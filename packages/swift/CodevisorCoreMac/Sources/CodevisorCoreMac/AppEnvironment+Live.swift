@@ -7,10 +7,7 @@ extension AppEnvironment {
   /// own `live` variant without a local server — that is why this lives in
   /// CodevisorCoreMac rather than the shared module.
   public static func live() throws -> AppEnvironment {
-    let storage = try ClientStorageBootstrap.open(
-      directory: CodevisorAppVariant.applicationSupportURL(),
-      credentials: KeychainMachineCredentialStore.shared
-    )
+    let storage = try ClientStorageBootstrap.open(directory: CodevisorAppVariant.applicationSupportURL())
     return live(storage: storage)
   }
 
@@ -44,7 +41,6 @@ extension AppEnvironment {
       composerDrafts: composerDrafts,
       settings: settings,
       machineStore: store,
-      machineCredentialStore: KeychainMachineCredentialStore.shared,
       cloudCredentialStore: KeychainCloudCredentialStore.shared,
       paneGroups: DefaultPaneGroupRepository(store: store),
       localServer: localServer,

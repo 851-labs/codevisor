@@ -4,11 +4,9 @@ import ACPKit
 
 @testable import CodevisorCore
 
-/// A machine's route flipping (direct ↔ relay) mid-turn used to tear the
-/// model down and reload history, which rewound the streaming transcript to
-/// a server snapshot and re-typed it. These cover the two guarantees that
-/// replaced that: a transport swap resumes from the applied cursor, and a
-/// history snapshot older than the applied stream is never installed.
+/// A streaming transcript must never rewind: applied stream events advance
+/// the resume cursor, and a history snapshot older than the applied stream
+/// is never installed.
 extension SessionModelTests {
   private func chunkEnvelope(
     id: Int,
@@ -58,52 +56,6 @@ extension SessionModelTests {
     await settleUntil { self.finalMarkdown(model)?.contains("Run multiple") == true }
 
     #expect(model.serverEventCursor == 11)
-    model.shutdown()
-  }
-
-  @Test("A route flip re-homes a streaming turn without rewinding it")
-  func adoptTransportResumesFromAppliedCursor() async {
-    let sessionId = UUID()
-    let direct = FakeSessionServerClient(sessionId: sessionId)
-    direct.echoOnPrompt = false
-    direct.initialTranscriptPage = ServerTranscriptPage(
-      items: [], nextBefore: nil, hasMore: false, eventCursor: 0
-    )
-    let model = SessionModel(
-      serverTransport: ServerSessionTransport(client: direct, sessionId: sessionId),
-      sessionId: sessionId.uuidString
-    )
-    await model.loadHistoryForInitialDisplay()
-    await model.send("describe the repo")
-    direct.emit(chunkEnvelope(id: 10, sessionId: sessionId, text: "Its main capabilities are:\n"))
-    direct.emit(chunkEnvelope(id: 11, sessionId: sessionId, text: "- Run multiple sessions\n"))
-    direct.emit(chunkEnvelope(id: 12, sessionId: sessionId, text: "- Provide a terminal\n"))
-    await settleUntil { self.finalMarkdown(model)?.contains("Provide a terminal") == true }
-    let streamedSoFar = finalMarkdown(model)
-    #expect(model.serverEventCursor == 12)
-
-    // The relay client is a different server connection to the same
-    // session. Like the real server, it replays only events newer than the
-    // cursor it is asked for.
-    let relay = FakeSessionServerClient(sessionId: sessionId)
-    await model.adoptTransport(ServerSessionTransport(client: relay, sessionId: sessionId))
-    await settleUntil { !relay.sessionEventSinceValues.isEmpty }
-
-    #expect(relay.sessionEventSinceValues == [12])
-    #expect(direct.transcriptPageRequests.count == 1)
-    #expect(relay.transcriptPageRequests.isEmpty)
-    // Nothing on screen moved: same text, still generating.
-    #expect(finalMarkdown(model) == streamedSoFar)
-    #expect(model.isSending)
-
-    relay.emit(chunkEnvelope(id: 13, sessionId: sessionId, text: "- Connect to remote machines\n"))
-    await settleUntil { self.finalMarkdown(model)?.contains("Connect to remote") == true }
-
-    #expect(
-      finalMarkdown(model)
-        == "Its main capabilities are:\n- Run multiple sessions\n- Provide a terminal\n- Connect to remote machines\n"
-    )
-    #expect(model.serverEventCursor == 13)
     model.shutdown()
   }
 

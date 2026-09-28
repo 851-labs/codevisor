@@ -19,6 +19,5 @@ struct UnresolvedMachineTests {
     // A reserved name that cannot resolve, so a request fails instead of
     // reaching some other server.
     #expect(machine.baseURL.host() == "unresolved.invalid")
-    #expect(machine.token == nil)
   }
 }

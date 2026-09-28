@@ -31,6 +31,12 @@ public protocol CloudMachineProviding: AnyObject {
   /// A screen-sharing media route over the tunnel to this machine
   /// (docs/plans/codevisor-tunnel.md); nil when there is no tunnel to it.
   func tunnelMediaRoute(for machine: CloudMachine) async -> CloudTunnelMediaRoute?
+  /// Registers a machine the app reaches directly (a retired, directly
+  /// paired machine, through `client`) on the signed-in account, named
+  /// `name`, and returns its cloud device id. The registration is
+  /// "external": like `codevisor auth login`, it stays connected when this
+  /// app signs out.
+  func adoptDirectMachine(using client: any CodevisorServerClienting, name: String) async throws -> String
 }
 
 public extension CloudMachineProviding {
@@ -40,6 +46,9 @@ public extension CloudMachineProviding {
   func registerLocalMachineIfNeeded() {}
   func prepareAccountSync(on client: any CodevisorServerClienting, machineId: String) async -> Bool { false }
   func tunnelMediaRoute(for machine: CloudMachine) async -> CloudTunnelMediaRoute? { nil }
+  func adoptDirectMachine(using _: any CodevisorServerClienting, name _: String) async throws -> String {
+    throw CloudAccountClientError.missingToken
+  }
 }
 
 extension CodevisorMachine {

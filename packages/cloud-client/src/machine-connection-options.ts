@@ -20,7 +20,7 @@ export const releaseChannelField = (
 export interface MachineConnectionOptions {
   credentials: MachineCredentials
   /// `serverId` is this machine's stable Codevisor server id, published in
-  /// hub presence so peers can match it to direct (FleetRoster) routes.
+  /// hub presence so peers list it under the id it reports in /v1/info.
   device: {
     name: string
     os?: string

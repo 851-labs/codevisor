@@ -3,7 +3,7 @@ import { Hono } from "hono"
 
 import { hasAppleAuth } from "./apple-auth.js"
 import { createAuth } from "./auth.js"
-import { credentialRoutes } from "./credential-routes.js"
+import { credentialRoutes, verifyMachineKey } from "./credential-routes.js"
 import { hasEmailAuth } from "./email-auth.js"
 import { DEV_USER, isDevAuthEnabled, type CloudEnv } from "./env.js"
 import { relayMap } from "./hub-tunnel.js"
@@ -79,6 +79,25 @@ app.get("/.well-known/codevisor", (c) =>
 )
 
 app.get("/health", (c) => c.json({ ok: true }))
+
+/// Universal links for the iOS app: the device-authorization page that
+/// `codevisor auth login` prints (and encodes as a QR code) opens in the app
+/// when it's installed, so a signed-in phone approves the machine in one tap.
+/// Without the app, the same URL is the web /device page. The app ID comes
+/// from the instance's Apple config, so self-hosters get their own (or none).
+app.get("/.well-known/apple-app-site-association", (c) => {
+  const { APPLE_TEAM_ID: teamId, APPLE_NATIVE_CLIENT_ID: bundleId } = c.env
+  if (!teamId || !bundleId) return c.notFound()
+  return c.json(
+    {
+      applinks: {
+        details: [{ appIDs: [`${teamId}.${bundleId}`], components: [{ "/": "/device" }] }]
+      }
+    },
+    200,
+    { "cache-control": "public, max-age=3600" }
+  )
+})
 
 // -- Auth --------------------------------------------------------------------
 
@@ -169,23 +188,61 @@ app.post("/api/machines/:deviceId/rename", async (c) => {
   return renamed ? c.json({ ok: true }) : c.json({ error: "unknown machine" }, 404)
 })
 
-/// Disconnect a machine from the account: revoke its api key (auth-side) and
-/// drop + forget it on the hub (connection-side).
-app.delete("/api/machines/:deviceId", async (c) => {
-  const auth = createAuth(c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers })
-  if (session === null) return c.json({ error: "unauthorized" }, 401)
-  const deviceId = c.req.param("deviceId")
-  const { apiKeys } = await auth.api.listApiKeys({ headers: c.req.raw.headers })
-  for (const key of apiKeys) {
-    const metadata = key.metadata as { deviceId?: string } | null
-    if (metadata?.deviceId === deviceId) {
-      await auth.api.deleteApiKey({ body: { keyId: key.id }, headers: c.req.raw.headers })
+/// The device id a stored api-key metadata column names. Better Auth has
+/// written the column both once- and twice-JSON-encoded over its versions.
+const metadataDeviceId = (raw: string | null): string | undefined => {
+  let value: unknown = raw
+  for (let depth = 0; depth < 2 && typeof value === "string"; depth += 1) {
+    try {
+      value = JSON.parse(value)
+    } catch {
+      return undefined
     }
   }
-  await forgetTunnelEndpoints(c.env, session.user.id, deviceId)
-  const removed = await hub(c.env, session.user.id, c.req.raw.cf).removeMachine(deviceId)
+  const deviceId = (value as { deviceId?: unknown } | null)?.deviceId
+  return typeof deviceId === "string" ? deviceId : undefined
+}
+
+/// Disconnects a machine from an account: revokes its api keys (auth-side),
+/// revokes its relay access, and drops + forgets it on the hub
+/// (connection-side). False when the hub did not know the machine. Shared by
+/// the app's removal (session) and the machine's own logout (its api key).
+const removeMachine = async (
+  env: CloudEnv,
+  userId: string,
+  deviceId: string,
+  cf: unknown
+): Promise<boolean> => {
+  const { results } = await env.DB.prepare("SELECT id, metadata FROM apikey WHERE reference_id = ?")
+    .bind(userId)
+    .all<{ id: string; metadata: string | null }>()
+  const revoked = results.filter((row) => metadataDeviceId(row.metadata) === deviceId)
+  if (revoked.length > 0) {
+    await env.DB.batch(
+      revoked.map((row) => env.DB.prepare("DELETE FROM apikey WHERE id = ?").bind(row.id))
+    )
+  }
+  await forgetTunnelEndpoints(env, userId, deviceId)
+  return hub(env, userId, cf).removeMachine(deviceId)
+}
+
+/// Remove a machine from the account (the apps' machine list). Answers 404
+/// for a machine the account no longer has — e.g. one that already removed
+/// itself on `codevisor auth logout`.
+app.delete("/api/machines/:deviceId", async (c) => {
+  const userId = await sessionUserId(c.env, c.req.raw.headers)
+  if (userId === undefined) return c.json({ error: "unauthorized" }, 401)
+  const removed = await removeMachine(c.env, userId, c.req.param("deviceId"), c.req.raw.cf)
   return removed ? c.json({ ok: true }) : c.json({ error: "unknown machine" }, 404)
+})
+
+/// A machine removing itself from its account (`codevisor auth logout`),
+/// authenticated by its own api key — the only credential a machine holds.
+app.delete("/api/machine/self", async (c) => {
+  const machine = await verifyMachineKey(c.env, c.req.header("x-api-key"))
+  if (machine === undefined) return c.json({ error: "invalid machine credential" }, 401)
+  await removeMachine(c.env, machine.userId, machine.deviceId, c.req.raw.cf)
+  return c.json({ ok: true })
 })
 
 /// Cheap machine-credential probe: lets a machine confirm its stored api key

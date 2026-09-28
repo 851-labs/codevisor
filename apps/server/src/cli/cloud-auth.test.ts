@@ -44,7 +44,7 @@ const makeWorld = (
       }
       if (url.endsWith("/v1/cloud/disconnect")) {
         registration = {}
-        return { status: 200, body: { ok: true } }
+        return { status: 200, body: { ok: true, removedFromAccount: true } }
       }
       if (url.endsWith("/v1/cloud")) return { status: 200, body: registration }
       return undefined
@@ -143,8 +143,14 @@ describe("authLoginCommand", () => {
       fetchImpl
     })
     expect(code).toBe(0)
-    expect(world.logs.join("\n")).toContain("AB12-CD34")
-    expect(world.logs.join("\n")).toContain("Connected as dev-vps")
+    const output = world.logs.join("\n")
+    expect(output).toContain("  https://cloud.example/device?user_code=AB12-CD34")
+    expect(output).toContain("  Code: AB12-CD34")
+    // The same URL is printed as a QR code for the phone app, above the
+    // link so the link stays visible in a short terminal.
+    expect(output).toContain("Scan to log in with the Codevisor app on your phone:")
+    expect(output.lastIndexOf("▄")).toBeLessThan(output.indexOf("Or log in from a browser:"))
+    expect(output).toContain("Connected as dev-vps")
     expect(world.httpCalls.find((call) => call.url.endsWith("/connect"))).toEqual({
       url: "http://127.0.0.1:49361/v1/cloud/connect",
       body: {
@@ -173,7 +179,8 @@ describe("authLoginCommand", () => {
       machineName: "named-by-flag"
     })
     expect(code).toBe(0)
-    expect(world.logs.join("\n")).toContain("https://cloud.example/device")
+    // A bare verification uri still resolves absolute, with the code filled in.
+    expect(world.logs.join("\n")).toContain("  https://cloud.example/device?user_code=AB12-CD34")
     expect(world.logs.join("\n")).toContain("Connected as named-by-flag")
   })
 
@@ -325,9 +332,28 @@ describe("authLogoutCommand", () => {
     expect(await authLogoutCommand(world.deps, { port: 54321 })).toBe(0)
     expect(world.httpCalls.at(-1)?.url).toBe("http://127.0.0.1:54321/v1/cloud/disconnect")
     expect(world.files.size).toBe(1)
-    expect(world.logs.join("\n")).toContain("Disconnected")
+    expect(world.logs.join("\n")).toContain(
+      "Disconnected this machine from https://cloud.example and removed it from your account."
+    )
+    expect(world.logs.join("\n")).not.toContain("machine list")
+    expect(world.errors).toEqual([])
     expect(await authLogoutCommand(world.deps)).toBe(0)
     expect(world.logs.at(-1)).toContain("not connected")
+  })
+
+  it("warns when the machine could not be removed from the account", async () => {
+    const world = makeWorld({ registration: connectedRegistration })
+    const deps: CliDeps = {
+      ...world.deps,
+      fetchJson: (url, init) =>
+        url.endsWith("/disconnect")
+          ? Promise.resolve({ status: 200, body: { ok: true, removedFromAccount: false } })
+          : world.deps.fetchJson(url, init)
+    }
+    expect(await authLogoutCommand(deps)).toBe(0)
+    expect(world.logs.join("\n")).toContain("Disconnected this machine from https://cloud.example.")
+    expect(world.errors.join("\n")).toContain("could not be removed from your account")
+    expect(world.errors.join("\n")).toContain("machine list in the Codevisor app")
   })
 
   it("reports a failure to disconnect", async () => {
@@ -344,151 +370,9 @@ describe("authLogoutCommand", () => {
   })
 })
 
-const loginScript = (machinesResponse?: Response) =>
+const loginScript = () =>
   scriptedFetch({
     "/.well-known/codevisor": [jsonResponse(instanceBody)],
     "/api/auth/device/code": [jsonResponse(grantBody())],
-    "/api/auth/device/token": [jsonResponse({ access_token: "session" })],
-    "/api/machines": [
-      machinesResponse ??
-        jsonResponse({ machines: [{ deviceId: "dev-0", name: "Original", online: true }] })
-    ]
+    "/api/auth/device/token": [jsonResponse({ access_token: "session" })]
   })
-
-describe("auth login sync choice", () => {
-  it("applies a prompted opt-out through the local server", async () => {
-    const world = makeWorld()
-    const calls: Array<{ url: string; body?: unknown }> = []
-    const deps: CliDeps = {
-      ...world.deps,
-      fetchJson: (url, init) => {
-        if (!url.endsWith("/v1/sync-participation")) return world.deps.fetchJson(url, init)
-        calls.push({ url, body: init?.body })
-        return Promise.resolve({ status: 200, body: { enabled: false } })
-      }
-    }
-    const code = await authLoginCommand(deps, {
-      server: "https://cloud.example",
-      fetchImpl: loginScript(),
-      promptSyncConfig: () => Promise.resolve(false)
-    })
-    expect(code).toBe(0)
-    expect(calls[0]?.url).toContain("/v1/sync-participation")
-    expect(calls[0]?.body).toEqual({ enabled: false })
-    expect(world.logs.join("\n")).toContain("Config sync is off")
-  })
-
-  it("prefers the explicit flag over the prompt and hints when the server is down", async () => {
-    const world = makeWorld()
-    let prompted = false
-    const code = await authLoginCommand(world.deps, {
-      server: "https://cloud.example",
-      fetchImpl: loginScript(),
-      syncConfig: false,
-      promptSyncConfig: () => {
-        prompted = true
-        return Promise.resolve(true)
-      }
-    })
-    expect(code).toBe(0)
-    expect(prompted).toBe(false)
-    expect(world.logs.join("\n")).toContain("codevisor sync off")
-
-    const optIn = makeWorld()
-    expect(
-      await authLoginCommand(optIn.deps, {
-        server: "https://cloud.example",
-        fetchImpl: loginScript(),
-        syncConfig: true
-      })
-    ).toBe(0)
-    expect(optIn.logs.join("\n")).toContain("codevisor sync on")
-  })
-
-  it("confirms a prompted opt-in", async () => {
-    const world = makeWorld()
-    const deps: CliDeps = {
-      ...world.deps,
-      fetchJson: (url, init) =>
-        url.endsWith("/v1/sync-participation")
-          ? Promise.resolve({ status: 200, body: { enabled: true } })
-          : world.deps.fetchJson(url, init)
-    }
-    const code = await authLoginCommand(deps, {
-      server: "https://cloud.example",
-      fetchImpl: loginScript(),
-      promptSyncConfig: () => Promise.resolve(true)
-    })
-    expect(code).toBe(0)
-    expect(world.logs.join("\n")).toContain("Config sync is on")
-  })
-})
-
-describe("auth login fleet awareness", () => {
-  it("never prompts the account's first machine and says why", async () => {
-    const world = makeWorld()
-    let prompted = false
-    const code = await authLoginCommand(world.deps, {
-      server: "https://cloud.example",
-      fetchImpl: loginScript(jsonResponse({ machines: [] })),
-      promptSyncConfig: () => {
-        prompted = true
-        return Promise.resolve(false)
-      }
-    })
-    expect(code).toBe(0)
-    expect(prompted).toBe(false)
-    expect(world.logs.join("\n")).toContain("first machine on your account")
-    expect(world.logs.join("\n")).not.toContain("Config sync is")
-  })
-
-  it("shows the existing fleet before asking a joining machine", async () => {
-    const world = makeWorld()
-    const deps: CliDeps = {
-      ...world.deps,
-      fetchJson: (url, init) =>
-        url.endsWith("/v1/sync-participation")
-          ? Promise.resolve({ status: 200, body: { enabled: true } })
-          : world.deps.fetchJson(url, init)
-    }
-    const code = await authLoginCommand(deps, {
-      server: "https://cloud.example",
-      fetchImpl: loginScript(
-        jsonResponse({
-          machines: [
-            { deviceId: "dev-1", name: "Studio" },
-            { deviceId: "dev-2", name: "Laptop" }
-          ]
-        })
-      ),
-      promptSyncConfig: () => Promise.resolve(true)
-    })
-    expect(code).toBe(0)
-    expect(world.logs.join("\n")).toContain("already has 2 machines: Studio, Laptop.")
-    expect(world.logs.join("\n")).toContain("Config sync is on")
-  })
-
-  it("keeps the ask when the machine list is unreachable", async () => {
-    const world = makeWorld()
-    const deps: CliDeps = {
-      ...world.deps,
-      fetchJson: (url, init) =>
-        url.endsWith("/v1/sync-participation")
-          ? Promise.resolve({ status: 200, body: { enabled: false } })
-          : world.deps.fetchJson(url, init)
-    }
-    let prompted = false
-    const code = await authLoginCommand(deps, {
-      server: "https://cloud.example",
-      fetchImpl: loginScript(jsonResponse({ error: "boom" }, 500)),
-      promptSyncConfig: () => {
-        prompted = true
-        return Promise.resolve(false)
-      }
-    })
-    expect(code).toBe(0)
-    expect(prompted).toBe(true)
-    expect(world.logs.join("\n")).not.toContain("already has")
-    expect(world.logs.join("\n")).toContain("Config sync is off")
-  })
-})

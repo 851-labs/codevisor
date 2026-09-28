@@ -33,38 +33,40 @@ struct MachineControllerCloudTests {
     #expect(controller.machine(for: "cloud:dev-1") == nil)
   }
 
-  @Test("Deduplicates against configured machines by cloud device id, then name")
-  func dedup() async throws {
-    let deviceId = "dev-configured"
-    // A real client over a canned transport, so the configured remote's
-    // status probe advertises its cloud device id like a live server.
-    let remoteTransport = FakeRelayRequestTransport()
-    remoteTransport.responsesByPath["/v1/info"] = """
-      {"id":"studio","name":"Studio","kind":"remote","version":"1.0.0",
-       "platform":"darwin","bindHost":"0.0.0.0","cloudDeviceId":"\(deviceId)"}
+  /// A controller whose local server's status probe advertises `deviceId`
+  /// — this Mac registered on the account — over a canned transport.
+  private func makeRegisteredLocal(
+    deviceId: String
+  ) -> (controller: MachineController, projectList: ProjectListModel, provider: FakeCloudProvider) {
+    let localTransport = FakeRelayRequestTransport()
+    localTransport.responsesByPath["/v1/info"] = """
+      {"id":"local","name":"Local","kind":"local","version":"1.0.0",
+       "platform":"darwin","bindHost":"127.0.0.1","cloudDeviceId":"\(deviceId)"}
       """
-    let (controller, _, provider) = makeController(clientFactory: { machine in
-      // Only the REMOTE speaks through the studio transport. Handing it
-      // to every machine let a racing local probe adopt the studio's
-      // cloud identity and silently corrupt deduplication.
-      CodevisorServerClient(
+    let provider = FakeCloudProvider()
+    let factory: MachineController.ClientFactory = { machine in
+      guard machine.isLocal else { return provider.relayClient(for: machine) }
+      return CodevisorServerClient(
         config: CodevisorServerConfig(
           baseURL: machine.baseURL,
-          requestTransport: machine.isLocal
-            ? FakeRelayRequestTransport()
-            : remoteTransport,
+          requestTransport: localTransport,
           webSocketTransport: UnusedWebSocketTransport()
         ))
-    })
-    let remote = try controller.addRemote(host: "studio.tailnet.ts.net")
+    }
+    return makeController(provider: provider, clientFactory: factory)
+  }
 
+  @Test("This Mac's own cloud registration is hidden by device id, then name")
+  func dedup() async throws {
+    let deviceId = "dev-this-mac"
+    let (controller, _, provider) = makeRegisteredLocal(deviceId: deviceId)
     provider.cloudMachines = [
-      // Same identity as the configured remote (device id match after
-      // its status probe answers).
-      makeCloudMachine(deviceId: deviceId, name: "Studio (Cloud)"),
-      // Name collision with a configured machine.
-      makeCloudMachine(deviceId: "dev-name-clash", name: remote.name),
-      // Genuinely cloud-only.
+      // This Mac's registration (device id match after its status probe
+      // answers).
+      makeCloudMachine(deviceId: deviceId, name: "This Mac (Cloud)"),
+      // Name collision with this Mac.
+      makeCloudMachine(deviceId: "dev-name-clash", name: CodevisorMachine.local.name),
+      // Genuinely another machine.
       makeCloudMachine(deviceId: "dev-only", name: "Only In Cloud"),
     ]
 
@@ -72,126 +74,30 @@ struct MachineControllerCloudTests {
     // listed (name fallback doesn't match it).
     #expect(controller.cloudOnlyMachines.map(\.deviceId) == [deviceId, "dev-only"])
 
-    await controller.refreshStatus(for: remote.id)
-    #expect(controller.statusByMachineId[remote.id]?.cloudDeviceId == deviceId)
+    await controller.refreshStatus(for: "local")
+    #expect(controller.statusByMachineId["local"]?.cloudDeviceId == deviceId)
     #expect(controller.cloudOnlyMachines.map(\.deviceId) == ["dev-only"])
-    #expect(controller.allMachines.map(\.id) == ["local", remote.id, "cloud:dev-only"])
+    #expect(controller.allMachines.map(\.id) == ["local", "cloud:dev-only"])
   }
 
-  /// A controller with one configured remote whose status probe advertises
-  /// `deviceId`, plus a cloud twin of that remote on the provider — the
-  /// setup for every stale-status deduplication regression below.
-  private func makeDedupedRemote(
-    deviceId: String
-  ) async throws -> (controller: MachineController, provider: FakeCloudProvider, remote: CodevisorMachine) {
-    let remoteTransport = FakeRelayRequestTransport()
-    remoteTransport.responsesByPath["/v1/info"] = """
-      {"id":"studio","name":"Studio","kind":"remote","version":"1.0.0",
-       "platform":"darwin","bindHost":"0.0.0.0","cloudDeviceId":"\(deviceId)"}
-      """
-    let (controller, _, provider) = makeController(clientFactory: { machine in
-      // Only the REMOTE speaks through the studio transport. Handing it
-      // to every machine let a racing local probe adopt the studio's
-      // cloud identity and silently corrupt deduplication.
-      CodevisorServerClient(
-        config: CodevisorServerConfig(
-          baseURL: machine.baseURL,
-          requestTransport: machine.isLocal
-            ? FakeRelayRequestTransport()
-            : remoteTransport,
-          webSocketTransport: UnusedWebSocketTransport()
-        ))
-    })
-    let remote = try controller.addRemote(host: "studio.tailnet.ts.net")
-    await controller.refreshStatus(for: remote.id)
-    provider.cloudMachines = [makeCloudMachine(deviceId: deviceId, name: "Studio (Cloud)")]
-    #expect(controller.cloudOnlyMachines.isEmpty)
-    return (controller, provider, remote)
-  }
-
-  @Test("Removing a machine frees its cloud twin for the unified list")
-  func removedMachineStatusDoesNotDeduplicate() async throws {
-    let deviceId = "dev-removed"
-    let (controller, _, remote) = try await makeDedupedRemote(deviceId: deviceId)
-
-    try controller.removeMachine(remote.id)
-
-    #expect(controller.statusByMachineId[remote.id] == nil)
-    #expect(controller.cloudOnlyMachines.map(\.deviceId) == [deviceId])
-    #expect(controller.allMachines.map(\.id) == ["local", "cloud:\(deviceId)"])
-  }
-
-  @Test("The delete-all-data reset frees cloud twins of removed machines")
-  func resetFreesCloudTwins() async throws {
-    // The exact post-reset regression: "reset app data" runs in-process
-    // (removeAllRemoteMachines), so without pruning, the removed dev
-    // remote's stale status kept hiding its cloud entry after the user
-    // re-onboarded and signed back in.
-    let deviceId = "dev-reset"
-    let (controller, _, _) = try await makeDedupedRemote(deviceId: deviceId)
-
-    controller.removeAllRemoteMachines()
-
-    #expect(controller.cloudOnlyMachines.map(\.deviceId) == [deviceId])
-    #expect(controller.allMachines.map(\.id) == ["local", "cloud:\(deviceId)"])
-  }
-
-  @Test("A status probe landing after removal still doesn't hide the twin")
-  func lateProbeAfterRemovalDoesNotDeduplicate() async throws {
-    // An in-flight refreshStatus can re-create the removed machine's
-    // status entry after removal pruned it. Deduplication must only count
-    // statuses of currently configured machines, so even that stale entry
-    // cannot hide the cloud twin.
-    let deviceId = "dev-late-probe"
-    let (controller, _, remote) = try await makeDedupedRemote(deviceId: deviceId)
-
-    try controller.removeMachine(remote.id)
-    // An in-flight refreshStatus holds its pre-removal client and its
-    // result can land after removal pruned the entry — model the landing
-    // directly rather than through client re-resolution, which correctly
-    // refuses to dial a machine that no longer exists.
-    controller.connection(for: remote.id).status = MachineStatus(
-      isReachable: true,
-      label: "Studio 1.0.0",
-      cloudDeviceId: deviceId,
-      route: .direct,
-      serverId: "studio"
-    )
-
-    #expect(controller.statusByMachineId[remote.id]?.cloudDeviceId == deviceId)
-    #expect(controller.cloudOnlyMachines.map(\.deviceId) == [deviceId])
-  }
-
-  @Test("A configured machine's probe prunes records under its cloud twin id")
+  @Test("This Mac's probe prunes records under its cloud twin id")
   func probePrunesCloudTwinRecords() async throws {
     let deviceId = "dev-twin"
-    let remoteTransport = FakeRelayRequestTransport()
-    remoteTransport.responsesByPath["/v1/info"] = """
-      {"id":"studio","name":"Studio","kind":"remote","version":"1.0.0",
-       "platform":"darwin","bindHost":"0.0.0.0","cloudDeviceId":"\(deviceId)"}
-      """
-    let (controller, projectList, provider) = makeController(clientFactory: { machine in
-      CodevisorServerClient(
-        config: CodevisorServerConfig(
-          baseURL: machine.baseURL,
-          requestTransport: remoteTransport,
-          webSocketTransport: UnusedWebSocketTransport()
-        ))
-    })
-    let remote = try controller.addRemote(host: "studio.tailnet.ts.net")
-    provider.cloudMachines = [makeCloudMachine(deviceId: deviceId, name: "Studio (Cloud)")]
+    let (controller, projectList, provider) = makeRegisteredLocal(deviceId: deviceId)
+    provider.cloudMachines = [makeCloudMachine(deviceId: deviceId, name: "This Mac (Cloud)")]
 
     // Records that synced under the twin id before the probe landed.
     let twinId = "cloud:\(deviceId)"
     await projectList.installProjectWithChat(machineId: twinId, folder: "/srv/studio-work", title: "twin chat")
     #expect(projectList.projects.contains { $0.serverId == twinId })
 
-    await controller.refreshStatus(for: remote.id)
+    await controller.refreshStatus(for: "local")
 
-    // The twin's records are gone, and connecting to the twin is refused.
+    // The twin's records are gone, and drafts naming the twin land on
+    // this Mac.
     #expect(!projectList.projects.contains { $0.serverId == twinId })
     #expect(!projectList.sessions.contains { $0.serverId == twinId })
-    #expect(controller.canonicalComposerMachineId(for: twinId) == remote.id)
+    #expect(controller.canonicalComposerMachineId(for: twinId) == "local")
   }
 
   @Test("A resolved local registration removes its cloud twin before fleet sync")
@@ -225,7 +131,10 @@ extension MachineControllerCloudTests {
     let local = SyncFakeServerClient(projects: [], sessions: [])
     local.configureInfoId("local")
     local.configureInfoCloudDeviceId(deviceId)
-    let (controller, projectList, provider) = makeController(clientFactory: { _ in local })
+    let provider = FakeCloudProvider()
+    let (controller, projectList, _) = makeController(
+      provider: provider,
+      clientFactory: { machine in machine.isLocal ? local : provider.relayClient(for: machine) })
     provider.cloudMachines = [makeCloudMachine(deviceId: deviceId, name: "Local (Cloud)")]
     provider.requestTransport.responsesByPath["/v1/info"] = """
       {"id":"local","name":"Local","kind":"local","version":"0.1.0",

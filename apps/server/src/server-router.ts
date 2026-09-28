@@ -6,7 +6,6 @@ import type { RestartDrainRequest as RestartDrainRequestBody, UpdateInfo } from 
 import type { ServerUpdateChannel } from "@codevisor/updater"
 
 import { applyAfterDrain } from "./apply-after-drain.js"
-import { readTailnetPeers } from "./infra/tailnet.js"
 import { routeBrowserState } from "./routes/browser-state.js"
 import { routeBrowserUse } from "./routes/browser-use.js"
 import { routeClientControl } from "./routes/client-control.js"
@@ -104,9 +103,9 @@ export const handleRequest = async (
       return
     }
 
-    // Tokenless on purpose: clients probe network peers (e.g. tailnet members)
-    // with this manifest to discover Codevisor servers before pairing. Keep the
-    // payload minimal — nothing here may reveal projects, sessions, or tokens.
+    // Tokenless on purpose: clients probe network peers with this manifest to
+    // identify Codevisor servers. Keep the payload minimal — nothing here may
+    // reveal projects, sessions, or tokens.
     if (request.method === "GET" && url.pathname === "/v1/discovery") {
       writeJson(response, 200, {
         serverId: config.id,
@@ -194,19 +193,6 @@ export const handleRequest = async (
 
     if (request.method === "GET" && url.pathname === "/v1/events/cursor") {
       writeJson(response, 200, { cursor: await run(services.db.latestEventCursor) })
-      return
-    }
-
-    // The machine's view of its tailnet, for clients that can't enumerate
-    // peers themselves (iOS). Authenticated: the peer list names every device
-    // on the user's tailnet, which is far more than /v1/discovery reveals.
-    if (request.method === "GET" && url.pathname === "/v1/tailnet/peers") {
-      const peers = await readTailnetPeers()
-      writeJson(
-        response,
-        200,
-        peers === undefined ? { available: false, peers: [] } : { available: true, peers }
-      )
       return
     }
 

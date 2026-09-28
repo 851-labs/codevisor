@@ -69,8 +69,8 @@ extension MachineController {
       }
     } else {
       do {
-        // Unlike health, info also proves this device's connection
-        // token is accepted before ordinary requests are released.
+        // Unlike health, info proves the machine serves ordinary routes
+        // before ordinary requests are released.
         _ = try await client.info()
       } catch {
         if await probeDataUpgrade(for: machineId, client: client) != nil {
@@ -90,7 +90,7 @@ extension MachineController {
           label: message
         )
         // Remote failures are routinely transient (a relay timeout
-        // against a machine mid-handoff, a stale direct pipe): keep
+        // against a machine mid-handoff, a stale tunnel path): keep
         // retrying with backoff instead of parking the machine in a
         // latched failure until the next foreground.
         schedulePreparationRetry(for: machineId)

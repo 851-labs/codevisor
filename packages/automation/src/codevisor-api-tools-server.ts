@@ -37,14 +37,8 @@ export const codevisorServerApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     "/v1/openapi.json"
   ),
   apiTool(
-    "machines.tailnet_peers",
-    "List machines visible on this server's tailnet.",
-    "GET",
-    "/v1/tailnet/peers"
-  ),
-  apiTool(
     "machines.list",
-    "List every machine on this account (this one, cloud-connected, and directly paired) with its stable id, name, OS, online state, and last-seen time. `isCurrent` marks the machine this call runs on.",
+    "List every machine on this account (this one and every cloud-connected machine) with its stable id, name, OS, online state, and last-seen time. `isCurrent` marks the machine this call runs on.",
     "GET",
     "/v1/machines"
   ),

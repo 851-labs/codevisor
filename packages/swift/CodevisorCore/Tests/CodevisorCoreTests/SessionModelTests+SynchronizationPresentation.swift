@@ -30,8 +30,6 @@ extension SessionModelTests {
     #expect(client.transcriptPageRequests.count == requests)
     await model.reconcileIfInFlight()
     #expect(model.connectionRecoveryMessage == nil)
-    await model.adoptTransport(transport)
-    #expect(model.connectionRecoveryMessage == nil)
     #expect(model.conversation == cached)
   }
 

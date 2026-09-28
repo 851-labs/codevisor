@@ -63,32 +63,23 @@ struct KeychainCredentialStoreTests {
     )
   }
 
-  @Test("Machine and cloud credentials share platform-default Keychain behavior")
-  func credentialStoresSharePlatformKeychainBehavior() throws {
+  @Test("Cloud credentials use the platform-default Keychain")
+  func cloudCredentialsUsePlatformKeychain() throws {
     let keychain = FakeKeychain()
-    let machine = KeychainMachineCredentialStore(
-      service: "machine.dev-a",
-      operations: keychain.operations
-    )
     let cloud = KeychainCloudCredentialStore(
       service: "cloud.dev-a",
       operations: keychain.operations
     )
 
-    try machine.saveToken("machine-token", forMachineID: "machine-1")
     try cloud.saveToken("cloud-token")
     try cloud.saveServerURL(URL(string: "https://cloud.example")!)
 
-    #expect(try machine.token(forMachineID: "machine-1") == "machine-token")
     #expect(try cloud.token() == "cloud-token")
     #expect(try cloud.serverURL() == URL(string: "https://cloud.example"))
-    #expect(keychain.value(service: "machine.dev-a", account: "machine-1") == "machine-token")
     #expect(keychain.value(service: "cloud.dev-a", account: "session-token") == "cloud-token")
     #expect(keychain.records.allSatisfy { !$0.usesDataProtectionKeychain })
 
-    try machine.removeToken(forMachineID: "machine-1")
     try cloud.removeToken()
-    #expect(try machine.token(forMachineID: "machine-1") == nil)
     #expect(try cloud.token() == nil)
   }
 

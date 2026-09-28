@@ -135,6 +135,28 @@ describe("codevisor CLI support", () => {
     expect(halfDead.errors.some((line) => line.includes("codevisor stop"))).toBe(true)
   })
 
+  it("waits for a booting server to finish starting before reporting it running", async () => {
+    const booting = { status: 200, body: { ok: false, database: "migrating" } }
+    const spawned = makeWorld({
+      http: { [health(DEFAULT_PORT)]: [undefined, booting, ok] },
+      spawnPid: 777
+    })
+    expect(await startCommand(spawned.deps)).toBe(0)
+    expect(spawned.logs.at(-1)).toContain("pid 777")
+    expect(spawned.httpCalls(health(DEFAULT_PORT))).toBe(3)
+
+    const alreadyBooting = makeWorld({ http: { [health(DEFAULT_PORT)]: [booting, booting, ok] } })
+    expect(await startCommand(alreadyBooting.deps)).toBe(0)
+    expect(alreadyBooting.logs.at(-1)).toContain("already running")
+    expect(alreadyBooting.spawned).toHaveLength(0)
+    expect(alreadyBooting.httpCalls(health(DEFAULT_PORT))).toBe(3)
+
+    const stuck = makeWorld({ http: { [health(DEFAULT_PORT)]: [booting] } })
+    expect(await startCommand(stuck.deps)).toBe(1)
+    expect(stuck.errors.some((line) => line.includes("did not finish starting"))).toBe(true)
+    expect(stuck.spawned).toHaveLength(0)
+  })
+
   it("fails when the spawned server never becomes healthy", async () => {
     const world = makeWorld({ files: { "/home/user/.codevisor/data/server.pid": "garbage" } })
     expect(await startCommand(world.deps)).toBe(1)

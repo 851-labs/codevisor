@@ -29,7 +29,8 @@ struct MachineControllerDataUpgradeTests {
     )
     defer { controller.stopEventSync() }
     let center = UpdateCenter(machines: controller, appUpdate: AppUpdateModel(currentVersion: "1.0"))
-    let remote = try controller.addRemote(host: "10.0.0.9", select: false)
+    let remote = accountMachine("remote-box")
+    signIn(controller, machines: [remote])
 
     await controller.prepareMachine(remote.id)
 
@@ -71,7 +72,8 @@ struct MachineControllerDataUpgradeTests {
     )
     defer { controller.stopEventSync() }
     let center = UpdateCenter(machines: controller, appUpdate: AppUpdateModel(currentVersion: "1.0"))
-    let remote = try controller.addRemote(host: "10.0.0.9", select: false)
+    let remote = accountMachine("remote-box")
+    signIn(controller, machines: [remote])
 
     await controller.refreshStatus(for: remote.id)
 

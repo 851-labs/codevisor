@@ -9,10 +9,10 @@ import {
 } from "../server-context.js"
 
 /// The machines surface: GET /v1/machines lists every machine on the
-/// account (this one, cloud presence, FleetRoster routes), and
+/// account (this one and its cloud peers), and
 /// POST /v1/gateway/invoke is the target end of a cross-machine gateway call
-/// — another machine's sandbox reaching this machine's tools, over a direct
-/// route (bearer token) or a sealed relay "gateway" channel (loopback).
+/// — another machine's sandbox reaching this machine's tools over a sealed
+/// relay "gateway" channel (loopback).
 ///
 /// Invoke answers `{ result }`, or `{ error: { message, code?, details? } }`:
 /// 400 for a malformed call, 422 when the tool call itself failed, 501 when

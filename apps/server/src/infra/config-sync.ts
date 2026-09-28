@@ -15,7 +15,7 @@ import { Effect } from "effect"
 /// distinguishing a local edit from replica lag. Since Phase 10, STATIC
 /// secrets travel with the definition — bearer token, headers, and stdio
 /// env replicate so a key-based server works on a fresh machine with zero
-/// re-entry (same-owner fleet trust, like the roster). OAuth material
+/// re-entry (same-owner fleet trust). OAuth material
 /// never syncs: its tokens rotate, and concurrent refreshes would
 /// invalidate each other (Phase 11 owns that with a refresh owner).
 export const MCPS_SYNC_NAMESPACE = "mcps"

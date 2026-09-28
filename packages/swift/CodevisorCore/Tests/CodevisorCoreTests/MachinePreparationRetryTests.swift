@@ -17,7 +17,8 @@ struct MachinePreparationRetryTests {
     let clock = TestClock()
     let controller = makeController(fake: fake, clock: clock)
     defer { controller.stopEventSync() }
-    let remote = try controller.addRemote(host: "10.0.0.9", select: false)
+    let remote = accountMachine("remote-box")
+    signIn(controller, machines: [remote])
 
     await controller.prepareMachine(remote.id)
     guard case .failed = controller.availabilityByMachineId[remote.id] else {
@@ -75,7 +76,8 @@ struct MachinePreparationRetryTests {
     fake.setInfoFails(true)
     let clock = TestClock()
     let controller = makeController(fake: fake, clock: clock)
-    let remote = try controller.addRemote(host: "10.0.0.9", select: false)
+    let remote = accountMachine("remote-box")
+    signIn(controller, machines: [remote])
 
     await controller.prepareMachine(remote.id)
     await #expect(throws: ServerRequestGateError.self) {

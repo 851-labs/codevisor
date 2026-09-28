@@ -2,53 +2,33 @@ import CodevisorClient
 import Foundation
 import os
 
-/// Reachability: the direct probe, the Phase 22 relay fallback for
-/// configured machines whose direct route is down, and the persisted
-/// direct↔cloud link both of those maintain.
+/// Reachability: the status probe and what it learns about a machine.
 extension MachineController {
   public func refreshStatus(for id: String) async {
     let client = client(for: id)
     let connection = connection(for: id)
-    defer { noteRouteAfterProbe(connection, id: id) }
     do {
-      let began = ContinuousClock.now
       let info = try await client.info()
-      let elapsed = ContinuousClock.now - began
       connection.status = MachineStatus(
         isReachable: true,
         label: "\(info.name) \(info.version)",
         cloudDeviceId: info.cloudDeviceId,
-        route: routeInUse(forMachineId: id),
         serverId: info.id,
         features: Set(info.features ?? []),
-        maxUploadBytes: info.maxUploadBytes,
-        roundTripMilliseconds: Int(elapsed / .milliseconds(1))
+        maxUploadBytes: info.maxUploadBytes
       )
       connection.dataUpgradeProgress = nil
-      // Persist the direct↔cloud link on the record itself: dedup and
-      // the relay fallback must both survive relaunches whose direct
-      // probe never succeeds.
-      if !id.hasPrefix(CodevisorMachine.cloudIdPrefix),
-        let deviceId = info.cloudDeviceId,
-        let index = registry.remoteMachines.firstIndex(where: { $0.id == id }),
-        registry.remoteMachines[index].cloudDeviceId != deviceId
-      {
-        registry.remoteMachines[index].cloudDeviceId = deviceId
-        persist()
-      }
       // A signed-in account with an unregistered local server (it may
       // have started after sign-in): register it now so this machine
       // shows up on the user's other devices.
       if id == CodevisorMachine.local.id, info.cloudDeviceId == nil {
         cloudProvider?.registerLocalMachineIfNeeded()
       }
-      // A CONFIGURED machine advertising a cloud device id makes its
-      // cloud twin a duplicate identity. The machine list already
-      // dedupes; also drop any records synced under the twin id before
-      // the probe landed, or they render as doubled projects/chats.
-      if !id.hasPrefix(CodevisorMachine.cloudIdPrefix),
-        let deviceId = info.cloudDeviceId
-      {
+      // The local machine advertising a cloud device id makes its cloud
+      // twin a duplicate identity. The machine list already dedupes; also
+      // drop any records synced under the twin id before the probe landed,
+      // or they render as doubled projects/chats.
+      if id == CodevisorMachine.local.id, let deviceId = info.cloudDeviceId {
         pruneCloudTwinRecords(deviceId: deviceId)
       }
       do {
@@ -67,20 +47,9 @@ extension MachineController {
       // than "Unreachable" — surface why instead.
       if id == CodevisorMachine.local.id, case let .unavailable(message) = localServer?.state {
         connection.status = MachineStatus(isReachable: false, label: message)
-      } else if case CodevisorServerClientError.httpStatus(401, _) = error {
-        // The server answered — the token is just wrong (or the
-        // machine was paired against a different server on that host).
-        // Say so, so the user fixes the token instead of chasing a
-        // phantom network problem.
-        connection.status = MachineStatus(isReachable: false, label: "Invalid connection token")
       } else if await probeDataUpgrade(for: id, client: client) != nil {
         // Booting through a data upgrade: the probe recorded the
-        // migration and set the status label. Not a network problem, so
-        // the (slow) relay fallback is not worth trying.
-      } else if let relayed = await probeRelayFallback(forMachineId: id) {
-        // The direct route is down but the machine answers through
-        // its cloud relay — reachable, just not directly.
-        connection.status = relayed
+        // migration and set the status label.
       } else {
         connection.status = MachineStatus(isReachable: false, label: "Unreachable")
         Log.machines.debug(
@@ -117,63 +86,5 @@ extension MachineController {
       label: failed ? "Server data update failed" : "Updating server data…"
     )
     return health
-  }
-
-  #if DEBUG
-    /// Seeds a persisted direct↔cloud link without a live probe — tests
-    /// model "the link was learned on an earlier launch". Lives in this
-    /// file because `registry`'s setter is file-private.
-    func adoptCloudLinkForTesting(machineId: String, deviceId: String) {
-      guard let index = registry.remoteMachines.firstIndex(where: { $0.id == machineId })
-      else { return }
-      registry.remoteMachines[index].cloudDeviceId = deviceId
-    }
-  #endif
-
-  /// Probes a configured machine through its persisted cloud twin's relay.
-  /// Nil when no link exists, the account is signed out, or the relay
-  /// probe fails too.
-  private func probeRelayFallback(forMachineId id: String) async -> MachineStatus? {
-    guard let config = relayFallbackConfig(forConfiguredMachineId: id) else { return nil }
-    let relayClient = CodevisorServerClient(
-      config: config,
-      requestGate: requestGate,
-      machineId: id
-    )
-    guard let info = try? await relayClient.info() else { return nil }
-    return MachineStatus(
-      isReachable: true,
-      label: "\(info.name) \(info.version) — via Codevisor Cloud",
-      cloudDeviceId: info.cloudDeviceId,
-      route: .relay,
-      serverId: info.id,
-      features: Set(info.features ?? []),
-      maxUploadBytes: info.maxUploadBytes
-    )
-  }
-
-  /// Route-flip detection: a probe that lands on a different route than
-  /// the last successful one means every live socket to this machine
-  /// rides a dead transport. Re-home the shell stream and tell the app
-  /// so open chats re-home too.
-  private func noteRouteAfterProbe(_ connection: MachineConnection, id: String) {
-    guard let newRoute = connection.status?.route else { return }
-    let known = connection.lastKnownRoute
-    connection.lastKnownRoute = newRoute
-    guard let known, known != newRoute else { return }
-    Log.machines.notice(
-      "Machine \(id, privacy: .public) route flipped \(String(describing: known), privacy: .public) → \(String(describing: newRoute), privacy: .public); re-homing streams"
-    )
-    // Coalesce: a flapping probe (LAN and relay trading places) must not
-    // tear the streams down once per flip. The last flip in a burst wins
-    // and triggers exactly one re-home.
-    connection.pendingRerouteTask?.cancel()
-    connection.pendingRerouteTask = Task { [weak self] in
-      try? await Task.sleep(for: .seconds(3))
-      guard let self, !Task.isCancelled else { return }
-      connection.pendingRerouteTask = nil
-      self.rerouteStreams(for: id)
-      self.onMachineRouteChanged?(id)
-    }
   }
 }

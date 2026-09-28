@@ -1,8 +1,7 @@
 import { Schema } from "effect"
 
-/// One machine on the account as GET /v1/machines lists it: this server,
-/// cloud-connected machines, and directly paired (FleetRoster) routes,
-/// merged under one stable id (the machine's server id).
+/// One machine on the account as GET /v1/machines lists it: this server and
+/// its cloud-connected peers, under one stable id (the machine's server id).
 export const MachineSummary = Schema.Struct({
   id: Schema.String,
   name: Schema.String,

@@ -142,7 +142,7 @@ struct ClientDatabaseTests {
   }
 
   @MainActor
-  @Test("Legacy files, defaults, and credentials migrate before cleanup")
+  @Test("Legacy files and defaults migrate before cleanup, queuing retired machines without importing tokens")
   func legacyUpgrade() throws {
     let directory = temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -172,19 +172,14 @@ struct ClientDatabaseTests {
       to: renamedLegacyDirectory.appendingPathComponent("sessions.json")
     )
 
-    let remote = CodevisorMachine(
-      id: "remote-example-443",
-      name: "Example",
-      baseURL: URL(string: "https://example.test")!,
-      kind: "remote",
-      token: "legacy-secret"
-    )
-    let registry = MachineRegistry(
-      selectedMachineId: remote.id,
-      remoteMachines: [remote]
-    )
-    try JSONEncoder().encode(registry)
-      .write(to: directory.appendingPathComponent("machines.json"))
+    // A directly paired machine (retired) with its token embedded, as the
+    // oldest builds stored it.
+    try Data(
+      """
+      {"selectedMachineId":"remote-example-443","remoteMachines":[{"id":"remote-example-443",
+      "name":"Example","baseURL":"https://example.test","kind":"remote","token":"legacy-secret"}]}
+      """.utf8
+    ).write(to: directory.appendingPathComponent("machines.json"))
 
     let attachment = Data([0, 1, 2, 3, 255])
     try attachment.write(
@@ -207,11 +202,9 @@ struct ClientDatabaseTests {
       forKey: "ios.workspace.panes.workspace-1"
     )
 
-    let credentials = InMemoryMachineCredentialStore()
     let storage = try ClientStorageBootstrap.open(
       directory: directory,
       legacyDefaults: defaults,
-      credentials: credentials,
       migrateRenamedApplicationSupport: false,
       renamedLegacyDirectory: renamedLegacyDirectory
     )
@@ -228,13 +221,9 @@ struct ClientDatabaseTests {
         forKey: "composer-draft-attachment-test.bin"
       ) == nil
     )
-    #expect(try credentials.token(forMachineID: remote.id) == "legacy-secret")
-
-    let persistedRegistry = try JSONDecoder().decode(
-      MachineRegistry.self,
-      from: #require(storage.store.loadData(forKey: "machines"))
-    )
-    #expect(persistedRegistry.remoteMachines.first?.token == nil)
+    #expect(
+      try storage.store.loadData(forKey: "machines")
+        == JSONEncoder().encode(MachineRegistry(selectedMachineId: "local")))
     #expect(
       try storage.database.dataMigrationState(
         id: ClientStorageBootstrap.legacyDataMigrationID
@@ -284,11 +273,16 @@ struct ClientDatabaseTests {
       FileManager.default.fileExists(
         atPath: recovery.appendingPathComponent("projects.json").path
       ))
-    let recoveredRegistry = try JSONDecoder().decode(
-      MachineRegistry.self,
-      from: Data(contentsOf: recovery.appendingPathComponent("machines.json"))
-    )
-    #expect(recoveredRegistry.remoteMachines.first?.token == nil)
+    let recoveredRegistry = try Data(contentsOf: recovery.appendingPathComponent("machines.json"))
+    #expect(!String(decoding: recoveredRegistry, as: UTF8.self).contains("legacy-secret"))
+    // The retired machine waits to be moved onto the cloud account, with the
+    // only copy of its inline token.
+    #expect(
+      try pendingAdoption(in: storage.store) == [
+        PendingDirectMachine(
+          id: "remote-example-443", name: "Example", baseURL: URL(string: "https://example.test")!,
+          legacyToken: "legacy-secret")
+      ])
 
     // A relaunch does not re-import and overwrite current SQLite values.
     let changedProjects = try JSONEncoder().encode([Project]())
@@ -296,7 +290,6 @@ struct ClientDatabaseTests {
     let reopened = try ClientStorageBootstrap.open(
       directory: directory,
       legacyDefaults: defaults,
-      credentials: credentials,
       migrateRenamedApplicationSupport: false
     )
     #expect(reopened.store.loadData(forKey: "projects") == changedProjects)
@@ -308,7 +301,6 @@ struct ClientDatabaseTests {
     let reopenedAgain = try ClientStorageBootstrap.open(
       directory: directory,
       legacyDefaults: defaults,
-      credentials: credentials,
       migrateRenamedApplicationSupport: false
     )
     #expect(reopenedAgain.store.loadData(forKey: "projects") == changedProjects)
@@ -338,7 +330,6 @@ struct ClientDatabaseTests {
     for _ in 0..<2 {
       _ = try ClientStorageBootstrap.open(
         directory: directory,
-        credentials: InMemoryMachineCredentialStore(),
         migrateRenamedApplicationSupport: false
       )
       #expect(!fileManager.fileExists(atPath: previews.path))
@@ -387,7 +378,6 @@ struct ClientDatabaseTests {
     #expect(throws: ClientDatabaseError.self) {
       _ = try ClientStorageBootstrap.open(
         directory: directory,
-        credentials: InMemoryMachineCredentialStore(),
         migrateRenamedApplicationSupport: false
       )
     }
@@ -410,7 +400,6 @@ struct ClientDatabaseTests {
     try FileManager.default.removeItem(at: alternate)
     let reopened = try ClientStorageBootstrap.open(
       directory: directory,
-      credentials: InMemoryMachineCredentialStore(),
       migrateRenamedApplicationSupport: false
     )
 
@@ -444,5 +433,54 @@ struct ClientDatabaseTests {
   ) throws -> Value? {
     guard let data = store.loadData(forKey: key) else { return nil }
     return try JSONDecoder().decode(Value.self, from: data)
+  }
+}
+
+extension ClientDatabaseTests {
+  @MainActor
+  @Test("Directly paired machines are queued for the cloud account once; the list keeps only its selection")
+  func retiredDirectMachines() throws {
+    let directory = temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let database = try ClientDatabase(url: directory.appendingPathComponent(ClientDatabase.fileName))
+    try database.migrate()
+    try database.setValue(
+      Data(
+        """
+        {"selectedMachineId":"cloud:dev-1","remoteMachines":[
+        {"id":"remote-studio-49361","name":"Studio","baseURL":"http://studio:49361","kind":"remote"},
+        {"id":"remote-box-49361","name":"Box","baseURL":"http://box:49361","kind":"remote"}]}
+        """.utf8),
+      forKey: "machines")
+    try database.setValue(Data(#"{"studio":"remote-studio-49361"}"#.utf8), forKey: "fleetRoster.applied")
+
+    let storage = try ClientStorageBootstrap.open(directory: directory, migrateRenamedApplicationSupport: false)
+
+    let queued = [
+      PendingDirectMachine(id: "remote-studio-49361", name: "Studio", baseURL: URL(string: "http://studio:49361")!),
+      PendingDirectMachine(id: "remote-box-49361", name: "Box", baseURL: URL(string: "http://box:49361")!),
+    ]
+    #expect(try pendingAdoption(in: storage.store) == queued)
+    #expect(
+      try storage.store.loadData(forKey: "machines")
+        == JSONEncoder().encode(MachineRegistry(selectedMachineId: "cloud:dev-1")))
+    #expect(storage.store.loadData(forKey: "fleetRoster.applied") == nil)
+    #expect(
+      try storage.database.dataMigrationState(id: ClientStorageBootstrap.retiredDirectMachinesMigrationID)
+        == "completed")
+
+    // Once: a stale list written back by an older build is left to the
+    // machine list, which ignores it, rather than queued again.
+    try storage.database.setValue(
+      Data(
+        #"{"selectedMachineId":"local","remoteMachines":[{"id":"remote-late","name":"Late","baseURL":"http://late:1","kind":"remote"}]}"#
+          .utf8), forKey: "machines")
+    let reopened = try ClientStorageBootstrap.open(directory: directory, migrateRenamedApplicationSupport: false)
+    #expect(try pendingAdoption(in: reopened.store) == queued)
+  }
+
+  private func pendingAdoption(in store: any PersistenceStore) throws -> [PendingDirectMachine] {
+    guard let data = store.loadData(forKey: DirectMachineCloudAdoption.storeKey) else { return [] }
+    return try JSONDecoder().decode([PendingDirectMachine].self, from: data)
   }
 }

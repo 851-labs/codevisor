@@ -38,15 +38,6 @@ export interface SyncReconcileOutcome {
   readonly refreshReadiness?: (fanout: EventFanout) => Promise<void>
 }
 
-/// The participation flag lives in a dot-named namespace the HTTP surface
-/// can never serve or gossip; only the dedicated endpoint reads it.
-export const PARTICIPATION_NAMESPACE = "local.sync"
-
-export const readParticipation = async (services: CodevisorServerServices): Promise<boolean> => {
-  const entries = await run(services.db.getSyncEntries(PARTICIPATION_NAMESPACE))
-  return entries.find((entry) => entry.key === "enabled")?.value !== false
-}
-
 /// One reconcile pass for a plane; undefined when the backing services are
 /// absent on this machine (callers decide whether that is a 501 or a
 /// silent skip).
@@ -205,7 +196,7 @@ export const publishSyncChanged = (
 }
 
 /// The mutation hook's half: run the pass and publish, silently skipping
-/// machines that opted out of sync or lack the backing services. Never
+/// machines that lack the backing services. Never
 /// throws — a failed background pass must not affect the request that
 /// triggered it.
 export const runBackgroundSyncReconcile = async (
@@ -215,7 +206,6 @@ export const runBackgroundSyncReconcile = async (
   namespace: SyncReconcileNamespace
 ): Promise<void> => {
   try {
-    if (!(await readParticipation(services))) return
     const result = await reconcileForNamespace(services, config, namespace)
     if (result === undefined) return
     publishSyncChanged(services, fanout, namespace, result.changedEntries)

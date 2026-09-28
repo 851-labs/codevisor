@@ -19,13 +19,18 @@ public protocol CodevisorServerClienting: BrowserStateClienting {
   /// Registers the machine on the account behind `sessionToken` and returns
   /// the new cloud device id (`POST /v1/cloud/connect`).
   func connectCloud(serverURL: URL, sessionToken: String) async throws -> String
+  /// `connectCloud` with the registration's owner and display name: an
+  /// "external" registration outlives this app's account session (sign-out
+  /// leaves it connected), as a `codevisor auth login` one does.
+  func connectCloud(
+    serverURL: URL,
+    sessionToken: String,
+    managedBy: String,
+    machineName: String?
+  ) async throws -> String
   /// Stops the machine's cloud connection and forgets its credential
   /// (`POST /v1/cloud/disconnect`).
   func disconnectCloud() async throws
-  /// The machine's view of its tailnet, for clients that can't enumerate
-  /// peers themselves (iOS). `available` is false when the machine has no
-  /// running Tailscale.
-  func tailnetPeers() async throws -> ServerTailnetPeers
   /// `refresh` bypasses the server's update-check cache; `channel` selects
   /// which release feed the server consults (older servers ignore both).
   func updateInfo(refresh: Bool, channel: ServerUpdateChannel) async throws -> ServerUpdateInfo
@@ -52,12 +57,7 @@ public protocol CodevisorServerClienting: BrowserStateClienting {
   /// machines.
   func syncBlob(id: String) async throws -> Data
   func putSyncBlob(id: String, bytes: Data) async throws
-  func setSyncParticipation(enabled: Bool) async throws -> ServerSyncParticipation
   func issuePairingToken() async throws -> ServerPairingToken
-  /// The machine's stable connection token (unchanged across restarts and
-  /// updates until rotated). Preferred over `issuePairingToken` for showing
-  /// a token to copy, so it stays consistent.
-  func connectionToken() async throws -> ServerPairingToken
   func capabilities(cwd: String) async throws -> ServerCapabilities
   /// Inspects only one known harness. Existing chats use this overload so
   /// unrelated agents never enter their loading path.

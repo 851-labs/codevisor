@@ -279,11 +279,6 @@ extension SyncFakeServerClient {
     }
   }
 
-  func setSyncParticipation(enabled: Bool) async throws -> ServerSyncParticipation {
-    lock.withLock { _operationLog.append("sync.participation:\(enabled)") }
-    return ServerSyncParticipation(enabled: enabled)
-  }
-
   func health() async throws -> ServerHealth {
     lock.withLock {
       if migrationStillRunning() {

@@ -4,8 +4,14 @@ description: Deploy the server without exposing its credentials or transport.
 icon: ShieldCheck
 ---
 
-Codevisor Server speaks plain HTTP and WebSocket. It does not terminate TLS. For access outside a
-trusted private network, put it behind a TLS-terminating reverse proxy or a private overlay network.
+Codevisor apps reach a machine through your Codevisor account: traffic between the app and the
+machine is end-to-end encrypted, and the machine only makes outbound connections to Codevisor Cloud.
+Signing a machine out with `codevisor auth logout` removes it from your account and revokes its
+credential.
+
+The server's own HTTP API speaks plain HTTP and WebSocket and does not terminate TLS. If scripts or
+custom clients call it from another host, put it behind a TLS-terminating reverse proxy or a private
+overlay network.
 
 ## Recommended baseline
 
@@ -15,7 +21,9 @@ trusted private network, put it behind a TLS-terminating reverse proxy or a priv
 - Keep the SQLite database and installation directory readable only by the service user.
 - Store bearer tokens in an operating-system credential manager.
 - Rotate the stable connection token with `codevisor token --rotate` if it is exposed. Separately
-  issued pairing tokens have no individual revocation endpoint.
+  issued tokens have no individual revocation endpoint.
+- Remove machines you no longer use from your account with `codevisor auth logout` on the machine,
+  or from the machine list in the Codevisor app.
 
 ## Extension trust
 

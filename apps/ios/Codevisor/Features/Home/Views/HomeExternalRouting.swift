@@ -2,15 +2,18 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// Parses and routes codevisor:// deeplinks. Diagnostic chat opens go back
-/// through the owner's closures; machine adds stay behind their confirmation
-/// alerts via the bindings.
+/// Parses and routes codevisor:// deeplinks and universal links. Diagnostic
+/// chat opens go back through the owner's closures; machine approvals stay
+/// behind their confirmation sheet via the bindings.
 struct HomeExternalRouting: ViewModifier {
   @Environment(AppEnvironment.self) private var environment
   @State private var pluginLinkError: String?
   @State private var linkedPlugin: ServerPluginSummary?
-  @Binding var pendingDeeplink: MachineDeeplink?
+  @Binding var pendingDeviceApproval: CloudDeviceApprovalRequest?
   @Binding var pendingPluginInstall: PendingPluginInstall?
+  /// Whether the onboarding cover is the visible context, so a device
+  /// approval presents over it rather than under it.
+  let isOnboardingPresented: Bool
   /// Diagnostics builds route codevisor://diagnostic-open-session here;
   /// production passes a no-op.
   let openDiagnosticSession: (UUID) -> Void
@@ -19,10 +22,8 @@ struct HomeExternalRouting: ViewModifier {
 
   func body(content: Content) -> some View {
     content
-      // Never auto-add machines: the token grants full agent access,
-      // so an explicit confirmation always sits between a link and
-      // the machine list (same contract as macOS).
       .onOpenURL { url in
+        if openDeviceApproval(url) { return }
         if PluginInstallDeeplink.pluginID(from: url) != nil {
           openPluginLink(url)
           return
@@ -56,11 +57,11 @@ struct HomeExternalRouting: ViewModifier {
           pendingPluginInstall = PendingPluginInstall(repo: install.repo)
           return
         }
-        guard let link = MachineDeeplink.parse(url) else { return }
-        pendingDeeplink = link
       }
       .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
-        if let url = activity.webpageURL { openPluginLink(url) }
+        guard let url = activity.webpageURL else { return }
+        if openDeviceApproval(url) { return }
+        openPluginLink(url)
       }
       .alert(
         "Plugin unavailable",
@@ -93,6 +94,20 @@ struct HomeExternalRouting: ViewModifier {
             }
         }
       }
+  }
+
+  /// The cloud's `/device?user_code=…` page (the QR code `codevisor auth
+  /// login` prints). Never auto-approves: an approved machine joins the
+  /// account, so the approval sheet always asks first.
+  private func openDeviceApproval(_ url: URL) -> Bool {
+    guard let link = CloudDeviceApprovalLink.parse(url) else { return false }
+    // Rescanning the code already on screen keeps its progress.
+    if pendingDeviceApproval?.link == link { return true }
+    pendingDeviceApproval = CloudDeviceApprovalRequest(
+      link: link,
+      presentsOverOnboarding: pendingDeviceApproval?.presentsOverOnboarding ?? isOnboardingPresented
+    )
+    return true
   }
 
   private func openPluginLink(_ url: URL) {

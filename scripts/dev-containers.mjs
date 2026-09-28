@@ -1,5 +1,5 @@
-// Containerized dev remotes: run Dev Direct and Dev Cloud as real Linux
-// machines instead of same-host processes, so config-plane sync is tested
+// Containerized dev remote: run Dev Cloud as a real Linux machine instead
+// of a same-host process, so config-plane sync is tested
 // across genuinely separate filesystems and operating systems.
 //
 // Constraints this module honors:
@@ -181,10 +181,10 @@ export async function prepareDevContainers({ repoRoot, containerRoot, engine, wo
   await sweepStaleContainers(engine, worktreeHash)
   const entryScript = join(repoRoot, "scripts", "dev-container-entry.sh")
   const nativesCheck = join(repoRoot, "scripts", "dev-container-natives.mjs")
-  // The two server containers share this state and workspace; their first
+  // Server containers share this state and workspace; concurrent first
   // boots would race the same bun download and node_modules install
   // (cross-VM file locks do not serialize virtiofs mounts). Provision
-  // once, host-sequenced, before either server starts.
+  // once, host-sequenced, before any server starts.
   if (changed || !(await pathExists(join(stateRoot, "installed.signature")))) {
     console.log("  provisioning Linux workspace (first container boot)…")
     const binary = engine === "apple" ? "container" : "docker"
@@ -231,7 +231,7 @@ export async function prepareDevContainers({ repoRoot, containerRoot, engine, wo
 /// existing waitForExit / waitForHealth / stop() logic works unchanged on
 /// both modes. exitCode flips (and "exit" fires) when the container is
 /// gone — it runs with --rm, so stopping and exiting look identical.
-const makeContainerHandle = (binary, name, port) => {
+const makeContainerHandle = (binary, name) => {
   const emitter = new EventEmitter()
   const handle = {
     exitCode: null,
@@ -240,26 +240,6 @@ const makeContainerHandle = (binary, name, port) => {
     kill: () => {
       void tryEngine(binary, ["rm", "--force", name])
       return true
-    },
-    readConnectionToken: async () => {
-      const script = [
-        `const response = await fetch("http://127.0.0.1:${port}/v1/auth/connection-token")`,
-        "if (!response.ok) throw new Error(`connection token returned ${response.status}`)",
-        "process.stdout.write(await response.text())"
-      ].join(";")
-      const output = await execEngine(binary, [
-        "exec",
-        name,
-        "node",
-        "--input-type=module",
-        "-e",
-        script
-      ])
-      const parsed = JSON.parse(output)
-      if (typeof parsed.token !== "string" || parsed.token.length === 0) {
-        throw new Error("Container returned an invalid development connection token")
-      }
-      return parsed.token
     }
   }
   let misses = 0
@@ -281,21 +261,6 @@ const makeContainerHandle = (binary, name, port) => {
   }, 2_000)
   poll.unref()
   return handle
-}
-
-/// A published container port is non-loopback from the server's perspective,
-/// so the unauthenticated development token endpoint correctly rejects the
-/// host request. Read it inside the container, where 127.0.0.1 really is the
-/// server's loopback; same-host runners retain the ordinary fetch path.
-export async function readDevRemoteConnectionToken(server, serverUrl) {
-  if (typeof server.readConnectionToken === "function") return await server.readConnectionToken()
-  const response = await fetch(`${serverUrl}/v1/auth/connection-token`)
-  if (!response.ok) throw new Error(`connection token returned ${response.status}`)
-  const parsed = await response.json()
-  if (typeof parsed.token !== "string" || parsed.token.length === 0) {
-    throw new Error("Server returned an invalid development connection token")
-  }
-  return parsed.token
 }
 
 /// Dev remote state deliberately survives runner restarts, including its
@@ -454,5 +419,5 @@ export async function launchDevRemoteServer({
   )
   await execEngine(binary, args)
   console.log(`  container ${containerName} (${engine}) → 127.0.0.1:${port}`)
-  return makeContainerHandle(binary, containerName, port)
+  return makeContainerHandle(binary, containerName)
 }

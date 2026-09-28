@@ -13,17 +13,14 @@ struct MachineConnectionPresentationTests {
     availability: ServerAvailability? = .ready,
     sync: NavigationSyncState? = .current,
     cloud: CloudMachineReach? = peerToPeer,
-    address: String? = nil,
-    roundTrip: Int? = nil,
     isLocal: Bool = false
   ) -> MachineConnectionPresentation {
     MachineConnectionPresentation(
       isLocal: isLocal,
-      status: reachable.map { MachineStatus(isReachable: $0, label: "Probe failed", roundTripMilliseconds: roundTrip) },
+      status: reachable.map { MachineStatus(isReachable: $0, label: "Probe failed") },
       availability: availability,
       navigationSyncState: sync,
-      cloud: cloud,
-      address: address
+      cloud: cloud
     )
   }
 
@@ -42,12 +39,9 @@ struct MachineConnectionPresentationTests {
     #expect(relayed.help == "Through the Codevisor relay in San Jose; a direct connection wasn't possible")
   }
 
-  @Test("This Mac, and machines added by address with the status check's round trip")
-  func otherKinds() {
+  @Test("This Mac is labeled as such")
+  func thisMac() {
     #expect(presentation(cloud: nil, isLocal: true).label() == "This Mac")
-    let byAddress = presentation(cloud: nil, address: "100.113.201.5:49361", roundTrip: 8)
-    #expect(byAddress.label() == "Public IP · 8 ms")
-    #expect(byAddress.help == "Connected to 100.113.201.5:49361")
   }
 
   @Test("A machine this device can't reach is offline, whatever the hub says, with when it was last seen")

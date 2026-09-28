@@ -106,27 +106,6 @@ struct PluginSettingsSessionTests {
     #expect(provider.requestTransport.requestCount(for: "/v1/plugins/import-remote") == 1)
   }
 
-  @Test("Configured machines can browse through their relay fallback")
-  func configuredMachineRelay() async throws {
-    let store = InMemoryStore()
-    let remote = CodevisorMachine(
-      id: "remote-studio", name: "Studio", baseURL: URL(string: "http://studio.invalid")!,
-      kind: "remote", cloudDeviceId: "dev-1")
-    try store.saveData(JSONEncoder().encode(MachineRegistry(remoteMachines: [remote])), forKey: "machines")
-    let (machines, _, provider) = makeController(store: store, localServer: nil)
-    provider.cloudMachines = [makeCloudMachine()]
-    configurePlugins(provider)
-    machines.connection(for: remote.id).status = MachineStatus(isReachable: true, label: "Connected", route: .relay)
-    machines.markReady(for: remote.id)
-    let session = try #require(
-      PluginSettingsSession(machines: machines, machineId: remote.id, page: .browse, catalog: catalog()))
-
-    let registry = try await session.fetchRegistry()
-
-    #expect(registry.entries.count == 1)
-    #expect(provider.configRequests == ["dev-1"])
-  }
-
   @Test("An installed-list failure does not hide a successfully fetched registry")
   func installedMarkersAreSupplementary() async throws {
     let (machines, _, provider) = makeController(localServer: nil)

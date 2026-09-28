@@ -6,7 +6,6 @@ import { basename, join } from "node:path"
 import { developmentLayout, iosDevelopmentBundleIdentifier } from "./dev-layout.mjs"
 import {
   colorFromHash,
-  containsAnyPath,
   directoryIsEmpty,
   findAvailablePort,
   parsePort,
@@ -86,12 +85,11 @@ export async function resolveDevelopmentInstance(repoRoot, environment) {
   const requestedWwwPort = parsePort(environment.CODEVISOR_DEV_WWW_PORT, "CODEVISOR_DEV_WWW_PORT")
   const wwwPort = requestedWwwPort ?? (await findAvailablePort(preferredWwwPort, 61_000, 4_000))
 
-  // Two standalone dev servers on this machine, each isolated from the local
-  // instance and from each other, named for the transport they exercise:
-  // - Dev Direct: added by token/deeplink; NEVER joins the dev cloud.
-  // - Dev Cloud: signs into the dev cloud; reached through the relay only.
-  const directRemotePort = await findAvailablePort(port + 1, 51_000, 10_000)
-  const cloudRemotePort = await findAvailablePort(directRemotePort + 1, 51_000, 10_000)
+  // Dev Cloud: a standalone server isolated from the local instance that
+  // signs into the dev cloud and is reached through the relay only. Its
+  // preferred port stays at port + 2, where it lived beside the retired
+  // direct-connection test server, so existing worktrees keep their layout.
+  const cloudRemotePort = await findAvailablePort(port + 2, 51_000, 10_000)
 
   return {
     appBundle,
@@ -102,21 +100,18 @@ export async function resolveDevelopmentInstance(repoRoot, environment) {
     appServerName: `Mac App (${worktreeName})`,
     cloudRemoteName: `Dev Cloud (${worktreeName})`,
     cloudRemotePort,
-    // The local dev instance and a standalone "remote" server each get their
-    // own production-shaped roots under tmp/: codevisor mirrors ~/codevisor
-    // and .codevisor mirrors ~/.codevisor. The fake remote repeats that layout.
+    // The local dev instance and the standalone Dev Cloud server each get
+    // their own production-shaped roots under tmp/: codevisor mirrors
+    // ~/codevisor and .codevisor mirrors ~/.codevisor.
     dataDirectory: layout.local.data,
     derivedDataPath,
     developmentIconColor,
-    directRemoteName: `Dev Direct (${worktreeName})`,
-    directRemotePort,
     iOSBundleIdentifier,
     instanceHash,
     instanceName,
     layout,
     macOSBundleIdentifier,
     port,
-    remoteDataDirectory: layout.remote.data,
     tmpRoot: layout.tmpRoot,
     urlScheme,
     worktreeName,
@@ -127,7 +122,7 @@ export async function resolveDevelopmentInstance(repoRoot, environment) {
 
 /// One-time moves of earlier dev state into the production-shaped layout.
 export async function migrateLegacyDevelopmentState(instance, repoRoot) {
-  const { dataDirectory, instanceName, layout, remoteDataDirectory, tmpRoot } = instance
+  const { dataDirectory, instanceName, layout, tmpRoot } = instance
   // Earlier local app/server state lived in tmp/codevisor, the repo's
   // .codevisor, or Application Support. The old tmp/codevisor path is
   // recognized only when it contains a server DB; after this migration that
@@ -151,20 +146,5 @@ export async function migrateLegacyDevelopmentState(instance, repoRoot) {
         break
       }
     }
-  }
-
-  // The old fake-remote root contained flat server state. Move it only when it
-  // has no nested repos/worktrees whose Git metadata contains absolute paths.
-  const legacyRemoteDataDirectory = join(tmpRoot, "codevisor-remote")
-  if (
-    (await pathExists(join(legacyRemoteDataDirectory, "codevisor-server.sqlite"))) &&
-    (await directoryIsEmpty(remoteDataDirectory)) &&
-    !(await containsAnyPath(legacyRemoteDataDirectory, ["repos", "plugins", "worktrees"]))
-  ) {
-    console.log(`Moving dev remote state into ${remoteDataDirectory}`)
-    await rm(remoteDataDirectory, { recursive: true, force: true })
-    await mkdir(layout.remote.root, { recursive: true })
-    await cp(legacyRemoteDataDirectory, remoteDataDirectory, { recursive: true })
-    await rm(legacyRemoteDataDirectory, { recursive: true, force: true })
   }
 }

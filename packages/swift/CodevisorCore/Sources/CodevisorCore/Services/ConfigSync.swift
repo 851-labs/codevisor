@@ -14,7 +14,7 @@ import Observation
 public final class ConfigSync {
   /// The namespaces this client gossips. Grows as stores onboard.
   public static let namespaces = [
-    "settings", "skills", "mcps", "harness-accounts", "machines", "harnesses", "plugins",
+    "settings", "skills", "mcps", "harness-accounts", "harnesses", "plugins",
     "mcp-readiness", "mcp-overlays", "harness-credentials", "harness-shared-accounts", "harness-readiness",
     "plugin-readiness", "skill-readiness",
   ]

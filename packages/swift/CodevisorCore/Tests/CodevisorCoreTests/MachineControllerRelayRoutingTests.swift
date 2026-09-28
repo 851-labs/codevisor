@@ -5,107 +5,24 @@ import Testing
 @MainActor
 @Suite("MachineController relay routing")
 struct MachineControllerRelayRoutingTests {
-  @Test("Pane recovery follows the selected route and exposes connection revisions")
+  @Test("Pane recovery follows the loopback bridge and exposes connection revisions")
   func paneRecoveryRouting() async throws {
     let (controller, _, provider) = makeController()
-    let remote = try controller.addRemote(host: "http://10.0.0.5:4152")
     let cloud = makeCloudMachine(deviceId: "pane-recovery")
     provider.cloudMachines = [cloud]
-    controller.adoptCloudLinkForTesting(machineId: remote.id, deviceId: cloud.deviceId)
-    let direct = controller.httpConnectionState(forMachineId: remote.id)
-    #expect(await controller.recoverHTTPConnection(forMachineId: remote.id) == remote.baseURL)
-    #expect(provider.loopbackRecoveryRequests.isEmpty)
-    controller.connection(for: remote.id).status = MachineStatus(
-      isReachable: true, label: "Remote", cloudDeviceId: cloud.deviceId, route: .relay, serverId: "remote")
-    let relayed = controller.httpConnectionState(forMachineId: remote.id)
-    #expect(relayed != direct)
+    let machineId = "cloud:\(cloud.deviceId)"
+    #expect(await controller.recoverHTTPConnection(forMachineId: "local") == CodevisorMachine.local.baseURL)
+    let relayed = controller.httpConnectionState(forMachineId: machineId)
+    #expect(relayed != controller.httpConnectionState(forMachineId: "local"))
     let bridge = URL(string: "http://127.0.0.1:54322")!
     provider.loopbackURLsByDeviceId[cloud.deviceId] = bridge
-    #expect(await controller.recoverHTTPConnection(forMachineId: remote.id) == bridge)
+    #expect(await controller.recoverHTTPConnection(forMachineId: machineId) == bridge)
     #expect(provider.loopbackRecoveryRequests == [cloud.deviceId])
     provider.loopbackRevisionsByDeviceId[cloud.deviceId] = 1
-    #expect(controller.httpConnectionState(forMachineId: remote.id) != relayed)
+    #expect(controller.httpConnectionState(forMachineId: machineId) != relayed)
     provider.loopbackRecoverySucceeds = false
     #expect(
-      await controller.recoverHTTPConnection(forMachineId: remote.id) == nil,
+      await controller.recoverHTTPConnection(forMachineId: machineId) == nil,
       "A failed probe must not return an old cached address")
-  }
-
-  @Test("serverConfig(for:) follows a configured machine onto cloud fallback")
-  func configuredServerConfigRouting() throws {
-    let (controller, _, provider) = makeController()
-    let remote = try controller.addRemote(host: "http://10.0.0.5:4152")
-    let cloud = makeCloudMachine(deviceId: "configured-device")
-    let loopback = URL(string: "http://127.0.0.1:54322")!
-    provider.cloudMachines = [cloud]
-    provider.loopbackURLsByDeviceId[cloud.deviceId] = loopback
-    controller.adoptCloudLinkForTesting(machineId: remote.id, deviceId: cloud.deviceId)
-    controller.connection(for: remote.id).status = MachineStatus(
-      isReachable: true,
-      label: "Remote — via Codevisor Cloud",
-      cloudDeviceId: cloud.deviceId,
-      route: .relay,
-      serverId: "remote"
-    )
-
-    let config = controller.serverConfig(for: remote.id)
-
-    #expect(config.baseURL == loopback)
-    #expect(config.requestTransport != nil)
-    #expect(config.webSocketTransport != nil)
-    #expect(provider.configRequests.contains(cloud.deviceId))
-  }
-
-  @Test("effectiveHTTPBaseURL keeps a configured machine on its active direct route")
-  func effectiveBaseURLDirectMachine() async throws {
-    let (controller, _, provider) = makeController()
-    let machine = try controller.addRemote(host: "http://10.0.0.5:4152")
-    let cloud = makeCloudMachine(deviceId: "configured-direct")
-    provider.cloudMachines = [cloud]
-    provider.loopbackURLsByDeviceId[cloud.deviceId] = URL(
-      string: "http://127.0.0.1:50504"
-    )!
-    controller.adoptCloudLinkForTesting(machineId: machine.id, deviceId: cloud.deviceId)
-    controller.connection(for: machine.id).status = MachineStatus(
-      isReachable: true,
-      label: "Remote",
-      cloudDeviceId: cloud.deviceId,
-      route: .direct,
-      serverId: "remote"
-    )
-
-    let url = await controller.effectiveHTTPBaseURL(forMachineId: machine.id)
-    #expect(url == machine.baseURL)
-  }
-
-  @Test("effectiveHTTPBaseURL follows a configured machine onto its cloud bridge")
-  func effectiveBaseURLConfiguredMachineRelayFallback() async throws {
-    let (controller, _, provider) = makeController()
-    let remote = try controller.addRemote(host: "http://10.0.0.5:4152")
-    let cloud = makeCloudMachine(deviceId: "configured-relay")
-    provider.cloudMachines = [cloud]
-    controller.adoptCloudLinkForTesting(machineId: remote.id, deviceId: cloud.deviceId)
-    controller.connection(for: remote.id).status = MachineStatus(
-      isReachable: true,
-      label: "Remote — via Codevisor Cloud",
-      cloudDeviceId: cloud.deviceId,
-      route: .relay,
-      serverId: "remote"
-    )
-
-    // The configured fallback must wait for the same raw TCP bridge used
-    // by a cloud-only machine instead of leaking back to its dead direct
-    // origin while the listener starts.
-    let clock = AdvancingServerUpdateScheduler()
-    clock.onSleep = {
-      provider.loopbackURLsByDeviceId[cloud.deviceId] = URL(
-        string: "http://127.0.0.1:50506"
-      )!
-    }
-
-    let url = await controller.effectiveHTTPBaseURL(forMachineId: remote.id, scheduler: clock.scheduler)
-
-    #expect(url == URL(string: "http://127.0.0.1:50506"))
-    #expect(url != remote.baseURL)
   }
 }

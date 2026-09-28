@@ -70,9 +70,8 @@ struct CodevisorApp: App {
           guard scenePhase == .active, hasCompletedBootstrap else { return }
           Task { await recoverAfterForeground(environment: environment) }
         }
-      // `codevisor://add-machine` deeplinks are handled inside HomeView,
-      // which owns the confirmation alerts and can present them over the
-      // onboarding cover.
+      // Device-approval links (the QR `codevisor auth login` prints) are
+      // handled inside HomeView, which can present over the onboarding cover.
     } else if let startupError {
       ClientDataStartupFailureView(
         message: startupError,
@@ -115,7 +114,6 @@ struct CodevisorApp: App {
       composerDrafts: composerDrafts,
       settings: AppSettingsModel(store: store),
       machineStore: store,
-      machineCredentialStore: KeychainMachineCredentialStore.shared,
       cloudCredentialStore: KeychainCloudCredentialStore.shared,
       paneGroups: DefaultPaneGroupRepository(store: store)
     )
@@ -134,10 +132,7 @@ struct CodevisorApp: App {
     do {
       let directory = URL.applicationSupportDirectory
         .appendingPathComponent("Codevisor", isDirectory: true)
-      let storage = try await ClientStorageBootstrap.openAsync(
-        directory: directory,
-        credentials: KeychainMachineCredentialStore.shared
-      )
+      let storage = try await ClientStorageBootstrap.openAsync(directory: directory)
       environment = Self.makeEnvironment(storage: storage)
       startupError = nil
     } catch {
@@ -146,10 +141,6 @@ struct CodevisorApp: App {
   }
 
   private func bootstrap(environment: AppEnvironment) async {
-    environment.onMachineRouteChanged = { [weak environment] machineId in
-      guard let environment else { return }
-      ChatControllerCache.shared.rerouteControllers(on: machineId, environment: environment)
-    }
     environment.onSessionStateChanged = { session, revision in
       guard
         let controller = ChatControllerCache.shared.existingController(

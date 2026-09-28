@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest"
 
 import {
   CloudApiError,
-  listAccountMachines,
   discoverInstance,
   MACHINE_CLIENT_ID,
   pollDeviceToken,
   provisionMachine,
+  removeMachineFromAccount,
   requestDeviceCode,
   type FetchLike
 } from "./index.js"
@@ -168,39 +168,27 @@ describe("discoverInstance", () => {
   })
 })
 
-describe("listAccountMachines", () => {
-  it("returns the account's machines using the session bearer token", async () => {
-    const { calls, fetch } = fetchStub(() =>
-      jsonResponse({
-        machines: [
-          { deviceId: "dev-1", name: "Studio", online: true },
-          { deviceId: "dev-2", name: "Laptop" }
-        ]
-      })
+describe("removeMachineFromAccount", () => {
+  it("deletes the machine with its own api key", async () => {
+    const { calls, fetch } = fetchStub(() => jsonResponse({ ok: true }))
+    const signal = new AbortController().signal
+    await removeMachineFromAccount(
+      fetch,
+      { serverUrl: "https://cloud.example", apiKey: "machine-key" },
+      signal
     )
-    const machines = await listAccountMachines(fetch, "https://cloud.example", "session-token")
-    expect(machines).toEqual([
-      { deviceId: "dev-1", name: "Studio" },
-      { deviceId: "dev-2", name: "Laptop" }
-    ])
-    expect(calls[0]?.input).toBe("https://cloud.example/api/machines")
-    expect(calls[0]?.init?.headers).toMatchObject({ authorization: "Bearer session-token" })
-  })
-
-  it("tolerates absent fields and an absent list", async () => {
-    const { fetch } = fetchStub(() => jsonResponse({ machines: [{}] }))
-    expect(await listAccountMachines(fetch, "https://cloud.example", "t")).toEqual([
-      { deviceId: "", name: "" }
-    ])
-    const { fetch: empty } = fetchStub(() => jsonResponse({}))
-    expect(await listAccountMachines(empty, "https://cloud.example", "t")).toEqual([])
-  })
-
-  it("throws CloudApiError on a rejected token", async () => {
-    const { fetch } = fetchStub(() => jsonResponse({ error: "unauthorized" }, 401))
-    await expect(listAccountMachines(fetch, "https://cloud.example", "bad")).rejects.toMatchObject({
-      name: "CloudApiError",
-      status: 401
+    expect(calls[0]?.input).toBe("https://cloud.example/api/machine/self")
+    expect(calls[0]?.init).toMatchObject({
+      method: "DELETE",
+      headers: { "x-api-key": "machine-key" },
+      signal
     })
+  })
+
+  it("throws CloudApiError when the cloud refuses", async () => {
+    const { fetch } = fetchStub(() => jsonResponse({ error: "invalid machine credential" }, 401))
+    await expect(
+      removeMachineFromAccount(fetch, { serverUrl: "https://cloud.example", apiKey: "revoked" })
+    ).rejects.toMatchObject({ name: "CloudApiError", status: 401 })
   })
 })

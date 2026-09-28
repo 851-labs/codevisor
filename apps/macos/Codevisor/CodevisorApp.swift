@@ -19,9 +19,9 @@ struct CodevisorApp: App {
           .themedRoot()
           .modifier(DebugMetricsOverlayModifier())
           .environment(environment)
-          // Deeplinks (codevisor://add-machine) should land in the
-          // window that's already open; without this, macOS spawns a
-          // fresh window scene for every external URL event.
+          // Deeplinks (codevisor://cloud-auth, install-plugin) should land
+          // in the window that's already open; without this, macOS spawns
+          // a fresh window scene for every external URL event.
           .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
       } else if let startupError = runtime.startupError {
         ClientDataStartupFailureView(
@@ -50,7 +50,6 @@ struct CodevisorApp: App {
       if let environment = runtime.environment {
         AppUpdateCommands(environment: environment)
         FileCommands()
-        MachineCommands(machines: environment.machines)
         WorkspaceLayoutCommands()
         BrowserCommands()
         DebugOverlayCommands()
@@ -247,11 +246,9 @@ struct RootView: View {
     // over the whole window, wherever the user is, instead of a card only
     // the New Chat page used to show.
     .modifier(ServerDataUpgradePresentation())
-    // codevisor://add-machine deeplinks, printed by `codevisor setup` on a
-    // remote machine. Extracted into its own modifier: inlining the
-    // alerts here pushed this already-large chain past the Swift type
-    // checker's budget on release builds.
-    .modifier(MachineDeeplinkHandling())
+    // Deeplink handling lives in modifiers: inlining the alerts here pushed
+    // this already-large chain past the Swift type checker's budget on
+    // release builds.
     // codevisor://cloud-auth deeplinks — the browser handoff's fallback
     // path when sign-in ran in the default browser instead of the
     // ASWebAuthenticationSession sheet.

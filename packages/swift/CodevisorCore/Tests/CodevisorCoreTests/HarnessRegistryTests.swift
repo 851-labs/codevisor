@@ -121,7 +121,7 @@ struct HarnessRegistryTests {
   private func makeSync() throws -> ConfigSync {
     let store = InMemoryStore()
     try store.saveData(
-      JSONEncoder().encode(MachineRegistry(selectedMachineId: "local", remoteMachines: [])),
+      JSONEncoder().encode(MachineRegistry(selectedMachineId: "local")),
       forKey: "machines"
     )
     let controller = MachineController(

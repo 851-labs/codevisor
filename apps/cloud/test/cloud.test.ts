@@ -1,7 +1,9 @@
-import { CLOUD_PROTOCOL_VERSION } from "@codevisor/api"
+import { CLOUD_PROTOCOL_VERSION, type CloudMachinePresence } from "@codevisor/api"
 import { env, SELF } from "cloudflare:test"
 import { describe, expect, it } from "vitest"
 
+import type { CloudEnv } from "../src/env.js"
+import worker from "../src/index.js"
 import { BASE, devLogin, authed, connectMachine } from "./cloud-test-support.js"
 
 describe("discovery", () => {
@@ -21,6 +23,33 @@ describe("discovery", () => {
       expect(response.status).toBe(200)
       expect(await response.text()).toContain("<html")
     }
+  })
+})
+
+describe("iOS universal links", () => {
+  const aasa = (overrides: Partial<CloudEnv>) =>
+    worker.fetch(new Request(`${BASE}/.well-known/apple-app-site-association`), {
+      ...(env as CloudEnv),
+      ...overrides
+    })
+
+  it("routes the device-approval page into the instance's iOS app", async () => {
+    const response = await aasa({
+      APPLE_TEAM_ID: "TEAM123",
+      APPLE_NATIVE_CLIENT_ID: "com.example.ios"
+    })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      applinks: {
+        details: [{ appIDs: ["TEAM123.com.example.ios"], components: [{ "/": "/device" }] }]
+      }
+    })
+  })
+
+  it("is absent on instances without an iOS app configured", async () => {
+    expect(
+      (await aasa({ APPLE_TEAM_ID: "", APPLE_NATIVE_CLIENT_ID: "com.example.ios" })).status
+    ).toBe(404)
   })
 })
 
@@ -182,5 +211,45 @@ describe("machine credential probe", () => {
       headers: { "x-api-key": "not-a-key" }
     })
     expect(bogus.status).toBe(401)
+  })
+})
+
+describe("machine self-removal", () => {
+  it("lets a machine remove itself with its own api key", async () => {
+    const token = await devLogin()
+    const machine = await connectMachine(token, "vps-self")
+    const sibling = await connectMachine(token, "vps-sibling")
+    const listed = async (): Promise<string[]> => {
+      const response = await SELF.fetch(`${BASE}/api/machines`, { headers: authed(token) })
+      return ((await response.json()) as { machines: CloudMachinePresence[] }).machines.map(
+        (m) => m.deviceId
+      )
+    }
+    const removeSelf = (headers: Record<string, string>) =>
+      SELF.fetch(`${BASE}/api/machine/self`, { method: "DELETE", headers })
+
+    // No key, a bogus key, and a user session are all refused.
+    expect((await removeSelf({})).status).toBe(401)
+    expect((await removeSelf({ "x-api-key": "not-a-key" })).status).toBe(401)
+    expect((await removeSelf(authed(token))).status).toBe(401)
+    expect(await listed()).toContain(machine.deviceId)
+
+    const removed = await removeSelf({ "x-api-key": machine.apiKey })
+    expect(removed.status).toBe(200)
+    expect(await listed()).not.toContain(machine.deviceId)
+    // Only this machine left: its sibling keeps its place and its credential.
+    expect(await listed()).toContain(sibling.deviceId)
+    const probe = (apiKey: string) =>
+      SELF.fetch(`${BASE}/api/machine/credential`, { headers: { "x-api-key": apiKey } })
+    expect((await probe(machine.apiKey)).status).toBe(401)
+    expect((await probe(sibling.apiKey)).status).toBe(200)
+    // The revoked key cannot remove anything again.
+    expect((await removeSelf({ "x-api-key": machine.apiKey })).status).toBe(401)
+    // An app removing the already-removed machine afterwards is a clean 404.
+    const appRemoval = await SELF.fetch(`${BASE}/api/machines/${machine.deviceId}`, {
+      method: "DELETE",
+      headers: authed(token)
+    })
+    expect(appRemoval.status).toBe(404)
   })
 })

@@ -20,15 +20,16 @@ public struct ClientStorage: Sendable {
 public enum ClientStorageBootstrap {
   public static let legacyDataMigrationID = 1
   public static let legacyCleanupMigrationID = 1
+  public static let retiredDirectMachinesMigrationID = 2
 
   private static let legacyDataMigrationName = "legacy file and defaults import"
   private static let legacyCleanupMigrationName = "legacy file and defaults cleanup"
+  private static let retiredDirectMachinesMigrationName = "queue directly paired machines for the cloud account"
 
   @MainActor
   public static func open(
     directory: URL,
     legacyDefaults: UserDefaults = .standard,
-    credentials: any MachineCredentialStore = KeychainMachineCredentialStore.shared,
     fileManager: FileManager = .default,
     migrateRenamedApplicationSupport: Bool = true,
     renamedLegacyDirectory: URL? = nil
@@ -36,7 +37,6 @@ public enum ClientStorageBootstrap {
     let storage = try openUnconfigured(
       directory: directory,
       legacyDefaults: legacyDefaults,
-      credentials: credentials,
       fileManager: fileManager,
       migrateRenamedApplicationSupport: migrateRenamedApplicationSupport,
       renamedLegacyDirectory: renamedLegacyDirectory
@@ -50,15 +50,11 @@ public enum ClientStorageBootstrap {
   /// Repositories are constructed only after this returns and preferences
   /// are attached back on the main actor, preserving the same no-races
   /// ordering as synchronous `open`.
-  public static func openAsync(
-    directory: URL,
-    credentials: any MachineCredentialStore = KeychainMachineCredentialStore.shared
-  ) async throws -> ClientStorage {
+  public static func openAsync(directory: URL) async throws -> ClientStorage {
     let storage = try await Task.detached(priority: .userInitiated) {
       try openUnconfigured(
         directory: directory,
         legacyDefaults: .standard,
-        credentials: credentials,
         fileManager: .default,
         migrateRenamedApplicationSupport: true,
         renamedLegacyDirectory: nil
@@ -73,7 +69,6 @@ public enum ClientStorageBootstrap {
   private static func openUnconfigured(
     directory: URL,
     legacyDefaults: UserDefaults,
-    credentials: any MachineCredentialStore,
     fileManager: FileManager,
     migrateRenamedApplicationSupport: Bool,
     renamedLegacyDirectory: URL?
@@ -102,11 +97,14 @@ public enum ClientStorageBootstrap {
       try importLegacyState(
         directories: importDirectories,
         defaults: legacyDefaults,
-        credentials: credentials,
         database: database,
         store: store,
         fileManager: fileManager
       )
+    }
+
+    if try database.dataMigrationState(id: retiredDirectMachinesMigrationID) != "completed" {
+      retireDirectMachines(database: database, store: store)
     }
 
     try database.assertHealthy()
@@ -140,7 +138,6 @@ public enum ClientStorageBootstrap {
   private static func importLegacyState(
     directories: [URL],
     defaults: UserDefaults,
-    credentials: any MachineCredentialStore,
     database: ClientDatabase,
     store: ClientPersistenceStore,
     fileManager: FileManager
@@ -156,28 +153,14 @@ public enum ClientStorageBootstrap {
       var importedValues: [(key: String, data: Data, source: String, digest: String)] = []
       for file in files {
         var data = file.data
-        if file.key == "machines",
-          var registry = try? JSONDecoder().decode(MachineRegistry.self, from: data)
-        {
-          for index in registry.remoteMachines.indices {
-            guard let token = registry.remoteMachines[index].token, !token.isEmpty else {
-              continue
-            }
-            let machineID = registry.remoteMachines[index].id
-            try credentials.saveToken(token, forMachineID: machineID)
-            guard try credentials.token(forMachineID: machineID) == token else {
-              throw ClientDatabaseError(
-                operation: "legacy credential verification",
-                detail: "Credential read-back failed for \(machineID)"
-              )
-            }
-            registry.remoteMachines[index].token = nil
-          }
-          data = try JSONEncoder().encode(registry)
+        // The legacy machine list embedded bearer tokens for the retired
+        // directly paired machines: queue those machines for the cloud
+        // account and keep only the selection, so no token is imported or
+        // copied into migration recovery.
+        if file.key == "machines" {
+          data = try queueRetiredMachines(from: data, store: store)
         }
-        importedValues.append(
-          (file.key, data, file.url.lastPathComponent, file.digest)
-        )
+        importedValues.append((file.key, data, file.url.lastPathComponent, file.digest))
       }
 
       try database.withTransaction {
@@ -319,4 +302,68 @@ public enum ClientStorageBootstrap {
     }
   }
 
+  /// The persisted shape of a retired directly paired machine. Very old
+  /// installs stored its bearer token inline; newer ones keep it in the
+  /// Keychain under `id`.
+  private struct RetiredMachineList: Decodable {
+    struct Machine: Decodable {
+      let id: String
+      let name: String?
+      let baseURL: URL?
+      let token: String?
+    }
+    let remoteMachines: [Machine]?
+  }
+
+  /// Queues a persisted machine list's retired directly paired machines for
+  /// `DirectMachineCloudAdoption` and returns the list reduced to its
+  /// selection. An unreadable list is returned unchanged: the machine list
+  /// handles (and quarantines) it on load.
+  private static func queueRetiredMachines(from data: Data, store: ClientPersistenceStore) throws -> Data {
+    guard let registry = try? JSONDecoder().decode(MachineRegistry.self, from: data) else { return data }
+    let retired = (try? JSONDecoder().decode(RetiredMachineList.self, from: data))?.remoteMachines ?? []
+    try DirectMachineCloudAdoption.enqueue(
+      retired.compactMap { machine in
+        guard let baseURL = machine.baseURL else { return nil }
+        return PendingDirectMachine(
+          id: machine.id,
+          name: machine.name ?? baseURL.host() ?? machine.id,
+          baseURL: baseURL,
+          legacyToken: machine.token.flatMap { $0.isEmpty ? nil : $0 }
+        )
+      },
+      in: store
+    )
+    return try JSONEncoder().encode(registry.normalized())
+  }
+
+  /// Directly paired remote machines were retired: every remote machine now
+  /// comes from Codevisor Cloud. Hands them to `DirectMachineCloudAdoption`,
+  /// which moves each onto the signed-in account (its Keychain token stays
+  /// until then), drops them from the persisted machine list, and forgets the
+  /// fleet roster's bookkeeping. An unreadable list must never block launch —
+  /// the machine list ignores retired entries anyway. A failure is recorded
+  /// and retried on the next launch.
+  private static func retireDirectMachines(database: ClientDatabase, store: ClientPersistenceStore) {
+    do {
+      try database.beginDataMigration(
+        id: retiredDirectMachinesMigrationID,
+        name: retiredDirectMachinesMigrationName
+      )
+      if let data = store.loadData(forKey: "machines") {
+        try store.saveData(queueRetiredMachines(from: data, store: store), forKey: "machines")
+      }
+      try store.removeData(forKey: "fleetRoster.applied")
+      store.flushBlobWrites()
+      try database.completeDataMigration(id: retiredDirectMachinesMigrationID)
+    } catch {
+      try? database.failDataMigration(
+        id: retiredDirectMachinesMigrationID,
+        error: String(describing: error)
+      )
+      Log.persistence.error(
+        "Failed to queue directly paired machines: \(String(describing: error), privacy: .public)"
+      )
+    }
+  }
 }

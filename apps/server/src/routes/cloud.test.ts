@@ -46,6 +46,7 @@ describe("cloud routes", () => {
     let bridgeDeviceId: string | undefined
     let lastConnect: { serverUrl: string; sessionToken: string; options?: unknown } | undefined
     let failWith: unknown
+    let removedFromAccount = true
     const cloud = {
       deviceId: () => bridgeDeviceId,
       state: () => (bridgeDeviceId === undefined ? undefined : "connected"),
@@ -59,7 +60,7 @@ describe("cloud routes", () => {
       },
       disconnect: () => {
         bridgeDeviceId = undefined
-        return Promise.resolve()
+        return Promise.resolve({ removedFromAccount })
       }
     }
     const server = await run(
@@ -166,8 +167,18 @@ describe("cloud routes", () => {
     })
 
     // Disconnect forgets the registration everywhere.
-    expect((await jsonRequest(server, "/v1/cloud/disconnect", { method: "POST" })).status).toBe(200)
+    const disconnected = await jsonRequest(server, "/v1/cloud/disconnect", { method: "POST" })
+    expect(disconnected.status).toBe(200)
+    expect(disconnected.body).toEqual({ ok: true, removedFromAccount: true })
     expect((await jsonRequest(server, "/v1/cloud")).body).toEqual({ connected: false })
     expect((await jsonRequest(server, "/v1/info")).body).not.toHaveProperty("cloudDeviceId")
+
+    // An unreachable cloud still disconnects locally, with a warning that
+    // the machine stays on the account until removed from an app.
+    removedFromAccount = false
+    const stranded = await jsonRequest(server, "/v1/cloud/disconnect", { method: "POST" })
+    expect(stranded.status).toBe(200)
+    expect(stranded.body).toMatchObject({ ok: true, removedFromAccount: false })
+    expect((stranded.body as { warning?: string }).warning).toContain("machine list")
   })
 })

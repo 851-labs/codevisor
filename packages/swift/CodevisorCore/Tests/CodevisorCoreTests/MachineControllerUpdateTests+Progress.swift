@@ -17,19 +17,16 @@ extension MachineControllerUpdateTests {
         ServerUpdateApplyState(state: "installing", at: "attempt-\($0)")
       }
     }
-    let remote = CodevisorMachine(
-      id: "remote-a", name: "Remote", baseURL: URL(string: "http://remote.test")!, kind: "remote")
-    let store = InMemoryStore()
-    try store.saveData(
-      JSONEncoder().encode(MachineRegistry(selectedMachineId: "local", remoteMachines: [remote])), forKey: "machines")
+    let remote = accountMachine("remote-a", name: "Remote")
     let clock = AdvancingServerUpdateScheduler()
     let controller = MachineController(
-      store: store,
+      store: InMemoryStore(),
       projectList: ProjectListModel.fixture(),
       clientFactory: { _ in fake },
       updatePollAttempts: 4,
       updateScheduler: clock.scheduler
     )
+    signIn(controller, machines: [remote])
     defer { controller.stopEventSync() }
     let center = UpdateCenter(machines: controller, appUpdate: AppUpdateModel(currentVersion: "1.0"))
     await controller.refreshStatus(for: remote.id)
@@ -68,19 +65,16 @@ extension MachineControllerUpdateTests {
     fake: SyncFakeServerClient,
     pollAttempts: Int
   ) throws -> MigrationFixture {
-    let remote = CodevisorMachine(
-      id: "remote-a", name: "Remote", baseURL: URL(string: "http://remote.test")!, kind: "remote")
-    let store = InMemoryStore()
-    try store.saveData(
-      JSONEncoder().encode(MachineRegistry(selectedMachineId: "local", remoteMachines: [remote])), forKey: "machines")
+    let remote = accountMachine("remote-a", name: "Remote")
     let clock = AdvancingServerUpdateScheduler()
     let controller = MachineController(
-      store: store,
+      store: InMemoryStore(),
       projectList: ProjectListModel.fixture(),
       clientFactory: { _ in fake },
       updatePollAttempts: pollAttempts,
       updateScheduler: clock.scheduler
     )
+    signIn(controller, machines: [remote])
     let center = UpdateCenter(machines: controller, appUpdate: AppUpdateModel(currentVersion: "1.0"))
     return MigrationFixture(controller: controller, center: center, clock: clock, remote: remote)
   }

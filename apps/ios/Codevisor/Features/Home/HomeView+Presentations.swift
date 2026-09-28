@@ -52,23 +52,17 @@ extension HomeView {
       } content: {
         OnboardingView(start: hasRemoteMachines || onboardingDismissed ? .connect : onboardingStart)
           .interactiveDismissDisabled(!hasAIDataSharingConsent)
-          // The QR flow lands here: alerts must present over the
-          // cover, so it carries its own copy of the deeplink
-          // alerts, active while it is the visible context.
-          .modifier(
-            MachineDeeplinkAlerts(
-              pending: $pendingDeeplink,
-              error: $deeplinkError,
-              isActive: true
-            )
-          )
+          // A QR code scanned during onboarding must present over the
+          // cover, so it carries its own copy of the approval sheet.
+          .modifier(CloudDeviceApprovalPresentation(pending: $pendingDeviceApproval, hostedByOnboarding: true))
       }
       // Parse and route codevisor:// deeplinks in one modifier;
       // diagnostic chat opens come back through these closures.
       .modifier(
         HomeExternalRouting(
-          pendingDeeplink: $pendingDeeplink,
+          pendingDeviceApproval: $pendingDeviceApproval,
           pendingPluginInstall: $pendingPluginInstall,
+          isOnboardingPresented: showsOnboarding.wrappedValue,
           openDiagnosticSession: { id in
             #if DEBUG || NAVIGATION_DIAGNOSTICS
               openDiagnosticSession(id)
@@ -81,13 +75,7 @@ extension HomeView {
           }
         )
       )
-      .modifier(
-        MachineDeeplinkAlerts(
-          pending: $pendingDeeplink,
-          error: $deeplinkError,
-          isActive: !showsOnboarding.wrappedValue
-        )
-      )
+      .modifier(CloudDeviceApprovalPresentation(pending: $pendingDeviceApproval, hostedByOnboarding: false))
       .task {
         try? await Task.sleep(for: .milliseconds(300))
         readyForOnboarding = true

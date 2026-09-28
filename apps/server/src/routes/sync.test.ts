@@ -142,51 +142,17 @@ describe("/v1/sync", () => {
     ).toEqual({ published: false })
   })
 
-  it("gates every sync surface behind the participation flag", async () => {
+  it("serves every sync surface regardless of a legacy participation flag", async () => {
     const { services } = await makeServices("server-optout")
+    // Machines that opted out before the opt-out was removed still sync.
+    await run(services.db.mergeSyncEntries("local.sync", [entry("enabled", false, 1)]))
     const server = await startWithApp(services)
 
-    // Participating by default.
-    expect((await jsonRequest(server, "/v1/sync-participation")).body).toEqual({ enabled: true })
-
-    // Off: every /v1/sync/* surface refuses, while the flag itself stays
-    // reachable (that is how it gets turned back on) and remembers.
-    const off = await jsonRequest(server, "/v1/sync-participation", {
-      body: JSON.stringify({ enabled: false }),
-      method: "PUT"
-    })
-    expect(off.status).toBe(200)
-    expect(off.body).toEqual({ enabled: false })
-    expect((await jsonRequest(server, "/v1/sync-participation")).body).toEqual({ enabled: false })
-    expect((await jsonRequest(server, "/v1/sync/settings")).status).toBe(403)
-    const put = await jsonRequest(server, "/v1/sync/settings", {
-      body: JSON.stringify({ entries: [] }),
-      method: "PUT"
-    })
-    expect(put.status).toBe(403)
-    expect((await jsonRequest(server, `/v1/sync/blobs/${"0".repeat(64)}`)).status).toBe(403)
-    expect(
-      (await jsonRequest(server, "/v1/sync/skills/reconcile", { method: "POST" })).status
-    ).toBe(403)
-    expect((await jsonRequest(server, "/v1/sync/mcps/reconcile", { method: "POST" })).status).toBe(
-      403
-    )
-    expect(
-      (await jsonRequest(server, "/v1/sync/accounts/publish", { method: "POST" })).status
-    ).toBe(403)
-
-    // Only GET and PUT exist on the flag.
-    expect((await jsonRequest(server, "/v1/sync-participation", { method: "POST" })).status).toBe(
-      405
-    )
-
-    // Back on: the plane opens up again.
-    const on = await jsonRequest(server, "/v1/sync-participation", {
-      body: JSON.stringify({ enabled: true }),
-      method: "PUT"
-    })
-    expect(on.body).toEqual({ enabled: true })
     expect((await jsonRequest(server, "/v1/sync/settings")).status).toBe(200)
+    expect((await jsonRequest(server, "/v1/sync/mcps/reconcile", { method: "POST" })).status).toBe(
+      200
+    )
+    expect((await jsonRequest(server, "/v1/sync-participation")).status).toBe(404)
   })
 
   it("reconciles harnesses over HTTP with auth and lifecycle gates", async () => {

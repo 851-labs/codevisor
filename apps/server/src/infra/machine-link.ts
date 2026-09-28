@@ -1,18 +1,6 @@
-import type {
-  CloudMachinePresence,
-  MachineCallOrigin,
-  MachineSummary,
-  SyncEntry
-} from "@codevisor/api"
+import type { CloudMachinePresence, MachineCallOrigin, MachineSummary } from "@codevisor/api"
 import { CodeExecutionToolError } from "@codevisor/automation"
 import { GatewayChannelError, type GatewayExchange } from "@codevisor/cloud-client"
-
-import {
-  DirectPathError,
-  type DirectAnswer,
-  type DirectProbe,
-  type DirectRoute
-} from "./machine-direct.js"
 
 /// This server's view of every machine on the account, and the transport
 /// that runs Codevisor gateway calls on them (the sandbox's `machines` API).
@@ -21,13 +9,10 @@ import {
 /// "machine-<uuid>"):
 /// - this machine;
 /// - cloud hub presence (machines publish their server id in hello; older
-///   servers that don't appear as `cloud:<deviceId>`);
-/// - the FleetRoster "machines" sync namespace — direct `{name, url, token}`
-///   routes keyed by server id, replicated to every server.
+///   servers that don't appear as `cloud:<deviceId>`).
 ///
-/// A call tries the direct route first, then the cloud relay, and falls
-/// back only when the earlier path provably never delivered the request.
-/// Nothing is retried once a request may have reached the target.
+/// A call runs over the cloud relay. Nothing is retried once a request may
+/// have reached the target.
 
 export interface MachineLinkCloud {
   /// This machine's own cloud device id (undefined while not registered).
@@ -42,20 +27,9 @@ export interface MachineLinkCloud {
   ) => Promise<GatewayExchange>
 }
 
-export interface RosterRoute extends DirectRoute {
-  /// The machine's stable server id (the roster key).
-  readonly id: string
-  readonly name?: string
-}
-
 export interface MachineLinkOptions {
   readonly self: { readonly id: string; readonly name: () => string; readonly os: string }
-  readonly cloud?: MachineLinkCloud
-  readonly roster: () => Promise<ReadonlyArray<RosterRoute>>
-  /// The direct path (production: postGatewayInvoke) and its reachability
-  /// probe (probeDirect), both in machine-direct.ts.
-  readonly direct: (route: DirectRoute, body: string, signal?: AbortSignal) => Promise<DirectAnswer>
-  readonly probe: (route: DirectRoute) => Promise<DirectProbe>
+  readonly cloud: MachineLinkCloud
   readonly now: () => number
 }
 
@@ -76,37 +50,11 @@ export interface MachineLink {
 
 export const GATEWAY_INVOKE_PATH = "/v1/gateway/invoke"
 
-/// FleetRoster's replicated namespace (see FleetRoster.swift): one entry per
-/// direct remote, keyed by its stable server id, valued { name, url, token }.
-export const FLEET_ROSTER_NAMESPACE = "machines"
-
-/// Live roster routes from the namespace's replica (tombstones and malformed
-/// entries skipped).
-export const rosterRoutes = (entries: ReadonlyArray<SyncEntry>): RosterRoute[] =>
-  entries.flatMap((entry) => {
-    const value = entry.value
-    if (entry.deleted === true || !isRecord(value) || typeof value.url !== "string") return []
-    return [
-      {
-        id: entry.key,
-        url: value.url,
-        ...(typeof value.name === "string" ? { name: value.name } : {}),
-        ...(typeof value.token === "string" ? { token: value.token } : {})
-      }
-    ]
-  })
-
-/// A probe answer stays fresh this long, so listing machines repeatedly
-/// does not hammer unreachable routes.
-const PROBE_TTL_MS = 15_000
-
-interface Target {
+/// Another machine on the account, as the hub reports it.
+interface Peer {
   readonly id: string
   readonly name: string
-  readonly os?: string
-  readonly isCurrent: boolean
-  readonly direct?: DirectRoute
-  readonly cloud?: CloudMachinePresence
+  readonly presence: CloudMachinePresence
 }
 
 const toolError = (
@@ -141,89 +89,31 @@ export const relativeAge = (iso: string, now: number): string => {
   return `${Math.floor(hours / 24)}d ago`
 }
 
-/// Why a path could not deliver the request: the target is unreachable on
-/// it, or reachable but running a version without cross-machine calls.
+/// Why the relay could not deliver the request: the target is unreachable,
+/// or reachable but running a version without cross-machine calls.
 type PathMiss = "unreachable" | "unsupported"
 
+const summarize = (peer: Peer): MachineSummary => ({
+  id: peer.id,
+  name: peer.name,
+  ...(peer.presence.os === undefined ? {} : { os: peer.presence.os }),
+  online: peer.presence.online,
+  lastSeen: peer.presence.lastSeenAt,
+  isCurrent: false
+})
+
 export const makeMachineLink = (options: MachineLinkOptions): MachineLink => {
-  const { now, direct, probe } = options
-  /// Last successful contact per direct machine id (probe or call), and
-  /// the latest probe verdict with its time.
-  const lastContact = new Map<string, number>()
-  const probes = new Map<string, DirectProbe & { readonly at: number }>()
+  const { cloud, now, self } = options
 
-  const contacted = (id: string): void => {
-    lastContact.set(id, now())
-  }
-
-  const targets = async (): Promise<Target[]> => {
-    const selfDeviceId = options.cloud?.deviceId()
-    const byId = new Map<string, Target>()
-    byId.set(options.self.id, {
-      id: options.self.id,
-      name: options.self.name(),
-      os: options.self.os,
-      isCurrent: true
-    })
-    for (const presence of options.cloud?.machines() ?? []) {
-      if (presence.deviceId === selfDeviceId || presence.serverId === options.self.id) continue
+  const peers = (): Peer[] => {
+    const selfDeviceId = cloud.deviceId()
+    const byId = new Map<string, Peer>()
+    for (const presence of cloud.machines() ?? []) {
+      if (presence.deviceId === selfDeviceId || presence.serverId === self.id) continue
       const id = presence.serverId ?? `cloud:${presence.deviceId}`
-      byId.set(id, {
-        id,
-        name: presence.name,
-        ...(presence.os === undefined ? {} : { os: presence.os }),
-        isCurrent: false,
-        cloud: presence
-      })
-    }
-    for (const route of await options.roster()) {
-      if (route.id === options.self.id) continue
-      const known = byId.get(route.id)
-      byId.set(route.id, {
-        id: route.id,
-        // The machine's own (hub) name wins over a client-chosen label.
-        name: known?.name ?? route.name ?? route.url,
-        ...(known?.os === undefined ? {} : { os: known.os }),
-        isCurrent: false,
-        ...(known?.cloud === undefined ? {} : { cloud: known.cloud }),
-        direct: { url: route.url, ...(route.token === undefined ? {} : { token: route.token }) }
-      })
+      byId.set(id, { id, name: presence.name, presence })
     }
     return [...byId.values()]
-  }
-
-  const lastSeenOf = (target: Target): string | undefined => {
-    const contact = lastContact.get(target.id)
-    const cloudSeen = target.cloud === undefined ? undefined : Date.parse(target.cloud.lastSeenAt)
-    const latest = Math.max(contact ?? -Infinity, cloudSeen ?? -Infinity)
-    return Number.isFinite(latest) ? new Date(latest).toISOString() : undefined
-  }
-
-  const directOnline = async (target: Target, route: DirectRoute): Promise<boolean> => {
-    const cached = probes.get(target.id)
-    if (cached !== undefined && now() - cached.at < PROBE_TTL_MS) return cached.online
-    const answer = await probe(route)
-    probes.set(target.id, { ...answer, at: now() })
-    if (answer.online) contacted(target.id)
-    return answer.online
-  }
-
-  const summarize = async (target: Target): Promise<MachineSummary> => {
-    const online =
-      target.isCurrent ||
-      target.cloud?.online === true ||
-      (target.direct !== undefined && (await directOnline(target, target.direct)))
-    const lastSeen = target.isCurrent ? undefined : lastSeenOf(target)
-    // A machine's own discovery answer beats a registry copy of its platform.
-    const os = probes.get(target.id)?.os ?? target.os
-    return {
-      id: target.id,
-      name: target.name,
-      ...(os === undefined ? {} : { os }),
-      online,
-      ...(lastSeen === undefined ? {} : { lastSeen }),
-      isCurrent: target.isCurrent
-    }
   }
 
   const unavailable = (
@@ -239,17 +129,9 @@ export const makeMachineLink = (options: MachineLinkOptions): MachineLink => {
       phase
     })
 
-  const lostMidCall = (target: Target): CodeExecutionToolError =>
-    unavailable(
-      target,
-      "in-flight",
-      `Lost connection to ${target.name} mid-call; the tool may or may not have completed`,
-      lastSeenOf(target)
-    )
-
   /// The target's answer: its result, or its own tool error re-thrown with
   /// the same message/code/details.
-  const interpret = (target: Target, answer: DirectAnswer): unknown => {
+  const interpret = (peer: Peer, answer: GatewayExchange): unknown => {
     const parsed = parseJson(answer.body)
     if (answer.status >= 200 && answer.status < 300 && isRecord(parsed) && "result" in parsed) {
       return parsed.result
@@ -262,58 +144,54 @@ export const makeMachineLink = (options: MachineLinkOptions): MachineLink => {
       )
     }
     const detail = isRecord(parsed) && typeof parsed.error === "string" ? `: ${parsed.error}` : ""
-    throw toolError(`${target.name} answered HTTP ${answer.status}${detail}`)
+    throw toolError(`${peer.name} answered HTTP ${answer.status}${detail}`)
   }
 
-  const viaDirect = async (
-    target: Target,
-    route: DirectRoute,
-    body: string,
-    signal: AbortSignal | undefined
-  ): Promise<DirectAnswer | PathMiss> => {
-    let answer: DirectAnswer
-    try {
-      answer = await direct(route, body, signal)
-    } catch (cause) {
-      if (!(cause instanceof DirectPathError)) throw cause
-      if (cause.phase === "in-flight") throw lostMidCall(target)
-      probes.set(target.id, { online: false, at: now() })
-      return "unreachable"
-    }
-    contacted(target.id)
-    // A rejected token never ran anything; a 404 is a server predating the
-    // route. Both leave the relay worth trying.
-    if (answer.status === 401 || answer.status === 403) return "unreachable"
-    // (The route itself never answers 404.)
-    if (answer.status === 404) return "unsupported"
-    return answer
-  }
-
+  /// One relay exchange, or why it provably never reached the target.
+  /// Nothing is retried once the request may have reached it.
   const viaCloud = async (
-    target: Target,
-    cloud: MachineLinkCloud,
-    presence: CloudMachinePresence,
+    peer: Peer,
     body: string,
     signal: AbortSignal | undefined
-  ): Promise<DirectAnswer | PathMiss> => {
+  ): Promise<GatewayExchange | PathMiss> => {
     try {
-      return await cloud.request(presence.deviceId, body, signal)
+      return await cloud.request(peer.presence.deviceId, body, signal)
     } catch (cause) {
       if (!(cause instanceof GatewayChannelError)) throw cause
-      if (cause.phase === "in-flight") throw lostMidCall(target)
+      if (cause.phase === "in-flight") {
+        throw unavailable(
+          peer,
+          "in-flight",
+          `Lost connection to ${peer.name} mid-call; the tool may or may not have completed`,
+          peer.presence.lastSeenAt
+        )
+      }
       return cause.closeReason === "unsupported" ? "unsupported" : "unreachable"
     }
   }
 
   return {
-    list: async () => Promise.all((await targets()).map(summarize)),
+    list: () =>
+      Promise.resolve([
+        { id: self.id, name: self.name(), os: self.os, online: true, isCurrent: true },
+        ...peers().map(summarize)
+      ]),
     invoke: async (machine, path, args, origin, signal) => {
-      const all = await targets()
       const lowered = machine.toLowerCase()
-      const target =
-        all.find((candidate) => candidate.id === machine) ??
-        all.find((candidate) => candidate.name.toLowerCase() === lowered)
-      if (target === undefined) {
+      const all = peers()
+      const selfName = self.name()
+      // Ids win over names; this machine is matched like any other.
+      const peer =
+        machine === self.id
+          ? "self"
+          : (all.find((candidate) => candidate.id === machine) ??
+            (selfName.toLowerCase() === lowered
+              ? "self"
+              : all.find((candidate) => candidate.name.toLowerCase() === lowered)))
+      if (peer === "self") {
+        throw toolError(`${selfName} is the current machine; call its tools directly`)
+      }
+      if (peer === undefined) {
         throw unavailable(
           { id: machine, name: machine },
           "before-send",
@@ -321,32 +199,23 @@ export const makeMachineLink = (options: MachineLinkOptions): MachineLink => {
           undefined
         )
       }
-      if (target.isCurrent) {
-        throw toolError(`${target.name} is the current machine; call its tools directly`)
-      }
-      const body = JSON.stringify({ path, args, origin })
-      const misses: PathMiss[] = []
-      if (target.direct !== undefined) {
-        const answer = await viaDirect(target, target.direct, body, signal)
-        if (typeof answer !== "string") return interpret(target, answer)
-        misses.push(answer)
-      }
-      if (options.cloud !== undefined && target.cloud !== undefined) {
-        const answer = await viaCloud(target, options.cloud, target.cloud, body, signal)
-        if (typeof answer !== "string") return interpret(target, answer)
-        misses.push(answer)
-      }
-      const lastSeen = lastSeenOf(target)
-      if (misses.includes("unsupported")) {
+      const answer = await viaCloud(peer, JSON.stringify({ path, args, origin }), signal)
+      if (typeof answer !== "string") return interpret(peer, answer)
+      const lastSeen = peer.presence.lastSeenAt
+      if (answer === "unsupported") {
         throw unavailable(
-          target,
+          peer,
           "before-send",
-          `${target.name} runs a Codevisor version that can't take calls from other machines; update it`,
+          `${peer.name} runs a Codevisor version that can't take calls from other machines; update it`,
           lastSeen
         )
       }
-      const since = lastSeen === undefined ? "" : ` (last seen ${relativeAge(lastSeen, now())})`
-      throw unavailable(target, "before-send", `${target.name} is offline${since}`, lastSeen)
+      throw unavailable(
+        peer,
+        "before-send",
+        `${peer.name} is offline (last seen ${relativeAge(lastSeen, now())})`,
+        lastSeen
+      )
     }
   }
 }

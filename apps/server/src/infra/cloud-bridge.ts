@@ -26,6 +26,7 @@ import {
   WS_CHANNEL_TYPE,
   type ChannelHandler,
   type CloudSocket,
+  type FetchLike,
   type GatewayExchange,
   type MachineConnectionState,
   type MachineCredentials,
@@ -35,6 +36,7 @@ import type { TerminalManagerService } from "@codevisor/terminal"
 import { Effect } from "effect"
 
 import type { CloudServerControl } from "../server-context-types.js"
+import { removeMachineFromCloudAccount } from "./cloud-account-removal.js"
 import { socketFactory } from "./cloud-bridge-socket.js"
 import { byteStreamChannelHandler } from "./cloud-byte-stream.js"
 import {
@@ -54,8 +56,8 @@ export interface CloudBridgeOptions {
   readonly credentialsPath: string
   readonly machineName: string
   readonly appVersion: string
-  /// This server's stable id, published in hub presence so peer machines can
-  /// match it to direct FleetRoster routes.
+  /// This server's stable id, published in hub presence so peer machines
+  /// list it under the same id it reports in /v1/info.
   readonly serverId?: string
   /// Loopback origin of this server's own HTTP API (http://127.0.0.1:port);
   /// structured request channels replay against it, while raw byte-stream
@@ -66,6 +68,8 @@ export interface CloudBridgeOptions {
   readonly log: (line: string) => void
   /// This machine's update channel, reported at every hub hello.
   readonly releaseChannel?: () => "stable" | "alpha" | undefined
+  /// Cloud REST transport for account removal (defaults to global fetch).
+  readonly fetchImpl?: FetchLike
 }
 
 /// Who created this machine's cloud registration. "app" registrations were
@@ -418,7 +422,7 @@ export const connectCloudBridge = async (
   const managedBy = params.managedBy ?? "app"
   const bridgeOptions = { ...options, machineName: params.machineName ?? options.machineName }
   const credentials = await provisionMachine(
-    (input, init) => fetch(input, init),
+    options.fetchImpl ?? ((input, init) => fetch(input, init)),
     serverUrl,
     params.sessionToken,
     bridgeOptions.machineName === "" ? hostname() : bridgeOptions.machineName
@@ -434,9 +438,8 @@ export const connectCloudBridge = async (
 }
 
 /// Forgets this machine's stored cloud credential (the caller stops the
-/// bridge). Revoking the api key server-side is the app's job — it holds the
-/// account session; this machine only holds its own credential. App key pins
-/// go with it: a disconnected machine starts its next pairing fresh.
+/// bridge). App key pins go with it: a disconnected machine starts its next
+/// registration fresh.
 export const removeCloudCredentials = async (credentialsPath: string): Promise<void> => {
   await rm(credentialsPath, { force: true })
   await rm(peerPinsPath(credentialsPath), { force: true })
@@ -451,22 +454,33 @@ export const makeCloudServerControl = (
 ): CloudServerControl &
   Required<Pick<CloudServerControl, "machineName" | "machines" | "requestGateway">> => {
   let current = initial
+  let connecting: Promise<string> | undefined
   return {
     deviceId: () => current?.deviceId,
     state: () => current?.state(),
     serverUrl: () => current?.serverUrl,
     managedBy: () => current?.managedBy,
     machineName: () => current?.machineName,
-    connect: async (serverUrl, sessionToken, registration) => {
-      const bridge = await connectCloudBridge(options, { serverUrl, sessionToken, ...registration })
-      current?.stop()
-      current = bridge
-      return bridge.deviceId
+    /// Idempotent (see CloudServerControl.connect): concurrent callers share
+    /// one registration; switching accounts is an explicit disconnect first.
+    connect: (serverUrl, sessionToken, registration) => {
+      if (current !== undefined) return Promise.resolve(current.deviceId)
+      connecting ??= connectCloudBridge(options, { serverUrl, sessionToken, ...registration })
+        .then((bridge) => (current = bridge).deviceId)
+        .finally(() => (connecting = undefined))
+      return connecting
     },
     disconnect: async () => {
       current?.stop()
       current = undefined
+      const stored = await readCredentials(options.credentialsPath)
+      const removedFromAccount = await removeMachineFromCloudAccount(
+        stored?.credentials,
+        options.fetchImpl ?? ((input, init) => fetch(input, init)),
+        options.log
+      )
       await removeCloudCredentials(options.credentialsPath)
+      return { removedFromAccount }
     },
     acceptDirect: (socket) => {
       if (current === undefined) return false

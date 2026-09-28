@@ -103,7 +103,7 @@ describe("direct pipe on a running server", () => {
       state: () => "connected" as const,
       managedBy: () => "external" as const,
       connect: () => Promise.resolve("device-direct"),
-      disconnect: () => Promise.resolve(),
+      disconnect: () => Promise.resolve({ removedFromAccount: true }),
       acceptDirect: (socket: CloudSocket) => {
         accepted.push(socket)
         socket.send("welcome-from-host")
@@ -139,7 +139,7 @@ describe("direct pipe on a running server", () => {
       state: () => undefined,
       managedBy: () => undefined,
       connect: () => Promise.resolve("unused"),
-      disconnect: () => Promise.resolve(),
+      disconnect: () => Promise.resolve({ removedFromAccount: true }),
       acceptDirect: () => false
     }
     const server = await run(
@@ -166,7 +166,7 @@ describe("direct pipe on a running server", () => {
       state: () => "connected" as const,
       managedBy: () => "external" as const,
       connect: () => Promise.resolve("device-relay-only"),
-      disconnect: () => Promise.resolve(),
+      disconnect: () => Promise.resolve({ removedFromAccount: true }),
       acceptDirect: () => {
         accepted = true
         return true

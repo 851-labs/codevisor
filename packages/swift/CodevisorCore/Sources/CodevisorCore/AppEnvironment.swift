@@ -21,6 +21,8 @@ public final class AppEnvironment {
   public let theme: ThemeManager
   public let machines: MachineController
   public let cloud: CloudAccountController
+  /// Moves retired directly paired machines onto the signed-in account.
+  public let directMachineAdoption: DirectMachineCloudAdoption
   public let pluginAccess: PluginAccessController
   public let localServer: (any LocalServerControlling)?
   public let appUpdate: AppUpdateModel
@@ -29,20 +31,15 @@ public final class AppEnvironment {
   public let updateCenter: UpdateCenter
   /// The config plane's client half: local replica + cross-machine gossip.
   public let configSync: ConfigSync
-  public let fleetRoster: FleetRoster
   /// Set at launch when an already-onboarded install is missing the system
   /// permissions Computer Use needs (typically right after an update).
   /// While true, the root view presents the blocking permissions gate
   /// instead of the main split. Cleared when the gate completes.
   public var requiresPermissionsReview = false
 
-  /// App-installed: fired when a machine's route flips (direct ↔ relay)
-  /// so the platform's chat cache can re-home live sessions onto a client
-  /// resolved over the new route.
   /// The last project suggestions each machine returned, so reopening the
   /// add-project surface shows them at once while a fresh request runs.
   @ObservationIgnored var projectRecommendationCache: [String: [ProjectRecommendation]] = [:]
-  @ObservationIgnored public var onMachineRouteChanged: ((String) -> Void)?
   @ObservationIgnored public var onSessionStateChanged: ((ChatSession, Int?) -> Void)?
   /// Persists each session's pane-group state (terminal tabs, selection,
   /// panel visibility/height) so panes reattach to their shells after
@@ -87,7 +84,6 @@ public final class AppEnvironment {
     composerDrafts: ComposerDraftStore? = nil,
     settings: AppSettingsModel,
     machineStore: any PersistenceStore = InMemoryStore(),
-    machineCredentialStore: (any MachineCredentialStore)? = nil,
     cloudCredentialStore: (any CloudCredentialStore)? = nil,
     paneGroups: any PaneGroupRepository = DefaultPaneGroupRepository(store: InMemoryStore()),
     localServer: (any LocalServerControlling)? = nil,
@@ -102,10 +98,7 @@ public final class AppEnvironment {
     // The old storage kept editable copies of server state; keep only the
     // tab arrangements before the store opens (see NavigationStoreMigration).
     NavigationStoreMigration.runIfNeeded(
-      store: navigationPersistence,
-      machineIds: [CodevisorMachine.local.id]
-        + (machineStore.loadData(forKey: "machines")
-          .flatMap { try? JSONDecoder().decode(MachineRegistry.self, from: $0) }?.remoteMachines.map(\.id) ?? []))
+      store: navigationPersistence, machineIds: [CodevisorMachine.local.id])
     let navigationStore = NavigationStore(store: navigationPersistence)
     self.navigationStore = navigationStore
     let workspaces = ProjectedWorkspaceRepository(store: navigationStore)
@@ -144,13 +137,11 @@ public final class AppEnvironment {
       store: machineStore,
       projectList: projectList,
       workspaceSync: workspaceSync,
-      credentialStore: machineCredentialStore,
       localServer: localServer,
       clientFactory: machineClientFactory
     )
     updateCenter = UpdateCenter(machines: machines, appUpdate: self.appUpdate)
     configSync = ConfigSync(machines: machines)
-    fleetRoster = FleetRoster(machines: machines, configSync: configSync)
     // Updates cover the harnesses in the shared list, once it has synced.
     updateCenter.listedHarnessIds = { [configSync] in
       guard configSync.hasSnapshot(namespace: "harnesses") else { return nil }
@@ -162,6 +153,7 @@ public final class AppEnvironment {
       credentialStore: cloudCredentialStore ?? InMemoryCloudCredentialStore()
     )
     self.pluginAccess = PluginAccessController(cloud: cloud, store: machineStore)
+    self.directMachineAdoption = DirectMachineCloudAdoption(store: machineStore)
     #if os(iOS)
       updateCenter.reviewPluginUpdate = { [pluginAccess] _, plan in
         try await pluginAccess.requireEligible(pluginId: plan.pluginId, ageRating: plan.candidate.ageRating)
@@ -186,6 +178,21 @@ public final class AppEnvironment {
       if let access = self?.pluginAccess { Task { try? await access.syncConsent() } }
       self?.machines.reconcileCloudSelection()
       self?.machines.pruneDeadCloudRecords()
+      // A verified roster is when retired directly paired machines can be
+      // moved onto the account (or recognized as already on it).
+      if let self, self.directMachineAdoption.hasPendingMachines {
+        Task { await self.directMachineAdoption.adoptPendingMachines(cloud: self.cloud) }
+      }
+    }
+    // A settled machine's chats and projects re-sync under its cloud id (if
+    // it moved); the records cached under its old direct id would render as
+    // duplicates or strays.
+    directMachineAdoption.onSettled = { [weak self] oldId, cloudId in
+      guard let self else { return }
+      self.projectList.removeAllRecords(serverId: oldId)
+      if let cloudId, self.composerDefaults.lastNewWorkspaceServerId == oldId {
+        self.composerDefaults.rememberNewWorkspaceServer(serverId: cloudId)
+      }
     }
     projectList.showsImportedSessions = settings.importExternalSessions
     machines.serverUpdateChannel = settings.alphaUpdatesEnabled ? .alpha : .stable
@@ -204,12 +211,7 @@ public final class AppEnvironment {
       self?.harnessCatalogDidChange(onServer: $0)
     }
     machines.onMachineConnected = { [weak self] in self?.noteMachineConnected($0) }
-    machines.onMachineRouteChanged = { [weak self] in self?.onMachineRouteChanged?($0) }
     machines.onSessionStateChanged = { [weak self] in self?.onSessionStateChanged?($0, $1) }
-    machines.onMachineAdded = { [weak self] in self?.fleetRoster.publishMachine($0) }
-    machines.onMachineRemoved = { [weak self] in
-      self?.fleetRoster.publishRemoval(localMachineId: $0)
-    }
     applyBootSyncState()
     machines.onPluginStateChanged = { [weak self] in self?.pluginStateDidChange(onServer: $0) }
     machines.onMcpStateChanged = { [weak self] in self?.mcpStateDidChange(onServer: $0) }
@@ -332,10 +334,11 @@ public final class AppEnvironment {
     composerDrafts.clear()
     paneGroups.removeAll()
     workspaces.removeAll()
-    machines.removeAllRemoteMachines()
-    // The Cloud session is local data too: staying signed in would
-    // re-synthesize every cloud-registered machine the instant the
-    // configured ones were removed, and onboarding would never return.
+    machines.resetSelection()
+    directMachineAdoption.reset()
+    // The Cloud session is local data too: staying signed in would keep
+    // every cloud-registered machine listed, and onboarding would never
+    // return.
     cloud.signOut()
     ClientPreferences.shared.removeAll()
     do {
@@ -426,17 +429,12 @@ public final class AppEnvironment {
   public static func preview(
     seedProjects: [Project] = AppEnvironment.sampleProjects,
     seedSessions: [ChatSession] = AppEnvironment.sampleSessions,
-    seedMachines: [CodevisorMachine] = [],
+    seedCloudMachines: [CloudMachine] = [],
     seedCapabilities: [ServerHarnessCapability] = [],
     hasOnboarded: Bool = true
   ) -> AppEnvironment {
     let settings = AppSettingsModel(store: InMemoryStore())
     let machineStore = InMemoryStore()
-    if !seedMachines.isEmpty {
-      try? machineStore.saveData(
-        JSONEncoder().encode(MachineRegistry(remoteMachines: seedMachines)), forKey: "machines"
-      )
-    }
     if hasOnboarded {
       settings.completeOnboarding(importExternalSessions: false)
       settings.setShareCrashReports(false)
@@ -451,6 +449,9 @@ public final class AppEnvironment {
       // projects into a live dev server's database.
       machineClientFactory: { _ in PreviewServerClient(harnessCapabilities: seedCapabilities) }
     )
+    if !seedCloudMachines.isEmpty {
+      environment.machines.cloudProvider = PreviewCloudMachines(cloudMachines: seedCloudMachines)
+    }
     // Previews have no server; queued records show exactly as a real
     // machine's would while they wait.
     for project in seedProjects {

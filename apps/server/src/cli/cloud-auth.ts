@@ -2,9 +2,8 @@ import {
   CloudApiError,
   discoverInstance,
   pollDeviceToken,
-  listAccountMachines,
   requestDeviceCode,
-  type AccountMachineSummary,
+  type DeviceCodeGrant,
   type FetchLike
 } from "@codevisor/cloud-client"
 
@@ -14,11 +13,12 @@ import {
   readCloudRegistration,
   waitForCloudConnection
 } from "./cloud-control.js"
+import { renderQr } from "./qr.js"
 import { resolvePort, type CliDeps, type CommandOptions } from "./support.js"
-import { applySyncParticipation } from "./sync.js"
 
 /// `codevisor auth …` — connect this machine to a Codevisor Cloud account via
-/// the RFC 8628 device flow, so it appears in the user's apps automatically.
+/// the RFC 8628 device flow, so it appears in the user's apps automatically
+/// and joins the account's config sync.
 /// Pure logic against CliDeps (+ an injectable fetch); wiring lives in cli.ts.
 
 const DEFAULT_CLOUD_URL = "https://cloud.codevisor.dev"
@@ -29,48 +29,14 @@ export interface CloudAuthOptions extends CommandOptions {
   readonly server?: string
   readonly fetchImpl?: FetchLike
   readonly machineName?: string
-  /// Explicit config-sync choice (--no-sync); wins over the prompt.
-  readonly syncConfig?: boolean
-  /// Interactive fallback: ask after a successful login. Absent (plus no
-  /// explicit choice) leaves the server's default — participating — alone.
-  readonly promptSyncConfig?: () => Promise<boolean>
 }
 
-/// The onboarding opt-in: after connecting to a cloud account, record
-/// whether this machine joins config sync. The flag lives in the local
-/// server's database, so it survives subsequent restarts.
-///
-/// Fleet awareness: the account's machine list (fetched during login)
-/// decides whether asking even makes sense. The FIRST machine has nothing
-/// to sync from, so it is never prompted — the server default
-/// (participating) simply applies to whatever fleet grows from here. Only
-/// a machine joining an existing fleet gets the question; when the list
-/// could not be fetched, the ask is kept rather than guessed away.
-const applyLoginSyncChoice = async (
-  deps: CliDeps,
-  options: CloudAuthOptions,
-  fleet: ReadonlyArray<AccountMachineSummary> | undefined
-): Promise<void> => {
-  let wanted = options.syncConfig
-  if (wanted === undefined) {
-    if (options.promptSyncConfig === undefined) return
-    if (fleet !== undefined && fleet.length === 0) {
-      deps.log("This is the first machine on your account, so config sync is on by default.")
-      deps.log("Machines you connect later will be asked whether to join.")
-      return
-    }
-    if (fleet !== undefined && fleet.length > 0) {
-      const names = fleet.map((machine) => machine.name).join(", ")
-      const plural = fleet.length === 1 ? "machine" : "machines"
-      deps.log(`This account already has ${fleet.length} ${plural}: ${names}.`)
-    }
-    wanted = await options.promptSyncConfig()
-  }
-  if (await applySyncParticipation(deps, wanted, options.port)) {
-    deps.log(`Config sync is ${wanted ? "on" : "off"} for this machine.`)
-    return
-  }
-  deps.log(`Could not apply config sync; retry with: codevisor sync ${wanted ? "on" : "off"}`)
+/// The absolute approval URL with the code filled in, so opening it (or
+/// scanning it with the Codevisor app) skips typing the code.
+const approvalUrl = (grant: DeviceCodeGrant, serverUrl: string): string => {
+  const url = new URL(grant.verificationUriComplete ?? grant.verificationUri, `${serverUrl}/`)
+  if (!url.searchParams.has("user_code")) url.searchParams.set("user_code", grant.userCode)
+  return url.toString()
 }
 
 const resolveServer = (deps: CliDeps, options: CloudAuthOptions): string =>
@@ -95,14 +61,21 @@ export const authLoginCommand = async (
       return 0
     }
     const instance = await discoverInstance(fetchImpl, serverUrl)
-    deps.log(`Connecting this machine to ${instance.instance} (${serverUrl})`)
+    deps.log(`Logging this machine in to ${instance.instance} (${serverUrl})`)
     const grant = await requestDeviceCode(fetchImpl, serverUrl)
+    const approval = approvalUrl(grant, serverUrl)
+    // The link comes last: in a short terminal it stays on screen, and the
+    // QR code is a scroll up.
     deps.log("")
-    deps.log("To approve, visit:")
-    deps.log(`  ${grant.verificationUriComplete ?? `${serverUrl}${grant.verificationUri}`}`)
-    deps.log(`and confirm the code:  ${grant.userCode}`)
+    deps.log("Scan to log in with the Codevisor app on your phone:")
     deps.log("")
-    deps.log("Waiting for approval…")
+    for (const line of renderQr(approval)) deps.log(`  ${line}`)
+    deps.log("")
+    deps.log("Or log in from a browser:")
+    deps.log(`  ${approval}`)
+    deps.log(`  Code: ${grant.userCode}`)
+    deps.log("")
+    deps.log("Waiting for you to log in…")
     let intervalSeconds = grant.interval
     const deadline = grant.expiresIn * 1000
     let waited = 0
@@ -128,15 +101,6 @@ export const authLoginCommand = async (
         return 1
       }
       const machineName = options.machineName ?? deps.env.HOSTNAME ?? "machine"
-      // Fleet awareness for the sync ask below — fetched only when a
-      // prompt could happen, so piped installs stay network-silent. An
-      // unreachable list degrades to "unknown", which keeps the ask.
-      const fleet =
-        options.syncConfig === undefined && options.promptSyncConfig !== undefined
-          ? await listAccountMachines(fetchImpl, serverUrl, poll.sessionToken).catch(
-              () => undefined
-            )
-          : undefined
       const response = await deps.fetchJson(`${cloudUrl(port)}/connect`, {
         method: "POST",
         timeoutMs: 30_000,
@@ -150,7 +114,6 @@ export const authLoginCommand = async (
       deps.log("")
       deps.log(`✓ Connected as ${machineName}.`)
       deps.log("This machine is online in your Codevisor apps.")
-      await applyLoginSyncChoice(deps, { ...options, port }, fleet)
       return 0
     }
   } catch (error) {
@@ -205,13 +168,22 @@ export const authLogoutCommand = async (
       deps.log("This machine is not connected to a Codevisor Cloud account.")
       return 0
     }
-    const response = await deps.fetchJson(`${cloudUrl(port)}/disconnect`, { method: "POST" })
+    const response = await deps.fetchJson(`${cloudUrl(port)}/disconnect`, {
+      method: "POST",
+      // The server waits a bounded time for the cloud before disconnecting.
+      timeoutMs: 30_000
+    })
     if (response?.status !== 200)
       throw new Error("The server could not remove the Cloud registration")
-    deps.log(`Disconnected this machine from ${registration.serverUrl ?? "Codevisor Cloud"}.`)
-    deps.log(
-      "To revoke its credential too, remove the machine from your machine list in the Codevisor app."
-    )
+    const cloud = registration.serverUrl ?? "Codevisor Cloud"
+    const body = response.body as { readonly removedFromAccount?: unknown } | undefined
+    if (body?.removedFromAccount === true) {
+      deps.log(`Disconnected this machine from ${cloud} and removed it from your account.`)
+      return 0
+    }
+    deps.log(`Disconnected this machine from ${cloud}.`)
+    deps.error("Warning: this machine could not be removed from your account.")
+    deps.error("Remove it from the machine list in the Codevisor app.")
     return 0
   } catch (error) {
     deps.error(`Cloud logout failed: ${String(error)}`)

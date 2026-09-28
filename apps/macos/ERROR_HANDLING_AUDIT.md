@@ -26,10 +26,6 @@ User clicks/taps something, it fails, and *nothing happens*:
 
 | Site | What fails silently | User impact |
 |---|---|---|
-| `Codevisor/Features/Sidebar/SidebarView.swift:268` | `try? machines.addRemote(...)` | Add-remote-machine sheet submits, nothing added, no error |
-| `Codevisor/Features/Settings/MachinesSettingsView.swift:39` | `try? machines.addRemote(...)` | Same, from Settings |
-| `Codevisor/Features/Settings/MachinesSettingsView.swift:46` | `try? machines.renameMachine(...)` | Rename silently no-ops |
-| `Codevisor/Features/Settings/MachinesSettingsView.swift:59` | `try? machines.removeMachine(...)` | Confirmed removal may not happen |
 | `Codevisor/Features/Settings/AppearanceSettingsView.swift:55` | `try? manager.deleteCustomTheme(...)` | Trash click, theme not deleted, no feedback |
 | `Codevisor/Features/Settings/SettingsView.swift:326` | harness toggle: `catch { revert toggle }` | Toggle snaps back with no reason shown |
 | `Codevisor/Features/Session/AttachmentLightbox.swift:201-203` | `try?` fetch attachment bytes on Download | Download click does nothing |
@@ -59,7 +55,7 @@ Persistence and sync failures that lose state invisibly:
 | `CodevisorCore/Persistence/ScratchpadRepository.swift:47` | corrupt scratchpad → nil → treated as empty | User notes silently lost on next save |
 | `CodevisorCore/Persistence/ScratchpadRepository.swift:51-52` | `try?` encode+save | Note save lost — and ScratchpadModel logs "save" *before* delegating, so the log claims success |
 | `CodevisorCore/Persistence/PaneGroupRepository.swift:36-37/44` | `try?` save / corrupt load → `?? [:]` | Tab layouts lost; orphaned server PTYs |
-| `CodevisorCore/Server/MachineController.swift:100` | corrupt registry decode → empty registry | All saved remote machines disappear |
+| `CodevisorCore/Server/MachineController.swift:100` | corrupt registry decode → empty registry | The remembered composer machine resets |
 | `CodevisorCore/Server/MachineController.swift:406-407` | `try?` encode+save registry | Machine registry write lost |
 | `CodevisorCore/AppSettings.swift:65` | corrupt settings decode → defaults | All prefs reset, onboarding re-triggers, corrupt file then overwritten |
 | `CodevisorCore/ViewModels/ProjectListModel.swift:379/381` | `compactMap { try? ... }` mapping server rows | A project/session that fails to map silently vanishes from sidebar |

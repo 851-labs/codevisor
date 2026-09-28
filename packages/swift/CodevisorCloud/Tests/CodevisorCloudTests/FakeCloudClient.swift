@@ -40,6 +40,8 @@ final class FakeCloudClient: CloudAccountClienting, @unchecked Sendable {
   private(set) var machineTokens: [String] = []
   private(set) var renames: [(deviceId: String, name: String)] = []
   private(set) var removals: [String] = []
+  /// Device-code decisions sent, as (decision, userCode, token).
+  private(set) var deviceDecisions: [(decision: String, userCode: String, token: String)] = []
 
   func discover() async throws -> CloudInstanceInfo {
     try lock.withLock {
@@ -114,6 +116,14 @@ final class FakeCloudClient: CloudAccountClienting, @unchecked Sendable {
   func removeMachine(deviceId: String, token: String) async throws {
     lock.withLock { removals.append(deviceId) }
   }
+
+  func approveDevice(userCode: String, token: String) async throws {
+    lock.withLock { deviceDecisions.append((decision: "approve", userCode: userCode, token: token)) }
+  }
+
+  func denyDevice(userCode: String, token: String) async throws {
+    lock.withLock { deviceDecisions.append((decision: "deny", userCode: userCode, token: token)) }
+  }
 }
 
 /// The embedded local server, reduced to its /v1/cloud registration surface.
@@ -122,6 +132,7 @@ final class FakeLocalServerClient: CodevisorServerClienting, @unchecked Sendable
   private let lock = NSLock()
   private var _registration: ServerCloudRegistration
   private var _connects: [(serverURL: URL, sessionToken: String)] = []
+  private var _externalConnects: [(sessionToken: String, managedBy: String, machineName: String?)] = []
   private var _disconnects = 0
   var connectError: (any Error)?
 
@@ -131,6 +142,9 @@ final class FakeLocalServerClient: CodevisorServerClienting, @unchecked Sendable
 
   var connects: [(serverURL: URL, sessionToken: String)] { lock.withLock { _connects } }
   var disconnects: Int { lock.withLock { _disconnects } }
+  var externalConnects: [(sessionToken: String, managedBy: String, machineName: String?)] {
+    lock.withLock { _externalConnects }
+  }
 
   func cloudRegistration() async throws -> ServerCloudRegistration {
     lock.withLock { _registration }
@@ -147,6 +161,18 @@ final class FakeLocalServerClient: CodevisorServerClienting, @unchecked Sendable
         managedBy: "app"
       )
       return "local-device-1"
+    }
+  }
+
+  func connectCloud(
+    serverURL _: URL,
+    sessionToken: String,
+    managedBy: String,
+    machineName: String?
+  ) async throws -> String {
+    lock.withLock {
+      _externalConnects.append((sessionToken: sessionToken, managedBy: managedBy, machineName: machineName))
+      return "adopted-device-1"
     }
   }
 
@@ -222,6 +248,8 @@ struct OfflineCloudClient: CloudAccountClienting {
   func machines(token: String) async throws -> [CloudMachine] { throw OfflineError() }
   func rename(deviceId: String, name: String, token: String) async throws { throw OfflineError() }
   func removeMachine(deviceId: String, token: String) async throws { throw OfflineError() }
+  func approveDevice(userCode: String, token: String) async throws { throw OfflineError() }
+  func denyDevice(userCode: String, token: String) async throws { throw OfflineError() }
 }
 
 /// A canned cloud machine presence entry (key defaults to `pk_<deviceId>`).

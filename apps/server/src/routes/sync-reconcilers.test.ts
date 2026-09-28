@@ -79,13 +79,13 @@ describe("runBackgroundSyncReconcile", () => {
     expect(entries.map((entry) => entry.key)).toEqual(["Background"])
   })
 
-  it("skips opted-out machines, absent services, and swallows failures", async () => {
+  it("ignores a legacy opt-out, skips absent services, and swallows failures", async () => {
     const fanout = await run(makeEventFanout)
 
-    // Participation off: nothing runs.
-    const { services: optedOut } = await makeServices("server-bg-off")
+    // Sync has no opt-out: a stored pre-removal `local.sync` flag is inert.
+    const { services: legacy } = await makeServices("server-bg-legacy")
     await run(
-      optedOut.db.mergeSyncEntries("local.sync", [
+      legacy.db.mergeSyncEntries("local.sync", [
         {
           key: "enabled",
           value: false,
@@ -93,15 +93,17 @@ describe("runBackgroundSyncReconcile", () => {
         }
       ])
     )
-    await optedOut.mcp?.create({
+    await legacy.mcp?.create({
       authType: "none",
       enabled: false,
-      name: "Hidden",
+      name: "Replicated",
       transport: "http",
-      url: "https://hidden.example.com/mcp"
+      url: "https://replicated.example.com/mcp"
     })
-    await runBackgroundSyncReconcile(optedOut, config, fanout, "mcps")
-    expect(await run(optedOut.db.getSyncEntries("mcps"))).toEqual([])
+    await runBackgroundSyncReconcile(legacy, config, fanout, "mcps")
+    expect((await run(legacy.db.getSyncEntries("mcps"))).map((entry) => entry.key)).toEqual([
+      "Replicated"
+    ])
 
     // A plane without its backing services is a silent no-op.
     const { services: bare } = await makeServices("server-bg-bare")

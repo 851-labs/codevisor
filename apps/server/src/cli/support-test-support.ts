@@ -11,6 +11,8 @@ export interface FakeWorld {
   readonly spawned: Array<{ args: ReadonlyArray<string>; logPath: string }>
   readonly files: Map<string, string>
   readonly signals: Array<{ pid: number; signal: string }>
+  /// How many times `METHOD url` was requested.
+  readonly httpCalls: (key: string) => number
 }
 
 export interface FakeOptions {
@@ -83,7 +85,8 @@ export const makeWorld = (options: FakeOptions = {}): FakeWorld => {
     log: (line) => void logs.push(line),
     error: (line) => void errors.push(line)
   }
-  return { deps, logs, errors, execCalls, interactiveCalls, spawned, files, signals }
+  const httpCalls = (key: string): number => httpCounts.get(key) ?? 0
+  return { deps, logs, errors, execCalls, interactiveCalls, spawned, files, signals, httpCalls }
 }
 
 export const unit = (port: number): ExecResult => ({

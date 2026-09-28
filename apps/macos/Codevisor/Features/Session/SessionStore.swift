@@ -157,31 +157,9 @@ final class SessionStore {
   ) {
     self.environment = environment
     self.notificationDelivery = notificationDelivery ?? ChatNotificationManager.shared
-    environment.onMachineRouteChanged = { [weak self] machineId in
-      self?.rerouteControllers(on: machineId)
-    }
     environment.onSessionStateChanged = { [weak self] session, revision in
       guard let controller = self?.controllers[SessionKey(session)] else { return }
       Task { await controller.reconcileServerSummary(session, revision: revision) }
-    }
-  }
-
-  /// A route flip (direct ↔ relay) leaves cached controllers streaming
-  /// over a dead transport. Re-home each affected chat onto a client
-  /// resolved over the new route. A connected chat keeps its model and
-  /// resumes its stream from the last applied cursor; tearing it down and
-  /// replaying history here rewound streaming transcripts to an older
-  /// snapshot and re-typed them on every flip.
-  func rerouteControllers(on machineId: String) {
-    for (key, controller) in controllers where key.serverId == machineId {
-      let client = environment.machines.client(for: machineId)
-      Task { await controller.rehome(with: client) }
-    }
-    // Drafts have no live stream, but their next send must ride the new
-    // route too.
-    for controller in draftsByServer.values
-    where controller.project.serverId == machineId {
-      controller.adoptServerClient(environment.machines.client(for: machineId), forServer: machineId)
     }
   }
 

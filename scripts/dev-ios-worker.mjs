@@ -1,10 +1,11 @@
 import { spawn } from "node:child_process"
-// iOS development loop: starts the same isolated Dev Direct and Dev Cloud
-// machines as scripts/dev.mjs (Linux containers by default), starts a
-// development cloud, then builds and launches the iOS app in the visible
-// Simulator. No macOS app is built or launched — iOS is a pure client.
+// iOS development loop: starts a development cloud and the same isolated Dev
+// Cloud machine as scripts/dev.mjs (a Linux container by default), then
+// builds and launches the iOS app in the visible Simulator. No macOS app is
+// built or launched — iOS is a pure client that reaches machines only
+// through the dev cloud account it signs into.
 import { createHash } from "node:crypto"
-import { cp, mkdir, readFile, realpath, rm } from "node:fs/promises"
+import { readFile, realpath } from "node:fs/promises"
 import { basename, join, resolve } from "node:path"
 import process from "node:process"
 import { fileURLToPath } from "node:url"
@@ -15,7 +16,6 @@ import { cloudWranglerEnvironment } from "./dev-cloud.mjs"
 import {
   launchDevRemoteServer,
   prepareDevContainers,
-  readDevRemoteConnectionToken,
   resolveContainerEngine
 } from "./dev-containers.mjs"
 import {
@@ -32,14 +32,11 @@ import {
 } from "./dev-layout.mjs"
 import {
   colorFromHash,
-  containsAnyPath,
   delay,
   describeExit,
-  directoryIsEmpty,
   findAvailablePort,
   isPortAvailable,
   parsePort,
-  pathExists,
   waitForExit,
   waitForHealth
 } from "./dev-shared.mjs"
@@ -54,10 +51,9 @@ const worktreeName = basename(repoRoot)
 const instanceHash = createHash("sha256").update(repoRoot).digest("hex").slice(0, 10)
 const instanceName = `${worktreeName}-${instanceHash}`
 const layout = developmentLayout(repoRoot)
-// Shared with scripts/dev.mjs's dev servers so the simulator talks to the
-// same machines (same data, same stable tokens) either way.
-const remoteDataDirectory = layout.remote.data
-const remoteName = `Dev Direct (${worktreeName})`
+// Shared with scripts/dev.mjs's Dev Cloud server so the simulator sees the
+// same machine (same data, same cloud identity) either way.
+const cloudRemoteDataDirectory = layout.remoteCloud.data
 const cloudRemoteName = `Dev Cloud (${worktreeName})`
 // Same hash → hue derivation as scripts/dev.mjs, so a worktree's iOS icon
 // color matches its macOS icon color.
@@ -67,11 +63,10 @@ const appDisplayName = `Codevisor (${worktreeName})`
 const bundleIdentifier = iosDevelopmentBundleIdentifier(repoRoot)
 const urlScheme = `codevisor-dev-${instanceHash}`
 
+// Same preferred port as scripts/dev.mjs's Dev Cloud server (the local
+// server's preferred port + 2).
 const preferredPort = 51_000 + (Number.parseInt(instanceHash.slice(0, 8), 16) % 10_000)
-const requestedPort = parsePort(process.env.CODEVISOR_DEV_REMOTE_PORT, "CODEVISOR_DEV_REMOTE_PORT")
-const remotePort = requestedPort ?? (await findAvailablePort(preferredPort + 1, 51_000, 10_000))
-const cloudRemotePort = await findAvailablePort(remotePort + 1, 51_000, 10_000)
-const serverURL = `http://127.0.0.1:${remotePort}`
+const cloudRemotePort = await findAvailablePort(preferredPort + 2, 51_000, 10_000)
 const cloudRemoteURL = `http://127.0.0.1:${cloudRemotePort}`
 const configuredCloudURL = process.env.CODEVISOR_DEV_CLOUD_URL?.replace(/\/+$/, "")
 const externalCloudURL = configuredCloudURL === "" ? undefined : configuredCloudURL
@@ -97,26 +92,12 @@ const cloudPort =
 const cloudURL = externalCloudURL ?? `http://localhost:${cloudPort}`
 const cloudPersistPath = layout.wrangler
 
-const legacyRemoteDataDirectory = join(layout.tmpRoot, "codevisor-remote")
-if (
-  (await pathExists(join(legacyRemoteDataDirectory, "codevisor-server.sqlite"))) &&
-  (await directoryIsEmpty(remoteDataDirectory)) &&
-  !(await containsAnyPath(legacyRemoteDataDirectory, ["repos", "plugins", "worktrees"]))
-) {
-  console.log(`Moving dev remote state into ${remoteDataDirectory}`)
-  await rm(remoteDataDirectory, { recursive: true, force: true })
-  await mkdir(layout.remote.root, { recursive: true })
-  await cp(legacyRemoteDataDirectory, remoteDataDirectory, { recursive: true })
-  await rm(legacyRemoteDataDirectory, { recursive: true, force: true })
-}
-
 await ensureDevelopmentDirectories(layout)
 Object.assign(process.env, localDevelopmentEnvironment(layout, process.env))
 
 console.log(`Codevisor iOS development instance: ${worktreeName}`)
-console.log(`  direct:    ${serverURL}  (${remoteName})`)
 console.log(`  viacloud:  ${cloudRemoteURL}  (${cloudRemoteName})`)
-console.log(`  data:      ${remoteDataDirectory}`)
+console.log(`  data:      ${cloudRemoteDataDirectory}`)
 console.log(`  simulator: ${simulator.name} (${simulator.udid})`)
 console.log(`  app:       ${appDisplayName} (${bundleIdentifier})`)
 console.log(`  icon:      ${developmentIconColor.hex}`)
@@ -125,13 +106,13 @@ console.log(`  cloud:     ${cloudURL}${externalCloudURL === undefined ? " (manag
 await bootstrapDevelopment(repoRoot, { environment: process.env })
 await run("bun", ["run", "--cwd", "apps/server", "build"])
 
-// Match dev/dev:macos: real Linux remotes by default, same-host only when
+// Match dev/dev:macos: a real Linux remote by default, same-host only when
 // explicitly requested or when neither supported engine is available.
 const containerEngine = wantsContainers
   ? await resolveContainerEngine(containerEnginePreference)
   : undefined
 if (wantsContainers && containerEngine === undefined) {
-  console.warn("No usable container engine; dev remotes run as same-host processes.")
+  console.warn("No usable container engine; the dev remote runs as a same-host process.")
 }
 const containerContext =
   containerEngine === undefined
@@ -144,10 +125,10 @@ const containerContext =
       })
 
 // Match the macOS development runner: unless an external dev cloud was
-// explicitly supplied, own a worktree-isolated Worker and hand its dev-user
-// session to both the standalone server and the iOS app. This keeps the
-// development-account sign-in button available without requiring a separate
-// `wrangler dev` process.
+// explicitly supplied, own a worktree-isolated Worker, sign the Dev Cloud
+// server into it, and point the iOS app at it. The dev cloud is the app's
+// only route to a machine, so the development-account sign-in button must be
+// available without requiring a separate `wrangler dev` process.
 let cloud
 if (externalCloudURL === undefined) {
   await run(
@@ -200,27 +181,16 @@ if (externalCloudURL === undefined) {
 // cloud-connected and the app can offer the explicit development-account
 // action.
 const cloudSession = await resolveCloudSession(cloudURL, cloud)
-
-// Dev Direct: the machine the simulator adds by token/deeplink. It gets NO
-// cloud environment — a direct machine must stay direct.
-const directRemoteEnvironment = {
-  ...remoteDevelopmentEnvironment(layout, process.env),
-  CODEVISOR_DEV_INSTANCE_ID: `${instanceName}-direct`
+if (cloudSession === undefined) {
+  console.warn(
+    "Without a dev cloud the simulator app cannot reach any machine; " +
+      "check the cloud output above or CODEVISOR_DEV_CLOUD_URL."
+  )
 }
-delete directRemoteEnvironment.CODEVISOR_DEV_CLOUD_URL
-delete directRemoteEnvironment.CODEVISOR_DEV_CLOUD_TOKEN
-const server = await launchDevRemoteServer({
-  containerContext,
-  repoRoot,
-  remoteRootHost: join(layout.tmpRoot, "remote"),
-  serverRoots: layout.remote,
-  port: remotePort,
-  serverName: remoteName,
-  environment: directRemoteEnvironment
-})
 
-// Dev Cloud: a second standalone server that signs into the dev cloud and is
-// reached through the relay — the hub's realistic "machine somewhere else".
+// Dev Cloud: a standalone server that signs into the dev cloud and is
+// reached through it — the hub's realistic "machine somewhere else", and the
+// machine the simulator app sees after signing into the dev account.
 const cloudRemoteServer = await launchDevRemoteServer({
   containerContext,
   repoRoot,
@@ -230,7 +200,7 @@ const cloudRemoteServer = await launchDevRemoteServer({
   serverName: cloudRemoteName,
   directPath: "disabled",
   environment: {
-    ...remoteDevelopmentEnvironment(layout, process.env, layout.remoteCloud),
+    ...remoteDevelopmentEnvironment(layout, process.env),
     CODEVISOR_DEV_INSTANCE_ID: `${instanceName}-cloud`,
     ...(cloudSession === undefined
       ? {}
@@ -248,24 +218,17 @@ const stop = async (exitCode = 0) => {
   if (stopping) return
   stopping = true
   await terminateIOSDevelopmentApp(iosTarget)
-  for (const [url, child] of [
-    [serverURL, server],
-    [cloudRemoteURL, cloudRemoteServer]
-  ]) {
-    try {
-      await fetch(`${url}/v1/shutdown`, { method: "POST", signal: AbortSignal.timeout(1_000) })
-    } catch {
-      child.kill("SIGTERM")
-    }
+  try {
+    await fetch(`${cloudRemoteURL}/v1/shutdown`, {
+      method: "POST",
+      signal: AbortSignal.timeout(1_000)
+    })
+  } catch {
+    cloudRemoteServer.kill("SIGTERM")
   }
   cloud?.kill("SIGTERM")
-  await Promise.race([
-    Promise.all([waitForExit(server), waitForExit(cloudRemoteServer)]),
-    delay(2_000)
-  ])
-  for (const child of [server, cloudRemoteServer]) {
-    if (child.exitCode === null) child.kill("SIGTERM")
-  }
+  await Promise.race([waitForExit(cloudRemoteServer), delay(2_000)])
+  if (cloudRemoteServer.exitCode === null) cloudRemoteServer.kill("SIGTERM")
   process.exitCode = exitCode
 }
 
@@ -280,10 +243,7 @@ const watchServerExit = (child, label) =>
       await stop(result.code ?? 1)
     }
   })
-const serverExit = Promise.all([
-  watchServerExit(server, "Codevisor dev direct server"),
-  watchServerExit(cloudRemoteServer, "Codevisor dev cloud server")
-])
+const serverExit = watchServerExit(cloudRemoteServer, "Codevisor dev cloud server")
 
 try {
   iosTarget = await buildIOSDevelopmentApp({
@@ -298,9 +258,7 @@ try {
 
   // First container boots may need to provision Linux dependencies.
   const remoteHealthAttempts = containerContext === undefined ? 120 : 2400
-  await waitForHealth(remotePort, server, remoteHealthAttempts)
   await waitForHealth(cloudRemotePort, cloudRemoteServer, remoteHealthAttempts)
-  const token = await readConnectionToken()
 
   await launchIOSDevelopmentApp({
     repoRoot,
@@ -309,31 +267,15 @@ try {
     worktreeName,
     instanceName,
     developmentIconColor,
-    remoteHost: "127.0.0.1",
-    remotePort,
-    remoteToken: token,
-    remoteName,
-    urlScheme,
     cloudURL: cloudSession?.url
   })
-  console.log(
-    `${cloudRemoteName} joins after dev-cloud sign-in; ${remoteName} is the token-added machine.`
-  )
+  console.log(`${cloudRemoteName} appears after signing into the dev cloud.`)
   console.log("Press Ctrl+C to stop the servers (the simulator stays open).")
 
   await serverExit
 } catch (error) {
   console.error(error instanceof Error ? error.message : error)
   await stop(1)
-}
-
-async function readConnectionToken() {
-  try {
-    return await readDevRemoteConnectionToken(server, serverURL)
-  } catch {
-    // Fall through: the address alone is enough to add the machine manually.
-  }
-  return ""
 }
 
 function run(command, arguments_, cwd = repoRoot, environment = process.env) {

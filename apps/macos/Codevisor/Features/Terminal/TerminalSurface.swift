@@ -45,7 +45,6 @@ struct TerminalLaunchDescriptor: Equatable {
         server: machine.baseURL,
         terminalKey: terminalKey,
         cwd: sessionFolder.path,
-        token: machine.token,
         attachOnly: attachOnly
       )
     )
@@ -70,7 +69,6 @@ enum TerminalProxyCommand {
     server: URL,
     terminalKey: String,
     cwd: String,
-    token: String? = nil,
     attachOnly: Bool = false
   ) -> String {
     // The proxy's --session-id is an opaque key end-to-end (proxy, wire
@@ -80,8 +78,7 @@ enum TerminalProxyCommand {
         "--server", server.absoluteString,
         "--session-id", terminalKey,
         "--cwd", cwd,
-      ] + (token.map { ["--token", $0] } ?? [])
-      + (attachOnly ? ["--attach-only", "true"] : [])
+      ] + (attachOnly ? ["--attach-only", "true"] : [])
     let executable = proxyExecutable()
     return ([executable.command] + executable.prefixArgs + args)
       .map(shellQuote)

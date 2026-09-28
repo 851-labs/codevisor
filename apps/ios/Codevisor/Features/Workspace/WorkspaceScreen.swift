@@ -353,7 +353,7 @@ struct WorkspaceScreen: View {
     .task(id: preparationIdentity) {
       IOSNavigationDiagnostics.record(
         "workspace.prepareTask",
-        "availability=\(screenAvailability) route=\(String(describing: preparationIdentity.route)) draft=\(isDraft)"
+        "availability=\(screenAvailability) draft=\(isDraft)"
       )
       guard isDraft || screenAvailability == .ready else { return }
       await prepare()
@@ -417,14 +417,12 @@ struct WorkspaceScreen: View {
   private struct PreparationIdentity: Equatable {
     let serverId: String
     let availability: ServerAvailability
-    let route: MachineRoute?
   }
 
   private var preparationIdentity: PreparationIdentity {
     PreparationIdentity(
       serverId: resolvedServerId,
-      availability: screenAvailability,
-      route: environment.machines.statusByMachineId[resolvedServerId]?.route
+      availability: screenAvailability
     )
   }
 

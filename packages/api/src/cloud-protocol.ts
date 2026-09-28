@@ -51,8 +51,8 @@ export const CloudDeviceInfo = Schema.Struct({
   appVersion: Schema.optional(Schema.String),
   publicKey: Schema.String,
   /// Machines only: the stable Codevisor server id ("machine-<uuid>") this
-  /// device runs, so peers can match hub presence to the same machine reached
-  /// directly (FleetRoster entries are keyed by it). Absent on older servers.
+  /// device runs, so peers list hub presence under the same id the machine
+  /// reports in /v1/info. Absent on older servers.
   serverId: Schema.optional(Schema.String),
   /// Hex Ed25519 id of the device's tunnel endpoint (docs/plans/
   /// codevisor-tunnel.md). Absent on devices that predate the tunnel.

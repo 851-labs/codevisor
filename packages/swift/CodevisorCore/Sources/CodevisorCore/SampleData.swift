@@ -143,6 +143,21 @@ public extension SessionModel {
   }
 }
 
+/// A signed-in account's fixed machine list, for previews and screenshots.
+/// Their clients come from the preview's injected transport factory.
+@MainActor
+final class PreviewCloudMachines: CloudMachineProviding {
+  let cloudMachines: [CloudMachine]
+  let isCloudSignedIn = true
+  let isCloudRosterVerified = true
+
+  init(cloudMachines: [CloudMachine]) {
+    self.cloudMachines = cloudMachines
+  }
+
+  func relayServerConfig(for machine: CloudMachine) -> CodevisorServerConfig? { nil }
+}
+
 /// A no-op server client for previews and preview-backed tests: the event
 /// stream never yields and every write throws or drops, so nothing can reach
 /// a real server.

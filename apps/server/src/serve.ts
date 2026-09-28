@@ -421,7 +421,7 @@ export const runServe = (
         // can connect; --kind lets it stay "local" despite the network bind.
         kind: resolvedKind,
         // Network-bound servers advertise the machine's hostname so client
-        // machine lists and tailnet discovery show something recognizable,
+        // machine lists show something recognizable,
         // not the default "local" server id.
         name: args.name ?? (host === "127.0.0.1" ? "Local Codevisor" : hostname()),
         port,

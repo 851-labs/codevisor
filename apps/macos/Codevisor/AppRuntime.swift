@@ -99,9 +99,7 @@ final class AppRuntime {
     defer { startupInProgress = false }
     do {
       let storage = try await ClientStorageBootstrap.openAsync(
-        directory: CodevisorAppVariant.applicationSupportURL(),
-        credentials: KeychainMachineCredentialStore.shared
-      )
+        directory: CodevisorAppVariant.applicationSupportURL())
       let runtime = Self.makeRuntime(
         serverAgent: serverAgent,
         storage: storage,

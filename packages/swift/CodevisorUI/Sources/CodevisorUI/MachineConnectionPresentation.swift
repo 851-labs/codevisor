@@ -15,7 +15,6 @@ public enum MachineConnectionPresentation: Equatable {
   case syncing
   case peerToPeer(milliseconds: Int?)
   case relayed(relayURL: String?, milliseconds: Int?)
-  case publicIP(address: String, milliseconds: Int?)
   /// Its Codevisor is too old to take tunnel connections.
   case updateNeeded
   case offline(lastSeen: Date?)
@@ -31,14 +30,12 @@ public enum MachineConnectionPresentation: Equatable {
 
   /// - Parameters:
   ///   - cloud: for a machine reached through Codevisor Cloud.
-  ///   - address: for a machine added by address (`host:port`).
   public init(
     isLocal: Bool = false,
     status: MachineStatus?,
     availability: ServerAvailability?,
     navigationSyncState: NavigationSyncState?,
-    cloud: CloudMachineReach? = nil,
-    address: String? = nil
+    cloud: CloudMachineReach? = nil
   ) {
     let lastSeen = cloud?.lastSeen
     if let cloud, cloud.online, !cloud.hasTunnel, !isLocal {
@@ -73,8 +70,7 @@ public enum MachineConnectionPresentation: Equatable {
         self = .syncing
         return
       }
-      self = Self.connected(
-        isLocal: isLocal, cloud: cloud, address: address, statusMilliseconds: status?.roundTripMilliseconds)
+      self = Self.connected(isLocal: isLocal, cloud: cloud)
     } else if let cloud {
       // Not probed yet: the tunnel's own state decides.
       if cloud.route != nil || cloud.dialing {
@@ -87,24 +83,19 @@ public enum MachineConnectionPresentation: Equatable {
     }
   }
 
-  private static func connected(
-    isLocal: Bool, cloud: CloudMachineReach?, address: String?, statusMilliseconds: Int?
-  ) -> MachineConnectionPresentation {
+  private static func connected(isLocal: Bool, cloud: CloudMachineReach?) -> MachineConnectionPresentation {
     if isLocal { return .thisMac }
-    if let cloud {
-      switch cloud.route {
-      case .peerToPeer(let milliseconds): return .peerToPeer(milliseconds: milliseconds)
-      case .relayed(let url, let milliseconds): return .relayed(relayURL: url, milliseconds: milliseconds)
-      // Reachable but the path isn't measured yet (the first refresh is moments away).
-      case nil: return .peerToPeer(milliseconds: nil)
-      }
+    switch cloud?.route {
+    case .peerToPeer(let milliseconds): return .peerToPeer(milliseconds: milliseconds)
+    case .relayed(let url, let milliseconds): return .relayed(relayURL: url, milliseconds: milliseconds)
+    // Reachable but the path isn't measured yet (the first refresh is moments away).
+    case nil: return .peerToPeer(milliseconds: nil)
     }
-    return .publicIP(address: address ?? "", milliseconds: statusMilliseconds)
   }
 
   public var indicator: Indicator {
     switch self {
-    case .thisMac, .peerToPeer, .relayed, .publicIP: .connected
+    case .thisMac, .peerToPeer, .relayed: .connected
     case .connecting, .waiting, .syncing: .busy
     case .updateNeeded, .offline: .inactive
     }
@@ -120,7 +111,6 @@ public enum MachineConnectionPresentation: Equatable {
     case .syncing: "Syncing…"
     case .peerToPeer(let milliseconds): Self.withRoundTrip("Peer-to-peer", milliseconds)
     case .relayed(_, let milliseconds): Self.withRoundTrip("Relayed", milliseconds)
-    case .publicIP(_, let milliseconds): Self.withRoundTrip("Public IP", milliseconds)
     case .updateNeeded: "Update needed"
     case .offline(let lastSeen): lastSeen.map { "Last seen \(Self.relative($0, now: now))" } ?? "Offline"
     }
@@ -132,7 +122,6 @@ public enum MachineConnectionPresentation: Equatable {
     case .peerToPeer: "Direct encrypted connection"
     case .relayed(let url, _):
       "Through the Codevisor relay\(Self.relayPlace(url).map { " in \($0)" } ?? ""); a direct connection wasn't possible"
-    case .publicIP(let address, _): address.isEmpty ? nil : "Connected to \(address)"
     case .updateNeeded: "Update Codevisor on this machine to connect"
     default: nil
     }

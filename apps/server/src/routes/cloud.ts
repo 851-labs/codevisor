@@ -78,8 +78,17 @@ export const routeCloud = async (
     if (control === undefined) {
       throw new HttpFailure(501, "This server cannot manage its cloud connection")
     }
-    await control.disconnect()
-    writeJson(response, 200, { ok: true })
+    const { removedFromAccount } = await control.disconnect()
+    writeJson(response, 200, {
+      ok: true,
+      removedFromAccount,
+      ...(removedFromAccount
+        ? {}
+        : {
+            warning:
+              "Codevisor Cloud could not be reached, so this machine is still listed on your account. Remove it from the machine list in the Codevisor app."
+          })
+    })
     return true
   }
   throw new HttpFailure(404, "Cloud route not found")

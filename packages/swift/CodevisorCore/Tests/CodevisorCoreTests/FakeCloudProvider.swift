@@ -91,6 +91,15 @@ final class FakeCloudProvider: CloudMachineProviding {
     loopbackRecoveryRequests.append(machine.deviceId)
     return loopbackRecoverySucceeds
   }
+
+  /// The relay client production resolves for a `cloud:` machine, for
+  /// injected client factories that fake only some machines.
+  func relayClient(for machine: CodevisorMachine) -> any CodevisorServerClienting {
+    let deviceId = CodevisorMachine.cloudDeviceId(forMachineId: machine.id)
+    let cloud = cloudMachines.first { $0.deviceId == deviceId }
+    return CodevisorServerClient(
+      config: cloud.flatMap(relayServerConfig) ?? .unreachable(machineId: machine.id))
+  }
 }
 
 @MainActor
@@ -116,6 +125,7 @@ func makeCloudMachine(
 func makeController(
   store: InMemoryStore = InMemoryStore(),
   localServer: (any LocalServerControlling)? = StubLocalServer(),
+  provider: FakeCloudProvider = FakeCloudProvider(),
   clientFactory: MachineController.ClientFactory? = nil
 ) -> (controller: MachineController, projectList: ProjectListModel, provider: FakeCloudProvider) {
   let projectList = ProjectListModel.fixture()
@@ -125,7 +135,33 @@ func makeController(
     localServer: localServer,
     clientFactory: clientFactory
   )
-  let provider = FakeCloudProvider()
   controller.cloudProvider = provider
   return (controller, projectList, provider)
+}
+
+/// An account machine as fixtures use it: the fleet entry the controller
+/// synthesizes for `makeCloudMachine(deviceId:name:)` once `signIn` lists it.
+@MainActor
+func accountMachine(_ deviceId: String, name: String? = nil) -> CodevisorMachine {
+  CodevisorMachine.cloud(from: makeCloudMachine(deviceId: deviceId, name: name ?? deviceId))
+}
+
+/// Signs `controller` in to an account holding `machines` (built with
+/// `accountMachine`), so they join its fleet ready for requests — as the
+/// controller treats injected test transports, which have no connection
+/// lifecycle to await. The controller keeps the returned provider.
+@MainActor
+@discardableResult
+func signIn(_ controller: MachineController, machines: [CodevisorMachine]) -> FakeCloudProvider {
+  let provider = FakeCloudProvider()
+  provider.cloudMachines = machines.compactMap { machine in
+    CodevisorMachine.cloudDeviceId(forMachineId: machine.id).map {
+      makeCloudMachine(deviceId: $0, name: machine.name)
+    }
+  }
+  controller.cloudProvider = provider
+  for machine in machines {
+    controller.markReady(for: machine.id)
+  }
+  return provider
 }

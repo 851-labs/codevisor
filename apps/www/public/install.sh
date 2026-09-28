@@ -287,8 +287,9 @@ UNIT
     note "  sudo loginctl enable-linger $USER"
   fi
 
-  # Onboarding: pick connectivity, issue a token, print the client steps and
-  # deeplink. `curl | sh` leaves stdin as the script, so prompts read /dev/tty.
+  # Onboarding: sign this machine into the user's Codevisor account (device
+  # code, approved in a browser or by scanning the QR code with the iOS app).
+  # `curl | sh` leaves stdin as the script, so setup reads /dev/tty.
   if [ "${CODEVISOR_NO_SETUP:-0}" = "1" ]; then
     note "Finish onboarding later with: codevisor setup"
   elif [ -t 1 ] && [ -r /dev/tty ]; then
@@ -296,9 +297,9 @@ UNIT
     "$bin_dir/codevisor" setup --port "$port" < /dev/tty ||
       note "Finish onboarding with: codevisor setup"
   else
-    say "Connect from the Codevisor app"
+    say "Connect this machine to your Codevisor account"
     note "Finish onboarding on this machine with: codevisor setup"
-    note "(It picks how clients connect and prints a connection token.)"
+    note "(It signs the machine in so it appears in your Codevisor apps.)"
   fi
 }
 

@@ -121,44 +121,6 @@ public struct ServerCloudRegistration: Decodable, Equatable, Sendable {
   }
 }
 
-/// A device on a paired machine's tailnet, from `GET /v1/tailnet/peers`.
-/// Sandboxed clients (iOS) can't enumerate tailnet peers themselves, so a
-/// paired machine's server reports its view and the client probes the peers'
-/// tokenless /v1/discovery manifests from its own side.
-public struct ServerTailnetPeer: Decodable, Equatable, Sendable {
-  public var hostName: String
-  /// MagicDNS name with the trailing dot stripped; preferred over the IP
-  /// because it survives IP reassignment.
-  public var dnsName: String?
-  public var ip: String?
-  public var os: String?
-  public var online: Bool
-
-  public init(hostName: String, dnsName: String? = nil, ip: String? = nil, os: String? = nil, online: Bool) {
-    self.hostName = hostName
-    self.dnsName = dnsName
-    self.ip = ip
-    self.os = os
-    self.online = online
-  }
-
-  /// The address a client should dial: MagicDNS name, else the tailnet IP.
-  public var host: String? {
-    dnsName ?? ip
-  }
-}
-
-public struct ServerTailnetPeers: Decodable, Equatable, Sendable {
-  /// False when Tailscale isn't installed or running on the machine.
-  public var available: Bool
-  public var peers: [ServerTailnetPeer]
-
-  public init(available: Bool, peers: [ServerTailnetPeer]) {
-    self.available = available
-    self.peers = peers
-  }
-}
-
 /// Which release feed a server update check follows. `alpha` sees alpha AND
 /// stable releases (newest wins); `stable` sees stable only. Mirrors the
 /// server's `ServerUpdateChannel`.
@@ -314,27 +276,42 @@ extension CodevisorServerClient {
   }
 
   public func connectCloud(serverURL: URL, sessionToken: String) async throws -> String {
-    struct Body: Encodable {
-      let serverUrl: String
-      let sessionToken: String
-    }
+    try await connectCloud(body: CloudConnectBody(serverUrl: serverURL.absoluteString, sessionToken: sessionToken))
+  }
+
+  public func connectCloud(
+    serverURL: URL,
+    sessionToken: String,
+    managedBy: String,
+    machineName: String?
+  ) async throws -> String {
+    try await connectCloud(
+      body: CloudConnectBody(
+        serverUrl: serverURL.absoluteString,
+        sessionToken: sessionToken,
+        managedBy: managedBy,
+        machineName: machineName
+      )
+    )
+  }
+
+  private struct CloudConnectBody: Encodable {
+    var serverUrl: String
+    var sessionToken: String
+    var managedBy: String?
+    var machineName: String?
+  }
+
+  private func connectCloud(body: CloudConnectBody) async throws -> String {
     struct Response: Decodable {
       let deviceId: String
     }
-    let response: Response = try await send(
-      "/v1/cloud/connect",
-      method: "POST",
-      body: Body(serverUrl: serverURL.absoluteString, sessionToken: sessionToken)
-    )
+    let response: Response = try await send("/v1/cloud/connect", method: "POST", body: body)
     return response.deviceId
   }
 
   public func disconnectCloud() async throws {
     try await sendNoResponse("/v1/cloud/disconnect", method: "POST")
-  }
-
-  public func tailnetPeers() async throws -> ServerTailnetPeers {
-    try await get("/v1/tailnet/peers")
   }
 
   /// `refresh` bypasses the server's update-check cache so a banner shown
@@ -354,10 +331,6 @@ extension CodevisorServerClient {
 
   public func issuePairingToken() async throws -> ServerPairingToken {
     try await send("/v1/auth/pairing-token", method: "POST", body: Optional<EmptyBody>.none)
-  }
-
-  public func connectionToken() async throws -> ServerPairingToken {
-    try await get("/v1/auth/connection-token")
   }
 
   public func capabilities(cwd: String) async throws -> ServerCapabilities {

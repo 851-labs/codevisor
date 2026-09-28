@@ -5,36 +5,14 @@ public struct CodevisorMachine: Identifiable, Sendable, Codable, Equatable {
   public var name: String
   public var baseURL: URL
   public var kind: String
-  /// Bearer token for this machine's server. Nil for the local machine —
-  /// same-machine connections are exempt from the server's token auth.
-  public var token: String?
-  /// The cloud device id this machine's server advertised on a successful
-  /// direct probe (Phase 22). Persisting the link means the machine keeps
-  /// deduplicating against its cloud twin AND keeps a relay fallback route
-  /// across relaunches — exactly when the direct route is down and no
-  /// probe can rediscover the identity.
-  public var cloudDeviceId: String?
-  public init(
-    id: String,
-    name: String,
-    baseURL: URL,
-    kind: String,
-    token: String? = nil,
-    cloudDeviceId: String? = nil
-  ) {
+  public init(id: String, name: String, baseURL: URL, kind: String) {
     self.id = id
     self.name = name
     self.baseURL = baseURL
     self.kind = kind
-    self.token = token
-    self.cloudDeviceId = cloudDeviceId
   }
 
   public var isLocal: Bool { id == Self.local.id }
-  /// `host:port` of a machine reached by address, as the Machines list shows it.
-  public var connectionAddress: String? {
-    baseURL.host().map { host in baseURL.port.map { "\(host):\($0)" } ?? host }
-  }
 
   /// A machine whose record cannot be resolved right now. The identity is the
   /// real server id, so nothing is mistaken for another machine, and the
@@ -52,7 +30,7 @@ public struct CodevisorMachine: Identifiable, Sendable, Codable, Equatable {
   public var isCloud: Bool { id.hasPrefix(Self.cloudIdPrefix) }
 
   public var serverConfig: CodevisorServerConfig {
-    CodevisorServerConfig(baseURL: baseURL, bearerToken: token)
+    CodevisorServerConfig(baseURL: baseURL)
   }
 
   public static let local = CodevisorMachine(

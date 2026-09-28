@@ -14,7 +14,6 @@ import {
   type NativeMcpManagerConfig
 } from "@codevisor/mcp"
 import type { TerminalManagerService } from "@codevisor/terminal"
-import { Effect } from "effect"
 
 import {
   backgroundTerminalSocketPath,
@@ -22,8 +21,7 @@ import {
   wrapBackgroundCommand
 } from "./infra/background-terminal-host.js"
 import { makeCloudServerControl, startCloudBridge } from "./infra/cloud-bridge.js"
-import { postGatewayInvoke, probeDirect } from "./infra/machine-direct.js"
-import { FLEET_ROSTER_NAMESPACE, makeMachineLink, rosterRoutes } from "./infra/machine-link.js"
+import { makeMachineLink } from "./infra/machine-link.js"
 import { machineReleaseChannel } from "./infra/release-channel.js"
 import type { ServerLease } from "./infra/server-lease.js"
 import { makeTerminalPersistence } from "./infra/terminal-persistence.js"
@@ -377,8 +375,8 @@ export const databaseStartupFailure = (error: string): DataUpgradeProgress => ({
 /// The machine network: when this machine is connected to a Codevisor Cloud
 /// account (`codevisor auth login`, or dev auto-provisioning), a presence
 /// connection to the user's hub serving end-to-end encrypted channels; and
-/// the MachineLink over every machine on the account (direct FleetRoster
-/// routes first, then the relay) behind the sandbox's `machines` API.
+/// the MachineLink over every machine on the account (via the relay) behind
+/// the sandbox's `machines` API.
 export const startMachineNetwork = async (options: {
   readonly databasePath: string
   readonly port: number
@@ -421,10 +419,6 @@ export const startMachineNetwork = async (options: {
       machines: cloudControl.machines,
       request: cloudControl.requestGateway
     },
-    roster: async () =>
-      rosterRoutes(await Effect.runPromise(options.db.getSyncEntries(FLEET_ROSTER_NAMESPACE))),
-    direct: postGatewayInvoke,
-    probe: (route) => probeDirect(route),
     now: Date.now
   })
   return { cloudControl, machine, machineLink }

@@ -104,35 +104,6 @@ export const pollDeviceToken = async (
   }
 }
 
-/// One machine already on the account, as the hub reports it. The login
-/// flow uses this to tell a first machine (nothing to sync from) apart
-/// from one joining an existing fleet.
-export interface AccountMachineSummary {
-  deviceId: string
-  name: string
-}
-
-/// The account's registered machines, fetched with the device-flow session
-/// token — available BEFORE this machine provisions itself, so callers can
-/// branch on "first machine" vs "joining a fleet".
-export const listAccountMachines = async (
-  fetchImpl: FetchLike,
-  serverUrl: string,
-  sessionToken: string
-): Promise<AccountMachineSummary[]> => {
-  const response = await fetchImpl(`${serverUrl}/api/machines`, {
-    headers: { authorization: `Bearer ${sessionToken}` }
-  })
-  if (!response.ok) throw new CloudApiError("machine list failed", response.status)
-  const body = (await response.json()) as {
-    machines?: Array<{ deviceId?: string; name?: string }>
-  }
-  return (body.machines ?? []).map((machine) => ({
-    deviceId: machine.deviceId ?? "",
-    name: machine.name ?? ""
-  }))
-}
-
 /// A machine's stored cloud identity: everything needed to reconnect to the
 /// hub across restarts. `secretKey` never leaves the machine.
 export interface MachineCredentials {
@@ -174,6 +145,24 @@ export const provisionMachine = async (
     secretKey: keys.secretKey,
     apiKey: body.key
   }
+}
+
+/// Removes this machine from its account (`codevisor auth logout`): the
+/// cloud revokes the machine's api key and drops it from every app's machine
+/// list. Authenticated by the machine's own api key. Throws CloudApiError on
+/// a refusal — 401 means the key is no longer valid (the machine was already
+/// removed, or the account is gone).
+export const removeMachineFromAccount = async (
+  fetchImpl: FetchLike,
+  credentials: Pick<MachineCredentials, "serverUrl" | "apiKey">,
+  signal?: AbortSignal
+): Promise<void> => {
+  const response = await fetchImpl(`${credentials.serverUrl}/api/machine/self`, {
+    method: "DELETE",
+    headers: { "x-api-key": credentials.apiKey },
+    ...(signal === undefined ? {} : { signal })
+  })
+  if (!response.ok) throw new CloudApiError("machine removal failed", response.status)
 }
 
 export interface CloudInstanceInfo {

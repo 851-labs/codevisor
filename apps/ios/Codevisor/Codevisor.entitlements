@@ -6,6 +6,7 @@
   <array>
     <string>applinks:codevisor.dev</string>
     <string>applinks:www.codevisor.dev</string>
+    <string>applinks:cloud.codevisor.dev</string>
   </array>
   <key>com.apple.developer.applesignin</key>
   <array><string>Default</string></array>

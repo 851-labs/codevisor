@@ -97,21 +97,6 @@ extension MachineController {
     connectionsById[machineId]?.eventSyncTask = nil
   }
 
-  /// Re-homes one machine's live shell stream after its route flips.
-  func rerouteStreams(for machineId: String) {
-    stopEventSync(for: machineId)
-    let client = client(for: machineId)
-    // The sync path owns the blocking state; writing it here too raced
-    // an in-flight sync's terminal write and could strand the spinner.
-    Task { [weak self] in
-      await self?.synchronizeNavigationState(
-        serverId: machineId,
-        client: client,
-        presentation: .catchUp
-      )
-    }
-  }
-
   private func handleSyncEvent(
     _ event: ServerEventEnvelope,
     serverId: String,

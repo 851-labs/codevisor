@@ -119,14 +119,19 @@ export interface CloudServerControl {
   /// bridge). Other machine-identity surfaces prefer it so they agree.
   readonly machineName?: () => string | undefined
   /// Provisions this machine on the account behind sessionToken and starts
-  /// the bridge; resolves to the new cloud device id.
+  /// the bridge; resolves to its cloud device id. Idempotent: concurrent
+  /// calls share one registration, and an already registered machine
+  /// resolves to its existing device id without re-provisioning.
   readonly connect: (
     serverUrl: string,
     sessionToken: string,
     options?: { readonly managedBy?: "app" | "external"; readonly machineName?: string }
   ) => Promise<string>
-  /// Stops the bridge and forgets the stored credential.
-  readonly disconnect: () => Promise<void>
+  /// Removes this machine from its cloud account (best effort), stops the
+  /// bridge, and forgets the stored credential. The local credential is
+  /// always forgotten; `removedFromAccount` is false when the cloud could not
+  /// be reached to drop the machine from the account's machine list.
+  readonly disconnect: () => Promise<{ readonly removedFromAccount: boolean }>
   /// Adopts one server-accepted WebSocket as a direct sealed-channel pipe
   /// (see @codevisor/cloud-client DirectChannelHost). False when no bridge
   /// is running — the caller closes the socket.

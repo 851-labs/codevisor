@@ -30,7 +30,7 @@ extension UpdateCenterTests {
     await center.refresh(force: true)
 
     #expect(fake.harnessCheckScopes == [["claude-code"]])
-    #expect(center.components.filter { $0.kind == .harness }.map(\.id) == ["harness:remote-a:claude-code"])
+    #expect(center.components.filter { $0.kind == .harness }.map(\.id) == ["harness:cloud:remote-a:claude-code"])
   }
 
   @Test("A forced check requested during a plain sweep still asks every feed afresh")

@@ -13,8 +13,6 @@ export function iosDevelopmentBundleIdentifier(repoRoot) {
 export function developmentLayout(repoRoot, environment = process.env) {
   const tmpRoot = join(repoRoot, "tmp")
   const localCodevisorRoot = join(tmpRoot, ".codevisor")
-  const remoteRoot = join(tmpRoot, "remote")
-  const remoteCodevisorRoot = join(remoteRoot, ".codevisor")
   const remoteCloudRoot = join(tmpRoot, "remote-cloud")
   const remoteCloudCodevisorRoot = join(remoteCloudRoot, ".codevisor")
   const buildRoot = join(tmpRoot, "build")
@@ -35,18 +33,6 @@ export function developmentLayout(repoRoot, environment = process.env) {
         environment.CODEVISOR_WORKTREES_ROOT ??
         environment.HERDMAN_WORKTREES_ROOT ??
         join(tmpRoot, "codevisor")
-    },
-    // The direct-connection test server (added by token/deeplink, never in
-    // the dev cloud). Keeps the original tmp/remote roots so existing dev
-    // state carries over.
-    remote: {
-      root: remoteCodevisorRoot,
-      data: join(remoteCodevisorRoot, "data"),
-      logs: join(remoteCodevisorRoot, "logs"),
-      repos: join(remoteCodevisorRoot, "repos"),
-      plugins: join(remoteCodevisorRoot, "plugins"),
-      cache: join(remoteCodevisorRoot, "cache"),
-      worktrees: join(remoteRoot, "codevisor")
     },
     // The cloud test server (signs into the dev cloud; reached through the
     // relay, never added directly).
@@ -104,12 +90,6 @@ export async function ensureDevelopmentDirectories(layout) {
       layout.local.plugins,
       layout.local.cache,
       layout.local.worktrees,
-      layout.remote.data,
-      layout.remote.logs,
-      layout.remote.repos,
-      layout.remote.plugins,
-      layout.remote.cache,
-      layout.remote.worktrees,
       layout.remoteCloud.data,
       layout.remoteCloud.logs,
       layout.remoteCloud.repos,
@@ -151,14 +131,9 @@ export function localDevelopmentEnvironment(layout, environment = process.env) {
   }
 }
 
-// `remote` picks which standalone server's roots to use: layout.remote (the
-// direct-connection server, the default) or layout.remoteCloud (the cloud
-// test server).
-export function remoteDevelopmentEnvironment(
-  layout,
-  environment = process.env,
-  remote = layout.remote
-) {
+// The Dev Cloud test server's own production-shaped roots (layout.remoteCloud).
+export function remoteDevelopmentEnvironment(layout, environment = process.env) {
+  const remote = layout.remoteCloud
   return {
     ...environment,
     TMPDIR: layout.runtime.temp,

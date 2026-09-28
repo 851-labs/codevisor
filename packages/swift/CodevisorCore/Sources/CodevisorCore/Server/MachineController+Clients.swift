@@ -2,9 +2,9 @@ import CodevisorClient
 import Foundation
 
 /// Client and transport routing: how a machine id becomes something the
-/// app can actually talk to — relay-backed for cloud ids and configured
-/// machines in fallback, plain HTTP for active direct routes, and a
-/// loudly-failing client when a cloud id can't be routed yet.
+/// app can actually talk to — relay-backed for cloud ids, plain HTTP for
+/// the local machine, and a loudly-failing client when a cloud id can't be
+/// routed yet.
 extension MachineController {
   public struct HTTPConnectionState: Equatable {
     let directURL: URL?
@@ -14,7 +14,7 @@ extension MachineController {
 
   /// Observed by raw-socket consumers, including cached browser/plugin panes.
   public func httpConnectionState(forMachineId machineId: String) -> HTTPConnectionState {
-    if let cloud = relayMachine(forMachineId: machineId) {
+    if let cloud = cloudMachine(forMachineId: machineId) {
       return HTTPConnectionState(
         directURL: nil, relayDeviceId: cloud.deviceId,
         revision: cloudProvider?.loopbackRevision(for: cloud) ?? 0)
@@ -23,7 +23,7 @@ extension MachineController {
   }
 
   public func recoverHTTPConnection(forMachineId machineId: String) async -> URL? {
-    if let cloud = relayMachine(forMachineId: machineId) {
+    if let cloud = cloudMachine(forMachineId: machineId) {
       guard await cloudProvider?.recoverLoopbackBridge(for: cloud) == true else { return nil }
     }
     return await effectiveHTTPBaseURL(forMachineId: machineId)
@@ -35,10 +35,12 @@ extension MachineController {
   }
 
   public func client(for machineId: String) -> any CodevisorServerClienting {
-    // Cloud machines — including configured machines whose direct route
-    // has failed over to their persisted cloud twin — get a real HTTP
-    // client whose transports tunnel every request/WebSocket through the
-    // account's encrypted relay, so all existing features work unchanged.
+    if let injectedClientFactory, let machine = machine(for: machineId) {
+      return injectedClientFactory(machine)
+    }
+    // Cloud machines get a real HTTP client whose transports tunnel every
+    // request/WebSocket through the account's encrypted relay, so all
+    // existing features work unchanged.
     if let config = relayServerConfig(forMachineId: machineId) {
       return CodevisorServerClient(
         config: config,
@@ -58,27 +60,13 @@ extension MachineController {
     guard let machine = machine(for: machineId) else {
       return CodevisorServerClient(config: .unreachable(machineId: machineId))
     }
-    return clientFactory(machine)
+    return CodevisorServerClient(config: machine.serverConfig, requestGate: requestGate, machineId: machine.id)
   }
 
-  /// The relay config backing a CONFIGURED machine's fallback route, via
-  /// the cloud device id persisted on its record. Nil without a link or a
-  /// signed-in cloud account.
-  func relayFallbackConfig(forConfiguredMachineId machineId: String) -> CodevisorServerConfig? {
-    guard let cloud = configuredCloudMachine(forMachineId: machineId), let cloudProvider
-    else { return nil }
-    return cloudProvider.relayServerConfig(for: cloud)
-  }
-
-  /// The route a machine's traffic is currently using.
-  func routeInUse(forMachineId machineId: String) -> MachineRoute {
-    statusByMachineId[machineId]?.route == .relay ? .relay : .direct
-  }
-
-  /// The server config for a machine id — relay-backed for cloud machines
-  /// and configured machines in fallback, plain for active direct routes.
-  /// Consumers that build their own transports from a config (terminals)
-  /// use this so every feature observes the same selected route.
+  /// The server config for a machine id — relay-backed for cloud machines,
+  /// plain for the local machine. Consumers that build their own transports
+  /// from a config (terminals) use this so every feature observes the same
+  /// route.
   public func serverConfig(for machineId: String) -> CodevisorServerConfig {
     if let config = relayServerConfig(forMachineId: machineId) {
       return config
@@ -87,34 +75,26 @@ extension MachineController {
   }
 
   private func relayServerConfig(forMachineId machineId: String) -> CodevisorServerConfig? {
-    guard let cloud = relayMachine(forMachineId: machineId) else { return nil }
+    guard let cloud = cloudMachine(forMachineId: machineId) else { return nil }
     return cloudProvider?.relayServerConfig(for: cloud)
   }
 
   /// The machine's effective HTTP origin for consumers that must dial a
   /// real socket instead of the in-process relay transports (plugin pane
-  /// webviews, external helper processes): direct machines answer their
-  /// configured baseURL; cloud machines lazily start the in-app loopback
-  /// bridge and answer its `http://127.0.0.1:<port>` address, waiting
-  /// (bounded) for the listener to come up. Configured machines currently
-  /// using their cloud fallback take that same bridge path, so raw-socket
-  /// consumers observe the same active route as API clients. Nil when the
-  /// machine is gone or the relay bridge can't start (signed out, relay
-  /// down).
+  /// webviews, external helper processes): the local machine answers its
+  /// baseURL; cloud machines lazily start the in-app loopback bridge and
+  /// answer its `http://127.0.0.1:<port>` address, waiting (bounded) for the
+  /// listener to come up. Nil when the machine is gone or the relay bridge
+  /// can't start (signed out, relay down).
   public func effectiveHTTPBaseURL(
     forMachineId machineId: String,
     timeout: Duration = .seconds(10),
     scheduler: ServerUpdateScheduler = .continuous
   ) async -> URL? {
-    guard let cloud = relayMachine(forMachineId: machineId) else {
-      // A cloud identity, or a configured machine already marked as
-      // relayed, must never leak back to a stale direct origin when its
-      // bridge is temporarily unavailable.
-      if CodevisorMachine.cloudDeviceId(forMachineId: machineId) != nil
-        || statusByMachineId[machineId]?.route == .relay
-      {
-        return nil
-      }
+    guard let cloud = cloudMachine(forMachineId: machineId) else {
+      // A cloud identity must never leak back to its placeholder origin
+      // when its bridge is temporarily unavailable.
+      if CodevisorMachine.cloudDeviceId(forMachineId: machineId) != nil { return nil }
       return machine(for: machineId)?.baseURL
     }
     guard let cloudProvider else { return nil }
@@ -128,33 +108,11 @@ extension MachineController {
     }
   }
 
-  /// The cloud presence record carrying the machine's active route. A
-  /// `cloud:` id resolves directly; a configured id resolves through its
-  /// persisted twin only after reachability has selected relay fallback.
   /// A screen-sharing media route over the tunnel to a cloud-reached
-  /// machine (docs/plans/codevisor-tunnel.md); nil for direct machines or
+  /// machine (docs/plans/codevisor-tunnel.md); nil for the local machine or
   /// when the machine has no tunnel.
   public func tunnelMediaRoute(forMachineId machineId: String) async -> CloudTunnelMediaRoute? {
-    guard let cloud = relayMachine(forMachineId: machineId) else { return nil }
+    guard let cloud = cloudMachine(forMachineId: machineId) else { return nil }
     return await cloudProvider?.tunnelMediaRoute(for: cloud)
-  }
-
-  private func relayMachine(forMachineId machineId: String) -> CloudMachine? {
-    if let cloud = cloudMachine(forMachineId: machineId) { return cloud }
-    guard statusByMachineId[machineId]?.route == .relay else { return nil }
-    return configuredCloudMachine(forMachineId: machineId)
-  }
-
-  /// The cloud twin persisted on a manually configured machine, independent
-  /// of whether reachability has selected that route yet. Status probing
-  /// uses this to test fallback; active consumers go through
-  /// `relayMachine(forMachineId:)` so direct routes stay direct.
-  private func configuredCloudMachine(forMachineId machineId: String) -> CloudMachine? {
-    guard
-      let deviceId = registry.remoteMachines.first(where: { $0.id == machineId })?
-        .cloudDeviceId,
-      let cloudProvider, cloudProvider.isCloudSignedIn
-    else { return nil }
-    return cloudProvider.cloudMachines.first { $0.deviceId == deviceId }
   }
 }

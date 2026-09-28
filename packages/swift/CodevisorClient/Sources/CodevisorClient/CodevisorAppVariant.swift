@@ -4,16 +4,6 @@ public enum CodevisorAppVariant: Sendable {
   public static let productionPort = 49_361
   public static let developmentPort = 49_362
 
-  /// The URL scheme this build registered (Info.plist CFBundleURLTypes).
-  /// Per-worktree dev builds suffix the scheme with their instance hash, so
-  /// anything that generates a deeplink back to *this* app must use the
-  /// registered value verbatim rather than assuming `codevisor-dev`.
-  public static var registeredURLScheme: String? {
-    (Bundle.main.infoDictionary?["CFBundleURLTypes"] as? [[String: Any]])?
-      .compactMap { ($0["CFBundleURLSchemes"] as? [String])?.first }
-      .first
-  }
-
   private static let stashedEnvironmentKey = "dev.launchEnvironment"
 
   /// A development instance is configured entirely through CODEVISOR_*
@@ -106,51 +96,6 @@ public enum CodevisorAppVariant: Sendable {
 
   public static var enablesSparkleUpdater: Bool {
     !isDevelopment || developmentSparkleFeedURL != nil
-  }
-
-  /// A local standalone server that `bun run dev` starts alongside the app,
-  /// so remote-machine flows can be developed offline. Present only in
-  /// development runs where the dev script provided its details.
-  public struct DevelopmentRemote: Sendable, Equatable {
-    public let host: String
-    public let port: Int
-    public let token: String
-    public let name: String
-
-    /// Value for MachineController.addRemote (which defaults the port).
-    public var hostWithPort: String { "\(host):\(port)" }
-
-    /// A dev-scheme deeplink that adds this machine, for testing the
-    /// deeplink flow by opening it. Uses the scheme this build actually
-    /// registered (per-worktree dev instances suffix it), falling back to
-    /// the plain dev scheme.
-    public var deeplink: String {
-      var components = URLComponents()
-      components.scheme = CodevisorAppVariant.registeredURLScheme ?? "codevisor-dev"
-      components.host = "add-machine"
-      components.queryItems = [
-        URLQueryItem(name: "host", value: host),
-        URLQueryItem(name: "port", value: String(port)),
-        URLQueryItem(name: "token", value: token),
-        URLQueryItem(name: "name", value: name),
-      ]
-      return components.string ?? ""
-    }
-  }
-
-  public static var developmentRemote: DevelopmentRemote? {
-    guard isDevelopment else { return nil }
-    let env = environment
-    guard let host = env["CODEVISOR_DEV_REMOTE_HOST"], !host.isEmpty,
-      let port = env["CODEVISOR_DEV_REMOTE_PORT"].flatMap(Int.init),
-      let token = env["CODEVISOR_DEV_REMOTE_TOKEN"], !token.isEmpty
-    else { return nil }
-    return DevelopmentRemote(
-      host: host,
-      port: port,
-      token: token,
-      name: env["CODEVISOR_DEV_REMOTE_NAME"] ?? "Test Remote"
-    )
   }
 
   /// The cloud dev instance `bun run dev` starts alongside the app, so the

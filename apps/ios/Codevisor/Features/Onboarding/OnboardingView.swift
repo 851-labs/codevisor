@@ -7,8 +7,7 @@ import SwiftUI
 /// signed out leads with Codevisor Cloud sign-in, signed-in-with-no-machines
 /// shows install-and-login instructions (the machine logs itself into the
 /// same account), and signed-in-with-machines is a brief success state before
-/// the cover dismisses itself. A secondary "Set up a machine manually" path
-/// keeps the old QR / tailnet / manual-entry pairing behind a NavigationLink.
+/// the cover dismisses itself. Every machine arrives through the account.
 ///
 /// Layout follows the iOS onboarding convention throughout: the hero glyph,
 /// title, and supporting content sit in the upper/centre of the screen while
@@ -122,9 +121,8 @@ private struct ConsentAndConnectStep: View {
   }
 }
 
-/// The cloud-first connect page. Sign-in is the primary path; the manual QR /
-/// tailnet / add-machine flow lives one tap away behind "Set up a machine
-/// manually" so it never crowds the initial screen.
+/// The connect page: sign in to Codevisor Cloud, then sign each machine in to
+/// the same account.
 private struct ConnectMachineStep: View {
   @Environment(AppEnvironment.self) private var environment
 
@@ -232,9 +230,6 @@ private struct ConnectMachineStep: View {
             Task { await cloud.signInWithDevelopmentAccount() }
           }
         }
-
-        secondaryManualLink
-          .padding(.top, 4)
       }
       .padding(.horizontal, 20)
       .padding(.top, 12)
@@ -292,11 +287,6 @@ private struct ConnectMachineStep: View {
       .padding(.horizontal, 20)
       .padding(.bottom, 24)
     }
-    .safeAreaInset(edge: .bottom) {
-      secondaryManualLink
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-    }
     // Poll while this state is on screen so a machine that logs into the
     // same account shows up without any user action — when it arrives the
     // list becomes non-empty and the flow advances / the cover dismisses.
@@ -328,19 +318,6 @@ private struct ConnectMachineStep: View {
         .padding(.horizontal, 8)
     }
     .padding(.horizontal, 24)
-  }
-
-  private var secondaryManualLink: some View {
-    NavigationLink {
-      ManualSetupView()
-    } label: {
-      Text("Set up a machine manually")
-        .font(.subheadline.weight(.semibold))
-        .foregroundStyle(.tint)
-        .frame(minHeight: 44)
-    }
-    .buttonStyle(.plain)
-    .accessibilityLabel("Set up a machine manually")
   }
 
   private func instructionStep(_ number: Int, text: String, command: String) -> some View {

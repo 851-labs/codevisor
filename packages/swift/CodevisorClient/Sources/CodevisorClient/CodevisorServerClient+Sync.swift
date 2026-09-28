@@ -126,26 +126,6 @@ extension CodevisorServerClient {
   }
 }
 
-/// Whether a machine participates in the config plane at all. Server-
-/// enforced: while disabled, every sync surface on that machine refuses.
-public struct ServerSyncParticipation: Codable, Equatable, Sendable {
-  public var enabled: Bool
-
-  public init(enabled: Bool) {
-    self.enabled = enabled
-  }
-}
-
-extension CodevisorServerClient {
-  public func setSyncParticipation(enabled: Bool) async throws -> ServerSyncParticipation {
-    try await send(
-      "/v1/sync-participation",
-      method: "PUT",
-      body: ServerSyncParticipation(enabled: enabled)
-    )
-  }
-}
-
 /// One machine blocked on itself: a sign-in required before an enable
 /// applies, or no runnable install method. Retried on every pass.
 public struct ServerHarnessSyncBlocked: Codable, Equatable, Sendable {

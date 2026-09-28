@@ -1,8 +1,22 @@
 ---
 title: Authentication
-description: Pair clients with the server and authenticate remote requests.
+description: How machines join your account and how scripts authenticate API requests.
 icon: KeyRound
 ---
+
+## Codevisor apps
+
+Codevisor apps never need a machine token. `codevisor setup` (or `codevisor auth login`) signs the
+machine into your Codevisor account with a device code that you approve in a browser or by scanning
+the printed QR code with the Codevisor iOS app. The machine then appears in every Codevisor app
+signed in to that account, and apps reach it end-to-end encrypted through Codevisor Cloud.
+
+`codevisor auth logout` disconnects the machine and removes it from your account, revoking its
+credential. If Codevisor Cloud cannot be reached at that moment, the machine still forgets its
+local credential and the command tells you to remove it from the machine list in the Codevisor app.
+
+The rest of this page covers the bearer tokens that scripts, automation, and custom clients use to
+call the HTTP API directly.
 
 ## Authentication modes
 
@@ -11,13 +25,13 @@ icon: KeyRound
 from `127.0.0.1`, `::1`, or an IPv4-mapped loopback address.
 
 `GET /v1/health` and `GET /v1/discovery` are tokenless in both modes. The discovery response is
-deliberately minimal so an unpaired client can identify a server without learning projects,
-sessions, extensions, or credentials.
+deliberately minimal so a caller can identify a server without learning projects, sessions,
+extensions, or credentials.
 
 ## Connection token
 
-Each machine has one stable connection token. Setup creates it, and local operators can print or
-rotate it:
+Each machine has one stable connection token for API callers. Local operators can print or rotate
+it:
 
 ```bash
 codevisor token
@@ -26,9 +40,9 @@ codevisor token --rotate
 
 The equivalent endpoints are `GET /v1/auth/connection-token` and
 `POST /v1/auth/connection-token/rotate`. Rotation invalidates the previous connection token, so
-every client using it must pair again.
+every script using it needs the new one.
 
-## Additional pairing tokens
+## Additional tokens
 
 Create a separate bearer credential with:
 
@@ -44,8 +58,8 @@ curl -fsS -X POST http://127.0.0.1:49361/v1/auth/pairing-token
 ```
 
 Remote callers must already be authenticated to issue another token. The server persists only the
-token hash and cannot reveal it later. There is currently no endpoint to revoke one individual
-pairing token; use a distinct server or replace its data store when that separation is required.
+token hash and cannot reveal it later. There is currently no endpoint to revoke one individually
+issued token; use a distinct server or replace its data store when that separation is required.
 
 ## HTTP requests
 

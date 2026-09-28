@@ -141,6 +141,11 @@ public protocol CloudAccountClienting: Sendable {
   func machines(token: String) async throws -> [CloudMachine]
   func rename(deviceId: String, name: String, token: String) async throws
   func removeMachine(deviceId: String, token: String) async throws
+  /// Approves a pending `codevisor auth login` device code on the account:
+  /// claims it (`GET /api/auth/device`), then `POST /api/auth/device/approve`.
+  func approveDevice(userCode: String, token: String) async throws
+  /// Denies a pending device code (claim, then `POST /api/auth/device/deny`).
+  func denyDevice(userCode: String, token: String) async throws
 }
 
 /// Minimal URLSession JSON client for one cloud instance.
@@ -324,6 +329,11 @@ public final class CloudAccountClient: CloudAccountClienting, Sendable {
     }
     guard (200..<300).contains(httpResponse.statusCode) else {
       struct ErrorBody: Decodable { let code: String?; let message: String? }
+      if path.hasPrefix("/api/auth/device"),
+        let error = Self.deviceApprovalError(status: httpResponse.statusCode, body: data)
+      {
+        throw error
+      }
       if path.hasPrefix("/api/auth/"),
         let error = Self.emailAuthError(
           code: (try? JSONDecoder().decode(ErrorBody.self, from: data))?.code, status: httpResponse.statusCode)

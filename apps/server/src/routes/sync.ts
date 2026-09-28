@@ -1,15 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 
-import {
-  PutSyncRequest as PutSyncRequestSchema,
-  SyncParticipation as SyncParticipationSchema
-} from "@codevisor/api"
-import {
-  isValidBlobId,
-  isValidSyncNamespace,
-  latestSyncTimestamp,
-  nextSyncTimestamp
-} from "@codevisor/sync"
+import { PutSyncRequest as PutSyncRequestSchema } from "@codevisor/api"
+import { isValidBlobId, isValidSyncNamespace } from "@codevisor/sync"
 
 import { ACCOUNTS_SYNC_NAMESPACE, publishAccountsRoster } from "../infra/config-sync.js"
 import { MCP_OVERLAYS_NAMESPACE } from "../infra/mcp-fleet.js"
@@ -27,9 +19,7 @@ import {
 } from "../server-context.js"
 import { refreshMcpReadiness } from "./sync-readiness.js"
 import {
-  PARTICIPATION_NAMESPACE,
   publishSyncChanged,
-  readParticipation,
   reconcileForNamespace,
   type SyncReconcileNamespace
 } from "./sync-reconcilers.js"
@@ -73,37 +63,6 @@ export const routeSync = async (
   response: ServerResponse,
   url: URL
 ): Promise<boolean> => {
-  // The machine owner's opt-out: when participation is off, every sync
-  // surface refuses — server-enforced, so no client can gossip past it.
-  // The flag endpoint itself stays reachable (that is how it turns back
-  // on) and lives outside /v1/sync/ so it can never collide with a
-  // namespace.
-  if (url.pathname === "/v1/sync-participation") {
-    if (request.method === "GET") {
-      writeJson(response, 200, { enabled: await readParticipation(services) })
-      return true
-    }
-    if (request.method === "PUT") {
-      const body = await readSchema(request, SyncParticipationSchema)
-      const entries = await run(services.db.getSyncEntries(PARTICIPATION_NAMESPACE))
-      await run(
-        services.db.mergeSyncEntries(PARTICIPATION_NAMESPACE, [
-          {
-            key: "enabled",
-            value: body.enabled,
-            timestamp: nextSyncTimestamp(config.id, latestSyncTimestamp(entries), Date.now())
-          }
-        ])
-      )
-      writeJson(response, 200, { enabled: body.enabled })
-      return true
-    }
-    throw new HttpFailure(405, "Method not allowed")
-  }
-  if (url.pathname.startsWith("/v1/sync/") && !(await readParticipation(services))) {
-    throw new HttpFailure(403, "Sync is disabled on this machine")
-  }
-
   const blobMatch = /^\/v1\/sync\/blobs\/([^/]+)$/.exec(url.pathname)
   if (blobMatch !== null) {
     const blobs = services.syncBlobs

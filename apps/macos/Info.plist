@@ -37,9 +37,8 @@
 	<string>$(CODEVISOR_SENTRY_DSN)</string>
 	<!--
 	  codevisor:// deeplinks (codevisor-dev:// in Debug so the dev app and
-	  the installed production app never race for the same handler). Used by
-	  `codevisor setup` on remote machines to hand the client a ready-made
-	  add-machine link.
+	  the installed production app never race for the same handler): cloud
+	  sign-in handoffs and the web plugin directory's install links.
 	-->
 	<key>CFBundleURLTypes</key>
 	<array>

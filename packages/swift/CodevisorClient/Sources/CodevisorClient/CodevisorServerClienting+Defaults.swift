@@ -22,6 +22,15 @@ public extension CodevisorServerClienting {
     throw CodevisorServerClientError.invalidResponse
   }
 
+  func connectCloud(
+    serverURL _: URL,
+    sessionToken _: String,
+    managedBy _: String,
+    machineName _: String?
+  ) async throws -> String {
+    throw CodevisorServerClientError.invalidResponse
+  }
+
   func disconnectCloud() async throws {}
 
   /// Cached-read stable-channel default so existing call sites keep
@@ -56,12 +65,6 @@ public extension CodevisorServerClienting {
   }
   func putSyncBlob(id: String, bytes: Data) async throws {
     throw CodevisorServerClientError.invalidResponse
-  }
-
-  /// Compatibility fallback for test doubles and pre-tailnet servers: no
-  /// discovery. The HTTP client overrides this with the real request.
-  func tailnetPeers() async throws -> ServerTailnetPeers {
-    ServerTailnetPeers(available: false, peers: [])
   }
 
   /// Compatibility fallback for test doubles and older transports. The HTTP
@@ -550,12 +553,6 @@ public extension CodevisorServerClienting {
     try await createWorktree(projectId: projectId, name: name)
   }
 
-  /// Default for fakes/older servers: fall back to issuing a fresh pairing
-  /// token when the stable connection-token endpoint isn't available.
-  func connectionToken() async throws -> ServerPairingToken {
-    try await issuePairingToken()
-  }
-
   /// Defaults so fakes and older transports keep compiling; the HTTP client
   /// overrides these with the real filesystem and clone endpoints.
   func listDirectory(path: String?, showHidden: Bool) async throws -> ServerFsListing {
@@ -588,10 +585,6 @@ public extension CodevisorServerClienting {
 
   func reconcileCredentialsSync() async throws -> JSONValue {
     throw CodevisorServerClientError.invalidResponse
-  }
-
-  func setSyncParticipation(enabled: Bool) async throws -> ServerSyncParticipation {
-    ServerSyncParticipation(enabled: enabled)
   }
 }
 extension CodevisorServerClienting {

@@ -10,24 +10,15 @@ import CodevisorTestSupport
 @Suite("MachineStatus features")
 struct MachineStatusFeaturesTests {
   private func makeController(fake: SyncFakeServerClient) throws -> (MachineController, CodevisorMachine) {
-    let remote = CodevisorMachine(
-      id: "remote-a",
-      name: "remote-a",
-      baseURL: URL(string: "http://remote-a.test:49361")!,
-      kind: "remote"
-    )
-    let store = InMemoryStore()
-    try store.saveData(
-      JSONEncoder().encode(MachineRegistry(selectedMachineId: "local", remoteMachines: [remote])),
-      forKey: "machines"
-    )
+    let remote = accountMachine("remote-a")
     let controller = MachineController(
-      store: store,
+      store: InMemoryStore(),
       projectList: ProjectListModel.fixture(),
       clientFactory: { machine in
         machine.id == remote.id ? fake : SyncFakeServerClient(projects: [], sessions: [])
       }
     )
+    signIn(controller, machines: [remote])
     return (controller, remote)
   }
 
@@ -69,7 +60,7 @@ struct MachineStatusFeaturesTests {
       clientFactory: { _ in SyncFakeServerClient(projects: [], sessions: []) }
     )
     controller.connection(for: CodevisorMachine.local.id).status = MachineStatus(
-      isReachable: true, label: "Local 1.0.0", route: .direct, serverId: "local",
+      isReachable: true, label: "Local 1.0.0", serverId: "local",
       features: ["screen-sharing-v1"]
     )
 

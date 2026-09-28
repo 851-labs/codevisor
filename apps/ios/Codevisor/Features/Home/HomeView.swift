@@ -73,8 +73,8 @@ struct HomeView: View {
   @State var pendingDraftPromotion: HomeRoute?
   /// Pages pushed within the split detail (a pane's sub-navigation).
   @State var detailPath = NavigationPath()
-  @State var pendingDeeplink: MachineDeeplink?
-  @State var deeplinkError: String?
+  /// A scanned `codevisor auth login` QR code awaiting approval.
+  @State var pendingDeviceApproval: CloudDeviceApprovalRequest?
   /// A codevisor://install-plugin deeplink (the web plugin directory's
   /// "Open in Codevisor" button), staged until the install sheet presents.
   @State var pendingPluginInstall: PendingPluginInstall?
@@ -121,7 +121,7 @@ struct HomeView: View {
     if showsOnboarding.wrappedValue { return "onboarding" }
     if pendingHarnessSignIn != nil { return "harness_sign_in" }
     if pendingPluginInstall != nil { return "plugin_install" }
-    if pendingDeeplink != nil || deeplinkError != nil { return "machine_connection" }
+    if pendingDeviceApproval != nil { return "device_approval" }
     if renamingWorkspace != nil || renamingTab != nil { return "rename" }
     return nil
   }
@@ -145,9 +145,16 @@ struct HomeView: View {
   var showsOnboarding: Binding<Bool> {
     Binding(
       get: {
+        // A pending device approval pins the cover to how it was when the
+        // QR code arrived. Presented over the cover, it keeps the cover up
+        // until the sheet is dismissed (approving usually adds the first
+        // machine, which would otherwise pull the sheet's host out from
+        // under the result); presented over Home, the cover waits so it
+        // can't collide with the open sheet.
+        if let pendingDeviceApproval { return pendingDeviceApproval.presentsOverOnboarding }
         // A cached machine list that hasn't been confirmed yet may still
         // turn out to hold machines; onboarding waits for it.
-        readyForOnboarding && environment.navigationRosterStatus != .unverified
+        return readyForOnboarding && environment.navigationRosterStatus != .unverified
           && !showsSampleSidebar && presentedSettingsDestination == nil
           && (!hasAIDataSharingConsent || (!onboardingDismissed && !hasRemoteMachines))
       },

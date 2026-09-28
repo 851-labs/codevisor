@@ -102,7 +102,7 @@ function TextFeatures() {
     },
     {
       title: "Remote machines",
-      body: "Run the server on a Linux box and pair it with a token. Everything syncs live."
+      body: "Run the server on a Linux box and sign it in. It shows up in all your apps."
     },
     {
       title: "Native",

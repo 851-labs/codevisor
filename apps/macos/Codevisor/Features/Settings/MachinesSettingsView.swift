@@ -1,47 +1,29 @@
 import SwiftUI
-import AppKit
 import CodevisorCore
-import CodevisorCoreMac
-import os
 import CodevisorUI
 
-/// A failed machine action (add/rename/remove), pending display in an alert.
-private struct MachineActionError: Identifiable {
-  let id = UUID()
-  let title: String
-  let message: String
-}
-
-/// Settings ▸ Machines: every Codevisor server this app knows about, as a
-/// flat list — status, actions, and removal all live on the rows. There is
+/// Settings ▸ Machines: this Mac plus every machine on the Codevisor Cloud
+/// account, as a flat list — status and actions live on the rows. There is
 /// no per-machine page and no "connect" affordance: the fleet is always
 /// connected, and which machine the app points at is a routing detail that
-/// follows the chat you open. The cloud account, network discovery, and the
-/// dev remote live here as list sections.
+/// follows the chat you open. Machines join by signing in to the account
+/// (`codevisor auth login`), never by address.
 struct MachinesSettingsView: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.theme) private var theme
   @Environment(\.controlActiveState) private var controlActiveState
 
-  @State private var showingAdd = false
-  @State private var discovery = MachineDiscoveryService()
-  @State private var addingDiscovered: DiscoveredMachine?
-  @State private var renaming: CodevisorMachine?
-  @State private var removing: CodevisorMachine?
-  @State private var tokenNotice: String?
-  @State private var actionError: MachineActionError?
   @State private var renamingCloud: CloudMachine?
   @State private var removingCloud: CloudMachine?
   @State private var trustingKeyCloud: CloudMachine?
 
   private var machines: MachineController { environment.machines }
 
-  /// The polls below run ONLY while this list can actually be seen: the
-  /// Machines section is selected, no machine page is pushed over it, and
-  /// the Settings window is key/active. An unguarded `.task` here kept a
-  /// `tailscale status` subprocess (30s) and a serial per-machine HTTP
-  /// probe (10s) running for the rest of the app's lifetime — even with
-  /// the window closed. `.task(id:)` restarts the loops (with an immediate
+  /// The status poll below runs ONLY while this list can actually be seen:
+  /// the Machines section is selected and the Settings window is
+  /// key/active. An unguarded `.task` here kept a per-machine HTTP probe
+  /// (10s) running for the rest of the app's lifetime — even with the
+  /// window closed. `.task(id:)` restarts the loop (with an immediate
   /// refresh) the moment the list becomes visible again.
   private var isPollingActive: Bool {
     controlActiveState != .inactive
@@ -49,9 +31,8 @@ struct MachinesSettingsView: View {
   }
 
   /// A Bool presentation binding over optional state ("present while
-  /// non-nil"). Extracted from `body`: five of these inlined as closure
-  /// pairs were the heaviest part of the expression the Release
-  /// type-checker gave up on.
+  /// non-nil"), kept out of `body` so the Release type-checker stays within
+  /// its budget.
   private func presenceBinding<Value>(_ state: Binding<Value?>) -> Binding<Bool> {
     Binding(
       get: { state.wrappedValue != nil },
@@ -66,9 +47,8 @@ struct MachinesSettingsView: View {
   private var machinesForm: some View {
     Form {
       Section {
-        // One list for every machine, however it arrives: configured
-        // (local + remote) machines plus cloud-relay machines the
-        // account knows about, deduplicated in the controller.
+        // This Mac plus the cloud account's machines, deduplicated in
+        // the controller (this Mac's own cloud registration is hidden).
         ForEach(machines.allMachines) { machine in
           if machine.isCloud,
             let presence = machines.cloudMachine(forMachineId: machine.id)
@@ -81,52 +61,18 @@ struct MachinesSettingsView: View {
       } header: {
         Text("Machines")
       } footer: {
-        SettingsListActions {
-          Button {
-            showingAdd = true
-          } label: {
-            Label("Add Remote Machine…", systemImage: "plus")
-          }
-          .settingsActionTint(theme)
-        }
-      }
-      // The cloud account (sign-in, self-hosted server) as its own
-      // "Cloud" section.
-      if discovery.isAvailable && !discovery.discovered.isEmpty {
-        Section {
-          ForEach(discovery.discovered) { machine in
-            discoveredRow(machine)
-          }
-        } header: {
-          Text("On Your Network")
-        }
-      }
-      if let devRemote = CodevisorAppVariant.developmentRemote {
-        developmentSection(devRemote)
+        Text(
+          "To add a machine, install Codevisor on it and run `codevisor auth login` to sign in to your Codevisor Cloud account."
+        )
+        .font(.caption)
+        .foregroundStyle(.secondary)
       }
     }
     .settingsPaneFormStyle(theme)
   }
 
-  /// Layer 1 of `body` (split so each expression stays inside the Release
-  /// type-checker's budget; one flat chain provably exceeds it in CI).
-  private var withDiscoveryTasks: some View {
+  var body: some View {
     machinesForm
-      .task(id: isPollingActive) {
-        guard isPollingActive else { return }
-        while !Task.isCancelled {
-          await refreshDiscovery()
-          try? await Task.sleep(for: .seconds(30))
-        }
-      }
-      .onChange(of: machines.allMachines.map(\.id)) { _, _ in
-        Task { await refreshDiscovery() }
-      }
-  }
-
-  /// Layer 2: cloud machine sheets and dialogs.
-  private var withCloudPresentations: some View {
-    withDiscoveryTasks
       .sheet(item: $renamingCloud) { machine in
         RenameCloudMachineSheet(machine: machine) { name in
           Task { await environment.cloud.rename(deviceId: machine.deviceId, name: name) }
@@ -166,69 +112,10 @@ struct MachinesSettingsView: View {
           "“\(machine.name)” is presenting a different encryption key than the one this device remembers. That happens if the machine was re-provisioned — but it can also mean something between you and the machine is intercepting traffic. Only trust the new key if you expected this change."
         )
       }
-  }
-
-  /// Layer 3: add/rename machine sheets.
-  private var withMachineSheets: some View {
-    withCloudPresentations
-      .sheet(item: $addingDiscovered) { machine in
-        RemoteMachineSheet(name: machine.name, host: machine.host) {
-          host, name, token, syncConfig in
-          await addMachine(host: host, name: name, token: token, syncConfig: syncConfig)
-        }
-      }
-      .sheet(isPresented: $showingAdd) {
-        RemoteMachineSheet { host, name, token, syncConfig in
-          await addMachine(host: host, name: name, token: token, syncConfig: syncConfig)
-        }
-      }
-      .sheet(item: $renaming) { machine in
-        RenameMachineSheet(machine: machine) { name in
-          do {
-            try machines.renameMachine(machine.id, to: name)
-          } catch {
-            Log.machines.error("Renaming machine failed: \(String(describing: error), privacy: .public)")
-            actionError = MachineActionError(
-              title: "Couldn't Rename the Machine",
-              message: ErrorReporter.userFacingMessage(for: error)
-            )
-          }
-        }
-      }
-  }
-
-  var body: some View {
-    withMachineSheets
-      .confirmationDialog(
-        "Remove “\(removing?.name ?? "")”?",
-        isPresented: presenceBinding($removing),
-        titleVisibility: .visible,
-        presenting: removing
-      ) { machine in
-        Button("Remove Machine", role: .destructive) {
-          do {
-            try machines.removeMachine(machine.id)
-            // A removed machine may be discoverable again — refetch so
-            // it reappears under "On Your Network" right away.
-            Task { await refreshDiscovery() }
-          } catch {
-            Log.machines.error("Removing machine failed: \(String(describing: error), privacy: .public)")
-            actionError = MachineActionError(
-              title: "Couldn't Remove the Machine",
-              message: ErrorReporter.userFacingMessage(for: error)
-            )
-          }
-        }
-        .settingsActionTint(theme)
-        Button("Cancel", role: .cancel) {}
-          .settingsActionTint(theme)
-      } message: { machine in
-        Text("Codevisor will forget “\(machine.name)”. Nothing on the machine itself is changed.")
-      }
       // Keep statuses honest while the pane is open: a machine that was mid
       // restart (or briefly offline) when first probed recovers on the next
-      // pass instead of staying stuck on "Unreachable". Gated exactly like
-      // discovery above — no probes while nobody is looking.
+      // pass instead of staying stuck on "Unreachable". No probes while
+      // nobody is looking.
       .task(id: isPollingActive) {
         guard isPollingActive else { return }
         while !Task.isCancelled {
@@ -236,179 +123,7 @@ struct MachinesSettingsView: View {
           try? await Task.sleep(for: .seconds(10))
         }
       }
-      .alert(
-        "Connection Token",
-        isPresented: presenceBinding($tokenNotice),
-        presenting: tokenNotice
-      ) { _ in
-        Button("OK") {}
-          .settingsActionTint(theme)
-      } message: { notice in
-        Text(notice)
-      }
-      .alert(
-        actionError?.title ?? "",
-        isPresented: presenceBinding($actionError),
-        presenting: actionError
-      ) { _ in
-        Button("OK") {}
-          .settingsActionTint(theme)
-      } message: { error in
-        Text(error.message)
-      }
   }
-
-  /// Issues a fresh token from this machine's server and puts it on the
-  /// clipboard, for pasting into another device's Add Remote Machine sheet.
-  private func copyConnectionToken() {
-    Task {
-      do {
-        let token = try await machines.issueLocalConnectionToken()
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(token, forType: .string)
-        tokenNotice =
-          "Copied to the clipboard. Paste it into “Add Remote Machine” on the other device to let it connect to this Mac."
-      } catch {
-        tokenNotice = "Couldn't issue a token: the local server isn't running."
-      }
-    }
-  }
-
-  /// One discovery pass that skips every machine already in the list:
-  /// direct machines by address, and machines on the cloud account by their
-  /// reported tunnel addresses and name (older servers don't say in their
-  /// discovery manifest that they're cloud-linked).
-  private func refreshDiscovery() async {
-    let cloudMachines = machines.allMachines.compactMap { machines.cloudMachine(forMachineId: $0.id) }
-    var hosts = Set(machines.machines.compactMap { $0.baseURL.host })
-    for machine in cloudMachines {
-      for address in machine.tunnel?.directAddrs ?? [] {
-        if let host = MachineDiscoveryService.host(fromSocketAddress: address) {
-          hosts.insert(host)
-        }
-      }
-    }
-    await discovery.refresh(
-      registeredHosts: hosts,
-      registeredNames: Set(cloudMachines.map(\.name))
-    )
-  }
-
-  /// Validates and adds a machine, returning an error message for the Add
-  /// dialog to show inline (nil on success). On success it re-runs discovery
-  /// so a just-added network peer drops out of the suggestions immediately.
-  private func addMachine(
-    host: String,
-    name: String?,
-    token: String?,
-    syncConfig: Bool = true
-  ) async -> String? {
-    do {
-      let machine = try await machines.addRemoteValidating(
-        host: host, name: name, token: token, syncConfig: syncConfig)
-      environment.composerDefaults.rememberNewWorkspaceServer(serverId: machine.id)
-      await refreshDiscovery()
-      return nil
-    } catch {
-      Log.machines.error("Adding machine failed: \(String(describing: error), privacy: .public)")
-      if case CodevisorServerClientError.httpStatus(401, _) = error {
-        return
-          "That connection token was rejected by the machine. Check it with `codevisor token` and try again."
-      }
-      return serverErrorMessage(error)
-    }
-  }
-
-  /// Dev-only shortcut: one click adds the standalone "Dev Direct" server
-  /// that `bun run dev` starts (no token entry), plus its connection details
-  /// so the manual add / deeplink flows can be exercised too. The "Dev
-  /// Cloud" server has no entry here on purpose — it arrives through the
-  /// dev cloud account, exercising the relay path.
-  @ViewBuilder
-  private func developmentSection(_ remote: CodevisorAppVariant.DevelopmentRemote) -> some View {
-    Section {
-      debugRow("Host", remote.hostWithPort)
-      debugRow("Token", remote.token)
-      debugRow("Deeplink", remote.deeplink)
-
-      if let existing = developmentMachine(remote) {
-        Button(role: .destructive) {
-          try? machines.removeMachine(existing.id)
-        } label: {
-          Label("Remove \(remote.name)", systemImage: "trash")
-        }
-        .settingsActionTint(theme)
-      } else {
-        Button {
-          Task {
-            _ = await addMachine(host: remote.hostWithPort, name: remote.name, token: remote.token)
-          }
-        } label: {
-          Label("Add \(remote.name)…", systemImage: "bolt.fill")
-        }
-        .settingsActionTint(theme)
-      }
-    } header: {
-      Text("Development")
-    }
-  }
-
-  /// The registered machine matching the dev remote (by host + port), if it
-  /// has been added — so the section can offer Remove instead of Add.
-  private func developmentMachine(_ remote: CodevisorAppVariant.DevelopmentRemote) -> CodevisorMachine? {
-    machines.machines.first { machine in
-      machine.baseURL.host == remote.host
-        && (machine.baseURL.port ?? CodevisorAppVariant.productionPort) == remote.port
-    }
-  }
-
-  /// A monospaced, selectable value with a copy button — for pasting dev
-  /// connection details into the other add flows.
-  private func debugRow(_ label: String, _ value: String) -> some View {
-    HStack(alignment: .firstTextBaseline, spacing: 8) {
-      Text(label)
-        .font(.caption.weight(.medium))
-        .foregroundStyle(.secondary)
-        .frame(width: 64, alignment: .leading)
-      Text(value)
-        .font(.caption.monospaced())
-        .foregroundStyle(.secondary)
-        .textSelection(.enabled)
-        .lineLimit(1)
-        .truncationMode(.middle)
-      Spacer(minLength: 4)
-      Button {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(value, forType: .string)
-      } label: {
-        Image(systemName: "doc.on.doc")
-      }
-      .buttonStyle(.plain)
-      .foregroundStyle(.secondary)
-      .help("Copy \(label)")
-      .accessibilityLabel("Copy \(label)")
-    }
-  }
-
-  private func discoveredRow(_ machine: DiscoveredMachine) -> some View {
-    HStack(spacing: 10) {
-      Image(systemName: machine.os == "linux" ? "server.rack" : "desktopcomputer")
-        .foregroundStyle(.secondary)
-      VStack(alignment: .leading, spacing: 2) {
-        Text(machine.name)
-        Text("\(machine.host) · Codevisor \(machine.version)")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-      }
-      Spacer()
-      Button("Add…") {
-        addingDiscovered = machine
-      }
-      .settingsActionTint(theme)
-    }
-    .padding(.vertical, 2)
-  }
-
 }
 
 // Row/label builders live in a private extension so the struct body stays
@@ -428,6 +143,8 @@ private extension MachinesSettingsView {
     )
   }
 
+  /// This Mac's own row (the embedded machine): its name follows the
+  /// computer name, so there is nothing to rename or remove.
   func machineRow(_ machine: CodevisorMachine) -> some View {
     HStack(spacing: 10) {
       Image(systemName: EntitySystemSymbol.machine(machine))
@@ -446,37 +163,6 @@ private extension MachinesSettingsView {
       }
       Spacer(minLength: 12)
       statusLabel(machine)
-      if machine.isLocal {
-        Menu {
-          Button("Copy Connection Token") { copyConnectionToken() }
-        } label: {
-          Image(systemName: "ellipsis.circle")
-            .foregroundStyle(.secondary)
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .settingsActionTint(theme)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("Machine actions")
-        .accessibilityLabel("Actions for \(machine.name)")
-      } else {
-        Menu {
-          Button("Rename…") { renaming = machine }
-          Divider()
-          Button("Remove…", role: .destructive) { removing = machine }
-        } label: {
-          Image(systemName: "ellipsis.circle")
-            .foregroundStyle(.secondary)
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .settingsActionTint(theme)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("Machine actions")
-        .accessibilityLabel("Actions for \(machine.name)")
-      }
     }
     .accessibilityElement(children: .combine)
   }
@@ -496,8 +182,7 @@ private extension MachinesSettingsView {
       status: machines.statusByMachineId[machine.id],
       availability: machines.availabilityByMachineId[machine.id],
       navigationSyncState: machines.navigationSyncStateByMachineId[machine.id],
-      cloud: presence.map { CloudMachineReach(presence: $0, pipes: environment.cloud.directPaths) },
-      address: machine.isCloud ? nil : machine.connectionAddress
+      cloud: presence.map { CloudMachineReach(presence: $0, pipes: environment.cloud.directPaths) }
     )
   }
 

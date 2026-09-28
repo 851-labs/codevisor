@@ -11,31 +11,20 @@ import CodevisorTestSupport
 @Suite("MachineConnection streams")
 struct MachineConnectionTests {
   private func makeRemote(_ id: String) -> CodevisorMachine {
-    CodevisorMachine(
-      id: id,
-      name: id,
-      baseURL: URL(string: "http://\(id).test:49361")!,
-      kind: "remote"
-    )
+    accountMachine(id)
   }
 
   private func makeController(
     fakes: [String: SyncFakeServerClient],
     remotes: [CodevisorMachine]
   ) throws -> (controller: MachineController, projectList: ProjectListModel) {
-    let store = InMemoryStore()
-    try store.saveData(
-      JSONEncoder().encode(
-        MachineRegistry(selectedMachineId: "local", remoteMachines: remotes)
-      ),
-      forKey: "machines"
-    )
     let projectList = ProjectListModel.fixture()
     let controller = MachineController(
-      store: store,
+      store: InMemoryStore(),
       projectList: projectList,
       clientFactory: { machine in fakes[machine.id] ?? SyncFakeServerClient(projects: [], sessions: []) }
     )
+    signIn(controller, machines: remotes)
     return (controller, projectList)
   }
 

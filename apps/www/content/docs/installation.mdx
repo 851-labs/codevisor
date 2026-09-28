@@ -36,9 +36,10 @@ export PATH="$HOME/.local/bin:$PATH"
 
 The Codevisor app is not available for Intel Macs. On an Intel Mac, the installer explains this and
 asks whether to install the standalone `darwin-x64` server instead. When you confirm, it installs
-and links the server the same way as on Linux, then runs `codevisor setup`. macOS has no systemd, so
-the server runs as a background process that you start with `codevisor start`, including after a
-reboot. Connect to it from the Codevisor app on another machine. Set `CODEVISOR_INSTALL_SERVER=1`
+and links the server the same way as on Linux, then runs `codevisor setup` to sign it into your
+Codevisor account. macOS has no systemd, so the server runs as a background process that you start
+with `codevisor start`, including after a reboot. It appears in the Codevisor app on your other
+machines once signed in. Set `CODEVISOR_INSTALL_SERVER=1`
 to skip the confirmation, for example when no terminal is attached. Homebrew users can instead run
 `brew install 851-labs/tap/codevisor-server`.
 
@@ -50,7 +51,7 @@ to skip the confirmation, for example when no terminal is attached. Homebrew use
 | `CODEVISOR_PORT`             | Listening port                                    | `49361`                                          |
 | `CODEVISOR_DATA_DIR`         | Server database and data dir                      | `~/.codevisor/data`                              |
 | `CODEVISOR_NO_SERVICE=1`     | Skip systemd setup                                | systemd enabled when available                   |
-| `CODEVISOR_NO_SETUP=1`       | Skip interactive onboarding                       | setup runs when a terminal is available          |
+| `CODEVISOR_NO_SETUP=1`       | Skip signing in during installation               | setup runs when a terminal is available          |
 | `CODEVISOR_INSTALL_SERVER=1` | Install the server on an Intel Mac without asking | asks for confirmation                            |
 
 ## Without systemd
@@ -62,7 +63,7 @@ codevisor start
 
 `codevisor start` runs a detached background process when no systemd unit exists. Use
 `codevisor stop`, `codevisor restart`, `codevisor status`, and `codevisor logs --follow` to manage it.
-Run `codevisor setup` after the first start.
+Run `codevisor setup` after the first start to sign the machine into your Codevisor account.
 
 To use another supervisor, run the foreground command and give the service user a persistent home
 directory:

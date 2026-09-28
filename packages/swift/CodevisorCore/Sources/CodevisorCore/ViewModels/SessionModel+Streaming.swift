@@ -49,33 +49,6 @@ extension SessionModel {
     applySynchronization(state)
   }
 
-  /// Re-homes a live session onto a new transport — the same machine over a
-  /// different route (direct ↔ relay). The conversation already applied is
-  /// newer than any snapshot the server could hand back, so nothing is
-  /// reloaded: the dead socket is dropped, its unapplied buffer discarded,
-  /// and a fresh subscription resumes from the last applied cursor. The
-  /// server replays anything after it, so the transcript neither regresses
-  /// nor re-animates.
-  public func adoptTransport(_ transport: ServerSessionTransport) async {
-    stopConnectionRecovery()
-    applySynchronization(.catchingUp)
-    self.transport = transport
-    consumerTask?.cancel()
-    consumerTask = nil
-    scheduledFlushTask?.cancel()
-    scheduledFlushTask = nil
-    isFlushScheduled = false
-    // Events buffered but not yet applied came over the old route and are
-    // not reflected in `serverEventCursor`; the new subscription replays
-    // them. Dropping them here also retires the old consumer generation so
-    // a late yield from the cancelled iterator cannot slip in.
-    pendingEvents.invalidateConsumer()
-    Log.session.notice(
-      "Adopting a new session transport; resuming the event stream from cursor \(String(describing: self.serverEventCursor), privacy: .public)"
-    )
-    await startConsumer()
-  }
-
   private func handleEventStreamFailure(_ error: any Error) async {
     Log.session.error(
       "Session event stream failed; reconciling from server: \(String(describing: error), privacy: .public)"

@@ -42,13 +42,6 @@ public final class MachineConnection {
   /// This machine's live shell-event subscription. Every machine holds its
   /// own; selection changes never touch another machine's stream.
   @ObservationIgnored var eventSyncTask: Task<Void, Never>?
-  /// The last non-nil route this machine was reached over. Route-flip
-  /// detection compares against this, so an unreachable gap between
-  /// probes never masks a direct↔relay change.
-  @ObservationIgnored var lastKnownRoute: MachineRoute?
-  /// A scheduled stream re-home waiting out a route flap; replaced by
-  /// every newer flip so a burst settles into exactly one reroute.
-  @ObservationIgnored var pendingRerouteTask: Task<Void, Never>?
   /// Guards one background connect at a time per machine.
   @ObservationIgnored var backgroundConnectInFlight = false
   /// One startup/connection preparation per machine. This replaces the
@@ -196,9 +189,9 @@ extension MachineController {
     }
   }
 
-  /// Removes everything stored under a configured machine's own cloud
-  /// twin id: its stream, and every project/session/workspace record that
-  /// synced under the duplicate identity.
+  /// Removes everything stored under this Mac's own cloud twin id: its
+  /// stream, and every project/session/workspace record that synced under
+  /// the duplicate identity.
   func pruneCloudTwinRecords(deviceId: String) {
     let twinId = CodevisorMachine.cloudIdPrefix + deviceId
     removeConnection(for: twinId)
@@ -219,7 +212,6 @@ extension MachineController {
         isReachable: true,
         label: CodevisorMachine.local.name,
         cloudDeviceId: deviceId,
-        route: .direct,
         serverId: CodevisorMachine.local.id
       )
     }
@@ -238,7 +230,6 @@ extension MachineController {
       return
     }
     let liveDeviceIds = Set(cloudProvider.cloudMachines.map(\.deviceId))
-      .union(registry.remoteMachines.compactMap(\.cloudDeviceId))
       .union(statusByMachineId.values.compactMap(\.cloudDeviceId))
     let storedServerIds = Set(
       projectList.projects.map(\.serverId) + projectList.sessions.map(\.serverId)
@@ -252,9 +243,9 @@ extension MachineController {
     }
   }
 
-  /// Cloud ids whose device is already served by a configured machine —
-  /// connecting to them would resurrect the duplicate records the prune
-  /// above removes.
+  /// Cloud ids whose device is this Mac, already served by the local
+  /// machine — connecting to them would resurrect the duplicate records the
+  /// prune above removes.
   func isCloudTwinOfConfiguredMachine(_ machineId: String) -> Bool {
     guard let deviceId = CodevisorMachine.cloudDeviceId(forMachineId: machineId) else {
       return false
@@ -336,11 +327,12 @@ extension MachineController {
     machine(for: registry.selectedMachineId) ?? allMachines.first ?? CodevisorMachine.local
   }
 
+  /// The machines configured on this device rather than synthesized from
+  /// the cloud account: only this Mac's embedded machine. Client-only
+  /// platforms (no local server) have none — every machine they reach
+  /// comes from the account.
   public var machines: [CodevisorMachine] {
-    // Client-only platforms (no local server) have no "Local" machine at
-    // all — their fleet is exactly the configured remotes. Only platforms
-    // that actually run a server alongside the app list it.
-    (includesLocalMachine ? [CodevisorMachine.local] : []) + registry.remoteMachines
+    includesLocalMachine ? [CodevisorMachine.local] : []
   }
 
   public func machine(for id: String) -> CodevisorMachine? {
@@ -348,10 +340,10 @@ extension MachineController {
   }
 
   /// Resolves a persisted machine target to the fleet identity the composer
-  /// can actually use. A configured machine's cloud twin disappears from
-  /// `allMachines` after its `/v1/info` probe links the two identities; old
-  /// drafts can still name that hidden twin. Map it back to the configured
-  /// machine instead of silently constructing a client for another target.
+  /// can actually use. This Mac's cloud twin disappears from `allMachines`
+  /// once its identity is linked to the local machine; old drafts can still
+  /// name that hidden twin. Map it back to the local machine instead of
+  /// silently constructing a client for another target.
   public func canonicalComposerMachineId(for id: String) -> String? {
     if machine(for: id) != nil, !isCloudTwinOfConfiguredMachine(id) {
       return id
@@ -400,22 +392,6 @@ extension MachineController {
       let cloudProvider, cloudProvider.isCloudSignedIn
     else { return nil }
     return cloudProvider.cloudMachines.first { $0.deviceId == deviceId }
-  }
-
-  /// This machine's stable connection token (the loopback call is exempt
-  /// from token auth), for pasting into another device's Add Remote Machine
-  /// sheet. Stable across restarts so the copied value keeps working.
-  public func issueLocalConnectionToken() async throws -> String {
-    try await client(for: CodevisorMachine.local.id).connectionToken().token
-  }
-
-  /// Records the onboarding sync choice on the machine itself — the server
-  /// enforces it (see /v1/sync-participation). Fire-and-forget: the flag
-  /// defaults to participating server-side, and an unreachable machine
-  /// simply keeps its current state.
-  public func applySyncParticipation(_ machineId: String, enabled: Bool) {
-    let client = client(for: machineId)
-    Task { _ = try? await client.setSyncParticipation(enabled: enabled) }
   }
 
   // MARK: - Legacy projections

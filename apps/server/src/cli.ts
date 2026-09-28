@@ -26,7 +26,7 @@ import {
   pluginUpdatesCommand,
   type PluginsCliDeps
 } from "./cli/plugins.js"
-import { qrCommand, setupCommand, type SetupDeps } from "./cli/setup.js"
+import { setupCommand, type SetupDeps } from "./cli/setup.js"
 import {
   logsCommand,
   restartCommand,
@@ -37,14 +37,7 @@ import {
   updateCommand,
   type CliDeps
 } from "./cli/support.js"
-import {
-  makeAuthCommand,
-  makeSyncCommand,
-  optionalString,
-  portFlag,
-  runPrompt,
-  syncConfigPrompt
-} from "./cli/wiring.js"
+import { makeAuthCommand, optionalString, portFlag, runPrompt } from "./cli/wiring.js"
 import { resolveDataDir, resolveLogsDir } from "./infra/data-dir.js"
 import { bundledVersion, runServe } from "./serve.js"
 
@@ -208,12 +201,16 @@ const token = Command.make(
   {
     port: portFlag,
     rotate: Flag.boolean("rotate").pipe(
-      Flag.withDescription("Replace the token; previously paired clients must re-pair")
+      Flag.withDescription("Replace the token; scripts using the old one must be updated")
     )
   },
   ({ port, rotate }) =>
     runCli((deps) => tokenCommand(deps, { port: Option.getOrUndefined(port), rotate }))
-).pipe(Command.withDescription("Print this machine's connection token (stable until rotated)"))
+).pipe(
+  Command.withDescription(
+    "Print this machine's API connection token for scripts (stable until rotated)"
+  )
+)
 
 const update = Command.make(
   "update",
@@ -238,53 +235,24 @@ const logs = Command.make(
   ({ follow }) => runCli((deps) => logsCommand(deps, { follow }))
 ).pipe(Command.withDescription("Show server logs (journalctl or the log file)"))
 
-const makeSetupDeps = (): SetupDeps => ({
-  ...makeDeps(),
-  hostname: hostname(),
-  isInteractive: process.stdin.isTTY === true && process.stdout.isTTY === true,
-  prompts: {
-    select: (message, choices) => runPrompt(Prompt.select({ message, choices })),
-    text: (message) => runPrompt(Prompt.text({ message }))
+const makeSetupDeps = (): SetupDeps => {
+  const deps = makeDeps()
+  return {
+    ...deps,
+    isInteractive: process.stdin.isTTY === true && process.stdout.isTTY === true,
+    // The running server saves the credential and connects immediately;
+    // login succeeds only after the relay handshake completes.
+    cloudLogin: (port) => authLoginCommand(deps, { port, machineName: hostname() })
   }
-})
+}
 
 const setup = Command.make("setup", { port: portFlag }, ({ port }) =>
   Effect.promise(async () => {
-    process.exitCode = await setupCommand(makeSetupDeps(), {
-      port: Option.getOrUndefined(port),
-      // The running server saves the credential and connects immediately;
-      // login succeeds only after the relay handshake completes.
-      cloudLogin: async () => {
-        const deps = makeDeps()
-        return authLoginCommand(deps, {
-          port: Option.getOrUndefined(port),
-          machineName: hostname(),
-          promptSyncConfig: syncConfigPrompt
-        })
-      }
-    })
+    process.exitCode = await setupCommand(makeSetupDeps(), { port: Option.getOrUndefined(port) })
   })
 ).pipe(
-  Command.withDescription("Onboard this machine: pick connectivity and issue a connection token")
+  Command.withDescription("Onboard this machine: start the server and sign it into Codevisor Cloud")
 )
-
-const qr = Command.make(
-  "qr",
-  {
-    port: portFlag,
-    host: optionalString(
-      "host",
-      "Address clients should use to reach this machine (defaults to Tailscale detection)"
-    )
-  },
-  ({ port, host }) =>
-    runCli((deps) =>
-      qrCommand(
-        { ...deps, hostname: hostname() },
-        { port: Option.getOrUndefined(port), host: Option.getOrUndefined(host) }
-      )
-    )
-).pipe(Command.withDescription("Print the pairing QR code for the Codevisor phone app"))
 
 /// Plugin commands talk to the running server over the loopback API; the
 /// consent prompt is the only interactive piece.
@@ -434,14 +402,12 @@ const plugin = Command.make("plugin").pipe(
 )
 
 const auth = makeAuthCommand(runCli)
-const sync = makeSyncCommand(runCli)
 
 const root = Command.make("codevisor").pipe(
   Command.withDescription("Control the Codevisor server on this machine"),
   Command.withSubcommands([
     serve,
     setup,
-    qr,
     auth,
     plugin,
     start,
@@ -450,7 +416,6 @@ const root = Command.make("codevisor").pipe(
     status,
     token,
     update,
-    sync,
     logs
   ])
 )

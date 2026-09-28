@@ -6,7 +6,6 @@ import { describe, expect, it, vi } from "vitest"
 import { WebSocket } from "ws"
 
 import { startBootListener } from "./boot-listener.js"
-import { readTailnetPeers } from "./infra/tailnet.js"
 import {
   defaultDatabasePath,
   defaultServerConfig,
@@ -22,10 +21,6 @@ import {
   start,
   startWithApp
 } from "./test-support.js"
-
-// The tailnet route shells out to the machine's Tailscale CLI; mock the
-// reader so the route's two shapes are deterministic on any test machine.
-vi.mock("./infra/tailnet.js", () => ({ readTailnetPeers: vi.fn() }))
 
 const attentionEvent = (subjectId: string, sidebarState: "inProgress" | "idle") => ({
   id: 1,
@@ -237,29 +232,6 @@ describe("@codevisor/server", () => {
     ).rejects.toMatchObject({
       operation: "start",
       message: expect.stringContaining("already has a listener")
-    })
-  })
-
-  it("serves tailnet peers from the mocked tailscale reader", async () => {
-    const { server } = await start()
-
-    vi.mocked(readTailnetPeers).mockResolvedValueOnce(undefined)
-    expect((await jsonRequest(server, "/v1/tailnet/peers")).body).toEqual({
-      available: false,
-      peers: []
-    })
-
-    const peer = {
-      hostName: "studio",
-      dnsName: "studio.tail1234.ts.net",
-      ip: "100.64.0.2",
-      os: "macOS",
-      online: true
-    }
-    vi.mocked(readTailnetPeers).mockResolvedValueOnce([peer])
-    expect((await jsonRequest(server, "/v1/tailnet/peers")).body).toEqual({
-      available: true,
-      peers: [peer]
     })
   })
 

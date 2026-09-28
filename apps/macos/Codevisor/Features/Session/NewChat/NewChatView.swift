@@ -274,15 +274,6 @@ struct NewChatView: View {
       else { return }
       Task { await controller.prepare() }
     }
-    // A route flip (direct ↔ relay) doesn't change the machine set, so
-    // watch it separately: the draft's next send must ride the new route.
-    .onChange(of: routeForDraftMachine) { _, _ in
-      guard let controller else { return }
-      controller.adoptServerClient(
-        environment.machines.client(for: controller.project.serverId),
-        forServer: controller.project.serverId
-      )
-    }
     .focusedSceneValue(
       \.newChatComposerFocus,
       NewChatComposerFocus(

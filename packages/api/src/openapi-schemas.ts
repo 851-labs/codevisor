@@ -96,7 +96,6 @@ import {
   StartOpenCodeAuthRequest,
   StartPiAuthRequest,
   SyncSkillsRequest,
-  TailnetPeersResponse,
   TerminalCreateRequest,
   TerminalCreateResponse,
   TranscriptBodyPage,
@@ -123,7 +122,7 @@ import { GatewayInvokeRequest, GatewayInvokeResponse, MachinesResponse } from ".
 import { MachineMcpState, SetMachineMcpEnabledRequest } from "./mcps.js"
 import { NavigationSnapshot } from "./navigation.js"
 import type { Endpoint } from "./openapi-endpoints.js"
-import { PutSyncRequest, SyncDocument, SyncParticipation } from "./sync.js"
+import { PutSyncRequest, SyncDocument } from "./sync.js"
 
 /// Request and response schemas per endpoint, rendered to JSON Schema for the
 /// OpenAPI document.
@@ -169,7 +168,6 @@ export const requestSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> =
   "POST /v1/plugins/:pluginId/tools/:toolName": InvokePluginToolRequest,
   "POST /v1/plugins/:pluginId/update/apply": ApplyPluginUpdateRequest,
   "PUT /v1/sync/:namespace": PutSyncRequest,
-  "PUT /v1/sync-participation": SyncParticipation,
   "POST /v1/plugins/:pluginId/set-enabled": SetPluginEnabledRequest,
   "POST /v1/clients/:clientId/navigate": ClientNavigationRequest,
   "POST /v1/clients/:clientId/page": ClientPageRequest,
@@ -213,15 +211,12 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
   "GET /v1/health": HealthResponse,
   "GET /v1/discovery": DiscoveryInfo,
   "GET /v1/info": ServerInfo,
-  "GET /v1/tailnet/peers": TailnetPeersResponse,
   "GET /v1/update": UpdateInfo,
   "GET /v1/restart/drain": RestartDrainState,
   "POST /v1/restart/drain": RestartDrainState,
   "DELETE /v1/restart/drain": RestartDrainState,
   "GET /v1/sync/:namespace": SyncDocument,
   "PUT /v1/sync/:namespace": SyncDocument,
-  "GET /v1/sync-participation": SyncParticipation,
-  "PUT /v1/sync-participation": SyncParticipation,
   "GET /v1/capabilities": ServerCapabilities,
   "POST /v1/auth/pairing-token": PairingTokenResponse,
   "GET /v1/auth/connection-token": PairingTokenResponse,

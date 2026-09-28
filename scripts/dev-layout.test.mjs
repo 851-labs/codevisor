@@ -21,8 +21,6 @@ test("development layout mirrors production roots inside tmp", () => {
   assert.equal(layout.local.data, join(root, "tmp/.codevisor/data"))
   assert.equal(layout.local.logs, join(root, "tmp/.codevisor/logs"))
   assert.equal(layout.local.cache, join(root, "tmp/.codevisor/cache"))
-  assert.equal(layout.remote.worktrees, join(root, "tmp/remote/codevisor"))
-  assert.equal(layout.remote.data, join(root, "tmp/remote/.codevisor/data"))
   assert.equal(layout.remoteCloud.worktrees, join(root, "tmp/remote-cloud/codevisor"))
   assert.equal(layout.remoteCloud.data, join(root, "tmp/remote-cloud/.codevisor/data"))
   assert.equal(layout.build.macos.derivedData, join(root, "tmp/build/macos/DerivedData"))
@@ -50,7 +48,7 @@ test("build-only setup does not create runtime state roots", async () => {
     await access(layout.build.bunCache)
     await access(layout.runtime.temp)
     await assert.rejects(access(layout.local.data), { code: "ENOENT" })
-    await assert.rejects(access(layout.remote.data), { code: "ENOENT" })
+    await assert.rejects(access(layout.remoteCloud.data), { code: "ENOENT" })
   } finally {
     await rm(root, { recursive: true, force: true })
   }
@@ -68,11 +66,7 @@ test("development environments point services at their own production-shaped roo
   assert.equal(local.TMPDIR, layout.runtime.temp)
   assert.equal(local.BUN_INSTALL_CACHE_DIR, layout.build.bunCache)
   assert.equal(local.npm_config_devdir, layout.build.nodeGyp)
-  assert.equal(remote.CODEVISOR_DATA_DIR, layout.remote.data)
-  assert.equal(remote.CODEVISOR_WORKTREES_ROOT, layout.remote.worktrees)
+  assert.equal(remote.CODEVISOR_DATA_DIR, layout.remoteCloud.data)
+  assert.equal(remote.CODEVISOR_WORKTREES_ROOT, layout.remoteCloud.worktrees)
   assert.equal(remote.PATH, "/bin")
-
-  const remoteCloud = remoteDevelopmentEnvironment(layout, { PATH: "/bin" }, layout.remoteCloud)
-  assert.equal(remoteCloud.CODEVISOR_DATA_DIR, layout.remoteCloud.data)
-  assert.equal(remoteCloud.CODEVISOR_WORKTREES_ROOT, layout.remoteCloud.worktrees)
 })

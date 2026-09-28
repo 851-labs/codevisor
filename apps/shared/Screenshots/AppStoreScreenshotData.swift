@@ -19,9 +19,10 @@
     static func makeEnvironment() -> AppEnvironment {
       let environment = AppEnvironment.preview(
         seedProjects: [project], seedSessions: [session],
-        seedMachines: [
-          CodevisorMachine(
-            id: machineID, name: "Studio Mac", baseURL: URL(string: "https://screenshots.invalid")!, kind: "remote")
+        seedCloudMachines: [
+          CloudMachine(
+            deviceId: deviceID, name: "Studio Mac", os: "macOS", publicKey: "screenshots", online: true,
+            lastSeenAt: "2027-01-15T08:00:00.000Z")
         ], seedCapabilities: capabilities
       )
       environment.theme.setMode(colorScheme == .dark ? .dark : .light)
@@ -41,7 +42,8 @@
     }
 
     static let projectID = id(1)
-    static let machineID = "screenshot-studio"
+    static let deviceID = "screenshot-studio"
+    static let machineID = CodevisorMachine.cloudIdPrefix + deviceID
     static let sessionID = id(2)
     static let paneID = id(3)
     static let assistantID = id(4)

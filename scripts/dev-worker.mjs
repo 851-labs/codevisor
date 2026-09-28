@@ -15,7 +15,6 @@ import {
 import {
   launchDevRemoteServer,
   prepareDevContainers,
-  readDevRemoteConnectionToken,
   resolveContainerEngine
 } from "./dev-containers.mjs"
 import {
@@ -58,7 +57,7 @@ const reuseMacOSBuild = requestsMacOSBuildReuse(arguments_)
 // also permits explicit reuse of its already-built, signed application).
 const includesIOS = !arguments_.includes("--no-ios")
 const simulator = includesIOS ? await requireIOSSimulator(repoRoot) : undefined
-// Containerized dev remotes are the default: real Linux machines make
+// A containerized dev remote is the default: a real Linux machine makes
 // cross-machine sync honest. --no-containers opts out; a missing engine
 // falls back to same-host processes with a warning either way.
 sanitizeAmbientEnvironment(process.env)
@@ -73,8 +72,6 @@ const {
   dataDirectory,
   derivedDataPath,
   developmentIconColor,
-  directRemoteName,
-  directRemotePort,
   iOSBundleIdentifier,
   instanceHash,
   instanceName,
@@ -114,7 +111,6 @@ console.log(`Codevisor development instance: ${worktreeName}`)
 console.log(`  app:      ${appName}`)
 console.log(`  server:   http://127.0.0.1:${port}`)
 console.log(`  www:      http://localhost:${wwwPort}`)
-console.log(`  direct:   http://127.0.0.1:${directRemotePort}  (${directRemoteName})`)
 console.log(`  viacloud: http://127.0.0.1:${cloudRemotePort}  (${cloudRemoteName})`)
 console.log(`  cloud:    ${cloudUrl}`)
 console.log(`  data:     ${dataDirectory}`)
@@ -139,15 +135,14 @@ const prepareServers = async () => {
   // local D1/DO state written by the workspace version. Failures fall through
   // to prepareCloudSession's "continuing without it" path instead of crashing.
   await applyCloudDevMigrations({ cloudPersistPath, repoRoot, run })
-  // Containerized dev remotes: Dev Direct and Dev Cloud run as
-  // real Linux machines so config-plane sync is tested across genuinely
-  // separate filesystems. Falls back to same-host processes when no engine
+  // Containerized dev remote: Dev Cloud runs as a real Linux machine so
+  // config-plane sync is tested across genuinely separate filesystems. Falls back to same-host processes when no engine
   // is available — never boots a stopped Docker daemon.
   const containerEngine = wantsContainers
     ? await resolveContainerEngine(containerEnginePreference)
     : undefined
   if (wantsContainers && containerEngine === undefined) {
-    console.warn("No usable container engine; dev remotes run as same-host processes.")
+    console.warn("No usable container engine; the dev remote runs as a same-host process.")
   }
   if (containerEngine === undefined) return undefined
   return prepareDevContainers({
@@ -249,14 +244,6 @@ const sharedEnvironment = {
   CODEVISOR_DEV_EXTENSION_ICON_DIR: developmentBrowserIconDirectory,
   CODEVISOR_DEV_PORT: String(port),
   CODEVISOR_DEV_WWW_PORT: String(wwwPort),
-  // The direct dev server's details, so the app can offer a one-click "add
-  // the test remote" in Settings → Machines (the token is filled in once
-  // it's read). The cloud dev server is deliberately absent here — it
-  // arrives through the dev cloud account, exercising the relay path.
-  CODEVISOR_DEV_REMOTE_HOST: "127.0.0.1",
-  CODEVISOR_DEV_REMOTE_PORT: String(directRemotePort),
-  CODEVISOR_DEV_REMOTE_NAME: directRemoteName,
-  CODEVISOR_DEV_REMOTE_TOKEN: "",
   // The local cloud instance (auth + relay). The token is a dev-user session
   // filled in once the cloud is healthy, so clients can sign in without any
   // GitHub OAuth setup.
@@ -316,28 +303,10 @@ const www = spawn(
   { cwd: repoRoot, env: sharedEnvironment, stdio: "inherit" }
 )
 
-// Dev Direct: a standalone server fully isolated from the local instance
-// (its own data dir, worktrees, and managed repos), added by token/deeplink
-// so direct-connection flows mirror talking to a real second machine. It
-// gets NO cloud environment — a direct machine must stay direct.
-const directRemoteEnvironment = {
-  ...remoteDevelopmentEnvironment(layout, process.env),
-  CODEVISOR_DEV_INSTANCE_ID: `${instanceName}-direct`
-}
-delete directRemoteEnvironment.CODEVISOR_DEV_CLOUD_URL
-delete directRemoteEnvironment.CODEVISOR_DEV_CLOUD_TOKEN
-const directRemoteServer = await launchDevRemoteServer({
-  containerContext,
-  repoRoot,
-  remoteRootHost: join(layout.tmpRoot, "remote"),
-  serverRoots: layout.remote,
-  port: directRemotePort,
-  serverName: directRemoteName,
-  environment: directRemoteEnvironment
-})
-
-// Dev Cloud: a second standalone server that signs into the dev cloud and is
-// reached through the relay — the hub's realistic "machine somewhere else".
+// Dev Cloud: a standalone server fully isolated from the local instance (its
+// own data dir, worktrees, and managed repos) that signs into the dev cloud
+// and is reached through the relay — the hub's realistic "machine somewhere
+// else".
 const cloudRemoteServer = await launchDevRemoteServer({
   containerContext,
   repoRoot,
@@ -347,7 +316,7 @@ const cloudRemoteServer = await launchDevRemoteServer({
   serverName: cloudRemoteName,
   directPath: "disabled",
   environment: {
-    ...remoteDevelopmentEnvironment(layout, process.env, layout.remoteCloud),
+    ...remoteDevelopmentEnvironment(layout, process.env),
     CODEVISOR_DEV_INSTANCE_ID: `${instanceName}-cloud`,
     CODEVISOR_DEV_CLOUD_URL: cloudUrl,
     CODEVISOR_DEV_CLOUD_TOKEN: sharedEnvironment.CODEVISOR_DEV_CLOUD_TOKEN,
@@ -372,7 +341,6 @@ const stop = async (exitCode = 0) => {
 
   await shutdownDevServers([
     [port, server],
-    [directRemotePort, directRemoteServer],
     [cloudRemotePort, cloudRemoteServer]
   ])
   process.exitCode = exitCode
@@ -391,7 +359,6 @@ const watchServerExit = (child, label) =>
   })
 const serverExit = Promise.all([
   watchServerExit(server, "Codevisor server"),
-  watchServerExit(directRemoteServer, "Codevisor dev direct server"),
   watchServerExit(cloudRemoteServer, "Codevisor dev cloud server")
 ])
 
@@ -411,9 +378,8 @@ try {
   await waitForHealth(port, server)
   // First container boots install Linux node_modules; allow minutes, not 30s.
   const remoteHealthAttempts = containerContext === undefined ? 120 : 2400
-  await waitForHealth(directRemotePort, directRemoteServer, remoteHealthAttempts)
   await waitForHealth(cloudRemotePort, cloudRemoteServer, remoteHealthAttempts)
-  const remoteToken = await announceDevRemote()
+  console.log(`\n${cloudRemoteName} is ready; it appears after signing into the dev cloud.\n`)
   // The apps sign into the dev cloud the production way (device-code
   // flow against CODEVISOR_DEV_CLOUD_URL); the session token never reaches
   // them, so cloud machines appear on a client only after a real sign-in.
@@ -446,11 +412,6 @@ try {
       worktreeName,
       instanceName,
       developmentIconColor,
-      remoteHost: "127.0.0.1",
-      remotePort: directRemotePort,
-      remoteToken,
-      remoteName: directRemoteName,
-      urlScheme,
       cloudURL: cloudUrl
     })
     console.log("Press Ctrl+C to stop both apps and their shared development services.")
@@ -461,31 +422,4 @@ try {
 } catch (error) {
   console.error(error instanceof Error ? error.message : error)
   await stop(1)
-}
-
-// Print the direct dev server's connection details so it can be added in the
-// app. Its token is stable, so this only needs to be done once per instance.
-async function announceDevRemote() {
-  let token = "(start the server to read it)"
-  try {
-    token = await readDevRemoteConnectionToken(
-      directRemoteServer,
-      `http://127.0.0.1:${directRemotePort}`
-    )
-  } catch {
-    // Non-fatal: the address alone is enough to add the machine.
-  }
-  // Hand the token to the app for the one-click "add test remote" action.
-  sharedEnvironment.CODEVISOR_DEV_REMOTE_TOKEN = token
-  const deeplink = `${urlScheme}://add-machine?host=127.0.0.1&port=${directRemotePort}&token=${token}&name=${encodeURIComponent(directRemoteName)}`
-  console.log("")
-  console.log(`Dev servers ready:`)
-  console.log(`  ${directRemoteName} — direct-connection testing; add it in ${appName}:`)
-  console.log(`    Settings → Machines → Add Remote Machine`)
-  console.log(`    Address: 127.0.0.1:${directRemotePort}`)
-  console.log(`    Token:   ${token}`)
-  console.log(`    Or open: ${deeplink}`)
-  console.log(`  ${cloudRemoteName} — relay testing; appears after signing into the dev cloud.`)
-  console.log("")
-  return token
 }

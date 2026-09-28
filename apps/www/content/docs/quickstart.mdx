@@ -1,6 +1,6 @@
 ---
 title: Quickstart
-description: Install the server, pair a client, and verify the connection.
+description: Install the server, connect it to your account, and verify the connection.
 icon: Rocket
 ---
 
@@ -16,15 +16,25 @@ curl -fsSL https://www.codevisor.dev/install.sh | sh
 The default port is `49361`. A non-root install uses `~/.codevisor`; a root install uses
 `/opt/codevisor` for the runtime and `/root/.codevisor/data` for data. Existing root installations
 migrate their data from `/var/lib/codevisor/data` on the first startup after updating. Explicit
-custom data directories stay in place. In an interactive terminal, the
-installer runs setup after installation. Rerun it at any time:
+custom data directories stay in place.
+
+## Connect the machine to your account
+
+In an interactive terminal, the installer runs setup after installation. Rerun it at any time:
 
 ```bash
 codevisor setup
 ```
 
-Setup starts the server, asks how clients should reach it, and prints a stable connection token,
-deeplink, and QR code. Tailscale is the recommended remote path.
+Setup starts the server and signs the machine into your Codevisor account. It prints an approval
+link, a one-time code, and a QR code. Open the link in a browser signed in to Codevisor and confirm
+the code, or scan the QR code with the Codevisor iOS app to approve from your phone. Once approved,
+the machine appears in every Codevisor app signed in to the same account, and it shares your
+synced configuration (skills, MCP servers, and settings) with your other machines.
+
+`codevisor auth login` runs the same sign-in on its own. Check the connection with
+`codevisor auth status`. `codevisor auth logout` disconnects the machine and removes it from your
+account.
 
 ## Check health locally
 
@@ -33,11 +43,12 @@ curl http://127.0.0.1:49361/v1/health
 ```
 
 Health reports whether the database is ready. `GET /v1/discovery` is also tokenless and returns a
-minimal machine manifest for private-network discovery.
+minimal machine manifest.
 
-## Authenticate a client
+## Call the API from a script
 
-For a client you control, read the machine's stable connection token locally:
+Codevisor apps reach the machine through your account, so they need no token. For your own scripts
+and automation, read the machine's stable connection token locally:
 
 ```bash
 TOKEN=$(codevisor token)
@@ -49,8 +60,6 @@ Treat the returned `hm_…` value as a password. Remote requests send it as a be
 curl http://SERVER_ADDRESS:49361/v1/info \
   -H "Authorization: Bearer $TOKEN"
 ```
-
-You can also enter the machine address and token in Codevisor under **Machines → Add Machine**.
 
 To create a separate credential instead, call `POST /v1/auth/pairing-token` from localhost. The
 server stores only its hash and does not expose that token again.

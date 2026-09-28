@@ -40,12 +40,7 @@ for (const terminationExitCode of [0, 3]) {
       environment: {},
       worktreeName: "test",
       instanceName: "test-instance",
-      developmentIconColor: { hex: "#123456" },
-      remoteHost: "127.0.0.1",
-      remotePort: 50000,
-      remoteToken: "test-token",
-      remoteName: "Test Remote",
-      urlScheme: "codevisor-test"
+      developmentIconColor: { hex: "#123456" }
     }).then(
       () => ({ error: undefined }),
       (error) => ({ error })

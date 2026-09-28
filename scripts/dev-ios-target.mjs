@@ -66,11 +66,6 @@ export async function launchIOSDevelopmentApp({
   worktreeName,
   instanceName,
   developmentIconColor,
-  remoteHost,
-  remotePort,
-  remoteToken,
-  remoteName,
-  urlScheme,
   cloudURL,
   requireSimulator = requireIOSSimulator
 }) {
@@ -89,9 +84,9 @@ export async function launchIOSDevelopmentApp({
   )
 
   // Match CodevisorAppVariant's development-launch contract so simulator icon
-  // relaunches retain the shared remote and cloud coordinates.
-  // Only the cloud URL: the simulator app signs in the production way, so
-  // cloud machines appear there only after a real sign-in.
+  // relaunches retain the dev cloud coordinates. Only the cloud URL: the
+  // simulator app signs in the production way, and every machine (the Dev
+  // Cloud server included) reaches it through that dev cloud account.
   const cloudEnvironment =
     cloudURL === undefined ? {} : { SIMCTL_CHILD_CODEVISOR_DEV_CLOUD_URL: cloudURL }
   await run(
@@ -102,23 +97,21 @@ export async function launchIOSDevelopmentApp({
       SIMCTL_CHILD_TRANSCRIPT_STRESS: environment.TRANSCRIPT_STRESS ?? "0",
       SIMCTL_CHILD_CODEVISOR_DEV_WORKTREE: worktreeName,
       SIMCTL_CHILD_CODEVISOR_DEV_INSTANCE_ID: instanceName,
-      SIMCTL_CHILD_CODEVISOR_DEV_ICON_COLOR: developmentIconColor.hex,
-      SIMCTL_CHILD_CODEVISOR_DEV_REMOTE_HOST: remoteHost,
-      SIMCTL_CHILD_CODEVISOR_DEV_REMOTE_PORT: String(remotePort),
-      SIMCTL_CHILD_CODEVISOR_DEV_REMOTE_TOKEN: remoteToken,
-      SIMCTL_CHILD_CODEVISOR_DEV_REMOTE_NAME: remoteName
+      SIMCTL_CHILD_CODEVISOR_DEV_ICON_COLOR: developmentIconColor.hex
     },
     "xcrun",
     ["simctl", "launch", simulator.udid, bundleIdentifier]
   )
 
   console.log("")
-  console.log(`Codevisor iOS is running on ${simulator.name} against the dev remote:`)
-  console.log(`  Address: ${remoteHost}:${remotePort}`)
-  console.log(`  Token:   ${remoteToken}`)
-  console.log(
-    `  Or open: ${urlScheme}://add-machine?host=${remoteHost}&port=${remotePort}&token=${remoteToken}&name=${encodeURIComponent(remoteName)}`
-  )
+  if (cloudURL === undefined) {
+    console.log(`Codevisor iOS is running on ${simulator.name} without a dev cloud;`)
+    console.log("  no machines are reachable until one is available.")
+  } else {
+    console.log(`Codevisor iOS is running on ${simulator.name} against the dev cloud:`)
+    console.log(`  Cloud: ${cloudURL}`)
+    console.log(`  Sign in with "Use Development Account" to reach the dev machines.`)
+  }
   console.log("")
 }
 

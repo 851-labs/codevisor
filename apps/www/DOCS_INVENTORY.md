@@ -32,8 +32,8 @@ formal stability policy exists, documentation uses these classifications:
 `packages/api/src/openapi.ts` is the allowlist for the generated reference. It
 currently covers these route families:
 
-- Server discovery, health, info, capabilities, updates, shutdown, and tailnet peers
-- Pairing and connection tokens
+- Server discovery, health, info, capabilities, updates, and shutdown
+- API connection tokens and additional bearer tokens
 - Projects, Git branches, worktrees, and filesystem listing
 - Workspaces and panes
 - Harness discovery, accounts, provider authentication, and agent-session discovery

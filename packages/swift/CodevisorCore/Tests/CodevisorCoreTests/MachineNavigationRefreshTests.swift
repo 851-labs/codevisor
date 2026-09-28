@@ -53,7 +53,7 @@ struct MachineNavigationRefreshTests {
     }
     await blocked.wait()
     await clock.waitForSleep(.seconds(5))
-    await awaitObserved { controller.navigationSyncStateByMachineId["healthy"] == .current }
+    await awaitObserved { controller.navigationSyncStateByMachineId["cloud:healthy"] == .current }
     let operation = try #require(controller.connection(for: "local").manualNavigationRefresh?.task)
 
     #expect(healthy.snapshots.value == 1)
@@ -90,7 +90,7 @@ struct MachineNavigationRefreshTests {
     // Returns once the ready machine answers, without the deadline firing.
     await controller.refreshNavigation(sleep: clock.sleep)
     #expect(healthy.snapshots.value == 1)
-    #expect(controller.navigationSyncStateByMachineId["healthy"] == .current)
+    #expect(controller.navigationSyncStateByMachineId["cloud:healthy"] == .current)
     #expect(clock.pendingCount == 0)
 
     // The unreachable machine's retry still started and completes later.
@@ -141,7 +141,7 @@ struct MachineNavigationRefreshTests {
       await clock.waitForSleep(.seconds(5), count: pull)
       await client.snapshots.wait()
       await healthy.snapshots.wait(for: pull)
-      await controller.connection(for: "healthy").manualNavigationRefresh?.task?.value
+      await controller.connection(for: "cloud:healthy").manualNavigationRefresh?.task?.value
       let operation = controller.connection(for: "local").manualNavigationRefresh
       if pull == 1 { firstOperation = operation }
       #expect(operation === firstOperation)
@@ -244,21 +244,14 @@ struct MachineNavigationRefreshTests {
     local: ManualRefreshClient,
     remote: ManualRefreshClient? = nil
   ) throws -> MachineController {
-    let store = InMemoryStore()
-    let remotes: [CodevisorMachine] =
-      remote == nil
-      ? []
-      : [
-        CodevisorMachine(
-          id: "healthy", name: "Healthy", baseURL: URL(string: "http://healthy.test")!, kind: "remote"
-        )
-      ]
-    try store.saveData(JSONEncoder().encode(MachineRegistry(remoteMachines: remotes)), forKey: "machines")
-    return MachineController(
-      store: store,
+    let healthy = accountMachine("healthy", name: "Healthy")
+    let controller = MachineController(
+      store: InMemoryStore(),
       projectList: ProjectListModel.fixture(),
-      clientFactory: { machine in machine.id == "healthy" ? remote! : local }
+      clientFactory: { machine in machine.id == healthy.id ? remote! : local }
     )
+    if remote != nil { signIn(controller, machines: [healthy]) }
+    return controller
   }
 }
 

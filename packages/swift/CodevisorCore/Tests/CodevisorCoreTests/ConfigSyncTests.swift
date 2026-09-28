@@ -11,32 +11,22 @@ import CodevisorTestSupport
 @Suite("ConfigSync")
 struct ConfigSyncTests {
   private func makeRemote(_ id: String) -> CodevisorMachine {
-    CodevisorMachine(
-      id: id,
-      name: id,
-      baseURL: URL(string: "http://\(id).test:49361")!,
-      kind: "remote"
-    )
+    accountMachine(id)
   }
 
   private func makeController(
     fakes: [String: SyncFakeServerClient],
     remotes: [CodevisorMachine]
   ) throws -> MachineController {
-    let store = InMemoryStore()
-    try store.saveData(
-      JSONEncoder().encode(
-        MachineRegistry(selectedMachineId: "local", remoteMachines: remotes)
-      ),
-      forKey: "machines"
-    )
-    return MachineController(
-      store: store,
+    let controller = MachineController(
+      store: InMemoryStore(),
       projectList: ProjectListModel.fixture(),
       clientFactory: { machine in
         fakes[machine.id] ?? SyncFakeServerClient(projects: [], sessions: [])
       }
     )
+    signIn(controller, machines: remotes)
+    return controller
   }
 
   private func waitForSync(_ predicate: () -> Bool) async throws {
@@ -233,26 +223,6 @@ struct ConfigSyncTests {
     controller.stopEventSync()
   }
 
-  @Test("Adding a machine records the onboarding sync choice on it")
-  func addAppliesSyncChoice() async throws {
-    let fake = SyncFakeServerClient(projects: [], sessions: [])
-    let controller = MachineController(
-      store: InMemoryStore(),
-      projectList: ProjectListModel.fixture(),
-      clientFactory: { _ in fake }
-    )
-
-    _ = try await controller.addRemoteValidating(
-      host: "box.test",
-      name: "Box",
-      token: nil,
-      syncConfig: false
-    )
-
-    try await waitForSync { fake.operationLog.contains("sync.participation:false") }
-    controller.stopEventSync()
-  }
-
   @Test("Full sync passes reconcile MCPs and publish rosters per machine")
   func fullPassReconciles() async throws {
     let remote = makeRemote("remote-a")
@@ -298,8 +268,9 @@ struct ConfigSyncTests {
   func harnessReconcileBumpsCatalog() async throws {
     let fake = SyncFakeServerClient(projects: [], sessions: [])
     fake._harnessesSyncApplied = ["opencode"]
-    let controller = try makeController(fakes: ["m1": fake], remotes: [makeRemote("m1")])
-    await controller.refreshStatus(for: "m1")
+    let remote = makeRemote("m1")
+    let controller = try makeController(fakes: [remote.id: fake], remotes: [remote])
+    await controller.refreshStatus(for: remote.id)
     let sync = ConfigSync(machines: controller, store: InMemoryStore())
     var changed: [String] = []
     let catalogChanged = TestSignal()
@@ -312,7 +283,7 @@ struct ConfigSyncTests {
       value: .object(["enabled": .bool(true), "installed": .bool(true)])
     )
     await catalogChanged.wait()
-    #expect(changed.contains("m1"))
+    #expect(changed.contains(remote.id))
   }
 
   @Test("Tombstones remove values and win over older writes")

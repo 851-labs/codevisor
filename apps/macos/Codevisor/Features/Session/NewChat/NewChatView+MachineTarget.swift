@@ -23,12 +23,6 @@ extension NewChatView {
     }
   }
 
-  /// The draft machine's current route — direct or relay — so the
-  /// composer notices a failover that leaves the machine set unchanged.
-  var routeForDraftMachine: MachineRoute? {
-    environment.machines.statusByMachineId[composerServerId]?.route
-  }
-
   var setupIdentity: String {
     let target =
       initialProjectTarget.map {

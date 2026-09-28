@@ -104,7 +104,6 @@ extension AppEnvironment {
     // New skill metadata means some machine is missing the content blob
     // behind it; ferry immediately instead of waiting for the sweep.
     if namespace == "skills" { Task { await configSync.synchronizeSkills() } }
-    if namespace == FleetRoster.namespace { Task { await fleetRoster.applyRoster() } }
     // Fleet-wide harness state moved (enables, accounts, ferried
     // credentials): every machine's picker catalog is now suspect. Mark
     // them all stale — the reconcile-response hook refines per machine
@@ -121,7 +120,6 @@ extension AppEnvironment {
   /// Applies everything the local replica already knows at startup.
   func applyBootSyncState() {
     applySyncedSettings()
-    Task { await fleetRoster.applyRoster() }
   }
 
   public func sessionImporter(for serverId: String) -> SessionImporter {

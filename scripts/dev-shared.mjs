@@ -3,7 +3,6 @@
 // bookkeeping, filesystem probes, and the worktree icon color derivation.
 import { access, readdir } from "node:fs/promises"
 import { createServer } from "node:net"
-import { join } from "node:path"
 
 export function colorFromHash(hash) {
   const hue = Number.parseInt(hash.slice(0, 8), 16) % 360
@@ -77,10 +76,6 @@ export async function directoryIsEmpty(path) {
     if (error?.code === "ENOENT") return true
     throw error
   }
-}
-
-export async function containsAnyPath(root, names) {
-  return (await Promise.all(names.map((name) => pathExists(join(root, name))))).some(Boolean)
 }
 
 export async function waitForHealth(port, child, attempts = 120) {

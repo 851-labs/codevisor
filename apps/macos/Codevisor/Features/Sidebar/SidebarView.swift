@@ -16,7 +16,6 @@ struct SidebarView: View {
   var publishesSceneActions = true
 
   @State private var showingAddProject = false
-  @State private var showingRemoteMachine = false
   @State private var pendingImport: PendingSessionImport?
   @State var renamingWorkspace: Workspace?
   @State var workspaceRenameTitle = ""
@@ -142,34 +141,8 @@ struct SidebarView: View {
         ))
   }
 
-  private var sidebarSheetsView: some View {
-    sidebarAlertsView
-      .modifier(
-        SidebarSheetsModifier(
-          showingRemoteMachine: $showingRemoteMachine,
-          onAddRemoteMachine: { host, name, token, syncConfig in
-            do {
-              let machine = try await environment.machines.addRemoteValidating(
-                host: host, name: name, token: token, syncConfig: syncConfig)
-              environment.composerDefaults.rememberNewWorkspaceServer(
-                serverId: machine.id
-              )
-              selection = .newChat(nil)
-              return nil
-            } catch {
-              Log.machines.error(
-                "Adding remote machine failed: \(String(describing: error), privacy: .public)")
-              if case CodevisorServerClientError.httpStatus(401, _) = error {
-                return "That connection token was rejected by the machine."
-              }
-              return serverErrorMessage(error)
-            }
-          }
-        ))
-  }
-
   private var sidebarConfiguredView: some View {
-    sidebarSheetsView
+    sidebarAlertsView
       // The docked sidebar answers ⇧⌘[ / ⇧⌘] (the drawer copy
       // stays passive so there is exactly one owner of the step).
       .task(id: store.map(ObjectIdentifier.init)) {
@@ -187,7 +160,6 @@ struct SidebarView: View {
           ? SidebarActions(
             newChat: { selection = .newChat(nil) },
             newProject: { startAddProject() },
-            addRemoteMachine: { showingRemoteMachine = true },
             stepTab: { _ = stepSidebarTab($0) }
           )
           : nil

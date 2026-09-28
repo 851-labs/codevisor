@@ -246,9 +246,7 @@ public final class SessionModel {
   /// each prompt so agents know which window asked. Set by the controller.
   @ObservationIgnored public var promptClientId: String?
 
-  /// Replaced in place by `adoptTransport` when the machine's route flips;
-  /// the conversation and its resume cursor survive the swap.
-  var transport: ServerSessionTransport
+  let transport: ServerSessionTransport
   private let sessionId: String
   let now: @Sendable () -> Date
   let stalledTurnQuietInterval: Duration

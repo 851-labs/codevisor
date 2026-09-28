@@ -11,27 +11,15 @@ import CodevisorTestSupport
 @Suite("UpdateCenter")
 struct UpdateCenterTests {
   func makeRemote(_ id: String) -> CodevisorMachine {
-    CodevisorMachine(
-      id: id,
-      name: id,
-      baseURL: URL(string: "http://\(id).test:49361")!,
-      kind: "remote"
-    )
+    accountMachine(id)
   }
 
   func makeController(
     fakes: [String: SyncFakeServerClient],
     remotes: [CodevisorMachine]
   ) throws -> MachineController {
-    let store = InMemoryStore()
-    try store.saveData(
-      JSONEncoder().encode(
-        MachineRegistry(selectedMachineId: "local", remoteMachines: remotes)
-      ),
-      forKey: "machines"
-    )
-    return MachineController(
-      store: store,
+    let controller = MachineController(
+      store: InMemoryStore(),
       projectList: ProjectListModel.fixture(),
       clientFactory: { machine in
         fakes[machine.id] ?? SyncFakeServerClient(projects: [], sessions: [])
@@ -40,6 +28,8 @@ struct UpdateCenterTests {
       updatePollAttempts: 50,
       updateScheduler: AdvancingServerUpdateScheduler().scheduler
     )
+    signIn(controller, machines: remotes)
+    return controller
   }
 
   func makeHarness(updateAvailable: Bool) -> ServerHarness {
@@ -91,9 +81,9 @@ struct UpdateCenterTests {
     let ids = center.components.map(\.id).sorted()
     #expect(
       ids == [
-        "harness:remote-a:claude-code",
-        "plugin:remote-a:notes",
-        "server:remote-a",
+        "harness:cloud:remote-a:claude-code",
+        "plugin:cloud:remote-a:notes",
+        "server:cloud:remote-a",
       ])
     #expect(center.availableCount == 3)
     let server = center.components.first { $0.kind == .server }
@@ -269,7 +259,7 @@ struct UpdateCenterTests {
     )
     let store = InMemoryStore()
     try store.saveData(
-      JSONEncoder().encode(["harness:remote-a:claude-code"]),
+      JSONEncoder().encode(["harness:cloud:remote-a:claude-code"]),
       forKey: "updateCenter.pendingSession"
     )
     let center = UpdateCenter(
@@ -396,7 +386,7 @@ extension UpdateCenterTests {
     await center.refresh()
 
     let groups = center.machineGroups
-    #expect(groups.map(\.id) == ["local", "remote-a"])
+    #expect(groups.map(\.id) == ["local", "cloud:remote-a"])
     // Each machine's Codevisor is the section itself, never one of its rows.
     #expect(groups.first?.isLocal == true)
     #expect(groups.first?.codevisor?.kind == .app)
@@ -468,7 +458,7 @@ extension UpdateCenterTests {
     await center.refresh(force: true)
 
     #expect(controller.connectionsById[remote.id]?.status?.isReachable == true)
-    #expect(center.components.map(\.id).sorted() == ["harness:remote-a:claude-code", "server:remote-a"])
+    #expect(center.components.map(\.id).sorted() == ["harness:cloud:remote-a:claude-code", "server:cloud:remote-a"])
     controller.stopEventSync()
   }
 }

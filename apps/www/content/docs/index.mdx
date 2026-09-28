@@ -1,6 +1,6 @@
 ---
 title: Get started
-description: Install Codevisor and choose how your clients and machines connect.
+description: Install Codevisor and connect your machines to your account.
 icon: Rocket
 ---
 
@@ -14,8 +14,8 @@ to one or more servers. The macOS app includes a local server; Linux installatio
     href="/docs/installation"
   />
   <Card
-    title="Connect a remote machine"
-    description="Run setup, issue a connection token, and pair a client."
+    title="Connect a machine"
+    description="Install the server and sign the machine into your Codevisor account."
     href="/docs/quickstart"
   />
   <Card
@@ -34,6 +34,8 @@ to one or more servers. The macOS app includes a local server; Linux installatio
 
 - A **machine** runs Codevisor Server and the coding-agent CLIs installed on that machine.
 - A **client** connects to one or more machines and presents their projects, sessions, and panes.
+  Every machine signed in to your Codevisor account appears in every client signed in to it, and
+  your machines share synced configuration such as skills, MCP servers, and settings.
 - **Extensions** such as MCP servers, skills, plugins, and custom agents are managed by that server.
 
 If you are integrating your own client, continue with [Codevisor Server](/docs/server) and the

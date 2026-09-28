@@ -87,9 +87,22 @@ export const resolvePort = async (
 
 const baseUrl = (port: number): string => `http://127.0.0.1:${port}`
 
-const isHealthy = async (deps: CliDeps, port: number): Promise<boolean> => {
+/// Something answers on the port — possibly the early listener a booting
+/// (or data-upgrading) server runs, which reports `ok: false` on /v1/health
+/// and refuses every other route with 503.
+const isAnswering = async (deps: CliDeps, port: number): Promise<boolean> => {
   const health = await deps.fetchJson(`${baseUrl(port)}/v1/health`)
   return health !== undefined && health.status === 200
+}
+
+/// The server has finished booting and serves every route.
+const isHealthy = async (deps: CliDeps, port: number): Promise<boolean> => {
+  const health = await deps.fetchJson(`${baseUrl(port)}/v1/health`)
+  return (
+    health !== undefined &&
+    health.status === 200 &&
+    (health.body as { readonly ok?: unknown } | null)?.ok === true
+  )
 }
 
 const waitFor = async (
@@ -157,7 +170,11 @@ export const startCommand = async (
     return 0
   }
 
-  if (await isHealthy(deps, port)) {
+  if (await isAnswering(deps, port)) {
+    if (!(await waitFor(deps, 60, () => isHealthy(deps, port)))) {
+      deps.error(`Server on port ${port} did not finish starting; see ${logFilePath(deps)}`)
+      return 1
+    }
     deps.log(`Codevisor server is already running on port ${port}`)
     return 0
   }
@@ -210,9 +227,9 @@ export const stopCommand = async (deps: CliDeps, options: CommandOptions = {}): 
   }
 
   // No pidfile (or a stale one): fall back to asking a live server politely.
-  if (await isHealthy(deps, port)) {
+  if (await isAnswering(deps, port)) {
     await deps.fetchJson(`${baseUrl(port)}/v1/shutdown`, { method: "POST" })
-    if (!(await waitFor(deps, 20, async () => !(await isHealthy(deps, port))))) {
+    if (!(await waitFor(deps, 20, async () => !(await isAnswering(deps, port))))) {
       deps.error("Server is still answering after the shutdown request")
       return 1
     }
@@ -341,7 +358,7 @@ export const statusCommand = async (
 }
 
 export interface TokenOptions extends CommandOptions {
-  /// Replace the token, retiring the old one (clients must re-pair).
+  /// Replace the token, retiring the old one (its users need the new one).
   readonly rotate?: boolean | undefined
 }
 

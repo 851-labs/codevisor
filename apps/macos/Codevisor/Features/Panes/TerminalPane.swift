@@ -122,9 +122,6 @@ final class TerminalPane: Pane, Identifiable {
         .appendingPathComponent(descriptor.terminalKey)
     )
     request.httpMethod = "DELETE"
-    if let token = machine.token {
-      request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-    }
     do {
       _ = try await URLSession.shared.data(for: request)
     } catch {

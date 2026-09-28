@@ -1,154 +1,21 @@
-/// `codevisor setup` — interactive onboarding for a freshly installed machine.
-/// The recommended path is one question deep: sign into Codevisor Cloud and
-/// the machine appears in the user's apps everywhere, end-to-end encrypted.
-/// Direct pairing (address + connection token + QR/deeplink) is the other
-/// first-class choice — and the fallback when the sign-in dies. Logic lives
-/// behind the same injectable seam as the other CLI commands; the real
-/// prompt implementations are wired in cli.ts.
-import qrcode from "qrcode-terminal"
-
+/// `codevisor setup` — onboarding for a freshly installed machine: start the
+/// server, then sign it into Codevisor Cloud (the `codevisor auth login`
+/// device flow) so it appears in every Codevisor app on the account. Logic
+/// lives behind the same injectable seam as the other CLI commands; the
+/// real login is wired in cli.ts.
 import { readCloudRegistration } from "./cloud-control.js"
-import {
-  DEFAULT_PORT,
-  resolvePort,
-  startCommand,
-  type CliDeps,
-  type CommandOptions
-} from "./support.js"
-
-export interface SelectChoice<A> {
-  readonly title: string
-  readonly value: A
-  readonly description?: string
-}
-
-export interface SetupPrompts {
-  readonly select: <A>(message: string, choices: ReadonlyArray<SelectChoice<A>>) => Promise<A>
-  readonly text: (message: string) => Promise<string>
-}
+import { resolvePort, startCommand, type CliDeps, type CommandOptions } from "./support.js"
 
 export interface SetupDeps extends CliDeps {
-  readonly hostname: string
   readonly isInteractive: boolean
-  readonly prompts: SetupPrompts
-}
-
-export interface TailscaleInfo {
-  readonly ip: string
-  readonly dnsName?: string
-}
-
-/// Machine-side Tailscale probe: the CLI on PATH covers Linux and the
-/// open-source macOS install; the app-bundle binary covers the GUI installs.
-export const detectTailscale = async (deps: CliDeps): Promise<TailscaleInfo | undefined> => {
-  for (const binary of ["tailscale", "/Applications/Tailscale.app/Contents/MacOS/Tailscale"]) {
-    const result = await deps.exec(binary, ["status", "--json"])
-    if (result.code !== 0) continue
-    try {
-      const status = JSON.parse(result.stdout) as {
-        readonly Self?: { readonly TailscaleIPs?: unknown; readonly DNSName?: unknown }
-      }
-      const ips = status.Self?.TailscaleIPs
-      const ip = Array.isArray(ips) ? ips.find((value) => typeof value === "string") : undefined
-      if (typeof ip === "string" && ip.length > 0) {
-        const dnsName =
-          typeof status.Self?.DNSName === "string" && status.Self.DNSName.length > 0
-            ? status.Self.DNSName.replace(/\.$/, "")
-            : undefined
-        return { ip, ...(dnsName === undefined ? {} : { dnsName }) }
-      }
-    } catch {
-      // Unparseable status output; try the next binary.
-    }
-  }
-  return undefined
-}
-
-export const detectPublicIp = async (deps: CliDeps): Promise<string | undefined> => {
-  const response = await deps.fetchJson("https://api.ipify.org?format=json")
-  const ip = (response?.body as { readonly ip?: string } | undefined)?.ip
-  return typeof ip === "string" && ip.length > 0 ? ip : undefined
-}
-
-export interface DeeplinkParams {
-  readonly host: string
-  readonly port: number
-  readonly token: string
-  readonly name: string
-}
-
-export const addMachineDeeplink = (params: DeeplinkParams): string => {
-  const query = new URLSearchParams({
-    host: params.host,
-    port: String(params.port),
-    token: params.token,
-    name: params.name
-  })
-  return `codevisor://add-machine?${query.toString()}`
-}
-
-type Connectivity = "tailscale" | "public" | "custom"
-
-const chooseHost = async (
-  deps: SetupDeps,
-  port: number
-): Promise<{ readonly host: string; readonly firewallNote: boolean } | undefined> => {
-  const tailscale = await detectTailscale(deps)
-  if (tailscale === undefined) {
-    deps.log("Tip: Tailscale is the recommended way to reach this machine securely.")
-    deps.log("     Install it on this machine and your Mac (https://tailscale.com/download),")
-    deps.log("     then re-run: codevisor setup")
-    deps.log("")
-  }
-  const choices: Array<SelectChoice<Connectivity>> = [
-    ...(tailscale === undefined
-      ? []
-      : [
-          {
-            title: "Tailscale (recommended)",
-            value: "tailscale" as const,
-            description: `Private tailnet connection via ${tailscale.dnsName ?? tailscale.ip}`
-          }
-        ]),
-    {
-      title: "Public IP",
-      value: "public",
-      description: `Direct connection; you must allow TCP ${port} through this machine's firewall`
-    },
-    {
-      title: "Other (VPN or custom address)",
-      value: "custom",
-      description: "Enter the address clients should use to reach this machine"
-    }
-  ]
-  const choice = await deps.prompts.select<Connectivity>(
-    "How should clients connect to this machine?",
-    choices
-  )
-  if (choice === "tailscale" && tailscale !== undefined) {
-    return { host: tailscale.dnsName ?? tailscale.ip, firewallNote: false }
-  }
-  if (choice === "public") {
-    const detected = await detectPublicIp(deps)
-    if (detected !== undefined) return { host: detected, firewallNote: true }
-    deps.log("Could not detect this machine's public IP automatically.")
-    const entered = await deps.prompts.text("Public IP or hostname for this machine")
-    return entered.trim().length === 0 ? undefined : { host: entered.trim(), firewallNote: true }
-  }
-  const entered = await deps.prompts.text("Address clients should use (IP or hostname)")
-  return entered.trim().length === 0 ? undefined : { host: entered.trim(), firewallNote: false }
-}
-
-export interface SetupOptions extends CommandOptions {
-  /// Runs the cloud device-code login and verifies the server's relay
-  /// connection. Wired by cli.ts; when absent — tests, programmatic use — the
-  /// connect choice is skipped and setup goes straight to direct pairing.
-  readonly cloudLogin?: () => Promise<number>
+  /// Runs the cloud device-code login against the server on `port` and
+  /// verifies its relay connection; resolves to an exit code.
+  readonly cloudLogin: (port: number) => Promise<number>
 }
 
 export const setupCommand = async (
   deps: SetupDeps,
-  options: SetupOptions = {}
+  options: CommandOptions = {}
 ): Promise<number> => {
   if (deps.env["CODEVISOR_NO_SETUP"] === "1") {
     deps.log("Skipping setup (CODEVISOR_NO_SETUP=1). Run later with: codevisor setup")
@@ -164,136 +31,22 @@ export const setupCommand = async (
   if (started !== 0) return started
   const port = await resolvePort(deps, options.port)
 
-  // The connect choice. Cloud is the recommended one-step path; a machine
-  // already signed in (or a run without the login wiring) goes straight to
-  // direct pairing. A failed sign-in falls back to direct pairing so setup
-  // never ends empty-handed.
-  if (
-    options.cloudLogin !== undefined &&
-    (await readCloudRegistration(deps, port))?.deviceId === undefined
-  ) {
-    const choice = await deps.prompts.select<"cloud" | "direct">(
-      "How do you want to connect this machine to your Codevisor apps?",
-      [
-        {
-          title: "Codevisor Cloud (recommended)",
-          value: "cloud",
-          description:
-            "Sign in once — this machine appears in your apps everywhere, end-to-end encrypted"
-        },
-        {
-          title: "Direct connection",
-          value: "direct",
-          description:
-            "Pair manually with an address and connection token (LAN, Tailscale, self-hosted)"
-        }
-      ]
+  const registration = await readCloudRegistration(deps, port)
+  if (registration?.deviceId !== undefined) {
+    deps.log(
+      `✓ This machine is already connected to your ${registration.serverUrl ?? "Codevisor Cloud"} account.`
     )
-    if (choice === "cloud") {
-      if ((await options.cloudLogin()) === 0) {
-        deps.log("")
-        deps.log("✓ This machine is connected to your cloud account.")
-        deps.log("It appears in your Codevisor apps — you're done.")
-        deps.log("To add a direct (LAN or tailnet) route too, re-run: codevisor setup")
-        return 0
-      }
-      deps.error("Cloud sign-in didn't finish; continuing with direct pairing.")
-      deps.error("Connect to cloud any time with: codevisor auth login")
-    }
+    deps.log("Check its connection any time with: codevisor auth status")
+    return 0
   }
 
-  const connection = await chooseHost(deps, port)
-  if (connection === undefined) {
-    deps.error("No address entered; re-run codevisor setup to finish onboarding.")
+  if ((await deps.cloudLogin(port)) !== 0) {
+    deps.error("Setup didn't finish: this machine is not connected to your account yet.")
+    deps.error("Retry with: codevisor auth login")
     return 1
   }
-
-  const response = await deps.fetchJson(`http://127.0.0.1:${port}/v1/auth/connection-token`)
-  const token = (response?.body as { readonly token?: string } | undefined)?.token
-  if (response === undefined || response.status !== 200 || token === undefined) {
-    deps.error("Could not issue a connection token; is the server healthy? (codevisor status)")
-    return 1
-  }
-
-  const name = deps.hostname
-  const host = port === DEFAULT_PORT ? connection.host : `${connection.host}:${port}`
   deps.log("")
-  deps.log("This machine is ready for Codevisor.")
-  deps.log("")
-  deps.log(`  Name               ${name}`)
-  deps.log(`  Host               ${host}`)
-  deps.log(`  Connection token   ${token}`)
-  deps.log("")
-  if (connection.firewallNote) {
-    deps.log(`Firewall: allow inbound TCP ${port} on this machine`)
-    deps.log(`  e.g. sudo ufw allow ${port}/tcp`)
-    deps.log("")
-  }
-  const deeplink = addMachineDeeplink({ host: connection.host, port, token, name })
-  deps.log("Connect from Codevisor on your phone:")
-  deps.log("  Scan this QR code with the camera — the app pairs automatically.")
-  deps.log("")
-  for (const line of renderQr(deeplink)) {
-    deps.log(`  ${line}`)
-  }
-  deps.log("")
-  deps.log("Connect from Codevisor on your Mac:")
-  deps.log("  1. Open Settings → Machines → Add Remote Machine")
-  deps.log("  2. Enter the Name, Host, and Connection token shown above")
-  deps.log("")
-  deps.log("Or open this link on your Mac to add the machine automatically:")
-  deps.log(`  ${deeplink}`)
-  deps.log("")
-  deps.log("Keep the token private — anyone with it can run agents on this machine.")
-  return 0
-}
-
-/// The pairing deeplink as terminal half-block QR lines. qrcode-terminal's
-/// generate callback is synchronous; the capture keeps our injectable
-/// line-logger seam instead of printing straight to stdout.
-export const renderQr = (text: string): string[] => {
-  let output = ""
-  qrcode.generate(text, { small: true }, (qr) => {
-    output = qr
-  })
-  return output.split("\n")
-}
-
-export interface QrDeps extends CliDeps {
-  readonly hostname: string
-}
-
-export interface QrOptions extends CommandOptions {
-  readonly host?: string | undefined
-}
-
-/// `codevisor qr` — reprint the pairing QR without rerunning the interactive
-/// setup flow. Non-interactive: the address comes from `--host` or Tailscale
-/// detection, and the token from the already-running server.
-export const qrCommand = async (deps: QrDeps, options: QrOptions = {}): Promise<number> => {
-  const port = await resolvePort(deps, options.port)
-  const response = await deps.fetchJson(`http://127.0.0.1:${port}/v1/auth/connection-token`)
-  const token = (response?.body as { readonly token?: string } | undefined)?.token
-  if (response === undefined || response.status !== 200 || token === undefined) {
-    deps.error("Could not read the connection token; is the server running? (codevisor status)")
-    return 1
-  }
-  const host = options.host ?? (await detectTailscale(deps).then((t) => t?.dnsName ?? t?.ip))
-  if (host === undefined || host.length === 0) {
-    deps.error("Could not determine this machine's address (no Tailscale detected).")
-    deps.error("Pass one explicitly: codevisor qr --host <ip-or-hostname>")
-    return 1
-  }
-  const deeplink = addMachineDeeplink({ host, port, token, name: deps.hostname })
-  deps.log("")
-  deps.log("Scan with your phone's camera to pair Codevisor:")
-  deps.log("")
-  for (const line of renderQr(deeplink)) {
-    deps.log(`  ${line}`)
-  }
-  deps.log("")
-  deps.log(`  ${deeplink}`)
-  deps.log("")
-  deps.log("Keep it private — anyone who scans it can run agents on this machine.")
+  deps.log("✓ Setup complete. This machine appears in every Codevisor app signed in to")
+  deps.log("  your account.")
   return 0
 }

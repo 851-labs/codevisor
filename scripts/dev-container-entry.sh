@@ -1,5 +1,5 @@
 #!/bin/sh
-# In-container bootstrap for the dev remote servers (Dev Direct / Dev Cloud).
+# In-container bootstrap for the Dev Cloud remote server.
 #
 # Runs inside a stock node image with bind mounts from the worktree's
 # ignored tmp/:
@@ -87,8 +87,8 @@ fi
 flock -u 9
 
 # One-shot provisioning mode: the runner boots this once (and waits)
-# before starting the two server containers, because they share this
-# state and cross-VM file locks cannot serialize their first boots.
+# before starting any server container, because they share this state
+# and cross-VM file locks cannot serialize their first boots.
 if [ "${1:-}" = "--provision-only" ]; then
   echo "[container] provisioning complete"
   exit 0

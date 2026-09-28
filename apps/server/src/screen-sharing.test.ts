@@ -64,7 +64,7 @@ const cloudControl = (bridge?: CloudServerControl["bridgeTunnelMedia"]): CloudSe
   state: () => "connected",
   managedBy: () => "external",
   connect: async () => "machine-1",
-  disconnect: async () => undefined,
+  disconnect: async () => ({ removedFromAccount: true }),
   ...(bridge === undefined ? {} : { bridgeTunnelMedia: bridge })
 })
 
