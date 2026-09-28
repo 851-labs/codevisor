@@ -19,6 +19,7 @@ import {
   deleteOwnedSimulator,
   reapOrphanedSimulators
 } from "./ios-simulator-state.mjs"
+import { ensureXcodeDerivedDataSettings } from "./xcode-derived-data.mjs"
 import { openOwnedXcodeWindow } from "./xcode-window.mjs"
 
 const exec = promisify(execFile)
@@ -95,6 +96,8 @@ try {
   check()
   const { stdout } = await exec("xcode-select", ["-p"])
   const developer = stdout.trim()
+  // Covers worktrees created before the post-checkout hook wrote this.
+  await ensureXcodeDerivedDataSettings(repoRoot)
   xcodeWindow = await openOwnedXcodeWindow(
     join(repoRoot, "apps/ios/Codevisor.xcodeproj"),
     await realpath(join(developer, "../.."))
