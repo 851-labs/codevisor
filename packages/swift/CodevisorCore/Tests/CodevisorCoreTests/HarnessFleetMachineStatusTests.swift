@@ -22,11 +22,20 @@ struct HarnessFleetMachineStatusTests {
     "Every reported state maps to one row status; unknown states read as still syncing",
     arguments: [
       ("ready", Status.ready), ("installing", .installing), ("uninstalling", .removing),
-      ("signInRequired", .signInRequired), ("notInstalled", .waiting), ("disabled", .off),
+      ("signInRequired", .signInFailed(reason: "Package manager unavailable")), ("notInstalled", .waiting),
+      ("disabled", .off),
       ("blocked", .blocked(reason: "Package manager unavailable")), ("someday", .syncing),
     ])
   func mapsServerStates(state: String, expected: Status) {
     #expect(HarnessFleet.machineStatus(state: state, reason: "Package manager unavailable") == expected)
+  }
+
+  @Test("Sign-in required only carries a failure when the machine explained one")
+  func signInFailure() {
+    #expect(HarnessFleet.machineStatus(state: "signInRequired", reason: nil) == .signInRequired)
+    #expect(HarnessFleet.machineStatus(state: "signInRequired", reason: "") == .signInRequired)
+    let failed = HarnessFleet.machineStatus(state: "signInRequired", reason: "keychain locked")
+    #expect(failed.rowStatus.reason == "keychain locked")
   }
 
   @Test("A blocked report without a reason still has something to show")
@@ -38,7 +47,7 @@ struct HarnessFleetMachineStatusTests {
 
   @Test("A machine either needs the user, is still catching up, or is quiet — never two at once")
   func flags() {
-    let attention: [Status] = [.signInRequired, .blocked(reason: "x")]
+    let attention: [Status] = [.signInRequired, .signInFailed(reason: "x"), .blocked(reason: "x")]
     let busy: [Status] = [.installing, .removing, .waiting, .syncing, .syncingSignIn]
     let quiet: [Status] = [.ready, .off, .unreachable, .awaitingSignIn]
     for status in attention {

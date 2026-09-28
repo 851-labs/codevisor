@@ -204,22 +204,14 @@ private struct PluginMachineOnlyRow: View {
   }
 
   /// The switch acts on the machine whose section this row sits in.
+  /// Reads this machine's own copy (the catalog's representative may be
+  /// another machine's) and moves the moment it's flipped.
   private var toggle: Binding<Bool>? {
-    let enabled = model.catalog[entry.id]?.isEnabled ?? true
-    return Binding(
-      get: { enabled },
-      set: { next in Task { await setEnabled(machineId: machineId, enabled: next) } })
-  }
-
-  private func setEnabled(machineId: String, enabled: Bool) async {
-    do {
-      _ = try await environment.machines.client(for: machineId)
-        .setPluginEnabled(pluginId: entry.id, enabled: enabled)
-      model.actionError = nil
-      await model.load(in: environment)
-    } catch {
-      model.actionError = ErrorReporter.userFacingMessage(for: error)
-    }
+    Binding(
+      get: { model.isEnabled(pluginId: entry.id, on: machineId) },
+      set: { next in
+        Task { await model.setEnabled(pluginId: entry.id, on: machineId, enabled: next, in: environment) }
+      })
   }
 }
 

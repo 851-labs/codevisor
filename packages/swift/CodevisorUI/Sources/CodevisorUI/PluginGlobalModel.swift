@@ -69,6 +69,13 @@ public final class PluginGlobalModel {
   /// Discards answers from a sweep that a newer one has replaced.
   @ObservationIgnored private var loadGeneration = 0
   @ObservationIgnored private var answered = false
+  /// Each machine's latest answer. A sweep replaces a machine's answer when
+  /// it lands rather than blanking the list first, so rows stay put while a
+  /// reload is in flight.
+  @ObservationIgnored private var answers: [String: (machine: CodevisorMachine, plugins: [ServerPluginSummary])] = [:]
+  /// A switch the user flipped whose request hasn't settled, by plugin and
+  /// machine. Rows read it ahead of the catalog so a flip shows at once.
+  public private(set) var pendingEnabled: [String: Bool] = [:]
 
   public init() {}
 
@@ -149,11 +156,9 @@ public final class PluginGlobalModel {
     let generation = loadGeneration
     isLoading = true
     defer { if generation == loadGeneration { isLoading = false } }
-    catalog = [:]
-    catalogMachineId = [:]
-    localOnly = [:]
-    pathsByPlugin = [:]
     answered = false
+    sweepAnswered = []
+    answerOrder = environment.machines.allMachines.map(\.id)
     // Every machine is asked at once and publishes its own answer the moment
     // it lands, so one unreachable machine never holds the page on
     // "Loading…" while the others sit ready.
@@ -162,11 +167,19 @@ public final class PluginGlobalModel {
       return Task { @MainActor [weak self] in
         let plugins = try? await client.listPlugins()
         guard let self, generation == self.loadGeneration, let plugins else { return }
+        self.sweepAnswered.insert(machine.id)
         self.absorb(plugins, from: machine)
       }
     }
     for probe in probes { await probe.value }
     guard generation == loadGeneration else { return }
+    // A machine that didn't answer this sweep no longer vouches for what it
+    // said last time.
+    let stale = Set(answers.keys).subtracting(sweepAnswered)
+    if !stale.isEmpty {
+      for machineId in stale { answers[machineId] = nil }
+      rebuild(order: environment.machines.allMachines.map(\.id))
+    }
     loadFailed = !answered
     await loadUpdates(in: environment)
   }
@@ -174,19 +187,64 @@ public final class PluginGlobalModel {
   private func absorb(_ plugins: [ServerPluginSummary], from machine: CodevisorMachine) {
     answered = true
     loadFailed = false
-    for plugin in plugins {
-      if catalog[plugin.id] == nil {
-        catalog[plugin.id] = plugin
-        catalogMachineId[plugin.id] = machine.id
-      }
-      pathsByPlugin[plugin.id, default: [:]][machine.id] = plugin.path
-      // A linked/dev checkout or a local-path install never reaches the
-      // fleet; its row sits under the machine that actually has it.
-      if plugin.source != "managed" {
-        localOnly[plugin.id, default: []]
-          .append(PluginMachineBinding(id: machine.id, name: machine.name))
+    answers[machine.id] = (machine, plugins)
+    rebuild(order: answerOrder)
+  }
+
+  @ObservationIgnored private var answerOrder: [String] = []
+  @ObservationIgnored private var sweepAnswered: Set<String> = []
+
+  /// The catalog as every machine's latest answer describes it. The first
+  /// machine to describe a plugin supplies its display metadata.
+  private func rebuild(order: [String]) {
+    answerOrder = order
+    var catalog: [String: ServerPluginSummary] = [:]
+    var catalogMachineId: [String: String] = [:]
+    var localOnly: [String: [PluginMachineBinding]] = [:]
+    var pathsByPlugin: [String: [String: String]] = [:]
+    let ordered = order.compactMap { answers[$0] } + answers.filter { !order.contains($0.key) }.map(\.value)
+    for (machine, plugins) in ordered {
+      for plugin in plugins {
+        if catalog[plugin.id] == nil {
+          catalog[plugin.id] = plugin
+          catalogMachineId[plugin.id] = machine.id
+        }
+        pathsByPlugin[plugin.id, default: [:]][machine.id] = plugin.path
+        // A linked/dev checkout or a local-path install never reaches the
+        // fleet; its row sits under the machine that actually has it.
+        if plugin.source != "managed" {
+          localOnly[plugin.id, default: []]
+            .append(PluginMachineBinding(id: machine.id, name: machine.name))
+        }
       }
     }
+    self.catalog = catalog
+    self.catalogMachineId = catalogMachineId
+    self.localOnly = localOnly
+    self.pathsByPlugin = pathsByPlugin
+  }
+
+  /// Whether one machine has a plugin switched on, as the user last set it.
+  public func isEnabled(pluginId: String, on machineId: String) -> Bool {
+    pendingEnabled["\(pluginId)|\(machineId)"]
+      ?? answers[machineId]?.plugins.first { $0.id == pluginId }?.isEnabled
+      ?? catalog[pluginId]?.isEnabled ?? true
+  }
+
+  /// Switches a plugin on one machine. The switch moves at once; a failure
+  /// puts it back and says why.
+  public func setEnabled(pluginId: String, on machineId: String, enabled: Bool, in environment: AppEnvironment) async {
+    let key = "\(pluginId)|\(machineId)"
+    pendingEnabled[key] = enabled
+    do {
+      _ = try await environment.machines.client(for: machineId)
+        .setPluginEnabled(pluginId: pluginId, enabled: enabled)
+      actionError = nil
+      await load(in: environment)
+    } catch {
+      actionError = ErrorReporter.userFacingMessage(for: error)
+    }
+    if pendingEnabled[key] == enabled { pendingEnabled[key] = nil }
   }
 
   /// Update checks hit the plugin registry over the network, so they run

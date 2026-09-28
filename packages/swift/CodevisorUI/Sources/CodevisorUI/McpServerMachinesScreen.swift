@@ -25,19 +25,19 @@ import SwiftUI
       // screen is open, and a captured copy would freeze at whatever the
       // fleet looked like when the row was tapped.
       let entry = model.entry(named: serverName)
+      // A machine switch writes the overlay locally; reading its revision is
+      // what re-renders this screen the moment one is flipped.
+      let _ = environment.configSync.revisionsByNamespace["mcp-overlays"]
       List {
         if let entry {
-          if !entry.isMachineScoped {
+          // Authorizing is a fleet act — the material replicates and every
+          // other machine adopts it — so it sits above the machines, not on
+          // any one machine's row. The machines carry the only switches.
+          if !entry.isMachineScoped, needsAuthorization(entry),
+            let machineId = entry.machineId(preferring: nil)
+          {
             Section {
-              Toggle("Enable \(entry.name)", isOn: fleetToggle(entry))
-              // Authorizing is a fleet act — the material replicates and
-              // every other machine adopts it — so it belongs beside the
-              // fleet switch, not on any one machine's row.
-              if needsAuthorization(entry),
-                let machineId = entry.machineId(preferring: nil)
-              {
-                Button("Connect…") { onConnect(entry, machineId) }
-              }
+              Button("Connect…") { onConnect(entry, machineId) }
             }
           }
           Section {
@@ -95,13 +95,6 @@ import SwiftUI
       }
     }
 
-    private func fleetToggle(_ entry: McpFleetEntry) -> Binding<Bool> {
-      Binding(
-        get: { entry.enabled },
-        set: { next in
-          Task { await model.setFleetEnabled(entry, enabled: next, in: environment) }
-        })
-    }
   }
 
   /// A machine on the detail screen: the switch, the browser choice where

@@ -222,6 +222,15 @@ describe("/v1/sync/harness-readiness", () => {
             desiredEnabled: true,
             enabled: false,
             readiness: { state: "notInstalled", detail: "CLI not found on PATH" }
+          })),
+          // A sign-in check that failed explains itself on the row.
+          ...list.map((harness) => ({
+            ...harness,
+            id: "auth-error",
+            desiredEnabled: true,
+            enabled: true,
+            readiness: { state: "ready" },
+            auth: { state: "error", detail: "Keychain is locked" }
           }))
         ]),
       decorateHarnessesFromStoredState: (list: ReadonlyArray<Harness>) =>
@@ -247,6 +256,10 @@ describe("/v1/sync/harness-readiness", () => {
       | undefined
     expect(missing?.state).toBe("notInstalled")
     expect(missing?.reason).toBe("CLI not found on PATH")
+    expect(rows.find((row) => row.id === "auth-error")).toMatchObject({
+      state: "signInRequired",
+      reason: "Keychain is locked"
+    })
   })
 })
 

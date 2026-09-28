@@ -59,6 +59,10 @@ public final class McpGlobalModel {
   /// Discards answers from a sweep that a newer one has replaced.
   @ObservationIgnored private var loadGeneration = 0
   @ObservationIgnored private var merged: [String: McpFleetEntry] = [:]
+  /// Switches the user flipped whose request hasn't settled, by server name
+  /// and machine. Applied over every machine answer, so a sweep that lands
+  /// mid-request can't flip the switch back.
+  @ObservationIgnored private var pendingEnabled: [String: Bool] = [:]
 
   public init() {}
 
@@ -153,8 +157,10 @@ public final class McpGlobalModel {
   /// Managed servers replicate by name, so one machine's row completes the
   /// picture another machine started.
   private func merge(
-    _ server: ServerMcpServer, from machineId: String, into merged: inout [String: McpFleetEntry]
+    _ incoming: ServerMcpServer, from machineId: String, into merged: inout [String: McpFleetEntry]
   ) {
+    var server = incoming
+    if let pending = pendingEnabled["\(server.name)|\(machineId)"] { server.enabled = pending }
     if var existing = merged[server.name] {
       existing.idByMachine[machineId] = server.id
       existing.enabledByMachine[machineId] = server.enabled
@@ -197,14 +203,35 @@ public final class McpGlobalModel {
       actionError = "\(entry.name) isn’t on that machine yet."
       return
     }
+    // The switch moves now; the request and the sweep after it confirm it,
+    // and a failure puts it back.
+    let key = "\(entry.name)|\(machineId)"
+    pendingEnabled[key] = enabled
+    applyEnabled(entry.name, on: machineId, enabled: enabled)
     do {
       _ = try await environment.machines.client(for: machineId)
         .setMcpServerEnabled(id: serverId, enabled: enabled)
       actionError = nil
+      if pendingEnabled[key] == enabled { pendingEnabled[key] = nil }
       await load(in: environment)
     } catch {
       actionError = ErrorReporter.userFacingMessage(for: error)
+      if pendingEnabled[key] == enabled { pendingEnabled[key] = nil }
+      await load(in: environment)
     }
+  }
+
+  /// Reflects a flip in the published list before any machine confirms it.
+  private func applyEnabled(_ name: String, on machineId: String, enabled: Bool) {
+    guard var entry = merged[name] else { return }
+    entry.enabledByMachine[machineId] = enabled
+    if !entry.isMachineScoped {
+      // One definition across the fleet: every machine's copy follows it.
+      entry.enabled = enabled
+      for id in entry.enabledByMachine.keys { entry.enabledByMachine[id] = enabled }
+    }
+    merged[name] = entry
+    publish(merged)
   }
 
   /// Flips the fleet definition through a machine that has the server. The

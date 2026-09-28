@@ -14,6 +14,9 @@ public extension HarnessFleet {
     case installing
     case removing
     case signInRequired
+    /// The machine couldn't check its sign-in; the reason says why. Still
+    /// offers sign-in, but the failure is what the row explains.
+    case signInFailed(reason: String)
     /// The harness syncs one fleet-wide sign-in that hasn't happened yet;
     /// this machine can't sign in on its own.
     case awaitingSignIn
@@ -33,6 +36,7 @@ public extension HarnessFleet {
       case .installing: "Installing…"
       case .removing: "Removing…"
       case .signInRequired: "Sign in required"
+      case .signInFailed: "Couldn’t check sign-in"
       case .awaitingSignIn: "Waiting for sign-in"
       case .syncingSignIn: "Syncing sign-in…"
       case .blocked: "Needs attention"
@@ -54,7 +58,7 @@ public extension HarnessFleet {
     /// The user has to do something: sign in, or look at a failure.
     public var needsAttention: Bool {
       switch self {
-      case .signInRequired, .blocked: true
+      case .signInRequired, .signInFailed, .blocked: true
       default: false
       }
     }
@@ -63,7 +67,7 @@ public extension HarnessFleet {
     public var rowStatus: FleetRowStatus {
       switch self {
       case .ready: .ready()
-      case .blocked(let reason): .attention(label, reason: reason)
+      case .blocked(let reason), .signInFailed(let reason): .attention(label, reason: reason)
       case .signInRequired: .attention(label)
       default: isBusy ? .busy(label) : .quiet(label)
       }
@@ -113,7 +117,8 @@ public extension HarnessFleet {
     case "ready": .ready
     case "installing": .installing
     case "uninstalling": .removing
-    case "signInRequired": .signInRequired
+    case "signInRequired":
+      if let reason, !reason.isEmpty { .signInFailed(reason: reason) } else { .signInRequired }
     case "blocked": .blocked(reason: reason ?? blockedFallbackReason)
     case "notInstalled": .waiting
     case "disabled": .off

@@ -5,12 +5,11 @@ import SwiftUI
 /// it. MCPs are the one plane with a real per-machine control, so a machine
 /// row carries its own switch.
 ///
-/// Managed servers have two levels: the server's toggle is the fleet's wish,
-/// each machine's toggle is "available here". Built-ins have only the
-/// machine level — they never replicate, so a fleet-wide switch over them
-/// would be a control with nothing behind it. When the fleet is one machine
-/// that lone switch folds up onto the server's row, so a single-machine user
-/// still sees exactly one.
+/// Every server is switched per machine: each machine row carries "on
+/// here", and the server row carries no switch of its own — a fleet-wide
+/// switch above per-machine ones made two controls for one question. When
+/// the fleet is one machine that lone switch folds up onto the server's
+/// row, so a single-machine user still sees exactly one.
 public struct McpFleetSection<MachineExtras: View, Icon: View>: View {
   @Environment(AppEnvironment.self) private var environment
   #if os(iOS)
@@ -119,11 +118,11 @@ private struct McpFleetRow<MachineExtras: View, Icon: View>: View {
     // report; reading the revision here is what subscribes this row to them.
     let _ = environment.configSync.revisionsByNamespace["mcp-overlays"]
     let rows = machineRows()
-    // A built-in has no fleet wish, so its machines list whatever its state:
-    // they are the only place it can be switched at all.
-    let live = entry.isMachineScoped || entry.enabled
+    // With several machines, the machine rows are the only switches, so
+    // they list whatever the server's state — even one the fleet turned off.
+    let live = entry.isMachineScoped || entry.enabled || machines.count > 1
     let onlyMachine = machines.count == 1 ? rows.first : nil
-    let showsMachines = live && machines.count > 1
+    let showsMachines = machines.count > 1
     // One machine is the fleet: its status — and, for a built-in, its
     // switch — folds up onto the server's row.
     let single = live ? onlyMachine : nil
@@ -177,11 +176,11 @@ private struct McpFleetRow<MachineExtras: View, Icon: View>: View {
     }
   }
 
-  /// The server row's switch. A managed server carries the fleet's wish. A
-  /// built-in carries nothing unless the fleet is one machine, in which case
-  /// it carries that machine's own switch rather than leaving the row inert
-  /// and repeating itself one line below.
+  /// The server row's switch, only when the fleet is one machine: the
+  /// machine rows carry it otherwise. A managed server's is the fleet's
+  /// wish; a built-in's is that machine's own switch.
   private func entryToggle(onlyMachine: McpFleet.MachineRow?) -> Binding<Bool>? {
+    guard machines.count <= 1 else { return nil }
     guard entry.isMachineScoped else {
       return Binding(
         get: { entry.enabled },
@@ -268,11 +267,13 @@ struct McpMachineTrailing: View {
 
   /// A built-in is switched on the machine itself — it never replicates, so
   /// there is no fleet definition for an overlay to override. A managed
-  /// server's off writes this machine's overlay only; on clears it, and
-  /// re-enables the fleet definition when that was what was off.
+  /// server's off writes this machine's overlay only; on clears it. When
+  /// the fleet definition itself was off, turning one machine on turns only
+  /// that machine on: every other machine gets an off overlay first, so
+  /// re-enabling the definition doesn't switch the whole fleet on with it.
   private var availability: Binding<Bool> {
     Binding(
-      get: { row.status.isOnHere },
+      get: { row.status.isOnHere && (entry.isMachineScoped || entry.enabled) },
       set: { next in
         if entry.isMachineScoped {
           Task {
@@ -285,11 +286,17 @@ struct McpMachineTrailing: View {
           model.actionError = "\(row.name) hasn’t reported its identity yet."
           return
         }
+        if next, !entry.enabled {
+          for machine in FleetMachineInfo.all(environment.machines) where machine.id != row.machineId {
+            guard let other = machine.syncKey else { continue }
+            McpFleet.setDisabled(environment.configSync, machineId: other, name: entry.name, disabled: true)
+          }
+          McpFleet.setDisabled(environment.configSync, machineId: key, name: entry.name, disabled: false)
+          Task { await model.setFleetEnabled(entry, enabled: true, in: environment) }
+          return
+        }
         McpFleet.setDisabled(
           environment.configSync, machineId: key, name: entry.name, disabled: !next)
-        if next, !entry.enabled {
-          Task { await model.setFleetEnabled(entry, enabled: true, in: environment) }
-        }
       })
   }
 }

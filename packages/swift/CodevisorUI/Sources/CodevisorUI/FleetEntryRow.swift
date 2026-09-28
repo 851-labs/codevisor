@@ -79,7 +79,9 @@ public struct FleetEntryRow<Icon: View, Accessory: View, Actions: View>: View {
       if let isEnabled {
         Toggle("Enable \(name)", isOn: isEnabled)
           .labelsHidden().toggleStyle(.switch)
-          .disabled(isChanging || isBusy || toggleDisabledReason != nil)
+          // Busy is a report, not a lock: a machine still converging on the
+          // last flip must not stop the user flipping it back.
+          .disabled(isChanging || toggleDisabledReason != nil)
           .help(toggleDisabledReason ?? "")
           #if os(macOS)
             .controlSize(.small)

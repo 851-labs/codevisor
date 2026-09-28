@@ -130,7 +130,11 @@ export const refreshHarnessReadiness = async (
             ? (refusal ?? harness.lifecycle?.error)
             : state === "notInstalled"
               ? harness.readiness.detail
-              : undefined
+              : state === "signInRequired" &&
+                  (harness.auth?.state === "error" || harness.auth?.state === "unavailable")
+                ? // The check itself failed: say why, so the row's mark can.
+                  harness.auth.detail
+                : undefined
         return {
           id: harness.id,
           state,

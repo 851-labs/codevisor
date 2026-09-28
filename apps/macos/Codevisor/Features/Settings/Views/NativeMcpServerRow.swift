@@ -11,6 +11,9 @@ struct NativeMcpServerRow: View {
   let setEnabled: (Bool) async -> Void
   let showDetails: () -> Void
   let requestRemoval: () -> Void
+  /// The flip the user made, shown until the harness's config answers —
+  /// then the rescan it returns is the truth (and puts a failed flip back).
+  @State private var pendingEnabled: Bool?
 
   var body: some View {
     HStack(spacing: 10) {
@@ -42,8 +45,14 @@ struct NativeMcpServerRow: View {
         Toggle(
           "Enable \(server.serverName) in \(server.harnessName)",
           isOn: Binding(
-            get: { server.enabled ?? true },
-            set: { enabled in Task { await setEnabled(enabled) } }
+            get: { pendingEnabled ?? server.enabled ?? true },
+            set: { enabled in
+              pendingEnabled = enabled
+              Task {
+                await setEnabled(enabled)
+                if pendingEnabled == enabled { pendingEnabled = nil }
+              }
+            }
           )
         )
         .labelsHidden()

@@ -3,8 +3,9 @@ import SwiftUI
 
 /// One machine under a fleet entry: its name, then — when there is exactly
 /// one thing to do about its status — that action, and a mark only when
-/// there is something to report. Marks trail so they line up down the list
-/// whether or not a row has an action; the mark's tooltip says what, and a
+/// there is something to report. The mark sits in a fixed column ahead of
+/// the action so the action never shifts as the mark comes and goes; its
+/// tooltip says what, and a
 /// mark with a failure behind it opens that failure when clicked.
 public struct FleetMachineRow<Trailing: View>: View {
   private let name: String
@@ -32,13 +33,12 @@ public struct FleetMachineRow<Trailing: View>: View {
         .lineLimit(1)
         .layoutPriority(1)
       Spacer(minLength: 8)
+      // The mark leads the controls so it can come and go without moving
+      // them: a switch that jumps sideways as it's flipped is one the user
+      // has to chase.
+      FleetStatusMark(status: status, details: details)
+        .frame(width: FleetRowMetrics.trailingControlWidth)
       trailing
-      #if os(macOS)
-        FleetStatusMark(status: status, details: details)
-          .frame(width: FleetRowMetrics.trailingControlWidth)
-      #else
-        FleetStatusMark(status: status, details: details)
-      #endif
     }
     .frame(minHeight: FleetRowMetrics.minContentHeight)
     .padding(.vertical, 4)
