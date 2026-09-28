@@ -5,7 +5,7 @@ import Testing
 
 /// The presentation contract every fleet page shares. Each plane maps its
 /// own states here, so these tests pin the rules the four pages rely on:
-/// exactly one emphasis per row, quiet states render nothing, and anything
+/// exactly one emphasis per row, quiet states stay quiet, and anything
 /// the user must act on carries the text that explains it.
 @MainActor
 @Suite("FleetRowStatus")
@@ -81,6 +81,42 @@ struct FleetRowStatusTests {
     // Offline still outranks a stale blocked report.
     #expect(rows[2].status == .unreachable)
     #expect(rows[3].status == .syncing)
+  }
+
+  @Test(
+    "A machine still reporting off after the user turned it on reads as syncing on every plane")
+  func pendingTurnOnIsBusy() {
+    let studio = [machines()[0]]
+    // MCP: only the machine the user wants on is waiting; the other is off.
+    let mcp = McpFleet.machineRows(
+      name: "Linear",
+      readiness: [
+        "studio-key": [.init(name: "Linear", state: "disabled", reason: nil)],
+        "book-key": [.init(name: "Linear", state: "disabled", reason: nil)],
+      ],
+      disabledKeys: [], machines: Array(machines()[0...1]),
+      wantsOn: { $0 == "studio" })
+    #expect(mcp.map(\.status) == [.syncing, .offFleet])
+    #expect(mcp[0].status.rowStatus.isBusy)
+    // Harness and plugin rows follow the fleet's wish the same way.
+    let harness = HarnessFleet.machineRows(
+      harnessId: "codex",
+      readiness: ["studio-key": [.init(harnessId: "codex", state: "disabled", reason: nil)]],
+      machines: [.init(id: "studio", name: "Studio", syncKey: "studio-key", isReachable: true)],
+      wantsOn: true)
+    #expect(harness.map(\.status) == [.syncing])
+    let plugin = PluginFleet.machineRows(
+      pluginId: "notes",
+      readiness: ["studio-key": [.init(pluginId: "notes", state: "disabled", reason: nil)]],
+      machines: studio, wantsOn: true)
+    #expect(plugin.map(\.status) == [.syncing])
+    // Without the wish, "disabled" is simply off.
+    #expect(
+      PluginFleet.machineRows(
+        pluginId: "notes",
+        readiness: ["studio-key": [.init(pluginId: "notes", state: "disabled", reason: nil)]],
+        machines: studio
+      ).map(\.status) == [.off])
   }
 
   @Test("A connected MCP reports the tools it actually exposes there")

@@ -103,14 +103,20 @@ public extension McpFleet {
   /// while a fleet converges. The overlay outranks the report: a machine
   /// switched off here reads as off immediately, without waiting for it to
   /// notice and republish.
+  ///
+  /// `wantsOn` says, per machine id, whether the user wants the server on
+  /// there. A machine still reporting "disabled" when it should be on hasn't
+  /// caught up with a flip yet, so it reads as syncing until it reports
+  /// connected or a failure.
   nonisolated static func machineRows(
     name: String,
     readiness: [String: [MachineReadiness]],
     disabledKeys: Set<String>,
-    machines: [FleetMachineInfo]
+    machines: [FleetMachineInfo],
+    wantsOn: (String) -> Bool = { _ in false }
   ) -> [MachineRow] {
     machines.map { machine in
-      let status: MachineStatus
+      var status: MachineStatus
       if let key = machine.syncKey, disabledKeys.contains(key) {
         status = .offHere
       } else if !machine.isReachable {
@@ -119,6 +125,7 @@ public extension McpFleet {
         let row = readiness[key]?.first(where: { $0.name == name })
       {
         status = machineStatus(row)
+        if status == .offFleet, wantsOn(machine.id) { status = .syncing }
       } else {
         status = .syncing
       }
@@ -133,20 +140,35 @@ public extension McpFleet {
     name: String,
     isMachineScoped: Bool,
     enabledByMachine: [String: Bool],
+    fleetEnabled: Bool = false,
+    turningOn: Set<String> = [],
     sync: ConfigSync,
     machines: [FleetMachineInfo]
   ) -> [MachineRow] {
-    let derived = rows(name: name, sync: sync, machines: machines)
-    guard isMachineScoped else { return derived }
+    // What the user last set: a built-in's own switch on each machine, or
+    // the fleet definition for a managed server (the overlay's "off here"
+    // is applied separately and wins).
+    let wantsOn: (String) -> Bool = { machineId in
+      isMachineScoped ? enabledByMachine[machineId] == true : fleetEnabled
+    }
+    let derived = rows(name: name, sync: sync, machines: machines, wantsOn: wantsOn)
     return derived.map { row in
-      guard enabledByMachine[row.machineId] == false else { return row }
       var copy = row
-      copy.status = .offHere
+      if isMachineScoped, enabledByMachine[row.machineId] == false {
+        copy.status = .offHere
+      } else if turningOn.contains(row.machineId), row.status != .offHere, row.status != .unreachable {
+        // The request to turn it on hasn't answered: whatever the machine
+        // last reported predates the flip.
+        copy.status = .syncing
+      }
       return copy
     }
   }
 
-  static func rows(name: String, sync: ConfigSync, machines: [FleetMachineInfo]) -> [MachineRow] {
+  static func rows(
+    name: String, sync: ConfigSync, machines: [FleetMachineInfo],
+    wantsOn: (String) -> Bool = { _ in false }
+  ) -> [MachineRow] {
     let disabled = Set(
       machines.compactMap { machine -> String? in
         guard let key = machine.syncKey,
@@ -155,6 +177,7 @@ public extension McpFleet {
         return key
       })
     return machineRows(
-      name: name, readiness: readiness(sync), disabledKeys: disabled, machines: machines)
+      name: name, readiness: readiness(sync), disabledKeys: disabled, machines: machines,
+      wantsOn: wantsOn)
   }
 }

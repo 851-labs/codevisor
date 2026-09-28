@@ -132,9 +132,13 @@ public extension HarnessFleet {
   /// where the account lives: waiting on the user (quiet, the harness row
   /// asks), catching up with an account that exists (busy), or — when the
   /// client can't tell — something to act on from the machine's row.
+  ///
+  /// `wantsOn` is the fleet's current wish. A machine still reporting "off"
+  /// while the fleet wants it on hasn't caught up with a flip yet, so it
+  /// reads as syncing until it reports ready or a failure.
   nonisolated static func machineRows(
     harnessId: String, readiness: [String: [MachineReadiness]], machines: [FleetMachine],
-    sharedSignIn: SharedSignIn = .notShared
+    sharedSignIn: SharedSignIn = .notShared, wantsOn: Bool = false
   ) -> [MachineRow] {
     machines.map { machine in
       var status: MachineStatus
@@ -142,6 +146,7 @@ public extension HarnessFleet {
         status = .unreachable
       } else if let key = machine.syncKey, let row = readiness[key]?.first(where: { $0.harnessId == harnessId }) {
         status = machineStatus(state: row.state, reason: row.reason)
+        if status == .off, wantsOn { status = .syncing }
       } else {
         status = .syncing
       }
@@ -159,9 +164,11 @@ public extension HarnessFleet {
   static func status(
     harnessId: String, sync: ConfigSync, machines: [FleetMachine], sharedSignIn: SharedSignIn = .notShared
   ) -> HarnessStatus {
-    HarnessStatus(
+    let wantsOn = settings(sync, includingUninstalled: true).first { $0.id == harnessId }?.enabled ?? false
+    return HarnessStatus(
       machines: machineRows(
-        harnessId: harnessId, readiness: readiness(sync), machines: machines, sharedSignIn: sharedSignIn))
+        harnessId: harnessId, readiness: readiness(sync), machines: machines, sharedSignIn: sharedSignIn,
+        wantsOn: wantsOn))
   }
 
   static func fleetMachines(_ machines: MachineController) -> [FleetMachine] {

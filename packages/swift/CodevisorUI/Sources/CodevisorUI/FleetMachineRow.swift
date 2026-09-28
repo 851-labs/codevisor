@@ -3,9 +3,9 @@ import SwiftUI
 
 /// One machine under a fleet entry: its name, then — when there is exactly
 /// one thing to do about its status — that action, and a mark only when
-/// there is something to report. The mark sits in a fixed column ahead of
-/// the action so the action never shifts as the mark comes and goes; its
-/// tooltip says what, and a
+/// there is something to report. The mark trails in a fixed column and is
+/// always present — a gray dot when the machine is off or quiet — so the
+/// action never shifts as the status changes; its tooltip says what, and a
 /// mark with a failure behind it opens that failure when clicked.
 public struct FleetMachineRow<Trailing: View>: View {
   private let name: String
@@ -33,12 +33,11 @@ public struct FleetMachineRow<Trailing: View>: View {
         .lineLimit(1)
         .layoutPriority(1)
       Spacer(minLength: 8)
-      // The mark leads the controls so it can come and go without moving
-      // them: a switch that jumps sideways as it's flipped is one the user
-      // has to chase.
+      trailing
+      // The mark trails in a fixed column and always shows something, so the
+      // controls before it never move as the status changes.
       FleetStatusMark(status: status, details: details)
         .frame(width: FleetRowMetrics.trailingControlWidth)
-      trailing
     }
     .frame(minHeight: FleetRowMetrics.minContentHeight)
     .padding(.vertical, 4)
@@ -56,8 +55,8 @@ public extension FleetMachineRow where Trailing == EmptyView {
 
 /// A check once a machine is in sync; a spinner while it catches up with
 /// the fleet; a mark when it needs the user. Quiet states — off here,
-/// unreachable, unsupported — render nothing: they are facts, not problems,
-/// and a column of grey dashes would only add noise to a converged fleet.
+/// unreachable, unsupported — are a gray dot: facts, not problems, but
+/// still a mark, so a machine row's status column never goes empty.
 ///
 /// When the status carries a failure the mark IS the way in: a second
 /// "Details…" button beside it would be one control too many for a row
@@ -96,7 +95,9 @@ public struct FleetStatusMark: View {
         mark("exclamationmark.circle.fill", theme.statusWarn)
       }
     case .quiet:
-      EmptyView()
+      // Off, unreachable, or waiting on something else: a quiet dot rather
+      // than nothing, so every row keeps its mark and the column holds.
+      mark("circle.fill", theme.textTertiary.opacity(0.5))
     }
   }
 

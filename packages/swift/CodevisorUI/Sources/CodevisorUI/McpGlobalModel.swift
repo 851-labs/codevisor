@@ -20,6 +20,9 @@ public struct McpFleetEntry: Identifiable, Equatable, Sendable {
   /// replicated, so this genuinely differs per machine; a managed server's
   /// entries agree once the fleet has converged.
   public var enabledByMachine: [String: Bool] = [:]
+  /// Machines where the user just turned this on and the request hasn't
+  /// answered yet; their rows show progress rather than a stale report.
+  public var turningOnMachines: Set<String> = []
   /// The best-known copy, for the editor sheet and the detail sheet.
   public var representative: ServerMcpServer
   public var id: String { name }
@@ -93,7 +96,8 @@ public final class McpGlobalModel {
   ) -> [McpFleet.MachineRow] {
     McpFleet.rowsRespectingBuiltIns(
       name: entry.name, isMachineScoped: entry.isMachineScoped,
-      enabledByMachine: entry.enabledByMachine, sync: sync, machines: machines)
+      enabledByMachine: entry.enabledByMachine, fleetEnabled: entry.enabled,
+      turningOn: entry.turningOnMachines, sync: sync, machines: machines)
   }
 
   /// Fans the server list out across every machine and merges by name. A
@@ -160,7 +164,9 @@ public final class McpGlobalModel {
     _ incoming: ServerMcpServer, from machineId: String, into merged: inout [String: McpFleetEntry]
   ) {
     var server = incoming
-    if let pending = pendingEnabled["\(server.name)|\(machineId)"] { server.enabled = pending }
+    let pending = pendingEnabled["\(server.name)|\(machineId)"]
+    if let pending { server.enabled = pending }
+    defer { if pending == true { merged[server.name]?.turningOnMachines.insert(machineId) } }
     if var existing = merged[server.name] {
       existing.idByMachine[machineId] = server.id
       existing.enabledByMachine[machineId] = server.enabled
@@ -225,6 +231,7 @@ public final class McpGlobalModel {
   private func applyEnabled(_ name: String, on machineId: String, enabled: Bool) {
     guard var entry = merged[name] else { return }
     entry.enabledByMachine[machineId] = enabled
+    if enabled { entry.turningOnMachines.insert(machineId) } else { entry.turningOnMachines.remove(machineId) }
     if !entry.isMachineScoped {
       // One definition across the fleet: every machine's copy follows it.
       entry.enabled = enabled

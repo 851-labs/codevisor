@@ -80,17 +80,21 @@ public extension PluginFleet {
   /// Machines keep their list order regardless of state, so rows don't jump
   /// while a fleet converges. An unreachable machine's last report is stale
   /// by definition and never outranks the fact that it is offline.
+  /// A machine still reporting "off" while the fleet wants the plugin on
+  /// hasn't caught up with a flip yet, so it reads as syncing.
   nonisolated static func machineRows(
-    pluginId: String, readiness: [String: [MachineReadiness]], machines: [FleetMachineInfo]
+    pluginId: String, readiness: [String: [MachineReadiness]], machines: [FleetMachineInfo],
+    wantsOn: Bool = false
   ) -> [MachineRow] {
     machines.map { machine in
-      let status: MachineStatus
+      var status: MachineStatus
       if !machine.isReachable {
         status = .unreachable
       } else if let key = machine.syncKey,
         let row = readiness[key]?.first(where: { $0.pluginId == pluginId })
       {
         status = machineStatus(state: row.state, reason: row.reason)
+        if status == .off, wantsOn { status = .syncing }
       } else {
         status = .syncing
       }
@@ -101,6 +105,8 @@ public extension PluginFleet {
   static func rows(
     pluginId: String, sync: ConfigSync, machines: [FleetMachineInfo]
   ) -> [MachineRow] {
-    machineRows(pluginId: pluginId, readiness: readiness(sync), machines: machines)
+    machineRows(
+      pluginId: pluginId, readiness: readiness(sync), machines: machines,
+      wantsOn: settings(sync).first { $0.id == pluginId }?.enabled ?? false)
   }
 }
