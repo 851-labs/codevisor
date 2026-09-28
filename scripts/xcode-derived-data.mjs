@@ -32,6 +32,8 @@ export function xcodeDerivedDataLocation(platform) {
 
 export async function ensureXcodeDerivedDataSettings(repoRoot, username = userInfo().username) {
   const written = []
+  // Xcode and plutil exist only on macOS; Linux checkouts (CI) have nothing to configure.
+  if (process.platform !== "darwin") return written
   for (const [platform, project] of Object.entries(xcodeProjects)) {
     const projectPath = join(repoRoot, project)
     if (!(await exists(projectPath))) continue
