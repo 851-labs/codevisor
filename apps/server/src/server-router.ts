@@ -10,7 +10,7 @@ import { readTailnetPeers } from "./infra/tailnet.js"
 import { routeBrowserState } from "./routes/browser-state.js"
 import { routeBrowserUse } from "./routes/browser-use.js"
 import { routeClientControl } from "./routes/client-control.js"
-import { routeCloud } from "./routes/cloud.js"
+import { liveCloudDeviceId, routeCloud } from "./routes/cloud.js"
 import { handleEvents } from "./routes/events.js"
 import { routeFiles } from "./routes/files.js"
 import { routeFs } from "./routes/fs.js"
@@ -115,7 +115,9 @@ export const handleRequest = async (
         kind: config.kind,
         version: config.version,
         platform: process.platform,
-        hostname: hostname()
+        hostname: hostname(),
+        // A bare flag, never the device id: clients skip cloud-linked machines.
+        cloudLinked: liveCloudDeviceId(config) !== undefined
       })
       return
     }
@@ -209,9 +211,7 @@ export const handleRequest = async (
     }
 
     if (request.method === "GET" && url.pathname === "/v1/info") {
-      // Live (app-driven) registrations beat the boot snapshot: no stale device id.
-      const cloudDeviceId =
-        config.cloud === undefined ? config.cloudDeviceId : config.cloud.deviceId()
+      const cloudDeviceId = liveCloudDeviceId(config)
       writeJson(response, 200, {
         id: config.id,
         name: config.name,

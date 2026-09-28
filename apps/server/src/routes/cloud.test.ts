@@ -21,6 +21,7 @@ describe("cloud routes", () => {
     expect((await jsonRequest(server, "/v1/info")).body).toMatchObject({
       cloudDeviceId: "device-123"
     })
+    expect((await jsonRequest(server, "/v1/discovery")).body).toMatchObject({ cloudLinked: true })
     // Without live control, /v1/cloud reflects the boot-time snapshot and
     // connect/disconnect are unavailable.
     expect((await jsonRequest(server, "/v1/cloud")).body).toEqual({
@@ -72,6 +73,7 @@ describe("cloud routes", () => {
     // Disconnected: no device id anywhere, /v1/cloud says so.
     expect((await jsonRequest(server, "/v1/info")).body).not.toHaveProperty("cloudDeviceId")
     expect((await jsonRequest(server, "/v1/cloud")).body).toEqual({ connected: false })
+    expect((await jsonRequest(server, "/v1/discovery")).body).toMatchObject({ cloudLinked: false })
 
     // Bad payloads are rejected before touching the control.
     expect(
@@ -104,6 +106,8 @@ describe("cloud routes", () => {
     expect((await jsonRequest(server, "/v1/info")).body).toMatchObject({
       cloudDeviceId: "device-live"
     })
+    // Discovery follows the live registration, not the boot snapshot.
+    expect((await jsonRequest(server, "/v1/discovery")).body).toMatchObject({ cloudLinked: true })
 
     // Provisioning failures surface as a gateway error with the cause —
     // Error instances and bare thrown values alike.

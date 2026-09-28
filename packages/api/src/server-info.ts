@@ -61,7 +61,11 @@ export const DiscoveryInfo = Schema.Struct({
   kind: ServerKind,
   version: Schema.String,
   platform: Schema.String,
-  hostname: Schema.String
+  hostname: Schema.String,
+  /// True when the machine is registered on a Codevisor Cloud account, so
+  /// clients don't offer it as an unpaired network peer. Optional for older
+  /// servers.
+  cloudLinked: Schema.optional(Schema.Boolean)
 })
 export type DiscoveryInfo = typeof DiscoveryInfo.Type
 

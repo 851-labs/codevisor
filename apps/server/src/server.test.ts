@@ -290,7 +290,8 @@ describe("@codevisor/server", () => {
       machineId: expect.stringMatching(/^[0-9a-f-]{36}$/),
       kind: "local",
       platform: process.platform,
-      hostname: expect.any(String)
+      hostname: expect.any(String),
+      cloudLinked: false
     })
     // The machine identity is stable across requests.
     expect((await jsonRequest(server, "/v1/discovery")).body).toMatchObject({

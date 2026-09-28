@@ -115,12 +115,12 @@ struct MachinesSettingsView: View {
       .task(id: isPollingActive) {
         guard isPollingActive else { return }
         while !Task.isCancelled {
-          await discovery.refresh(registeredHosts: registeredHosts)
+          await refreshDiscovery()
           try? await Task.sleep(for: .seconds(30))
         }
       }
-      .onChange(of: machines.machines.map(\.id)) { _, _ in
-        Task { await discovery.refresh(registeredHosts: registeredHosts) }
+      .onChange(of: machines.allMachines.map(\.id)) { _, _ in
+        Task { await refreshDiscovery() }
       }
   }
 
@@ -210,7 +210,7 @@ struct MachinesSettingsView: View {
             try machines.removeMachine(machine.id)
             // A removed machine may be discoverable again — refetch so
             // it reappears under "On Your Network" right away.
-            Task { await discovery.refresh(registeredHosts: registeredHosts) }
+            Task { await refreshDiscovery() }
           } catch {
             Log.machines.error("Removing machine failed: \(String(describing: error), privacy: .public)")
             actionError = MachineActionError(
@@ -274,9 +274,24 @@ struct MachinesSettingsView: View {
     }
   }
 
-  /// Hosts already in the machine list, so discovery skips them.
-  private var registeredHosts: Set<String> {
-    Set(machines.machines.compactMap { $0.baseURL.host })
+  /// One discovery pass that skips every machine already in the list:
+  /// direct machines by address, and machines on the cloud account by their
+  /// reported tunnel addresses and name (older servers don't say in their
+  /// discovery manifest that they're cloud-linked).
+  private func refreshDiscovery() async {
+    let cloudMachines = machines.allMachines.compactMap { machines.cloudMachine(forMachineId: $0.id) }
+    var hosts = Set(machines.machines.compactMap { $0.baseURL.host })
+    for machine in cloudMachines {
+      for address in machine.tunnel?.directAddrs ?? [] {
+        if let host = MachineDiscoveryService.host(fromSocketAddress: address) {
+          hosts.insert(host)
+        }
+      }
+    }
+    await discovery.refresh(
+      registeredHosts: hosts,
+      registeredNames: Set(cloudMachines.map(\.name))
+    )
   }
 
   /// Validates and adds a machine, returning an error message for the Add
@@ -292,7 +307,7 @@ struct MachinesSettingsView: View {
       let machine = try await machines.addRemoteValidating(
         host: host, name: name, token: token, syncConfig: syncConfig)
       environment.composerDefaults.rememberNewWorkspaceServer(serverId: machine.id)
-      await discovery.refresh(registeredHosts: registeredHosts)
+      await refreshDiscovery()
       return nil
     } catch {
       Log.machines.error("Adding machine failed: \(String(describing: error), privacy: .public)")

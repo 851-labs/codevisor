@@ -32,6 +32,9 @@ enum TailnetDiscovery {
     var version: String
     var platform: String
     var hostname: String
+    /// True when the machine is already on a Codevisor Cloud account (ours
+    /// or another); nil from older servers.
+    var cloudLinked: Bool?
   }
 
   /// A found server plus the address that reached it (the address is what
@@ -184,8 +187,11 @@ final class TailnetMachineDiscovery {
       let results = await withTaskGroup(of: Discovered?.self) { group in
         for peer in chunk {
           group.addTask {
+            // Machines already linked to a cloud account are either on
+            // ours already or belong to someone else — not addable here.
             guard let host = peer.host,
-              let machine = await TailnetDiscovery.probe(host)
+              let machine = await TailnetDiscovery.probe(host),
+              machine.manifest.cloudLinked != true
             else { return nil }
             return Discovered(
               id: machine.manifest.machineId,

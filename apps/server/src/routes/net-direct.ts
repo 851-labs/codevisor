@@ -5,6 +5,7 @@ import type { CloudSocket } from "@codevisor/cloud-client"
 import type { WebSocket } from "ws"
 
 import { writeJson, type CodevisorServerConfig } from "../server-context.js"
+import { liveCloudDeviceId } from "./cloud.js"
 
 /// The direct-path discovery surface: apps ask (over the E2E relay) where
 /// this machine can be reached on its local networks, probe the candidates,
@@ -47,8 +48,7 @@ export const routeNetDirect = (
   url: URL
 ): boolean => {
   if (request.method !== "GET" || url.pathname !== "/v1/net/direct") return false
-  const deviceId =
-    (config.cloud === undefined ? config.cloudDeviceId : config.cloud.deviceId()) ?? null
+  const deviceId = liveCloudDeviceId(config) ?? null
   const info: DirectPathInfo = {
     deviceId,
     port: config.port,

@@ -111,7 +111,20 @@ struct TailscaleDiscoveryTests {
             kind: "remote",
             version: "1.2.3",
             platform: "linux",
-            hostname: "build-box"
+            hostname: "build-box",
+            cloudLinked: false
+          )
+        case "100.64.0.4":
+          // Already on a cloud account (ours or another) — never offered.
+          ServerDiscoveryInfo(
+            serverId: "local",
+            machineId: "machine-2",
+            name: "Linked Box",
+            kind: "remote",
+            version: "1.2.3",
+            platform: "linux",
+            hostname: "bare-peer",
+            cloudLinked: true
           )
         default:
           nil
@@ -135,6 +148,11 @@ struct TailscaleDiscoveryTests {
     // Already-registered hosts disappear from the section.
     await service.refresh(registeredHosts: ["build-box.tail6fc9a.ts.net"])
     #expect(service.discovered.isEmpty)
+
+    // So do machines already on the cloud account, matched by name for
+    // servers too old to report being cloud-linked.
+    await service.refresh(registeredHosts: [], registeredNames: ["Build-Box"])
+    #expect(service.discovered.isEmpty)
   }
 
   @Test("Discovery turns off when tailscale is absent")
@@ -144,6 +162,13 @@ struct TailscaleDiscoveryTests {
     await service.refresh(registeredHosts: [])
     #expect(service.isAvailable == false)
     #expect(service.discovered.isEmpty)
+  }
+
+  @Test("Extracts hosts from tunnel socket addresses")
+  func socketAddressHosts() {
+    #expect(MachineDiscoveryService.host(fromSocketAddress: "100.64.0.2:41641") == "100.64.0.2")
+    #expect(MachineDiscoveryService.host(fromSocketAddress: "[fd7a::2]:41641") == "fd7a::2")
+    #expect(MachineDiscoveryService.host(fromSocketAddress: ":41641") == nil)
   }
 
   @Test("Falls back to the hostname when a server advertises the generic name")

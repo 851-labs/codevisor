@@ -115,6 +115,9 @@ public struct ServerDiscoveryInfo: Decodable, Equatable, Sendable {
   public var version: String
   public var platform: String
   public var hostname: String
+  /// True when the machine is already registered on a Codevisor Cloud
+  /// account (ours or someone else's). Nil from older servers.
+  public var cloudLinked: Bool?
 
   public init(
     serverId: String,
@@ -123,7 +126,8 @@ public struct ServerDiscoveryInfo: Decodable, Equatable, Sendable {
     kind: String,
     version: String,
     platform: String,
-    hostname: String
+    hostname: String,
+    cloudLinked: Bool? = nil
   ) {
     self.serverId = serverId
     self.machineId = machineId
@@ -132,6 +136,7 @@ public struct ServerDiscoveryInfo: Decodable, Equatable, Sendable {
     self.version = version
     self.platform = platform
     self.hostname = hostname
+    self.cloudLinked = cloudLinked
   }
 }
 
@@ -180,9 +185,12 @@ public final class MachineDiscoveryService {
   }
 
   /// One discovery pass. `registeredHosts` are addresses already in the
-  /// machine list (by DNS name or IP) — those peers are skipped so the
-  /// section only ever shows machines the user could add.
-  public func refresh(registeredHosts: Set<String>) async {
+  /// machine list (by DNS name or IP) and `registeredNames` the names of
+  /// machines already on the user's cloud account — matching peers are
+  /// skipped, as are servers that report being linked to any cloud account
+  /// (ours or another), so the section only ever shows machines the user
+  /// could add.
+  public func refresh(registeredHosts: Set<String>, registeredNames: Set<String> = []) async {
     guard !isRefreshing else { return }
     isRefreshing = true
     defer { isRefreshing = false }
@@ -202,6 +210,7 @@ public final class MachineDiscoveryService {
     }
 
     let probe = self.probe
+    let lowercasedNames = Set(registeredNames.map { $0.lowercased() })
     var found: [DiscoveredMachine] = []
     // Bounded fan-out: enough parallelism to finish a big tailnet in a
     // couple of timeouts, without opening a connection per peer at once.
@@ -209,8 +218,11 @@ public final class MachineDiscoveryService {
       let results = await withTaskGroup(of: DiscoveredMachine?.self) { group in
         for peer in chunk {
           group.addTask {
-            guard let host = peer.host, let info = await probe(host) else { return nil }
+            guard let host = peer.host, let info = await probe(host), info.cloudLinked != true
+            else { return nil }
             let name = Self.displayName(info: info, peer: peer)
+            let names = [name, info.name, info.hostname].map { $0.lowercased() }
+            if names.contains(where: { lowercasedNames.contains($0) }) { return nil }
             return DiscoveredMachine(
               id: info.machineId,
               name: name,
@@ -233,6 +245,19 @@ public final class MachineDiscoveryService {
     discovered = found.sorted {
       $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
     }
+  }
+
+  /// The host part of an `ip:port` / `[ipv6]:port` socket address, as
+  /// reported in a cloud machine's tunnel `directAddrs`.
+  public nonisolated static func host(fromSocketAddress address: String) -> String? {
+    if address.hasPrefix("[") {
+      guard let close = address.firstIndex(of: "]") else { return nil }
+      let host = address[address.index(after: address.startIndex)..<close]
+      return host.isEmpty ? nil : String(host)
+    }
+    guard let colon = address.lastIndex(of: ":") else { return address.isEmpty ? nil : address }
+    let host = address[..<colon]
+    return host.isEmpty ? nil : String(host)
   }
 
   /// Servers that predate the hostname default advertise the generic
