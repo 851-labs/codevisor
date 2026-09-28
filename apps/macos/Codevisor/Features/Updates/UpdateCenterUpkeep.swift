@@ -25,8 +25,9 @@ struct UpdateCenterUpkeep: ViewModifier {
           try? await Task.sleep(for: .seconds(5 * 60))
           guard !Task.isCancelled else { return }
           environment.machines.ensureBackgroundConnections()
-          await environment.machines.refreshServerUpdates()
-          await environment.updateCenter.refresh()
+          // Held back while anything is installing, so the Updates
+          // pane's list doesn't shift under an update in progress.
+          await environment.updateCenter.backgroundRefresh()
           await environment.configSync.synchronizeAll()
         }
       }

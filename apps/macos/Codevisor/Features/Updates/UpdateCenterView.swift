@@ -8,9 +8,11 @@ import SwiftUI
 /// on top, then one section per machine listing what that machine can
 /// update (its Codevisor, then its harnesses and plugins).
 ///
-/// Opening the pane always checks every feed afresh, and the list stays
-/// hidden until that check finishes: installing from a stale list is how an
-/// update ends with another one already waiting.
+/// The pane shows what the last sweep found — the same list behind the
+/// sidebar's update count — the moment it opens; opening it checks nothing.
+/// A sweep landing while it is open (the periodic one, or "Check Again")
+/// spins inside the button and updates rows in place, never hiding them.
+/// Only before the first sweep ever finishes is there nothing to show.
 ///
 /// Every row keeps the same two-line geometry in every state — available,
 /// updating, failed — so a live update never reflows the pane, and failure
@@ -21,23 +23,22 @@ struct UpdateCenterView: View {
   @Environment(\.theme) private var theme
   /// The component whose failure details popover is open.
   @State private var failureDetailsId: String?
-  /// Whether this visit's opening check has finished. Starts false so the
-  /// first frame already shows the check rather than the stale list.
-  @State private var hasCheckedOnOpen = false
 
   private var center: UpdateCenter { environment.updateCenter }
 
-  /// The known updates may be stale: the opening check (or a later forced
-  /// one) is still running.
+  /// A sweep has finished at least once, so there is a list to show.
+  private var hasLoaded: Bool { center.lastRefreshedAt != nil }
+
+  /// A sweep or an explicit check is running. Shown in the "Check Again"
+  /// button only; the list stays on screen.
   private var isChecking: Bool {
-    !hasCheckedOnOpen || center.isCheckingForUpdates
+    center.isRefreshing || center.isCheckingForUpdates
   }
 
   var body: some View {
     Form {
       summarySection
-      // The summary above reports the check; the stale list stays hidden.
-      if !isChecking {
+      if hasLoaded {
         ForEach(center.machineGroups) { group in
           machineSection(group)
         }
@@ -47,13 +48,11 @@ struct UpdateCenterView: View {
     .background {
       if !theme.isSystem { theme.windowBackground }
     }
+    .animation(.default, value: center.components.map(\.id))
     .task {
-      // An update-all in flight is working from its own list, and its rows
-      // are the progress the user came to see: leave it be.
-      if !center.isUpdatingAll {
-        await center.refresh(force: true)
-      }
-      hasCheckedOnOpen = true
+      // Opened before the launch sweep finished: join it (or start one)
+      // so there is something to show. Otherwise the last sweep stands.
+      if !hasLoaded { await center.refresh() }
     }
   }
 
@@ -78,21 +77,22 @@ struct UpdateCenterView: View {
           BusyButtonLabel(title: "Check Again", isBusy: isChecking)
         }
         .settingsActionTint(theme)
-        .disabled(isChecking || center.isUpdatingAll)
-        if !isChecking, center.availableCount > 0 {
+        // Nothing re-checks while an update runs, so the list stays put.
+        .disabled(isChecking || center.hasUpdateInFlight)
+        if hasLoaded, center.availableCount > 0 {
           Button {
             Task { await center.updateAll() }
           } label: {
             BusyButtonLabel(title: "Update All", isBusy: center.isUpdatingAll)
           }
           .buttonStyle(.borderedProminent)
-          .disabled(center.isUpdatingAll)
+          .disabled(center.isUpdatingAll || center.isCheckingForUpdates)
         }
       }
       .padding(.vertical, 4)
       Toggle("Receive alpha updates", isOn: alphaUpdatesEnabled)
         .toggleStyle(.switch)
-        .disabled(isChecking || center.isUpdatingAll)
+        .disabled(center.isCheckingForUpdates || center.hasUpdateInFlight)
     } footer: {
       if let notice = center.updateAllNotice {
         Label(notice, systemImage: "exclamationmark.triangle")
@@ -104,7 +104,7 @@ struct UpdateCenterView: View {
 
   private var summaryTitle: String {
     if center.isUpdatingAll { return "Updating…" }
-    if isChecking { return "Checking for updates…" }
+    if !hasLoaded { return "Checking for updates…" }
     switch center.availableCount {
     case 0: return "Everything is up to date"
     case 1: return "1 update available"
@@ -113,7 +113,7 @@ struct UpdateCenterView: View {
   }
 
   private var summaryDetail: String {
-    guard !isChecking, let refreshed = center.lastRefreshedAt else {
+    guard let refreshed = center.lastRefreshedAt else {
       return "Checking every machine's Codevisor, harnesses, and plugins."
     }
     return "Last checked \(refreshed.formatted(date: .omitted, time: .shortened))"

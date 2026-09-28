@@ -105,4 +105,62 @@ extension UpdateCenterTests {
     release.signal()
     await update.value
   }
+
+  @Test("The periodic sweep holds off while an update runs, then catches up")
+  func backgroundSweepWaitsForUpdatesToSettle() async throws {
+    let remote = makeRemote("remote-a")
+    let fake = SyncFakeServerClient(projects: [], sessions: [])
+    var armed = makeHarness(updateAvailable: true)
+    armed.lifecycle = ServerHarnessLifecycleState(phase: "pendingUpdate")
+    fake.configureHarnesses([armed])
+    let controller = try makeController(
+      fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: fake],
+      remotes: [remote]
+    )
+    defer { controller.stopEventSync() }
+    await controller.refreshStatus(for: remote.id)
+    let center = UpdateCenter(machines: controller, appUpdate: AppUpdateModel(currentVersion: "1.0.0"))
+    await center.refresh()
+    #expect(center.hasUpdateInFlight)
+
+    // A new release lands mid-update: the list the user watches stays put.
+    fake.configurePluginUpdates([makePluginUpdate()])
+    await center.backgroundRefresh()
+    #expect(!center.components.contains { $0.kind == .plugin })
+
+    // The harness finishes; the held-back sweep runs on its own.
+    fake.configureHarnesses([makeHarness(updateAvailable: false)])
+    center.noteHarnessLifecycleChanged(onServer: remote.id)
+    await awaitObserved { center.components.contains { $0.kind == .plugin } }
+    #expect(!center.hasUpdateInFlight)
+  }
+
+  @Test("A forced check keeps the last sweep's list on screen until it finishes")
+  func forcedCheckKeepsTheKnownList() async throws {
+    let remote = makeRemote("remote-a")
+    let fake = SyncFakeServerClient(projects: [], sessions: [])
+    fake.configureHarnesses([makeHarness(updateAvailable: true)])
+    let controller = try makeController(
+      fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: fake],
+      remotes: [remote]
+    )
+    defer { controller.stopEventSync() }
+    await controller.refreshStatus(for: remote.id)
+    let center = UpdateCenter(machines: controller, appUpdate: AppUpdateModel(currentVersion: "1.0.0"))
+    await center.refresh()
+    let checking = TestSignal()
+    let release = TestSignal()
+    fake.harnessReadGate = {
+      checking.signal()
+      await release.wait()
+    }
+
+    let check = Task { await center.refresh(force: true) }
+    await checking.wait()
+    #expect(center.lastRefreshedAt != nil)
+    #expect(center.availableCount == 1)
+
+    release.signal()
+    await check.value
+  }
 }

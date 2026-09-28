@@ -1,108 +1,17 @@
 import Foundation
 import Observation
 
-/// One updatable thing somewhere in the fleet: the app itself, a machine's
-/// server, or a harness/plugin on a machine. The row identity every update
-/// surface (settings page, footer count, update-all) folds over.
-public struct UpdateComponent: Identifiable, Equatable, Sendable {
-  public enum Kind: String, Sendable {
-    case app
-    case server
-    case harness
-    case plugin
-  }
-
-  public enum Phase: Equatable, Sendable {
-    case idle
-    case updating
-    case failed(String)
-  }
-
-  public let id: String
-  public let kind: Kind
-  public let machineId: String
-  public let machineName: String
-  /// The harness/plugin id on its machine; empty for app/server rows.
-  public let subjectId: String
-  public let title: String
-  public let installedVersion: String?
-  public let latestVersion: String?
-  public let updateAvailable: Bool
-  public let phase: Phase
-  /// What an in-flight update is doing ("Waiting for 2 chats to finish…",
-  /// "Downloading…"); nil when there is nothing more specific than the phase.
-  public var statusMessage: String?
-  /// Determinate progress (0...1) of an in-flight update, when it has one.
-  public var progress: Double?
-}
-
-extension UpdateComponent {
-  /// The row's detail in every state: versions when idle, what the machine
-  /// is doing while updating, a one-line reason when failed. Status stays on
-  /// one line and the full failure output lives behind a details control;
-  /// versions are never truncated, so rows may wrap them.
-  public var detailText: String {
-    switch phase {
-    case .updating:
-      let status = statusMessage ?? "Updating…"
-      guard let progress else { return status }
-      return "\(status) \(Int((progress * 100).rounded()))%"
-    case let .failed(message):
-      let reason = message.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
-      return reason.isEmpty ? "Update failed" : "Update failed: \(reason)"
-    case .idle:
-      if let change = pendingVersionChange {
-        return "\(change.installed) → \(change.latest)"
-      }
-      if updateAvailable, let latestVersion {
-        return "\(latestVersion) available"
-      }
-      return installedVersion ?? "Up to date"
-    }
-  }
-
-  /// The move an idle row's update would make, when both ends are known.
-  /// Rows use it to break a version change that doesn't fit one line at the
-  /// arrow instead of inside a version.
-  public var pendingVersionChange: (installed: String, latest: String)? {
-    guard phase == .idle, updateAvailable, let installedVersion, let latestVersion else {
-      return nil
-    }
-    return (installedVersion, latestVersion)
-  }
-
-  public var isFailed: Bool {
-    if case .failed = phase { return true }
-    return false
-  }
-}
-
-/// One machine in the Updates pane: the machine's own Codevisor (the app
-/// locally, the server remotely) as the first row when it needs attention,
-/// followed by the harnesses and plugins on it.
-public struct UpdateMachineGroup: Identifiable, Equatable, Sendable {
-  /// The machine id.
-  public let id: String
-  public let machineName: String
-  public let isLocal: Bool
-  /// The machine's Codevisor. Nil when the machine has no self-updater to
-  /// report through (development builds of the app; a server whose
-  /// release state is not known yet).
-  public let codevisor: UpdateComponent?
-  /// Harnesses first, then plugins.
-  public let components: [UpdateComponent]
-
-  public var availableCount: Int {
-    components.count(where: \.updateAvailable) + (codevisor?.updateAvailable == true ? 1 : 0)
-  }
-}
-
 /// The fleet-wide update fold: app + every machine's server, harnesses, and
 /// plugins, as one observable component list with per-row actions and a
 /// properly ordered "update all". Server rows read live per-connection
 /// state (updated by polls and `update.changed` events); harness and plugin
 /// inventories are swept on `refresh` and re-fetched when lifecycle events
 /// arrive.
+///
+/// The Updates pane shows whatever the last sweep found — the same list the
+/// ambient count is built from — and never blocks on a fresh check. While
+/// anything is installing, the periodic sweep holds off (see
+/// `backgroundRefresh`), so the list the user is acting on stays put.
 @MainActor
 @Observable
 public final class UpdateCenter {
@@ -124,12 +33,16 @@ public final class UpdateCenter {
   private let harnessSettlePollInterval: Duration
   private let harnessSettleAttempts: Int
 
+  /// A sweep (periodic or forced) is running. The Updates pane shows it in
+  /// its "Check Again" button and keeps the current list on screen.
   public private(set) var isRefreshing = false
   /// A forced check — every release feed asked afresh — was requested and
   /// has not finished (it may still be waiting for a plain sweep to end).
-  /// Until it finishes the known updates may be stale, so the Updates pane
-  /// shows the check instead of the list, and update-all waits for it.
+  /// Update-all waits for it rather than install from the list it replaces.
   public private(set) var isCheckingForUpdates = false
+  /// A periodic sweep came due while something was installing and was held
+  /// back; it runs as soon as the fleet settles.
+  private var hasDeferredRefresh = false
   /// The one refresh in flight; later callers join it instead of racing it.
   private var refreshTask: Task<Void, Never>?
   private var refreshTaskIsForced = false
@@ -359,7 +272,6 @@ public final class UpdateCenter {
   private func resetFailures() -> [String] {
     var retryMachines: [String] = []
     updateAllNotice = nil
-    lastRefreshedAt = nil
     transientPhases = transientPhases.filter { $0.value == .updating }
     for (machineId, harnesses) in harnessesByMachine {
       for harness in harnesses where harness.lifecycle?.phase == "failed" {
@@ -385,7 +297,7 @@ public final class UpdateCenter {
   ///
   /// One refresh runs at a time. A caller arriving mid-refresh waits for
   /// it; a forced caller that finds only a plain sweep running then runs
-  /// its own check, so opening the Updates pane during the periodic sweep
+  /// its own check, so "Check Again" pressed during the periodic sweep
   /// still asks every feed afresh.
   public func refresh(force: Bool = false) async {
     if force { isCheckingForUpdates = true }
@@ -426,8 +338,10 @@ public final class UpdateCenter {
     }
     if force {
       await appUpdate.checkForUpdates()
-      await machines.refreshServerUpdates(force: true)
     }
+    // A plain sweep reads each server's cached release state; only a
+    // forced check makes the servers ask their release origin.
+    await machines.refreshServerUpdates(force: force)
     let listed = listedHarnessIds?()
     for machine in machines.allMachines {
       guard machines.connectionsById[machine.id]?.status?.isReachable == true else {
@@ -451,10 +365,40 @@ public final class UpdateCenter {
     lastRefreshedAt = Date()
   }
 
+  /// Anything is installing right now: an update-all run, or any single
+  /// row mid-update (including a harness update armed to run once its
+  /// chats finish).
+  public var hasUpdateInFlight: Bool {
+    isUpdatingAll || components.contains { $0.phase == .updating }
+  }
+
+  /// The periodic sweep. Holds off while anything is installing — a sweep
+  /// then would reshuffle the list the user is watching and acting on — and
+  /// runs once the fleet settles instead. In-flight rows keep tracking their
+  /// own progress through lifecycle events and per-row re-reads meanwhile.
+  public func backgroundRefresh() async {
+    guard !hasUpdateInFlight else {
+      hasDeferredRefresh = true
+      return
+    }
+    hasDeferredRefresh = false
+    await refresh()
+  }
+
+  /// Runs the sweep held back by `backgroundRefresh` once nothing is
+  /// installing any more.
+  private func runDeferredRefreshIfSettled() async {
+    guard hasDeferredRefresh, !hasUpdateInFlight else { return }
+    await backgroundRefresh()
+  }
+
   /// A machine's harness lifecycle changed (install/update progress, a
   /// finished update): re-read that machine's inventory so rows track it.
   public func noteHarnessLifecycleChanged(onServer serverId: String) {
-    Task { await self.refreshHarnesses(onMachine: serverId) }
+    Task {
+      await self.refreshHarnesses(onMachine: serverId)
+      await self.runDeferredRefreshIfSettled()
+    }
   }
 
   // MARK: - Actions
@@ -463,6 +407,11 @@ public final class UpdateCenter {
   /// observe (server convergence; harness trigger accepted; plugin
   /// prepared and applied; the app handed to its updater).
   public func update(_ component: UpdateComponent) async {
+    await install(component)
+    await runDeferredRefreshIfSettled()
+  }
+
+  private func install(_ component: UpdateComponent) async {
     switch component.kind {
     case .app:
       await appUpdate.installUpdate()
@@ -513,6 +462,7 @@ public final class UpdateCenter {
     // Never install from a list a running check is about to replace.
     while let running = refreshTask { await running.value }
     await run(components: components.filter(\.updateAvailable))
+    await runDeferredRefreshIfSettled()
   }
 
   /// Installs the given components in order, persisting the remaining ids
@@ -547,7 +497,7 @@ public final class UpdateCenter {
         if kind == .server, harnessMachines.contains(component.machineId) {
           await waitForHarnessUpdatesToSettle(onMachine: component.machineId)
         }
-        await update(component)
+        await install(component)
         remaining.remove(component.id)
         persistSession(remaining)
       }
@@ -596,6 +546,7 @@ public final class UpdateCenter {
       clearSession()
     } else {
       await run(components: pending)
+      await runDeferredRefreshIfSettled()
     }
   }
 }

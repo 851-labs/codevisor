@@ -204,7 +204,7 @@ struct CodevisorApp: App {
     async let chatRecovery: Void = ChatControllerCache.shared.reconcileInFlightControllers()
     _ = await (roster, hub, machineRecovery, chatRecovery)
     // Re-sweep fleet update state with transport restored.
-    Task { await environment.updateCenter.refresh() }
+    Task { await environment.updateCenter.backgroundRefresh() }
   }
 }
 

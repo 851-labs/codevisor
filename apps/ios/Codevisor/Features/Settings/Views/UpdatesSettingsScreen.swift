@@ -5,34 +5,43 @@ import SwiftUI
 /// section per machine listing what it can update (its server, then its
 /// agents and plugins). The iOS twin of macOS's UpdateCenterView — the app
 /// itself is App Store-managed here, so its row simply never exists.
-/// Opening the screen checks every feed afresh, and the list stays hidden
-/// until that check finishes, so nothing installs from a stale list.
+/// The screen shows what the last sweep found — the same list behind the
+/// Settings badge — the moment it opens; opening it checks nothing. Pull to
+/// refresh checks every feed afresh, and a sweep landing while the screen
+/// is open updates rows in place without hiding them.
 struct UpdatesSettingsScreen: View {
   @Environment(AppEnvironment.self) private var environment
-  /// Whether this visit's opening check has finished.
-  @State private var hasCheckedOnOpen = false
 
   private var center: UpdateCenter { environment.updateCenter }
 
-  private var isChecking: Bool {
-    !hasCheckedOnOpen || center.isCheckingForUpdates
+  /// A sweep has finished at least once, so there is a list to show.
+  private var hasLoaded: Bool { center.lastRefreshedAt != nil }
+
+  /// Background activity worth a spinner in the summary. A pull-to-refresh
+  /// check already shows the system's own indicator.
+  private var showsActivity: Bool {
+    !hasLoaded || center.isUpdatingAll
+      || (center.isRefreshing && !center.isCheckingForUpdates)
   }
 
   var body: some View {
     List {
       summarySection
-      if !isChecking {
+      if hasLoaded {
         machineSections
       }
     }
     .navigationTitle("Updates")
-    .refreshable { await center.refresh(force: true) }
+    .animation(.default, value: center.components.map(\.id))
+    .refreshable {
+      // Nothing re-checks while an update runs, so the list stays put.
+      guard !center.hasUpdateInFlight else { return }
+      await center.refresh(force: true)
+    }
     .task {
-      // An update-all in flight is working from its own list: leave it be.
-      if !center.isUpdatingAll {
-        await center.refresh(force: true)
-      }
-      hasCheckedOnOpen = true
+      // Opened before the launch sweep finished: join it (or start one)
+      // so there is something to show. Otherwise the last sweep stands.
+      if !hasLoaded { await center.refresh() }
     }
   }
 
@@ -60,24 +69,24 @@ struct UpdatesSettingsScreen: View {
   private var summarySection: some View {
     Section {
       HStack(spacing: 10) {
-        if isChecking || center.isUpdatingAll {
+        if showsActivity {
           ProgressView()
         }
         VStack(alignment: .leading, spacing: 2) {
           Text(summaryTitle)
             .font(.headline)
-          if !isChecking, let refreshed = center.lastRefreshedAt {
+          if let refreshed = center.lastRefreshedAt {
             Text("Last checked \(refreshed.formatted(date: .omitted, time: .shortened))")
               .font(.footnote)
               .foregroundStyle(.secondary)
           }
         }
       }
-      if !isChecking, center.availableCount > 0 {
+      if hasLoaded, center.availableCount > 0 {
         Button(center.isUpdatingAll ? "Updating…" : "Update All") {
           Task { await center.updateAll() }
         }
-        .disabled(center.isUpdatingAll)
+        .disabled(center.isUpdatingAll || center.isCheckingForUpdates)
       }
     } footer: {
       if let notice = center.updateAllNotice {
@@ -88,7 +97,7 @@ struct UpdatesSettingsScreen: View {
 
   private var summaryTitle: String {
     if center.isUpdatingAll { return "Updating…" }
-    if isChecking { return "Checking for updates…" }
+    if !hasLoaded { return "Checking for updates…" }
     switch center.availableCount {
     case 0: return "Everything is up to date"
     case 1: return "1 update available"
