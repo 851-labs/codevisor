@@ -3,20 +3,18 @@ import CodevisorCoreMac
 import CodevisorUI
 import SwiftUI
 
-/// A Settings ▸ Machines row for a machine reached through the cloud
-/// account's relay: presence, cloud account actions, and the TOFU "key
-/// changed" warning when the machine's presented key conflicts with the
-/// pinned one (relay channels are cut off until the user explicitly
-/// re-trusts it).
+/// A Settings ▸ Machines row for a machine reached through Codevisor Cloud:
+/// how it's reached, cloud account actions, and the TOFU "key changed"
+/// warning when the machine's presented key conflicts with the pinned one
+/// (its channels are cut off until the user explicitly re-trusts it).
 struct CloudMachineRowView: View {
   @Environment(\.theme) private var theme
 
   let machine: CodevisorMachine
   let presence: CloudMachine
   let keyChanged: Bool
-  /// A verified direct LAN pipe to this machine is live — channels skip the
-  /// relay and make one local hop.
-  let direct: Bool
+  /// How this device reaches the machine right now.
+  let connection: MachineConnectionPresentation
   let onRename: () -> Void
   let onRemove: () -> Void
   let onTrustKey: () -> Void
@@ -49,16 +47,7 @@ struct CloudMachineRowView: View {
         .buttonStyle(.plain)
         .help("This machine's encryption key changed — click to review")
       } else {
-        HStack(spacing: 5) {
-          Circle()
-            .fill(presence.online ? theme.statusOK : Color.gray)
-            .frame(width: 7, height: 7)
-            .accessibilityHidden(true)
-          Text(presence.online ? (direct ? "Online · Direct" : "Online") : "Offline")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
-        .help(direct ? "Connected directly over the local network" : "")
+        MachineConnectionBadge(connection)
       }
       Menu {
         if keyChanged {

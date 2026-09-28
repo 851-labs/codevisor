@@ -152,15 +152,13 @@ struct MachinesSettingsScreen: View {
   /// roster says the host is online.
   private func machineRow(_ machine: CodevisorMachine) -> some View {
     let presence = cloudMachine(for: machine)
-    let status = machines.statusByMachineId[machine.id]
-    let configuredDirect = !machine.isCloud && status?.isReachable == true && status?.route == .direct
-    let direct = configuredDirect || presence.map { cloud.directPaths.machineIds.contains($0.deviceId) } == true
     let connection = MachineConnectionPresentation(
-      status: status,
+      isLocal: machine.isLocal,
+      status: machines.statusByMachineId[machine.id],
       availability: machines.availabilityByMachineId[machine.id],
       navigationSyncState: machines.navigationSyncStateByMachineId[machine.id],
-      cloudOnline: presence?.online,
-      usesDirectConnection: direct
+      cloud: presence.map { CloudMachineReach(presence: $0, pipes: cloud.directPaths) },
+      address: machine.isCloud ? nil : machine.connectionAddress
     )
     return HStack(spacing: 10) {
       Image(systemName: EntitySystemSymbol.machine(machine))
@@ -182,16 +180,7 @@ struct MachinesSettingsScreen: View {
         }
         .buttonStyle(.plain)
       } else {
-        HStack(spacing: 5) {
-          Circle()
-            .fill(connectionColor(connection))
-            .frame(width: 7, height: 7)
-            .accessibilityHidden(true)
-          Text(connection.label)
-            .font(.footnote)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: true, vertical: false)
-        }
+        MachineConnectionBadge(connection, font: .footnote)
       }
     }
     .accessibilityElement(children: .combine)
@@ -265,11 +254,6 @@ struct MachinesSettingsScreen: View {
         "“\(machine.name)” is presenting a different encryption key than the one this device remembers. That happens if the machine was re-provisioned — but it can also mean something between you and the machine is intercepting traffic. Only trust the new key if you expected this change."
       )
     }
-  }
-
-  private func connectionColor(_ connection: MachineConnectionPresentation) -> Color {
-    if case .online = connection { return .green }
-    return .gray
   }
 
   private func discoveredRow(_ machine: TailnetMachineDiscovery.Discovered) -> some View {

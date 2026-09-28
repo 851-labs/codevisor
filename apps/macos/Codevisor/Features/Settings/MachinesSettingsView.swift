@@ -406,7 +406,7 @@ private extension MachinesSettingsView {
       machine: machine,
       presence: presence,
       keyChanged: environment.cloud.machinesWithChangedKeys.contains(presence.deviceId),
-      direct: environment.cloud.directPaths.machineIds.contains(presence.deviceId),
+      connection: connection(for: machine, presence: presence),
       onRename: { renamingCloud = presence },
       onRemove: { removingCloud = presence },
       onTrustKey: { trustingKeyCloud = presence }
@@ -466,26 +466,24 @@ private extension MachinesSettingsView {
     .accessibilityElement(children: .combine)
   }
 
-  @ViewBuilder
   func statusLabel(_ machine: CodevisorMachine) -> some View {
-    if let status = machines.statusByMachineId[machine.id] {
-      HStack(spacing: 5) {
-        Circle()
-          .fill(status.isReachable ? theme.statusOK : theme.statusError)
-          .frame(width: 7, height: 7)
-          .accessibilityHidden(true)
-        // The label carries the failure reason when unreachable (e.g.
-        // the local server's launch error), not just "Unreachable".
-        Text(status.label)
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
-      }
-      .accessibilityLabel(status.isReachable ? "Reachable, \(status.label)" : status.label)
-    } else {
-      ProgressView()
-        .controlSize(.mini)
-    }
+    let status = machines.statusByMachineId[machine.id]
+    // An unreachable machine's probe error (e.g. the local server's launch failure) stays
+    // available as the tooltip; the label says Offline.
+    return MachineConnectionBadge(connection(for: machine, presence: nil))
+      .help(status?.isReachable == false ? status?.label ?? "" : "")
+  }
+
+  /// One connection presentation for every kind of machine row.
+  func connection(for machine: CodevisorMachine, presence: CloudMachine?) -> MachineConnectionPresentation {
+    MachineConnectionPresentation(
+      isLocal: machine.isLocal,
+      status: machines.statusByMachineId[machine.id],
+      availability: machines.availabilityByMachineId[machine.id],
+      navigationSyncState: machines.navigationSyncStateByMachineId[machine.id],
+      cloud: presence.map { CloudMachineReach(presence: $0, pipes: environment.cloud.directPaths) },
+      address: machine.isCloud ? nil : machine.connectionAddress
+    )
   }
 
   func refreshStatuses() async {

@@ -56,6 +56,9 @@ public struct MachineStatus: Sendable, Equatable {
   /// The largest attachment upload the server advertised (`maxUploadBytes`
   /// from /v1/info); nil for servers that predate the field.
   public var maxUploadBytes: Int?
+  /// How long the last status check took end to end: the round trip the Machines list shows
+  /// for machines reached by address.
+  public var roundTripMilliseconds: Int?
 
   public init(
     isReachable: Bool,
@@ -64,7 +67,8 @@ public struct MachineStatus: Sendable, Equatable {
     route: MachineRoute? = nil,
     serverId: String? = nil,
     features: Set<String> = [],
-    maxUploadBytes: Int? = nil
+    maxUploadBytes: Int? = nil,
+    roundTripMilliseconds: Int? = nil
   ) {
     self.isReachable = isReachable
     self.label = label
@@ -73,6 +77,7 @@ public struct MachineStatus: Sendable, Equatable {
     self.serverId = serverId
     self.features = features
     self.maxUploadBytes = maxUploadBytes
+    self.roundTripMilliseconds = roundTripMilliseconds
   }
 
   /// What servers accepted before they advertised a limit: their cloud

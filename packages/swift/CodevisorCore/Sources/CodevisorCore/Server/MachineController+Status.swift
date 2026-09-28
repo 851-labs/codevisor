@@ -11,7 +11,9 @@ extension MachineController {
     let connection = connection(for: id)
     defer { noteRouteAfterProbe(connection, id: id) }
     do {
+      let began = ContinuousClock.now
       let info = try await client.info()
+      let elapsed = ContinuousClock.now - began
       connection.status = MachineStatus(
         isReachable: true,
         label: "\(info.name) \(info.version)",
@@ -19,7 +21,8 @@ extension MachineController {
         route: routeInUse(forMachineId: id),
         serverId: info.id,
         features: Set(info.features ?? []),
-        maxUploadBytes: info.maxUploadBytes
+        maxUploadBytes: info.maxUploadBytes,
+        roundTripMilliseconds: Int(elapsed / .milliseconds(1))
       )
       connection.dataUpgradeProgress = nil
       // Persist the direct↔cloud link on the record itself: dedup and

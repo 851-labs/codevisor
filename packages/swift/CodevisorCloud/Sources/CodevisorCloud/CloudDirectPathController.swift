@@ -16,6 +16,17 @@ import Observation
 @MainActor
 @Observable
 public final class CloudDirectPathController {
+  /// A verified pipe, and how to read its current network path.
+  public struct Pipe: Sendable {
+    public let connection: CloudDirectConnection
+    public let path: @Sendable () -> CloudTunnelPath?
+
+    public init(connection: CloudDirectConnection, path: @escaping @Sendable () -> CloudTunnelPath? = { nil }) {
+      self.connection = connection
+      self.path = path
+    }
+  }
+
   /// Dials and verifies one machine's pipe (nil when it doesn't answer).
   /// Injectable so tests can script the dial. The second argument is the
   /// pipe's `onDown` callback.
@@ -23,10 +34,20 @@ public final class CloudDirectPathController {
     @Sendable (
       CloudMachine,
       @escaping @Sendable () -> Void
-    ) async -> CloudDirectConnection?
+    ) async -> Pipe?
 
   /// Machines currently reachable over a verified pipe.
   public private(set) var machineIds: Set<String> = []
+  /// Each live pipe's path (peer-to-peer or relayed, and its round trip), refreshed every
+  /// `pathRefreshInterval` while any pipe is up.
+  public private(set) var paths: [String: CloudTunnelPath] = [:]
+  /// Machines being dialed right now.
+  public private(set) var dialing: Set<String> = []
+  /// When each machine's pipe last went down: "last seen" from this device's point of view.
+  public private(set) var lastReachable: [String: Date] = [:]
+  @ObservationIgnored private var pathReaders: [String: @Sendable () -> CloudTunnelPath?] = [:]
+  @ObservationIgnored var pathRefresh: Task<Void, Never>?
+  static let pathRefreshInterval: Duration = .seconds(5)
 
   @ObservationIgnored private var connections: [String: (connection: CloudDirectConnection, publicKey: String)] = [:]
   @ObservationIgnored var probeTasks: [String: Task<Void, Never>] = [:]
@@ -116,21 +137,24 @@ public final class CloudDirectPathController {
     guard let machine = known[deviceId], machine.tunnel != nil else { return }
     retryTasks.removeValue(forKey: deviceId)?.cancel()
     lastAttempt[deviceId] = .now
+    dialing.insert(deviceId)
     let onDown: @Sendable () -> Void = { [weak self] in
       guard let self else { return }
       Task { @MainActor in self.handleDown(deviceId: deviceId) }
     }
     probeTasks[deviceId] = Task { [weak self, prober] in
-      let connection = await prober(machine, onDown)
+      let pipe = await prober(machine, onDown)
       guard let self, !Task.isCancelled else {
-        await connection?.shutdown()
+        await pipe?.connection.shutdown()
         return
       }
       self.probeTasks[deviceId] = nil
-      guard let connection else {
+      self.dialing.remove(deviceId)
+      guard let pipe else {
         self.scheduleRetry(deviceId)
         return
       }
+      let connection = pipe.connection
       guard self.connections[deviceId] == nil else {
         await connection.shutdown()
         return
@@ -138,6 +162,9 @@ public final class CloudDirectPathController {
       self.failures[deviceId] = nil
       self.connections[deviceId] = (connection, machine.publicKey)
       self.machineIds.insert(deviceId)
+      self.pathReaders[deviceId] = pipe.path
+      self.refreshPaths()
+      self.startPathRefresh()
       self.resumeWaiters(deviceId)
       Log.cloud.log("Tunnel to machine \(deviceId, privacy: .public) is up")
     }
@@ -161,6 +188,8 @@ public final class CloudDirectPathController {
   private func handleDown(deviceId: String) {
     guard connections.removeValue(forKey: deviceId) != nil else { return }
     machineIds.remove(deviceId)
+    forgetPath(deviceId)
+    lastReachable[deviceId] = Date()
     Log.cloud.log("Tunnel to machine \(deviceId, privacy: .public) went down")
     // The pipe dying is fresh information (the network changed): re-dial
     // now rather than on the next roster refresh.
@@ -221,9 +250,39 @@ public final class CloudDirectPathController {
     known[deviceId] = nil
     failures[deviceId] = nil
     machineIds.remove(deviceId)
+    dialing.remove(deviceId)
+    forgetPath(deviceId)
     resumeWaiters(deviceId)
     guard let entry = connections.removeValue(forKey: deviceId) else { return }
     Task { await entry.connection.shutdown() }
+  }
+
+  /// Reads every live pipe's path; only changes are published.
+  func refreshPaths() {
+    for (deviceId, read) in pathReaders {
+      let path = read()
+      if paths[deviceId] != path { paths[deviceId] = path }
+    }
+  }
+
+  private func startPathRefresh() {
+    guard pathRefresh == nil else { return }
+    let sleep = sleep
+    pathRefresh = Task { [weak self] in
+      while (try? await sleep(Self.pathRefreshInterval)) != nil {
+        guard let self, !Task.isCancelled else { return }
+        self.refreshPaths()
+        if self.pathReaders.isEmpty {
+          self.pathRefresh = nil
+          return
+        }
+      }
+    }
+  }
+
+  private func forgetPath(_ deviceId: String) {
+    pathReaders[deviceId] = nil
+    paths[deviceId] = nil
   }
 
   /// Sign-out / server switch: everything goes.
@@ -257,16 +316,18 @@ extension CloudDirectPathController {
   ) -> Prober {
     { machine, onDown in
       guard let address = machine.tunnel else { return nil }
+      let transport = CloudTunnelWebSocketTransport(endpoint: tunnel, address: address)
       let connection = CloudDirectConnection(
         directURL: URL(string: "tunnel://\(machine.deviceId)")!,
         machineDeviceId: machine.deviceId,
         machinePublicKey: machine.publicKey,
         credentialStore: credentialStore,
-        webSocketTransport: CloudTunnelWebSocketTransport(endpoint: tunnel, address: address),
+        webSocketTransport: transport,
         readyTimeout: .seconds(15),
         onDown: onDown
       )
-      if await Self.verifySealedRoundTrip(connection) { return connection }
+      let paths = transport.paths
+      if await Self.verifySealedRoundTrip(connection) { return Pipe(connection: connection) { paths.current() } }
       Log.cloud.notice("Tunnel to machine \(machine.deviceId, privacy: .public) did not verify")
       await connection.shutdown()
       return nil

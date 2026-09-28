@@ -12,9 +12,47 @@ import Foundation
 struct CloudTunnelWebSocketTransport: ServerWebSocketTransport {
   let endpoint: CloudTunnelEndpoint
   let address: CloudTunnelInfo
+  /// Reads the path of whichever connection this transport dialed last.
+  let paths = CloudTunnelPathProbe()
 
   func connect(_ request: URLRequest, maximumMessageSize: Int) -> any ServerWebSocketConnecting {
-    CloudTunnelSocket(endpoint: endpoint, address: address)
+    CloudTunnelSocket(endpoint: endpoint, address: address, paths: paths)
+  }
+}
+
+/// How a tunnel pipe reaches its machine right now: straight to it, or through one of our
+/// relays, and the round trip QUIC measured on that path.
+public struct CloudTunnelPath: Equatable, Sendable {
+  public var isRelayed: Bool
+  /// The relay's URL on a relayed path.
+  public var relayURL: String?
+  public var roundTripMilliseconds: Int
+
+  public init(isRelayed: Bool, relayURL: String? = nil, roundTripMilliseconds: Int) {
+    self.isRelayed = isRelayed
+    self.relayURL = relayURL
+    self.roundTripMilliseconds = roundTripMilliseconds
+  }
+}
+
+/// The live connection's path, read on demand (QUIC keeps the RTT current).
+final class CloudTunnelPathProbe: @unchecked Sendable {
+  private let lock = NSLock()
+  private var connection: NetConnectionHandle?
+
+  func adopt(_ connection: NetConnectionHandle) {
+    lock.withLock { self.connection = connection }
+  }
+
+  func current() -> CloudTunnelPath? {
+    guard let connection = lock.withLock({ connection }) else { return nil }
+    let paths = connection.paths()
+    guard let path = paths.first(where: \.selected) ?? paths.first else { return nil }
+    return CloudTunnelPath(
+      isRelayed: path.isRelay,
+      relayURL: path.isRelay ? path.remote : nil,
+      roundTripMilliseconds: Int(path.rttMs.rounded())
+    )
   }
 }
 
@@ -32,7 +70,7 @@ final class CloudTunnelSocket: ServerWebSocketConnecting, @unchecked Sendable {
   /// init (after every other property), read-only afterwards.
   private var opened: Task<NetMessageStreamHandle, any Error>!
 
-  init(endpoint: CloudTunnelEndpoint, address: CloudTunnelInfo) {
+  init(endpoint: CloudTunnelEndpoint, address: CloudTunnelInfo, paths: CloudTunnelPathProbe) {
     let addr = NetTunnelAddr(
       endpointId: address.endpointId,
       relayUrl: address.relayUrl,
@@ -45,6 +83,7 @@ final class CloudTunnelSocket: ServerWebSocketConnecting, @unchecked Sendable {
         connection.close(code: 1000, reason: "cancelled")
         throw CancellationError()
       }
+      paths.adopt(connection)
       return try await connection.openMessageStream()
     }
   }

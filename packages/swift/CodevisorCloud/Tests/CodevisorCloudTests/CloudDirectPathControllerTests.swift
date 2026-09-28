@@ -17,6 +17,7 @@ private final class ProbeScript: @unchecked Sendable {
   private let lock = NSLock()
   private var results: [String: ScriptedDirectMachine] = [:]
   private var downCallbacks: [String: @Sendable () -> Void] = [:]
+  private var scriptedPath: CloudTunnelPath?
   let log: ProbeLog
 
   @MainActor init() {
@@ -29,6 +30,11 @@ private final class ProbeScript: @unchecked Sendable {
     lock.withLock { results[deviceId] = scripted }
   }
 
+  /// The path every pipe reports from now on.
+  func report(_ path: CloudTunnelPath?) {
+    lock.withLock { scriptedPath = path }
+  }
+
   func takeDown(_ deviceId: String) {
     lock.withLock { downCallbacks[deviceId] }?()
   }
@@ -38,8 +44,9 @@ private final class ProbeScript: @unchecked Sendable {
       await MainActor.run { log.probes.append(machine.deviceId) }
       lock.withLock { downCallbacks[machine.deviceId] = onDown }
       guard let scripted = lock.withLock({ results[machine.deviceId] }) else { return nil }
-      return makeDirectConnection(
+      let connection = makeDirectConnection(
         to: scripted, directURL: URL(string: "tunnel://\(machine.deviceId)")!, onDown: onDown)
+      return CloudDirectPathController.Pipe(connection: connection) { [self] in lock.withLock { scriptedPath } }
     }
   }
 }
@@ -223,5 +230,33 @@ struct CloudDirectPathControllerTests {
     #expect(controller.machineIds == ["m2"])
     controller.reconcile(machines: [])
     #expect(controller.machineIds.isEmpty)
+  }
+
+  @Test("A live pipe publishes its path and round trip, refreshed while it's up; a drop records last seen")
+  func pathsAndLastSeen() async throws {
+    let script = ProbeScript()
+    let clock = TestClock()
+    script.answer("m1", with: ScriptedDirectMachine())
+    script.report(CloudTunnelPath(isRelayed: false, roundTripMilliseconds: 12))
+    let controller = makePathController(script: script, clock: clock)
+    controller.reconcile(machines: [testMachine("m1", publicKey: "key")])
+    #expect(controller.dialing == ["m1"])
+    await settle(controller)
+    #expect(controller.dialing.isEmpty)
+    #expect(controller.paths["m1"] == CloudTunnelPath(isRelayed: false, roundTripMilliseconds: 12))
+
+    // The network moved it onto a relay: the next refresh shows it.
+    let relayed = CloudTunnelPath(
+      isRelayed: true, relayURL: "https://relay-sjc-1.codevisor.dev/", roundTripMilliseconds: 48)
+    script.report(relayed)
+    await clock.waitForSleep(CloudDirectPathController.pathRefreshInterval)
+    clock.advance(by: CloudDirectPathController.pathRefreshInterval)
+    #expect(await waitUntil { controller.paths["m1"] == relayed })
+
+    // The pipe drops: no path, and "last seen" is now.
+    script.answer("m1", with: nil)
+    script.takeDown("m1")
+    #expect(await waitUntil { controller.paths["m1"] == nil })
+    #expect(controller.lastReachable["m1"] != nil)
   }
 }

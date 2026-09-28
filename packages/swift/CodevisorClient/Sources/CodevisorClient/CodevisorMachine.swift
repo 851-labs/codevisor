@@ -31,6 +31,10 @@ public struct CodevisorMachine: Identifiable, Sendable, Codable, Equatable {
   }
 
   public var isLocal: Bool { id == Self.local.id }
+  /// `host:port` of a machine reached by address, as the Machines list shows it.
+  public var connectionAddress: String? {
+    baseURL.host().map { host in baseURL.port.map { "\(host):\($0)" } ?? host }
+  }
 
   /// A machine whose record cannot be resolved right now. The identity is the
   /// real server id, so nothing is mistaken for another machine, and the
