@@ -243,6 +243,23 @@ const handleStreamEvent = (
     }
     case "content_block_start": {
       const block = event.content_block
+      // Current Claude models stream thinking with its text omitted (only a
+      // signature delta follows), so the block's start is the only reliable
+      // thinking signal. An empty thought chunk drives the client's
+      // "Thinking…" state through the otherwise silent gap; any thought text
+      // that does stream still flows through `thinking_delta` below.
+      if (isRecord(block) && (block.type === "thinking" || block.type === "redacted_thinking")) {
+        void session.emit({
+          kind: "session.output",
+          payload: {
+            content: { text: "", type: "text" },
+            sessionUpdate: "agent_thought_chunk",
+            ...(parentId === undefined ? {} : { parentToolCallId: parentId })
+          },
+          subjectId: session.key
+        })
+        break
+      }
       if (isRecord(block) && block.type === "tool_use") {
         // A tool_use block starting after streamed text in the same top-level
         // message proves that text was preamble ("Let me check…"), not the

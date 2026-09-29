@@ -325,6 +325,64 @@ describe("ClaudeProvider", () => {
     expect(chunks).toHaveLength(1)
   })
 
+  it("signals thinking when a text-omitted thinking block starts", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const emit = async (event: RuntimeEvent): Promise<void> => {
+      events.push(event)
+    }
+    const createPromise = run(provider.createSession(definition, "/tmp", emit))
+    fake.push(initMessage())
+    const created = await createPromise
+
+    const promptPromise = run(created.handle.prompt("think, then answer"))
+    await fake.nextPrompt()
+    fake.push(streamEvent({ message: { id: "msg-1" }, type: "message_start" }))
+    // The shape current models stream: a thinking block whose text is
+    // omitted, carrying only a signature.
+    fake.push(
+      streamEvent({
+        content_block: { signature: "", thinking: "", type: "thinking" },
+        index: 0,
+        type: "content_block_start"
+      })
+    )
+    fake.push(
+      streamEvent({
+        delta: { signature: "sig", type: "signature_delta" },
+        index: 0,
+        type: "content_block_delta"
+      })
+    )
+    fake.push(streamEvent({ index: 0, type: "content_block_stop" }))
+    fake.push(
+      streamEvent({
+        delta: { text: "The answer is 42.", type: "text_delta" },
+        index: 1,
+        type: "content_block_delta"
+      })
+    )
+    fake.push(resultMessage())
+    await promptPromise
+
+    const updates = events
+      .map((event) => event.payload as Record<string, unknown>)
+      .filter(
+        (payload) =>
+          payload.sessionUpdate === "agent_thought_chunk" ||
+          payload.sessionUpdate === "agent_message_chunk"
+      )
+    expect(updates.map((payload) => payload.sessionUpdate)).toEqual([
+      "agent_thought_chunk",
+      "agent_message_chunk"
+    ])
+    expect(updates[0]).toEqual({
+      content: { text: "", type: "text" },
+      sessionUpdate: "agent_thought_chunk"
+    })
+  })
+
   it("drops contentless text deltas so the activity indicator survives", async () => {
     const fake = new FakeQuery()
     const provider = makeProvider(fake)
