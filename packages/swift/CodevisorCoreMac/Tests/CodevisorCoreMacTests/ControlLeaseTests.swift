@@ -33,10 +33,7 @@ struct ControlLeaseTests {
         $0.message = "Accessibility required"
       }
       await store.receive(\.delegate.released)
-      await store.send(.event(.availability(false))) {
-        $0.available = false
-        $0.message = "Control is unavailable on this connection."
-      }
+      await store.send(.event(.availability(false))) { $0.available = false }
       await store.send(.event(.availability(true))) {
         $0.available = true
         $0.message = nil
@@ -119,16 +116,45 @@ struct ControlLeaseTests {
       client.sendSucceeds = false
       await clock.advance(by: .seconds(1))
       await store.receive(\.heartbeatTick)
+      // The connection is going away: control pauses (no message, no release to the pane) and
+      // is asked for again on the next channel (851-2472).
       await store.receive(\.channelSendFailed) {
-        $0.wantsControl = false
+        $0.wantsControl = true
         $0.lease = nil
         $0.phase = .viewing
-        $0.message = "The control channel closed."
       }
-      await store.receive(\.delegate.released)
       expectNoDifference(client.endInputs, [endpoint])
       expectNoDifference(client.messages(to: endpoint).last, .release(lease: lease))
       await clock.advance(by: .seconds(5))
+    }
+  }
+
+  /// 851-2470 / 2472: a held lease whose channel goes away (a reconnect) pauses instead of
+  /// releasing, and control is requested again as soon as a channel is back.
+  @Test func controlHeldWhenTheChannelDropsIsRequestedAgainWhenItReturns() async {
+    await withMainSerialExecutor {
+      let client = FakeEndpointClient()
+      let store = await makeControllingStore(client, clock: Clocks.TestClock())
+      await store.send(.event(.availability(false))) {
+        $0.available = false
+        $0.wantsControl = true
+        $0.lease = nil
+        $0.phase = .viewing
+      }
+      #expect(store.state.message == nil)
+      expectNoDifference(client.messages(to: endpoint).last, .release(lease: lease))
+      await store.send(.event(.availability(true))) {
+        $0.available = true
+        $0.requestID = UUID(1)
+        $0.phase = .requesting
+      }
+      expectNoDifference(client.messages(to: endpoint).last, .request(id: UUID(1)))
+      await store.send(.controlReleased(reason: nil)) {
+        $0.wantsControl = false
+        $0.requestID = nil
+        $0.phase = .viewing
+      }
+      await store.receive(\.delegate.released)
     }
   }
 
