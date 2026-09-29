@@ -23,6 +23,17 @@ struct ScreenSharingControlMessageTests {
     #expect(!ScreenSharingInputEvent.text(String(repeating: "x", count: 1025)).isValid)
   }
 
+  /// 851-2469: Apps, Mission Control and Desktop travel as the Mac's own keys; other codes above
+  /// the keyboard range stay invalid.
+  @Test func systemKeysAreValidInputAndOtherHighCodesAreNot() {
+    for key in ScreenSharingSystemKey.allCases {
+      #expect(ScreenSharingInputEvent.key(code: key.rawValue, down: true, repeatKey: false, modifiers: 0).isValid)
+    }
+    #expect(ScreenSharingSystemKey.missionControl.rawValue == 160 && ScreenSharingSystemKey.apps.rawValue == 131)
+    #expect(!ScreenSharingInputEvent.key(code: 127, down: true, repeatKey: false, modifiers: 0).isValid)
+    #expect(!ScreenSharingInputEvent.key(code: 200, down: true, repeatKey: false, modifiers: 0).isValid)
+  }
+
   @Test func geometryExcludesLetterboxingAndClampsOnlyAnActiveDrag() {
     func pointer(_ x: Double, _ y: Double, clamp: Bool = false) -> ScreenSharingPointer? {
       ScreenSharingVideoGeometry.pointer(

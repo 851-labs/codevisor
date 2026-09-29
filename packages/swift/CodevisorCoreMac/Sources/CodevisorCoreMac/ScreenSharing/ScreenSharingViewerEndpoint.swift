@@ -225,6 +225,14 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     surface.endInput()
   }
 
+  /// Presses and releases `key` on the host, under the control lease (851-2469). Does nothing
+  /// while not controlling: the forwarder only sends under a lease.
+  public func tap(_ key: ScreenSharingSystemKey) {
+    for down in [true, false] {
+      forwarder.forward(.key(code: key.rawValue, down: down, repeatKey: false, modifiers: 0))
+    }
+  }
+
   /// The fill the surface paints around the remote display; the pane keeps it
   /// on the app's own surface color instead of black bars.
   public func letterbox(_ color: NSColor) { surface.setLetterboxColor(color) }
