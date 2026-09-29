@@ -32,6 +32,7 @@ import {
 import { makeSkillsManager, managedAttachmentSkill } from "@codevisor/skills"
 import { makeBlobStore } from "@codevisor/sync"
 import { makeTerminalManager } from "@codevisor/terminal"
+import { systemXcodeArtifactHost } from "@codevisor/worktrees"
 import { Effect } from "effect"
 
 import {
@@ -69,7 +70,7 @@ import {
   databaseStartupFailure
 } from "./serve-boot.js"
 import { makeSelfUpdater } from "./serve-self-updater.js"
-import { sweepTrashedWorktrees } from "./server-workspace-effects.js"
+import { sweepTrashedWorktrees, sweepWorktreeXcodeArtifacts } from "./server-workspace-effects.js"
 import { defaultServerConfig, startCodevisorServer } from "./server.js"
 import { makeStartupReporter, type StartupReporter } from "./startup-progress.js"
 export {
@@ -393,6 +394,8 @@ export const runServe = (
     // not delay the health endpoint the launching app is waiting on.
     void Effect.runPromise(agents.refreshEnvironment).catch(() => undefined)
     void sweepTrashedWorktrees()
+    const xcodeArtifacts = systemXcodeArtifactHost()
+    void sweepWorktreeXcodeArtifacts(xcodeArtifacts)
     startup.checkpoint("checkingHealth")
     const server = yield* startCodevisorServer(
       {
@@ -401,6 +404,7 @@ export const runServe = (
         customHarnesses: customHarnessStore,
         db,
         resolveGitEnvironment: () => gitEnvironment,
+        ...(xcodeArtifacts === undefined ? {} : { xcodeArtifacts }),
         terminal,
         ...(auth === undefined ? {} : { auth }),
         ...(sharedAccounts === undefined ? {} : { sharedAccounts }),

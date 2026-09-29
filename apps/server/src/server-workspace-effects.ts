@@ -4,10 +4,12 @@ import type { SessionSummary, Workspace } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 import { worktreePath, worktreesRoot } from "@codevisor/db"
 import {
+  type XcodeArtifactHost,
   deleteSnapshot,
   removeArchivedWorktreeFiles,
   restoreWorktree,
   snapshotWorktree,
+  sweepStaleXcodeArtifacts,
   sweepWorktreeTrash
 } from "@codevisor/worktrees"
 
@@ -25,6 +27,11 @@ export const worktreeTrashRoot = (): string => join(worktreesRoot(), ".trash")
 /// didn't get to delete. Runs at background priority, so boot never waits on
 /// it and it never competes with the user's work.
 export const sweepTrashedWorktrees = (): Promise<void> => sweepWorktreeTrash(worktreeTrashRoot())
+
+/// Deletes Xcode DerivedData and simulators left by worktrees that are gone,
+/// including ones removed before removal cleaned them up. Fire-and-forget.
+export const sweepWorktreeXcodeArtifacts = (host: XcodeArtifactHost | undefined): Promise<void> =>
+  host === undefined ? Promise.resolve() : sweepStaleXcodeArtifacts(worktreesRoot(), host)
 
 /// Workspace archive side effects: retiring runtimes and reclaiming the
 /// worktree the workspace owns.
@@ -226,7 +233,12 @@ export const archiveWorkspaceWorktree = async (
     location.folderPath,
     worktree.path,
     worktree.branch,
-    { trashRoot: worktreeTrashRoot(), worktreeId: worktree.id, env: environment }
+    {
+      trashRoot: worktreeTrashRoot(),
+      worktreeId: worktree.id,
+      env: environment,
+      xcode: services.xcodeArtifacts
+    }
   )
   // Same record, now that the files really are gone. `createArchivedWorktree`
   // upserts on id, so this is the completion write.

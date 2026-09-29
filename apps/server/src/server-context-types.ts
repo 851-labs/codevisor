@@ -163,6 +163,9 @@ export interface CodevisorServerServices {
   /// hooks and filters. GUI-launched macOS servers otherwise inherit a PATH
   /// that omits Homebrew tools such as git-lfs.
   readonly resolveGitEnvironment?: () => Promise<NodeJS.ProcessEnv>
+  /// Where Xcode keeps a worktree's DerivedData and simulators, so removing
+  /// the worktree removes them too. Absent off macOS and in tests.
+  readonly xcodeArtifacts?: import("@codevisor/worktrees").XcodeArtifactHost
   readonly auth?: HarnessAuthManager
   readonly sharedAccounts?: SharedAccounts
   readonly credentialFerry?: ReadonlyArray<CredentialSource>
