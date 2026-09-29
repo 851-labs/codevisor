@@ -55,11 +55,26 @@ struct ScreenSharingRemoteCursorTests {
     #expect(image.alphaInfo == .premultipliedFirst)
   }
 
+  /// 851-2468: the cursor channel opens before the video; a pointer drawn then sat frozen over
+  /// the connecting screen. Nothing is drawn until the first frame, then it appears at once.
+  @Test func thePointerWaitsForTheFirstVideoFrame() throws {
+    let surface = try ScreenSharingVideoSurface(mailbox: ScreenSharingFrameMailbox(), metrics: ScreenSharingMetrics())
+    defer { surface.stop() }
+    surface.frame = NSRect(x: 0, y: 0, width: 960, height: 540)
+    surface.layoutSubtreeIfNeeded()
+    surface.showRemoteCursor(.shape(RFBCursorTestShapes.corner))
+    surface.showRemoteCursor(.position(RFBPoint(x: 100, y: 200)))
+    #expect(surface.remoteCursorOverlayFrame == nil)
+    surface.metal.onFrameSize?(CGSize(width: 1920, height: 1080))
+    #expect(surface.remoteCursorOverlayFrame != nil)
+  }
+
   @Test func viewingShowsTheOverlayAtTheHostsPosition() throws {
     let surface = try ScreenSharingVideoSurface(mailbox: ScreenSharingFrameMailbox(), metrics: ScreenSharingMetrics())
     defer { surface.stop() }
     surface.frame = NSRect(x: 0, y: 0, width: 960, height: 540)
     surface.layoutSubtreeIfNeeded()
+    surface.metal.onFrameSize?(CGSize(width: 1920, height: 1080))
     #expect(surface.remoteCursorOverlayFrame == nil, "Nothing to draw before a shape and a position.")
     surface.showRemoteCursor(.shape(RFBCursorTestShapes.corner))
     #expect(surface.remoteCursorOverlayFrame == nil, "A shape alone has nowhere to go.")
@@ -82,6 +97,7 @@ struct ScreenSharingRemoteCursorTests {
     defer { surface.stop() }
     surface.frame = NSRect(x: 0, y: 0, width: 960, height: 540)
     surface.layoutSubtreeIfNeeded()
+    surface.metal.onFrameSize?(CGSize(width: 1920, height: 1080))
     #expect(surface.controlCursor.image.size == NSSize(width: 1, height: 1), "Native: the video has the pointer.")
     surface.showRemoteCursor(.shape(.hidden))
     #expect(surface.controlCursor.image.size == NSSize(width: 1, height: 1))
@@ -112,6 +128,7 @@ extension ScreenSharingRemoteCursorTests {
     defer { surface.stop() }
     surface.frame = NSRect(x: 0, y: 0, width: 1920, height: 1080)
     surface.layoutSubtreeIfNeeded()
+    surface.metal.onFrameSize?(CGSize(width: 1920, height: 1080))
     let shape = RFBCursorShape(
       width: 4, height: 4, hotspotX: 2, hotspotY: 0, pixels: [UInt8](repeating: 255, count: 64))
     surface.showRemoteCursor(.sizedShape(shape, width: 0.01, height: 0.01 * 16 / 9))

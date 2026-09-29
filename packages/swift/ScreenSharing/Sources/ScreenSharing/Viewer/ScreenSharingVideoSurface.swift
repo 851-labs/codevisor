@@ -34,6 +34,9 @@
       window?.invalidateCursorRects(for: self)
     }
     private var videoSize = CGSize(width: 1920, height: 1080)
+    /// Whether a video frame has arrived. The cursor channel opens before the video, and a
+    /// pointer drawn then sat frozen over the "Connecting…" screen (851-2468).
+    private var hasVideo = false
     /// The remote pointer when the backend reports it (VNC Cursor/PointerPos,
     /// 851-2311): its shape is the local cursor while controlling, so the
     /// pointer moves without a network round trip; while viewing, an overlay
@@ -77,8 +80,13 @@
       cursorOverlay.isHidden = true
       addSubview(cursorOverlay)
       metal.onFrameSize = { [weak self] size in
-        self?.videoSize = size
-        self?.needsLayout = true
+        guard let self else { return }
+        self.videoSize = size
+        self.needsLayout = true
+        if !self.hasVideo {
+          self.hasVideo = true
+          self.refreshRemoteCursor()
+        }
       }
       applyLetterboxColor()
     }
@@ -177,7 +185,7 @@
       let position =
         remotePosition.map { (Double($0.x), Double($0.y)) }
         ?? remoteNormalizedPosition.map { ($0.x * Double(videoSize.width), $0.y * Double(videoSize.height)) }
-      guard !input.isLive, let shape = remoteShape, let image = remoteImage, let position,
+      guard hasVideo, !input.isLive, let shape = remoteShape, let image = remoteImage, let position,
         let frame = ScreenSharingVideoGeometry.cursorFrame(
           x: position.0, y: position.1, hotspotX: Double(shape.hotspotX) * unit,
           hotspotY: Double(shape.hotspotY) * unit, cursorWidth: Double(shape.width) * unit,
