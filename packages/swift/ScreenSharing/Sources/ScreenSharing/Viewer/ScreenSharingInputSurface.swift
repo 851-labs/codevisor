@@ -63,9 +63,10 @@
     func begin() -> Bool {
       guard !active else { return true }
       failureMessage = nil
-      guard let view, let window = view.window, window.isKeyWindow,
-        window.makeFirstResponder(view)
-      else {
+      // The window needn't be key: a grant that arrives while it isn't (the user switched apps while
+      // the pane connected) starts suspended and resumes when the window is key again, as after ⌘Tab.
+      // Refusing it released control and switched the pane to View for the session (851-2472).
+      guard let view, let window = view.window, window.makeFirstResponder(view) else {
         failureMessage = "Focus this window and request control again."
         return false
       }
@@ -85,7 +86,7 @@
         return false
       }
       active = true
-      inputFocused = true
+      inputFocused = window.isKeyWindow && applicationIsActive()
       view.controlCursorChanged()
       monitor = NSEvent.addLocalMonitorForEvents(
         matching: [.keyDown, .keyUp, .flagsChanged, .leftMouseDown, .rightMouseDown, .otherMouseDown]

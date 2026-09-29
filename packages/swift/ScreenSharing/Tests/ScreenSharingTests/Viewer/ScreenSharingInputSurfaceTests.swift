@@ -222,6 +222,19 @@ struct ScreenSharingInputSurfaceTests {
     #expect(fixture.events.last == .key(code: 12, down: true, repeatKey: false, modifiers: 0))
   }
 
+  /// 851-2472: a grant that arrives while the window isn't key starts input suspended, keeping the
+  /// lease, and goes live when the window becomes key. Refusing it switched the pane to View.
+  @Test func aGrantWhileTheWindowIsNotKeyStartsSuspendedAndResumesOnFocus() throws {
+    let fixture = try InputSurfaceFixture(windowIsKey: false)
+    defer { fixture.close() }
+    #expect(fixture.controlling && fixture.input.active && !fixture.input.isLive)
+    fixture.window.key = true
+    fixture.notifications.post(name: NSWindow.didBecomeKeyNotification, object: fixture.window)
+    #expect(fixture.input.isLive)
+    #expect(fixture.keyboard.send(.keyDown, try fixture.systemKey(code: 12)))
+    #expect(fixture.events.last == .key(code: 12, down: true, repeatKey: false, modifiers: 0))
+  }
+
   /// Returning while something else has focus (a local editor, a sheet) stays suspended.
   @Test func returningWithAnotherResponderStaysSuspended() throws {
     let fixture = try InputSurfaceFixture()
@@ -294,10 +307,11 @@ private final class InputSurfaceFixture {
     input.end()
   }
 
-  init(keyboardStarts: Bool = true) throws {
+  init(keyboardStarts: Bool = true, windowIsKey: Bool = true) throws {
     _ = NSApplication.shared
     window = InputTestWindow(
       contentRect: .init(x: 0, y: 0, width: 640, height: 540), styleMask: .borderless, backing: .buffered, defer: false)
+    window.key = windowIsKey
     window.isReleasedWhenClosed = false
     window.contentView?.addSubview(view)
     keyboard.starts = keyboardStarts
