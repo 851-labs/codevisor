@@ -38,6 +38,17 @@ public struct ScreenSharingPointer: Codable, Sendable, Equatable {
 
 /// Physical Mac key codes use the host's keyboard layout. Text insertion is a
 /// separate operation; it must never be interpreted as a physical shortcut.
+/// Keys a Mac keyboard has for system features, which the viewer offers as toolbar buttons like
+/// Apple Screen Sharing's (851-2469). Pressed on the host as the keys themselves: on tuftlord
+/// key 160 put the Dock into Mission Control and key 131 opened Apps. A host from before these
+/// drops codes above 126 as invalid.
+public enum ScreenSharingSystemKey: UInt16, CaseIterable, Sendable {
+  case apps = 131
+  case missionControl = 160
+  /// Show Desktop's default shortcut, F11.
+  case desktop = 103
+}
+
 public enum ScreenSharingInputEvent: Codable, Sendable, Equatable {
   case move(ScreenSharingPointer, modifiers: UInt8)
   case button(ScreenSharingPointer, button: UInt8, down: Bool, clicks: UInt8, modifiers: UInt8)
@@ -52,7 +63,7 @@ public enum ScreenSharingInputEvent: Codable, Sendable, Equatable {
       point.isValid && button <= 2 && (1...3).contains(clicks) && flags < 64
     case .scroll(let point, let x, let y, let flags):
       point.isValid && (-4096...4096).contains(x) && (-4096...4096).contains(y) && flags < 64
-    case .key(let code, _, _, let flags): code <= 126 && flags < 64
+    case .key(let code, _, _, let flags): (code <= 126 || ScreenSharingSystemKey(rawValue: code) != nil) && flags < 64
     case .text(let text): !text.isEmpty && text.utf16.count <= 1024
     }
   }
