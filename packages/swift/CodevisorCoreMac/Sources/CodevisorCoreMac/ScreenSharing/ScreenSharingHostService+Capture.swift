@@ -38,30 +38,36 @@ extension ScreenSharingHostService {
     return Int(elapsed.components.seconds * 1000 + elapsed.components.attoseconds / 1_000_000_000_000_000)
   }
 
-  /// The capture a viewer's connection starts, and what it started with.
-  func startFirstCapture(
-    _ session: Session
-  ) async throws -> (display: CGDirectDisplayID, configuration: ScreenSharingVideoConfiguration) {
-    let started = (display: session.captureDisplayID, configuration: session.configuration)
-    try await startWatchedCapture(session, reason: "viewer connected")
-    return started
+  func startCapture(_ session: Session) async throws {
+    session.capturing = (session.captureDisplayID, session.configuration)
+    try await session.capture.start(
+      displayID: session.captureDisplayID, configuration: session.configuration,
+      sink: session.peer.frameSender, metrics: session.metrics)
   }
 
-  /// A resize only moves a capture that's running. One that lands while the first capture is
-  /// still starting (on tuftlord a start took 1.1 s) made the virtual display and mirrored onto
-  /// it, and the capture then stayed on the old display at the old size: the viewer saw the
-  /// desktop cut off and letterboxed. Once the start returns, the capture follows.
-  func catchUpWithResize(
-    _ session: Session,
-    startedWith started: (display: CGDirectDisplayID, configuration: ScreenSharingVideoConfiguration)
-  ) async throws {
-    // The audio subscription may be restarting the stream right now (it waited for the same start).
-    await session.capture.settled()
-    if session.captureDisplayID != started.display {
-      try? await session.capture.stop()
-      try await startWatchedCapture(session, reason: "display changed while starting")
-    } else if session.configuration != started.configuration {
-      try await session.capture.update(configuration: session.configuration)
+  /// Brings the capture to the session's current display and size before the session reads as
+  /// viewing. A resize only moves a capture that's viewing; one that lands while the first capture
+  /// is starting, or while this catches up with an earlier one, would otherwise be lost. On
+  /// tuftlord (alpha 1112) a second pane size arrived during the catch-up of #165: the capture kept
+  /// 1920×1416 while the sender expected 1920×1356 and dropped all 40,864 frames, a frozen picture
+  /// with no error. This loops until nothing differs; the caller marks the session viewing with no
+  /// suspension in between, so a later resize sees it viewing and applies itself.
+  func reconcileCapture(_ session: Session) async throws {
+    while true {
+      // The audio subscription may be restarting the stream right now (it waited for the same start).
+      await session.capture.settled()
+      guard let capturing = session.capturing else { return }
+      if session.captureDisplayID != capturing.display {
+        try? await session.capture.stop()
+        try await startWatchedCapture(session, reason: "display changed while starting")
+      } else if session.configuration != capturing.configuration {
+        let configuration = session.configuration
+        try await session.capture.update(configuration: configuration)
+        session.capturing?.configuration = configuration
+        Self.logger.notice("Capture resized to \(configuration.width)×\(configuration.height) while starting")
+      } else {
+        return
+      }
     }
   }
 }
