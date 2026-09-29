@@ -64,7 +64,9 @@ describe("@codevisor/terminal terminal manager", () => {
     )
     const frames: Array<unknown> = []
     const disconnect = await run(
-      manager.connectTerminal(terminal.terminalId, 0, (frame) => frames.push(frame))
+      manager.connectTerminal(terminal.terminalId, 0, (frame) => {
+        if (frame.type !== "size") frames.push(frame)
+      })
     )
     disconnect()
 
@@ -91,7 +93,9 @@ describe("@codevisor/terminal terminal manager", () => {
     )
     const firstSink: Array<unknown> = []
     const disconnect = await run(
-      manager.connectTerminal(terminal.terminalId, 0, (frame) => firstSink.push(frame))
+      manager.connectTerminal(terminal.terminalId, 0, (frame) => {
+        if (frame.type !== "size") firstSink.push(frame)
+      })
     )
 
     const sameTerminal = await run(
@@ -110,8 +114,6 @@ describe("@codevisor/terminal terminal manager", () => {
     await run(manager.handleClientFrame(terminal.terminalId, resizeFrame(2, 1, 1)))
     spawner.handlers[0]?.onOutput("hello")
     spawner.handlers[0]?.onExit(7)
-    disconnect()
-    spawner.handlers[0]?.onOutput("after-disconnect")
 
     const process = spawner.processes[0]
     expect(spawner.requests[0]).toMatchObject({ shell: "/bin/bash", env: { PATH: "/bin" } })
@@ -121,15 +123,11 @@ describe("@codevisor/terminal terminal manager", () => {
       { type: "output", seq: 1, data: "hello" },
       { type: "exit", seq: 2, exitCode: 7 }
     ])
-    expect(await run(replayedFrames(manager, terminal.terminalId))).toEqual([
-      { type: "output", seq: 1, data: "hello" },
-      { type: "exit", seq: 2, exitCode: 7 },
-      { type: "output", seq: 3, data: "after-disconnect" }
-    ])
+    // While a client is still attached, the exited terminal stays readable.
     expect(await run(replayedFrames(manager, terminal.terminalId, 1))).toEqual([
-      { type: "exit", seq: 2, exitCode: 7 },
-      { type: "output", seq: 3, data: "after-disconnect" }
+      { type: "exit", seq: 2, exitCode: 7 }
     ])
+    // Its session key is released at exit, so the next create respawns.
     const replacement = await run(
       manager.createTerminal({
         sessionId: "session-2",
@@ -141,7 +139,15 @@ describe("@codevisor/terminal terminal manager", () => {
     expect(replacement.terminalId).not.toBe(terminal.terminalId)
     expect(spawner.requests).toHaveLength(2)
 
-    await run(manager.closeTerminal(terminal.terminalId))
+    // The last client leaving reaps the exited shell and its scrollback.
+    disconnect()
+    await expect(
+      run(manager.connectTerminal(terminal.terminalId, 0, () => undefined))
+    ).rejects.toBeInstanceOf(TerminalError)
+    await expect(run(manager.closeTerminal(terminal.terminalId))).rejects.toBeInstanceOf(
+      TerminalError
+    )
+
     const stillReplacement = await run(
       manager.createTerminal({
         sessionId: "session-2",
@@ -154,9 +160,42 @@ describe("@codevisor/terminal terminal manager", () => {
     await run(manager.closeTerminal(replacement.terminalId))
     expect(process?.killCount).toBe(0)
     expect(spawner.processes[1]?.killCount).toBe(1)
-    await expect(
-      run(manager.connectTerminal(terminal.terminalId, 0, () => undefined))
-    ).rejects.toBeInstanceOf(TerminalError)
+  })
+
+  it("closing an exited shell leaves the session's replacement mapped", async () => {
+    const spawner = makeSpawner()
+    const manager = makeTerminalManager({ spawner })
+    const exited = await run(
+      manager.createTerminal({ sessionId: "session-7", cwd: "/tmp", cols: 80, rows: 24 })
+    )
+    const disconnect = await run(manager.connectTerminal(exited.terminalId, 0, () => undefined))
+    spawner.handlers[0]?.onExit(0)
+    const replacement = await run(
+      manager.createTerminal({ sessionId: "session-7", cwd: "/tmp", cols: 80, rows: 24 })
+    )
+    await run(manager.closeTerminal(exited.terminalId))
+    disconnect()
+    expect(
+      (
+        await run(
+          manager.createTerminal({ sessionId: "session-7", cwd: "/tmp", cols: 80, rows: 24 })
+        )
+      ).terminalId
+    ).toBe(replacement.terminalId)
+  })
+
+  it("reaps a shell that exits with no client attached and stops persisting it", async () => {
+    const spawner = makeSpawner()
+    const manager = makeTerminalManager({ spawner })
+    const terminal = await run(
+      manager.createTerminal({ sessionId: "session-6", cwd: "/tmp", cols: 80, rows: 24 })
+    )
+    expect(manager.snapshotTerminals().terminals).toHaveLength(1)
+    spawner.handlers[0]?.onExit(0)
+    await expect(run(replayedFrames(manager, terminal.terminalId))).rejects.toBeInstanceOf(
+      TerminalError
+    )
+    expect(manager.snapshotTerminals().terminals).toEqual([])
   })
 
   it("kills terminals from client close frames and reports missing terminals", async () => {
@@ -209,8 +248,8 @@ describe("@codevisor/terminal terminal manager", () => {
     )
     expect(replacement.terminalId).not.toBe(terminal.terminalId)
 
-    // A pty that exited on its own leaves a stale mapping: closing reports
-    // false, drops the mapping, and does not double-kill the process.
+    // A pty that exited on its own already released its session: closing
+    // reports false and does not double-kill the process.
     spawner.handlers[1]?.onExit(0)
     expect(await run(manager.closeTerminalForSession("session-5"))).toBe(false)
     expect(spawner.processes[1]?.killCount).toBe(0)

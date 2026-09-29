@@ -68,5 +68,21 @@ export const routeTerminals = async (
     return true
   }
 
+  // The terminal's current screen and scrollback, from the server's own
+  // copy of its state: plain text for agents and tools, or VT that
+  // reproduces it (colors, cursor, modes) in a terminal emulator.
+  const screenTerminalId = matchRoute(url.pathname, "/v1/terminals/:id/screen")
+  if (screenTerminalId !== undefined && request.method === "GET") {
+    const format = url.searchParams.get("format") ?? "text"
+    if (format !== "text" && format !== "vt") {
+      throw new HttpFailure(400, "format must be text or vt")
+    }
+    const screen = await run(services.terminal.readScreen(screenTerminalId, format)).catch(() => {
+      throw new HttpFailure(404, `Terminal not found: ${screenTerminalId}`)
+    })
+    writeJson(response, 200, { format, screen })
+    return true
+  }
+
   return false
 }

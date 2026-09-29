@@ -168,9 +168,17 @@ const main = async (): Promise<void> => {
     socket?.close()
   })
 
+  let terminalId: string | undefined
+  let failures = 0
   while (!exited) {
     try {
       const activeTerminal = await createTerminal(options)
+      // A different terminal (the server restarted and spawned a fresh
+      // shell) numbers its output from 1 again: replay all of it.
+      if (activeTerminal.terminalId !== terminalId) {
+        terminalId = activeTerminal.terminalId
+        lastOutputSeq = 0
+      }
       await new Promise<void>((resolve) => {
         const websocketUrl = websocketUrlFor(
           options.server,
@@ -180,6 +188,7 @@ const main = async (): Promise<void> => {
         const nextSocket = new WebSocket(websocketUrl, { headers: authHeaders(options) })
         socket = nextSocket
         nextSocket.on("open", () => {
+          failures = 0
           while (pendingFrames.length > 0 && nextSocket.readyState === WebSocket.OPEN) {
             const frame = pendingFrames.shift()
             if (frame !== undefined) {
@@ -223,7 +232,10 @@ const main = async (): Promise<void> => {
     }
 
     if (!exited) {
-      await sleep(750)
+      // Exponential backoff (250ms doubling to 5s) so a server that is down
+      // for a while is not hammered by every open pane.
+      failures += 1
+      await sleep(Math.min(5000, 250 * 2 ** Math.min(failures - 1, 5)))
     }
   }
 }

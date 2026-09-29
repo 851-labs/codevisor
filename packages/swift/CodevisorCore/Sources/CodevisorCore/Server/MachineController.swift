@@ -228,7 +228,7 @@ public final class MachineController {
         var machine = CodevisorMachine.cloud(from: cloud)
         // A real loopback address (bridged onto the relay) replaces the
         // placeholder once the machine's bridge is listening, so baseURL
-        // consumers like the external terminal proxy can actually dial it.
+        // consumers that dial a real socket (plugin and browser panes) can reach it.
         if let loopback = cloudProvider?.loopbackBaseURL(for: cloud) {
           machine.baseURL = loopback
         }

@@ -1,10 +1,8 @@
 import { randomUUID } from "node:crypto"
 
-import type { TerminalServerFrame } from "@codevisor/api"
 import { Context, Effect, Layer } from "effect"
 
 import {
-  EXTERNAL_TERMINAL_MAX_FRAMES,
   isDuplicateClientFrame,
   noopProcess,
   sequenceFrame,
@@ -12,21 +10,27 @@ import {
   terminalPromise,
   terminalResponse,
   type RunningTerminal,
+  type SequencedFrame,
   type TerminalFramePayload
 } from "./frames.js"
 import { nodePtySpawner } from "./node-pty-spawner.js"
+import { ReplayBuffer } from "./replay-buffer.js"
 import {
   BUNDLED_GHOSTTY_TERMINFO_DIRECTORY,
   GHOSTTY_TERM,
   resolveDefaultShell,
   resolveTerminalName
 } from "./shell.js"
+import { SizeArbiter, type TerminalSize } from "./size-arbiter.js"
+import { createTerminalScreen, replayCovers, resyncFrames } from "./terminal-screen.js"
+import { RESTORED_TERMINAL_SIZE, restoreEntry, snapshotEntry } from "./terminal-snapshot.js"
 import type {
   TerminalManagerConfig,
   TerminalManagerService,
   TerminalSpawnRequest
 } from "./types.js"
 import { TerminalError } from "./types.js"
+import { createVtTerminal } from "./vt/ghostty-vt.js"
 
 export class TerminalManager extends Context.Service<TerminalManager, TerminalManagerService>()(
   "@codevisor/terminal/TerminalManager"
@@ -35,10 +39,36 @@ export class TerminalManager extends Context.Service<TerminalManager, TerminalMa
     Layer.succeed(TerminalManager, TerminalManager.of(makeTerminalManager(config)))
 }
 
+/// Screen size for pipe-fed external processes, which have no PTY size of
+/// their own until a client resizes the terminal.
+const UNKNOWN_TERMINAL_SIZE = RESTORED_TERMINAL_SIZE
+const decoder = new TextDecoder()
+
+const sizeFrame = (size: TerminalSize) =>
+  ({ type: "size", seq: 0, cols: size.cols, rows: size.rows }) as const
+
+const applySize = (terminal: RunningTerminal, size: TerminalSize | undefined): void => {
+  if (size === undefined) return
+  terminal.process.resize(size.cols, size.rows)
+  terminal.screen.resize(size.cols, size.rows)
+  // Every client learns the PTY's size, so watchers can fit its grid.
+  for (const sink of terminal.sinks) sink(sizeFrame(size))
+}
+
+/// ⌘K for every client at once, deciding as Ghostty does locally. At the
+/// shell's prompt: clear the screen and scrollback everywhere (the server's
+/// screen copy included), then hand the shell Ctrl-L so it redraws its prompt
+/// and whatever was typed. With a program in the foreground, only scrollback
+/// goes: the screen is the program's to draw.
+const CLEAR_SCREEN_AND_SCROLLBACK = "\u001b[H\u001b[2J\u001b[3J"
+const CLEAR_SCROLLBACK = "\u001b[3J"
+
 export const makeTerminalManager = (config: TerminalManagerConfig = {}): TerminalManagerService => {
   const terminals = new Map<string, RunningTerminal>()
   const terminalsBySession = new Map<string, string>()
   const stopping = new Map<string, Promise<void>>()
+  let revision = 0
+
   /* v8 ignore next -- real node-pty spawning is covered by packaging smoke tests. */
   const spawner = config.spawner ?? nodePtySpawner
   const env = config.env ?? process.env
@@ -46,20 +76,29 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
   const defaultShell = resolveDefaultShell(config, env)
   const terminalName = resolveTerminalName(config.platform ?? process.platform)
 
-  const pushFrame = (
-    terminal: RunningTerminal,
-    frame: TerminalFramePayload
-  ): TerminalServerFrame => {
+  const pushFrame = (terminal: RunningTerminal, frame: TerminalFramePayload): SequencedFrame => {
     const sequenced = sequenceFrame(terminal.nextOutputSeq, frame)
     terminal.nextOutputSeq += 1
+    revision += 1
     terminal.frames.push(sequenced)
-    if (terminal.external && terminal.frames.length > EXTERNAL_TERMINAL_MAX_FRAMES) {
-      terminal.frames.splice(0, terminal.frames.length - EXTERNAL_TERMINAL_MAX_FRAMES)
+    if (sequenced.type === "output") {
+      if (!terminal.removed) terminal.screen.write(sequenced.data)
+    } else {
+      terminal.exitFrame = sequenced
     }
     for (const sink of terminal.sinks) {
       sink(sequenced)
     }
     return sequenced
+  }
+
+  const clearTerminal = (terminal: RunningTerminal): void => {
+    const atPrompt = terminal.process.isShellInForeground?.() === true
+    pushFrame(terminal, {
+      type: "output",
+      data: atPrompt ? CLEAR_SCREEN_AND_SCROLLBACK : CLEAR_SCROLLBACK
+    })
+    if (atPrompt) terminal.process.write("\f")
   }
 
   const getTerminal = (terminalId: string, operation: string): RunningTerminal => {
@@ -70,9 +109,25 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
     return terminal
   }
 
+  /// Removes a terminal from the manager and releases its screen state.
+  const dropTerminal = (terminal: RunningTerminal): void => {
+    if (terminals.get(terminal.terminalId) === terminal) terminals.delete(terminal.terminalId)
+    terminal.removed = true
+    terminal.screen.free()
+  }
+
   const clearSessionMapping = (terminal: RunningTerminal): void => {
     if (terminalsBySession.get(terminal.sessionId) === terminal.terminalId) {
       terminalsBySession.delete(terminal.sessionId)
+    }
+  }
+
+  /// A regular shell that exited on its own is dead weight once no client is
+  /// attached to read its exit frame: it can never be reattached by session
+  /// (createTerminal spawns a fresh shell), so drop it with its scrollback.
+  const reapIfUnwatched = (terminal: RunningTerminal): void => {
+    if (terminal.closed && !terminal.external && terminal.sinks.size === 0) {
+      dropTerminal(terminal)
     }
   }
 
@@ -84,7 +139,7 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
         if (terminal.process.stop !== undefined) await terminal.process.stop()
         else if (!terminal.closed) terminal.process.kill()
         terminal.closed = true
-        terminals.delete(terminal.terminalId)
+        dropTerminal(terminal)
         clearSessionMapping(terminal)
       })
       .finally(() => stopping.delete(terminal.sessionId))
@@ -111,13 +166,12 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
 
         const existingTerminalId = terminalsBySession.get(request.sessionId)
         if (existingTerminalId !== undefined) {
-          const existing = terminals.get(existingTerminalId)!
-          // External terminals stay attachable after exit: the process is
-          // agent-owned and will not be respawned, but the scrollback (and
-          // the exit frame) must still replay to a connecting client.
-          if (!existing.closed || existing.external) {
-            return terminalResponse(existing)
-          }
+          // A session key only maps to a live terminal or an external one:
+          // exited session shells release their key at exit, while external
+          // terminals stay attachable after exit (the process is agent-owned
+          // and never respawned, but its scrollback and exit frame must
+          // still replay to a connecting client).
+          return terminalResponse(terminals.get(existingTerminalId)!)
         }
         if (request.attachOnly === true) {
           return yield* Effect.fail(
@@ -164,12 +218,14 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
         const process = yield* spawner.spawn(spawnRequest, {
           onOutput: (data) => publishFrame({ type: "output", data }),
           onExit: (exitCode) => {
+            publishFrame(exitCode === undefined ? { type: "exit" } : { type: "exit", exitCode })
             if (runningTerminal === undefined) {
               exitedBeforeRegistration = true
             } else {
               runningTerminal.closed = true
+              clearSessionMapping(runningTerminal)
+              reapIfUnwatched(runningTerminal)
             }
-            publishFrame(exitCode === undefined ? { type: "exit" } : { type: "exit", exitCode })
           }
         })
         const terminal: RunningTerminal = {
@@ -177,8 +233,11 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
           sessionId: request.sessionId,
           process,
           sinks: new Set(),
-          frames: [],
+          frames: new ReplayBuffer(),
           clientSeqs: new Map(),
+          screen: createTerminalScreen(() => runningTerminal, request),
+          sizes: new SizeArbiter({ cols: request.cols, rows: request.rows }),
+          removed: false,
           nextOutputSeq: 1,
           closed: exitedBeforeRegistration,
           external: false
@@ -196,12 +255,23 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
     connectTerminal: (terminalId, lastOutputSeq, sink) =>
       terminalAttempt("connectTerminal", () => {
         const terminal = getTerminal(terminalId, "connectTerminal")
-        terminal.sinks.add(sink)
-        for (const frame of terminal.frames.filter((candidate) => candidate.seq > lastOutputSeq)) {
+        // Catch the client up byte for byte while the replay buffer reaches
+        // back to its cursor; otherwise send the server's reconstruction of
+        // the screen. Replay first: a sink that throws mid-replay must not
+        // stay attached.
+        const catchUp = replayCovers(terminal, lastOutputSeq)
+          ? terminal.frames.since(lastOutputSeq)
+          : resyncFrames(terminal)
+        // The size first: a client showing a larger PTY than its own screen
+        // fits its grid to it before parsing the output laid out for it.
+        sink(sizeFrame(terminal.sizes.size))
+        for (const frame of catchUp) {
           sink(frame)
         }
+        terminal.sinks.add(sink)
         return () => {
           terminal.sinks.delete(sink)
+          reapIfUnwatched(terminal)
         }
       }),
     handleClientFrame: (terminalId, frame) =>
@@ -222,11 +292,30 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
 
         switch (frame.type) {
           case "input": {
+            if (frame.claim !== false) applySize(terminal, terminal.sizes.claim(frame.clientId))
             terminal.process.write(frame.data)
             break
           }
           case "resize": {
-            terminal.process.resize(frame.cols, frame.rows)
+            if (frame.cols < 1 || frame.rows < 1) {
+              throw new Error("Terminal dimensions must be positive")
+            }
+            applySize(
+              terminal,
+              terminal.sizes.resize(frame.clientId, { cols: frame.cols, rows: frame.rows })
+            )
+            break
+          }
+          case "focus": {
+            applySize(terminal, terminal.sizes.claim(frame.clientId))
+            break
+          }
+          case "hide": {
+            applySize(terminal, terminal.sizes.hide(frame.clientId))
+            break
+          }
+          case "clear": {
+            clearTerminal(terminal)
             break
           }
           case "close": {
@@ -235,6 +324,11 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
           }
         }
       }),
+    releaseClient: (terminalId, clientId) => {
+      const terminal = terminals.get(terminalId)
+      if (terminal === undefined || terminal.closed) return
+      applySize(terminal, terminal.sizes.release(clientId))
+    },
     closeTerminal: (terminalId) =>
       terminalPromise("closeTerminal", async () => {
         const terminal = getTerminal(terminalId, "closeTerminal")
@@ -254,13 +348,11 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
         // (closeTerminal and close frames clear the mapping when removing).
         const terminal = getTerminal(terminalId, "closeTerminalForSession")
         if (terminal.closed) {
+          // Only external terminals keep their key after exit (to stay
+          // attachable for scrollback), so an explicit session close is when
+          // they finally get removed.
           if (terminal.process.stop !== undefined) await stopTerminal(terminal)
-          // The pty already exited on its own; just drop the stale mapping.
-          // Exited external terminals are kept attachable for scrollback, so
-          // an explicit session close is when they finally get removed.
-          if (terminal.external) {
-            terminals.delete(terminalId)
-          }
+          dropTerminal(terminal)
           terminalsBySession.delete(sessionId)
           return false
         }
@@ -285,18 +377,19 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
         return closed
       }),
     snapshotTerminals: () => ({
-      version: 1,
-      terminals: [...terminals.values()].map((terminal) => ({
-        terminalId: terminal.terminalId,
-        sessionId: terminal.sessionId,
-        // Regular terminals have no in-memory cap (they live and die with a
-        // session), so bound what we persist to the external-terminal cap.
-        frames: terminal.frames.slice(-EXTERNAL_TERMINAL_MAX_FRAMES),
-        nextOutputSeq: terminal.nextOutputSeq,
-        closed: terminal.closed,
-        external: terminal.external
-      }))
+      version: 2,
+      // Exited session shells are never restored to a session, so persisting
+      // them would only carry dead scrollback across restarts forever.
+      terminals: [...terminals.values()]
+        .filter((terminal) => terminal.external || !terminal.closed)
+        .map(snapshotEntry)
     }),
+    readScreen: (terminalId, format) =>
+      terminalAttempt("readScreen", () => {
+        const { screen } = getTerminal(terminalId, "readScreen")
+        return format === "text" ? screen.text() : decoder.decode(screen.reconstruct())
+      }),
+    outputRevision: () => revision,
     restoreTerminals: (snapshot) => {
       for (const entry of snapshot.terminals) {
         if (terminals.has(entry.terminalId)) continue
@@ -305,21 +398,26 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
           sessionId: entry.sessionId,
           process: noopProcess,
           sinks: new Set(),
-          frames: [...entry.frames],
+          frames: new ReplayBuffer(),
           // Input dedup state is irrelevant to a closed, process-less
           // terminal: external ones ignore input, regular ones refuse it.
           clientSeqs: new Map(),
+          // Process-less: nothing to answer terminal queries to.
+          screen: createVtTerminal({
+            cols: entry.cols ?? RESTORED_TERMINAL_SIZE.cols,
+            rows: entry.rows ?? RESTORED_TERMINAL_SIZE.rows
+          }),
+          sizes: new SizeArbiter(RESTORED_TERMINAL_SIZE),
+          removed: false,
           nextOutputSeq: entry.nextOutputSeq,
           closed: true,
           external: entry.external
         }
+        restoreEntry(terminal, entry)
         // The process died with the previous server; terminals that were
         // still live at snapshot time replay a synthetic exit so attached
         // clients learn the process is gone rather than waiting on it.
-        if (!entry.closed) {
-          terminal.frames.push(sequenceFrame(terminal.nextOutputSeq, { type: "exit" }))
-          terminal.nextOutputSeq += 1
-        }
+        if (!entry.closed) pushFrame(terminal, { type: "exit" })
         terminals.set(entry.terminalId, terminal)
         // Only external terminals reclaim their session key: their contract is
         // "attachable after exit". A restored session shell must not claim it,
@@ -337,8 +435,13 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
         sessionId: config.sessionId,
         process,
         sinks: new Set(),
-        frames: [],
+        frames: new ReplayBuffer(),
         clientSeqs: new Map(),
+        // Pipe-fed processes have no size of their own until a client
+        // resizes the terminal.
+        screen: createTerminalScreen(() => terminal, UNKNOWN_TERMINAL_SIZE),
+        sizes: new SizeArbiter(UNKNOWN_TERMINAL_SIZE),
+        removed: false,
         nextOutputSeq: 1,
         closed: false,
         external: true
@@ -347,9 +450,8 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
       // (e.g. an agent restarting its dev server): drop the stale one so the
       // mapping never points at output from a dead process.
       const previousId = terminalsBySession.get(config.sessionId)
-      if (previousId !== undefined) {
-        terminals.delete(previousId)
-      }
+      const previous = previousId === undefined ? undefined : terminals.get(previousId)
+      if (previous !== undefined) dropTerminal(previous)
       terminals.set(terminalId, terminal)
       terminalsBySession.set(config.sessionId, terminalId)
       const normalize = config.normalizeNewlines === true
@@ -371,7 +473,7 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
           )
         },
         remove: () => {
-          terminals.delete(terminalId)
+          dropTerminal(terminal)
           clearSessionMapping(terminal)
         }
       }

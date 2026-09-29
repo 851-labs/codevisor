@@ -133,6 +133,38 @@ struct TerminalTransportReplayTests {
     #expect(received.map(\.1) == [true, false])
   }
 
+  /// A client whose cursor predates the server's retained output gets the
+  /// reconstructed screen instead; it is history, even when it arrives
+  /// numbered at or past the head this client learned about.
+  @Test("A reset reconstruction is delivered as replayed history", .timeLimit(.minutes(1)))
+  func deliversResetAsReplayed() async throws {
+    let socket = ScriptedSocket(frames: [
+      #"{"type":"output","seq":1,"data":"superseded"}"#,
+      #"{"type":"output","seq":7,"data":"\u001bcscreen","reset":true}"#,
+      #"{"type":"output","seq":8,"data":"live"}"#,
+    ])
+    let (events, continuation) = AsyncStream<TerminalEvent>.makeStream()
+    let transport = TerminalTransport(
+      config: CodevisorServerConfig(
+        baseURL: URL(string: "https://fixture.invalid")!,
+        requestTransport: TerminalWithHistory(),
+        webSocketTransport: ScriptedSocketTransport(socket: socket)
+      ),
+      onEvent: { continuation.yield($0) }
+    )
+    try await transport.open(sessionId: "s", cwd: "/", cols: 80, rows: 24)
+
+    var received: [(String, Bool)] = []
+    for await event in events {
+      if case let .output(data, replayed) = event { received.append((data, replayed)) }
+      if received.count == 2 { break }
+    }
+    transport.detach()
+
+    #expect(received.map(\.0) == ["\u{1B}cscreen", "live"])
+    #expect(received.map(\.1) == [true, false])
+  }
+
   /// An idle shell produces no live output, so the history can't wait for
   /// any: its last frame releases it.
   @Test("History is delivered once complete, without waiting for live output", .timeLimit(.minutes(1)))
@@ -201,7 +233,7 @@ struct TerminalTransportReplayTests {
     #expect(received.map(\.1) == [true, true, false])
     // The reconnect resumes after what was received, having asked for the
     // head without spawning a shell.
-    #expect(sockets.connectQueries == ["lastOutputSeq=0", "lastOutputSeq=1"])
+    #expect(sockets.connectQueries == ["lastOutputSeq=0&protocol=2", "lastOutputSeq=1&protocol=2"])
     #expect(heads.attachOnlyRequests == [false, true])
   }
 }

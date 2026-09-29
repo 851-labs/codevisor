@@ -329,6 +329,7 @@ export const restoreTerminalPersistence = (
   })
   persistence.restore()
   persistence.installExitHooks()
+  persistence.startPeriodicFlush()
 }
 
 /// The `serve` arguments a self-updated runtime is re-launched with: the
@@ -383,7 +384,6 @@ export const startMachineNetwork = async (options: {
   readonly serverId: string
   readonly machineName: string
   readonly version: string | undefined
-  readonly terminal: TerminalManagerService
   readonly db: CodevisorDatabaseService
 }) => {
   const cloudBridgeOptions = {
@@ -392,7 +392,6 @@ export const startMachineNetwork = async (options: {
     serverId: options.serverId,
     appVersion: options.version ?? "unknown",
     localBaseUrl: `http://127.0.0.1:${options.port}`,
-    terminal: options.terminal,
     env: process.env,
     log: (line: string) => console.error(line),
     releaseChannel: machineReleaseChannel(dirname(options.databasePath), options.db, process.env)

@@ -22,7 +22,9 @@ terminal without spawning a shell; creation fails until that terminal has regist
 contains `terminalId`, `websocketPath`, and `nextOutputSeq`.
 
 Connect to `/v1/terminals/{id}/socket?lastOutputSeq=N`. The server replays output after the supplied
-sequence before sending live frames.
+sequence before sending live frames. The server keeps about 2 MiB of recent output per terminal. When
+the supplied sequence is older than that, it sends one `output` frame with `reset: true` instead: a
+reconstruction of the terminal's current screen and scrollback, starting with a full reset.
 
 ## Client frames
 
@@ -40,10 +42,47 @@ Every client frame carries a stable `clientId` and a monotonic `clientSeq`.
 { "type": "close", "clientId": "client-1", "clientSeq": 3 }
 ```
 
+With protocol 2, three more frames:
+
+```json
+{ "type": "focus", "clientId": "client-1", "clientSeq": 4 }
+```
+
+```json
+{ "type": "hide", "clientId": "client-1", "clientSeq": 5 }
+```
+
+```json
+{ "type": "clear", "clientId": "client-1", "clientSeq": 6 }
+```
+
+When several clients show one terminal, the client being used sets the PTY's size, so programs lay
+out for the screen someone is using. A client is being used when it types (`input`) or sends
+`focus`: send `focus` when the terminal is opened, tapped, or clicked into. A terminal's own replies
+to a program's queries are input but not use: send them with `"claim": false`, and only from the client
+whose size the PTY has, so the program gets one answer. Until any client does,
+the first to show the terminal sets the size. Every client receives
+`{ "type": "size", "seq": 0, "cols": 200, "rows": 50 }` on attach and whenever the size changes. A
+client whose own grid is smaller than that should show the PTY's grid, cropped or scaled, rather than
+reflow it. Send `resize` whenever the terminal is shown or changes size, and `hide` when it goes off
+screen. If the client that set the size hides or disconnects, the most recently active client still
+showing the terminal takes over.
+
+The server acknowledges each client frame with `{ "type": "ack", "seq": 0, "clientSeq": 6 }`. Keep
+frames until they are acknowledged and send them again, unchanged, after reconnecting: a connection
+can drop with frames still in flight, and the `clientSeq` duplicate check ignores any that did
+arrive.
+
+`clear` clears the terminal for every client. When the shell is in the foreground, the server
+clears the screen and scrollback and sends the shell Ctrl-L so it redraws its prompt. When a program
+is running, only the scrollback is cleared.
+
 ## Server frames
 
 Server frames are `output`, `exit`, or `error` objects. Their `seq` field is the replay cursor.
 Persist the highest processed sequence and supply it as `lastOutputSeq` after reconnecting.
+Treat replayed and `reset` output as history: it can contain terminal queries that were already
+answered, so a renderer must not answer them again.
 
 Keep one stable `clientId` per client attachment and increase `clientSeq` for every frame. This lets
 the server reject duplicate input after a client retries or reconnects.
@@ -51,3 +90,28 @@ the server reject duplicate input after a client retries or reconnects.
 Deleting `/v1/terminals/session/{sessionId}` closes the live terminal associated with a session so a
 later create request can start a fresh shell. It returns `200 { "closed": true }`; when no live
 terminal exists, it returns `404 { "closed": false }`.
+
+## Protocol 2 and flow control
+
+Add `protocol=2` to the socket URL to receive output as binary frames. The server first sends a
+`{ "type": "ready", "seq": 0, "protocol": 2 }` text frame; servers without protocol 2 ignore the
+parameter and keep sending JSON text. Each binary frame is a kind byte (`1` output, `2` reset
+output), the sequence number as a big-endian 64-bit integer, and the UTF-8 output. Other frames stay
+JSON text.
+
+After `ready`, clients can send `{ "type": "ping", "t": 123, "srtt": 80 }`. The server answers
+`{ "type": "pong", "seq": 0, "t": 123 }`. `srtt` is the client's smoothed round trip in
+milliseconds; on slow links the server batches output for a few milliseconds to send fewer, larger
+frames.
+
+A client that cannot keep up is never allowed to stall the terminal. When its socket falls about
+1 MiB behind, the server stops sending it output, and once it drains, catches it up from the last
+frame it received: with the missed output when that is still retained, otherwise with a `reset`
+reconstruction.
+
+## Reading the screen
+
+`GET /v1/terminals/{id}/screen?format=text` returns the terminal's current screen and scrollback as
+plain text, from the server's own copy of the terminal state: `{ "format": "text", "screen": "..." }`.
+Use `format=vt` for escape sequences that reproduce the screen, including colors and the cursor, in a
+terminal emulator. Unknown terminals return `404`.

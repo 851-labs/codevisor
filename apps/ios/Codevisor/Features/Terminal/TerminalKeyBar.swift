@@ -1,10 +1,11 @@
 import Combine
-import SwiftTerm
+import GhosttyTerminal
 import SwiftUI
 import UIKit
 
-/// Bridges the SwiftUI key bar to the SwiftTerm terminal view: key sends,
-/// ctrl/touch modifier state, and the keyboard's geometry.
+/// Bridges the SwiftUI key bar to the Ghostty terminal view: key presses
+/// (encoded by Ghostty for the program's key modes), the sticky ctrl
+/// modifier, and the keyboard's geometry.
 ///
 /// The pane is laid out edge to edge and opts out of SwiftUI's own keyboard
 /// avoidance (see `EdgeToEdgePaneHost`), so the keyboard is measured here
@@ -12,7 +13,7 @@ import UIKit
 /// terminal and the key bar move with it rather than racing it.
 @MainActor
 final class TerminalKeyController: ObservableObject {
-  private(set) weak var terminalView: SwiftTerm.TerminalView?
+  private(set) weak var terminalView: SessionTerminalView?
 
   @Published private(set) var keyboardVisible = false
   /// The docked keyboard's top edge in the host window's coordinate space —
@@ -24,7 +25,6 @@ final class TerminalKeyController: ObservableObject {
   /// terminal has to stay clear of.
   @Published private(set) var keyboardTop: CGFloat?
   @Published var ctrlActive = false
-  @Published var touchModeActive = false
 
   private var observers: [NSObjectProtocol] = []
 
@@ -43,14 +43,6 @@ final class TerminalKeyController: ObservableObject {
         forName: UIResponder.keyboardWillHideNotification, object: nil, queue: .main
       ) { [weak self] note in
         MainActor.assumeIsolated { self?.apply(top: nil, visible: false, note: note) }
-      })
-    // SwiftTerm auto-clears the control modifier after applying it to the
-    // next keystroke; mirror that in the button state.
-    observers.append(
-      center.addObserver(
-        forName: .terminalViewControlModifierReset, object: nil, queue: .main
-      ) { [weak self] _ in
-        Task { @MainActor [weak self] in self?.ctrlActive = false }
       })
   }
 
@@ -101,8 +93,16 @@ final class TerminalKeyController: ObservableObject {
     }
   }
 
-  func attach(_ view: SwiftTerm.TerminalView) {
+  func attach(_ view: SessionTerminalView) {
+    guard terminalView !== view else { return }
     terminalView = view
+    // The view clears a one-shot ctrl after the next keystroke; mirror its
+    // state in the button.
+    view.setStickyModifierChangeHandler { [weak self, weak view] in
+      guard let view else { return }
+      self?.ctrlActive = view.stickyActivation(for: .ctrl) != .inactive
+    }
+    ctrlActive = view.stickyActivation(for: .ctrl) != .inactive
   }
 
   func showKeyboard() {
@@ -117,50 +117,41 @@ final class TerminalKeyController: ObservableObject {
     }
   }
 
-  func sendEsc() { clickAndSend(EscapeSequences.cmdEsc) }
-  func sendTab() { clickAndSend(EscapeSequences.cmdTab) }
+  func sendEsc() { press(.escape) }
+  func sendTab() { press(.tab) }
 
   enum Arrow {
     case up, down, left, right
   }
 
+  /// Ghostty encodes arrows for the program's cursor-key mode itself.
   func sendArrow(_ arrow: Arrow) {
-    guard let tv = terminalView else { return }
-    let app = tv.getTerminal().applicationCursor
-    let data: [UInt8] =
-      switch arrow {
-      case .up: app ? EscapeSequences.moveUpApp : EscapeSequences.moveUpNormal
-      case .down: app ? EscapeSequences.moveDownApp : EscapeSequences.moveDownNormal
-      case .left: app ? EscapeSequences.moveLeftApp : EscapeSequences.moveLeftNormal
-      case .right: app ? EscapeSequences.moveRightApp : EscapeSequences.moveRightNormal
-      }
-    clickAndSend(data)
+    switch arrow {
+    case .up: press(.arrowUp)
+    case .down: press(.arrowDown)
+    case .left: press(.arrowLeft)
+    case .right: press(.arrowRight)
+    }
   }
 
+  /// One-shot ctrl: applies to the next key typed, then clears.
   func toggleCtrl() {
-    guard let tv = terminalView else { return }
+    guard let terminalView else { return }
     UIDevice.current.playInputClick()
-    // With no TerminalAccessory installed, SwiftTerm falls back to the
-    // TerminalView's own controlModifier and auto-clears it after use.
-    tv.controlModifier.toggle()
-    ctrlActive = tv.controlModifier
+    terminalView.toggleStickyModifier(.ctrl)
+    ctrlActive = terminalView.stickyActivation(for: .ctrl) != .inactive
   }
 
-  func toggleTouchMode() {
-    guard let tv = terminalView else { return }
+  private func press(_ key: TerminalKey) {
     UIDevice.current.playInputClick()
-    tv.allowMouseReporting.toggle()
-    touchModeActive = !tv.allowMouseReporting
-  }
-
-  private func clickAndSend(_ data: [UInt8]) {
-    UIDevice.current.playInputClick()
-    terminalView?.send(data)
+    terminalView?.noteUserInput()
+    _ = terminalView?.sendKey(key)
   }
 }
 
-/// Liquid Glass key bar floating above the keyboard: esc, ctrl, tab, arrows,
-/// and touch-mode toggle. Shown only while the keyboard is up; the keyboard is
+/// Liquid Glass key bar floating above the keyboard: esc, ctrl, tab, and
+/// arrows. (Touches select text or go to the program as mouse input as
+/// Ghostty decides from the program's mouse mode.) Shown only while the keyboard is up; the keyboard is
 /// dismissed by swiping it down (interactive dismissal on the terminal).
 struct TerminalKeyBar: View {
   @ObservedObject var controller: TerminalKeyController
@@ -174,9 +165,6 @@ struct TerminalKeyBar: View {
       repeatKey("arrow.down", "Down arrow", .down)
       repeatKey("arrow.up", "Up arrow", .up)
       repeatKey("arrow.right", "Right arrow", .right)
-      toggleKey("hand.draw", "Touch mode", isOn: controller.touchModeActive) {
-        controller.toggleTouchMode()
-      }
     }
     .padding(.horizontal, 10)
     .frame(height: 48)

@@ -193,6 +193,7 @@ struct CodevisorApp: App {
     async let hub: Void = environment.cloud.reconnectHub()
     async let machineRecovery: Void = environment.prepareAllMachines()
     async let chatRecovery: Void = ChatControllerCache.shared.reconcileInFlightControllers()
+    TerminalSessionCache.shared.reconnectAll()
     _ = await (roster, hub, machineRecovery, chatRecovery)
     // Re-sweep fleet update state with transport restored.
     Task { await environment.updateCenter.backgroundRefresh() }

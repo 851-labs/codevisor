@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest"
 
 import {
   CLOUD_PROTOCOL_VERSION,
-  TERMINAL_CHANNEL_TYPE,
   decodeAppToHub,
   decodeHubToApp,
   decodeHubToMachine,
@@ -103,8 +102,7 @@ describe("control frames (JSON text)", () => {
     expect(() => decodeHubToMachine("not json")).toThrow()
   })
 
-  it("exports the terminal channel contract", () => {
-    expect(TERMINAL_CHANNEL_TYPE).toBe("terminal")
+  it("exports the cloud protocol version", () => {
     expect(CLOUD_PROTOCOL_VERSION).toBe(2)
   })
 })

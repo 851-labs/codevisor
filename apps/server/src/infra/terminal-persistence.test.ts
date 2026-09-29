@@ -3,6 +3,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { makeTerminalManager, type TerminalProcess } from "@codevisor/terminal"
+import { Effect } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 
 import { makeTerminalPersistence } from "./terminal-persistence.js"
@@ -46,19 +47,17 @@ describe("terminal persistence", () => {
     expect(lines).toEqual(["Restored 1 terminal buffer(s) from previous run"])
     // The snapshot file is consumed so a crash cannot replay it again later.
     expect(existsSync(join(dataDir, "terminal-buffers.json"))).toBe(false)
-    // Scrollback survives; the still-live terminal gained a synthetic exit.
+    // The screen survives; the still-live terminal gained a synthetic exit.
     expect(second.snapshotTerminals().terminals).toMatchObject([
       {
         terminalId: handle.terminalId,
         sessionId: "plugin:demo",
         closed: true,
         external: true,
-        frames: [
-          { type: "output", seq: 1, data: "plugin output\r\n" },
-          { type: "exit", seq: 2 }
-        ]
+        nextOutputSeq: 3
       }
     ])
+    expect(Effect.runSync(second.readScreen(handle.terminalId, "text"))).toBe("plugin output")
   })
 
   it("reports actual restored terminal counts across batches", () => {
@@ -167,7 +166,7 @@ describe("terminal persistence", () => {
     const snapshotPath = join(dataDir, "terminal-buffers.json")
     expect(existsSync(`${snapshotPath}.tmp`)).toBe(false)
     const parsed = JSON.parse(readFileSync(snapshotPath, "utf8")) as { version: number }
-    expect(parsed.version).toBe(1)
+    expect(parsed.version).toBe(2)
     expect(statSync(snapshotPath).mode & 0o777).toBe(0o600)
   })
 
@@ -195,5 +194,36 @@ describe("terminal persistence", () => {
     expect(existsSync(join(dataDir, "terminal-buffers.json"))).toBe(false)
     handlers.get("exit")?.()
     expect(existsSync(join(dataDir, "terminal-buffers.json"))).toBe(true)
+  })
+
+  it("flushes periodically, but only after new output", () => {
+    const dataDir = makeDataDir()
+    const manager = makeTerminalManager()
+    const handle = manager.registerExternalTerminal({ sessionId: "agent:bg:tick" }, noopProcess)
+    handle.output("first")
+    const ticks: Array<{ run: () => void; ms: number; unrefs: number }> = []
+    makeTerminalPersistence({
+      dataDir,
+      terminal: manager,
+      setInterval: (run, ms) => {
+        const tick = { run, ms, unrefs: 0 }
+        ticks.push(tick)
+        return { unref: () => (tick.unrefs += 1) }
+      }
+    }).startPeriodicFlush()
+    const tick = ticks[0]!
+    expect(tick.ms).toBe(30_000)
+    expect(tick.unrefs).toBe(1)
+
+    const snapshotPath = join(dataDir, "terminal-buffers.json")
+    tick.run()
+    expect(existsSync(snapshotPath)).toBe(true)
+    // Unchanged since the last write: the file is left alone.
+    rmSync(snapshotPath)
+    tick.run()
+    expect(existsSync(snapshotPath)).toBe(false)
+    handle.output("second")
+    tick.run()
+    expect(existsSync(snapshotPath)).toBe(true)
   })
 })

@@ -1,21 +1,29 @@
 import type { TerminalCreateResponse, TerminalServerFrame } from "@codevisor/api"
 import { Effect } from "effect"
 
+import type { ReplayBuffer } from "./replay-buffer.js"
+import type { SizeArbiter } from "./size-arbiter.js"
 import type { TerminalProcess } from "./types.js"
 import { TerminalError } from "./types.js"
-
-/// External terminals can outlive any single client and stream indefinitely
-/// (dev servers); cap the replay buffer so memory stays bounded. Clients that
-/// reconnect past the trim point lose the oldest scrollback only.
-export const EXTERNAL_TERMINAL_MAX_FRAMES = 20_000
+import type { VtTerminal } from "./vt/ghostty-vt.js"
 
 export interface RunningTerminal {
   readonly terminalId: string
   readonly sessionId: string
   readonly process: TerminalProcess
   readonly sinks: Set<(frame: TerminalServerFrame) => void>
-  readonly frames: Array<TerminalServerFrame>
+  /// Byte-bounded replay for reconnecting clients; see ReplayBuffer.
+  readonly frames: ReplayBuffer
   readonly clientSeqs: Map<string, number>
+  /// Authoritative screen state, fed every output frame.
+  readonly screen: VtTerminal
+  /// Which client's size the PTY follows when several are attached.
+  readonly sizes: SizeArbiter
+  /// The exit frame once the process ended, replayed after a resync.
+  exitFrame?: Extract<TerminalServerFrame, { type: "exit" }>
+  /// Set once the terminal left the manager and its screen was freed; late
+  /// output from a caller-owned process is still sequenced but not parsed.
+  removed: boolean
   nextOutputSeq: number
   closed: boolean
   /// Externally-managed terminals are never (re)spawned by the manager and
@@ -73,7 +81,10 @@ export const terminalResponse = (terminal: RunningTerminal): TerminalCreateRespo
   nextOutputSeq: terminal.nextOutputSeq
 })
 
-export const sequenceFrame = (seq: number, frame: TerminalFramePayload): TerminalServerFrame => {
+/// The frames a terminal's own output produces (errors are per-client).
+export type SequencedFrame = Extract<TerminalServerFrame, { type: "output" | "exit" }>
+
+export const sequenceFrame = (seq: number, frame: TerminalFramePayload): SequencedFrame => {
   switch (frame.type) {
     case "output": {
       return { type: "output", seq, data: frame.data }

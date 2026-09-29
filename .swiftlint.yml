@@ -14,6 +14,7 @@ included:
 
 excluded:
   - apps/macos/Codevisor/Vendor
+  - packages/ghostty-terminal/Sources/Vendor
   # Generated code (uniffi bindings for packages/net).
   - "**/Generated"
   - "**/.build"

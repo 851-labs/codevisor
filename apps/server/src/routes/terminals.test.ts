@@ -7,7 +7,10 @@ const recordMessages = (socket: WebSocket) => {
   const messages: unknown[] = []
   const waiters = new Map<number, () => void>()
   socket.on("message", (data) => {
-    messages.push(JSON.parse(data.toString()))
+    const message = JSON.parse(data.toString()) as { type?: string }
+    // Size announcements aren't what these tests follow.
+    if (message.type === "size") return
+    messages.push(message)
     waiters.get(messages.length)?.()
     waiters.delete(messages.length)
   })
@@ -157,5 +160,25 @@ describe("terminal routes", () => {
       badPathSocket.once("close", resolve)
       badPathSocket.once("error", () => resolve())
     })
+  })
+
+  it("reads a terminal's screen as text or VT", async () => {
+    const { server, spawner } = await start()
+    const created = await jsonRequest(server, "/v1/terminals", {
+      body: JSON.stringify({ sessionId: "session-screen", cwd: "/tmp", cols: 80, rows: 24 }),
+      method: "POST"
+    })
+    const { terminalId } = created.body as { readonly terminalId: string }
+    spawner.handlers[0]?.onOutput("$ make\r\n\u001b[32mok\u001b[0m")
+
+    const text = await jsonRequest(server, `/v1/terminals/${terminalId}/screen`)
+    expect(text.body).toEqual({ format: "text", screen: "$ make\nok" })
+    const vt = await jsonRequest(server, `/v1/terminals/${terminalId}/screen?format=vt`)
+    expect((vt.body as { screen: string }).screen).toContain("\u001b[")
+
+    expect(
+      (await jsonRequest(server, `/v1/terminals/${terminalId}/screen?format=html`)).status
+    ).toBe(400)
+    expect((await jsonRequest(server, "/v1/terminals/missing/screen")).status).toBe(404)
   })
 })

@@ -13,3 +13,13 @@ and advertises `xterm-ghostty`. Linux PTYs use the host's standard
 `xterm-256color` database and retain `COLORTERM=truecolor`; they deliberately
 omit `TERMINFO` so the Ghostty-only bundle cannot mask system entries in Zsh.
 `GHOSTTY-LICENSE` contains the upstream MIT license.
+
+# libghostty-vt (WebAssembly)
+
+`ghostty-vt.wasm` is libghostty-vt built for `wasm32-freestanding`
+(`ReleaseSmall`) from the Ghostty revision in `GHOSTTY-VT-REF`, by
+`scripts/build-ghostty-vt-wasm.sh`. The build is reproducible: rerunning the
+script at the same revision with Zig 0.16.0 yields identical bytes. The server
+keeps an authoritative copy of each terminal's screen in it, so reattaching
+clients receive a reconstruction of the current screen instead of the
+terminal's whole output history (`src/vt/ghostty-vt.ts`).

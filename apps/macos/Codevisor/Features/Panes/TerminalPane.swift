@@ -37,6 +37,7 @@ final class TerminalPane: Pane, Identifiable {
       session: context.session,
       project: context.project,
       machine: context.machine,
+      serverConfig: context.resolveServerConfig?(),
       terminalKey: context.terminalKey,
       attachOnly: context.attachOnly,
       workspaceRootDirectory: context.workspaceRootDirectory
@@ -94,6 +95,7 @@ final class TerminalPane: Pane, Identifiable {
     if !visible {
       _surface?.setFocused(false)
     }
+    _surface?.setVisible(visible)
   }
 
   /// Tab closed: tear down the surface AND kill the server-side shell.
@@ -113,19 +115,25 @@ final class TerminalPane: Pane, Identifiable {
   // MARK: - Server shell lifecycle
 
   private func deleteServerShell() async {
-    let machine = descriptor.machine
+    let config = descriptor.serverConfig
     var request = URLRequest(
-      url: machine.baseURL
+      url: config.baseURL
         .appendingPathComponent("v1/terminals/session")
         // ":" is urlPathAllowed so the synthetic "<session>:<pane>" key
         // passes through raw; the server decodes the segment either way.
         .appendingPathComponent(descriptor.terminalKey)
     )
     request.httpMethod = "DELETE"
+    if let token = config.bearerToken, !token.isEmpty {
+      request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    }
     do {
-      _ = try await URLSession.shared.data(for: request)
+      // Through the config's transport, so cloud machines use the relay.
+      let transport = config.requestTransport ?? URLSessionRequestTransport(session: .shared)
+      _ = try await transport.data(for: request)
     } catch {
-      // Best-effort cleanup; the server reaps orphaned shells itself.
+      // Best-effort: a missed delete leaves the shell running until the
+      // session or workspace is retired, which closes its terminals.
       Log.terminal.debug(
         "server shell delete failed for \(self.descriptor.terminalKey, privacy: .public): \(String(describing: error), privacy: .public)"
       )

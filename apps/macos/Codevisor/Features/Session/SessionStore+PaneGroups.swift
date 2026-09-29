@@ -256,6 +256,9 @@ extension SessionStore {
         resolveHTTPBaseURL: {
           await machines?.effectiveHTTPBaseURL(forMachineId: serverId)
         },
+        resolveServerConfig: {
+          machines?.serverConfig(for: serverId) ?? machine.serverConfig
+        },
         openTunnelMedia: {
           guard let route = await machines?.tunnelMediaRoute(forMachineId: serverId) else { return nil }
           return ScreenSharingTunnelMedia(

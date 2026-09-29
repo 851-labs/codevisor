@@ -42,6 +42,18 @@ extension Ghostty {
         /// Context for surface creation
         var context: ghostty_surface_context_e = GHOSTTY_SURFACE_CONTEXT_WINDOW
 
+        // CODEVISOR-PATCH-BEGIN: host-managed I/O (libghostty-spm patch).
+        // Codevisor's terminals run on the server: instead of spawning a
+        // process, the host writes PTY output into the surface and receives
+        // its input and size through these callbacks.
+        struct HostIO {
+            let userdata: UnsafeMutableRawPointer
+            let receiveBuffer: ghostty_surface_receive_buffer_cb
+            let receiveResize: ghostty_surface_receive_resize_cb
+        }
+        var hostIO: HostIO?
+        // CODEVISOR-PATCH-END
+
         init() {}
 
         init(from config: ghostty_surface_config_s) {
@@ -99,6 +111,15 @@ extension Ghostty {
 
             // Set context
             config.context = context
+
+            // CODEVISOR-PATCH-BEGIN: host-managed I/O (see `hostIO`).
+            if let hostIO {
+                config.backend = GHOSTTY_SURFACE_IO_BACKEND_HOST_MANAGED
+                config.receive_userdata = hostIO.userdata
+                config.receive_buffer = hostIO.receiveBuffer
+                config.receive_resize = hostIO.receiveResize
+            }
+            // CODEVISOR-PATCH-END
 
             // Use withCString to ensure strings remain valid for the duration of the closure
             return try workingDirectory.withCString { cWorkingDir in

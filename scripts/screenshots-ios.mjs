@@ -39,7 +39,7 @@ if (
   throw new Error(
     'Screenshot capture requires the worktree simulator to use iPhone 13 Pro Max and the requested runtime. Restart its owner with: bun run ios-simulator --device="iPhone 13 Pro Max"'
   )
-await bootstrapDevelopment(root)
+await bootstrapDevelopment(root, { ghosttyKit: true })
 const bundle = `${iosDevelopmentBundleIdentifier(root)}.screenshots`
 const baseArguments = [
   "-project",

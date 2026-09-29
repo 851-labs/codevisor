@@ -1,3 +1,5 @@
+import { basename } from "node:path"
+
 import { trackProcessTree } from "@codevisor/processes"
 import { Effect } from "effect"
 
@@ -33,7 +35,10 @@ export const nodePtySpawner: TerminalSpawner = {
           kill: () => {
             void tree.stop().catch(() => child.kill("SIGKILL"))
           },
-          stop: () => tree.stop()
+          stop: () => tree.stop(),
+          // node-pty reports the foreground process of the PTY's session.
+          isShellInForeground: () =>
+            basename(child.process).replace(/^-/, "") === basename(request.shell)
         }
       },
       catch: (cause) =>

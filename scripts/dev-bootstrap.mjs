@@ -11,6 +11,9 @@ export async function bootstrapDevelopment(repoRoot, options = {}) {
   // xcframework before it resolves the package (docs/plans/codevisor-tunnel.md).
   await ensureSwiftFramework(options.environment)
   if (options.ghostty === true) await ensureNativeFrameworks(repoRoot, options)
+  // The iOS app's terminal (packages/ghostty-terminal) links GhosttyKit too,
+  // but not Chromium.
+  else if (options.ghosttyKit === true) await ensureGhosttyFramework(repoRoot, options.environment)
 }
 
 /// The prebuilt native frameworks the macOS app links (GhosttyKit and the

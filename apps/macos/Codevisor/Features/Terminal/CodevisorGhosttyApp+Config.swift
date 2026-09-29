@@ -119,9 +119,13 @@ extension CodevisorGhosttyApp {
     // No font-family: libghostty falls back to its embedded default
     // (JetBrains Mono, with ligatures), so the embedded terminal renders
     // exactly like stock Ghostty. Only the size is pinned to the app's.
+    // keybind super+k=unbind: Ghostty's ⌘K (clear_screen) only clears this
+    // view. Codevisor's surfaces catch ⌘K and clear the server terminal for
+    // every client instead (see CodevisorGhosttySurfaceView).
     var contents = """
       font-size = \(terminalFontSize)
       crash-report = false
+      keybind = super+k=unbind
 
       """
     if let theme {

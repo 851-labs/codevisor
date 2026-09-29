@@ -22,6 +22,8 @@ import { fileURLToPath } from "node:url"
 
 const defaultOrigin = "https://updates.codevisor.dev/dev-artifacts/ghostty"
 const frameworkRelativePath = join("apps", "macos", "Frameworks", "GhosttyKit.xcframework")
+/// The macOS app links the first slice, the iOS app the other two.
+export const GHOSTTY_SLICES = ["macos-arm64_x86_64", "ios-arm64", "ios-arm64_x86_64-simulator"]
 
 export async function ghosttyBuildStamp(repoRoot) {
   return (
@@ -60,7 +62,26 @@ export async function ensureGhosttyFramework(repoRoot, environment = process.env
         return
       }
 
-      await downloadFramework({ artifactsRoot, cachedFramework, environment, stamp })
+      try {
+        await downloadFramework({ artifactsRoot, cachedFramework, environment, stamp })
+      } catch (cause) {
+        // The shared artifact is published by CI after a pin bump lands; until
+        // then, produce it locally (a checksum-verified download plus
+        // repackaging, so this takes seconds, not a Zig build).
+        console.log(
+          `GhosttyKit ${stamp} is not published yet (${cause instanceof Error ? cause.message : String(cause)}); building it locally.`
+        )
+        await run(join(repoRoot, "apps/macos/scripts/build-ghostty.sh"), [], { cwd: repoRoot })
+        if (!(await validRegularFramework(localFramework, stamp))) {
+          throw new Error(
+            `The local Ghostty build did not produce a valid framework for ${stamp}`,
+            {
+              cause
+            }
+          )
+        }
+        await installFramework(localFramework, cachedFramework)
+      }
     })
   }
 
@@ -69,7 +90,6 @@ export async function ensureGhosttyFramework(repoRoot, environment = process.env
 }
 
 export async function buildGhosttyFramework(repoRoot, environment = process.env) {
-  await run("git", ["submodule", "update", "--init", ".repos/ghostty"], { cwd: repoRoot })
   await run(join(repoRoot, "apps/macos/scripts/build-ghostty.sh"), [], { cwd: repoRoot })
   const stamp = await ghosttyBuildStamp(repoRoot)
   const artifactsRoot = ghosttyArtifactsRoot(environment)
@@ -180,8 +200,10 @@ export async function validFramework(path, expectedStamp) {
     if (stamp !== expectedStamp) return false
     await Promise.all([
       access(join(path, "Info.plist")),
-      access(join(path, "macos-arm64_x86_64", "Headers", "ghostty.h")),
-      access(join(path, "macos-arm64_x86_64", "ghostty-internal.a"))
+      ...GHOSTTY_SLICES.flatMap((slice) => [
+        access(join(path, slice, "Headers", "GhosttyKit", "ghostty.h")),
+        access(join(path, slice, "ghostty-internal.a"))
+      ])
     ])
     return true
   } catch {

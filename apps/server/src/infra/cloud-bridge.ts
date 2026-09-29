@@ -3,15 +3,7 @@ import { hostname } from "node:os"
 import { dirname, join } from "node:path"
 import { deflateRawSync, inflateRawSync } from "node:zlib"
 
-import {
-  decode,
-  GATEWAY_CHANNEL_TYPE,
-  TERMINAL_CHANNEL_TYPE,
-  type CloudMachinePresence,
-  TerminalChannelParams,
-  TerminalClientFrame,
-  type TerminalServerFrame
-} from "@codevisor/api"
+import { GATEWAY_CHANNEL_TYPE, type CloudMachinePresence } from "@codevisor/api"
 import {
   BYTE_STREAM_CHANNEL_TYPE,
   CloudMachineConnection,
@@ -24,7 +16,6 @@ import {
   requestOverGatewayChannel,
   serializePeerKeyPins,
   WS_CHANNEL_TYPE,
-  type ChannelHandler,
   type CloudSocket,
   type FetchLike,
   type GatewayExchange,
@@ -32,8 +23,6 @@ import {
   type MachineCredentials,
   type PeerKeyPinStore
 } from "@codevisor/cloud-client"
-import type { TerminalManagerService } from "@codevisor/terminal"
-import { Effect } from "effect"
 
 import type { CloudServerControl } from "../server-context-types.js"
 import { removeMachineFromCloudAccount } from "./cloud-account-removal.js"
@@ -47,8 +36,8 @@ import {
 import { prepareMachineTunnel, tunnelKeyPath, tunnelPinsPath } from "./cloud-tunnel.js"
 
 /// Connects a running server to the user's cloud hub as a machine, serving
-/// end-to-end encrypted terminal channels. Integration boundary over `ws`,
-/// the filesystem, and live terminals — the protocol/reconnect/crypto logic
+/// end-to-end encrypted request, WebSocket, and byte-stream channels.
+/// Integration boundary over `ws` and the filesystem — the protocol/reconnect/crypto logic
 /// it composes is covered in @codevisor/cloud-client and @codevisor/cloud-crypto.
 
 export interface CloudBridgeOptions {
@@ -63,7 +52,6 @@ export interface CloudBridgeOptions {
   /// structured request channels replay against it, while raw byte-stream
   /// channels connect only to this exact listener.
   readonly localBaseUrl: string
-  readonly terminal: TerminalManagerService
   readonly env: Readonly<Record<string, string | undefined>>
   readonly log: (line: string) => void
   /// This machine's update channel, reported at every hub hello.
@@ -179,42 +167,6 @@ const compressPayload = (bytes: Uint8Array): Uint8Array | undefined => {
 
 const decompressPayload = (bytes: Uint8Array): Uint8Array => new Uint8Array(inflateRawSync(bytes))
 
-/// Serves one app-opened terminal channel: reattach via (terminalId,
-/// sinceSeq), stream frames out, apply client frames in. Channel payloads:
-/// app→machine TerminalClientFrame, machine→app TerminalServerFrame.
-const terminalChannelHandler =
-  (terminal: TerminalManagerService, log: (line: string) => void): ChannelHandler =>
-  (channel) => {
-    let detach: (() => void) | undefined
-    let params: TerminalChannelParams
-    try {
-      params = decode(TerminalChannelParams)(channel.params)
-    } catch {
-      channel.close("rejected")
-      return
-    }
-    const sink = (frame: TerminalServerFrame): void => channel.send(frame)
-    Effect.runPromise(terminal.connectTerminal(params.terminalId, params.sinceSeq, sink))
-      .then((unsubscribe) => {
-        detach = unsubscribe
-      })
-      .catch((cause) => {
-        log(`Cloud terminal channel rejected: ${cause instanceof Error ? cause.message : cause}`)
-        channel.close("rejected")
-      })
-    channel.onData = (value) => {
-      try {
-        const frame = decode(TerminalClientFrame)(value)
-        void Effect.runPromise(terminal.handleClientFrame(params.terminalId, frame)).catch(
-          () => undefined
-        )
-      } catch {
-        channel.close("protocol-error")
-      }
-    }
-    channel.onClosed = () => detach?.()
-  }
-
 /// Dev self-heal: a local cloud reset (fresh D1) leaves the machine holding a
 /// dead api key it would retry forever. When the dev env can mint fresh
 /// credentials, probe the stored ones and re-provision if they're no longer
@@ -271,7 +223,6 @@ const makeBridge = async (
   // identically no matter which pipe carried it.
   const channelHandlers = {
     [BYTE_STREAM_CHANNEL_TYPE]: byteStreamChannelHandler(options.localBaseUrl, options.log),
-    [TERMINAL_CHANNEL_TYPE]: terminalChannelHandler(options.terminal, options.log),
     [HTTP_CHANNEL_TYPE]: httpChannelHandler(options.localBaseUrl, options.log),
     [GATEWAY_CHANNEL_TYPE]: gatewayLoopbackHandler(options.localBaseUrl, options.log),
     [WS_CHANNEL_TYPE]: wsChannelHandler(options.localBaseUrl)

@@ -245,7 +245,7 @@ export const runServe = (
     // never depends on it.
     const machineName = args.name ?? hostname()
     const { cloudControl, machine, machineLink } = yield* Effect.promise(() =>
-      startMachineNetwork({ databasePath, port, serverId, machineName, version, terminal, db })
+      startMachineNetwork({ databasePath, port, serverId, machineName, version, db })
     )
     // Start resolving the GUI process's minimal environment without delaying
     // server boot. The first Git operation awaits this shared result so

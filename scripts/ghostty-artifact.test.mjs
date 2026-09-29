@@ -8,12 +8,9 @@ import { promisify } from "node:util"
 
 const execFileAsync = promisify(execFile)
 const buildGhosttyScript = new URL("../apps/macos/scripts/build-ghostty.sh", import.meta.url)
-const ghosttyPatch = new URL(
-  "../apps/macos/patches/ghostty-libcpp-availability.patch",
-  import.meta.url
-)
 
 import {
+  GHOSTTY_SLICES,
   ghosttyArtifactsRoot,
   ghosttyCachedFramework,
   validFramework
@@ -36,9 +33,7 @@ test("Ghostty build stamp is independent of the checkout path", async () => {
       const macosRoot = join(root, checkout, "apps/macos")
       const script = join(macosRoot, "scripts/build-ghostty.sh")
       await mkdir(join(macosRoot, "scripts"), { recursive: true })
-      await mkdir(join(macosRoot, "patches"), { recursive: true })
       await cp(buildGhosttyScript, script)
-      await cp(ghosttyPatch, join(macosRoot, "patches/ghostty-libcpp-availability.patch"))
       const { stdout } = await execFileAsync("/bin/bash", [script, "--print-stamp"])
       stamps.push(stdout.trim())
     }
@@ -53,14 +48,19 @@ test("Ghostty framework validation requires the expected stamp and structure", a
   const root = await mkdtemp(join(tmpdir(), "codevisor-ghostty-test-"))
   const framework = join(root, "GhosttyKit.xcframework")
   try {
-    await mkdir(join(framework, "macos-arm64_x86_64/Headers"), { recursive: true })
-    await writeFile(join(framework, ".codevisor-stamp"), "current\n")
+    for (const slice of GHOSTTY_SLICES) {
+      await mkdir(join(framework, slice, "Headers/GhosttyKit"), { recursive: true })
+      await writeFile(join(framework, slice, "Headers/GhosttyKit/ghostty.h"), "header")
+      await writeFile(join(framework, slice, "ghostty-internal.a"), "archive")
+    }
     await writeFile(join(framework, "Info.plist"), "plist")
-    await writeFile(join(framework, "macos-arm64_x86_64/Headers/ghostty.h"), "header")
-    await writeFile(join(framework, "macos-arm64_x86_64/ghostty-internal.a"), "archive")
+    await writeFile(join(framework, ".codevisor-stamp"), "current\n")
 
     assert.equal(await validFramework(framework, "current"), true)
     assert.equal(await validFramework(framework, "stale"), false)
+    // A macOS-only framework (the iOS app links the other slices) is incomplete.
+    await rm(join(framework, "ios-arm64"), { recursive: true })
+    assert.equal(await validFramework(framework, "current"), false)
   } finally {
     await rm(root, { recursive: true, force: true })
   }

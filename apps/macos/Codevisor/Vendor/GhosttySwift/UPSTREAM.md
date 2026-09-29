@@ -64,8 +64,9 @@ Patch classes (12 files):
 
 ## Re-syncing to a new upstream commit
 
-1. Update `GHOSTTY_REF` in `apps/macos/scripts/build-ghostty.sh`; run it to
-   rebuild `Frameworks/GhosttyKit.xcframework` (needs Zig 0.15.2).
+1. Update the pins in `apps/macos/scripts/build-ghostty.sh` (a newer
+   libghostty-spm `upstream.<ref>` release); run it to refresh
+   `Frameworks/GhosttyKit.xcframework`, and `--fetch-only` for the source.
 2. Run `apps/macos/scripts/sync-ghostty-swift.sh` — copies the manifest files
    from `.repos/ghostty` over this directory and prints the diff.
 3. Re-apply the patches: `git diff` will show upstream's changes mixed with

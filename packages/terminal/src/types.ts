@@ -18,6 +18,9 @@ export interface TerminalProcess {
   readonly kill: () => void
   /// Resolves only once the owned process tree has exited.
   readonly stop?: () => Promise<void>
+  /// Whether the shell itself (not a program it runs) is the terminal's
+  /// foreground process, i.e. it is sitting at its prompt.
+  readonly isShellInForeground?: () => boolean
 }
 
 export interface TerminalSpawnRequest extends TerminalCreateRequest {
@@ -83,16 +86,25 @@ export interface ExternalTerminalConfig {
 export interface TerminalSnapshotEntry {
   readonly terminalId: string
   readonly sessionId: string
-  readonly frames: ReadonlyArray<TerminalServerFrame>
   readonly nextOutputSeq: number
   readonly closed: boolean
   readonly external: boolean
+  /// Version 2: the terminal's screen and scrollback as a VT reconstruction,
+  /// with the size it was laid out at and the exit code if it had exited.
+  readonly screen?: string
+  readonly cols?: number
+  readonly rows?: number
+  readonly exitCode?: number
+  /// Version 1 files carry the raw replay frames instead.
+  readonly frames?: ReadonlyArray<TerminalServerFrame>
 }
 
 export interface TerminalSnapshot {
-  readonly version: 1
+  readonly version: 1 | 2
   readonly terminals: ReadonlyArray<TerminalSnapshotEntry>
 }
+
+export type TerminalScreenFormat = "text" | "vt"
 
 export interface TerminalManagerService {
   readonly createTerminal: (
@@ -125,9 +137,9 @@ export interface TerminalManagerService {
     config: ExternalTerminalConfig,
     process: TerminalProcess
   ) => ExternalTerminalHandle
-  /// Serializable dump of every terminal's replay buffer. Synchronous so the
-  /// server can call it from process exit handlers; frame counts are bounded
-  /// per terminal, so the snapshot is bounded too.
+  /// Serializable dump of every terminal's screen and scrollback. Synchronous
+  /// so the server can call it from process exit handlers; scrollback is
+  /// line-bounded per terminal, so the snapshot is bounded too.
   readonly snapshotTerminals: () => TerminalSnapshot
   /// Restores a previous process's snapshot. Restored terminals are closed
   /// and process-less: they replay scrollback (and a synthetic exit frame if
@@ -137,4 +149,15 @@ export interface TerminalManagerService {
   /// createTerminal for the session spawns a fresh shell as usual. Terminal
   /// ids that already exist are skipped — call this before serving clients.
   readonly restoreTerminals: (snapshot: TerminalSnapshot) => void
+  /// The terminal's current screen and scrollback: plain text for agents and
+  /// tools, or VT bytes that reproduce it in a terminal emulator.
+  readonly readScreen: (
+    terminalId: string,
+    format: TerminalScreenFormat
+  ) => Effect.Effect<string, TerminalError>
+  /// Increments whenever any terminal produces output or exits, so callers
+  /// can skip persisting an unchanged snapshot.
+  readonly outputRevision: () => number
+  /// A client disconnected: its size stops constraining the PTY.
+  readonly releaseClient: (terminalId: string, clientId: string) => void
 }

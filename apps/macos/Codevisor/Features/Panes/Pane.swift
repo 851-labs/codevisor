@@ -50,6 +50,11 @@ struct PaneContext {
   /// its 127.0.0.1 address (MachineController.effectiveHTTPBaseURL). Nil
   /// (previews) falls back to `machine.baseURL`.
   var resolveHTTPBaseURL: (@MainActor () async -> URL?)? = nil
+  /// The machine's relay-aware server config for panes that open their own
+  /// connections (terminals): MachineController.serverConfig(for:), so a
+  /// cloud machine tunnels through the in-process relay transports. Nil
+  /// (previews) falls back to `machine.serverConfig`.
+  var resolveServerConfig: (@MainActor () -> CodevisorServerConfig)? = nil
   /// Opens a screen-sharing media route over the Codevisor tunnel to this
   /// machine (docs/plans/codevisor-tunnel.md); nil for direct machines.
   var openTunnelMedia: ScreenSharingViewerBackend.TunnelMediaProvider? = nil

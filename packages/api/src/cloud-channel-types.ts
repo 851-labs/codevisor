@@ -4,8 +4,7 @@ import { Schema } from "effect"
 /// payloads, invisible to the hub. Re-exported through cloud-protocol.ts.
 
 /// Decrypted content of an open envelope's payload. `params` is
-/// channel-type-specific; terminal channels use TerminalChannelParams to
-/// reattach durable sessions. `compress: true` negotiates prefix-framed
+/// channel-type-specific. `compress: true` negotiates prefix-framed
 /// payloads: every data plaintext in both directions starts with a framing
 /// byte (0 = raw, 1 = raw-DEFLATE body), letting the responder compress
 /// compressible bodies. Invisible to the hub, like everything else here.
@@ -23,17 +22,7 @@ export const ChannelOpenPayload = Schema.Struct({
 })
 export type ChannelOpenPayload = typeof ChannelOpenPayload.Type
 
-export const TERMINAL_CHANNEL_TYPE = "terminal"
-
 /// Machine→machine request channel: one Codevisor gateway call per channel
 /// (see @codevisor/cloud-client gateway-channel.ts). The only channel type a
 /// machine accepts from another machine.
 export const GATEWAY_CHANNEL_TYPE = "gateway"
-
-export const TerminalChannelParams = Schema.Struct({
-  terminalId: Schema.String,
-  /// Resume after this output sequence number (0 = from the start of the
-  /// machine's retained frame window).
-  sinceSeq: Schema.Number
-})
-export type TerminalChannelParams = typeof TerminalChannelParams.Type

@@ -15,6 +15,45 @@ import os
 /// into `sizeDidChange` here.
 @MainActor
 private final class CodevisorGhosttySurfaceView: Ghostty.SurfaceView {
+  /// ⌘K: clear the terminal for every client (set by the surface).
+  var onClear: (() -> Void)?
+  /// The terminal was clicked or focused into: it takes the PTY's size
+  /// from another device showing it (set by the surface).
+  var onUse: (() -> Void)?
+  /// A key press, click, drag, scroll or paste: what the surface produces
+  /// next is the user's, not a reply to a program's query (set by the
+  /// surface).
+  var onUserInput: (() -> Void)?
+
+  override func keyDown(with event: NSEvent) {
+    onUserInput?()
+    super.keyDown(with: event)
+  }
+
+  override func mouseUp(with event: NSEvent) {
+    onUserInput?()
+    super.mouseUp(with: event)
+  }
+
+  override func mouseDragged(with event: NSEvent) {
+    onUserInput?()
+    super.mouseDragged(with: event)
+  }
+
+  override func rightMouseDown(with event: NSEvent) {
+    onUserInput?()
+    super.rightMouseDown(with: event)
+  }
+
+  override func otherMouseDown(with event: NSEvent) {
+    onUserInput?()
+    super.otherMouseDown(with: event)
+  }
+
+  override func scrollWheel(with event: NSEvent) {
+    onUserInput?()
+    super.scrollWheel(with: event)
+  }
   /// Set by the adapter; fired from the context menu's "Restart Terminal".
   var onRestartRequest: (() -> Void)?
   /// Set by the adapter; fired for pane-group shortcuts while focused.
@@ -27,6 +66,7 @@ private final class CodevisorGhosttySurfaceView: Ghostty.SurfaceView {
     let accepted = super.becomeFirstResponder()
     if accepted {
       onFocusChanged?(true)
+      onUse?()
     }
     return accepted
   }
@@ -83,6 +123,9 @@ private final class CodevisorGhosttySurfaceView: Ghostty.SurfaceView {
   }
 
   override func mouseDown(with event: NSEvent) {
+    onUserInput?()
+    // Already focused, a click still says this is the device being used.
+    if window?.firstResponder === self { onUse?() }
     focusForInput()
     super.mouseDown(with: event)
   }
@@ -96,6 +139,16 @@ private final class CodevisorGhosttySurfaceView: Ghostty.SurfaceView {
   /// first-responder relationship — not the published `focused` flag, which
   /// can go stale and would eat composer/menu key equivalents.
   override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    // AppKit offers key equivalents to every view; only this one's count.
+    if window?.firstResponder === self { onUserInput?() }
+    // ⌘K clears the terminal for every device showing it, not just this view.
+    if event.type == .keyDown, window?.firstResponder === self, let onClear,
+      event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+      event.charactersIgnoringModifiers == "k"
+    {
+      onClear()
+      return true
+    }
     if event.type == .keyDown, window?.firstResponder === self, let onPaneCommand,
       // A focused terminal routes workspace commands to its pane model;
       // all other key equivalents continue through Ghostty.
@@ -130,6 +183,12 @@ private final class CodevisorGhosttySurfaceView: Ghostty.SurfaceView {
 final class GhosttyTerminalSurface: TerminalSurface {
   private var surfaceView: CodevisorGhosttySurfaceView?
   private var cancellables = Set<AnyCancellable>()
+  /// The server connection behind the surface. The surface runs no local
+  /// process: output arrives through the controller, and input and size
+  /// changes go back through `hostIO`.
+  private let controller: TerminalController
+  private let hostIO: GhosttyHostIO
+  private var renderer: GhosttySurfaceRenderer?
 
   var nsView: NSView { surfaceView ?? NSView() }
 
@@ -149,17 +208,22 @@ final class GhosttyTerminalSurface: TerminalSurface {
   }
 
   init(descriptor: TerminalLaunchDescriptor) {
+    controller = TerminalController(
+      config: descriptor.serverConfig,
+      terminalKey: descriptor.terminalKey,
+      cwd: descriptor.workingDirectory,
+      attachOnly: descriptor.attachOnly)
+    hostIO = GhosttyHostIO.make(for: controller)
     var config = Ghostty.SurfaceConfiguration()
-    config.workingDirectory = descriptor.workingDirectory.path
-    // Ghostty spawns the codevisor-terminal-proxy (not a shell); the proxy
-    // bridges to the PTY on the codevisor server for this session.
-    config.command = descriptor.command
+    // No local process: the surface's I/O is the server terminal. The shell
+    // opens once the surface reports its first size.
+    config.hostIO = hostIO.surfaceIO
     config.waitAfterCommand = true
 
     let view = CodevisorGhosttySurfaceView(CodevisorGhosttyApp.shared.app, baseConfig: config)
     if view.error != nil {
       Ghostty.logger.error(
-        "terminal surface creation failed for \(descriptor.workingDirectory.path, privacy: .public)")
+        "terminal surface creation failed for \(descriptor.terminalKey, privacy: .public)")
       ErrorReporter.shared.report(
         .terminalOpenFailed,
         title: "Couldn't Open the Terminal",
@@ -173,6 +237,17 @@ final class GhosttyTerminalSurface: TerminalSurface {
     view.focusDidChange(false)
     CodevisorGhosttyApp.shared.register(view)
     surfaceView = view
+
+    let renderer = GhosttySurfaceRenderer(surface: view.surface, view: view)
+    self.renderer = renderer
+    controller.onError = { [weak renderer] message in
+      // Shown in the terminal itself, where the user is looking.
+      renderer?.writeLive(Array("\r\n\u{1B}[2m[codevisor] \(message)\u{1B}[0m\r\n".utf8))
+    }
+    controller.attach(renderer)
+    view.onClear = { [weak controller] in controller?.clear() }
+    view.onUse = { [weak controller] in controller?.focus() }
+    view.onUserInput = { [weak controller] in controller?.noteUserInput() }
 
     // Upstream applies the surface's published pointer style from its
     // SwiftUI wrapper (not vendored); mirror that here.
@@ -204,13 +279,21 @@ final class GhosttyTerminalSurface: TerminalSurface {
     }
   }
 
+  func setVisible(_ visible: Bool) {
+    controller.setVisible(visible)
+  }
+
   func terminate() {
+    // The server's shell keeps running (reattached next time); closing it
+    // for good is the pane's explicit delete.
+    controller.detach()
+    renderer?.invalidate()
     guard let view = surfaceView else { return }
     CodevisorGhosttyApp.shared.unregister(view)
     view.removeFromSuperview()
     cancellables.removeAll()
     // Dropping the last reference releases Ghostty.Surface, whose deinit
-    // frees the C surface (and its child proxy process) on the main actor.
+    // frees the C surface on the main actor.
     surfaceView = nil
   }
 }

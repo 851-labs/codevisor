@@ -1,6 +1,6 @@
 import CodevisorTheming
 import CodevisorUI
-import SwiftTerm
+import GhosttyTerminal
 import SwiftUI
 import UIKit
 
@@ -15,6 +15,8 @@ struct TerminalColors: Equatable {
   /// otherwise Ghostty's default.
   let ansi: [UInt32]?
   let isDark: Bool
+  /// No terminal theme: the terminal sits on the app's own surface.
+  let followsSystem: Bool
 
   init(palette: TerminalPalette?, colorScheme: ColorScheme) {
     let traits = UITraitCollection(userInterfaceStyle: colorScheme == .dark ? .dark : .light)
@@ -26,6 +28,7 @@ struct TerminalColors: Equatable {
       let colors = palette.ansi.compactMap { $0 }
       ansi = colors.count == 16 ? colors.map { Self.hex($0) } : nil
       isDark = Self.luminance(palette.background) < 0.5
+      followsSystem = false
     } else {
       // The chat's own surface, so terminals and chats sit on one color.
       background = UIColor.systemGroupedBackground.resolvedColor(with: traits)
@@ -36,6 +39,7 @@ struct TerminalColors: Equatable {
       // appearance, so prompts and TUIs color the same on both platforms.
       ansi = Self.ghosttyANSI
       isDark = colorScheme == .dark
+      followsSystem = true
     }
   }
 
@@ -49,14 +53,40 @@ struct TerminalColors: Equatable {
     UIColor(red: rgba.r / 255, green: rgba.g / 255, blue: rgba.b / 255, alpha: rgba.a)
   }
 
-  /// SwiftTerm's palette entries (16-bit channels).
-  var terminalANSI: [SwiftTerm.Color]? {
-    ansi?.map { value in
-      SwiftTerm.Color(
-        red: UInt16((value >> 16) & 0xFF) * 257,
-        green: UInt16((value >> 8) & 0xFF) * 257,
-        blue: UInt16(value & 0xFF) * 257)
+  /// These colors as Ghostty configuration, at the app's terminal font size.
+  /// Ghostty's compiled-in font (JetBrains Mono with Nerd Font symbols) is
+  /// used as-is, matching the macOS app.
+  func ghosttyConfiguration(fontSize: Float) -> TerminalConfiguration {
+    TerminalConfiguration { builder in
+      builder.withFontSize(fontSize)
+      // Ghostty's ⌘K clears only this view; the app clears the server
+      // terminal for every device instead (SessionTerminalView.onClear).
+      builder.withCustom("keybind", "super+k=unbind")
+      builder.withBackground(Self.hex(background))
+      builder.withForeground(Self.hex(foreground))
+      if followsSystem {
+        // As on macOS: the cursor takes the color of the text under it, so it
+        // stays visible on backgrounds programs paint themselves.
+        builder.withCursorColor("cell-foreground")
+        builder.withCursorText("cell-background")
+      } else {
+        builder.withCursorColor(Self.hex(cursor))
+      }
+      if let selection { builder.withSelectionBackground(Self.hex(selection)) }
+      for (index, value) in (ansi ?? []).enumerated() {
+        builder.withPalette(index, color: String(format: "#%06X", value))
+      }
     }
+  }
+
+  private static func hex(_ color: UIColor) -> String {
+    var red: CGFloat = 0
+    var green: CGFloat = 0
+    var blue: CGFloat = 0
+    var alpha: CGFloat = 0
+    color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+    func channel(_ value: CGFloat) -> Int { Int(max(0, min(255, (value * 255).rounded()))) }
+    return String(format: "#%02X%02X%02X", channel(red), channel(green), channel(blue))
   }
 
   private static func hex(_ rgba: RGBA) -> UInt32 {

@@ -679,7 +679,7 @@ extension CloudAccountController: CloudMachineProviding {
     }
     let endpoint = machineTransport(for: machine, verifiedKey: verifiedKey)
     // The transports tunnel in-process; the baseURL matters only to
-    // consumers that hand it to external processes (terminal proxy), so
+    // consumers that dial a real socket (plugin and browser panes), so
     // it becomes the machine's real loopback address once bridged.
     return CodevisorServerConfig(
       baseURL: loopbackBaseURL(for: machine) ?? CodevisorMachine.cloudPlaceholderBaseURL,

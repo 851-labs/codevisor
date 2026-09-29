@@ -30,8 +30,8 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
   public let id: UUID
   public let kind: PaneKind
   public var name: String
-  /// The key the server's PTY manager stores this pane's shell under (sent
-  /// as `--session-id` to the terminal proxy). The first pane of a session
+  /// The key the server's PTY manager stores this pane's shell under (the
+  /// terminal create request's `sessionId`). The first pane of a session
   /// uses the bare chat-session UUID so it reattaches to shells created
   /// before panes existed; later panes use "<sessionUuid>:<paneUuid>".
   public let terminalKey: String

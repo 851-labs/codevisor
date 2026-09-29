@@ -165,15 +165,22 @@ describe("@codevisor/terminal terminal manager external terminals", () => {
     expect(await run(manager.closeTerminalsForSessionPrefix("agent-1:bg:"))).toBe(0)
   })
 
-  it("caps the replay buffer of external terminals", async () => {
+  it("bounds the replay buffer by bytes and resyncs clients it no longer reaches", async () => {
     const manager = makeTerminalManager({ spawner: makeSpawner() })
     const handle = manager.registerExternalTerminal({ sessionId: "bg-key-4" }, new FakeProcess())
-    for (let index = 0; index < 20_001; index += 1) {
-      handle.output(`chunk-${index}`)
+    const chunk = "x".repeat(64 * 1024)
+    for (let index = 0; index < 40; index += 1) {
+      handle.output(chunk)
     }
-    const frames = await run(replayedFrames(manager, handle.terminalId))
-    expect(frames).toHaveLength(20_000)
-    expect(frames[0]).toEqual({ type: "output", seq: 2, data: "chunk-1" })
+    // 2 MiB budget / 64 KiB chunks: a client within the 32 retained chunks
+    // is caught up byte for byte.
+    const recent = await run(replayedFrames(manager, handle.terminalId, 20))
+    expect(recent.map((frame) => frame.seq)).toEqual(Array.from({ length: 20 }, (_, i) => i + 21))
+    // One from before the window gets the reconstructed screen instead.
+    const [resync, ...rest] = await run(replayedFrames(manager, handle.terminalId))
+    expect(rest).toEqual([])
+    expect(resync).toMatchObject({ type: "output", seq: 40, reset: true })
+    expect(resync?.type === "output" && resync.data.startsWith("\u001bc")).toBe(true)
   })
 
   it("wraps non-Error process failures as terminal errors", async () => {

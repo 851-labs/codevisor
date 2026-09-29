@@ -7,19 +7,19 @@ The sidebar lists those tabs, and each terminal uses its workspace's directory.
 > runs a real libghostty terminal. The framework and runtime resources are
 > required build inputs; missing Ghostty assets should fail the build.
 
-## How GhosttyKit was built & linked (for rebuilds)
+## How GhosttyKit is built & linked
 
-1. Build the static-lib xcframework (needs Zig 0.15.2 + the Metal Toolchain).
-   Ghostty's required Zig 0.15.2 can't link against the macOS 26/27 *beta* SDK,
-   so force a stable SDK that has an `arm64` slice via an `xcrun` shim:
-   ```sh
-   xcodebuild -downloadComponent MetalToolchain   # one-time
-   # shim: make `xcrun --show-sdk-path` return a stable arm64 SDK
-   #   e.g. /Library/Developer/CommandLineTools/SDKs/MacOSX15.2.sdk
-   cd .repos/ghostty
-   zig build -Demit-xcframework=true -Dxcframework-target=universal -Doptimize=ReleaseFast
-   # → .repos/ghostty/macos/GhosttyKit.xcframework ; copied to repo Frameworks/
-   ```
+1. `apps/macos/scripts/build-ghostty.sh` produces
+   `apps/macos/Frameworks/GhosttyKit.xcframework` (macOS, iOS, iOS Simulator).
+   It downloads a pinned [libghostty-spm](https://github.com/Lakr233/libghostty-spm)
+   release, verifies its SHA-256, and repackages it as the `GhosttyKit` module.
+   That release is upstream Ghostty at a pinned commit plus libghostty-spm's
+   patch set, which adds what Codevisor needs: a host-managed I/O backend (the
+   app feeds the surface the server's PTY output and receives its input, with
+   no local subprocess), replay that doesn't re-answer old terminal queries,
+   and the iOS slices upstream no longer builds. Sentry is compiled out. Dev
+   bootstrap fetches the same stamp from the shared artifact cache, or runs the
+   script when it isn't published yet.
 2. Linked into the Codevisor target via build settings:
    - `SWIFT_INCLUDE_PATHS` points at the GhosttyKit macOS slice headers.
    - `OTHER_LDFLAGS = -force_load .../libghostty-internal-fat.a -lc++` + Metal,
@@ -82,18 +82,15 @@ Codevisor-owned pieces in this directory:
   split actions are unhandled by design.
 - `GhosttyTerminalSurface.swift` — implements `TerminalSurface` by
   wrapping the vendored `Ghostty.SurfaceView`; maps `TerminalLaunchDescriptor`
-  (cwd + codevisor-terminal-proxy command) to `Ghostty.SurfaceConfiguration`.
+  to a host-managed `Ghostty.SurfaceConfiguration`: no local process runs;
+  `TerminalController` (CodevisorCore) streams the server PTY into the surface
+  and `GhosttyHostIO` returns its input and size.
 
 ## Rebuilding the terminal
 
-1. **Build the framework** (needs Zig 0.15.2 and a *stable* macOS SDK — see the
-   caveat below):
-
-   ```sh
-   scripts/build-ghostty.sh
-   ```
-
-   This produces `Codevisor/Frameworks/GhosttyKit.xcframework`.
+1. **Fetch the framework**: `apps/macos/scripts/build-ghostty.sh` (seconds; no
+   Zig or Metal toolchain needed). To move to a newer Ghostty, update its pins
+   to a newer libghostty-spm `upstream.<ref>` release.
 
 2. **Keep it linked into the app target** through the Xcode build settings or
    release-script overrides: `SWIFT_INCLUDE_PATHS` must point at the GhosttyKit
@@ -114,5 +111,3 @@ macOS SDK (or once toolchain support lands), then drop the xcframework in.
 
 - Not vendored (candidates for later): `SurfaceScrollView` (native scrollbar
   overlay), child-exited message bar, URL-hover banner, terminal inspector UI.
-- Bundle `codevisor-terminal-proxy` inside the .app so the terminal works without
-  node/Homebrew on the user's machine (see `TerminalProxyCommand`).

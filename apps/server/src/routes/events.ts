@@ -1,22 +1,17 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 import type { Socket } from "node:net"
 
-import type { EventEnvelope, TerminalClientFrame } from "@codevisor/api"
-import { TerminalClientFrame as TerminalClientFrameSchema, decode } from "@codevisor/api"
+import type { EventEnvelope } from "@codevisor/api"
 import { CODEVISOR_BROWSER_EXTENSION_ID } from "@codevisor/automation"
 import type { CodevisorDatabaseService } from "@codevisor/db"
-import type { TerminalManagerService } from "@codevisor/terminal"
 import { WebSocket, type WebSocketServer } from "ws"
 
 import type { ClientControlBroker } from "../infra/client-control.js"
 import {
   authorize,
-  failureMessage,
-  HttpFailure,
   isLocalhost,
   matchRoute,
   parseRequestUrl,
-  run,
   type CodevisorServerConfig,
   type CodevisorServerServices,
   type EventFanout
@@ -24,6 +19,7 @@ import {
 import { adaptDirectSocket } from "./net-direct.js"
 import { spliceVNCSocket, VNC_SOCKET_PATH } from "./screen-sharing-vnc.js"
 import { attachSyncEventSocket } from "./sync-event-socket.js"
+import { attachTerminalSocket } from "./terminal-socket.js"
 
 export const handleEvents = async (
   db: CodevisorDatabaseService,
@@ -175,7 +171,10 @@ export const handleUpgrade = async (
       void attachTerminalSocket(
         services.terminal,
         terminalId,
-        numberSearchParam(url, "lastOutputSeq"),
+        {
+          lastOutputSeq: numberSearchParam(url, "lastOutputSeq"),
+          protocol: numberSearchParam(url, "protocol")
+        },
         webSocket
       ).catch(
         /* v8 ignore next -- defensive: socket setup failures close the just-upgraded connection. */
@@ -203,57 +202,6 @@ export const attachEventSocket = async (
   _durableReplay: boolean = false
 ): Promise<void> =>
   attachSyncEventSocket(db, fanout, since, webSocket, serverId, subjectId, keepaliveMs)
-
-const attachTerminalSocket = async (
-  terminal: TerminalManagerService,
-  terminalId: string,
-  lastOutputSeq: number,
-  webSocket: WebSocket
-): Promise<void> => {
-  try {
-    const disconnect = await run(
-      terminal.connectTerminal(terminalId, lastOutputSeq, (frame) => {
-        /* v8 ignore next -- the close event removes this sink before normal closed-socket output. */
-        if (webSocket.readyState === WebSocket.OPEN) {
-          webSocket.send(JSON.stringify(frame))
-        }
-      })
-    )
-    webSocket.on("message", (data) => {
-      const frame = parseTerminalFrameOrSend(data.toString(), webSocket)
-      if (frame === undefined) {
-        return
-      }
-      void run(terminal.handleClientFrame(terminalId, frame)).catch((cause: unknown) => {
-        webSocket.send(JSON.stringify({ type: "error", seq: 0, message: failureMessage(cause) }))
-      })
-    })
-    webSocket.on("close", disconnect)
-  } catch (cause) {
-    webSocket.send(JSON.stringify({ type: "error", seq: 0, message: failureMessage(cause) }))
-    webSocket.close()
-  }
-}
-
-const parseTerminalFrame = (raw: string): TerminalClientFrame => {
-  try {
-    return decode(TerminalClientFrameSchema)(JSON.parse(raw) as unknown)
-  } catch (cause) {
-    throw new HttpFailure(400, failureMessage(cause))
-  }
-}
-
-const parseTerminalFrameOrSend = (
-  raw: string,
-  webSocket: WebSocket
-): TerminalClientFrame | undefined => {
-  try {
-    return parseTerminalFrame(raw)
-  } catch (cause) {
-    webSocket.send(JSON.stringify({ type: "error", seq: 0, message: failureMessage(cause) }))
-    return undefined
-  }
-}
 
 const numberSearchParam = (url: URL, name: string): number => {
   const parsed = Number(url.searchParams.get(name) ?? "0")

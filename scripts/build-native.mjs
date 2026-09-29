@@ -50,7 +50,7 @@ if (target === "macos") {
     `\nBuilt macOS app: ${join(layout.build.macos.derivedData, "Build/Products/Debug/Codevisor.app")}`
   )
 } else if (target === "ios") {
-  await bootstrapDevelopment(repoRoot, { environment })
+  await bootstrapDevelopment(repoRoot, { environment, ghosttyKit: true })
   await runXcodebuild(
     repoRoot,
     "ios",

@@ -3,143 +3,47 @@ import Foundation
 import CodevisorCore
 import CodevisorCoreMac
 
-/// Everything needed to launch a terminal surface. The terminal renderer is local
-/// Ghostty, but the command always runs the Codevisor proxy, which connects to the
-/// server that owns the session.
-struct TerminalLaunchDescriptor: Equatable {
+/// Everything needed to open a terminal surface. The terminal renders in local
+/// Ghostty; the shell runs on the server that owns the session, and the surface
+/// talks to it directly (host-managed I/O — no local process).
+struct TerminalLaunchDescriptor {
   /// The key the server's PTY manager stores this terminal under. One PTY
   /// per key; a session's first pane uses the bare session UUID (legacy)
   /// and later panes use "<sessionUuid>:<paneUuid>".
   let terminalKey: String
-  /// Agent-owned background terminal: the proxy attaches to a registered
-  /// terminal (retrying until it exists) instead of spawning a shell, and
-  /// never closes it on teardown.
+  /// Agent-owned background terminal: attach to a registered terminal
+  /// instead of spawning a shell, and never close it on teardown.
   let attachOnly: Bool
   let machine: CodevisorMachine
-  let workingDirectory: URL
-  let command: String
+  /// Relay-aware connection to the machine (cloud machines tunnel through
+  /// the in-process relay transports).
+  let serverConfig: CodevisorServerConfig
+  /// The shell's starting directory on the server's machine.
+  let workingDirectory: String
 
   static func make(
     session: ChatSession?,
     project: Project,
     machine: CodevisorMachine,
+    serverConfig: CodevisorServerConfig? = nil,
     terminalKey: String,
     attachOnly: Bool = false,
     workspaceRootDirectory: String? = nil
   ) -> TerminalLaunchDescriptor {
     // The session's cwd IS the workspace's one working directory
     // (worktree sessions open in the worktree), else the project
-    // folder. The proxy passes the folder along via --cwd. Without a session
-    // the workspace's own directory takes that place.
-    let sessionFolder = URL(
-      fileURLWithPath: PaneWorkingDirectory.resolve(
-        anchor: session.map { .session(cwd: $0.cwd) } ?? .workspace,
-        workspaceRootDirectory: workspaceRootDirectory,
-        projectFolderPath: project.folderURL.path))
+    // folder. Without a session the workspace's own directory takes that place.
+    let folder = PaneWorkingDirectory.resolve(
+      anchor: session.map { .session(cwd: $0.cwd) } ?? .workspace,
+      workspaceRootDirectory: workspaceRootDirectory,
+      projectFolderPath: project.folderURL.path)
     return TerminalLaunchDescriptor(
       terminalKey: terminalKey,
       attachOnly: attachOnly,
       machine: machine,
-      workingDirectory: localWorkingDirectory(for: sessionFolder),
-      command: TerminalProxyCommand.command(
-        server: machine.baseURL,
-        terminalKey: terminalKey,
-        cwd: sessionFolder.path,
-        attachOnly: attachOnly
-      )
+      serverConfig: serverConfig ?? machine.serverConfig,
+      workingDirectory: folder
     )
-  }
-
-  /// Ghostty spawns the proxy locally, so its working directory must exist on
-  /// this Mac. Remote projects point at paths on the other machine (the pty
-  /// still starts in the project folder remotely, via the proxy's --cwd).
-  private static func localWorkingDirectory(for folderURL: URL) -> URL {
-    var isDirectory: ObjCBool = false
-    if FileManager.default.fileExists(atPath: folderURL.path, isDirectory: &isDirectory),
-      isDirectory.boolValue
-    {
-      return folderURL
-    }
-    return FileManager.default.homeDirectoryForCurrentUser
-  }
-}
-
-enum TerminalProxyCommand {
-  nonisolated static func command(
-    server: URL,
-    terminalKey: String,
-    cwd: String,
-    attachOnly: Bool = false
-  ) -> String {
-    // The proxy's --session-id is an opaque key end-to-end (proxy, wire
-    // schema, and the server's PTY map all treat it as a plain string).
-    let args =
-      [
-        "--server", server.absoluteString,
-        "--session-id", terminalKey,
-        "--cwd", cwd,
-      ] + (attachOnly ? ["--attach-only", "true"] : [])
-    let executable = proxyExecutable()
-    return ([executable.command] + executable.prefixArgs + args)
-      .map(shellQuote)
-      .joined(separator: " ")
-  }
-
-  nonisolated private static func proxyExecutable() -> (command: String, prefixArgs: [String]) {
-    let environment = ProcessInfo.processInfo.environment
-    if let override = environment["CODEVISOR_TERMINAL_PROXY"]
-      ?? environment["HERDMAN_TERMINAL_PROXY"], !override.isEmpty
-    {
-      return (override, [])
-    }
-    if let entrypoint = proxyEntrypoint() {
-      let node = LocalCodevisorServer.defaultNodeExecutable()
-      let prefix = node.lastPathComponent == "env" ? ["node", entrypoint.path] : [entrypoint.path]
-      return (node.path, prefix)
-    }
-    // Ghostty launches the command through `bash --noprofile --norc`, which
-    // only sees the minimal system PATH — Homebrew's bin directories are
-    // not on it, so resolve the brew-installed proxy by absolute path.
-    let installedCandidates = [
-      "/opt/homebrew/bin/codevisor-terminal-proxy",
-      "/usr/local/bin/codevisor-terminal-proxy",
-    ]
-    if let installed = installedCandidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) {
-      return (installed, [])
-    }
-    return ("/usr/bin/env", ["codevisor-terminal-proxy"])
-  }
-
-  nonisolated private static func proxyEntrypoint() -> URL? {
-    if let runtimeDirectory = LocalCodevisorServer.bundledServerRuntimeDirectory() {
-      let entrypoint = runtimeDirectory.appendingPathComponent("terminal-proxy.js")
-      if FileManager.default.fileExists(atPath: entrypoint.path) {
-        return entrypoint
-      }
-    }
-
-    let bundledCandidates = [
-      Bundle.main.url(forResource: "terminal-proxy", withExtension: "js", subdirectory: "server"),
-      Bundle.main.url(forResource: "terminal-proxy", withExtension: "js", subdirectory: "Server"),
-      Bundle.main.url(forResource: "codevisor-terminal-proxy", withExtension: "js"),
-    ].compactMap { $0 }
-    if let bundled = bundledCandidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }) {
-      return bundled
-    }
-
-    var directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-    for _ in 0..<12 {
-      let candidate = directory.appendingPathComponent("apps/server/dist/terminal-proxy.js")
-      if FileManager.default.fileExists(atPath: candidate.path) {
-        return candidate
-      }
-      directory.deleteLastPathComponent()
-    }
-    return nil
-  }
-
-  nonisolated private static func shellQuote(_ value: String) -> String {
-    "'\(value.replacingOccurrences(of: "'", with: "'\\''"))'"
   }
 }
 
@@ -153,6 +57,9 @@ protocol TerminalSurface: AnyObject {
   var nsView: NSView { get }
   /// Routes keyboard focus into (or out of) the terminal.
   func setFocused(_ focused: Bool)
+  /// The surface went on or off screen: only on-screen clients size the
+  /// server's PTY.
+  func setVisible(_ visible: Bool)
   /// Tears down the shell/PTY and releases resources.
   func terminate()
   /// Invoked when the user asks to kill this terminal and start a fresh one

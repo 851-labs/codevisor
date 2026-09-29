@@ -103,7 +103,7 @@ console.log(`  app:       ${appDisplayName} (${bundleIdentifier})`)
 console.log(`  icon:      ${developmentIconColor.hex}`)
 console.log(`  cloud:     ${cloudURL}${externalCloudURL === undefined ? " (managed)" : ""}`)
 
-await bootstrapDevelopment(repoRoot, { environment: process.env })
+await bootstrapDevelopment(repoRoot, { environment: process.env, ghosttyKit: true })
 await run("bun", ["run", "--cwd", "apps/server", "build"])
 
 // Match dev/dev:macos: a real Linux remote by default, same-host only when

@@ -239,37 +239,18 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: apps/macos/Frameworks/GhosttyKit.xcframework
-          key: ghosttykit-${{ hashFiles('apps/macos/scripts/build-ghostty.sh', 'apps/macos/patches/ghostty-libcpp-availability.patch') }}
-      - name: Fetch Ghostty source
-        if: steps.ghosttykit-cache.outputs.cache-hit != 'true'
-        run: apps/macos/scripts/build-ghostty.sh --fetch-only
-      - uses: DeterminateSystems/nix-installer-action@33c9ab3ef95cd57c164d9d6eb1f9a46338538d41
-        if: steps.ghosttykit-cache.outputs.cache-hit != 'true'
-        with:
-          determinate: true
-      # Ghostty's renderer compiles Metal shaders, and Xcode 16+ ships the
-      # Metal Toolchain as a separately downloadable component. Idempotent: a
-      # no-op once installed, so it only costs time on a fresh runner. Gated on
-      # the GhosttyKit cache miss so warm builds skip it entirely.
-      - name: Ensure Metal Toolchain
-        if: steps.ghosttykit-cache.outputs.cache-hit != 'true'
-        run: xcodebuild -downloadComponent MetalToolchain
+          key: ghosttykit-${{ hashFiles('apps/macos/scripts/build-ghostty.sh') }}
       - name: Build GhosttyKit
         if: steps.ghosttykit-cache.outputs.cache-hit != 'true'
-        # NIX_CONFIG outranks the runner's nix.conf, whose access token was
-        # written by nix-installer-action on FIRST install with that job's
-        # ephemeral GITHUB_TOKEN. On a persistent self-hosted runner the
-        # install is reused, the recorded token is long expired, and any
-        # uncached github: flake input fails with 401 Bad credentials.
-        env:
-          NIX_CONFIG: access-tokens = github.com=${{ github.token }}
-        run: nix develop ./.repos/ghostty -c apps/macos/scripts/build-ghostty.sh
+        # Downloads the pinned, checksum-verified libghostty-spm release and
+        # repackages it; no Ghostty source, Zig, or Metal toolchain needed.
+        run: apps/macos/scripts/build-ghostty.sh
       - name: Save GhosttyKit cache
         if: steps.ghosttykit-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: apps/macos/Frameworks/GhosttyKit.xcframework
-          key: ghosttykit-${{ hashFiles('apps/macos/scripts/build-ghostty.sh', 'apps/macos/patches/ghostty-libcpp-availability.patch') }}
+          key: ghosttykit-${{ hashFiles('apps/macos/scripts/build-ghostty.sh') }}
       - name: Verify GhosttyKit
         run: test -d apps/macos/Frameworks/GhosttyKit.xcframework
       - name: Package shared GhosttyKit development artifact
@@ -296,7 +277,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: dist/release/DerivedData
-          key: codevisor-xcode-${{ runner.arch }}-${{ steps.xcode-cache-version.outputs.value }}-${{ hashFiles('apps/macos/Codevisor.xcodeproj/**', 'apps/macos/Codevisor/**', 'packages/swift/**', 'apps/macos/scripts/build-ghostty.sh', 'apps/macos/patches/ghostty-libcpp-availability.patch', 'scripts/release/build-macos-xcode.sh') }}
+          key: codevisor-xcode-${{ runner.arch }}-${{ steps.xcode-cache-version.outputs.value }}-${{ hashFiles('apps/macos/Codevisor.xcodeproj/**', 'apps/macos/Codevisor/**', 'packages/swift/**', 'apps/macos/scripts/build-ghostty.sh', 'scripts/release/build-macos-xcode.sh') }}
           restore-keys: |
             codevisor-xcode-${{ runner.arch }}-${{ steps.xcode-cache-version.outputs.value }}-
       - name: Import Developer ID certificate
@@ -362,7 +343,7 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: dist/release/DerivedData
-          key: codevisor-xcode-${{ runner.arch }}-${{ steps.xcode-cache-version.outputs.value }}-${{ hashFiles('apps/macos/Codevisor.xcodeproj/**', 'apps/macos/Codevisor/**', 'packages/swift/**', 'apps/macos/scripts/build-ghostty.sh', 'apps/macos/patches/ghostty-libcpp-availability.patch', 'scripts/release/build-macos-xcode.sh') }}
+          key: codevisor-xcode-${{ runner.arch }}-${{ steps.xcode-cache-version.outputs.value }}-${{ hashFiles('apps/macos/Codevisor.xcodeproj/**', 'apps/macos/Codevisor/**', 'packages/swift/**', 'apps/macos/scripts/build-ghostty.sh', 'scripts/release/build-macos-xcode.sh') }}
       - name: Build ARM macOS server archive
         run: scripts/release/build-server-archive.sh "$VERSION" dist/release darwin-arm64 dist/release/work/app-server-runtimes/darwin-arm64
       - name: Upload macOS release artifacts
@@ -415,10 +396,14 @@ jobs:
         with:
           bun-version-file: package.json
       - uses: ./.github/actions/setup-rust
-      # SwiftTerm compiles Metal shaders, and Xcode 16+ ships the Metal
-      # Toolchain as a separate component. A no-op once installed.
+      # Xcode 16+ ships the Metal Toolchain as a separate component. A no-op
+      # once installed.
       - name: Ensure Metal Toolchain
         run: xcodebuild -downloadComponent MetalToolchain
+      # The terminal view (packages/ghostty-terminal) links GhosttyKit's iOS
+      # slices: the pinned, checksum-verified libghostty-spm release.
+      - name: Fetch GhosttyKit
+        run: apps/macos/scripts/build-ghostty.sh
       - name: Build the tunnel xcframework
         run: node scripts/net-artifact.mjs ensure-swift
       - name: Archive and cloud-sign the iOS build
