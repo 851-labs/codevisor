@@ -319,7 +319,10 @@ final class ScreenSharingHostService {
     session.injector = ScreenSharingInputInjector(displayBounds: CGDisplayBounds(session.displayID))
     let control = ScreenSharingHostControl(
       availability: { [weak session] in
-        guard let session, !session.stopping, session.state == "viewing" else {
+        // Live video, not the "viewing" label: a viewer asks as soon as its first frame shows, and
+        // a slow first capture reads "connecting" for a while after frames go out. Denying then
+        // switched the pane to View for the session (851-2472).
+        guard let session, !session.stopping, session.state == "viewing" || session.hasSentVideo else {
           return "Wait for live video before requesting control."
         }
         guard session.injector?.isAvailable == true else { return "Native input is unavailable on this Mac." }

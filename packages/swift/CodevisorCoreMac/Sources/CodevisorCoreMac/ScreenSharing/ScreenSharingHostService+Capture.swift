@@ -114,3 +114,8 @@ extension ScreenSharingHostService {
     throw lastError ?? ScreenSharingError.unavailable("The shared display didn't come back.")
   }
 }
+
+extension ScreenSharingHostService.Session {
+  /// Whether the capture has handed frames to the sender: the viewer has live video to control.
+  var hasSentVideo: Bool { metrics.snapshot().counters["capturedFrames", default: 0] > 0 }
+}
