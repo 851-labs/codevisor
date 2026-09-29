@@ -51,8 +51,8 @@ public struct ControlLease {
   public var body: some ReducerOf<Self> {
     Reduce { state, action in
       switch action {
-      case .channelSendFailed(let reason):
-        return release(&state, reason: reason)
+      case .channelSendFailed:
+        return pause(&state)
 
       case .controlReleased(let reason):
         return release(&state, reason: reason)
@@ -68,7 +68,7 @@ public struct ControlLease {
       case .event(.availability(let available)):
         guard available != state.available else { return .none }
         state.available = available
-        if !available { return release(&state, reason: "Control is unavailable on this connection.") }
+        if !available { return pause(&state) }
         state.message = nil
         return state.wantsControl && state.phase == .viewing ? request(&state) : .none
 
@@ -143,6 +143,27 @@ public struct ControlLease {
         await send(.requestTimedOut)
       }
       .cancellable(id: CancelID.requestDeadline, cancelInFlight: true))
+  }
+
+  /// The channel went away (the connection is closing or reconnecting): input stops and a held
+  /// lease is given back, but the wish to control stays, so control is asked for again when a
+  /// channel is available. Not a release: no message and no `released`, which switched the pane
+  /// to View for good after any reconnect (851-2472) and showed "Control is unavailable on this
+  /// connection." over the connecting spinner (851-2470).
+  private func pause(_ state: inout State) -> Effect<Action> {
+    let lease = state.lease
+    state.wantsControl = state.wantsControl || state.phase != .viewing
+    state.requestID = nil
+    state.lease = nil
+    state.phase = .viewing
+    let id = state.endpoint
+    return .merge(
+      .cancel(id: CancelID.requestDeadline),
+      .cancel(id: CancelID.heartbeat),
+      .run { [endpoint] _ in
+        await endpoint.endInput(id)
+        if let lease { _ = await endpoint.sendControl(id, .release(lease: lease)) }
+      })
   }
 
   private func release(_ state: inout State, reason: String?) -> Effect<Action> {

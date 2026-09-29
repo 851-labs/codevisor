@@ -202,7 +202,8 @@ private struct ScreenSharingPaneView: View {
 
   private func connection(_ store: StoreOf<ScreenSharingViewer>) -> some View {
     VStack(spacing: 0) {
-      if let message = store.lease?.message {
+      // Lease messages describe control of a picture that's showing, not a connection being made (851-2470).
+      if store.phase == .viewing, let message = store.lease?.message {
         Text(message).font(.caption).foregroundStyle(.secondary)
           .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.vertical, 8)
       }

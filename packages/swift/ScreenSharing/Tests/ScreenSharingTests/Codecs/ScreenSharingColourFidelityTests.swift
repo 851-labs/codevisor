@@ -54,6 +54,32 @@ struct ScreenSharingColourFidelityTests {
     }
   }
 
+  /// The Computer Use live preview (851-2471): BGRA frames (crisp text, alpha edges) into HEVC
+  /// Main. The encoder must emit Main 4:2:0, which the preview negotiated, not 4:4:4.
+  @Test func bgraFramesIntoHEVCMainComeOutAsMain() async throws {
+    let metrics = ScreenSharingMetrics()
+    let configuration = try ScreenSharingVideoConfiguration(
+      width: 320, height: 192, framesPerSecond: 30, bitrate: 4_000_000)
+    let encoder = try ScreenSharingEncoder(configuration: configuration, metrics: metrics, codec: .hevc)
+    let encoded = Log<ScreenSharingEncodedFrame>()
+    encoder.onFrame { encoded.record($0) }
+    let decoded = Log<ScreenSharingVideoFrame>()
+    let decoder = ScreenSharingDecoder(metrics: metrics, codec: .hevc) { decoded.record($0) }
+    defer {
+      encoder.stop()
+      decoder.stop()
+    }
+    #expect(
+      try encoder.encode(ScreenSharingVideoFrame(pixelBuffer: try Self.bands(width: 320, height: 192), timestampNs: 0)))
+    await encoded.deliveries.wait(for: 1)
+    try decoder.decode(encoded.items[0])
+    await decoded.deliveries.wait(for: 1)
+    let labels = metrics.snapshot().labels
+    print("bgra->hevc labels:", labels.filter { $0.key.contains("encoded") || $0.key.contains("decoded") })
+    #expect(labels["encodedChroma"] == "4:2:0" && labels["encodedHEVCProfileIDC"] == "1")
+    #expect(metrics.snapshot().counters["encodeErrors"] == nil && metrics.snapshot().counters["decodeErrors"] == nil)
+  }
+
   /// Four vertical bands of `colours`, BGRA, tagged the way ScreenCaptureKit tags the product's sRGB capture.
   static func bands(width: Int, height: Int) throws -> CVPixelBuffer {
     var created: CVPixelBuffer?
