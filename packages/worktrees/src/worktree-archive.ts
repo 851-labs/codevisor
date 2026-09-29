@@ -13,6 +13,7 @@ import {
 } from "./git.js"
 import { worktreeStartPoint } from "./project-branches.js"
 import { type TrashedWorktree, trashWorktree } from "./worktree-trash.js"
+import { removeWorktreeXcodeArtifacts, type XcodeArtifactHost } from "./xcode-artifacts.js"
 
 /// Archiving a chat used to delete its worktree outright, losing any work that
 /// was not committed. Instead we capture the worktree's full state as a commit
@@ -230,6 +231,9 @@ export const snapshotWorktree = async (
 /// worktree-trash.ts); `purged` settles when they are. The registration is
 /// pruned even when the directory was already gone, since a stale
 /// registration would keep the branch checked out and undeletable.
+///
+/// With an `xcode` host, the worktree's DerivedData and simulators are deleted
+/// in the background too, and `purged` also waits for them.
 export const removeArchivedWorktreeFiles = async (
   repoDir: string,
   worktreeDir: string,
@@ -238,9 +242,10 @@ export const removeArchivedWorktreeFiles = async (
     readonly trashRoot: string
     readonly worktreeId: string
     readonly env?: NodeJS.ProcessEnv
+    readonly xcode?: XcodeArtifactHost | undefined
   }
 ): Promise<TrashedWorktree> => {
-  const { env } = options
+  const { env, xcode } = options
   const trashed = await trashWorktree(repoDir, worktreeDir, {
     trashRoot: options.trashRoot,
     id: options.worktreeId,
@@ -248,7 +253,12 @@ export const removeArchivedWorktreeFiles = async (
   })
   await pruneWorktreeRegistrations(repoDir, env)
   await releaseBranch(repoDir, branch, env)
-  return trashed
+  if (xcode === undefined) return trashed
+  return {
+    purged: Promise.all([trashed.purged, removeWorktreeXcodeArtifacts(worktreeDir, xcode)]).then(
+      () => undefined
+    )
+  }
 }
 
 /// Every snapshot ref currently in the repository, by worktree id. The GC pass
