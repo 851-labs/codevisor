@@ -40,6 +40,8 @@ final class ScreenSharingHostService {
     /// Posts input within the shared display's current bounds (they change while mirrored).
     var injector: ScreenSharingInputInjector?
     var pendingResize: Task<Void, Never>?
+    /// What the capture is running with: the display and configuration it last started or updated to.
+    var capturing: (display: CGDirectDisplayID, configuration: ScreenSharingVideoConfiguration)?
     /// The resize being applied; a newer size waits for it rather than cancelling it.
     var resizing: Task<Void, Never>?
     /// Until this uptime, display changes are the host's own (a virtual display appearing,
@@ -351,9 +353,9 @@ final class ScreenSharingHostService {
           guard let self, let session else { return }
           do {
             let baseline = ScreenSharingCaptureStallRecovery.activity(session.metrics.snapshot().counters)
-            let started = try await self.startFirstCapture(session)
+            try await self.startWatchedCapture(session, reason: "viewer connected")
             guard self.current === session, !session.stopping else { try? await session.capture.stop(); return }
-            try await self.catchUpWithResize(session, startedWith: started)
+            try await self.reconcileCapture(session)
             session.state = "viewing"
             session.notice = nil
             session.displaySleepAssertion = ScreenSharingDisplaySleepAssertion(reason: "Codevisor Screen Sharing")
@@ -507,12 +509,6 @@ extension ScreenSharingHostService {
       session.notice = nil
       await self.recoverStalledCapture(session, baseline: baseline)
     }
-  }
-
-  func startCapture(_ session: Session) async throws {
-    try await session.capture.start(
-      displayID: session.captureDisplayID, configuration: session.configuration,
-      sink: session.peer.frameSender, metrics: session.metrics)
   }
 
   func captureRecovery(_ session: Session) -> ScreenSharingCaptureStallRecovery {

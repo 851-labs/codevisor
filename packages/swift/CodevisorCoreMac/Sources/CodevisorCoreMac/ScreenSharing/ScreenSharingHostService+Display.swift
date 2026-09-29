@@ -111,6 +111,7 @@ extension ScreenSharingHostService {
         } else {
           let began = ContinuousClock.now
           try await session.capture.update(configuration: session.configuration)
+          session.capturing?.configuration = session.configuration
           Self.logger.notice(
             "Capture resized to \(session.configuration.width)×\(session.configuration.height) in \(Self.milliseconds(since: began)) ms"
           )
