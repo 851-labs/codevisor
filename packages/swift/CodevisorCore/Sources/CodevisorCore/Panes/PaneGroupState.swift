@@ -55,6 +55,13 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
   public var screenSharing: ScreenSharingPanePreferences?
   public var browserURL: String?
   public var documentPath: String?
+  /// Terminal panes only: the title the running program set, from the
+  /// server's pane record. Kept apart from `name`, which this client
+  /// publishes back as the record's title.
+  public var liveTitle: String?
+  /// Terminal panes only, from the server's pane record like `liveTitle`:
+  /// what an agent CLI running in the terminal is doing.
+  public var terminalActivity: TerminalActivity?
   public init(
     id: UUID,
     kind: PaneKind,
@@ -67,7 +74,9 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
     pluginPaneType: String? = nil,
     documentPath: String? = nil,
     browserURL: String? = nil,
-    screenSharing: ScreenSharingPanePreferences? = nil
+    screenSharing: ScreenSharingPanePreferences? = nil,
+    liveTitle: String? = nil,
+    terminalActivity: TerminalActivity? = nil
   ) {
     self.id = id
     self.kind = kind
@@ -81,6 +90,8 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
     self.documentPath = documentPath
     self.browserURL = browserURL
     self.screenSharing = screenSharing
+    self.liveTitle = liveTitle
+    self.terminalActivity = terminalActivity
   }
 
   public init(from decoder: Decoder) throws {
@@ -104,7 +115,10 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
       pluginPaneType: try container.decodeIfPresent(String.self, forKey: .pluginPaneType),
       documentPath: try container.decodeIfPresent(String.self, forKey: .documentPath),
       browserURL: try container.decodeIfPresent(String.self, forKey: .browserURL),
-      screenSharing: try container.decodeIfPresent(ScreenSharingPanePreferences.self, forKey: .screenSharing)
+      screenSharing: try container.decodeIfPresent(ScreenSharingPanePreferences.self, forKey: .screenSharing),
+      liveTitle: try container.decodeIfPresent(String.self, forKey: .liveTitle),
+      // Layouts persisted before terminal status carry none.
+      terminalActivity: try container.decodeIfPresent(TerminalActivity.self, forKey: .terminalActivity)
     )
   }
 }
@@ -198,8 +212,8 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     return previousPanes != panes || previousSelection != selectedPaneId
   }
 
-  /// Appends a new terminal pane named "Terminal N" (N = highest existing
-  /// numeric suffix + 1), and selects it. The shell spawns
+  /// Appends a new terminal pane named "Terminal" (it shows what runs in it;
+  /// see `displayName`), and selects it. The shell spawns
   /// in the workspace's working directory (the anchor session's cwd).
   /// Requires a session identity: the terminal key namespaces the server's
   /// live PTY per session, so a substitute namespace would either collide with
@@ -211,7 +225,7 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     let pane = PaneDescriptorState(
       id: paneId,
       kind: .terminal,
-      name: Self.nextTerminalName(existing: panes.map(\.name)),
+      name: PaneDescriptorState.defaultTerminalName,
       terminalKey: "\(sessionId.uuidString):\(paneId.uuidString)"
     )
     panes.append(pane)
@@ -284,7 +298,7 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
       pane = PaneDescriptorState(
         id: paneId,
         kind: .terminal,
-        name: Self.nextTerminalName(existing: panes.map(\.name)),
+        name: PaneDescriptorState.defaultTerminalName,
         terminalKey: "\(sessionId.uuidString):\(paneId.uuidString)"
       )
     case .chat:
@@ -421,20 +435,6 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
   public mutating func selectPane(id: UUID) {
     guard panes.contains(where: { $0.id == id }) else { return }
     selectedPaneId = id
-  }
-
-  /// "Terminal N" with N one past the highest existing "Terminal <int>"
-  /// suffix (so after closing "Terminal 2" of [1, 2], the next add is
-  /// "Terminal 2" again; with [1, 3] it is "Terminal 4").
-  static func nextTerminalName(existing: [String]) -> String {
-    let highest =
-      existing
-      .compactMap { name -> Int? in
-        guard name.hasPrefix("Terminal ") else { return nil }
-        return Int(name.dropFirst("Terminal ".count))
-      }
-      .max() ?? 0
-    return "Terminal \(highest + 1)"
   }
 
 }

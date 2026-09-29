@@ -189,6 +189,15 @@ public struct ServerWorkspacePane: Codable, Equatable, Sendable {
   public var position: String?
   public var createdAt: String
   public var updatedAt: String?
+  /// Terminal panes only: the title the running program last set (OSC 0/2).
+  /// Server-owned, so pane upserts never send it; nil when no program has
+  /// set one or on servers that predate live titles.
+  public var liveTitle: String?
+  /// Terminal panes only: "working" while an agent CLI in the terminal is
+  /// running a turn, "idle" once it waits; nil when no agent reports status
+  /// or on servers that predate terminal status. Kept raw so a value this
+  /// client doesn't know yet never fails the record. Server-owned.
+  public var terminalActivity: String?
 
   public init(
     id: String,
@@ -202,7 +211,9 @@ public struct ServerWorkspacePane: Codable, Equatable, Sendable {
     revision: Int? = nil,
     position: String? = nil,
     createdAt: String,
-    updatedAt: String? = nil
+    updatedAt: String? = nil,
+    liveTitle: String? = nil,
+    terminalActivity: String? = nil
   ) {
     self.id = id
     self.workspaceId = workspaceId
@@ -216,6 +227,8 @@ public struct ServerWorkspacePane: Codable, Equatable, Sendable {
     self.revision = revision
     self.createdAt = createdAt
     self.updatedAt = updatedAt
+    self.liveTitle = liveTitle
+    self.terminalActivity = terminalActivity
   }
 }
 

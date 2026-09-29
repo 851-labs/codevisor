@@ -144,10 +144,14 @@ enum NavigationOverlay {
   private static func upsertPane(
     _ pane: PaneDescriptorState, workspaceId: UUID, into records: inout NavigationRecords
   ) {
+    let current = records.panes.first { UUID(uuidString: $0.id) == pane.id }
     let createdAt =
-      records.panes.first { UUID(uuidString: $0.id) == pane.id }
-      .flatMap { try? ServerDateCoding.date(from: $0.createdAt) } ?? Date(timeIntervalSince1970: 0)
+      current.flatMap { try? ServerDateCoding.date(from: $0.createdAt) } ?? Date(timeIntervalSince1970: 0)
     var record = WorkspaceSyncModel.serverPane(from: pane, workspaceId: workspaceId, createdAt: createdAt)
+    // The server owns the live title and terminal status, and an upsert
+    // never changes them; keep showing them while the request waits.
+    record.liveTitle = current?.liveTitle
+    record.terminalActivity = current?.terminalActivity
     if let index = records.panes.firstIndex(where: { UUID(uuidString: $0.id) == pane.id }) {
       // Content edits never move a tab.
       record.position = records.panes[index].position

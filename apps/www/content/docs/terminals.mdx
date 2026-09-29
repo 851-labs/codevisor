@@ -21,6 +21,9 @@ Create a terminal with `POST /v1/terminals`:
 terminal without spawning a shell; creation fails until that terminal has registered. The response
 contains `terminalId`, `websocketPath`, and `nextOutputSeq`.
 
+Shells the server starts load Ghostty's shell integration (zsh, bash 4 and later, fish, elvish,
+and nushell), so they set the title to the running command and mark their prompts.
+
 Connect to `/v1/terminals/{id}/socket?lastOutputSeq=N`. The server replays output after the supplied
 sequence before sending live frames. The server keeps about 2 MiB of recent output per terminal. When
 the supplied sequence is older than that, it sends one `output` frame with `reset: true` instead: a
@@ -108,6 +111,27 @@ A client that cannot keep up is never allowed to stall the terminal. When its so
 1 MiB behind, the server stops sending it output, and once it drains, catches it up from the last
 frame it received: with the missed output when that is still retained, otherwise with a `reset`
 reconstruction.
+
+## Pane titles
+
+When a program sets the terminal title (OSC 0 or 2), the server records it as `liveTitle` on every
+workspace pane whose `resourceKind` is `terminal` and whose `resourceId` is the terminal's
+`sessionId`. The title arrives in the usual `navigation.changed` pane updates. It is recorded once
+it has held for half a second, so animated titles do not flood clients, and is removed when the
+program clears it or the terminal exits. Show it in place of the pane's `title` unless the user
+named the tab.
+
+A single leading activity glyph followed by a space is dropped from the title: a braille spinner
+frame, or one of `·✢✳✶✻✽◐◓◑◒`, so Claude Code's `✳ Claude Code` is recorded as `Claude Code`.
+What the glyph meant is recorded as `terminalActivity`:
+
+- `working`: the title starts with a braille spinner frame or a half circle (`◐◓◑◒`), or contains
+  a braille spinner frame as a separate word, as Codex does.
+- `idle`: the title starts with `✳`, Claude Code at its prompt.
+- Absent for any other title, such as a plain shell's.
+
+A spinner animating the title changes neither the title nor the activity, so a working agent is
+recorded once when it starts and once when it stops. Neither survives a server restart.
 
 ## Reading the screen
 

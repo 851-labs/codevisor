@@ -99,6 +99,7 @@ extension SidebarView {
       pluginIconClient: environment.machines.client(for: workspace.serverId),
       pluginIconCacheNamespace: workspace.serverId,
       chatSession: chatSession,
+      terminalStatus: descriptor?.terminalAgentStatus,
       store: store,
       isSelected: routesSelection && workspace.selectedCenterTabId == tab.id
         && tab.activeLeafId == leafId,
@@ -135,6 +136,7 @@ extension SidebarView {
       pluginIconClient: environment.machines.client(for: workspace.serverId),
       pluginIconCacheNamespace: workspace.serverId,
       chatSession: chatSession,
+      terminalStatus: descriptor?.terminalAgentStatus,
       store: store,
       isSelected: routesSelection && workspace.selectedCenterTabId == tab.id,
       isReordering: isReordering,
@@ -163,7 +165,15 @@ extension SidebarView {
     in workspace: Workspace
   ) -> PaneDescriptorState? {
     let liveKey = SessionStore.CenterLeafKey(workspaceId: workspace.id, groupId: leafId)
-    return store?.centerLeafGroups[liveKey]?.state.selectedPane ?? persisted?.selectedPane
+    guard var live = store?.centerLeafGroups[liveKey]?.state.selectedPane else { return persisted?.selectedPane }
+    // Only this device's edits run ahead. Server-owned fields come from the
+    // record, which stays current even for a workspace no mounted container
+    // is reconciling its live models with.
+    if let record = persisted?.panes.first(where: { $0.id == live.id }) {
+      live.liveTitle = record.liveTitle
+      live.terminalActivity = record.terminalActivity
+    }
+    return live
   }
 
   /// Only browser rows look up a live page.
@@ -178,7 +188,7 @@ extension SidebarView {
     if descriptor.kind == .browser, let title = store?.localBrowserTitle(paneId: descriptor.id) {
       return title
     }
-    return descriptor.name
+    return descriptor.displayName
   }
 
   private func tabTitle(

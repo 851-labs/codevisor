@@ -19,6 +19,7 @@ import { createServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseConfig, CodevisorDatabaseService } from "./service.js"
 import { makeSessionsService } from "./sessions-service.js"
 import { makeSyncService } from "./sync-service.js"
+import { makeTerminalPaneTitlesService } from "./terminal-pane-titles.js"
 import { makeTranscriptService } from "./transcript-service.js"
 import { makeUpdatesService } from "./updates-service.js"
 import { makeWorkspaceCreationService } from "./workspace-creation-service.js"
@@ -95,6 +96,7 @@ export const createService = (
     ...makeProjectsService(context),
     ...makeWorktreesService(context),
     ...makeWorkspacesService(context),
+    ...makeTerminalPaneTitlesService(context),
     ...makeWorkspaceCreationService(context),
     ...makeSessionsService(context),
     ...makeTranscriptService(context),

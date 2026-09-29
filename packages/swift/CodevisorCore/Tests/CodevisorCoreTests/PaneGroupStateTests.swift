@@ -21,19 +21,19 @@ struct PaneGroupStateTests {
 
     let added = state.addTerminalPane(sessionId: sessionId)
 
-    #expect(added.name == "Terminal 1")
+    #expect(added.name == "Terminal")
     #expect(added.kind == .terminal)
     #expect(added.terminalKey == "\(sessionId.uuidString):\(added.id.uuidString)")
     #expect(state.panes == [added])
     #expect(state.selectedPaneId == added.id)
   }
 
-  @Test("Adding a pane names it Terminal N, selects it and uses a synthetic key")
+  @Test("Adding a pane names it Terminal, selects it and uses a synthetic key")
   func addPane() {
     var state = PaneGroupState()
     state.addTerminalPane(sessionId: sessionId)
     let added = state.addTerminalPane(sessionId: sessionId)
-    #expect(added.name == "Terminal 2")
+    #expect(added.name == "Terminal")
     #expect(state.panes.count == 2)
     #expect(state.selectedPaneId == added.id)
     #expect(added.terminalKey == "\(sessionId.uuidString):\(added.id.uuidString)")
@@ -101,21 +101,6 @@ struct PaneGroupStateTests {
     let didRepairSelection = local.reconcilePaneDescriptors(from: incoming)
     #expect(didRepairSelection)
     #expect(local.selectedPaneId == survivor.id)
-  }
-
-  @Test("Naming is max numeric suffix + 1, including after close and re-add")
-  func naming() {
-    #expect(PaneGroupState.nextTerminalName(existing: []) == "Terminal 1")
-    #expect(PaneGroupState.nextTerminalName(existing: ["Terminal 1"]) == "Terminal 2")
-    #expect(PaneGroupState.nextTerminalName(existing: ["Terminal 1", "Terminal 3"]) == "Terminal 4")
-    #expect(PaneGroupState.nextTerminalName(existing: ["Renamed", "Terminal 2"]) == "Terminal 3")
-
-    var state = PaneGroupState()
-    state.addTerminalPane(sessionId: sessionId)
-    let second = state.addTerminalPane(sessionId: sessionId)
-    state.closePane(id: second.id)
-    // After closing "Terminal 2" of [1, 2], the next add is "Terminal 2" again.
-    #expect(state.addTerminalPane(sessionId: sessionId).name == "Terminal 2")
   }
 
   @Test("Closing the selected pane selects the pane before it, else the one after")

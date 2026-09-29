@@ -77,6 +77,24 @@ describe("libghostty-vt terminal state", () => {
     terminal.free()
   })
 
+  it("reports the title programs set with OSC 0 and 2", () => {
+    const terminal = createVtTerminal({ cols: 20, rows: 3 })
+    expect(terminal.title()).toBe("")
+    terminal.write("\u001b]2;hello\u0007")
+    expect(terminal.title()).toBe("hello")
+    // OSC 0 sets it too, ST-terminated and split across writes.
+    terminal.write("\u001b]0;✳ Claude")
+    terminal.write(" Code\u001b\\")
+    expect(terminal.title()).toBe("✳ Claude Code")
+    // Reading the screen or resizing leaves it in place.
+    terminal.reconstruct()
+    terminal.resize(30, 6)
+    expect(terminal.title()).toBe("✳ Claude Code")
+    terminal.write("\u001b]2;\u0007")
+    expect(terminal.title()).toBe("")
+    terminal.free()
+  })
+
   it("refuses use after free, and freeing twice is harmless", () => {
     const terminal = createVtTerminal({ cols: 10, rows: 2, onReply: () => undefined })
     terminal.free()

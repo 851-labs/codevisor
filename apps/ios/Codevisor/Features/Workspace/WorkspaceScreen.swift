@@ -246,7 +246,7 @@ struct WorkspaceScreen: View {
     case .browser:
       return BrowserPaneCache.shared.localTitle(paneId: pane.id) ?? pane.name
     case .terminal, .plugin, .document, .screenSharing:
-      return pane.name
+      return pane.displayName
     }
   }
 
@@ -449,7 +449,18 @@ struct WorkspaceScreen: View {
     if let promotionNavigationTitle { return promotionNavigationTitle.title }
     if isDraft { return "New Chat" }
     guard let pane = activePane else { return "" }
+    // A single-pane tab's rename is the tab's name, as in the sidebar.
+    if pane.kind != .chat, let custom = singlePaneTab(showing: pane.id)?.customTitle {
+      return custom
+    }
     return title(for: pane)
+  }
+
+  private func singlePaneTab(showing paneId: UUID) -> WorkspaceTab? {
+    resolvedWorkspace?.centerTabs.first { tab in
+      let groups = tab.root.allGroups
+      return groups.count == 1 && groups[0].state.panes.map(\.id) == [paneId]
+    }
   }
 
   private var chatSubtitle: String {

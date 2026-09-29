@@ -14,6 +14,7 @@ import { hasExistingListener } from "./infra/listener-probe.js"
 import { readMcpOverlays } from "./infra/mcp-fleet.js"
 import { SHARED_ACCOUNTS_NAMESPACE } from "./infra/shared-account-store.js"
 import { adoptLegacySyncIdentity } from "./infra/sync-identity.js"
+import { forwardTerminalTitles } from "./infra/terminal-titles.js"
 import {
   makeFileRestartSnapshotStore,
   makeMemoryRestartSnapshotStore,
@@ -129,6 +130,7 @@ export const makeCodevisorServerApp = (
   // drains parked finishes stranded by a previous process (startup
   // reconciliation has already cleared their stale task snapshots).
   const attentionSettle = makeAttentionSettleScheduler(services.db, fanout)
+  const closeTerminalTitles = forwardTerminalTitles(services.db, services.terminal, fanout)
   void attentionSettle.recover().catch(swallowError)
   const activeSessionIds = new Set<string>()
   const unsubscribeSessionActivity = config.sessionActivity
@@ -311,6 +313,7 @@ export const makeCodevisorServerApp = (
       // Every listener above is detached synchronously, so no new background
       // work can start; awaiting the last reconcile drains what is in flight.
       await sharedAccountReconcile
+      await closeTerminalTitles()
       // Archive teardown outlives the request that started it. Finish it
       // before the database closes so a half-done archive is not left for
       // the next boot.

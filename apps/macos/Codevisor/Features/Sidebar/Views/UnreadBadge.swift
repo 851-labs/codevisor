@@ -8,6 +8,6 @@ struct UnreadBadge: View {
     Circle()
       .fill(color)
       .frame(width: 10, height: 10)
-      .accessibilityLabel("Unread chat")
+      .accessibilityLabel("Unread")
   }
 }

@@ -120,6 +120,8 @@ export interface VtTerminal {
   reconstruct(): Uint8Array
   /// The screen and scrollback as plain text.
   text(): string
+  /// The title the program last set with OSC 0/2; empty when none.
+  title(): string
   state(): VtState
   free(): void
 }
@@ -244,6 +246,24 @@ class GhosttyVt {
       return this.view().getUint32(ptr, true)
     } finally {
       this.exports.ghostty_wasm_free(ptr, 8)
+    }
+  }
+
+  /// A GhosttyString-valued datum, copied out of the terminal's memory. The
+  /// string is borrowed (valid until the next mutating call), so it is not
+  /// freed here.
+  getString(terminal: number, data: string): string {
+    const layout = this.struct("GhosttyString")
+    const ptr = this.exports.ghostty_wasm_alloc(layout.size)
+    try {
+      this.bytes().fill(0, ptr, ptr + layout.size)
+      this.check(this.exports.ghostty_terminal_get(terminal, this.data(data), ptr), data)
+      const view = this.view()
+      const start = view.getUint32(ptr + layout.fields.ptr!.offset, true)
+      const len = view.getUint32(ptr + layout.fields.len!.offset, true)
+      return decoder.decode(this.bytes().subarray(start, start + len))
+    } finally {
+      this.exports.ghostty_wasm_free(ptr, layout.size)
     }
   }
 
@@ -390,6 +410,7 @@ export const createVtTerminal = (options: VtTerminalOptions): VtTerminal => {
       return out
     },
     text: () => decoder.decode(vt.format(live(), "PLAIN")),
+    title: () => vt.getString(live(), "TITLE"),
     state: () => {
       const id = live()
       return {

@@ -3,7 +3,8 @@ import CodevisorUI
 import SwiftUI
 
 /// A workspace tab as a sidebar row: the tab's kind glyph — a
-/// chat tab borrows the chat row's live status icon — its title, and a
+/// chat tab borrows the chat row's live status icon, and a terminal running
+/// an agent shows the same working indicator while it works — its title, and a
 /// hover close button.
 struct SidebarWorkspaceTabRow: View {
   let title: String
@@ -19,6 +20,8 @@ struct SidebarWorkspaceTabRow: View {
   /// The chat a chat tab shows, when it is still known to the session
   /// list; drives the activity/unread leading icon.
   let chatSession: ChatSession?
+  /// A terminal tab's agent status, shown in place of the terminal glyph.
+  var terminalStatus: AgentPaneStatus? = nil
   let store: SessionStore?
   let isSelected: Bool
   let isReordering: Bool
@@ -105,6 +108,9 @@ struct SidebarWorkspaceTabRow: View {
     if let chatSession {
       ChatSessionLeadingIcon(session: chatSession, store: store, activityColor: .secondary)
         .foregroundStyle(.secondary)
+    } else if let terminalStatus {
+      AgentStatusIndicator(status: terminalStatus)
+        .frame(width: 18)
     } else if kind == .browser, let browserFavicon {
       Image(nsImage: browserFavicon)
         .resizable()

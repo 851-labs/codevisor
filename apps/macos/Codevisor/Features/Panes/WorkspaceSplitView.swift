@@ -420,6 +420,9 @@ private struct SplitLeafHeader: View {
         store: sessionStore,
         activityColor: theme.textSecondary
       )
+    } else if let status = pane?.terminalAgentStatus {
+      AgentStatusIndicator(status: status, activityColor: theme.textSecondary)
+        .frame(width: 18)
     } else if pane?.kind == .plugin,
       let pluginId = pane?.pluginId,
       let pluginIconClient

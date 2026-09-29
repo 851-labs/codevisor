@@ -61,7 +61,7 @@ struct HomeSidebarSectionBuilder {
           id: pane.id,
           title: tab?.displayTitle(for: pane, chatTitle: chat?.title) ?? paneTitle(pane, chat: chat),
           icon: paneIcon(pane, chat: chat),
-          status: chat.map(status(for:)) ?? .idle,
+          status: chat.map(status(for:)) ?? status(forTerminal: pane),
           chatSessionId: chat?.id,
           renamableTabId: tab?.id,
           tabId: owner.id
@@ -90,7 +90,7 @@ struct HomeSidebarSectionBuilder {
     case .browser:
       return BrowserPaneCache.shared.localTitle(paneId: pane.id) ?? pane.name
     case .terminal, .plugin, .document, .screenSharing:
-      return pane.name
+      return pane.displayName
     }
   }
 
@@ -132,5 +132,11 @@ struct HomeSidebarSectionBuilder {
     if ChatControllerCache.shared.isInProgress(session) { return .inProgress }
     if session.unreadCount > 0 { return .unread }
     return .idle
+  }
+
+  /// A terminal whose agent is working shows the chat's in-progress
+  /// indicator; any other pane stays idle.
+  private func status(forTerminal pane: PaneDescriptorState) -> HomeSessionStatus {
+    pane.terminalAgentStatus == .working ? .inProgress : .idle
   }
 }

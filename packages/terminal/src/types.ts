@@ -2,7 +2,8 @@ import type {
   TerminalClientFrame,
   TerminalCreateRequest,
   TerminalCreateResponse,
-  TerminalServerFrame
+  TerminalServerFrame,
+  TerminalActivity
 } from "@codevisor/api"
 import type { Effect } from "effect"
 import { Schema } from "effect"
@@ -55,7 +56,22 @@ export interface TerminalManagerConfig {
   /// Override for tests or alternate packages. Production uses the Ghostty
   /// terminfo database shipped beside this package's compiled JavaScript.
   readonly terminfoDirectory?: string
+  /// Ghostty's resources directory (its `shell-integration/` tree). Production
+  /// uses the copy shipped beside this package's compiled JavaScript.
+  readonly ghosttyResourcesDirectory?: string
 }
+
+/// A terminal title read for display: the text without its activity glyph,
+/// and the activity that glyph announced.
+export interface TerminalTitleStatus {
+  readonly title: string | undefined
+  readonly activity: TerminalActivity | undefined
+}
+
+/// Hears a terminal's settled title (activity glyph dropped) and the activity
+/// it shows, keyed by its session key; both `undefined` once the terminal
+/// ended.
+export type TerminalTitleListener = (sessionId: string, status: TerminalTitleStatus) => void
 
 /// Caller-facing side of an externally-managed terminal: the caller owns the
 /// process and pumps its output/exit through this handle; input, resize, and
@@ -158,6 +174,9 @@ export interface TerminalManagerService {
   /// Increments whenever any terminal produces output or exits, so callers
   /// can skip persisting an unchanged snapshot.
   readonly outputRevision: () => number
+  /// Follows the title each terminal's program sets (OSC 0/2) once it has
+  /// held for `TITLE_SETTLE_MS`. Returns an unsubscribe.
+  readonly subscribeTitles: (listener: TerminalTitleListener) => () => void
   /// A client disconnected: its size stops constraining the PTY.
   readonly releaseClient: (terminalId: string, clientId: string) => void
 }

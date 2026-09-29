@@ -48,7 +48,7 @@ public struct NativeClientContext: Codable, Sendable {
     init(_ pane: PaneDescriptorState, leafId: UUID? = nil) {
       id = pane.id
       kind = pane.kind.rawValue
-      title = pane.name
+      title = pane.displayName
       sessionId = pane.kind == .chat ? pane.chatSessionId : nil
       self.leafId = leafId
     }

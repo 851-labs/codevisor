@@ -27,7 +27,10 @@ extension WorkspaceSyncModel {
       return projectList.renameSession(chat, to: trimmed, errorReporter: errorReporter)
     }
     let normalized = trimmed.isEmpty ? nil : trimmed
-    guard workspace.centerTabs[index].customTitle != normalized else { return nil }
+    guard tab.customTitle != normalized else { return nil }
+    // Confirming the title editor unchanged is not a rename: it must not pin
+    // a terminal's current program title as the tab's permanent name.
+    if tab.customTitle == nil, normalized == pane?.displayName { return nil }
     workspace.centerTabs[index].customTitle = normalized
     repository.save(workspace)
     return nil

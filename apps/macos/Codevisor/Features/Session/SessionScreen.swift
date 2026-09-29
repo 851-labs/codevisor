@@ -102,7 +102,7 @@ struct SessionScreen: View {
           node: centerTree,
           activeLeafId: activeLeafId ?? primaryLeafId,
           groupModel: centerLeafModel,
-          paneTitle: centerPaneTitle ?? { $0.name },
+          paneTitle: centerPaneTitle ?? { $0.displayName },
           sessionStore: sessionStore,
           dragCoordinator: splitDragCoordinator,
           onSplitLeaf: { leafId, edge in onSplitLeaf?(leafId, edge) },

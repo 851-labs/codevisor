@@ -21,6 +21,7 @@ import type {
   QuestionPayload,
   SessionDetail,
   SessionSummary,
+  TerminalActivity,
   TranscriptItemDetails,
   TranscriptBodyPage,
   TranscriptPage,
@@ -160,6 +161,20 @@ export interface CodevisorDatabaseService {
     sessionId: string,
     title: string
   ) => Effect.Effect<WorkspacePane, DatabaseError>
+  /// Sets the title the program in terminal `terminalKey` set (OSC 0/2, its
+  /// activity glyph dropped) and the activity it showed on every pane showing
+  /// that terminal; `undefined` clears either. Returns the navigation changes
+  /// it journaled, empty when no pane changed, so the caller can wake event
+  /// readers without appending another event.
+  readonly setTerminalPaneStatus: (
+    terminalKey: string,
+    liveTitle: string | undefined,
+    activity: TerminalActivity | undefined
+  ) => Effect.Effect<ReadonlyArray<EventEnvelope>, DatabaseError>
+  /// Clears every pane's live title and activity, for a boot: no terminal
+  /// process from before it survives. Returns the navigation changes it
+  /// journaled.
+  readonly clearTerminalPaneStatuses: Effect.Effect<ReadonlyArray<EventEnvelope>, DatabaseError>
   readonly setSessionWorkspace: (
     sessionId: string,
     workspaceId: string | null

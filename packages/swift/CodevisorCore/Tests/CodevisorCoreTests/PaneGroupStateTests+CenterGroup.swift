@@ -113,13 +113,13 @@ extension PaneGroupStateTests {
     state.addTerminalPane(sessionId: sessionId)
     let placeholder = state.addNewTabPane()
 
-    // Terminal conversion: same slot, next terminal name, selected.
+    // Terminal conversion: same slot, the terminal name, selected.
     let terminal = state.convertNewTabPane(
       id: placeholder.id, to: .terminal, sessionId: sessionId
     )
     #expect(terminal?.kind == .terminal)
     #expect(terminal?.id == placeholder.id)
-    #expect(terminal?.name == "Terminal 2")
+    #expect(terminal?.name == "Terminal")
     #expect(state.panes.map(\.id) == [state.panes[0].id, terminal?.id])
     #expect(state.selectedPaneId == terminal?.id)
 

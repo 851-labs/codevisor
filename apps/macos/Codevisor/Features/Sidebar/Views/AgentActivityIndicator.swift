@@ -28,7 +28,7 @@ struct AgentActivityIndicator: View {
       .frame(width: BrailleSpinnerFrames.size.width, height: BrailleSpinnerFrames.size.height)
       .accessibilityElement(children: .ignore)
       .accessibilityLabel("Working")
-      .help("Chat is working")
+      .help("Working")
   }
 }
 

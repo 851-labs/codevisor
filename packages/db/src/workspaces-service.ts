@@ -19,6 +19,11 @@ import { archivedStamp, type ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
 import { makeSessionWorkspacesService } from "./session-workspaces-service.js"
 
+/// Whether a client's pane upsert leaves it on the resource it showed. SQL
+/// over the conflicting row and the `excluded` one.
+const sameResource = `workspace_panes.resource_kind is excluded.resource_kind
+  and lower(workspace_panes.resource_id) is lower(excluded.resource_id)`
+
 /// The synchronous upsert behind `upsertWorkspace`, exported so the atomic
 /// workspace create can run it inside its own transaction.
 export const upsertWorkspaceRow = (
@@ -247,6 +252,12 @@ export const makeWorkspacesService = (
                  resource_kind = excluded.resource_kind,
                  resource_id = excluded.resource_id,
                  metadata = excluded.metadata,
+                 -- A live title and activity belong to the terminal the pane
+                 -- showed.
+                 live_title = case when ${sameResource} then workspace_panes.live_title end,
+                 terminal_activity = case
+                   when ${sameResource} then workspace_panes.terminal_activity
+                 end,
                  revision = workspace_panes.revision + 1,
                  updated_at = ?
                where workspace_panes.provider_id is not excluded.provider_id
@@ -300,6 +311,12 @@ export const makeWorkspacesService = (
         if ((resourceKind === null) !== (resourceId === null)) {
           throw new Error("resourceKind and resourceId must be provided together")
         }
+        // A live title and activity belong to the terminal the pane showed.
+        const keepTerminalStatus =
+          existing.resource_kind === resourceKind &&
+          existing.resource_id?.toLowerCase() === resourceId?.toLowerCase()
+            ? 1
+            : 0
         sqlite.transaction(() => {
           if (resourceKind !== null && resourceId !== null) {
             discardConflictingPanes(paneId, resourceKind, resourceId, workspaceId)
@@ -309,7 +326,9 @@ export const makeWorkspacesService = (
               `update workspace_panes set
                  provider_id = ?, pane_type = ?, title = ?, resource_kind = ?,
                  resource_id = ?, metadata = ?, position = ?,
-                 revision = revision + case when ? then 1 else 0 end, updated_at = ?
+                 revision = revision + case when ? then 1 else 0 end, updated_at = ?,
+                 live_title = case when ? then live_title end,
+                 terminal_activity = case when ? then terminal_activity end
                where id = ? and workspace_id = ?`
             )
             .run(
@@ -324,6 +343,8 @@ export const makeWorkspacesService = (
               // optimistic pane conversions, which a reorder never races.
               contentChanged(request) ? 1 : 0,
               isoTimestamp(),
+              keepTerminalStatus,
+              keepTerminalStatus,
               paneId,
               workspaceId
             )
@@ -418,7 +439,8 @@ export const makeWorkspacesService = (
             .prepare(
               `update workspace_panes set
                  provider_id = 'codevisor', pane_type = 'chat', title = ?,
-                 resource_kind = 'session', resource_id = ?, metadata = null,
+                 resource_kind = 'session', resource_id = ?, metadata = null, live_title = null,
+                 terminal_activity = null,
                  revision = revision + 1, updated_at = ?
                where id = ? and workspace_id = ?`
             )

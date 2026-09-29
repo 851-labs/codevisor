@@ -83,6 +83,8 @@ export interface WorkspacePaneRow {
   readonly resource_kind: string | null
   readonly resource_id: string | null
   readonly metadata: string | null
+  readonly live_title: string | null
+  readonly terminal_activity: "working" | "idle" | null
   readonly revision: number
   /// The shared tab order key. Inserts and the upgrade assign one; the
   /// column default of "" only covers rows written outside the service.

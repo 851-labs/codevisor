@@ -23,3 +23,13 @@ script at the same revision with Zig 0.16.0 yields identical bytes. The server
 keeps an authoritative copy of each terminal's screen in it, so reattaching
 clients receive a reconstruction of the current screen instead of the
 terminal's whole output history (`src/vt/ghostty-vt.ts`).
+
+# Ghostty shell integration
+
+`shell-integration/` is Ghostty's `src/shell-integration` tree, copied unmodified from the Ghostty
+revision in `GHOSTTY-VT-REF`. Shells the server starts load it the way Ghostty's
+`src/termio/shell_integration.zig` injects it (`src/shell-integration.ts`), so they report the
+running command as the title and emit OSC 133 prompt marks. The fish, elvish, and nushell scripts
+are Ghostty's MIT (`GHOSTTY-LICENSE`), and `bash-preexec.sh` is rcaloras/bash-preexec (MIT). The
+zsh and `ghostty.bash` scripts derive from Kitty's and are GPLv3, as their headers state; they are
+standalone scripts the shell sources, not linked into Codevisor.

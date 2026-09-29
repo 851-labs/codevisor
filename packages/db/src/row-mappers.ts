@@ -155,6 +155,8 @@ export const workspacePaneFromRow = (row: WorkspacePaneRow): WorkspacePane => ({
   ...(row.resource_kind === null ? {} : { resourceKind: row.resource_kind }),
   ...(row.resource_id === null ? {} : { resourceId: row.resource_id }),
   ...(row.metadata === null ? {} : { metadata: row.metadata }),
+  ...(row.live_title === null ? {} : { liveTitle: row.live_title }),
+  ...(row.terminal_activity === null ? {} : { terminalActivity: row.terminal_activity }),
   revision: row.revision,
   ...(row.position === "" ? {} : { position: row.position }),
   createdAt: row.created_at,

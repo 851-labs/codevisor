@@ -28,17 +28,13 @@ struct ChatSessionLeadingIcon: View {
       } else if store?.isWaitingOnUser(session) == true {
         ActionRequiredIndicator(color: theme.statusError)
       } else if store?.isInProgress(session) == true {
-        AgentActivityIndicator(color: activityColor)
+        AgentStatusIndicator(status: .working, activityColor: activityColor)
       } else if let store, store.unreadCount(session) > 0 {
-        UnreadBadge(color: notificationColor)
+        AgentStatusIndicator(status: .unread)
       } else {
         HarnessIcon(harnessId: session.harnessId, fallbackSymbolName: "bubble.and.pencil")
       }
     }
     .frame(width: 18)
-  }
-
-  private var notificationColor: Color {
-    theme.isSystem ? .blue : theme.accent
   }
 }

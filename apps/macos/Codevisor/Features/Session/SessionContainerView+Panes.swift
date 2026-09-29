@@ -232,7 +232,7 @@ extension SessionContainerView {
     if descriptor.kind == .browser, let title = store.localBrowserTitle(paneId: descriptor.id) {
       return title
     }
-    return descriptor.kind == .chat ? chatPaneTitle(descriptor) : descriptor.name
+    return descriptor.kind == .chat ? chatPaneTitle(descriptor) : descriptor.displayName
   }
 
   func chatPaneTitle(_ descriptor: PaneDescriptorState) -> String {

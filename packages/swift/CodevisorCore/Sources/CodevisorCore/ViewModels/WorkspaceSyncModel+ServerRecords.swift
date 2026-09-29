@@ -146,7 +146,9 @@ extension WorkspaceSyncModel {
         name: record.title,
         terminalKey: record.resourceId ?? id.uuidString,
         attachOnly: decoded?.attachOnly ?? false,
-        ownerChatSessionId: decoded?.ownerChatSessionId
+        ownerChatSessionId: decoded?.ownerChatSessionId,
+        liveTitle: PaneDescriptorState.normalizedLiveTitle(record.liveTitle),
+        terminalActivity: record.terminalActivity.flatMap(TerminalActivity.init(rawValue:))
       )
     case "new-tab":
       // A row a client that predates local-only New Tab pages may still

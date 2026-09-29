@@ -15,15 +15,18 @@ import {
 } from "./frames.js"
 import { nodePtySpawner } from "./node-pty-spawner.js"
 import { ReplayBuffer } from "./replay-buffer.js"
+import { BUNDLED_GHOSTTY_RESOURCES_DIRECTORY, withShellIntegration } from "./shell-integration.js"
 import {
   BUNDLED_GHOSTTY_TERMINFO_DIRECTORY,
   GHOSTTY_TERM,
   resolveDefaultShell,
-  resolveTerminalName
+  resolveTerminalName,
+  withDefaultLocale
 } from "./shell.js"
 import { SizeArbiter, type TerminalSize } from "./size-arbiter.js"
 import { createTerminalScreen, replayCovers, resyncFrames } from "./terminal-screen.js"
 import { RESTORED_TERMINAL_SIZE, restoreEntry, snapshotEntry } from "./terminal-snapshot.js"
+import { makeTerminalTitles } from "./terminal-titles.js"
 import type {
   TerminalManagerConfig,
   TerminalManagerService,
@@ -67,6 +70,7 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
   const terminals = new Map<string, RunningTerminal>()
   const terminalsBySession = new Map<string, string>()
   const stopping = new Map<string, Promise<void>>()
+  const titles = makeTerminalTitles()
   let revision = 0
 
   /* v8 ignore next -- real node-pty spawning is covered by packaging smoke tests. */
@@ -74,7 +78,9 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
   const env = config.env ?? process.env
   const terminfoDirectory = config.terminfoDirectory ?? BUNDLED_GHOSTTY_TERMINFO_DIRECTORY
   const defaultShell = resolveDefaultShell(config, env)
-  const terminalName = resolveTerminalName(config.platform ?? process.platform)
+  const platform = config.platform ?? process.platform
+  const terminalName = resolveTerminalName(platform)
+  const ghosttyResources = config.ghosttyResourcesDirectory ?? BUNDLED_GHOSTTY_RESOURCES_DIRECTORY
 
   const pushFrame = (terminal: RunningTerminal, frame: TerminalFramePayload): SequencedFrame => {
     const sequenced = sequenceFrame(terminal.nextOutputSeq, frame)
@@ -82,9 +88,13 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
     revision += 1
     terminal.frames.push(sequenced)
     if (sequenced.type === "output") {
-      if (!terminal.removed) terminal.screen.write(sequenced.data)
+      if (!terminal.removed) {
+        terminal.screen.write(sequenced.data)
+        titles.observe(terminal, sequenced.data)
+      }
     } else {
       terminal.exitFrame = sequenced
+      titles.end(terminal)
     }
     for (const sink of terminal.sinks) {
       sink(sequenced)
@@ -113,6 +123,7 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
   const dropTerminal = (terminal: RunningTerminal): void => {
     if (terminals.get(terminal.terminalId) === terminal) terminals.delete(terminal.terminalId)
     terminal.removed = true
+    titles.end(terminal)
     terminal.screen.free()
   }
 
@@ -183,6 +194,9 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
         }
 
         const terminalId = randomUUID()
+        // Match Ghostty's launch environment on macOS. Linux uses the
+        // broadly recognized xterm-256color name so stock distro profiles
+        // enable colors without requiring Ghostty-specific TERM handling.
         const terminalEnvironment: NodeJS.ProcessEnv = {
           ...env,
           ...envOverrides,
@@ -197,14 +211,17 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
           // xterm-256color database for shells such as Zsh.
           delete terminalEnvironment.TERMINFO
         }
-        const spawnRequest: TerminalSpawnRequest = {
-          ...request,
-          shell: request.shell ?? defaultShell,
-          // Match Ghostty's launch environment on macOS. Linux uses the
-          // broadly recognized xterm-256color name so stock distro profiles
-          // enable colors without requiring Ghostty-specific TERM handling.
-          env: terminalEnvironment
-        }
+        const shell = request.shell ?? defaultShell
+        const launch = withShellIntegration(
+          shell,
+          request.args ?? [],
+          withDefaultLocale(terminalEnvironment, platform),
+          {
+            resourcesDirectory: ghosttyResources,
+            platform
+          }
+        )
+        const spawnRequest: TerminalSpawnRequest = { ...request, shell, ...launch }
         const pendingFrames: Array<TerminalFramePayload> = []
         let runningTerminal: RunningTerminal | undefined
         let exitedBeforeRegistration = false
@@ -390,6 +407,7 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
         return format === "text" ? screen.text() : decoder.decode(screen.reconstruct())
       }),
     outputRevision: () => revision,
+    subscribeTitles: titles.subscribe,
     restoreTerminals: (snapshot) => {
       for (const entry of snapshot.terminals) {
         if (terminals.has(entry.terminalId)) continue

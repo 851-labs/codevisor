@@ -70,6 +70,12 @@ export const UpsertWorkspaceRequest = Schema.Struct({
 })
 export type UpsertWorkspaceRequest = typeof UpsertWorkspaceRequest.Type
 
+/// What the agent in a terminal says it is doing, read from the leading glyph
+/// of the title it sets: a spinner while `working`, Claude Code's `✳` once
+/// `idle` at its prompt.
+export const TerminalActivity = Schema.Literals(["working", "idle"])
+export type TerminalActivity = typeof TerminalActivity.Type
+
 /// A server-owned pane identity. Layout deliberately does not live here:
 /// clients arrange these stable ids into their own tabs/splits, while the
 /// provider/type/resource tuple says what each pane renders on every device.
@@ -84,6 +90,14 @@ export const WorkspacePane = Schema.Struct({
   /// Opaque JSON owned by the provider. Keeping the transport opaque lets a
   /// future extension evolve its pane contract without changing core schema.
   metadata: Schema.optional(Schema.String),
+  /// The title the program in a terminal pane set (OSC 0/2), server-owned;
+  /// absent when none. A leading activity glyph (a spinner frame, Claude
+  /// Code's `✳`) is dropped: `terminalActivity` carries what it meant.
+  /// Clients show it (unless the user renamed the tab) in place of `title`.
+  liveTitle: Schema.optional(Schema.String),
+  /// What the agent in a terminal pane is doing, from its title; absent when
+  /// its title shows no activity (a plain shell, a program without one).
+  terminalActivity: Schema.optional(TerminalActivity),
   /// Monotonic server-owned content revision. Clients use this to reject a
   /// snapshot that was captured before an optimistic pane conversion landed.
   revision: Schema.Number,
