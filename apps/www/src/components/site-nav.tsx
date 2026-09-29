@@ -17,6 +17,14 @@ export function SiteNav() {
             Docs
           </a>
           <a
+            href="https://github.com/851-labs/codevisor"
+            target="_blank"
+            rel="noreferrer"
+            className="transition-colors hover:text-text"
+          >
+            GitHub
+          </a>
+          <a
             href="/#install"
             className="rounded-full bg-text px-3 py-1 font-medium text-black transition-opacity hover:opacity-90"
           >
