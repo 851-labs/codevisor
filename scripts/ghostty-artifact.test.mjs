@@ -51,6 +51,7 @@ test("Ghostty framework validation requires the expected stamp and structure", a
     for (const slice of GHOSTTY_SLICES) {
       await mkdir(join(framework, slice, "Headers/GhosttyKit"), { recursive: true })
       await writeFile(join(framework, slice, "Headers/GhosttyKit/ghostty.h"), "header")
+      await writeFile(join(framework, slice, "Headers/GhosttyKit/module.modulemap"), "module")
       await writeFile(join(framework, slice, "ghostty-internal.a"), "archive")
     }
     await writeFile(join(framework, "Info.plist"), "plist")
@@ -58,6 +59,11 @@ test("Ghostty framework validation requires the expected stamp and structure", a
 
     assert.equal(await validFramework(framework, "current"), true)
     assert.equal(await validFramework(framework, "stale"), false)
+    // Without its module map, Swift can't import the slice.
+    await rm(join(framework, "ios-arm64/Headers/GhosttyKit/module.modulemap"))
+    assert.equal(await validFramework(framework, "current"), false)
+    await writeFile(join(framework, "ios-arm64/Headers/GhosttyKit/module.modulemap"), "module")
+    assert.equal(await validFramework(framework, "current"), true)
     // A macOS-only framework (the iOS app links the other slices) is incomplete.
     await rm(join(framework, "ios-arm64"), { recursive: true })
     assert.equal(await validFramework(framework, "current"), false)

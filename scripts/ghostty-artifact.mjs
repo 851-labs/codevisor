@@ -194,6 +194,10 @@ async function validRegularFramework(path, expectedStamp) {
   }
 }
 
+/// Whether `path` is the GhosttyKit this checkout pins (`expectedStamp`),
+/// laid out the way the apps build against it: each slice's headers and
+/// module map under Headers/GhosttyKit/ (so the slices' module maps don't
+/// collide), found through a Swift include path of Headers/.
 export async function validFramework(path, expectedStamp) {
   try {
     const stamp = (await readFile(join(path, ".codevisor-stamp"), "utf8")).trim()
@@ -202,6 +206,7 @@ export async function validFramework(path, expectedStamp) {
       access(join(path, "Info.plist")),
       ...GHOSTTY_SLICES.flatMap((slice) => [
         access(join(path, slice, "Headers", "GhosttyKit", "ghostty.h")),
+        access(join(path, slice, "Headers", "GhosttyKit", "module.modulemap")),
         access(join(path, slice, "ghostty-internal.a"))
       ])
     ])
@@ -299,12 +304,25 @@ async function main() {
     console.log(result.cachedFramework)
     return
   }
+  if (command === "validate") {
+    // Release builds install the framework with build-ghostty.sh and check it
+    // here, against the same layout the dev tooling uses.
+    const framework =
+      process.argv[3] ?? join(repoRoot, "apps/macos/Frameworks/GhosttyKit.xcframework")
+    const stamp = await ghosttyBuildStamp(repoRoot)
+    if (!(await validFramework(framework, stamp))) {
+      throw new Error(
+        `${framework} is not GhosttyKit ${stamp} (missing, stale, or incomplete); run apps/macos/scripts/build-ghostty.sh`
+      )
+    }
+    return
+  }
   if (command === "print-path") {
     const stamp = await ghosttyBuildStamp(repoRoot)
     console.log(ghosttyCachedFramework(ghosttyArtifactsRoot(), stamp))
     return
   }
-  throw new Error(`Unknown command ${command}; expected ensure, build, or print-path`)
+  throw new Error(`Unknown command ${command}; expected ensure, build, validate, or print-path`)
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

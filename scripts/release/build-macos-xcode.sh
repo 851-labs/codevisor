@@ -70,17 +70,15 @@ if [[ ${#ghostty_candidates[@]} -ne 1 ]]; then
 fi
 ghostty_library="${ghostty_candidates[0]}"
 ghostty_slice_dir="$(dirname "$ghostty_library")"
-ghostty_headers="$ghostty_slice_dir/Headers/ghostty.h"
 ghostty_resources="$repo_root/apps/macos/Codevisor/Resources/ghostty-resources.tar.gz"
 lipo -info "$ghostty_library" || true
 if ! library_has_arch "$ghostty_library" arm64; then
   echo "error: GhosttyKit macOS library $ghostty_library has no arm64 slice." >&2
   exit 1
 fi
-if [[ ! -f "$ghostty_headers" ]]; then
-  echo "error: GhosttyKit headers are required at $ghostty_headers" >&2
-  exit 1
-fi
+# The pinned version, every slice, and the header layout the project's
+# Swift include path (Headers/) expects: the same check the dev tooling uses.
+node "$repo_root/scripts/ghostty-artifact.mjs" validate "$ghostty_framework"
 if [[ ! -f "$ghostty_resources" ]]; then
   echo "error: Ghostty runtime resources are required at $ghostty_resources" >&2
   exit 1

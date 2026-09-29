@@ -22,7 +22,6 @@ test("the release build passes the macOS Ghostty archive without overriding proj
   for (const [id, archive] of slices) {
     await mkdir(join(framework, id, "Headers"), { recursive: true })
     await writeFile(join(framework, id, archive), "fixture")
-    await writeFile(join(framework, id, "Headers/ghostty.h"), "fixture")
   }
   const slice = join(framework, "macos-arm64 custom slice")
   const library = join(slice, "custom archive.a")
@@ -58,6 +57,12 @@ test("the release build passes the macOS Ghostty archive without overriding proj
   assert.ok(args.includes(`SWIFT_INCLUDE_PATHS=${slice}/Headers`))
   assert.ok(args.includes("ARCHS=arm64"))
   assert.ok(!args.some((arg) => arg.startsWith("OTHER_LDFLAGS=")))
+  // The framework is validated by the dev tooling's check (the stubbed node
+  // records the call), not a copy of its layout rules.
+  assert.match(
+    await readFile(nodeArgs, "utf8"),
+    new RegExp(`^${join(root, "scripts/ghostty-artifact.mjs")}\nvalidate\n${framework}\n`)
+  )
   assert.match(
     await readFile(nodeArgs, "utf8"),
     /macos-browser-artifact\.mjs\nlinkage\n[^\n]+\narm64\n$/
