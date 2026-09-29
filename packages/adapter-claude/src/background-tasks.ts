@@ -5,6 +5,7 @@ import { backgroundTerminalKey } from "@codevisor/agent-runtime"
 
 import { isRecord } from "./internal.js"
 import type { BackgroundTaskEntry, ClaudeSession } from "./session.js"
+import { toolKind } from "./tool-presentation.js"
 
 /// Tracks the SDK's background-task lifecycle (`task_*` system messages) so
 /// clients can tell "idle" apart from "turn ended, waiting on background
@@ -74,17 +75,33 @@ export const handleSystemMessage = (
         ...(terminalKey === undefined ? {} : { terminalKey })
       })
       emitBackgroundTasks(session)
-      // Retitle the spawning tool call with the task's description — the most
-      // reliable source, immune to the Task→Agent tool rename.
       if (message.subagent_type !== undefined && message.tool_use_id !== undefined) {
+        // Stamp the agent's task id on the call that started this run, so
+        // clients can tie an agent's spawn and later follow-ups together
+        // from stored transcript data alone.
+        const subagent = { codevisorSubagent: { taskId: message.task_id } }
         void session.emit({
           kind: "session.output",
-          payload: {
-            kind: "agent",
-            sessionUpdate: "tool_call_update",
-            title: `Agent: ${message.description}`,
-            toolCallId: message.tool_use_id
-          },
+          payload: startsNewSubagent(session, message.tool_use_id)
+            ? // Retitle the spawning call with the task's description — the
+              // most reliable source, immune to the Task→Agent tool rename.
+              {
+                _meta: subagent,
+                kind: "agent",
+                sessionUpdate: "tool_call_update",
+                title: `Agent: ${message.description}`,
+                toolCallId: message.tool_use_id
+              }
+            : // A message to an existing agent (`SendMessage`) restarts its
+              // task under this call, but it's not a new agent: it stays an
+              // ordinary tool call, and the agent's thread keeps streaming
+              // under the call that spawned it.
+              {
+                _meta: subagent,
+                sessionUpdate: "tool_call_update",
+                title: `Messaged agent: ${message.description}`,
+                toolCallId: message.tool_use_id
+              },
           subjectId: session.key
         })
       }
@@ -139,6 +156,14 @@ export const handleSystemMessage = (
     default:
       break
   }
+}
+
+/// Whether a subagent `task_started` comes from the Agent/Task tool (a new
+/// agent) rather than a message to an existing one. Unknown tools count as
+/// spawns, the long-standing behavior.
+const startsNewSubagent = (session: ClaudeSession, toolUseId: string): boolean => {
+  const toolName = session.accumulators.get(toolUseId)?.toolName
+  return toolName === undefined || toolKind(toolName) === "agent"
 }
 
 export const emitBackgroundTasks = (session: ClaudeSession): Promise<void> =>

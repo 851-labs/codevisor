@@ -9,8 +9,8 @@ extension WorkspaceSyncModel {
     workspaceId: UUID,
     client: (any CodevisorServerClienting)? = nil
   ) {
-    // The New Tab page is device-local: nothing to share.
-    guard pane.kind != .newTab, let workspace = repository.workspace(id: workspaceId) else { return }
+    // New Tab pages and subagent views are device-local: nothing to share.
+    guard !pane.kind.isDeviceLocal, let workspace = repository.workspace(id: workspaceId) else { return }
     enqueue(.upsertPane(pane, workspaceId: workspaceId), serverId: workspace.serverId)
   }
 

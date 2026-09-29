@@ -91,6 +91,16 @@ extension SessionContainerView {
     // New Tab placeholder. Weak model: the closure is held BY the model.
     model.chatContent = { [weak model] descriptor in
       let workspace = selectedWorkspace
+      if descriptor.kind == .subagent {
+        return AnyView(
+          SubagentPaneContentView(
+            descriptor: descriptor,
+            focus: sessionFocus,
+            hostWorkspace: workspace,
+            store: store,
+            environment: environment
+          ))
+      }
       if descriptor.kind == .newTab {
         return AnyView(
           NewTabPageView(
@@ -301,7 +311,8 @@ extension SessionContainerView {
     for pane in updated {
       environment.workspaceSync.publishPane(pane, workspaceId: workspace.id, client: client)
     }
-    for pane in removed {
+    // Subagent panes were never registered with the server.
+    for pane in removed where pane.kind != .subagent {
       environment.workspaceSync.deletePane(id: pane.id, workspaceId: workspace.id, client: client)
     }
     Task {

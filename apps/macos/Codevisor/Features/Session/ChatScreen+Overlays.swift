@@ -54,14 +54,16 @@ extension ChatScreen {
       ZStack(alignment: .bottom) {
         if !isAtBottom {
           scrollToBottomButton
-            .padding(.bottom, composerHeight - 10)
+            .padding(.bottom, isReadOnly ? Self.composerBottomMargin : composerHeight - 10)
             .glassEffectID(
               ComposerGlassElement.scrollToBottom.rawValue,
               in: composerGlassNamespace
             )
             .glassEffectTransition(.matchedGeometry)
         }
-        composerOverlay
+        if !isReadOnly {
+          composerOverlay
+        }
       }
     }
   }

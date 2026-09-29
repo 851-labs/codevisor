@@ -214,7 +214,7 @@ final class PaneGroupModel: Identifiable {
     // The New Tab placeholder rides the chat pane's plumbing: an
     // AnyView host resolving content from the live descriptor via
     // `chatContent` (the container branches on kind there).
-    case .chat, .newTab:
+    case .chat, .newTab, .subagent:
       let chat = ChatPane(id: descriptor.id)
       wireChatHost(chat, paneId: descriptor.id)
       pane = chat
@@ -287,6 +287,9 @@ final class PaneGroupModel: Identifiable {
           self.pendingNewTabFocus = paneId
           self.requestBackgroundFocus?()
         }
+      case .subagent:
+        // Read-only: nothing to type into.
+        self.requestBackgroundFocus?()
       case .terminal, .plugin, .document, .browser, .screenSharing:
         break
       }

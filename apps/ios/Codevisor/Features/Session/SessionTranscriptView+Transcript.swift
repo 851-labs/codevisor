@@ -110,6 +110,7 @@ extension SessionTranscriptView {
               .environment(\.theme, theme)
               .environment(\.attachmentImages, attachmentImages)
               .environment(\.openFileDocument, openFileDocument)
+              .environment(\.openSubagent, openSubagent)
               .markdownImageActions(transcriptImageActions)
               .environment(\.transcriptDisclosure, disclosure)
               .environment(\.transcriptController, controller)

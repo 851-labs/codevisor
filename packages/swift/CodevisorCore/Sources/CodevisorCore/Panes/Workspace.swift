@@ -310,7 +310,7 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
   public var hasOpenNonChatContent: Bool {
     centerTabs.contains { tab in
       tab.root.allGroups.contains { group in
-        group.state.panes.contains { $0.kind != .chat && $0.kind != .newTab }
+        group.state.panes.contains { $0.kind != .chat && !$0.kind.isDeviceLocal }
       }
     }
   }
@@ -331,6 +331,6 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
   /// Whether any pane is real content. A workspace showing only the local
   /// New Tab page has none: the server knows nothing about that page.
   public var hasRealPanes: Bool {
-    allPanes.contains { $0.kind != .newTab }
+    allPanes.contains { !$0.kind.isDeviceLocal }
   }
 }

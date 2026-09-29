@@ -84,6 +84,7 @@ extension ChatScreen {
                     .environment(\.theme, theme)
                     .environment(\.attachmentImages, attachmentImages)
                     .environment(\.openFileDocument, openFileDocument)
+                    .environment(\.openSubagent, openSubagent)
                     .environment(\.hoverTrackingSuspended, controller.isSending)
                     .environment(\.transcriptDisclosure, controller.disclosure)
                     .environment(\.transcriptController, controller)
@@ -133,6 +134,9 @@ extension ChatScreen {
               isInitialTranscriptReady = true
             },
             onScrollViewReady: { scrollView in
+              // A read-only mirror must not steal the parent chat's
+              // shared transcript slot.
+              guard !isReadOnly else { return }
               focus.transcriptView = scrollView
               // Keyed: EVERY chat's transcript is a click-to-blur zone in
               // multi-chat workspaces (the single slot is last-mounted).

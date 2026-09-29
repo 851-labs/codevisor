@@ -100,6 +100,7 @@ extension SidebarView {
       pluginIconCacheNamespace: workspace.serverId,
       chatSession: chatSession,
       terminalStatus: descriptor?.terminalAgentStatus,
+      subagentHarnessId: descriptor.flatMap { subagentHarnessId($0, serverId: workspace.serverId) },
       store: store,
       isSelected: routesSelection && workspace.selectedCenterTabId == tab.id
         && tab.activeLeafId == leafId,
@@ -137,6 +138,7 @@ extension SidebarView {
       pluginIconCacheNamespace: workspace.serverId,
       chatSession: chatSession,
       terminalStatus: descriptor?.terminalAgentStatus,
+      subagentHarnessId: descriptor.flatMap { subagentHarnessId($0, serverId: workspace.serverId) },
       store: store,
       isSelected: routesSelection && workspace.selectedCenterTabId == tab.id,
       isReordering: isReordering,
@@ -200,6 +202,11 @@ extension SidebarView {
     if let customTitle = tab.customTitle { return customTitle }
     // Chat tabs follow the session's LIVE title (auto-titles, renames).
     return paneTitle(descriptor, chatSession: chatSession)
+  }
+
+  private func subagentHarnessId(_ descriptor: PaneDescriptorState, serverId: String) -> String? {
+    guard descriptor.kind == .subagent, let ownerId = descriptor.ownerChatSessionId else { return nil }
+    return list.session(ownerId, serverId: serverId)?.harnessId
   }
 
   private func sessionForPane(_ descriptor: PaneDescriptorState, serverId: String) -> ChatSession? {

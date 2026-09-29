@@ -22,6 +22,8 @@ struct SidebarWorkspaceTabRow: View {
   let chatSession: ChatSession?
   /// A terminal tab's agent status, shown in place of the terminal glyph.
   var terminalStatus: AgentPaneStatus? = nil
+  /// A subagent tab's harness (its chat's), for the harness icon.
+  var subagentHarnessId: String? = nil
   let store: SessionStore?
   let isSelected: Bool
   let isReordering: Bool
@@ -128,6 +130,10 @@ struct SidebarWorkspaceTabRow: View {
       )
       .frame(width: 14, height: 14)
       .frame(width: 18)
+    } else if kind == .subagent {
+      HarnessIcon(harnessId: subagentHarnessId ?? "", fallbackSymbolName: iconName)
+        .frame(width: 18)
+        .foregroundStyle(.secondary)
     } else if kind == .document {
       FileIcon(path: title, size: 16).frame(width: 18)
     } else {
@@ -146,6 +152,7 @@ struct SidebarWorkspaceTabRow: View {
     case .document: "text.document"
     case .browser: "globe"
     case .screenSharing: "display"
+    case .subagent: "wand.and.sparkles"
     }
   }
 

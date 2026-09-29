@@ -68,6 +68,7 @@ extension WorkspaceScreen {
       onRenamePane: { renamePane($0, to: $1) }
     )
     .environment(\.openFileDocument, OpenFileDocumentAction { openFileDocument($0) })
+    .environment(\.openSubagent, openSubagentAction)
     // BrowserPaneView extends its page separately so its floating controls
     // retain the home-indicator and keyboard safe areas.
     .ignoresSafeArea(.container, edges: pane.kind == .plugin ? .bottom : [])

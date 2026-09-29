@@ -2,9 +2,7 @@ import CodevisorCore
 import Foundation
 import StreamMarkdown
 
-/// Stable identities shared by the macOS and iOS transcript renderers. Main
-/// turn text and each subagent bucket use separate namespaces because their
-/// reducer-local fallback ids (`t0`, `t1`, …) may otherwise collide.
+/// Stable identities shared by the macOS and iOS transcript renderers.
 public enum TranscriptStreamingTextIdentity {
   /// Snapshot provenance must travel with the projected rows. Reading the
   /// current model at presentation time can consume a restoration while an
@@ -31,14 +29,6 @@ public enum TranscriptStreamingTextIdentity {
     segmentIndex: Int
   ) -> String {
     main(turnID: turnID, entryID: "\(entryID):\(segmentIndex)")
-  }
-
-  public static func subagent(
-    turnID: UUID,
-    parentToolCallID: String,
-    entryID: String
-  ) -> String {
-    "\(turnID.uuidString):subagent:\(parentToolCallID):\(entryID)"
   }
 
   /// Every text stream that predates this turn view's mount. Seeding these
@@ -73,17 +63,6 @@ public enum TranscriptStreamingTextIdentity {
     }
     if turn.finalTextIndex == nil, !turn.attachments.isEmpty {
       result.append(main(turnID: turnID, entryID: "attachments"))
-    }
-    for (parentToolCallID, transcript) in turn.subagents {
-      result.append(
-        contentsOf: transcript.entries.compactMap { entry -> String? in
-          guard case let .text(id, _) = entry else { return nil }
-          return subagent(
-            turnID: turnID,
-            parentToolCallID: parentToolCallID,
-            entryID: id
-          )
-        })
     }
     return result
   }

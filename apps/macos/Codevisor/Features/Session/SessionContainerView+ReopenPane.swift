@@ -108,6 +108,13 @@ extension SessionContainerView {
         id: paneId, kind: .document, name: closed.name,
         terminalKey: paneId.uuidString, documentPath: closed.documentPath
       )
+    case .subagent:
+      // Only while its chat is still open here: an agent is a view of it.
+      guard let owner = closed.ownerChatSessionId, selectedWorkspace.pane(containingChat: owner) != nil
+      else { return nil }
+      return PaneDescriptorState(
+        id: paneId, kind: .subagent, name: closed.name, terminalKey: paneId.uuidString,
+        ownerChatSessionId: closed.ownerChatSessionId, subagentToolCallId: closed.subagentToolCallId)
     case .newTab:
       return nil
     }

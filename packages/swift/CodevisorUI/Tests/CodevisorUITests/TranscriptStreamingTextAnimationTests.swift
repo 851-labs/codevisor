@@ -66,7 +66,7 @@ struct TranscriptStreamingTextAnimationTests {
     )
   }
 
-  @Test("Initial settlement includes main and separately namespaced subagent text")
+  @Test("Initial settlement covers the turn's own text; subagent threads stream in their own view")
   func settledStreamIDs() {
     let turnID = UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!
     var turn = AssistantTurn(entries: [.text(id: "t0", markdown: "Main")])
@@ -85,7 +85,6 @@ struct TranscriptStreamingTextAnimationTests {
       ids == [
         "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE:main:t0",
         "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE:main:t0:0",
-        "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE:subagent:agent-1:t0",
       ])
   }
 

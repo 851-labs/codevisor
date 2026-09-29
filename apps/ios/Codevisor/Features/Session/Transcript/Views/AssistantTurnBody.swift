@@ -365,9 +365,7 @@ struct AssistantTurnBody: View {
           VStack(alignment: .leading, spacing: 12) {
             TurnItemsView(
               items: items,
-              turn: turn,
               turnId: turnId,
-              depth: 0,
               isTurnActive: isGenerating,
               animationPresentation: textAnimationPresentation,
               animationEnabled: textAnimationPresentation.animationsEnabled

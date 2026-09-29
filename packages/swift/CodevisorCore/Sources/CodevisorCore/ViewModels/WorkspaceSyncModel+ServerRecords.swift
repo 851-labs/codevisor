@@ -37,6 +37,11 @@ extension WorkspaceSyncModel {
       paneType = "new-tab"
       resourceKind = nil
       resourceId = nil
+    case .subagent:
+      // Never published (`isDeviceLocal`); mapped only for exhaustiveness.
+      paneType = "subagent"
+      resourceKind = nil
+      resourceId = nil
     case .browser:
       paneType = "browser"
       resourceKind = nil

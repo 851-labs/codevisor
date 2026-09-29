@@ -156,31 +156,6 @@ struct WorkedItemsTests {
     }
   }
 
-  @Test("subagentItems groups a bucket's entries with the same rules")
-  func nestedGrouping() {
-    var base = turn([tool("task-1", .agent)])
-    base.subagents["task-1"] = SubagentTranscript(entries: [
-      .text(id: "t0", markdown: "child prose"),
-      .tool(ToolCall(toolCallId: "sub-a", title: "Read", kind: .read)),
-      .tool(ToolCall(toolCallId: "sub-b", title: "Grep", kind: .search)),
-      .tool(ToolCall(toolCallId: "task-2", title: "Agent: nested", kind: .agent)),
-    ])
-    let items = base.subagentItems("task-1")
-    #expect(items.count == 3)
-    #expect(items[0] == .text(id: "t0", markdown: "child prose"))
-    if case let .toolGroup(group) = items[1] {
-      #expect(group.calls.count == 2)
-    } else {
-      Issue.record("expected group")
-    }
-    if case let .subagent(id, _) = items[2] {
-      #expect(id == "task-2")
-    } else {
-      Issue.record("expected nested subagent")
-    }
-    #expect(base.subagentItems("unknown").isEmpty)
-  }
-
   @Test("Summaries describe tool groups in first-seen order")
   func summaries() {
     #expect(ToolCallSummary.describe([call(.read), call(.read), call(.read)]) == "Read 3 files")

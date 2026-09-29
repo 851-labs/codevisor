@@ -85,6 +85,29 @@ struct NavigationIncrementalTests {
     #expect(alphaEntry.generation == alphaGeneration)
   }
 
+  @Test("A chat closed on another device takes this device's views of its subagents with it")
+  func remoteChatCloseRemovesItsSubagentPanes() async throws {
+    let (fixture, alpha, _, first, _) = await installTwo()
+    var edited = try #require(fixture.workspaces.workspace(id: alpha.id))
+    let chatPane = try #require(edited.pane(containingChat: first.id))
+    let agentId = UUID()
+    let agent = PaneDescriptorState(
+      id: agentId, kind: .subagent, name: "Map the chat UI", terminalKey: agentId.uuidString,
+      ownerChatSessionId: first.id, subagentToolCallId: "toolu_1")
+    #expect(edited.insertPane(agent, besidePane: chatPane.id, destination: .split(.trailing)) != nil)
+    fixture.workspaces.save(edited)
+    fixture.store.rebuild()
+    #expect(fixture.workspaces.workspace(id: alpha.id)?.tabId(containingPane: agentId) != nil)
+
+    #expect(
+      await fixture.store.apply(
+        .fixture(cursor: 5, deleted: [(table: "workspace_panes", id: chatPane.id.uuidString)]), machineId: "m"))
+
+    let workspace = try #require(fixture.workspaces.workspace(id: alpha.id))
+    #expect(workspace.tabId(containingPane: agentId) == nil)
+    #expect(!workspace.centerTabs.isEmpty)
+  }
+
   @Test("A workspace that goes away clears its entry")
   func removedWorkspaceClearsEntry() async {
     let (fixture, alpha, beta, first, second) = await installTwo()

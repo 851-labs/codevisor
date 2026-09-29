@@ -40,13 +40,11 @@ extension TranscriptRowLeaves {
       userMessage: { message in
         AnyView(UserBubbleRow(text: message.text, attachments: message.attachments))
       },
-      workedItem: { item, turn, turnID, isTurnActive, animationPresentation, animationEnabled in
+      workedItem: { item, _, turnID, isTurnActive, animationPresentation, animationEnabled in
         AnyView(
           TurnItemsView(
             items: [item],
-            turn: turn,
             turnId: turnID,
-            depth: 0,
             isTurnActive: isTurnActive,
             animationPresentation: animationPresentation,
             animationEnabled: animationEnabled

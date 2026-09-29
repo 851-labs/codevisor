@@ -10,6 +10,10 @@ extension EnvironmentValues {
   /// turn ended.
   @Entry public var runningSubagentToolCallIds: Set<String> = []
 
+  /// Opens a subagent's thread as a read-only pane beside its parent chat.
+  /// Must be re-injected per transcript row (rows live in cached hosts).
+  @Entry public var openSubagent: OpenSubagentAction?
+
   /// Stable session facade used by deferred historical detail sections.
   @Entry public var transcriptController: SessionController?
 
@@ -41,4 +45,29 @@ public struct TranscriptRowMeasurementInvalidationAction: Sendable {
   public init(_ handler: @escaping @MainActor @Sendable () -> Void) { self.handler = handler }
 
   @MainActor public func callAsFunction() { handler() }
+}
+
+/// Opens a subagent (by its spawning tool call) read-only, beside the chat
+/// that started it. The host decides what that means on its platform.
+public struct OpenSubagentAction: Sendable {
+  public enum Placement: Sendable {
+    /// The host's default: a split beside the chat on macOS, a push on iOS.
+    case automatic
+    case split
+    case newTab
+  }
+
+  private let handler:
+    @MainActor @Sendable (_ parentSessionId: UUID, _ toolCallId: String, _ title: String, _ placement: Placement)
+      -> Void
+
+  public init(
+    _ handler: @escaping @MainActor @Sendable (UUID, String, String, Placement) -> Void
+  ) { self.handler = handler }
+
+  @MainActor public func callAsFunction(
+    parentSessionId: UUID, toolCallId: String, title: String, placement: Placement = .automatic
+  ) {
+    handler(parentSessionId, toolCallId, title, placement)
+  }
 }

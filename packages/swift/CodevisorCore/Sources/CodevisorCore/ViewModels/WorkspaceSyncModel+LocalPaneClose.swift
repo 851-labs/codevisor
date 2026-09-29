@@ -39,6 +39,8 @@ extension Workspace {
       return LocalPaneCloseResult(replacement: replacement)
     }
     guard removePane(id: id) else { return nil }
+    // A closed chat takes its subagent views with it.
+    pruneOrphanedSubagentPanes()
     pruneEmptyCenterTabs()
     ensureUsableLayout()
     return LocalPaneCloseResult(replacement: nil)

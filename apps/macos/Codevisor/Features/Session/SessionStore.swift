@@ -65,6 +65,13 @@ final class SessionStore {
     TranscriptPresentationSurfaceCache()
   /// Per-session todo-panel expansion deliberately outlives controller
   /// eviction so pinned checklists retain their disclosure state.
+  /// Each open subagent pane's mirror of its parent chat. Pruned with the
+  /// pane (see `reconcileMountedPaneGroups`).
+  @ObservationIgnored var subagentMirrors: [SubagentPaneKey: SubagentMirror] = [:]
+  struct SubagentPaneKey: Hashable {
+    let workspaceId: UUID
+    let paneId: UUID
+  }
   @ObservationIgnored var todoExpansionStates: [SessionKey: Bool] = [:]
   /// Center-tree leaf groups, keyed by (workspace, leaf group) — the ONE
   /// model per leaf that both the top bar and the split view share.

@@ -380,6 +380,7 @@ private struct SplitLeafHeader: View {
     case .document: "doc.richtext"
     case .browser: "globe"
     case .screenSharing: "display"
+    case .subagent: "wand.and.sparkles"
     case .newTab, .none: "square.dashed"
     }
   }
@@ -411,9 +412,19 @@ private struct SplitLeafHeader: View {
     return environment.projectList.sessions.first(where: { $0.id == sessionId })
   }
 
+  /// A subagent pane's harness: its chat's.
+  private var subagentHarnessId: String? {
+    guard pane?.kind == .subagent, let ownerId = pane?.ownerChatSessionId else { return nil }
+    return environment.projectList.sessions.first(where: { $0.id == ownerId })?.harnessId
+  }
+
   @ViewBuilder
   private var leadingIcon: some View {
-    if let session = chatSession {
+    if pane?.kind == .subagent {
+      HarnessIcon(harnessId: subagentHarnessId ?? "", fallbackSymbolName: iconName)
+        .foregroundStyle(theme.textSecondary)
+        .frame(width: 18)
+    } else if let session = chatSession {
       // Matches the tint its sibling (the non-chat pane icon) uses.
       ChatSessionLeadingIcon(
         session: session,
@@ -448,7 +459,7 @@ private struct SplitLeafHeader: View {
     switch pane?.kind {
     case .chat: "Rename Chat"
     case .terminal: "Rename Terminal"
-    case .newTab, .plugin, .document, .browser, .screenSharing, .none: "Rename Pane"
+    case .newTab, .plugin, .document, .browser, .screenSharing, .subagent, .none: "Rename Pane"
     }
   }
 

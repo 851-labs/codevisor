@@ -25,6 +25,7 @@ struct ChatScreen: View {
   @Environment(\.attachmentImages) var attachmentImages
   @Environment(\.quickLook) var quickLook
   @Environment(\.openFileDocument) var openFileDocument
+  @Environment(\.openSubagent) var openSubagent
   @Environment(\.codeHighlightTheme) var codeHighlightTheme
   @Environment(AppEnvironment.self) var environment
   @Environment(\.computerUsePiPPane) var computerUsePiPPane
@@ -34,6 +35,9 @@ struct ChatScreen: View {
   /// The pane's retained AppKit presentation. Reattaching this surface keeps
   /// its mounted Markdown rows, TextKit layout, and exact native viewport.
   let presentationSurface: TranscriptPresentationSurface
+  /// A view-only transcript (a subagent's thread): no composer, no
+  /// connection, no focus registration.
+  let isReadOnly: Bool
   @State var isAtBottom: Bool
   @State var autoFollow: Bool
   @State var composerHeight: CGFloat
@@ -72,17 +76,19 @@ struct ChatScreen: View {
   init(
     controller: SessionController,
     focus: TerminalFocusController,
-    presentationSurface: TranscriptPresentationSurface
+    presentationSurface: TranscriptPresentationSurface,
+    isReadOnly: Bool = false
   ) {
     self.controller = controller
     self.focus = focus
     self.presentationSurface = presentationSurface
+    self.isReadOnly = isReadOnly
     let isWarm = presentationSurface.isWarm
     _isAtBottom = State(initialValue: controller.scrollState?.isAtBottom ?? true)
     _autoFollow = State(
       initialValue: controller.scrollState?.followMode.followsLatest ?? true
     )
-    _composerHeight = State(initialValue: presentationSurface.composerHeight)
+    _composerHeight = State(initialValue: isReadOnly ? 0 : presentationSurface.composerHeight)
     _isQueueExpanded = State(initialValue: presentationSurface.isQueueExpanded)
     _isTranscriptMounted = State(initialValue: isWarm)
     _isInitialTranscriptReady = State(initialValue: isWarm)
@@ -139,7 +145,7 @@ struct ChatScreen: View {
       // after the shell mount boundary above; workspace navigation never
       // prepares a hidden routing chat.
       .task(id: contentLoadingIdentity) {
-        guard isTranscriptMounted else { return }
+        guard isTranscriptMounted, !isReadOnly else { return }
         if controller.resumeAgentSessionId?.isEmpty == false {
           // Existing chats know their harness. Refresh only that one in
           // parallel; neither config inspection nor runtime startup may

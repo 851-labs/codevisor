@@ -36,8 +36,6 @@ public final class TranscriptDisclosureStore {
     case turnImplementation(UUID)
     /// A single tool call's output card, keyed by tool-call id.
     case toolCall(String)
-    /// A subagent thread, keyed by the Task tool-call id.
-    case subagent(String)
   }
 
   private var values: [Key: Bool] = [:]
@@ -85,7 +83,7 @@ public final class TranscriptDisclosureStore {
     switch key {
     case .turn, .turnImplementation:
       workedSectionRevision &+= 1
-    case .toolCall, .subagent:
+    case .toolCall:
       break
     }
   }

@@ -139,6 +139,10 @@ struct WorkspacePaneContentView: View {
       } else {
         ContentUnavailableView("No Machine", systemImage: "bolt.slash")
       }
+    case .subagent:
+      // Device-local to the Mac that opened it; iOS pushes subagents instead
+      // and never holds this kind of pane.
+      EmptyView()
     }
   }
 

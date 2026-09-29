@@ -144,6 +144,9 @@ extension WorkspaceScreen {
       return lhs.chatSessionId != nil && lhs.chatSessionId == rhs.chatSessionId
     case .terminal:
       return lhs.terminalKey.caseInsensitiveCompare(rhs.terminalKey) == .orderedSame
+    case .subagent:
+      return lhs.ownerChatSessionId == rhs.ownerChatSessionId
+        && lhs.subagentToolCallId != nil && lhs.subagentToolCallId == rhs.subagentToolCallId
     case .newTab, .plugin, .document, .browser, .screenSharing:
       return false
     }

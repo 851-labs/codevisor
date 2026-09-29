@@ -25,9 +25,8 @@ public struct ToolCallGroup: Identifiable, Sendable, Equatable {
 public enum WorkedItem: Identifiable, Sendable, Equatable {
   case text(id: String, markdown: String)
   case toolGroup(ToolCallGroup)
-  /// A subagent spawn rendered as its own collapsible section with a nested
-  /// transcript (`AssistantTurn.subagentItems(_:)`), never folded into a
-  /// tool-group summary.
+  /// A subagent spawn: its own row (the thread opens separately), never
+  /// folded into a tool-group summary.
   case subagent(id: String, call: ToolCall)
 
   public var id: String {
@@ -78,13 +77,6 @@ extension AssistantTurn {
   /// text and tool groups must never reorder around each other mid-turn.
   public var streamingItems: [WorkedItem] {
     groupedItems(entries)
-  }
-
-  /// A subagent's nested thread grouped with the same rules as the top
-  /// level. Because `subagents` is flat, an agent call inside this thread
-  /// becomes a `.subagent` item of its own — nesting recurses by lookup.
-  public func subagentItems(_ parentToolCallId: String) -> [WorkedItem] {
-    groupedItems(subagents[parentToolCallId]?.entries ?? [])
   }
 
   private func groupedItems(_ source: [TranscriptEntry]) -> [WorkedItem] {

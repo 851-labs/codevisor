@@ -115,6 +115,7 @@ extension SessionStore {
     for key in removedKeys {
       centerLeafGroups[key] = nil
     }
+    pruneSubagentMirrors(in: workspace)
     return changed
   }
 
@@ -208,7 +209,8 @@ extension SessionStore {
       return panes.count == 1 && panes[0].id == pane.id
     }
     model.onPaneRemoved = { [weak environment] pane, replacement in
-      guard let environment else { return }
+      // Subagent panes were never registered with the server.
+      guard let environment, pane.kind != .subagent else { return }
       environment.workspaceSync.deletePane(
         id: pane.id,
         workspaceId: workspaceId,

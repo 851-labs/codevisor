@@ -48,11 +48,10 @@ extension TranscriptRowLeaves {
       userMessage: { message in
         AnyView(UserMessageView(message: message))
       },
-      workedItem: { item, turn, turnID, isTurnActive, animationPresentation, animationEnabled in
+      workedItem: { item, _, turnID, isTurnActive, animationPresentation, animationEnabled in
         AnyView(
           TranscriptItemsView(
             items: [item],
-            turn: turn,
             turnID: turnID,
             isTurnActive: isTurnActive,
             animationPresentation: animationPresentation,

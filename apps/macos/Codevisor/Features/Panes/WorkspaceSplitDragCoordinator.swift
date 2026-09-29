@@ -253,6 +253,7 @@ struct WorkspaceSplitDragGhost: View {
     case .document: "doc.richtext"
     case .browser: "globe"
     case .screenSharing: "display"
+    case .subagent: "wand.and.sparkles"
     }
   }
 

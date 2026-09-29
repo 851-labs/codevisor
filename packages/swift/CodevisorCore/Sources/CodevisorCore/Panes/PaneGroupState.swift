@@ -21,6 +21,15 @@ public enum PaneKind: String, Codable, Sendable {
   case document
   case browser
   case screenSharing
+  /// A read-only view of one subagent's thread inside its parent chat.
+  /// Device-local: never published to the server's pane registry, so other
+  /// devices (and older builds) never see it. `ownerChatSessionId` is the
+  /// parent chat; `subagentToolCallId` is the spawning tool call.
+  case subagent
+
+  /// Panes that exist only in this device's layout: never published to the
+  /// server's pane registry, never pruned by server reconciliation.
+  public var isDeviceLocal: Bool { self == .newTab || self == .subagent }
 }
 
 /// The persisted identity of one pane in a session's pane group. Pure data —
@@ -62,6 +71,8 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
   /// Terminal panes only, from the server's pane record like `liveTitle`:
   /// what an agent CLI running in the terminal is doing.
   public var terminalActivity: TerminalActivity?
+  /// Subagent panes only: the tool call that spawned the subagent.
+  public var subagentToolCallId: String?
   public init(
     id: UUID,
     kind: PaneKind,
@@ -76,7 +87,8 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
     browserURL: String? = nil,
     screenSharing: ScreenSharingPanePreferences? = nil,
     liveTitle: String? = nil,
-    terminalActivity: TerminalActivity? = nil
+    terminalActivity: TerminalActivity? = nil,
+    subagentToolCallId: String? = nil
   ) {
     self.id = id
     self.kind = kind
@@ -92,6 +104,7 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
     self.screenSharing = screenSharing
     self.liveTitle = liveTitle
     self.terminalActivity = terminalActivity
+    self.subagentToolCallId = subagentToolCallId
   }
 
   public init(from decoder: Decoder) throws {
@@ -118,7 +131,8 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
       screenSharing: try container.decodeIfPresent(ScreenSharingPanePreferences.self, forKey: .screenSharing),
       liveTitle: try container.decodeIfPresent(String.self, forKey: .liveTitle),
       // Layouts persisted before terminal status carry none.
-      terminalActivity: try container.decodeIfPresent(TerminalActivity.self, forKey: .terminalActivity)
+      terminalActivity: try container.decodeIfPresent(TerminalActivity.self, forKey: .terminalActivity),
+      subagentToolCallId: try container.decodeIfPresent(String.self, forKey: .subagentToolCallId)
     )
   }
 }
@@ -325,7 +339,7 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
       pane = PaneDescriptorState(
         id: paneId, kind: .screenSharing, name: "Screen Sharing",
         terminalKey: paneId.uuidString, screenSharing: ScreenSharingPanePreferences())
-    case .newTab, .document:
+    case .newTab, .document, .subagent:
       return nil
     }
     panes[index] = pane

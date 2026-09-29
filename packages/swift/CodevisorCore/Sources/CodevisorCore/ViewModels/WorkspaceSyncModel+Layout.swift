@@ -43,7 +43,7 @@ extension WorkspaceSyncModel {
     }
 
     for pane in allPanes(in: workspace) {
-      guard pane.kind != .newTab, !protectedLocalPaneIds.contains(pane.id),
+      guard !pane.kind.isDeviceLocal, !protectedLocalPaneIds.contains(pane.id),
         !remoteIds.contains(pane.id)
       else { continue }
       // Resource matching is an identity-migration fallback, not a
@@ -56,6 +56,8 @@ extension WorkspaceSyncModel {
       }
       _ = removePane(id: pane.id, from: &workspace)
     }
+    // A chat that left takes its subagent views with it.
+    workspace.pruneOrphanedSubagentPanes()
     if !hadRealPanes, workspace.hasRealPanes {
       workspace.centerTabs.removeAll(where: \.isPlaceholder)
     }
@@ -101,7 +103,7 @@ extension WorkspaceSyncModel {
       pane.chatSessionId.map { "session:\($0.uuidString.lowercased())" }
     case .terminal:
       "terminal:\(pane.terminalKey.lowercased())"
-    case .newTab, .plugin, .document, .browser, .screenSharing:
+    case .newTab, .plugin, .document, .browser, .screenSharing, .subagent:
       nil
     }
   }

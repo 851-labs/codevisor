@@ -89,6 +89,8 @@ struct WorkspaceScreen: View {
   /// One controller per chat session shown in this workspace (macOS allows
   /// several chats per workspace; so do we).
   @State var controllers: [UUID: SessionController] = [:]
+  /// The subagent pushed over this workspace, if any.
+  @State var presentedSubagent: SubagentRoute?
   @State var missing = false
   @State var serverConfig: CodevisorServerConfig?
   @State var project: Project?
@@ -229,6 +231,12 @@ struct WorkspaceScreen: View {
   func chatController(for pane: PaneDescriptorState) -> SessionController? {
     guard let chatId = pane.chatSessionId ?? activeSessionId else { return draftController }
     if chatId == draftPlaceholderId { return draftController }
+    return chatController(forChat: chatId)
+  }
+
+  /// An established chat's controller, when this screen or the shared cache
+  /// holds one.
+  func chatController(forChat chatId: UUID) -> SessionController? {
     if let controller = controllers[chatId] { return controller }
     if chatId == sessionId, let initialController { return initialController }
     return cachedController(for: chatId)
@@ -245,7 +253,7 @@ struct WorkspaceScreen: View {
       return "New Tab"
     case .browser:
       return BrowserPaneCache.shared.localTitle(paneId: pane.id) ?? pane.name
-    case .terminal, .plugin, .document, .screenSharing:
+    case .terminal, .plugin, .document, .screenSharing, .subagent:
       return pane.displayName
     }
   }
@@ -264,6 +272,9 @@ struct WorkspaceScreen: View {
       workspaceContent
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+    .navigationDestination(item: $presentedSubagent) { SubagentScreen(route: $0) }
+    // An agent belongs to the pane it was opened from.
+    .onChange(of: paneState?.selectedPaneId) { presentedSubagent = nil }
   }
 
   private var workspaceContent: some View {

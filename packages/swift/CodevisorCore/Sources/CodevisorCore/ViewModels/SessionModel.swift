@@ -149,7 +149,7 @@ public final class SessionModel {
   public internal(set) var backgroundTasks: [BackgroundTaskInfo] = [] {
     didSet {
       if backgroundTasks != oldValue { transcriptProjectionRevision &+= 1 }
-      let ids = Set(backgroundTasks.compactMap { $0.taskType == "subagent" ? $0.toolUseId : nil })
+      let ids = runningSubagentSpawnIds(backgroundTasks)
       if ids != runningSubagentToolCallIds {
         runningSubagentToolCallIds = ids
       }
@@ -205,6 +205,7 @@ public final class SessionModel {
   /// Stored (maintained by `backgroundTasks.didSet`) because it is read in
   /// several view bodies per flush — computing it allocated a fresh Set per
   /// read, and only real membership changes should invalidate observers.
+  /// The spawning tool calls of subagents still running in the background.
   public private(set) var runningSubagentToolCallIds: Set<String> = []
 
   /// The session's persistent goal, when the harness supports goal mode.
@@ -347,4 +348,43 @@ public final class SessionModel {
   }
 
   @ObservationIgnored var appliedUpdateCount = 0
+}
+
+extension SessionModel {
+  /// A running subagent task names the call that started its current run.
+  /// For a message sent to an existing agent (Claude's `SendMessage`) that's
+  /// the follow-up call, but the agent — its row, its thread — is identified
+  /// by the call that spawned it, found by the task id both calls carry.
+  func runningSubagentSpawnIds(_ tasks: [BackgroundTaskInfo]) -> Set<String> {
+    var ids = Set<String>()
+    for task in tasks where task.taskType == "subagent" {
+      guard let toolUseId = task.toolUseId else { continue }
+      if let call = toolCall(toolUseId), call.kind != .agent,
+        let spawn = subagentSpawn(taskId: task.id)
+      {
+        ids.insert(spawn.toolCallId)
+      } else {
+        ids.insert(toolUseId)
+      }
+    }
+    return ids
+  }
+
+  private func toolCall(_ id: String) -> ToolCall? {
+    for item in conversation.reversed() {
+      guard case let .assistant(message) = item else { continue }
+      if let call = message.turn.allToolCalls.first(where: { $0.toolCallId == id }) { return call }
+    }
+    return nil
+  }
+
+  private func subagentSpawn(taskId: String) -> ToolCall? {
+    for item in conversation.reversed() {
+      guard case let .assistant(message) = item else { continue }
+      if let call = message.turn.allToolCalls.first(where: { $0.kind == .agent && $0.subagentTaskId == taskId }) {
+        return call
+      }
+    }
+    return nil
+  }
 }

@@ -425,7 +425,6 @@ struct AssistantTurnView: View {
           // the other tool calls that surround them.
           TranscriptItemsView(
             items: items,
-            turn: turn,
             turnID: turnID,
             isTurnActive: turn.isGenerating,
             animationPresentation: textAnimationPresentation,

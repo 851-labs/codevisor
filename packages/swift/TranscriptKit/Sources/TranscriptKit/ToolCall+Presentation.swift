@@ -78,6 +78,14 @@ extension ToolCall {
     return String(description.prefix(limit - 1)).trimmingCharacters(in: .whitespaces) + "…"
   }
 
+  /// The subagent this call started or messaged (the harness's task id),
+  /// which the server attaches as `_meta.codevisorSubagent.taskId` to both an
+  /// agent's spawning call and each later message to it (Claude's
+  /// `SendMessage`). Stored with the transcript, it ties them together.
+  public var subagentTaskId: String? {
+    meta?["codevisorSubagent"]?["taskId"]?.stringValue
+  }
+
   /// Live gateway state the server attaches to an `execute` row.
   public var codevisorExecution: CodevisorExecution? {
     guard codevisorGatewayOperation == .execute else { return nil }

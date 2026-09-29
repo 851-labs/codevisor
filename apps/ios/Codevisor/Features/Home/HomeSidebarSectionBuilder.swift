@@ -89,7 +89,7 @@ struct HomeSidebarSectionBuilder {
       return "New Tab"
     case .browser:
       return BrowserPaneCache.shared.localTitle(paneId: pane.id) ?? pane.name
-    case .terminal, .plugin, .document, .screenSharing:
+    case .terminal, .plugin, .document, .screenSharing, .subagent:
       return pane.displayName
     }
   }
@@ -112,6 +112,9 @@ struct HomeSidebarSectionBuilder {
     case .screenSharing:
       .screenSharing
     case .newTab:
+      .newTab
+    case .subagent:
+      // Device-local to a Mac; iOS pushes subagents and never lists one.
       .newTab
     }
   }

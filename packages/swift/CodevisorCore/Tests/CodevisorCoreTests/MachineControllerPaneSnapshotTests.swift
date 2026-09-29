@@ -97,8 +97,10 @@ struct MachineControllerPaneSnapshotTests {
     #expect(repository.workspace(id: workspaceId)?.tabId(containingPane: localNewTab.id) != nil)
   }
 
-  @Test("A pane opened on this device is published once the machine is current; New Tab pages are not")
-  func publishesPanesButNotNewTabs() async throws {
+  @Test(
+    "A pane opened on this device is published once the machine is current; New Tab pages and subagent views stay local"
+  )
+  func publishesPanesButNotDeviceLocalPanes() async throws {
     let fake = makeFake()
     let navigation = NavigationFixture()
     let repository = navigation.workspaces
@@ -111,17 +113,25 @@ struct MachineControllerPaneSnapshotTests {
     var newTabGroup = PaneGroupState()
     let newTab = newTabGroup.addNewTabPane()
     let terminal = PaneDescriptorState(id: UUID(), kind: .terminal, name: "Terminal", terminalKey: "shell")
+    let subagentId = UUID()
+    let subagent = PaneDescriptorState(
+      id: subagentId, kind: .subagent, name: "Map the chat UI", terminalKey: subagentId.uuidString,
+      ownerChatSessionId: sessionId, subagentToolCallId: "toolu_1")
     workspace.centerTabs.append(WorkspaceTab(root: .leaf(newTabGroup)))
+    workspace.centerTabs.append(
+      WorkspaceTab(root: .leaf(PaneGroupState(panes: [subagent], selectedPaneId: subagent.id))))
     workspace.centerTabs.append(
       WorkspaceTab(root: .leaf(PaneGroupState(panes: [terminal], selectedPaneId: terminal.id))))
     repository.save(workspace)
     navigation.workspaceSync.publishPane(newTab, workspaceId: workspaceId)
     navigation.workspaceSync.publishPane(terminal, workspaceId: workspaceId)
+    navigation.workspaceSync.publishPane(subagent, workspaceId: workspaceId)
     await navigation.store.executor.idle(machineId: "local")
 
     #expect(fake.paneMutationLog == ["upsert"])
     #expect(fake.workspacePanes?.contains { $0.id == terminal.id.uuidString } == true)
     #expect(fake.workspacePanes?.contains { $0.id == newTab.id.uuidString } == false)
+    #expect(fake.workspacePanes?.contains { $0.id == subagent.id.uuidString } == false)
     // The server's event for the new pane lands; the layout keeps both tabs.
     fake.emit(kind: "workspace.pane.created", subjectId: terminal.id.uuidString)
     await awaitObserved {
@@ -131,6 +141,8 @@ struct MachineControllerPaneSnapshotTests {
     let synced = try #require(repository.workspace(id: workspaceId))
     #expect(synced.tabId(containingPane: terminal.id) != nil)
     #expect(synced.tabId(containingPane: newTab.id) != nil)
+    // Server reconciliation never prunes a pane the server was never told of.
+    #expect(synced.tabId(containingPane: subagent.id) != nil)
     #expect(navigation.store.pendingIntents.isEmpty)
   }
 }

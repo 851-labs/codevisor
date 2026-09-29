@@ -13,8 +13,16 @@ extension Workspace {
   public mutating func insertBrowserPane(
     _ pane: PaneDescriptorState, from sourcePaneId: UUID, destination: BrowserLinkDestination
   ) -> (tabId: UUID, leafId: UUID)? {
-    guard pane.kind == .browser,
-      let index = centerTabs.firstIndex(where: { $0.root.groupId(containingPane: sourcePaneId) != nil }),
+    guard pane.kind == .browser else { return nil }
+    return insertPane(pane, besidePane: sourcePaneId, destination: destination)
+  }
+
+  /// Inserts a new pane beside `sourcePaneId`: as the next tab, or as a split
+  /// of the source's leaf. Nil when the source is gone or the pane exists.
+  public mutating func insertPane(
+    _ pane: PaneDescriptorState, besidePane sourcePaneId: UUID, destination: BrowserLinkDestination
+  ) -> (tabId: UUID, leafId: UUID)? {
+    guard let index = centerTabs.firstIndex(where: { $0.root.groupId(containingPane: sourcePaneId) != nil }),
       let sourceLeaf = centerTabs[index].root.groupId(containingPane: sourcePaneId),
       !centerTabs.contains(where: { $0.root.groupId(containingPane: pane.id) != nil })
     else { return nil }

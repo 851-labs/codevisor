@@ -15,6 +15,7 @@ extension Notification.Name {
 /// opening, measurement, pagination, and streaming are one position system.
 struct SessionTranscriptView: View {
   @Environment(\.openFileDocument) var openFileDocument
+  @Environment(\.openSubagent) var openSubagent
   /// Increment whenever the iOS row-measurement environment changes. Scroll
   /// state can outlive a mounted transcript, so heights produced under an
   /// older hosting contract must not be restored as exact geometry.
@@ -32,6 +33,9 @@ struct SessionTranscriptView: View {
   /// This flag is the only difference between the two surfaces — everything
   /// else (watermark, composer, expansion, notice rails) is shared here.
   var showsRunPickers: Bool = false
+  /// A view-only transcript (a subagent's thread): no composer or
+  /// accessories, and the transcript runs to the bottom edge.
+  var isReadOnly: Bool = false
   /// New Chat supplies one request for its initial presentation. Existing
   /// chats leave this nil and never steal keyboard focus when opened.
   var initialComposerFocusRequest: UUID? = nil
@@ -124,7 +128,7 @@ struct SessionTranscriptView: View {
   /// The complete resting bottom chrome above the safe-area margin. Every
   /// transcript inset and snapshot crop reads this single value.
   var composerHeight: CGFloat {
-    composerCardHeight + composerAccessoryHeight
+    isReadOnly ? 0 : composerCardHeight + composerAccessoryHeight
   }
 
   var body: some View {
@@ -381,35 +385,11 @@ struct SessionTranscriptView: View {
           .allowsHitTesting(false)
       }
 
-      GlassEffectContainer(spacing: ComposerGlassStyle.clusterSpacing) {
-        composerCluster
-          // On a wide pane (iPad, an unfolded iPhone Duo) the composer
-          // keeps the transcript's reading column instead of spanning
-          // the window. Phone widths never reach the cap.
-          .frame(maxWidth: VirtualizedTranscriptScrollView.maxRowWidth)
-          // The jump control belongs to the same material group but
-          // not its measured vertical stack: showing it must never
-          // change transcript insets or the user's scroll position.
-          .overlay(alignment: .topTrailing) {
-            if showsScrollToBottom {
-              scrollToBottomButton
-                .offset(y: -52)
-                .glassEffectID(
-                  ComposerGlassElement.scrollToBottom.rawValue,
-                  in: composerGlassNamespace
-                )
-                // This control floats well beyond the
-                // container spacing, so Apple recommends
-                // materializing instead of seeking a nearby
-                // shape to morph from.
-                .glassEffectTransition(.materialize)
-                .transition(.opacity)
-            }
-          }
+      if isReadOnly {
+        readOnlyScrollControl
+      } else {
+        composerChrome
       }
-      .animation(Motion.quick(reduceMotion: reduceMotion), value: showsScrollToBottom)
-      .padding(.horizontal, 10)
-      .padding(.bottom, Self.composerBottomMargin)
     }
     .background {
       ChatSurfaceBackground()
@@ -612,5 +592,58 @@ extension SessionTranscriptView {
     .buttonBorderShape(.circle)
     .controlSize(.large)
     .accessibilityLabel("Scroll to bottom")
+  }
+}
+
+// MARK: - Bottom chrome
+
+extension SessionTranscriptView {
+  /// The composer and its accessories, with the jump-to-latest control.
+  var composerChrome: some View {
+    GlassEffectContainer(spacing: ComposerGlassStyle.clusterSpacing) {
+      composerCluster
+        // On a wide pane (iPad, an unfolded iPhone Duo) the composer
+        // keeps the transcript's reading column instead of spanning
+        // the window. Phone widths never reach the cap.
+        .frame(maxWidth: VirtualizedTranscriptScrollView.maxRowWidth)
+        // The jump control belongs to the same material group but
+        // not its measured vertical stack: showing it must never
+        // change transcript insets or the user's scroll position.
+        .overlay(alignment: .topTrailing) {
+          if showsScrollToBottom {
+            scrollToBottomButton
+              .offset(y: -52)
+              .glassEffectID(
+                ComposerGlassElement.scrollToBottom.rawValue,
+                in: composerGlassNamespace
+              )
+              // This control floats well beyond the
+              // container spacing, so Apple recommends
+              // materializing instead of seeking a nearby
+              // shape to morph from.
+              .glassEffectTransition(.materialize)
+              .transition(.opacity)
+          }
+        }
+    }
+    .animation(Motion.quick(reduceMotion: reduceMotion), value: showsScrollToBottom)
+    .padding(.horizontal, 10)
+    .padding(.bottom, Self.composerBottomMargin)
+  }
+
+  /// A read-only transcript has no composer; only the jump-to-latest
+  /// control floats over it.
+  var readOnlyScrollControl: some View {
+    GlassEffectContainer {
+      if showsScrollToBottom {
+        scrollToBottomButton
+          .glassEffectTransition(.materialize)
+          .transition(.opacity)
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .trailing)
+    .animation(Motion.quick(reduceMotion: reduceMotion), value: showsScrollToBottom)
+    .padding(.horizontal, 16)
+    .padding(.bottom, Self.composerBottomMargin + 10)
   }
 }
