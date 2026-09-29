@@ -69,6 +69,14 @@ struct ScreenSharingHEVCFormat: Equatable {
     chromaDepth = 8 + Int(bytes[18] & 7)
   }
 
+  /// The HEVC codec this stream is: 8-bit Main 4:2:0 or 8-bit Main 4:4:4, else nil.
+  var codec: ScreenSharingVideoCodec? {
+    guard lumaDepth == 8, chromaDepth == 8 else { return nil }
+    if profile == 1, chroma == 1 { return .hevc }
+    if profile == 4, chroma == 3 { return .hevc444 }
+    return nil
+  }
+
   func validate(for codec: ScreenSharingVideoCodec) throws {
     guard codec != .h264, profile == (codec == .hevc444 ? 4 : 1),
       chroma == (codec == .hevc444 ? 3 : 1), lumaDepth == 8, chromaDepth == 8

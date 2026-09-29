@@ -38,7 +38,8 @@ public final class ScreenSharingDecoder: @unchecked Sendable {
   private var session: VTDecompressionSession?
   private var format: CMVideoFormatDescription?
   private var parameterSets: [Data] = []
-  private let codec: ScreenSharingVideoCodec
+  /// For H265, follows the stream: the profile the parameter sets carry, not the one negotiated.
+  private var codec: ScreenSharingVideoCodec
   private let output: @Sendable (ScreenSharingVideoFrame) -> Void
   private var refreshSignal: ScreenSharingRefreshSignal?
   public let metrics: ScreenSharingMetrics
@@ -163,7 +164,13 @@ public final class ScreenSharingDecoder: @unchecked Sendable {
     guard let description else { throw ScreenSharingError.invalid("Missing \(codec.payloadName) format.") }
     if codec != .h264 {
       let actual = try ScreenSharingHEVCFormat.read(description)
-      try actual.validate(for: codec)
+      // libwebrtc (M152) creates the H265 decoder from the first H265 format the viewer offered,
+      // whatever profile the answer settled on: a viewer offering Main 4:4:4 and Main, talking to
+      // a Main-only sender (the Computer Use live preview), got a 4:4:4 decoder for a Main stream
+      // and rejected every frame (851-2471). Both are 8-bit H265 through the same hardware
+      // decoder; the parameter sets say which this stream is, and the output format follows.
+      guard let streamCodec = actual.codec else { try actual.validate(for: codec); return }
+      codec = streamCodec
       metrics.label("decodedChroma", actual.chroma == 3 ? "4:4:4" : "4:2:0")
       metrics.label("decodedBitDepth", String(actual.lumaDepth))
     }
