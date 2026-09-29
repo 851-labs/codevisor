@@ -183,6 +183,10 @@ public struct ServerWorkspacePane: Codable, Equatable, Sendable {
   /// Monotonic content revision. Nil only when talking to a server that
   /// predates revisioned pane snapshots.
   public var revision: Int?
+  /// Shared tab order within the workspace (ascending). Nil from servers
+  /// that predate synced tab order, and for panes this device created that
+  /// the server hasn't listed yet.
+  public var position: String?
   public var createdAt: String
   public var updatedAt: String?
 
@@ -196,11 +200,13 @@ public struct ServerWorkspacePane: Codable, Equatable, Sendable {
     resourceId: String? = nil,
     metadata: String? = nil,
     revision: Int? = nil,
+    position: String? = nil,
     createdAt: String,
     updatedAt: String? = nil
   ) {
     self.id = id
     self.workspaceId = workspaceId
+    self.position = position
     self.providerId = providerId
     self.paneType = paneType
     self.title = title

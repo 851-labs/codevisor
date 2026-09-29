@@ -21,8 +21,8 @@ struct SidebarView: View {
   @State var workspaceRenameTitle = ""
   @State var renamingTab: SidebarTabRenameRequest?
   @State var tabRenameTitle = ""
-  @State var workspaceDrag: SidebarWorkspaceDrag?
-  @State var workspaceGeometry = SidebarWorkspaceGeometryStore()
+  @State var drag: SidebarDrag?
+  @State var dragGeometry = SidebarDragGeometryStore()
   /// Collapsed by default: the archive is a place you go looking for
   /// something, not something that should crowd the live list.
   /// Page state is deliberately NOT persisted: reopening the archive should
@@ -30,7 +30,7 @@ struct SidebarView: View {
   /// The item a click is asking to restore, driving the confirmation alert.
 
   var list: ProjectListModel { environment.projectList }
-  var isReordering: Bool { workspaceDrag != nil }
+  var isReordering: Bool { drag != nil }
   var itemTitleFont: Font { .body }
 
   var isNewChatSelected: Bool {
@@ -66,7 +66,7 @@ struct SidebarView: View {
       .padding(.top, 8)
 
       ScrollView {
-        workspaceList(visibleSidebarItems)
+        workspaceList(listedSidebarItems)
       }
       .scrollContentBackground(.hidden)
       .scrollBounceBehavior(.basedOnSize)
@@ -74,11 +74,10 @@ struct SidebarView: View {
       SidebarSyncFooter(indicator: environment.navigationSyncIndicator)
       SidebarUpdateFooter(center: environment.updateCenter)
     }
-    // Section frames and the reorder ghost share this space, so the ghost
-    // can be placed over whichever row it was lifted from or lands on.
+    // Row frames, the drag copy, and the insertion line share this space,
+    // so the overlay lines up with the rows it points between.
     .coordinateSpace(.named(Self.reorderSpace))
-    .overlay(alignment: .topLeading) { workspaceReorderGhost }
-    .task(id: settlingWorkspaceID) { await finishSettledWorkspaceDrag() }
+    .overlay(alignment: .topLeading) { reorderOverlay }
   }
 
   /// Iterates the precomputed list only; each section resolves its own
@@ -95,7 +94,7 @@ struct SidebarView: View {
       // independently, which reads as shearing/jitter.
       ForEach(items) { item in
         SidebarWorkspaceSection(
-          sidebar: self, item: item, selection: selection, draggingWorkspaceID: draggingWorkspaceID
+          sidebar: self, item: item, selection: selection, draggingID: draggingID
         )
         .geometryGroup()
         .transition(.identity)

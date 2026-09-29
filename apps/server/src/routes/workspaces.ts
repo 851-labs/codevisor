@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http"
 
 import {
   PromoteWorkspacePaneToChatRequest as PromoteWorkspacePaneToChatRequestSchema,
+  ReorderWorkspacePanesRequest as ReorderWorkspacePanesRequestSchema,
   UpdateWorkspacePaneRequest as UpdateWorkspacePaneRequestSchema,
   UpdateWorkspaceRequest as UpdateWorkspaceRequestSchema,
   UpsertWorkspacePaneRequest as UpsertWorkspacePaneRequestSchema,
@@ -126,6 +127,21 @@ export const routeWorkspaces = async (
     )
     await appendAndPublish(services.db, fanout, "workspace.pane.updated", pane.id, pane)
     writeJson(response, created ? 201 : 200, { pane, session })
+    return true
+  }
+
+  const reorderRoute = matchRouteParams(url.pathname, "/v1/workspaces/:workspaceId/panes/reorder")
+  if (reorderRoute !== undefined && request.method === "POST") {
+    const payload = await readSchema(request, ReorderWorkspacePanesRequestSchema)
+    const workspaceId = reorderRoute.workspaceId as string
+    if ((await findWorkspace(services, workspaceId)) === undefined) {
+      throw new HttpFailure(404, `Workspace not found: ${workspaceId}`)
+    }
+    const panes = await run(services.db.reorderWorkspacePanes(workspaceId, payload.paneIds))
+    for (const pane of panes) {
+      await appendAndPublish(services.db, fanout, "workspace.pane.updated", pane.id, pane)
+    }
+    writeJson(response, 200, panes)
     return true
   }
 

@@ -542,6 +542,9 @@ public extension CodevisorServerClienting {
   func renameWorkspace(id: UUID, name: String, hasCustomName: Bool) async throws {
     throw CodevisorServerClientError.invalidResponse
   }
+  func moveWorkspacePane(workspaceId: UUID, paneId: UUID, position: String) async throws {
+    throw CodevisorServerClientError.httpStatus(405, "Tab ordering is unavailable on this server.")
+  }
 
   func createWorktree(projectId: UUID, name: String?) async throws -> ServerWorktree {
     throw CodevisorServerClientError.invalidResponse

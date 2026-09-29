@@ -118,7 +118,7 @@ export const makeNavigationService = (context: ServiceContext) => ({
         ).map(workspaceFromRow),
         panes: (
           sqlite
-            .prepare("select * from workspace_panes order by created_at, id")
+            .prepare("select * from workspace_panes order by position, created_at, id")
             .all() as WorkspacePaneRow[]
         ).map(workspacePaneFromRow)
       }

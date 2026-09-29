@@ -57,6 +57,7 @@ export const endpoints = [
   "POST /v1/workspaces/:workspaceId/panes/:paneId/promote-chat",
   "POST /v1/workspaces/:workspaceId/panes/:paneId/close",
   "DELETE /v1/workspaces/:workspaceId/panes/:paneId",
+  "POST /v1/workspaces/:workspaceId/panes/reorder",
   "GET /v1/harnesses",
   "POST /v1/harnesses/rescan",
   "POST /v1/harnesses/auth/refresh",

@@ -87,6 +87,10 @@ export const WorkspacePane = Schema.Struct({
   /// Monotonic server-owned content revision. Clients use this to reject a
   /// snapshot that was captured before an optimistic pane conversion landed.
   revision: Schema.Number,
+  /// Shared tab order within the workspace (a `WorkspacePosition`-format
+  /// key; ascending). Clients sort their tabs by it while keeping splits
+  /// device-local. Absent only on servers that predate synced tab order.
+  position: Schema.optional(Schema.String),
   createdAt: Schema.String,
   updatedAt: Schema.optional(Schema.String)
 })
@@ -127,9 +131,18 @@ export const UpdateWorkspacePaneRequest = Schema.Struct({
   title: Schema.optional(Schema.String),
   resourceKind: Schema.optional(Schema.NullOr(Schema.String)),
   resourceId: Schema.optional(Schema.NullOr(Schema.String)),
-  metadata: Schema.optional(Schema.NullOr(Schema.String))
+  metadata: Schema.optional(Schema.NullOr(Schema.String)),
+  /// Moves the tab in the workspace's shared tab order; the latest move wins.
+  position: Schema.optional(WorkspacePosition)
 })
 export type UpdateWorkspacePaneRequest = typeof UpdateWorkspacePaneRequest.Type
+
+/// Puts a workspace's tabs in this order. Listed panes come first, in the
+/// given order; panes not listed keep their relative order after them.
+export const ReorderWorkspacePanesRequest = Schema.Struct({
+  paneIds: Schema.Array(Schema.String)
+})
+export type ReorderWorkspacePanesRequest = typeof ReorderWorkspacePanesRequest.Type
 
 /// Converts an existing placeholder into a chat without creating a second
 /// pane identity. The session is ensured first but remains unassigned until

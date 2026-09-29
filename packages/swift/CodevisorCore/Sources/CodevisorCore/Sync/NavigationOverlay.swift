@@ -68,6 +68,10 @@ enum NavigationOverlay {
       }
     case let .reorderWorkspace(workspaceId, position, _):
       updateWorkspace(workspaceId, in: &records) { $0.sidebarPosition = position }
+    case let .movePane(paneId, _, position):
+      if let index = records.panes.firstIndex(where: { UUID(uuidString: $0.id) == paneId }) {
+        records.panes[index].position = position
+      }
     case let .upsertPane(pane, workspaceId):
       upsertPane(pane, workspaceId: workspaceId, into: &records)
     case let .closePane(paneId, _):
@@ -143,8 +147,10 @@ enum NavigationOverlay {
     let createdAt =
       records.panes.first { UUID(uuidString: $0.id) == pane.id }
       .flatMap { try? ServerDateCoding.date(from: $0.createdAt) } ?? Date(timeIntervalSince1970: 0)
-    let record = WorkspaceSyncModel.serverPane(from: pane, workspaceId: workspaceId, createdAt: createdAt)
+    var record = WorkspaceSyncModel.serverPane(from: pane, workspaceId: workspaceId, createdAt: createdAt)
     if let index = records.panes.firstIndex(where: { UUID(uuidString: $0.id) == pane.id }) {
+      // Content edits never move a tab.
+      record.position = records.panes[index].position
       records.panes[index] = record
     } else {
       records.panes.append(record)

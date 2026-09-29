@@ -14,7 +14,8 @@ struct SidebarWorkspaceSection: View {
   /// Sidebar state every row depends on. Passed explicitly so a change
   /// re-evaluates the section rather than relying on the copied sidebar.
   let selection: SidebarSelection?
-  let draggingWorkspaceID: UUID?
+  /// The dragged workspace or tab, whose row dims in place.
+  let draggingID: UUID?
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {

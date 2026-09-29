@@ -31,6 +31,8 @@ public enum NavigationIntent: Codable, Equatable, Sendable {
   /// sent only because servers from before last-write-wins ordering require
   /// the field.
   case reorderWorkspace(workspaceId: UUID, position: String, expectedRevision: Int)
+  /// Moves one tab in its workspace's shared tab order; the latest move wins.
+  case movePane(paneId: UUID, workspaceId: UUID, position: String)
   case upsertPane(PaneDescriptorState, workspaceId: UUID)
   case closePane(paneId: UUID, workspaceId: UUID)
   /// Turns a pane the server already lists into a chat, keeping its id.
@@ -50,6 +52,7 @@ public enum NavigationIntent: Codable, Equatable, Sendable {
     case let .renameWorkspace(workspaceId, _, _): "ws:\(workspaceId):name"
     case let .setWorkspaceArchived(workspaceId, _): "ws:\(workspaceId):archive"
     case let .reorderWorkspace(workspaceId, _, _): "ws:\(workspaceId):order"
+    case let .movePane(paneId, _, _): "pane-order:\(paneId)"
     case let .upsertPane(pane, _): "pane:\(pane.id)"
     case let .closePane(paneId, _): "pane:\(paneId)"
     case let .promotePane(pane, _, _): "pane:\(pane.id)"
@@ -63,7 +66,7 @@ public enum NavigationIntent: Codable, Equatable, Sendable {
     switch self {
     case let .upsertSession(_, workspaceId): workspaceId
     case let .upsertPane(_, workspaceId), let .closePane(_, workspaceId),
-      let .promotePane(_, workspaceId, _):
+      let .promotePane(_, workspaceId, _), let .movePane(_, workspaceId, _):
       workspaceId
     case .upsertProject, .deleteProject, .expectSession, .renameSession, .deleteSession, .markSessionRead,
       .markSessionUnread, .renameWorkspace, .setWorkspaceArchived, .reorderWorkspace:
@@ -123,6 +126,11 @@ public enum NavigationIntent: Codable, Equatable, Sendable {
     case let .reorderWorkspace(workspaceId, position, expectedRevision):
       _ = try await client.reorderWorkspace(
         id: workspaceId, position: position, expectedRevision: expectedRevision)
+    case let .movePane(paneId, workspaceId, position):
+      // The tab may have closed since; its order no longer matters.
+      try await Self.ignoringMissing {
+        try await client.moveWorkspacePane(workspaceId: workspaceId, paneId: paneId, position: position)
+      }
     case let .upsertPane(pane, workspaceId):
       _ = try await client.upsertWorkspacePane(
         WorkspaceSyncModel.serverPane(from: pane, workspaceId: workspaceId, createdAt: Date()))

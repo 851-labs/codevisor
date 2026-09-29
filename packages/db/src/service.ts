@@ -142,6 +142,12 @@ export interface CodevisorDatabaseService {
     paneId: string,
     request: UpdateWorkspacePaneRequest
   ) => Effect.Effect<WorkspacePane, DatabaseError>
+  /// Puts the workspace's tabs in this order (listed first, the rest after
+  /// in their current order) and returns every pane of the workspace.
+  readonly reorderWorkspacePanes: (
+    workspaceId: string,
+    paneIds: ReadonlyArray<string>
+  ) => Effect.Effect<ReadonlyArray<WorkspacePane>, DatabaseError>
   /// Deletes the pane; an emptied workspace is a valid state.
   readonly deleteWorkspacePane: DeleteWorkspacePane
   /// Workspace, session and chat pane in one transaction; idempotent per session id.

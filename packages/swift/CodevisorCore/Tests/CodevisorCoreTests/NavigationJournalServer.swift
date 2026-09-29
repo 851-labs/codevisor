@@ -161,6 +161,35 @@ final class NavigationJournalServer: CodevisorServerClienting, @unchecked Sendab
     }
   }
 
+  func moveWorkspacePane(workspaceId: UUID, paneId: UUID, position: String) async throws {
+    try await request("movePane")
+    try lock.withLock {
+      guard var pane = state.panes.first(where: { UUID(uuidString: $0.id) == paneId }) else {
+        throw CodevisorServerClientError.httpStatus(404, "Missing pane")
+      }
+      pane.position = position
+      _ = commitLocked(panes: [pane])
+    }
+  }
+
+  /// Gives the listed panes ascending shared tab keys, as the server's
+  /// migration and pane creation do.
+  func assignTabOrder(_ paneIds: [UUID]) {
+    lock.withLock {
+      var previous: String?
+      var changed: [ServerWorkspacePane] = []
+      for id in paneIds {
+        guard var pane = state.panes.first(where: { UUID(uuidString: $0.id) == id }),
+          let position = WorkspacePosition.between(previous, nil, id: id)
+        else { continue }
+        pane.position = position
+        previous = position
+        changed.append(pane)
+      }
+      _ = commitLocked(panes: changed)
+    }
+  }
+
   func upsertWorkspacePane(_ pane: ServerWorkspacePane) async throws -> ServerWorkspacePane? {
     try await request("upsertPane:\(pane.paneType)")
     lock.withLock { _ = commitLocked(panes: [pane]) }

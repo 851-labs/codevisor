@@ -3,20 +3,20 @@ import CodevisorCore
 
 extension SidebarView {
   /// One workspace: its header (the reorder handle) over its tab rows.
-  /// Both report their frames so a drag can compare the lifted header
-  /// against whole sections and land back on the header precisely.
+  /// Both report their frames so a drag can compare the picked-up header
+  /// against whole sections and draw the insertion line between them.
   func workspaceSection(_ item: SidebarWorkspaceListItem) -> some View {
     let id = item.workspace.id
     return VStack(alignment: .leading, spacing: 1) {
       workspaceHeader(item)
-        // The lifted row stays dimmed in place while its ghost travels.
-        .opacity(draggingWorkspaceID == id ? 0.4 : 1)
+        // The picked-up row stays dimmed in place while its copy travels.
+        .opacity(draggingID == id ? 0.4 : 1)
         .onGeometryChange(for: CGRect.self) { proxy in
           proxy.frame(in: .named(Self.reorderSpace))
         } action: { frame in
           recordWorkspaceHeaderFrame(frame, for: id)
         }
-        .gesture(workspaceReorderGesture(for: id))
+        .gesture(reorderGesture(for: .workspace(id)))
 
       workspaceTabRows(item)
     }

@@ -49,7 +49,7 @@ struct HomeSidebarSectionBuilder {
   private func rows(for workspace: Workspace, visibility: PaneNavigationVisibility) -> [HomeSidebarTabRow] {
     var seen: Set<UUID> = []
     var rows: [HomeSidebarTabRow] = []
-    func append(_ pane: PaneDescriptorState, in tab: WorkspaceTab?) {
+    func append(_ pane: PaneDescriptorState, in tab: WorkspaceTab?, owner: WorkspaceTab) {
       guard visibility.includes(pane) else { return }
       guard seen.insert(pane.id).inserted else { return }
       let chat =
@@ -63,7 +63,8 @@ struct HomeSidebarSectionBuilder {
           icon: paneIcon(pane, chat: chat),
           status: chat.map(status(for:)) ?? .idle,
           chatSessionId: chat?.id,
-          renamableTabId: tab?.id
+          renamableTabId: tab?.id,
+          tabId: owner.id
         )
       )
     }
@@ -72,7 +73,7 @@ struct HomeSidebarSectionBuilder {
       let isSinglePane = groups.count == 1 && groups[0].state.panes.count == 1
       for group in groups {
         for pane in group.state.panes {
-          append(pane, in: isSinglePane ? tab : nil)
+          append(pane, in: isSinglePane ? tab : nil, owner: tab)
         }
       }
     }

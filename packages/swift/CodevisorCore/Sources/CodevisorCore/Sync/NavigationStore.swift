@@ -145,6 +145,24 @@ public final class NavigationStore {
 
   public var pendingIntents: [NavigationOutboxEntry] { outbox.entries }
 
+  /// Sends the key changes that make `workspace`'s current tab order the one
+  /// every device sorts to. Tabs already in order keep their keys.
+  func publishTabOrder(of workspace: Workspace) {
+    guard workspace.isServerSynced else { return }
+    var records = NavigationRecords(caches.caches[workspace.serverId])
+    NavigationOverlay.apply(outbox.entries(for: workspace.serverId), to: &records)
+    let positions = SharedTabOrder.positions(of: records.panes, workspaceId: workspace.id)
+    let moves = SharedTabOrder.moves(for: workspace.centerTabs, positions: positions)
+    guard !moves.isEmpty else { return }
+    for move in moves {
+      outbox.enqueue(
+        .movePane(paneId: move.paneId, workspaceId: workspace.id, position: move.position),
+        machineId: workspace.serverId)
+    }
+    rebuild()
+    executor.resume(machineId: workspace.serverId)
+  }
+
   func addDraft(_ draft: WorkspaceDraft, layout: DeviceLayout) {
     layouts.addDraft(draft, layout: layout)
     rebuild()

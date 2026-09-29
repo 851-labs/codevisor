@@ -22,29 +22,50 @@ extension SidebarView {
 
   // MARK: - Rows
 
+  /// Each tab is one drag unit: a split's pane rows move together, and
+  /// the unit reports its frame so a drag can draw the line between tabs.
   @ViewBuilder
   func workspaceTabRows(_ item: SidebarWorkspaceListItem) -> some View {
     let workspace = item.workspace
     let routesSelection = routesSelectedSession(workspace)
     ForEach(workspace.centerTabs) { tab in
-      let groups = sidebarGroups(tab, in: workspace)
-      // A split tab is FLATTENED into one row per pane at the tab's own
-      // level (no grouping row): the active pane carries the selection.
-      if tab.root.allGroups.count > 1 {
-        ForEach(groups, id: \.id) { leaf in
-          workspacePaneRow(
-            leafId: leaf.id,
-            state: leaf.state,
-            tab: tab,
-            in: item,
-            routesSelection: routesSelection
-          )
-          .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+      if !sidebarGroups(tab, in: workspace).isEmpty {
+        VStack(alignment: .leading, spacing: 1) {
+          tabRows(tab, in: item, routesSelection: routesSelection)
         }
-      } else if !groups.isEmpty {
-        workspaceTabRow(tab, in: item, routesSelection: routesSelection)
-          .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+        // The picked-up tab stays dimmed in place while its copy travels.
+        .opacity(draggingID == tab.id ? 0.4 : 1)
+        .onGeometryChange(for: CGRect.self) { proxy in
+          proxy.frame(in: .named(Self.reorderSpace))
+        } action: { frame in
+          recordTabFrame(frame, for: tab.id)
+        }
+        .onDisappear { forgetTabGeometry(for: tab.id) }
+        // Alongside the row's own press-to-select, so a drag selects too.
+        .simultaneousGesture(reorderGesture(for: .tab(tab.id, workspaceID: workspace.id)))
+        .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
       }
+    }
+  }
+
+  /// One tab's rows. A split tab is FLATTENED into one row per pane at the
+  /// tab's own level (no grouping row): the active pane carries the
+  /// selection.
+  @ViewBuilder
+  func tabRows(_ tab: WorkspaceTab, in item: SidebarWorkspaceListItem, routesSelection: Bool) -> some View {
+    let groups = sidebarGroups(tab, in: item.workspace)
+    if tab.root.allGroups.count > 1 {
+      ForEach(groups, id: \.id) { leaf in
+        workspacePaneRow(
+          leafId: leaf.id,
+          state: leaf.state,
+          tab: tab,
+          in: item,
+          routesSelection: routesSelection
+        )
+      }
+    } else if !groups.isEmpty {
+      workspaceTabRow(tab, in: item, routesSelection: routesSelection)
     }
   }
 

@@ -6,9 +6,6 @@ import SwiftUI
 /// workspace to reorder it (see `HomeSidebarList`).
 struct HomeSidebarSectionHeader: View {
   let section: HomeSidebarSection
-  /// While a workspace is lifted the list is just names: the menu leaves
-  /// the row entirely, so the name and machine get its width back.
-  var isReordering = false
   let onNewTab: () -> Void
   let onRename: () -> Void
   let onArchive: () -> Void
@@ -30,10 +27,8 @@ struct HomeSidebarSectionHeader: View {
           .lineLimit(1)
           .truncationMode(.tail)
       }
-      Spacer(minLength: isReordering ? 0 : 8)
-      if !isReordering {
-        menu
-      }
+      Spacer(minLength: 8)
+      menu
     }
     .textCase(nil)
     .accessibilityElement(children: .contain)

@@ -2,14 +2,17 @@ import { randomUUID } from "node:crypto"
 
 import {
   initialWorkspacePosition,
+  nextPanePosition,
   workspacePositionEpoch,
   isoTimestamp,
+  type UpdateWorkspacePaneRequest,
   type UpsertWorkspaceRequest,
   type Workspace
 } from "@codevisor/api"
 
 import { attempt } from "./errors.js"
 import { canonicalUuid } from "./ids.js"
+import { nextPanePositionIn } from "./pane-position.js"
 import { serializeLabels, workspaceFromRow, workspacePaneFromRow } from "./row-mappers.js"
 import type { WorkspacePaneRow, WorkspaceRow } from "./rows.js"
 import { archivedStamp, type ServiceContext } from "./service-context.js"
@@ -82,6 +85,11 @@ export const upsertWorkspaceRow = (
   )
 }
 
+/// Every update bumps the content revision except a pure tab move.
+const contentChanged = (request: UpdateWorkspacePaneRequest): boolean =>
+  request.position === undefined ||
+  Object.entries(request).some(([key, value]) => key !== "position" && value !== undefined)
+
 export const makeWorkspacesService = (
   context: ServiceContext
 ): Pick<
@@ -94,6 +102,7 @@ export const makeWorkspacesService = (
   | "listWorkspacePanes"
   | "upsertWorkspacePane"
   | "updateWorkspacePane"
+  | "reorderWorkspacePanes"
   | "deleteWorkspacePane"
   | "promoteWorkspacePaneToSession"
   | "setSessionWorkspace"
@@ -190,7 +199,7 @@ export const makeWorkspacesService = (
         ).map(workspaceFromRow),
         panes: (
           sqlite
-            .prepare("select * from workspace_panes order by created_at, id")
+            .prepare("select * from workspace_panes order by position, created_at, id")
             .all() as ReadonlyArray<WorkspacePaneRow>
         ).map(workspacePaneFromRow)
       }))()
@@ -198,7 +207,7 @@ export const makeWorkspacesService = (
     listWorkspacePanes: attempt("listWorkspacePanes", () =>
       (
         sqlite
-          .prepare("select * from workspace_panes order by created_at, id")
+          .prepare("select * from workspace_panes order by position, created_at, id")
           .all() as ReadonlyArray<WorkspacePaneRow>
       ).map(workspacePaneFromRow)
     ),
@@ -229,8 +238,8 @@ export const makeWorkspacesService = (
             .prepare(
               `insert into workspace_panes (
                  id, workspace_id, provider_id, pane_type, title, resource_kind,
-                 resource_id, metadata, revision, created_at, updated_at
-               ) values (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, null)
+                 resource_id, metadata, revision, created_at, updated_at, position
+               ) values (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, null, ?)
                on conflict(id) do update set
                  provider_id = excluded.provider_id,
                  pane_type = excluded.pane_type,
@@ -257,6 +266,7 @@ export const makeWorkspacesService = (
               resourceId,
               request.metadata ?? null,
               request.createdAt ?? now,
+              nextPanePositionIn(sqlite, workspaceId, id),
               now
             )
           if (request.resourceKind === "session" && resourceId !== null) {
@@ -298,7 +308,8 @@ export const makeWorkspacesService = (
             .prepare(
               `update workspace_panes set
                  provider_id = ?, pane_type = ?, title = ?, resource_kind = ?,
-                 resource_id = ?, metadata = ?, revision = revision + 1, updated_at = ?
+                 resource_id = ?, metadata = ?, position = ?,
+                 revision = revision + case when ? then 1 else 0 end, updated_at = ?
                where id = ? and workspace_id = ?`
             )
             .run(
@@ -308,6 +319,10 @@ export const makeWorkspacesService = (
               resourceKind,
               resourceId,
               request.metadata === undefined ? existing.metadata : request.metadata,
+              request.position ?? existing.position,
+              // A move alone is not a content change: the revision guards
+              // optimistic pane conversions, which a reorder never races.
+              contentChanged(request) ? 1 : 0,
               isoTimestamp(),
               paneId,
               workspaceId
@@ -323,6 +338,36 @@ export const makeWorkspacesService = (
             .prepare("select * from workspace_panes where id = ?")
             .get(paneId) as WorkspacePaneRow
         )
+      }),
+    reorderWorkspacePanes: (rawWorkspaceId, paneIds) =>
+      attempt("reorderWorkspacePanes", () => {
+        const workspaceId = canonicalUuid(rawWorkspaceId)
+        const select = sqlite.prepare(
+          "select * from workspace_panes where workspace_id = ? order by position, created_at, id"
+        )
+        return sqlite.transaction(() => {
+          const panes = select.all(workspaceId) as ReadonlyArray<WorkspacePaneRow>
+          const known = new Set(panes.map((pane) => pane.id))
+          const listed = paneIds
+            .map((id) => canonicalUuid(id))
+            .filter((id, index, all) => known.has(id) && all.indexOf(id) === index)
+          const unlisted = panes.filter((pane) => !listed.includes(pane.id)).map((pane) => pane.id)
+          // Fresh ascending keys for the whole order, so the result never
+          // depends on the previous keys.
+          const update = sqlite.prepare(
+            "update workspace_panes set position = ?, updated_at = ? where id = ? and position <> ?"
+          )
+          const now = isoTimestamp()
+          let previous: string | undefined
+          for (const id of [...listed, ...unlisted]) {
+            const position = nextPanePosition(previous, Date.now(), id)
+            update.run(position, now, id, position)
+            previous = position
+          }
+          return (select.all(workspaceId) as ReadonlyArray<WorkspacePaneRow>).map(
+            workspacePaneFromRow
+          )
+        })()
       }),
     deleteWorkspacePane: (rawWorkspaceId, rawPaneId) =>
       attempt("deleteWorkspacePane", () => {

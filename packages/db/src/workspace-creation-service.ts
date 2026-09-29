@@ -4,6 +4,7 @@ import { isoTimestamp } from "@codevisor/api"
 
 import { attempt } from "./errors.js"
 import { canonicalUuid } from "./ids.js"
+import { nextPanePositionIn } from "./pane-position.js"
 import { workspaceFromRow, workspacePaneFromRow } from "./row-mappers.js"
 import type { WorkspacePaneRow, WorkspaceRow } from "./rows.js"
 import type { ServiceContext } from "./service-context.js"
@@ -65,9 +66,11 @@ export const makeWorkspaceCreationService = (
             .prepare(
               `insert into workspace_panes (
                  id, workspace_id, provider_id, pane_type, title, resource_kind,
-                 resource_id, metadata, revision, created_at, updated_at
-               ) values (?, ?, 'codevisor', 'chat', ?, 'session', ?, null, 1, ?, null)
+                 resource_id, metadata, revision, created_at, updated_at, position
+               ) values (?, ?, 'codevisor', 'chat', ?, 'session', ?, null, 1, ?, null, ?)
                on conflict(id) do update set
+                 position = case when workspace_panes.workspace_id = excluded.workspace_id
+                   then workspace_panes.position else excluded.position end,
                  workspace_id = excluded.workspace_id,
                  provider_id = 'codevisor',
                  pane_type = 'chat',
@@ -78,7 +81,15 @@ export const makeWorkspaceCreationService = (
                  revision = workspace_panes.revision + 1,
                  updated_at = ?`
             )
-            .run(paneId, workspace.id, title, sessionId, session.createdAt, now)
+            .run(
+              paneId,
+              workspace.id,
+              title,
+              sessionId,
+              session.createdAt,
+              nextPanePositionIn(sqlite, workspace.id, paneId),
+              now
+            )
           const pane = workspacePaneFromRow(
             sqlite
               .prepare("select * from workspace_panes where id = ?")

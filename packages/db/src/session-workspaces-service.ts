@@ -2,6 +2,7 @@ import { isoTimestamp } from "@codevisor/api"
 
 import { attempt } from "./errors.js"
 import { canonicalUuid } from "./ids.js"
+import { nextPanePositionIn } from "./pane-position.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
 
@@ -41,9 +42,14 @@ export const makeSessionWorkspacesService = (
           if (existing !== undefined) {
             sqlite
               .prepare(
-                "update workspace_panes set workspace_id = ?, revision = revision + 1, updated_at = ? where id = ?"
+                "update workspace_panes set workspace_id = ?, position = ?, revision = revision + 1, updated_at = ? where id = ?"
               )
-              .run(targetWorkspaceId, isoTimestamp(), existing.id)
+              .run(
+                targetWorkspaceId,
+                nextPanePositionIn(sqlite, targetWorkspaceId, existing.id),
+                isoTimestamp(),
+                existing.id
+              )
             return
           }
           const session = sqlite
@@ -56,10 +62,17 @@ export const makeSessionWorkspacesService = (
             .prepare(
               `insert into workspace_panes (
                  id, workspace_id, provider_id, pane_type, title,
-                 resource_kind, resource_id, created_at
-               ) values (?, ?, 'codevisor', 'chat', ?, 'session', ?, ?)`
+                 resource_kind, resource_id, created_at, position
+               ) values (?, ?, 'codevisor', 'chat', ?, 'session', ?, ?, ?)`
             )
-            .run(id, targetWorkspaceId, session.title || "Chat", id, session.created_at)
+            .run(
+              id,
+              targetWorkspaceId,
+              session.title || "Chat",
+              id,
+              session.created_at,
+              nextPanePositionIn(sqlite, targetWorkspaceId, id)
+            )
         })()
       })
   }

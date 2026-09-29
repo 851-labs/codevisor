@@ -29,6 +29,11 @@ extension HomeView {
         withSidebarReflow { environment.archiveWorkspace(workspace) }
       },
       reorder: { id, ids in commitWorkspaceOrder(id, visibleIDs: ids) },
+      moveTab: { tabId, successor, workspace in
+        withSidebarReflow {
+          environment.workspaceSync.moveTab(tabId, before: successor, inWorkspace: workspace.id)
+        }
+      },
       openInNewWindow: UIApplication.shared.supportsMultipleScenes
         ? { row, workspace in
           openWindow(

@@ -60,6 +60,9 @@ extension WorkspaceSyncModel {
       workspace.centerTabs.removeAll(where: \.isPlaceholder)
     }
     pruneEmptyCenterTabs(in: &workspace)
+    // Tab order is shared across devices (splits stay local).
+    workspace.centerTabs = SharedTabOrder.sorted(
+      workspace.centerTabs, positions: SharedTabOrder.positions(of: records, workspaceId: nil))
     if workspace.centerTabs.contains(where: { $0.id == selectedTab }) { workspace.selectedCenterTabId = selectedTab }
     ensureUsableLayout(&workspace)
   }

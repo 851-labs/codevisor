@@ -63,10 +63,14 @@ public final class ProjectedWorkspaceRepository: WorkspaceRepository, @unchecked
       }
     }
     layouts.setLayout(DeviceLayout(updated), for: updated.id)
+    let reordered = current.centerTabs.map(\.id) != updated.centerTabs.map(\.id)
     // The views showing this workspace update in the same transaction as the
     // click that changed its layout.
     onMain { [weak self] store in
       store.workspaceEntries.update(updated) { self?.workspaceId(forSession: $0) }
+      // Tab order is shared: a local reorder (a drag, an agent's layout
+      // action) becomes the order every device shows.
+      if reordered { store.publishTabOrder(of: updated) }
     }
   }
 

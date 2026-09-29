@@ -4,6 +4,7 @@ import {
   CreateScratchProjectRequest,
   CreateWorktreeRequest,
   PromoteWorkspacePaneToChatRequest,
+  ReorderWorkspacePanesRequest,
   UpdateBrowserUseConfigurationRequest,
   UpdateProjectRequest,
   UpdateWorkspacePaneRequest,
@@ -250,6 +251,13 @@ export const codevisorServerApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     {
       body: UpdateWorkspaceRequest
     }
+  ),
+  apiTool(
+    "workspaces.panes_reorder",
+    "Reorder a workspace's tabs on every client. paneIds lists pane ids in the order they should appear (see workspaces.panes_list); panes left out keep their relative order after them. Splits stay device-local; a split's panes move together as one tab.",
+    "POST",
+    "/v1/workspaces/:workspaceId/panes/reorder",
+    { body: ReorderWorkspacePanesRequest }
   ),
   apiTool(
     "workspaces.delete",

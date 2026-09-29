@@ -61,4 +61,7 @@ struct HomeSidebarTabRow: Identifiable, Equatable {
   /// Nil for panes inside a split, which have no title
   /// of their own.
   let renamableTabId: UUID?
+  /// The center tab holding the pane: what a drag moves. Rows of one split
+  /// share it and move together.
+  var tabId: UUID? = nil
 }

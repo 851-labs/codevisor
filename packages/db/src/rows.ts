@@ -84,6 +84,9 @@ export interface WorkspacePaneRow {
   readonly resource_id: string | null
   readonly metadata: string | null
   readonly revision: number
+  /// The shared tab order key. Inserts and the upgrade assign one; the
+  /// column default of "" only covers rows written outside the service.
+  readonly position: string
   readonly created_at: string
   readonly updated_at: string | null
 }

@@ -13,6 +13,9 @@ struct HomeSidebarActions {
   var archiveWorkspace: (HomeSidebarWorkspaceRef) -> Void = { _ in }
   /// The workspace ids in their new order after a drag-to-reorder drop.
   var reorder: (UUID, [UUID]) -> Void = { _, _ in }
+  /// A tab dragged within its workspace: the tab and the one it now sits
+  /// in front of (nil at the end).
+  var moveTab: (UUID, UUID?, HomeSidebarWorkspaceRef) -> Void = { _, _, _ in }
   /// Nil where the device shows one window at a time (iPhone).
   var openInNewWindow: ((HomeSidebarTabRow, HomeSidebarWorkspaceRef) -> Void)?
   /// A split-layout selection landed; an overlay sidebar gets out of the way.
@@ -35,9 +38,9 @@ final class HomeSidebarActionHandler {
 /// The sidebar: one always-expanded section per workspace listing its tabs.
 ///
 /// Reordering is a single gesture on a workspace header: a long press lifts
-/// it, every card collapses to its header so the list is just names, the
-/// drag moves it live past the other names, and the drop commits the order
-/// and expands the cards again. The whole thing happens inside this one
+/// it and collapses just that workspace to its header, the drag moves it
+/// live past the other workspaces (which keep their tabs showing), and the
+/// drop commits the order and expands it again. The whole thing happens inside this one
 /// `List` — swapping to a separate reorder view would end the gesture.
 ///
 /// The lifted header is drawn as an overlay on the list, positioned only by
@@ -60,6 +63,9 @@ struct HomeSidebarList: View {
   /// and the finger and the frames must agree. Scrolling is suspended while
   /// something is lifted, so global stays stable for the drag.
   @State private var headerFrames: [UUID: CGRect] = [:]
+  /// Where each section's rows end, so a lifted header crosses a whole
+  /// section rather than just its header.
+  @State private var rowBottoms = HomeSidebarRowBottoms()
   /// The list's own global frame, to place the floating header in it.
   @State private var listFrame: CGRect = .zero
   @State private var liftFeedback = 0
@@ -69,15 +75,15 @@ struct HomeSidebarList: View {
     var order: [UUID]
     /// Where the header's center was when it lifted. Until the first drag
     /// sample this is where the finger is, so the floating header stays put
-    /// while the cards collapse under it.
+    /// while its own tabs collapse under it.
     let liftedMidY: CGFloat
     var fingerY: CGFloat?
     /// Where on the header the finger landed, relative to its center, so
     /// the header lifts in place instead of snapping its center under the
     /// finger.
     var grabOffset: CGFloat?
-    /// Released: the floating header is gliding into its slot before the
-    /// cards expand.
+    /// Released: the floating header is gliding into its slot before its
+    /// tabs expand.
     var isSettling = false
   }
 
@@ -92,7 +98,8 @@ struct HomeSidebarList: View {
   private func sectionContent(isSelectionList: Bool) -> some View {
     ForEach(displayedSections) { section in
       Section {
-        if drag == nil {
+        // Only the lifted workspace collapses to its header.
+        if drag?.id != section.id {
           let workspace = section.workspace
           ForEach(section.rows) { row in
             HomeSidebarTabRowView(
@@ -103,6 +110,17 @@ struct HomeSidebarList: View {
             )
             .equatable()
             .tag(row.id)
+            .onGeometryChange(for: CGFloat.self) { proxy in
+              proxy.frame(in: .global).maxY
+            } action: { maxY in
+              rowBottoms.record(maxY, row: row.id, section: section.id)
+            }
+            .onDisappear { rowBottoms.forget(row: row.id, section: section.id) }
+          }
+          // The system's own row drag: long press, lift, drop. Rows of a
+          // split belong to one tab, so moving any of them moves the tab.
+          .onMove { source, destination in
+            moveTab(in: section, from: source, to: destination)
           }
           if section.rows.isEmpty {
             Text("No tabs")
@@ -113,6 +131,13 @@ struct HomeSidebarList: View {
         header(section)
       }
     }
+  }
+
+  private func moveTab(in section: HomeSidebarSection, from source: IndexSet, to destination: Int) {
+    guard let row = source.first, let tabId = section.rows[row].tabId else { return }
+    let rowTabIds = section.rows.map { $0.tabId ?? $0.id }
+    let successor = SharedTabOrder.successor(of: tabId, droppedAt: destination, rowTabIds: rowTabIds)
+    actions.actions.moveTab(tabId, successor, section.workspace)
   }
 
   /// The split layout uses the platform sidebar: its selection highlight,
@@ -172,14 +197,13 @@ struct HomeSidebarList: View {
         }
       HomeSidebarSectionHeader(
         section: section,
-        isReordering: drag != nil,
         onNewTab: { actions.actions.newTab(section.workspace) },
         onRename: { actions.actions.renameWorkspace(section.workspace) },
         onArchive: { actions.actions.archiveWorkspace(section.workspace) }
       )
       // The lifted header's own slot is an invisible placeholder; the
       // floating copy is what the user sees moving.
-      .opacity(isLifted ? 0 : drag != nil ? 0.55 : 1)
+      .opacity(isLifted ? 0 : 1)
     }
     .contentShape(Rectangle())
     .gesture(
@@ -205,7 +229,6 @@ struct HomeSidebarList: View {
       let centerY = drag.isSettling ? slot.midY : liftedCenterY(drag)
       HomeSidebarSectionHeader(
         section: section,
-        isReordering: true,
         onNewTab: {},
         onRename: {},
         onArchive: {}
@@ -253,16 +276,19 @@ struct HomeSidebarList: View {
     reconcileOrder()
   }
 
-  /// Slot the lifted workspace after every other header its center has
-  /// passed. Compares header centers to the lifted header's center rather
-  /// than the fingertip, so where you grabbed it doesn't bias the crossing.
+  /// Slot the lifted workspace after every other section whose middle its
+  /// center has passed. Sections span their header and tabs, so a tall one
+  /// is crossed halfway down its tabs. Compares against the lifted header's
+  /// center rather than the fingertip, so where you grabbed it doesn't bias
+  /// the crossing.
   private func reconcileOrder() {
     guard var current = drag, !current.isSettling else { return }
     let liftedMidY = liftedCenterY(current)
     let others = current.order.filter { $0 != current.id }
     let passed = others.filter { id in
-      guard let frame = headerFrames[id] else { return false }
-      return frame.midY < liftedMidY
+      guard let header = headerFrames[id] else { return false }
+      let bottom = max(header.maxY, rowBottoms.bottom(of: id) ?? header.maxY)
+      return (header.minY + bottom) / 2 < liftedMidY
     }.count
     var order = others
     order.insert(current.id, at: min(passed, others.count))
@@ -272,7 +298,7 @@ struct HomeSidebarList: View {
   }
 
   /// Commit the order, glide the floating header onto its slot, then let
-  /// the cards expand.
+  /// its tabs expand again.
   private func endDrag() {
     guard var current = drag, !current.isSettling else { return }
     if current.order != sections.map(\.id) {
@@ -291,5 +317,25 @@ struct HomeSidebarList: View {
         drag = nil
       }
     }
+  }
+}
+
+/// The lowest row edge of each section, in global space. A plain class,
+/// deliberately not observed: rows move on every scroll tick and must not
+/// re-render the list; the drag reads the values on demand.
+@MainActor
+final class HomeSidebarRowBottoms {
+  private var bottoms: [UUID: [UUID: CGFloat]] = [:]
+
+  func record(_ maxY: CGFloat, row: UUID, section: UUID) {
+    bottoms[section, default: [:]][row] = maxY
+  }
+
+  func forget(row: UUID, section: UUID) {
+    bottoms[section]?[row] = nil
+  }
+
+  func bottom(of section: UUID) -> CGFloat? {
+    bottoms[section]?.values.max()
   }
 }

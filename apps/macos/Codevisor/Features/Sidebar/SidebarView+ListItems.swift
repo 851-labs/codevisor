@@ -10,20 +10,6 @@ extension SidebarView {
     }
   }
 
-  /// The listed workspaces as shown: the saved order, with a dragged header
-  /// in the slot it is over. Applied to the live list, so a workspace that
-  /// arrives or leaves mid-drag doesn't reset the drag.
-  var visibleSidebarItems: [WorkspaceSidebarItem] {
-    let items = listedSidebarItems
-    guard let drag = workspaceDrag, let target = drag.targetIndex,
-      let current = items.firstIndex(where: { $0.id == drag.workspaceID }),
-      current != target, items.indices.contains(target)
-    else { return items }
-    var reordered = items
-    reordered.insert(reordered.remove(at: current), at: target)
-    return reordered
-  }
-
   /// The chat a workspace routes through: its first routing chat that the
   /// sidebar shows (imported chats only when enabled), else any routing chat
   /// still known to the session list -- a terminal-only workspace routes
@@ -50,6 +36,6 @@ extension SidebarView {
   /// Every listed workspace resolved. For actions that need the whole list
   /// (keyboard stepping, reordering) -- never read from a view body.
   var listedWorkspaceItems: [SidebarWorkspaceListItem] {
-    visibleSidebarItems.compactMap(listItem(for:))
+    listedSidebarItems.compactMap(listItem(for:))
   }
 }

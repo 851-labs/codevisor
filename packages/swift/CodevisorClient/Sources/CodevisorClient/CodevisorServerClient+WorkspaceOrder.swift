@@ -16,3 +16,17 @@ extension CodevisorServerClient {
     )
   }
 }
+
+private struct MovePaneBody: Encodable {
+  var position: String
+}
+
+extension CodevisorServerClient {
+  /// Moves one tab in its workspace's shared tab order.
+  public func moveWorkspacePane(workspaceId: UUID, paneId: UUID, position: String) async throws {
+    let _: ServerWorkspacePane = try await send(
+      "/v1/workspaces/\(workspaceId.uuidString)/panes/\(paneId.uuidString)", method: "PATCH",
+      body: MovePaneBody(position: position)
+    )
+  }
+}
