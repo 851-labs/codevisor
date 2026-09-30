@@ -189,12 +189,18 @@ extension SessionContainerView {
     closeLeaf(activeLeafId ?? tab.activeLeafId)
   }
 
+  /// Closes the leaf's selected pane, asking first if it's a working chat.
   func closeLeaf(_ leafId: UUID) {
-    let workspace = selectedWorkspace
-    let closesActiveLeaf = leafId == (activeLeafId ?? workspace.selectedCenterTab?.activeLeafId)
     let model = configuredCenterModel(leafId: leafId)
-    guard let paneId = model.state.selectedPaneId else { return }
-    model.closePane(id: paneId, activateRemainingPane: closesActiveLeaf)
+    guard let pane = model.state.selectedPane else { return }
+    store.confirmClosingWorkingChats([pane], serverId: selectedWorkspace.serverId) {
+      // The confirmation can outlive a selection change; close the pane
+      // that was asked about, not whatever is selected now.
+      guard model.state.panes.contains(where: { $0.id == pane.id }) else { return }
+      let workspace = selectedWorkspace
+      let closesActiveLeaf = leafId == (activeLeafId ?? workspace.selectedCenterTab?.activeLeafId)
+      model.closePane(id: pane.id, activateRemainingPane: closesActiveLeaf)
+    }
   }
 
   func renameLeaf(_ leafId: UUID, to name: String) {

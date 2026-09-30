@@ -41,6 +41,10 @@ public struct AppSettings: Sendable, Codable, Equatable {
   /// (next to ⌘W) tears down every open terminal and agent view at once, so
   /// this defaults on; the alert's "Do not ask me again" turns it off.
   public var confirmBeforeQuitting: Bool
+  /// Whether closing a chat whose agent is still working (⌘W, Close Tab,
+  /// or a tab's close button) asks first. Defaults on; the alert's
+  /// "Do not ask me again" turns it off.
+  public var confirmBeforeClosingWorkingChat: Bool
   /// Appearance: force light/dark or follow the OS.
   public var themeMode: ThemeMode
   /// The theme id used when the effective appearance is light/dark. The
@@ -68,6 +72,7 @@ public struct AppSettings: Sendable, Codable, Equatable {
     shareCrashReports: Bool = false,
     alphaUpdatesEnabled: Bool = false,
     confirmBeforeQuitting: Bool = true,
+    confirmBeforeClosingWorkingChat: Bool = true,
     themeMode: ThemeMode = .system,
     lightThemeId: String = ThemeCatalog.systemLightID,
     darkThemeId: String = ThemeCatalog.systemDarkID,
@@ -87,6 +92,7 @@ public struct AppSettings: Sendable, Codable, Equatable {
     self.shareCrashReports = shareCrashReports
     self.alphaUpdatesEnabled = alphaUpdatesEnabled
     self.confirmBeforeQuitting = confirmBeforeQuitting
+    self.confirmBeforeClosingWorkingChat = confirmBeforeClosingWorkingChat
     self.themeMode = themeMode
     self.lightThemeId = lightThemeId
     self.darkThemeId = darkThemeId
@@ -104,7 +110,7 @@ public struct AppSettings: Sendable, Codable, Equatable {
     case shareCrashReports, alphaUpdatesEnabled
     /// Read-only migration key written by the former custom updater.
     case betaUpdatesEnabled
-    case confirmBeforeQuitting
+    case confirmBeforeQuitting, confirmBeforeClosingWorkingChat
     case themeMode, lightThemeId, darkThemeId
     case notificationsEnabled, systemNotificationsEnabled, notificationSoundsEnabled
     case chatFinishedSoundPath, actionRequiredSoundPath
@@ -136,6 +142,8 @@ public struct AppSettings: Sendable, Codable, Equatable {
       ?? container.decodeIfPresent(Bool.self, forKey: .betaUpdatesEnabled)
       ?? false
     confirmBeforeQuitting = try container.decodeIfPresent(Bool.self, forKey: .confirmBeforeQuitting) ?? true
+    confirmBeforeClosingWorkingChat =
+      try container.decodeIfPresent(Bool.self, forKey: .confirmBeforeClosingWorkingChat) ?? true
     themeMode = try container.decodeIfPresent(ThemeMode.self, forKey: .themeMode) ?? .system
     lightThemeId = try container.decodeIfPresent(String.self, forKey: .lightThemeId) ?? ThemeCatalog.systemLightID
     darkThemeId = try container.decodeIfPresent(String.self, forKey: .darkThemeId) ?? ThemeCatalog.systemDarkID
@@ -167,6 +175,7 @@ public struct AppSettings: Sendable, Codable, Equatable {
     try container.encode(shareCrashReports, forKey: .shareCrashReports)
     try container.encode(alphaUpdatesEnabled, forKey: .alphaUpdatesEnabled)
     try container.encode(confirmBeforeQuitting, forKey: .confirmBeforeQuitting)
+    try container.encode(confirmBeforeClosingWorkingChat, forKey: .confirmBeforeClosingWorkingChat)
     try container.encode(themeMode, forKey: .themeMode)
     try container.encode(lightThemeId, forKey: .lightThemeId)
     try container.encode(darkThemeId, forKey: .darkThemeId)
@@ -217,6 +226,7 @@ public final class AppSettingsModel {
   public var shareCrashReports: Bool { settings.shareCrashReports }
   public var alphaUpdatesEnabled: Bool { settings.alphaUpdatesEnabled }
   public var confirmBeforeQuitting: Bool { settings.confirmBeforeQuitting }
+  public var confirmBeforeClosingWorkingChat: Bool { settings.confirmBeforeClosingWorkingChat }
   /// Whether ⌘Q should ask first. Never during onboarding: granting a
   /// system permission there has macOS offer "Quit & Reopen", and a
   /// confirmation sheet makes that relaunch silently fail.
@@ -283,6 +293,14 @@ public final class AppSettingsModel {
   /// "Do not ask me again" checkbox records; Settings can turn it back on.
   public func setConfirmBeforeQuitting(_ value: Bool) {
     settings.confirmBeforeQuitting = value
+    persist()
+  }
+
+  /// Turns the working-chat close confirmation on or off. Off is what the
+  /// alert's "Do not ask me again" checkbox records; Settings can turn it
+  /// back on.
+  public func setConfirmBeforeClosingWorkingChat(_ value: Bool) {
+    settings.confirmBeforeClosingWorkingChat = value
     persist()
   }
 

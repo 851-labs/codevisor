@@ -51,6 +51,9 @@ final class SessionStore {
   /// AttributeGraph from inside that same render pass. The controllers are
   /// observable themselves, while `activityRevision` covers aggregate reads.
   @ObservationIgnored var controllers: [SessionKey: SessionController] = [:]
+  /// Whether a "close this working chat?" alert is up, so repeated ⌘W
+  /// doesn't stack another one. See `confirmClosingWorkingChats`.
+  @ObservationIgnored var isConfirmingChatClose = false
   /// Tiny viewport snapshots share the controller cache's lifetime. This
   /// restores an exact position while its transcript remains resident, while
   /// a genuinely uncached chat opens at the latest content after reloading.

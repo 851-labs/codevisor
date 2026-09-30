@@ -65,7 +65,17 @@ extension SessionContainerView {
     )
   }
 
+  /// Closes a whole top tab, asking first if any of its chats is working.
   func closeCenterTab(_ tabId: UUID) {
+    let workspace = selectedWorkspace
+    guard let tab = workspace.centerTabs.first(where: { $0.id == tabId }) else { return }
+    let panes = tab.root.allGroups.flatMap { configuredCenterModel(leafId: $0.id).state.panes }
+    store.confirmClosingWorkingChats(panes, serverId: workspace.serverId) {
+      closeCenterTabNow(tabId)
+    }
+  }
+
+  private func closeCenterTabNow(_ tabId: UUID) {
     var workspace = selectedWorkspace
     guard let index = workspace.centerTabs.firstIndex(where: { $0.id == tabId }) else { return }
     let closing = workspace.centerTabs[index]
