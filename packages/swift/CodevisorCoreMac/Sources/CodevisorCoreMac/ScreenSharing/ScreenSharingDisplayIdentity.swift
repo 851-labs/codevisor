@@ -35,6 +35,17 @@ struct ScreenSharingDisplayIdentity: Equatable, Sendable {
 }
 
 extension ScreenSharingDisplayIdentity {
+  /// Whether a session can go on after the display set changed: the display it shares can still
+  /// be followed, and the host's virtual display it mirrors onto, if any, is still online.
+  static func sessionSurvives(
+    shared: CGDirectDisplayID, identity: ScreenSharingDisplayIdentity, virtual: CGDirectDisplayID?,
+    online: [Online]
+  ) -> Bool {
+    guard follow(shared, identity: identity, online: online) != nil else { return false }
+    guard let virtual else { return true }
+    return online.contains { $0.id == virtual }
+  }
+
   init(display id: CGDirectDisplayID) {
     self.init(
       vendor: CGDisplayVendorNumber(id), model: CGDisplayModelNumber(id), serial: CGDisplaySerialNumber(id))

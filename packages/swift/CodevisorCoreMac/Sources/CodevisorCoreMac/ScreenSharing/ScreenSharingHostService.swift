@@ -97,7 +97,7 @@ final class ScreenSharingHostService {
         configuration: configuration, metrics: metrics, connectivity: connectivity.native())
     }
   }
-  private var current: Session?
+  private(set) var current: Session?
   /// Why the host itself last ended a viewer's session, told to that viewer's next heartbeat: its
   /// connection just drops, and "the connection ended" blamed the network (851-2397).
   private var lastEnd: (owner: ScreenSharingHostLease.Owner, reason: String)?
@@ -460,11 +460,6 @@ final class ScreenSharingHostService {
       ) { [weak self] _ in MainActor.assumeIsolated { self?.screenParametersChanged() } })
   }
 
-  /// A display change ends the session, unless the session made it itself (851-2376).
-  func screenParametersChanged() {
-    if let current, ProcessInfo.processInfo.systemUptime < current.ownDisplayChangeUntil { return }
-    systemStopped()
-  }
 }
 
 extension ScreenSharingHostService {
