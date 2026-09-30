@@ -7,6 +7,7 @@ import { createServer } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
+import { rootCertificates } from "node:tls"
 
 import { relayHealthUrl, relayHealthy, waitForDevRelays } from "./dev-net.mjs"
 
@@ -46,7 +47,9 @@ test("waiting on relays that never answer gives up after its attempts", async ()
   const netRoot = await mkdtemp(join(tmpdir(), "dev-net-"))
   try {
     const caFile = join(netRoot, "ca.pem")
-    await writeFile(caFile, "")
+    // A well-formed CA, so the wait reaches the never-answering server
+    // instead of failing on the certificate first.
+    await writeFile(caFile, rootCertificates[0])
     const net = {
       caFile,
       relays: [
@@ -71,6 +74,11 @@ test("waiting on relays that never answer gives up after its attempts", async ()
     await server.close()
     await rm(netRoot, { recursive: true, force: true })
   }
+})
+
+test("a relay probe with an unusable CA reports unhealthy instead of throwing", async () => {
+  const healthy = await relayHealthy("https://127.0.0.1:1", Buffer.from("not a certificate"), 200)
+  assert.equal(healthy, false)
 })
 
 test("the host checks relays over loopback, not the container-facing address", () => {

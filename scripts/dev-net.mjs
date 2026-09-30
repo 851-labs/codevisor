@@ -249,10 +249,17 @@ export const relayHealthy = (url, ca, timeoutMs = 1000) =>
       resolve(value)
     }
     deadline = setTimeout(() => settle(false), timeoutMs)
-    req = request(`${url}/healthz`, { ca, timeout: timeoutMs }, (response) => {
-      response.resume()
-      settle(response.statusCode === 200)
-    })
+    try {
+      req = request(`${url}/healthz`, { ca, timeout: timeoutMs }, (response) => {
+        response.resume()
+        settle(response.statusCode === 200)
+      })
+    } catch {
+      // Some runtimes validate TLS options up front and throw (an unreadable
+      // CA, for one): that relay is simply not healthy yet.
+      settle(false)
+      return
+    }
     req.on("error", () => settle(false))
     req.on("timeout", () => settle(false))
     req.on("close", () => settle(false))
