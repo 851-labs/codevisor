@@ -17,7 +17,7 @@
     "screenshots:ios": "bun scripts/screenshots-ios.mjs",
     "build:pixelbook": "bun scripts/build-native.mjs pixelbook",
     "ghostty:build": "bun scripts/ghostty-artifact.mjs build",
-    "dev:scripts:test": "node --test scripts/*.test.mjs",
+    "dev:scripts:test": "node --test scripts/*.test.mjs && bun test scripts/dev-net.test.mjs",
     "net:e2e": "node scripts/net-e2e.mjs",
     "net:test": "node scripts/net-artifact.mjs cargo test --manifest-path packages/net/Cargo.toml --locked",
     "build": "turbo run build",

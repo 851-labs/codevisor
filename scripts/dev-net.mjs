@@ -231,33 +231,65 @@ export async function startDevRelays({ net, repoRoot, relayBinary, cloudPort, co
   return processes
 }
 
-const healthy = (url, ca) =>
+/// One relay /healthz probe over dev-CA TLS. Always settles, and within
+/// `timeoutMs`: Bun (which runs the dev scripts) emits only "close" — not
+/// "error" — when a timed-out request is destroyed, so a probe that waited
+/// for "error" never settled against an address that swallows packets,
+/// hanging the whole dev runner.
+export const relayHealthy = (url, ca, timeoutMs = 1000) =>
   new Promise((resolve) => {
-    const req = request(`${url}/healthz`, { ca, timeout: 1000 }, (response) => {
+    let settled = false
+    let deadline
+    let req
+    const settle = (value) => {
+      if (settled) return
+      settled = true
+      clearTimeout(deadline)
+      req?.destroy()
+      resolve(value)
+    }
+    deadline = setTimeout(() => settle(false), timeoutMs)
+    req = request(`${url}/healthz`, { ca, timeout: timeoutMs }, (response) => {
       response.resume()
-      resolve(response.statusCode === 200)
+      settle(response.statusCode === 200)
     })
-    req.on("error", () => resolve(false))
-    req.on("timeout", () => req.destroy())
+    req.on("error", () => settle(false))
+    req.on("timeout", () => settle(false))
+    req.on("close", () => settle(false))
     req.end()
   })
 
-const routerHealthy = (relay) =>
-  fetch(`http://127.0.0.1:${relay.ports.router}/generate_204`).then(
+const routerHealthy = (relay, timeoutMs = 1000) =>
+  fetch(`http://127.0.0.1:${relay.ports.router}/generate_204`, {
+    signal: AbortSignal.timeout(timeoutMs)
+  }).then(
     (response) => response.status === 204,
     () => false
   )
 
+/// Where the host checks a relay: always loopback. In container mode the
+/// relay also listens on the container-facing address (`relay.url`), but that
+/// address only exists on the host while a container network is up — and the
+/// containers start after this check. Loopback proves the same process is
+/// serving, and the dev certificate covers 127.0.0.1.
+export const relayHealthUrl = (relay) => `https://127.0.0.1:${relay.ports.https}`
+
 /// Waits (bounded) until every relay answers /healthz over dev-CA TLS and its
 /// port-80 router forwards captive-portal probes.
-export async function waitForDevRelays(net) {
+export async function waitForDevRelays(
+  net,
+  { attempts = 80, intervalMs = 250, probeTimeoutMs } = {}
+) {
   const ca = await readFile(net.caFile)
-  for (let attempt = 0; attempt < 80; attempt += 1) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     const results = await Promise.all(
-      net.relays.flatMap((relay) => [healthy(relay.url, ca), routerHealthy(relay)])
+      net.relays.flatMap((relay) => [
+        relayHealthy(relayHealthUrl(relay), ca, probeTimeoutMs),
+        routerHealthy(relay, probeTimeoutMs)
+      ])
     )
     if (results.every(Boolean)) return true
-    await delay(250)
+    await delay(intervalMs)
   }
   return false
 }
