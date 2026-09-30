@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { installProcessSafetyNet } from "./process-safety-net.js"
 import { makeStartupReporter, parseServeArgs } from "./startup-progress.js"
 
 const USAGE = `codevisor-server — Codevisor server
@@ -34,6 +35,11 @@ if (wantsHelp) {
   console.error(USAGE)
   process.exitCode = 1
 } else {
+  installProcessSafetyNet(process, {
+    log: (line) => console.error(line),
+    exit: (code) => process.exit(code),
+    now: () => performance.now()
+  })
   const parsed = parseServeArgs(args.slice(1))
   const startup = makeStartupReporter(parsed)
   startup.checkpoint("loadingRuntime")
