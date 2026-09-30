@@ -290,10 +290,11 @@ public final class UpdateCenter {
     return retryMachines
   }
 
-  /// Sweeps every reachable machine's harness and plugin inventories.
-  /// `force` additionally re-checks the app and every server's release
-  /// feeds (the explicit "Check for Updates" action); the plain sweep
-  /// reads what the servers already know.
+  /// Sweeps every reachable machine's harness and plugin inventories and
+  /// every machine's Codevisor release state, this app's included. `force`
+  /// (the explicit "Check for Updates" action) additionally makes every
+  /// server bypass its cached release state; the plain sweep reads what
+  /// the servers already know.
   ///
   /// One refresh runs at a time. A caller arriving mid-refresh waits for
   /// it; a forced caller that finds only a plain sweep running then runs
@@ -336,8 +337,13 @@ public final class UpdateCenter {
         group.addTask { await self.machines.refreshStatus(for: machineId) }
       }
     }
+    // This app is checked on the same cadence as every other machine's
+    // Codevisor: each sweep asks its feed, so a release shows up on the
+    // local row when it shows up on the remote ones.
     if force {
       await appUpdate.checkForUpdates()
+    } else {
+      await appUpdate.checkForUpdatesInBackground()
     }
     // A plain sweep reads each server's cached release state; only a
     // forced check makes the servers ask their release origin.

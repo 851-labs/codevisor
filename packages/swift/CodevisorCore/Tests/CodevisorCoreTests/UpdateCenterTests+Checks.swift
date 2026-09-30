@@ -33,6 +33,35 @@ extension UpdateCenterTests {
     #expect(center.components.filter { $0.kind == .harness }.map(\.id) == ["harness:cloud:remote-a:claude-code"])
   }
 
+  @Test("The periodic sweep checks this app's feed alongside every other machine")
+  func plainSweepChecksTheApp() async throws {
+    let controller = try makeController(
+      fakes: ["local": SyncFakeServerClient(projects: [], sessions: [])],
+      remotes: []
+    )
+    defer { controller.stopEventSync() }
+    let appUpdate = AppUpdateModel(currentVersion: "1.0.0")
+    let center = UpdateCenter(machines: controller, appUpdate: appUpdate)
+    var checks = 0
+    var rowDuringCheck: UpdateComponent?
+    appUpdate.checkHandler = {
+      checks += 1
+      rowDuringCheck = center.components.first { $0.kind == .app }
+      appUpdate.reportAvailable(version: "1.1.0", releasePageURL: nil)
+    }
+
+    await center.refresh()
+    #expect(checks == 1)
+    #expect(center.components.first { $0.kind == .app }?.latestVersion == "1.1.0")
+
+    // The next sweep re-reads the feed without the known release blinking
+    // out of the list while it does.
+    await center.backgroundRefresh()
+    #expect(checks == 2)
+    #expect(rowDuringCheck?.updateAvailable == true)
+    #expect(center.availableCount == 1)
+  }
+
   @Test("A forced check requested during a plain sweep still asks every feed afresh")
   func forcedCheckWaitsForSweepThenRuns() async throws {
     let remote = makeRemote("remote-a")

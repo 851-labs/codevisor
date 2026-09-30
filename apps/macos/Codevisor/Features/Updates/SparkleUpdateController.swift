@@ -64,6 +64,11 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
     } catch {
       model.reportFailure(error.localizedDescription)
     }
+    // The update center's sweep checks this app on the same cadence as
+    // every other machine; Sparkle's own (daily) schedule would be a
+    // second, slower clock. Set in code as well as Info.plist so installs
+    // that persisted the old preference follow the single schedule too.
+    updater.automaticallyChecksForUpdates = false
     // A fresh boot is the success path of an install (the relaunched app
     // IS the update): drop any stale handoff report, and re-assert this
     // machine's release channel for the bundled server — it answers

@@ -113,6 +113,15 @@ public final class AppUpdateModel {
     await checkHandler()
   }
 
+  /// The same check, run by the fleet's periodic sweep: the row keeps
+  /// whatever it last knew until Sparkle reports, so a known release never
+  /// blinks out of the list (or the count) while the feed is re-read, and
+  /// an offline sweep leaves no failure behind.
+  public func checkForUpdatesInBackground() async {
+    guard !isUpdating, let checkHandler else { return }
+    await checkHandler()
+  }
+
   public func resetFailure() {
     guard case let .failed(release, _) = phase else { return }
     phase = release.map(Phase.available) ?? .idle
