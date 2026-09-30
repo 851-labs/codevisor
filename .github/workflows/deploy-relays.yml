@@ -1,12 +1,12 @@
 name: Deploy relays
 
 # Tunnel relays on Fly.io, one app per relay instance
-# (docs/plans/codevisor-tunnel.md, infra/relays/README.md).
+# (docs/plans/codevisor-tunnel.md, apps/relay/README.md).
 on:
   push:
     branches: [main]
     paths:
-      - "infra/relays/**"
+      - "apps/relay/**"
       - "scripts/net-build.lock.json"
       - ".github/workflows/deploy-relays.yml"
   workflow_dispatch:
@@ -34,9 +34,9 @@ jobs:
         with:
           node-version-file: .node-version
       # Fails if fly/*.toml drifted from relays.json.
-      - run: node infra/relays/gen-fly.mjs --check
+      - run: node apps/relay/gen-fly.mjs --check
       - id: plan
-        run: node infra/relays/plan.mjs --only "${{ inputs.relay }}" >> "$GITHUB_OUTPUT"
+        run: node apps/relay/plan.mjs --only "${{ inputs.relay }}" >> "$GITHUB_OUTPUT"
 
   image:
     needs: plan
@@ -56,7 +56,7 @@ jobs:
       - name: Build the image
         run: |
           eval "$(node scripts/net-artifact.mjs relay-build-args)"
-          docker build infra/relays \
+          docker build apps/relay \
             --build-arg IROH_RELAY_URL --build-arg IROH_RELAY_SHA256 --build-arg CERTBOT_VERSION \
             -t "${{ needs.plan.outputs.image }}"
       # Boots the image as Fly does, with a throwaway CA instead of certbot:
@@ -66,10 +66,10 @@ jobs:
         run: |
           bunx turbo run build --filter=@codevisor/net
           node scripts/net-artifact.mjs ensure-node
-          node infra/relays/smoke.mjs --local-image "${{ needs.plan.outputs.image }}" --engine docker
+          node apps/relay/smoke.mjs --local-image "${{ needs.plan.outputs.image }}" --engine docker
       - name: Push
         run: |
-          node infra/relays/provision.mjs --registry
+          node apps/relay/provision.mjs --registry
           flyctl auth docker
           docker push "${{ needs.plan.outputs.image }}"
         env:
@@ -93,7 +93,7 @@ jobs:
       - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # v1.6
       # Idempotent: app, dedicated IPv4 + IPv6, volume, staged secret,
       # grey-cloud DNS. Never deletes anything.
-      - run: node infra/relays/provision.mjs "${{ matrix.relay }}"
+      - run: node apps/relay/provision.mjs "${{ matrix.relay }}"
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           # The same token deploy-cloud.yml uses (also needs Zone:DNS:Edit
@@ -102,11 +102,11 @@ jobs:
           RELAY_AUTHORIZE_TOKEN: ${{ secrets.RELAY_AUTHORIZE_TOKEN }}
       - run: >
           flyctl deploy
-          --config "infra/relays/fly/${{ matrix.relay }}.toml"
+          --config "apps/relay/fly/${{ matrix.relay }}.toml"
           --image "${{ needs.plan.outputs.image }}"
           --ha=false
           --wait-timeout 10m
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
       # Public TLS with ≥14 days left, /healthz, and the router.
-      - run: node infra/relays/smoke.mjs --relay "${{ matrix.relay }}"
+      - run: node apps/relay/smoke.mjs --relay "${{ matrix.relay }}"

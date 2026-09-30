@@ -50,9 +50,8 @@
   "vars": {
     "APPLE_NATIVE_CLIENT_ID": "com.dylanplayer.codevisor.ios",
     "PUBLIC_BASE_URL": "https://cloud.codevisor.dev",
-    "INSTANCE_NAME": "Codevisor Cloud",
-    // Tunnel relays handed to devices (docs/plans/codevisor-tunnel.md). Must
-    // match infra/relays/relays.json (checked by infra/relays/check-relay-map.mjs).
-    "RELAY_MAP": "[{\"url\":\"https://relay-iad-1.codevisor.dev\"},{\"url\":\"https://relay-sjc-1.codevisor.dev\"},{\"url\":\"https://relay-fra-1.codevisor.dev\"},{\"url\":\"https://relay-sin-1.codevisor.dev\"}]"
+    "INSTANCE_NAME": "Codevisor Cloud"
+    // RELAY_MAP (the tunnel relays handed to devices) is not set here:
+    // deploy-cloud.yml builds it from apps/relay/relays.json at deploy time.
   }
 }

@@ -1,11 +1,11 @@
 // Relay smoke tests (docs/plans/codevisor-tunnel.md).
 //
-//   node infra/relays/smoke.mjs --local-image <image> [--engine docker|container]
+//   node apps/relay/smoke.mjs --local-image <image> [--engine docker|container]
 //     Boots the image exactly as Fly does, but with a throwaway CA (no
 //     certbot): /healthz over TLS, the port-80 router, and a relay-only
 //     tunnel round trip between two real endpoints through the container.
 //
-//   node infra/relays/smoke.mjs --relay <id>
+//   node apps/relay/smoke.mjs --relay <id>
 //     Against the live hostname: public-CA TLS with ≥14 days left, /healthz,
 //     and the router's /generate_204.
 import { execFile, spawn } from "node:child_process"
@@ -128,7 +128,7 @@ async function smokeLocalImage(image, engine) {
         ? []
         : [
             "--volume",
-            `${join(repoRoot, "infra/relays")}:/app`,
+            `${join(repoRoot, "apps/relay")}:/app`,
             "--volume",
             `${mounted}:/relay-bin`,
             "--env",

@@ -2,7 +2,7 @@
 //
 // Two iroh-relay processes run from the same pinned binary as production
 // (scripts/net-build.lock.json), configured by the same
-// infra/relays/render-config.sh, each behind the same port-80 router. The
+// apps/relay/render-config.sh, each behind the same port-80 router. The
 // only differences from production are configuration: per-worktree ports,
 // a per-worktree dev CA instead of Let's Encrypt, and relay access checked
 // against the local wrangler instead of cloud.codevisor.dev.
@@ -197,7 +197,7 @@ export async function startDevRelays({ net, repoRoot, relayBinary, cloudPort, co
       RUST_LOG: process.env.CODEVISOR_DEV_RELAY_LOG ?? "warn"
     }
     const config = await new Promise((resolve, reject) => {
-      const child = spawn("sh", [join(repoRoot, "infra/relays/render-config.sh")], {
+      const child = spawn("sh", [join(repoRoot, "apps/relay/render-config.sh")], {
         env: relayEnvironment,
         stdio: ["ignore", "pipe", "inherit"]
       })
@@ -217,7 +217,7 @@ export async function startDevRelays({ net, repoRoot, relayBinary, cloudPort, co
         env: relayEnvironment,
         stdio: ["ignore", "inherit", "inherit"]
       }),
-      spawn("python3", [join(repoRoot, "infra/relays/port80-router.py")], {
+      spawn("python3", [join(repoRoot, "apps/relay/port80-router.py")], {
         env: {
           ...relayEnvironment,
           ROUTER_HOST: bind,

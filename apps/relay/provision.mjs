@@ -7,8 +7,8 @@
 //      uses; needs Zone:DNS:Edit + Zone:Zone:Read on codevisor.dev),
 //      RELAY_AUTHORIZE_TOKEN, and optionally CLOUDFLARE_ZONE_ID (otherwise
 //      the zone is looked up by name).
-// Usage: node infra/relays/provision.mjs <relay-id>
-//        node infra/relays/provision.mjs --registry   (the image-holder app)
+// Usage: node apps/relay/provision.mjs <relay-id>
+//        node apps/relay/provision.mjs --registry   (the image-holder app)
 import { execFile } from "node:child_process"
 import process from "node:process"
 import { promisify } from "node:util"

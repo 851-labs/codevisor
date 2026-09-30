@@ -167,11 +167,11 @@ kinds, with no `CLOUD_PROTOCOL_VERSION` bump:
   `peer-tunnel` notice tells a machine which app endpoints may dial it, plus
   their addresses for hole punching.
 - **`/.well-known/codevisor`:** gains `relays: [{ url, region }]`, so
-  self-hosted instances advertise their own relay map. The hosted map is
-  bundled from `infra/relays/relays.json` (only entries with
-  `"advertise": true`); a `RELAY_MAP` var overrides it for self-hosters and
-  local dev. `HubWelcome` carries the same map, so clients pick it up on
-  every connect.
+  self-hosted instances advertise their own relay map. The map is the
+  Worker's `RELAY_MAP` var: `deploy-cloud.yml` builds the hosted one from
+  `apps/relay/relays.json` (only entries with `"advertise": true`), and
+  self-hosters and local dev set their own. `HubWelcome` carries the same
+  map, so clients pick it up on every connect.
 - **Who uses the tunnel.** From 0.1.104 the apps are tunnel-only: their
   data path to machines is the tunnel alone (direct, else through our
   relays), with no LAN/Tailscale discovery and no hub-relay fallback. Pipes
@@ -378,14 +378,14 @@ Every production component runs locally with the production binary and code
 path. The only thing dev overrides is **configuration** (URLs, trust root,
 path policy), never code branches.
 
-| Production                                                         | Local (`bun run dev`)                                                                                                                                                                                                                                                                                                                                                                                       |
-| ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cloud.codevisor.dev` Worker                                       | `wrangler dev` (existing)                                                                                                                                                                                                                                                                                                                                                                                   |
-| `relay-*.codevisor.dev` (Fly, iroh-relay, TLS, QAD, `access.http`) | **Two** local `iroh-relay` processes: the same pinned binary as the Fly image, with config rendered by the same `infra/relays/render-config.sh`. Each loads a certificate from a per-worktree dev CA in the same `cert_mode = "Reloading"` production uses (only the issuer differs; no certbot locally), behind the same port-80 router, QAD enabled, and `access.http.url` pointing at the local wrangler |
-| Relay map from `/.well-known/codevisor`                            | Same endpoint, served by wrangler with the local relay URLs                                                                                                                                                                                                                                                                                                                                                 |
-| System trust store                                                 | The dev CA passed as `trustAnchors` via `CODEVISOR_DEV_NET_CA` (a config input the production code also accepts)                                                                                                                                                                                                                                                                                            |
-| Machine `codevisor-net` in the server                              | The same addon in the local server, Dev Direct and Dev Cloud                                                                                                                                                                                                                                                                                                                                                |
-| App `codevisor-net`                                                | The same xcframework in the macOS app and iOS simulator                                                                                                                                                                                                                                                                                                                                                     |
+| Production                                                         | Local (`bun run dev`)                                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cloud.codevisor.dev` Worker                                       | `wrangler dev` (existing)                                                                                                                                                                                                                                                                                                                                                                                 |
+| `relay-*.codevisor.dev` (Fly, iroh-relay, TLS, QAD, `access.http`) | **Two** local `iroh-relay` processes: the same pinned binary as the Fly image, with config rendered by the same `apps/relay/render-config.sh`. Each loads a certificate from a per-worktree dev CA in the same `cert_mode = "Reloading"` production uses (only the issuer differs; no certbot locally), behind the same port-80 router, QAD enabled, and `access.http.url` pointing at the local wrangler |
+| Relay map from `/.well-known/codevisor`                            | Same endpoint, served by wrangler with the local relay URLs                                                                                                                                                                                                                                                                                                                                               |
+| System trust store                                                 | The dev CA passed as `trustAnchors` via `CODEVISOR_DEV_NET_CA` (a config input the production code also accepts)                                                                                                                                                                                                                                                                                          |
+| Machine `codevisor-net` in the server                              | The same addon in the local server, Dev Direct and Dev Cloud                                                                                                                                                                                                                                                                                                                                              |
+| App `codevisor-net`                                                | The same xcframework in the macOS app and iOS simulator                                                                                                                                                                                                                                                                                                                                                   |
 
 **Changes to `scripts/dev-*`:**
 
@@ -395,7 +395,7 @@ path policy), never code branches.
 - **Starting the relays.** `dev-worker.mjs` fetches the relay binary through
   `scripts/net-artifact.mjs` (the same lock and sha256 the Fly image's
   Dockerfile uses) and renders each relay's config with
-  `infra/relays/render-config.sh`, the script the container entrypoint runs.
+  `apps/relay/render-config.sh`, the script the container entrypoint runs.
   It starts both relays before the servers. It
   waits on `/healthz` and passes `CODEVISOR_DEV_NET_CA` and the relay URLs to
   the servers and apps, the same way it passes `CODEVISOR_DEV_CLOUD_URL` today.
@@ -455,11 +455,11 @@ These follow the `deterministic-tests` and `test-audit` skills.
 Three things deploy, each from `main` through GitHub Actions. Nobody deploys
 by hand.
 
-| What                                                  | Where                                             | Workflow                      | Trigger                                                                                                                                  |
-| ----------------------------------------------------- | ------------------------------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Control plane (Worker + hub)                          | Cloudflare                                        | `deploy-cloud.yml` (existing) | Push to `main` touching `apps/cloud`, `packages/api`, `packages/cloud-crypto` or `infra/relays/relays.json`                              |
-| Relays                                                | Fly.io, one app per instance                      | `deploy-relays.yml` (new)     | Push to `main` touching `infra/relays/**` or the relay pin in `scripts/net-build.lock.json`; also `workflow_dispatch` for a single relay |
-| `codevisor-net` (xcframework, Node addons, probe CLI) | `updates.codevisor.dev/dev-artifacts/net/<stamp>` | `net-artifact.yml` (new)      | Push to `main` touching `packages/net/**` or the lock                                                                                    |
+| What                                                  | Where                                             | Workflow                      | Trigger                                                                                                                                |
+| ----------------------------------------------------- | ------------------------------------------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Control plane (Worker + hub)                          | Cloudflare                                        | `deploy-cloud.yml` (existing) | Push to `main` touching `apps/cloud`, `packages/api`, `packages/cloud-crypto` or `apps/relay/relays.json`                              |
+| Relays                                                | Fly.io, one app per instance                      | `deploy-relays.yml` (new)     | Push to `main` touching `apps/relay/**` or the relay pin in `scripts/net-build.lock.json`; also `workflow_dispatch` for a single relay |
+| `codevisor-net` (xcframework, Node addons, probe CLI) | `updates.codevisor.dev/dev-artifacts/net/<stamp>` | `net-artifact.yml` (new)      | Push to `main` touching `packages/net/**` or the lock                                                                                  |
 
 The server and apps keep shipping through `build.yml` and
 `publish-{alpha,beta,stable}.yml`. `codevisor-net` is inside the bytes those
@@ -470,7 +470,7 @@ that is a Worker change that `deploy-cloud.yml` ships in minutes.
 ### Repository layout
 
 ```
-infra/relays/
+apps/relay/
   relays.json          # source of truth: every relay instance
   gen-fly.mjs          # renders fly/*.toml from relays.json; --check in CI
   fly/
@@ -487,7 +487,7 @@ infra/relays/
   README.md            # runbook
 ```
 
-### `infra/relays/relays.json`
+### `apps/relay/relays.json`
 
 ```json
 {
@@ -525,13 +525,13 @@ Each relay is deployed to the Fly app `codevisor-<id>`. `advertise` controls
 whether the Worker includes the relay in the relay map it hands clients. It
 exists so relays can be added and removed safely (see the runbook below).
 
-### `infra/relays/fly/relay-iad-1.toml`
+### `apps/relay/fly/relay-iad-1.toml`
 
 `gen-fly.mjs` generates this file. The four files differ only in `app`,
 `primary_region` and `RELAY_HOSTNAME`.
 
 ```toml
-# Generated by infra/relays/gen-fly.mjs from relays.json. Do not edit.
+# Generated by apps/relay/gen-fly.mjs from relays.json. Do not edit.
 app = "codevisor-relay-iad-1"
 primary_region = "iad"
 kill_signal = "SIGTERM"
@@ -628,7 +628,7 @@ The VM size starts small, because relays are bandwidth-bound, not
 memory-bound. We move to `performance-1x` when Fly's CPU throttling metrics
 show sustained throttling.
 
-### `infra/relays/Dockerfile`
+### `apps/relay/Dockerfile`
 
 ```dockerfile
 FROM debian:bookworm-slim
@@ -659,7 +659,7 @@ EXPOSE 80 443 7842/udp 9090
 ENTRYPOINT ["tini", "--", "/app/entrypoint.sh"]
 ```
 
-### `infra/relays/entrypoint.sh`
+### `apps/relay/entrypoint.sh`
 
 ```sh
 #!/bin/sh
@@ -703,7 +703,7 @@ fi
 exec iroh-relay --config-path /tmp/iroh-relay.toml
 ```
 
-### `infra/relays/port80-router.py`
+### `apps/relay/port80-router.py`
 
 This is the only process listening on port 80. It uses Python's standard
 library only; Python is already in the image for certbot.
@@ -759,7 +759,7 @@ class Server(http.server.ThreadingHTTPServer):
 Server(("::", LISTEN_PORT), Handler).serve_forever()
 ```
 
-### `infra/relays/render-config.sh`
+### `apps/relay/render-config.sh`
 
 This is the one place the relay config is written. Production, CI smoke tests
 and `bun run dev` all run it; only the environment differs.
@@ -808,7 +808,7 @@ on:
   push:
     branches: [main]
     paths:
-      - infra/relays/**
+      - apps/relay/**
       - scripts/net-build.lock.json
       - .github/workflows/deploy-relays.yml
   workflow_dispatch:
@@ -835,12 +835,12 @@ jobs:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
       # Fails if fly/*.toml drifted from relays.json.
-      - run: bun infra/relays/gen-fly.mjs --check
+      - run: bun apps/relay/gen-fly.mjs --check
       # Emits the relay id list (all, or the dispatch input), the image tag
       # registry.fly.io/codevisor-relay:<git sha>, and whether the image
       # inputs (Dockerfile, scripts, relay pin) changed.
       - id: plan
-        run: bun infra/relays/plan.mjs --only "${{ inputs.relay }}" >> "$GITHUB_OUTPUT"
+        run: bun apps/relay/plan.mjs --only "${{ inputs.relay }}" >> "$GITHUB_OUTPUT"
 
   image:
     needs: plan
@@ -853,7 +853,7 @@ jobs:
       - name: Build
         run: |
           eval "$(bun scripts/net-artifact.mjs relay-build-args)"  # IROH_RELAY_URL/_SHA256, CERTBOT_VERSION from the lock
-          docker build infra/relays \
+          docker build apps/relay \
             --build-arg IROH_RELAY_URL --build-arg IROH_RELAY_SHA256 --build-arg CERTBOT_VERSION \
             -t "${{ needs.plan.outputs.image }}"
       # Boots the image exactly as Fly does, but with a throwaway CA
@@ -861,7 +861,7 @@ jobs:
       # codevisor-net probe: two endpoints relay-only through this relay, plus
       # a QAD round trip.
       - name: Smoke test image
-        run: bun infra/relays/smoke.mjs --local-image "${{ needs.plan.outputs.image }}"
+        run: bun apps/relay/smoke.mjs --local-image "${{ needs.plan.outputs.image }}"
       - name: Push
         run: flyctl auth docker && docker push "${{ needs.plan.outputs.image }}"
         env:
@@ -884,14 +884,14 @@ jobs:
       # Idempotent. Creates the Fly app, dedicated IPv4 + IPv6, the relay_data
       # volume, grey-cloud A/AAAA records in Cloudflare, and staged secrets
       # if any are missing. It never deletes anything.
-      - run: bun infra/relays/provision.mjs "${{ matrix.relay }}"
+      - run: bun apps/relay/provision.mjs "${{ matrix.relay }}"
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           RELAY_AUTHORIZE_TOKEN: ${{ secrets.RELAY_AUTHORIZE_TOKEN }}
       - run: >
           flyctl deploy
-          --config "infra/relays/fly/${{ matrix.relay }}.toml"
+          --config "apps/relay/fly/${{ matrix.relay }}.toml"
           --image "${{ needs.plan.outputs.image }}"
           --ha=false
           --wait-timeout 5m
@@ -901,7 +901,7 @@ jobs:
       # probe through this relay, and a QAD check that the observed address
       # includes the runner's real source port (the Fly UDP question from
       # Phase 0, re-checked on every deploy).
-      - run: bun infra/relays/smoke.mjs --relay "${{ matrix.relay }}"
+      - run: bun apps/relay/smoke.mjs --relay "${{ matrix.relay }}"
 ```
 
 **What a relay deploy costs users.** Each app has a single Machine, so a deploy
@@ -922,8 +922,8 @@ Phase 3 measures the gap. If it matters, we add a drain step later: flip
 ### Changes to existing workflows
 
 - **`deploy-cloud.yml`:**
-  - Add `infra/relays/relays.json` to the path filter, since the Worker
-    bundles the relay map.
+  - Add `apps/relay/relays.json` to the path filter, since the deploy
+    builds `RELAY_MAP` from it.
   - The D1 migration (the tunnel `endpoint_id` on devices) is additive, like
     every other migration.
   - New Worker secret: `RELAY_AUTHORIZE_TOKEN`. The Worker accepts a
@@ -1093,7 +1093,7 @@ criteria.
   `/api/relay/authorize`.
 - **Local stack:** local relays in `bun run dev`, with the dev CA and ports.
 - **CI:** `net-artifact.yml`, `net-artifact.mjs ensure` in `build.yml`, and
-  the `infra/relays/` skeleton (`relays.json`, `gen-fly.mjs`, Dockerfile,
+  the `apps/relay/` skeleton (`relays.json`, `gen-fly.mjs`, Dockerfile,
   scripts). `deploy-relays.yml` runs through the image smoke test, with
   deploys gated off until Phase 3.
 - **Exit:** `bun run dev` starts both relays, and every device shows a tunnel
@@ -1120,7 +1120,7 @@ criteria.
 
 ### Phase 3: Production relays
 
-- **Rollout:** `infra/relays/` and `deploy-relays.yml` bring up the four Fly
+- **Rollout:** `apps/relay/` and `deploy-relays.yml` bring up the four Fly
   apps. Also the Grafana dashboards and alerts, and the runbook.
   Alpha devices use the tunnel from their first build with it; Stable
   follows once the exit criteria hold.
