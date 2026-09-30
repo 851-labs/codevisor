@@ -18,8 +18,11 @@ struct ScreenSharingToolbar: ToolbarContent {
       // Dynamic Resolution lives in the machine settings sheet.
       if store.endpoint?.supportsControl != false { controlActions }
     }
-    ToolbarItem(id: "screenSharing.macControls", placement: .principal) {
-      if store.endpoint?.supportsControl != false { ScreenSharingSystemKeyButtons(store: store) }
+    // Only where the buttons do something (a native Mac host), so no empty pill otherwise.
+    if store.endpoint?.supportsSystemKeys == true {
+      ToolbarItem(id: "screenSharing.macControls", placement: .principal) {
+        ScreenSharingSystemKeyButtons(store: store)
+      }
     }
     ToolbarItem(id: "screenSharing.display", placement: .primaryAction) {
       if store.displays.count > 1 { displayMenu }

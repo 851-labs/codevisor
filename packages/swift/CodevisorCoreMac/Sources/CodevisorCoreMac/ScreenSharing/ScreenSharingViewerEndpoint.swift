@@ -21,6 +21,8 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
   public var supportsControl: Bool { capabilities.contains(.control) }
   /// The explicit text clipboard protocol is available on this session.
   public var supportsClipboard: Bool { capabilities.contains(.clipboard) }
+  /// A native Mac host: the Apps, Mission Control and Desktop buttons (851-2469) do something there.
+  public var supportsSystemKeys: Bool { capabilities.contains(.systemKeys) }
   public var view: NSView { surface.view }
   public let clipboard: ScreenSharingViewerClipboard?
   public let diagnostics = ScreenSharingViewerDiagnostics()

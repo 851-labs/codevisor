@@ -54,7 +54,7 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
 
   // MARK: ScreenSharingViewingSession
 
-  public var capabilities: ScreenSharingCapabilities { [.control, .clipboard, .statistics] }
+  public var capabilities: ScreenSharingCapabilities { [.control, .clipboard, .statistics, .systemKeys] }
   public var frames: ScreenSharingFrameMailbox { mailbox }
   public var control: (any ScreenSharingMessageChannel<ScreenSharingControlMessage>)? { controlChannel }
   public var clipboard: (any ScreenSharingMessageChannel<ScreenSharingClipboardMessage>)? { clipboardChannel }
