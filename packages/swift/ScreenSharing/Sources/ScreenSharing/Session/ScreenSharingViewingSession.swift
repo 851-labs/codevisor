@@ -86,6 +86,9 @@ public protocol ScreenSharingViewingSession: AnyObject {
   func setAudioEnabled(_ enabled: Bool)
   /// How loud the host's sound plays, 0…1.
   func setAudioVolume(_ volume: Float)
+  /// Whether the display the viewer is on can show high dynamic range; a host that can sends HDR
+  /// then (the native stream, 851-2380). The default ignores it.
+  func setDisplayHighDynamicRange(_ supported: Bool)
 }
 
 extension ScreenSharingViewingSession {
@@ -98,6 +101,7 @@ extension ScreenSharingViewingSession {
   public var supportsAudio: Bool { false }
   public func setAudioEnabled(_ enabled: Bool) {}
   public func setAudioVolume(_ volume: Float) {}
+  public func setDisplayHighDynamicRange(_ supported: Bool) {}
 
   public var onCursorChanged: ((ScreenSharingCursorUpdate) -> Void)? {
     get { nil }

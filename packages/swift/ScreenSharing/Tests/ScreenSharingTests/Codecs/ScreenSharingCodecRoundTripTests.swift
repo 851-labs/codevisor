@@ -58,6 +58,38 @@ struct ScreenSharingCodecRoundTripTests {
     #expect(labels["encodedHEVCProfileIDC"] == "4")
   }
 
+  /// HDR (851-2380): ScreenCaptureKit's 10-bit full-range 4:4:4 goes through Main 4:4:4 10 and
+  /// comes out as 10-bit 4:4:4, with its precision. The picture is a gentle ramp of 320 adjacent
+  /// 10-bit codes: 8 bits anywhere on the way would leave about 70 distinct levels.
+  @Test(.enabled(if: CodecHardware.hasHighDynamicRange, "No hardware HEVC Main 4:4:4 10 encoder on this machine."))
+  func hdrFramesKeepTheirTenBitsAndFullChroma() async throws {
+    let harness = try CodecHarness(codec: .hevc444, width: 320, height: 192, dynamicRange: .high)
+    defer { harness.stop() }
+    let decoded = try await harness.decode(harness.encode(index: 0, timestampNs: 0, identity: 7))
+    #expect(decoded.pixelFormat == kCVPixelFormatType_444YpCbCr10BiPlanarVideoRange)
+    #expect(decoded.sourceTimestampNs == 7)
+    #expect(decoded.distinctLumaCodes > 200, "\(decoded.distinctLumaCodes) distinct luma codes")
+    let labels = harness.metrics.snapshot().labels
+    #expect(labels["encodedChroma"] == "4:4:4" && labels["decodedChroma"] == "4:4:4")
+    #expect(labels["encodedBitDepth"] == "10" && labels["decodedBitDepth"] == "10")
+    #expect(labels["encodedColor"] == "Display P3 primaries, PQ transfer")
+    // The decoder follows the stream back to 8 bits when the host stops sending HDR.
+    try harness.restartEncoder(width: 320, height: 192, dynamicRange: .standard)
+    let standard = try await harness.decode(harness.encode(index: 1, timestampNs: 33_333_333, identity: 8))
+    #expect(standard.pixelFormat == kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange)
+    #expect(harness.metrics.snapshot().counters["decodeErrors"] == nil)
+  }
+
+  @Test func dynamicRangeFollowsThePixelFormat() {
+    #expect(ScreenSharingDynamicRange(pixelFormat: ScreenSharingDynamicRange.highCapturePixelFormat) == .high)
+    #expect(ScreenSharingDynamicRange(pixelFormat: kCVPixelFormatType_444YpCbCr10BiPlanarVideoRange) == .high)
+    #expect(ScreenSharingDynamicRange(pixelFormat: kCVPixelFormatType_32BGRA) == .standard)
+    #expect(ScreenSharingDynamicRange(pixelFormat: kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange) == .standard)
+    #expect(ScreenSharingVideoCodec.hevc444.supportsHighDynamicRange)
+    #expect(
+      !ScreenSharingVideoCodec.hevc.supportsHighDynamicRange && !ScreenSharingVideoCodec.h264.supportsHighDynamicRange)
+  }
+
   @discardableResult
   private func assertRoundTrip(_ codec: ScreenSharingVideoCodec) async throws -> CodecHarness {
     let harness = try CodecHarness(codec: codec, width: 320, height: 192)
@@ -180,6 +212,15 @@ private enum CodecHardware {
     })
 
   static func has(_ codec: ScreenSharingVideoCodec) -> Bool { encoders.contains(codec) }
+
+  static let hasHighDynamicRange: Bool = {
+    guard let configuration = try? CodecHarness.configuration(width: 320, height: 192),
+      let encoder = try? CodecHarness.makeEncoder(
+        codec: .hevc444, configuration: configuration, metrics: ScreenSharingMetrics(), dynamicRange: .high)
+    else { return false }
+    encoder.stop()
+    return true
+  }()
 }
 
 /// One encoder feeding one decoder. The logs are the only state shared with
@@ -193,6 +234,8 @@ private final class CodecHarness {
     let sourceTimestampNs: Int64?
     let leftLuma: Double
     let rightLuma: Double
+    /// Distinct luma codes along the middle row, at the plane's own depth.
+    let distinctLumaCodes: Int
   }
 
   let codec: ScreenSharingVideoCodec
@@ -202,15 +245,20 @@ private final class CodecHarness {
   private let decoder: ScreenSharingDecoder
   private var encoder: ScreenSharingEncoder
   private(set) var configuration: ScreenSharingVideoConfiguration
+  private(set) var dynamicRange: ScreenSharingDynamicRange
 
-  init(codec: ScreenSharingVideoCodec, width: Int, height: Int) throws {
+  init(
+    codec: ScreenSharingVideoCodec, width: Int, height: Int, dynamicRange: ScreenSharingDynamicRange = .standard
+  ) throws {
     let metrics = ScreenSharingMetrics()
     let encoded = EncodedLog()
     let decoded = DecodedLog()
     let configuration = try Self.configuration(width: width, height: height)
-    let encoder = try Self.makeEncoder(codec: codec, configuration: configuration, metrics: metrics)
+    let encoder = try Self.makeEncoder(
+      codec: codec, configuration: configuration, metrics: metrics, dynamicRange: dynamicRange)
     encoder.onFrame { encoded.record($0) }
     self.codec = codec
+    self.dynamicRange = dynamicRange
     self.metrics = metrics
     self.encoded = encoded
     self.decoded = decoded
@@ -224,12 +272,13 @@ private final class CodecHarness {
   }
 
   static func makeEncoder(
-    codec: ScreenSharingVideoCodec, configuration: ScreenSharingVideoConfiguration, metrics: ScreenSharingMetrics
+    codec: ScreenSharingVideoCodec, configuration: ScreenSharingVideoConfiguration, metrics: ScreenSharingMetrics,
+    dynamicRange: ScreenSharingDynamicRange = .standard
   ) throws -> ScreenSharingEncoder {
     try ScreenSharingEncoder(
       configuration: configuration, metrics: metrics,
       // Main444 refuses the low-latency rate control, which can reduce chroma.
-      useLowLatencyRateControl: codec != .hevc444, codec: codec)
+      useLowLatencyRateControl: codec != .hevc444, codec: codec, dynamicRange: dynamicRange)
   }
 
   /// Submits one picture and returns the frame the encoder's callback delivered.
@@ -241,7 +290,9 @@ private final class CodecHarness {
     -> ScreenSharingEncodedFrame
   {
     let picture = try Self.picture(
-      configuration: configuration, format: codec.capturePixelFormat, ascending: index.isMultiple(of: 2))
+      configuration: configuration,
+      format: dynamicRange == .high ? ScreenSharingDynamicRange.highCapturePixelFormat : codec.capturePixelFormat,
+      ascending: index.isMultiple(of: 2))
     let target = encoded.count + 1
     let admitted = try encoder.encode(
       ScreenSharingVideoFrame(pixelBuffer: picture, timestampNs: timestampNs, sourceTimestampNs: identity),
@@ -259,11 +310,13 @@ private final class CodecHarness {
   }
 
   /// WebRTC restarts the encoder for a new resolution and keeps the decoder.
-  func restartEncoder(width: Int, height: Int) throws {
+  func restartEncoder(width: Int, height: Int, dynamicRange: ScreenSharingDynamicRange? = nil) throws {
     encoder.stop()
     configuration = try Self.configuration(width: width, height: height)
+    if let dynamicRange { self.dynamicRange = dynamicRange }
     let encoded = encoded
-    encoder = try Self.makeEncoder(codec: codec, configuration: configuration, metrics: metrics)
+    encoder = try Self.makeEncoder(
+      codec: codec, configuration: configuration, metrics: metrics, dynamicRange: self.dynamicRange)
     encoder.onFrame { encoded.record($0) }
   }
 
@@ -293,6 +346,26 @@ private final class CodecHarness {
     let width = configuration.width
     let height = configuration.height
     func level(_ column: Int) -> Int { (ascending ? column : width - 1 - column) * 255 / (width - 1) }
+    if format == ScreenSharingDynamicRange.highCapturePixelFormat {
+      // Full-range 10-bit codes in the top of 16-bit words: one code per column from 360 up.
+      for plane in 0..<2 {
+        let base = try #require(CVPixelBufferGetBaseAddressOfPlane(buffer, plane)).assumingMemoryBound(to: UInt8.self)
+        let stride = CVPixelBufferGetBytesPerRowOfPlane(buffer, plane)
+        for row in 0..<height {
+          let line = UnsafeMutableRawPointer(base + row * stride).assumingMemoryBound(to: UInt16.self)
+          for column in 0..<width {
+            let code = ascending ? 360 + column : 360 + width - 1 - column
+            if plane == 0 {
+              line[column] = UInt16(code << 6)
+            } else {
+              line[column * 2] = 512 << 6
+              line[column * 2 + 1] = 512 << 6
+            }
+          }
+        }
+      }
+      return buffer
+    }
     if format == kCVPixelFormatType_32BGRA {
       let base = try #require(CVPixelBufferGetBaseAddress(buffer)).assumingMemoryBound(to: UInt8.self)
       let stride = CVPixelBufferGetBytesPerRow(buffer)
@@ -322,26 +395,36 @@ private final class CodecHarness {
     return buffer
   }
 
-  /// Mean luma of the outer eighth of each side of the picture.
-  static func lumaEdges(_ buffer: CVPixelBuffer) -> (left: Double, right: Double) {
+  /// Mean luma of the outer eighth of each side of the picture, in 8-bit terms, and the distinct
+  /// luma codes along the middle row at the plane's own depth (8 or 10 bits).
+  static func lumaEdges(_ buffer: CVPixelBuffer) -> (left: Double, right: Double, distinct: Int) {
     CVPixelBufferLockBaseAddress(buffer, .readOnly)
     defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
-    guard let base = CVPixelBufferGetBaseAddressOfPlane(buffer, 0) else { return (0, 0) }
-    let luma = base.assumingMemoryBound(to: UInt8.self)
+    guard let base = CVPixelBufferGetBaseAddressOfPlane(buffer, 0) else { return (0, 0, 0) }
+    let tenBit = ScreenSharingDynamicRange(pixelFormat: CVPixelBufferGetPixelFormatType(buffer)) == .high
     let stride = CVPixelBufferGetBytesPerRowOfPlane(buffer, 0)
     let width = CVPixelBufferGetWidthOfPlane(buffer, 0)
     let height = CVPixelBufferGetHeightOfPlane(buffer, 0)
+    func code(_ row: Int, _ column: Int) -> Int {
+      let line = base + row * stride
+      return tenBit
+        ? Int(line.assumingMemoryBound(to: UInt16.self)[column] >> 6)
+        : Int(line.assumingMemoryBound(to: UInt8.self)[column])
+    }
     let edge = max(1, width / 8)
     var left = 0
     var right = 0
     for row in 0..<height {
-      let line = luma + row * stride
       for column in 0..<edge {
-        left += Int(line[column])
-        right += Int(line[width - 1 - column])
+        left += code(row, column)
+        right += code(row, width - 1 - column)
       }
     }
-    return (Double(left) / Double(height * edge), Double(right) / Double(height * edge))
+    let scale = tenBit ? 4.0 : 1.0
+    let distinct = Set((0..<width).map { code(height / 2, $0) }).count
+    return (
+      Double(left) / Double(height * edge) / scale, Double(right) / Double(height * edge) / scale, distinct
+    )
   }
 
   private final class EncodedLog: @unchecked Sendable {
@@ -370,7 +453,8 @@ private final class CodecHarness {
       let decoded = Decoded(
         width: CVPixelBufferGetWidth(frame.pixelBuffer), height: CVPixelBufferGetHeight(frame.pixelBuffer),
         pixelFormat: CVPixelBufferGetPixelFormatType(frame.pixelBuffer), timestampNs: frame.timestampNs,
-        sourceTimestampNs: frame.sourceTimestampNs, leftLuma: edges.left, rightLuma: edges.right)
+        sourceTimestampNs: frame.sourceTimestampNs, leftLuma: edges.left, rightLuma: edges.right,
+        distinctLumaCodes: edges.distinct)
       lock.withLock { items.append(decoded) }
       deliveries.signal()
     }

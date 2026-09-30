@@ -29,10 +29,16 @@
     /// The surface's size in points and its window's backing scale, whenever
     /// either changes (for a remote desktop that follows it).
     var onSizeChanged: ((CGSize, CGFloat) -> Void)? { get set }
+    /// Whether the screen the surface is on can show high dynamic range, whenever that changes (851-2380).
+    var onScreenHighDynamicRangeChanged: ((Bool) -> Void)? { get set }
   }
 
   extension ScreenSharingViewerSurface {
     public var onSizeChanged: ((CGSize, CGFloat) -> Void)? {
+      get { nil }
+      set {}
+    }
+    public var onScreenHighDynamicRangeChanged: ((Bool) -> Void)? {
       get { nil }
       set {}
     }

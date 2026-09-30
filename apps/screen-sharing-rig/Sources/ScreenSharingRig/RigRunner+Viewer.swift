@@ -93,6 +93,8 @@
         }
       }
       session.metalView = view
+      // HDR (851-2380): what this Mac's screen can show, as the product viewer reports it.
+      view.onScreenHighDynamicRangeChanged = { [weak peer] in peer?.setDisplayHighDynamicRange($0) }
       let offer = try await peer.makeDescription(offer: true)
       let request = RigOfferRequest(sessionID: session.id, offer: offer, build: build, name: name)
       let answer = try await RigHTTPClient.post(

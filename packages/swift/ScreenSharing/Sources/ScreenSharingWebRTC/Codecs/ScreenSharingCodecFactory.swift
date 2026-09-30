@@ -148,32 +148,62 @@ private final class ScreenSharingRTCEncoder: NSObject, RTCVideoEncoder, @uncheck
   func scalingSettings() -> RTCVideoEncoderQpThresholds? { nil }
   func setCallback(_ callback: RTCVideoEncoderCallback?) { lock.withLock { self.callback = callback } }
 
+  /// What the session was started with, and its latest rate: an encoder rebuilt for another
+  /// dynamic range (851-2380) continues from here.
+  private var configuration: ScreenSharingVideoConfiguration?
+
   func startEncode(with settings: RTCVideoEncoderSettings, numberOfCores: Int32) -> Int {
     do {
       encoder?.stop()
       let configuration = try ScreenSharingVideoConfiguration(
         width: Int(settings.width), height: Int(settings.height), framesPerSecond: max(1, Int(settings.maxFramerate)),
         bitrate: max(100_000, Int(settings.startBitrate) * 1000))
-      let encoder = try ScreenSharingEncoder(
-        configuration: configuration, metrics: metrics, useLowLatencyRateControl: useLowLatencyRateControl,
-        codec: codec,
-        disableLookAhead: disableLookAhead, maximumPendingFrames: maximumPendingFrames,
-        completeEachFrame: completeEachFrame, prioritizeSpeed: prioritizeSpeed,
-        keyframeIntervalSeconds: keyframeIntervalSeconds
-      )
-      encoder.onFrame { [weak self] frame in self?.deliver(frame) }
-      encoder.useDropCheck(dropCheck)
-      self.encoder = encoder
+      self.configuration = configuration
+      encoder = try makeEncoder(configuration, dynamicRange: encoder?.dynamicRange ?? .standard)
       return 0
     } catch { metrics.label("encoderError", error.localizedDescription); return -1 }
+  }
+
+  private func makeEncoder(
+    _ configuration: ScreenSharingVideoConfiguration, dynamicRange: ScreenSharingDynamicRange
+  ) throws -> ScreenSharingEncoder {
+    let encoder = try ScreenSharingEncoder(
+      configuration: configuration, metrics: metrics, useLowLatencyRateControl: useLowLatencyRateControl,
+      codec: codec,
+      disableLookAhead: disableLookAhead, maximumPendingFrames: maximumPendingFrames,
+      completeEachFrame: completeEachFrame, prioritizeSpeed: prioritizeSpeed,
+      keyframeIntervalSeconds: keyframeIntervalSeconds, dynamicRange: dynamicRange
+    )
+    encoder.onFrame { [weak self] frame in self?.deliver(frame) }
+    encoder.useDropCheck(dropCheck)
+    return encoder
+  }
+
+  /// The capture switched between 8-bit SDR and 10-bit HDR (851-2380): a new session in the
+  /// frame's range, at the current rate, starting with a keyframe (a new session always does).
+  private func follow(_ range: ScreenSharingDynamicRange) throws -> ScreenSharingEncoder? {
+    guard let encoder, encoder.dynamicRange != range, let configuration else { return encoder }
+    encoder.stop()
+    self.encoder = nil
+    let rebuilt = try makeEncoder(configuration, dynamicRange: range)
+    self.encoder = rebuilt
+    metrics.increment("encoderDynamicRangeSwitches")
+    metrics.label("encoderDynamicRange", range.rawValue)
+    return rebuilt
   }
 
   func encode(
     _ frame: RTCVideoFrame, codecSpecificInfo info: (any RTCCodecSpecificInfo)?, frameTypes: [NSNumber]
   ) -> Int {
-    guard let encoder, let native = frame.buffer as? RTCCVPixelBuffer, !native.requiresCropping() else {
+    guard self.encoder != nil, let native = frame.buffer as? RTCCVPixelBuffer, !native.requiresCropping() else {
       metrics.increment("unsupportedEncoderInput"); return -1
     }
+    let range = ScreenSharingDynamicRange(pixelFormat: CVPixelBufferGetPixelFormatType(native.pixelBuffer))
+    let encoder: ScreenSharingEncoder
+    do {
+      guard let current = try follow(range) else { return -1 }
+      encoder = current
+    } catch { metrics.label("encoderError", error.localizedDescription); return -1 }
     // WebRTC translated this frame's timestamp; identity rides on the buffer.
     guard let identity = ScreenSharingFrameIdentity.required(of: native.pixelBuffer, metrics: metrics) else {
       return -1
@@ -203,7 +233,16 @@ private final class ScreenSharingRTCEncoder: NSObject, RTCVideoEncoder, @uncheck
       return 0
     }
     do {
-      try encoder?.setBitrate(max(1, Int(bitrateKbit)) * 1000, framesPerSecond: min(60, max(1, Int(framerate))))
+      let bitrate = max(1, Int(bitrateKbit)) * 1000
+      let framesPerSecond = min(60, max(1, Int(framerate)))
+      try encoder?.setBitrate(bitrate, framesPerSecond: framesPerSecond)
+      if let configuration {
+        // Remembered for a rebuild only; the configuration's own bounds never refuse a rate here.
+        self.configuration =
+          (try? ScreenSharingVideoConfiguration(
+            width: configuration.width, height: configuration.height, framesPerSecond: framesPerSecond,
+            bitrate: min(80_000_000, max(100_000, bitrate)))) ?? configuration
+      }
       return 0
     } catch { metrics.label("encoderError", error.localizedDescription); return -1 }
   }

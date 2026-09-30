@@ -40,6 +40,9 @@ extension ScreenSharingHostService {
 
   func startCapture(_ session: Session) async throws {
     session.capturing = (session.captureDisplayID, session.configuration)
+    // The display may have changed (a virtual display has no HDR headroom): the range follows it
+    // before the stream starts, so its first frames are already in the right format.
+    if session.hdr.viewerSupports { await applyDynamicRange(session).value }
     try await session.capture.start(
       displayID: session.captureDisplayID, configuration: session.configuration,
       sink: session.peer.frameSender, metrics: session.metrics)

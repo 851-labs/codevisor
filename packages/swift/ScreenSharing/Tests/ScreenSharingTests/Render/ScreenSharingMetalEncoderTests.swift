@@ -19,16 +19,21 @@ struct ScreenSharingMetalEncoderTests {
   @Test(arguments: [
     (kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, false), (kCVPixelFormatType_420YpCbCr8BiPlanarFullRange, true),
     (kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange, false), (kCVPixelFormatType_444YpCbCr8BiPlanarFullRange, true),
+    (kCVPixelFormatType_444YpCbCr10BiPlanarVideoRange, false), (kCVPixelFormatType_444YpCbCr10BiPlanarFullRange, true),
+    (kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange, false),
   ])
   func biplanarBindsLumaAndChromaWithItsRange(format: OSType, fullRange: Bool) throws {
     let encoder = try makeEncoder()
     let textures = try #require(encoder.textures(for: frame(format)))
-    guard case .biplanar(let y, let uv, let isFullRange) = textures.planes else {
+    guard case .biplanar(let y, let uv, let range) = textures.planes else {
       Issue.record("Expected biplanar planes"); return
     }
-    #expect(CVMetalTextureGetTexture(y)?.pixelFormat == .r8Unorm)
-    #expect(CVMetalTextureGetTexture(uv)?.pixelFormat == .rg8Unorm)
-    #expect(isFullRange == fullRange)
+    // 10-bit planes (HDR, 851-2380) are bound as 16-bit normalized samples.
+    let wide = ScreenSharingDynamicRange(pixelFormat: format) == .high
+    #expect(CVMetalTextureGetTexture(y)?.pixelFormat == (wide ? .r16Unorm : .r8Unorm))
+    #expect(CVMetalTextureGetTexture(uv)?.pixelFormat == (wide ? .rg16Unorm : .rg8Unorm))
+    #expect(range.fullRange == fullRange && range.dynamicRange == (wide ? .high : .standard))
+    #expect(textures.dynamicRange == range.dynamicRange)
     #expect(textures.retained.count == 2)
   }
 

@@ -158,6 +158,8 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
       self?.paneSize = (size, scale)
       self?.applyResolution()
     }
+    // A native host sends HDR while this Mac's screen can show it (851-2380).
+    surface.onScreenHighDynamicRangeChanged = { [weak session] in session?.setDisplayHighDynamicRange($0) }
     surface.onPresented = { [weak self] in
       guard let self, !self.presented else { return }
       self.presented = true

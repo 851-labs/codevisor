@@ -141,17 +141,46 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
 
   #if os(macOS)
     private var screenObserver: (any NSObjectProtocol)?
+    private var screenParametersObserver: (any NSObjectProtocol)?
 
-    /// Follows the refresh of whatever screen the window is on.
+    /// Whether the screen the window is on can show high dynamic range (851-2380): reported when
+    /// the view joins a window, and again when the window moves to another screen or the screen's
+    /// settings change (an HDR display preset turned off, a display attached).
+    public var onScreenHighDynamicRangeChanged: ((Bool) -> Void)? {
+      didSet { reportedHighDynamicRange = nil; reportScreenHighDynamicRange() }
+    }
+    private var reportedHighDynamicRange: Bool?
+
+    /// Follows the refresh and dynamic range of whatever screen the window is on.
     public override func viewDidMoveToWindow() {
       super.viewDidMoveToWindow()
-      if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
+      for observer in [screenObserver, screenParametersObserver].compactMap({ $0 }) {
+        NotificationCenter.default.removeObserver(observer)
+      }
       screenObserver = nil
+      screenParametersObserver = nil
       guard let window else { return }
       matchDisplayRefresh()
+      reportScreenHighDynamicRange()
       screenObserver = NotificationCenter.default.addObserver(
         forName: NSWindow.didChangeScreenNotification, object: window, queue: .main
-      ) { [weak self] _ in MainActor.assumeIsolated { self?.matchDisplayRefresh() } }
+      ) { [weak self] _ in
+        MainActor.assumeIsolated {
+          self?.matchDisplayRefresh()
+          self?.reportScreenHighDynamicRange()
+        }
+      }
+      screenParametersObserver = NotificationCenter.default.addObserver(
+        forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+      ) { [weak self] _ in MainActor.assumeIsolated { self?.reportScreenHighDynamicRange() } }
+    }
+
+    private func reportScreenHighDynamicRange() {
+      guard let screen = window?.screen else { return }
+      let supported = screen.maximumPotentialExtendedDynamicRangeColorComponentValue > 1
+      guard supported != reportedHighDynamicRange else { return }
+      reportedHighDynamicRange = supported
+      onScreenHighDynamicRangeChanged?(supported)
     }
 
     private func matchDisplayRefresh() {
@@ -231,6 +260,7 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
     guard let (frame, isNewFrame) = coordinator.select() else { return }
     let audit = isNewFrame ? coordinator.audit : nil
     guard let textures = encoder.textures(for: frame) else { metrics.increment("renderDrops"); return }
+    if surface == nil { showDynamicRange(textures.dynamicRange) }
     // The acquisition pair brackets only the actual MTKView acquisition; a
     // supplied drawable (display-link experiment) records no acquisition.
     let target: Surface?
@@ -251,6 +281,10 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
       return
     }
     coordinator.reportSize(ScreenSharingMetalEncoder.videoSize(of: frame))
+    // The letterbox colour is sRGB; a linear HDR drawable needs it linear, or the bars turn grey.
+    if target.drawable.texture.pixelFormat == ScreenSharingMetalEncoder.highDynamicRangePixelFormat {
+      target.pass.colorAttachments[0].clearColor = Self.linear(clearColor)
+    }
     guard let encoded = encoder.encode(textures, into: target) else {
       metrics.increment("renderDrops")
       if isNewFrame { coordinator.deferPresentation() }
@@ -297,6 +331,43 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
     }
   }
 
+  /// The dynamic range the layer shows. HDR frames (851-2380) switch it to half-float extended-linear
+  /// Display P3 with extended dynamic range: SDR white is 1.0, so the host's windows are exactly as
+  /// bright as in SDR, and highlights go above it up to this display's headroom. SDR frames switch
+  /// it back. Before the first drawable of the new range is acquired, so no frame
+  /// is drawn in the wrong format.
+  private var layerDynamicRange = ScreenSharingDynamicRange.standard
+
+  /// An sRGB-encoded colour as linear light (the IEC 61966-2-1 curve), alpha unchanged.
+  nonisolated static func linear(_ color: MTLClearColor) -> MTLClearColor {
+    func channel(_ value: Double) -> Double {
+      value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
+    }
+    return MTLClearColor(
+      red: channel(color.red), green: channel(color.green), blue: channel(color.blue), alpha: color.alpha)
+  }
+
+  private func showDynamicRange(_ range: ScreenSharingDynamicRange) {
+    guard range != layerDynamicRange else { return }
+    layerDynamicRange = range
+    colorPixelFormat = range == .high ? ScreenSharingMetalEncoder.highDynamicRangePixelFormat : .bgra8Unorm
+    #if os(macOS)
+      if let metalLayer = layer as? CAMetalLayer {
+        // Extended range without tone mapping: automatic tone mapping squeezed each whole frame into
+        // the display's current headroom whenever it held a highlight, and took SDR white down with it
+        // (to ~58% at night brightness, tuftlord → M4 Max, 2026-09-30). Unmapped, 1.0 stays this Mac's
+        // white and only highlights past the headroom clip.
+        metalLayer.preferredDynamicRange = range == .high ? .high : .standard
+        metalLayer.toneMapMode = range == .high ? .never : .automatic
+        // Not a PQ layer with HDR10 metadata: macOS tone-maps that whole curve into the display's
+        // current headroom, which pulled SDR white down to 40% on a MacBook Pro at night (tuftlord →
+        // M4 Max, 2026-09-30). The shader places the host's SDR white at 1.0 itself.
+        metalLayer.colorspace = range == .high ? CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3) : nil
+      }
+    #endif
+    metrics.label("renderDynamicRange", range.rawValue)
+  }
+
   private func acquireSurface() -> Surface? {
     let started = ScreenSharingMetrics.nowNs
     defer {
@@ -305,30 +376,6 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
     guard let drawable = currentDrawable, let pass = currentRenderPassDescriptor else { return nil }
     return Surface(drawable: drawable, pass: pass)
   }
-
-  static let shader = """
-    #include <metal_stdlib>
-    using namespace metal;
-    struct ScreenVertex { float4 position [[position]]; float2 uv; };
-    vertex ScreenVertex screenVertex(uint id [[vertex_id]]) {
-      float2 positions[3] = {float2(-1,-1), float2(3,-1), float2(-1,3)};
-      float2 p = positions[id];
-      return {float4(p,0,1), float2((p.x+1)*0.5, (1-p.y)*0.5)};
-    }
-    fragment float4 screenFragment(ScreenVertex in [[stage_in]],
-      texture2d<float> yPlane [[texture(0)]], texture2d<float> uvPlane [[texture(1)]],
-      constant float& fullRange [[buffer(0)]]) {
-      constexpr sampler sample(filter::linear, address::clamp_to_edge);
-      float y = yPlane.sample(sample,in.uv).r;
-      float2 uv = uvPlane.sample(sample,in.uv).rg - float2(128.0/255.0);
-      if (fullRange < 0.5) { y = (y-16.0/255.0)*(255.0/219.0); uv *= 255.0/224.0; }
-      return float4(y+1.5748*uv.y, y-0.187324*uv.x-0.468124*uv.y, y+1.8556*uv.x, 1);
-    }
-    fragment float4 screenFragmentBGRA(ScreenVertex in [[stage_in]], texture2d<float> plane [[texture(0)]]) {
-      constexpr sampler sample(filter::linear, address::clamp_to_edge);
-      return float4(plane.sample(sample,in.uv).rgb, 1);
-    }
-    """
 }
 
 /// A drawable with its render pass (MTKView's on the main actor, or one built
@@ -344,151 +391,6 @@ final class TextureFrame: @unchecked Sendable {
   let frame: ScreenSharingVideoFrame
   let textures: [CVMetalTexture]
   init(frame: ScreenSharingVideoFrame, textures: [CVMetalTexture]) { self.frame = frame; self.textures = textures }
-}
-
-/// Pure Metal encoding of one frame into a surface — no actor, no AppKit.
-/// One instance per thread (the texture cache is not shared); the command
-/// queue and pipelines are shared (thread-safe / immutable per Metal).
-struct ScreenSharingMetalEncoder: @unchecked Sendable {
-  /// One pipeline per supported pixel layout, compiled once from the shared shader source.
-  struct Pipelines: @unchecked Sendable {
-    let biplanar: any MTLRenderPipelineState
-    let bgra: any MTLRenderPipelineState
-
-    init(device: any MTLDevice, shader: String) throws {
-      let library = try device.makeLibrary(source: shader, options: nil)
-      func pipeline(fragment: String) throws -> any MTLRenderPipelineState {
-        let descriptor = MTLRenderPipelineDescriptor()
-        descriptor.vertexFunction = library.makeFunction(name: "screenVertex")
-        descriptor.fragmentFunction = library.makeFunction(name: fragment)
-        descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
-        return try device.makeRenderPipelineState(descriptor: descriptor)
-      }
-      biplanar = try pipeline(fragment: "screenFragment")
-      bgra = try pipeline(fragment: "screenFragmentBGRA")
-    }
-  }
-  /// Validated plane textures of one frame, created before any drawable is acquired.
-  struct Textures {
-    enum Planes {
-      /// 4:2:0 or 4:4:4 biplanar YCbCr, video or full range: the decoder's output.
-      case biplanar(y: CVMetalTexture, uv: CVMetalTexture, fullRange: Bool)
-      /// Packed 8-bit BGRA: a framebuffer backend's output, drawn without conversion.
-      case bgra(CVMetalTexture)
-    }
-    let frame: ScreenSharingVideoFrame
-    let planes: Planes
-    var retained: [CVMetalTexture] {
-      switch planes {
-      case .biplanar(let y, let uv, _): [y, uv]
-      case .bgra(let plane): [plane]
-      }
-    }
-  }
-  struct Encoded {
-    let buffer: any MTLCommandBuffer
-    let retained: TextureFrame
-  }
-  static let supportedPixelFormats: Set<OSType> = [
-    kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
-    kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange, kCVPixelFormatType_444YpCbCr8BiPlanarFullRange,
-    kCVPixelFormatType_32BGRA,
-  ]
-  private let commandQueue: any MTLCommandQueue
-  private let pipelines: Pipelines
-  private let textureCache: CVMetalTextureCache
-
-  init(device: any MTLDevice, commandQueue: any MTLCommandQueue, pipelines: Pipelines) throws {
-    var cache: CVMetalTextureCache?
-    let status = CVMetalTextureCacheCreate(nil, nil, device, nil, &cache)
-    guard status == kCVReturnSuccess, let cache else { throw ScreenSharingError.codec("Create texture cache", status) }
-    self.commandQueue = commandQueue
-    self.pipelines = pipelines
-    textureCache = cache
-  }
-
-  static func videoSize(of frame: ScreenSharingVideoFrame) -> CGSize {
-    CGSize(width: CVPixelBufferGetWidth(frame.pixelBuffer), height: CVPixelBufferGetHeight(frame.pixelBuffer))
-  }
-
-  /// The aspect-fit placement of one video inside a drawable: scaled to fit,
-  /// centred, letterboxed on the short axis. Named so the letterbox geometry
-  /// can be checked without a GPU drawable.
-  static func viewport(video: CGSize, target: CGSize) -> MTLViewport {
-    let scale = min(target.width / video.width, target.height / video.height)
-    return MTLViewport(
-      originX: (target.width - video.width * scale) / 2, originY: (target.height - video.height * scale) / 2,
-      width: video.width * scale, height: video.height * scale, znear: 0, zfar: 1)
-  }
-
-  /// Pixel-format validation and plane textures; nil for an unsupported frame.
-  func textures(for frame: ScreenSharingVideoFrame) -> Textures? {
-    let pixel = frame.pixelBuffer
-    let format = CVPixelBufferGetPixelFormatType(pixel)
-    guard Self.supportedPixelFormats.contains(format) else { return nil }
-    if format == kCVPixelFormatType_32BGRA {
-      guard let plane = texture(pixel, plane: 0, format: .bgra8Unorm) else { return nil }
-      return Textures(frame: frame, planes: .bgra(plane))
-    }
-    guard let y = texture(pixel, plane: 0, format: .r8Unorm), let uv = texture(pixel, plane: 1, format: .rg8Unorm)
-    else { return nil }
-    let fullRange = [kCVPixelFormatType_420YpCbCr8BiPlanarFullRange, kCVPixelFormatType_444YpCbCr8BiPlanarFullRange]
-      .contains(format)
-    return Textures(frame: frame, planes: .biplanar(y: y, uv: uv, fullRange: fullRange))
-  }
-
-  /// Encodes and ends encoding; the buffer is neither presented nor committed here.
-  /// The video is scaled to fit the target and centred, letterboxed on the short axis.
-  func encode(_ textures: Textures, into target: Surface) -> Encoded? {
-    encode(textures, into: target.pass, target: target.drawable.texture)
-  }
-
-  /// The same drawing against a plain render target. A drawable contributes
-  /// only its texture here, so the rendered pixels can be checked against an
-  /// ordinary off-screen texture, with no CoreAnimation layer to acquire and
-  /// no window server session to depend on.
-  func encode(
-    _ textures: Textures, into pass: MTLRenderPassDescriptor, target targetTexture: any MTLTexture
-  ) -> Encoded? {
-    guard
-      let buffer = commandQueue.makeCommandBuffer(),
-      let encoder = buffer.makeRenderCommandEncoder(descriptor: pass)
-    else { return nil }
-    let pixel = textures.frame.pixelBuffer
-    let video = CGSize(width: CVPixelBufferGetWidth(pixel), height: CVPixelBufferGetHeight(pixel))
-    let targetSize = CGSize(width: targetTexture.width, height: targetTexture.height)
-    encoder.setViewport(Self.viewport(video: video, target: targetSize))
-    switch textures.planes {
-    case .biplanar(let y, let uv, let isFullRange):
-      guard let yTexture = CVMetalTextureGetTexture(y), let uvTexture = CVMetalTextureGetTexture(uv) else {
-        encoder.endEncoding()
-        return nil
-      }
-      encoder.setRenderPipelineState(pipelines.biplanar)
-      encoder.setFragmentTexture(yTexture, index: 0)
-      encoder.setFragmentTexture(uvTexture, index: 1)
-      var fullRange: Float = isFullRange ? 1 : 0
-      encoder.setFragmentBytes(&fullRange, length: MemoryLayout<Float>.size, index: 0)
-    case .bgra(let plane):
-      guard let planeTexture = CVMetalTextureGetTexture(plane) else {
-        encoder.endEncoding()
-        return nil
-      }
-      encoder.setRenderPipelineState(pipelines.bgra)
-      encoder.setFragmentTexture(planeTexture, index: 0)
-    }
-    encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
-    encoder.endEncoding()
-    return Encoded(buffer: buffer, retained: TextureFrame(frame: textures.frame, textures: textures.retained))
-  }
-
-  private func texture(_ buffer: CVPixelBuffer, plane: Int, format: MTLPixelFormat) -> CVMetalTexture? {
-    var texture: CVMetalTexture?
-    let status = CVMetalTextureCacheCreateTextureFromImage(
-      nil, textureCache, buffer, nil, format, CVPixelBufferGetWidthOfPlane(buffer, plane),
-      CVPixelBufferGetHeightOfPlane(buffer, plane), plane, &texture)
-    return status == kCVReturnSuccess ? texture : nil
-  }
 }
 
 #if os(macOS)

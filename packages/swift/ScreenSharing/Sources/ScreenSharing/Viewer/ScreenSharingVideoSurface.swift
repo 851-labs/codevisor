@@ -112,6 +112,11 @@
       metal.needsDisplay = true
     }
     public required init?(coder: NSCoder) { nil }
+    /// Whether the window's screen can show HDR, whenever that changes (851-2380).
+    public var onScreenHighDynamicRangeChanged: ((Bool) -> Void)? {
+      get { metal.onScreenHighDynamicRangeChanged }
+      set { metal.onScreenHighDynamicRangeChanged = newValue }
+    }
     /// The video always fills the pane, scaled to fit and letterboxed by the renderer.
     /// The size in points and the backing scale, reported when either changes
     /// (851-2314; the scale for a Retina remote desktop, 851-2315).
