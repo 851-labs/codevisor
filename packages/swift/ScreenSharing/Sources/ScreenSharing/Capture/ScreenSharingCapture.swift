@@ -36,7 +36,7 @@
     /// Whether the pointer is drawn into the frames; off once the viewer draws it from the cursor stream (851-2377).
     public private(set) var showsCursor = true
     /// Standard: 8-bit sRGB. High (851-2380): ScreenCaptureKit's canonical HDR, 10-bit 4:4:4 in
-    /// Display P3 PQ with SDR white at 203 nits. Only a 4:4:4 (BGRA) capture can switch to it.
+    /// Display P3 PQ; a display capture puts SDR white at 100 nits. Only a 4:4:4 (BGRA) capture can switch to it.
     public private(set) var dynamicRange = ScreenSharingDynamicRange.standard
     /// Whether the system's sound is captured too (851-2379); off until a viewer asks for it.
     public private(set) var capturesAudio = false

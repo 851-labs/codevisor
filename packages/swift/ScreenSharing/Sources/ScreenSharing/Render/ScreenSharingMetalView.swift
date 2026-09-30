@@ -281,6 +281,10 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
       return
     }
     coordinator.reportSize(ScreenSharingMetalEncoder.videoSize(of: frame))
+    // The letterbox colour is sRGB; a linear HDR drawable needs it linear, or the bars turn grey.
+    if target.drawable.texture.pixelFormat == ScreenSharingMetalEncoder.highDynamicRangePixelFormat {
+      target.pass.colorAttachments[0].clearColor = Self.linear(clearColor)
+    }
     guard let encoded = encoder.encode(textures, into: target) else {
       metrics.increment("renderDrops")
       if isNewFrame { coordinator.deferPresentation() }
@@ -327,11 +331,21 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
     }
   }
 
-  /// The dynamic range the layer shows. HDR frames (851-2380) switch it to 10-bit Display P3 PQ
-  /// with extended dynamic range, so macOS maps the host's highlights onto this display's headroom;
-  /// SDR frames switch it back. Before the first drawable of the new range is acquired, so no frame
+  /// The dynamic range the layer shows. HDR frames (851-2380) switch it to half-float extended-linear
+  /// Display P3 with extended dynamic range: SDR white is 1.0, so the host's windows are exactly as
+  /// bright as in SDR, and highlights go above it up to this display's headroom. SDR frames switch
+  /// it back. Before the first drawable of the new range is acquired, so no frame
   /// is drawn in the wrong format.
   private var layerDynamicRange = ScreenSharingDynamicRange.standard
+
+  /// An sRGB-encoded colour as linear light (the IEC 61966-2-1 curve), alpha unchanged.
+  nonisolated static func linear(_ color: MTLClearColor) -> MTLClearColor {
+    func channel(_ value: Double) -> Double {
+      value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
+    }
+    return MTLClearColor(
+      red: channel(color.red), green: channel(color.green), blue: channel(color.blue), alpha: color.alpha)
+  }
 
   private func showDynamicRange(_ range: ScreenSharingDynamicRange) {
     guard range != layerDynamicRange else { return }
@@ -339,13 +353,16 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
     colorPixelFormat = range == .high ? ScreenSharingMetalEncoder.highDynamicRangePixelFormat : .bgra8Unorm
     #if os(macOS)
       if let metalLayer = layer as? CAMetalLayer {
-        metalLayer.wantsExtendedDynamicRangeContent = range == .high
-        metalLayer.colorspace = range == .high ? CGColorSpace(name: CGColorSpace.displayP3_PQ) : nil
-        // ScreenCaptureKit's canonical HDR puts SDR white at 203 nits (BT.2408): that is 1.0 here,
-        // so the host's windows look as bright as this Mac's own and only highlights go beyond.
-        metalLayer.edrMetadata =
-          range == .high
-          ? CAEDRMetadata.hdr10(minLuminance: 0.0005, maxLuminance: 1000, opticalOutputScale: 203) : nil
+        // Extended range without tone mapping: automatic tone mapping squeezed each whole frame into
+        // the display's current headroom whenever it held a highlight, and took SDR white down with it
+        // (to ~58% at night brightness, tuftlord → M4 Max, 2026-09-30). Unmapped, 1.0 stays this Mac's
+        // white and only highlights past the headroom clip.
+        metalLayer.preferredDynamicRange = range == .high ? .high : .standard
+        metalLayer.toneMapMode = range == .high ? .never : .automatic
+        // Not a PQ layer with HDR10 metadata: macOS tone-maps that whole curve into the display's
+        // current headroom, which pulled SDR white down to 40% on a MacBook Pro at night (tuftlord →
+        // M4 Max, 2026-09-30). The shader places the host's SDR white at 1.0 itself.
+        metalLayer.colorspace = range == .high ? CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3) : nil
       }
     #endif
     metrics.label("renderDynamicRange", range.rawValue)

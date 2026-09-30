@@ -5,9 +5,9 @@ import Testing
 @testable import ScreenSharing
 
 /// HDR rendering (851-2380): the decoder's 10-bit planes carry Display P3 PQ, and the view draws
-/// them unchanged into a PQ drawable. Each case renders one flat frame into an off-screen texture
-/// and reads the code values back: PQ survives the trip, SDR white lands at 203 nits (BT.2408)
-/// wherever the two meet, and 8-bit output of HDR frames stays SDR.
+/// them as linear light into a half-float extended-linear drawable, SDR white (100 nits, as
+/// ScreenCaptureKit captures a display) at 1.0. Each case renders one flat frame into an off-screen texture and reads it back: the
+/// host's white is the viewer's white, highlights go above 1, and 8-bit output of HDR stays SDR.
 @MainActor
 struct ScreenSharingHDRRenderTests {
   /// The PQ code for `nits`, as a fraction of full scale (SMPTE ST 2084).
@@ -33,32 +33,39 @@ struct ScreenSharingHDRRenderTests {
     kCVPixelFormatType_444YpCbCr10BiPlanarFullRange, kCVPixelFormatType_444YpCbCr10BiPlanarVideoRange,
     kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange,
   ])
-  func pqFramesReachAPQDrawableUnchanged(format: OSType) throws {
+  func pqFramesBecomeLinearLightWithSDRWhiteAtOne(format: OSType) throws {
     let gpu = try HDRFixture()
-    for nits in [0.0, 203, 1000] {
-      let code = Self.pq(nits)
+    for nits in [0.0, 100, 203, 1000] {
       let rendered = try gpu.render(
-        HDRFixture.flat(format: format, luma: code), target: ScreenSharingMetalEncoder.highDynamicRangePixelFormat)
+        HDRFixture.flat(format: format, luma: Self.pq(nits)),
+        target: ScreenSharingMetalEncoder.highDynamicRangePixelFormat)
+      let expected = nits / 100
       for channel in rendered {
-        #expect(abs(channel - code) < 2.5 / 1023, "\(nits) nits: \(channel * 1023) for \(code * 1023)")
+        // One 10-bit PQ code is under 1% of the light it stands for in this range.
+        #expect(abs(channel - expected) <= max(0.002, expected * 0.015), "\(nits) nits: \(channel) for \(expected)")
       }
     }
   }
 
-  @Test func sdrWhiteMeetsHDRAt203Nits() throws {
+  @Test func sdrWhiteMeetsHDRAt100Nits() throws {
     let gpu = try HDRFixture()
-    let white = Self.pq(203)
-    // SDR in an HDR layer (the frame before it switches back).
+    // SDR in an HDR layer (the frame before it switches back): white is 1.0, as HDR's 100 nits is.
     for channel in try gpu.render(HDRFixture.bgra(255), target: ScreenSharingMetalEncoder.highDynamicRangePixelFormat) {
-      #expect(abs(channel - white) < 2.5 / 1023, "\(channel * 1023) for \(white * 1023)")
+      #expect(abs(channel - 1) < 0.002, "\(channel)")
     }
-    // HDR in an 8-bit layer: 203 nits is SDR white, brighter clips, black stays black.
+    // HDR in an 8-bit layer: 100 nits is SDR white, brighter clips, black stays black.
     let format = kCVPixelFormatType_444YpCbCr10BiPlanarFullRange
-    for (nits, expected) in [(203.0, 1.0), (1000, 1), (0, 0)] {
+    for (nits, expected) in [(100.0, 1.0), (1000, 1), (0, 0)] {
       for channel in try gpu.render(HDRFixture.flat(format: format, luma: Self.pq(nits)), target: .bgra8Unorm) {
         #expect(abs(channel - expected) < 1.5 / 255, "\(nits) nits: \(channel * 255)")
       }
     }
+  }
+
+  @Test func theLetterboxColourIsLinearizedForTheHDRDrawable() {
+    let linear = ScreenSharingMetalView.linear(MTLClearColorMake(1, 0.5, 0.025, 0.75))
+    #expect(abs(linear.red - 1) < 1e-9 && abs(linear.green - 0.214) < 1e-3)
+    #expect(abs(linear.blue - 0.025 / 12.92) < 1e-9 && linear.alpha == 0.75)
   }
 
   @Test func eightBitFramesStillRenderAsBefore() throws {
@@ -105,14 +112,16 @@ private struct HDRFixture {
     blit.endEncoding()
     encoded.buffer.commit()
     encoded.buffer.waitUntilCompleted()
-    var word: UInt32 = 0
-    surface.getBytes(&word, bytesPerRow: 32, from: MTLRegionMake2D(4, 4, 1, 1), mipmapLevel: 0)
     if format == .bgra8Unorm {
+      var word: UInt32 = 0
+      surface.getBytes(&word, bytesPerRow: 32, from: MTLRegionMake2D(4, 4, 1, 1), mipmapLevel: 0)
       // Bytes B, G, R, A.
       return [16, 8, 0].map { Double((word >> $0) & 0xff) / 255 }
     }
-    // BGR10A2: blue in bits 0–9, green 10–19, red 20–29.
-    return [20, 10, 0].map { Double((word >> $0) & 0x3ff) / 1023 }
+    // RGBA16Float: red, green, blue, alpha halves.
+    var halves = [Float16](repeating: 0, count: 4)
+    surface.getBytes(&halves, bytesPerRow: 64, from: MTLRegionMake2D(4, 4, 1, 1), mipmapLevel: 0)
+    return halves.prefix(3).map { Double($0) }
   }
 
   static func attributes() -> CFDictionary {

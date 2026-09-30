@@ -9,13 +9,13 @@ struct ScreenSharingMetalEncoder: @unchecked Sendable {
   struct Pipelines: @unchecked Sendable {
     let biplanar: any MTLRenderPipelineState
     let bgra: any MTLRenderPipelineState
-    /// HDR planes into a PQ target (`ScreenSharingMetalEncoder.highDynamicRangePixelFormat`), unchanged.
+    /// HDR planes into the HDR target (`ScreenSharingMetalEncoder.highDynamicRangePixelFormat`), as linear light.
     let biplanarHDR: any MTLRenderPipelineState
     /// HDR planes into an 8-bit target: tone-mapped to SDR (a layer not yet switched, or a diagnostic path).
     let biplanarPQToSDR: any MTLRenderPipelineState
-    /// SDR planes and BGRA into a PQ target: the frames while a layer switches back from HDR.
-    let biplanarSDRToPQ: any MTLRenderPipelineState
-    let bgraSDRToPQ: any MTLRenderPipelineState
+    /// SDR planes and BGRA into the HDR target: the frames while a layer switches back from HDR.
+    let biplanarSDRToLinear: any MTLRenderPipelineState
+    let bgraSDRToLinear: any MTLRenderPipelineState
 
     init(device: any MTLDevice, shader: String) throws {
       let library = try device.makeLibrary(source: shader, options: nil)
@@ -31,11 +31,11 @@ struct ScreenSharingMetalEncoder: @unchecked Sendable {
       biplanar = try pipeline(fragment: "screenFragment")
       bgra = try pipeline(fragment: "screenFragmentBGRA")
       biplanarHDR = try pipeline(
-        fragment: "screenFragment", target: ScreenSharingMetalEncoder.highDynamicRangePixelFormat)
+        fragment: "screenFragmentPQToLinear", target: ScreenSharingMetalEncoder.highDynamicRangePixelFormat)
       biplanarPQToSDR = try pipeline(fragment: "screenFragmentPQToSDR")
-      let pq = ScreenSharingMetalEncoder.highDynamicRangePixelFormat
-      biplanarSDRToPQ = try pipeline(fragment: "screenFragmentSDRToPQ", target: pq)
-      bgraSDRToPQ = try pipeline(fragment: "screenFragmentBGRAToPQ", target: pq)
+      let hdr = ScreenSharingMetalEncoder.highDynamicRangePixelFormat
+      biplanarSDRToLinear = try pipeline(fragment: "screenFragmentSDRToLinear", target: hdr)
+      bgraSDRToLinear = try pipeline(fragment: "screenFragmentBGRAToLinear", target: hdr)
     }
   }
   /// Validated plane textures of one frame, created before any drawable is acquired.
@@ -77,8 +77,9 @@ struct ScreenSharingMetalEncoder: @unchecked Sendable {
       return SIMD4(black * step, 1 / (lumaSpan * step), half * step, 1 / (chromaSpan * step))
     }
   }
-  /// The drawable format for HDR frames: 10 bits, PQ-encoded, in a Display P3 PQ layer.
-  static let highDynamicRangePixelFormat = MTLPixelFormat.bgr10a2Unorm
+  /// The drawable format for HDR frames: half floats, linear light in an extended Display P3 layer,
+  /// SDR white at 1.0 and highlights above it.
+  static let highDynamicRangePixelFormat = MTLPixelFormat.rgba16Float
   struct Encoded {
     let buffer: any MTLCommandBuffer
     let retained: TextureFrame
@@ -171,7 +172,7 @@ struct ScreenSharingMetalEncoder: @unchecked Sendable {
       let pipeline: any MTLRenderPipelineState =
         switch (range.dynamicRange, hdrTarget) {
         case (.standard, false): pipelines.biplanar
-        case (.standard, true): pipelines.biplanarSDRToPQ
+        case (.standard, true): pipelines.biplanarSDRToLinear
         case (.high, true): pipelines.biplanarHDR
         case (.high, false): pipelines.biplanarPQToSDR
         }
@@ -185,7 +186,7 @@ struct ScreenSharingMetalEncoder: @unchecked Sendable {
         encoder.endEncoding()
         return nil
       }
-      encoder.setRenderPipelineState(hdrTarget ? pipelines.bgraSDRToPQ : pipelines.bgra)
+      encoder.setRenderPipelineState(hdrTarget ? pipelines.bgraSDRToLinear : pipelines.bgra)
       encoder.setFragmentTexture(planeTexture, index: 0)
     }
     encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
