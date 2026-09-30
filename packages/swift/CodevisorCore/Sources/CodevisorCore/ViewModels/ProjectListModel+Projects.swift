@@ -6,7 +6,7 @@ extension ProjectListModel {
   /// `projects`", which a machine going quiet must not be mistaken for.
   public func isProjectDeleted(id: UUID, serverId: String) -> Bool {
     navigationStore?.pendingIntents.contains { entry in
-      guard entry.machineId == serverId, case let .deleteProject(projectId, _) = entry.intent else { return false }
+      guard entry.machineId == serverId, case let .deleteProject(projectId, _, _) = entry.intent else { return false }
       return projectId == id
     } ?? false
   }
@@ -66,9 +66,35 @@ extension ProjectListModel {
     enqueue(.upsertProject(project), serverId: project.serverId)
   }
 
-  /// Deletes a project and every chat in it.
-  public func removeProject(_ project: Project) {
+  /// Deletes a project and every chat in it. `deletingFiles` also removes
+  /// the project's folder from its machine.
+  public func removeProject(_ project: Project, deletingFiles: Bool = false) {
     let sessionIds = sessions.filter { $0.serverId == project.serverId && $0.projectId == project.id }.map(\.id)
-    enqueue(.deleteProject(projectId: project.id, sessionIds: sessionIds), serverId: project.serverId)
+    enqueue(
+      .deleteProject(projectId: project.id, sessionIds: sessionIds, deletesFiles: deletingFiles ? true : nil),
+      serverId: project.serverId)
+  }
+
+  /// Deletes a project from every machine that has it.
+  public func removeProjectGroup(_ group: ProjectGroup, deletingFiles: Bool = false) {
+    for project in group.members { removeProject(project, deletingFiles: deletingFiles) }
+  }
+
+  /// Points every checkout of a project at one base branch for new
+  /// worktrees. Each machine's change waits in the outbox, so a machine
+  /// that is offline picks it up when it reconnects.
+  public func setWorktreeBase(_ base: ProjectWorktreeBase, for group: ProjectGroup) {
+    for project in group.members where project.isGitRepository && project.worktreeBase != base {
+      enqueue(.setProjectWorktreeBase(projectId: project.id, worktreeBase: base), serverId: project.serverId)
+    }
+  }
+
+  /// A project has one base branch. Brings any checkout that differs (added
+  /// on another machine later, or offline during a change) onto it; a
+  /// project that never chose one is left on the default untouched.
+  public func alignWorktreeBase(for group: ProjectGroup) {
+    let chosen = group.members.filter(\.isGitRepository).contains { $0.worktreeBase != nil }
+    guard chosen else { return }
+    setWorktreeBase(group.worktreeBase, for: group)
   }
 }

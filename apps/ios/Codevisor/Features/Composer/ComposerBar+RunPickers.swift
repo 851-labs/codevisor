@@ -22,7 +22,7 @@ extension ComposerBar {
       onLocation: selectRunLocation,
       onManageMachines: { showsMachineSettings = true },
       onManageProject: { managedProject = liveProject },
-      onDeleteProject: deleteManagedProject
+      onProjectDeleted: projectDeleted
     )
     // Keep 44-point controls while drawing a slimmer pill behind them.
     .padding(.vertical, -6)
@@ -125,9 +125,9 @@ extension ComposerBar {
     controller.wantsNewWorktree = newWorktree
   }
 
-  func deleteManagedProject(_ project: Project) {
-    environment.projectList.removeProject(project)
-    guard controller.project.serverId == project.serverId, controller.project.id == project.id else { return }
-    selectTargetProject(.runTargetPlaceholder(serverId: project.serverId))
+  /// Settings deleted a project; a draft aimed at it falls back to no project.
+  func projectDeleted(_ group: ProjectGroup) {
+    guard group.contains(controller.project) else { return }
+    selectTargetProject(.runTargetPlaceholder(serverId: controller.project.serverId))
   }
 }

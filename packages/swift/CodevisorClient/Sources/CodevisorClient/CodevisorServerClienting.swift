@@ -232,6 +232,9 @@ public protocol CodevisorServerClienting: BrowserStateClienting {
   func upsertProject(_ project: Project) async throws -> ServerProject
   func updateProject(_ project: Project) async throws -> ServerProject
   func deleteProject(id: UUID) async throws
+  /// Deletes the project and, when `deletingFiles` is set, its folder on
+  /// this machine too. Servers without folder deletion keep the folder.
+  func deleteProject(id: UUID, deletingFiles: Bool) async throws
   func listProjectGitBranches(projectId: UUID) async throws -> [ServerProjectGitBranch]
   func updateProjectWorktreeBase(
     id: UUID,

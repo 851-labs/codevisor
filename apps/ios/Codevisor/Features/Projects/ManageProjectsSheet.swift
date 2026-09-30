@@ -12,7 +12,8 @@ struct ManageProjectsSheet: View {
   @Environment(\.dismiss) private var dismiss
 
   let serverId: String
-  let onDelete: (Project) -> Void
+  /// Runs after a project is deleted from its settings.
+  let onDeleted: (ProjectGroup) -> Void
 
   @State private var navigationPath = NavigationPath()
   @State private var modal: Modal?
@@ -21,14 +22,9 @@ struct ManageProjectsSheet: View {
   @State private var recommendations: [ProjectRecommendation]?
 
   private enum Modal: Identifiable {
-    case repository, project(Project)
+    case repository
 
-    var id: String {
-      switch self {
-      case .repository: "repository"
-      case .project(let project): project.id.uuidString
-      }
-    }
+    var id: String { "repository" }
   }
 
   private var projects: [Project] {
@@ -96,13 +92,6 @@ struct ManageProjectsSheet: View {
           serverId: serverId,
           onCloned: { _ in self.modal = nil }
         )
-      case .project(let project):
-        ManageProjectSheet(
-          project: project,
-          client: environment.machines.client(for: serverId),
-          didUpdate: { await load() },
-          onDelete: { onDelete(project) }
-        )
       }
     }
   }
@@ -112,8 +101,8 @@ struct ManageProjectsSheet: View {
   private var projectsSection: some View {
     Section {
       ForEach(projects) { project in
-        Button {
-          modal = .project(project)
+        NavigationLink {
+          ProjectSettingsScreen(groupId: ProjectGroup.routeID(for: project), onDeleted: onDeleted)
         } label: {
           FolderRow(name: project.name, path: project.folderURL.path, symbol: EntitySystemSymbol.project)
         }

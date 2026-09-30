@@ -17,6 +17,7 @@ import {
   listSubjectEvents
 } from "../test-support.js"
 import { resetRepoUrlDiscoveryCache } from "./project-repo-identity.js"
+import { isDeletableProjectFolder } from "./projects.js"
 
 const execFileAsync = promisify(execFile)
 
@@ -248,6 +249,55 @@ describe("project routes", () => {
     })
     expect(worktree.status).not.toBe(404)
     expect(JSON.stringify(worktree.body)).not.toContain("Project not found")
+  })
+
+  it("deletes a project's folder only when asked, and never one holding Codevisor's own files", async () => {
+    const base = mkdtempSync(join(tmpdir(), "codevisor-delete-files-"))
+    tempDirs.push(base)
+    process.env["CODEVISOR_WORKTREES_ROOT"] = join(base, "codevisor")
+    try {
+      const { server } = await start()
+      const folder = (name: string): string => {
+        const path = join(base, name)
+        mkdirSync(join(path, "src"), { recursive: true })
+        writeFileSync(join(path, "src", "index.ts"), "x")
+        return path
+      }
+      const create = async (id: string, folderPath: string): Promise<void> => {
+        const response = await jsonRequest(server, "/v1/projects", {
+          body: JSON.stringify({ folderPath, id }),
+          method: "POST"
+        })
+        expect(response.status).toBe(201)
+      }
+      const kept = folder("kept")
+      const removed = folder("removed")
+      await create("kept-project", kept)
+      await create("removed-project", removed)
+      await create("enclosing-project", base)
+
+      const del = async (path: string): Promise<number> =>
+        (await jsonRequest(server, path, { method: "DELETE" })).status
+      expect(await del("/v1/projects/kept-project")).toBe(204)
+      expect(await del("/v1/projects/removed-project?deleteFiles=true")).toBe(204)
+      expect(await del("/v1/projects/enclosing-project?deleteFiles=true")).toBe(204)
+
+      expect(existsSync(join(kept, "src", "index.ts"))).toBe(true)
+      expect(existsSync(removed)).toBe(false)
+      // The folder holds the worktree root, so it survives its project.
+      expect(existsSync(join(base, "kept"))).toBe(true)
+      expect(((await jsonRequest(server, "/v1/projects")).body as Array<unknown>).length).toBe(0)
+    } finally {
+      delete process.env["CODEVISOR_WORKTREES_ROOT"]
+    }
+  })
+
+  it("refuses to delete the root, the home folder, or relative paths", () => {
+    expect(isDeletableProjectFolder("/")).toBe(false)
+    expect(isDeletableProjectFolder(homedir())).toBe(false)
+    expect(isDeletableProjectFolder(`${homedir()}/`)).toBe(false)
+    expect(isDeletableProjectFolder("projects/app")).toBe(false)
+    expect(isDeletableProjectFolder(join(homedir(), "src", "app"))).toBe(true)
   })
 
   it("creates scratch workspace projects and re-homes their sessions before the agent starts", async () => {

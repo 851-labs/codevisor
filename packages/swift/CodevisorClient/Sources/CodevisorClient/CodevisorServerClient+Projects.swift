@@ -353,7 +353,12 @@ extension CodevisorServerClient {
   }
 
   public func deleteProject(id: UUID) async throws {
-    try await sendNoResponse("/v1/projects/\(id.uuidString)", method: "DELETE")
+    try await deleteProject(id: id, deletingFiles: false)
+  }
+
+  public func deleteProject(id: UUID, deletingFiles: Bool) async throws {
+    let query = deletingFiles ? "?deleteFiles=true" : ""
+    try await sendNoResponse("/v1/projects/\(id.uuidString)\(query)", method: "DELETE")
   }
 
   public func createScratchProject(id: UUID) async throws -> ServerProject {

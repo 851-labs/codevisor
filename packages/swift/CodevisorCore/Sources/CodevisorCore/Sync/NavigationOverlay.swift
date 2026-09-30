@@ -32,10 +32,14 @@ enum NavigationOverlay {
     switch intent {
     case let .upsertProject(project):
       upsert(project, into: &records.projects)
-    case let .deleteProject(projectId, sessionIds):
+    case let .deleteProject(projectId, sessionIds, _):
       let removed = Set(sessionIds)
       records.projects.removeAll { $0.id == projectId }
       records.sessions.removeAll { $0.projectId == projectId || removed.contains($0.id) }
+    case let .setProjectWorktreeBase(projectId, worktreeBase):
+      if let index = records.projects.firstIndex(where: { $0.id == projectId }) {
+        records.projects[index].worktreeBase = worktreeBase
+      }
     case let .upsertSession(session, workspaceId):
       upsertSession(session, into: &records)
       if let workspaceId { records.assignments[session.id] = workspaceId }

@@ -76,6 +76,25 @@ export const trashWorktree = async (
   return { purged: purge(target) }
 }
 
+/// Moves any directory (a deleted project's own folder) to the trash and
+/// deletes it in the background. A directory the rename can't move — the
+/// trash is on another volume, say — is deleted in place instead, still at
+/// background priority. A path that is already gone counts as removed.
+export const trashDirectory = async (
+  directory: string,
+  options: { readonly trashRoot: string; readonly id: string }
+): Promise<TrashedWorktree> => {
+  if (!(await exists(directory))) return done
+  const target = join(options.trashRoot, `${options.id}-${randomUUID()}`)
+  try {
+    await prepareTrashRoot(options.trashRoot)
+    await rename(directory, target)
+  } catch {
+    return { purged: purge(directory) }
+  }
+  return { purged: purge(target) }
+}
+
 /// Deletes whatever an earlier run left in the trash, for example when the
 /// server stopped before a background delete finished.
 export const sweepWorktreeTrash = async (trashRoot: string): Promise<void> => {

@@ -1,6 +1,7 @@
 import { mkdirSync, readdirSync, rmdirSync } from "node:fs"
 import type { IncomingMessage, ServerResponse } from "node:http"
-import { dirname } from "node:path"
+import { homedir } from "node:os"
+import { dirname, isAbsolute, relative, resolve } from "node:path"
 
 import type { Worktree, WorktreeSetupUpdate } from "@codevisor/api"
 import {
@@ -13,6 +14,7 @@ import {
   DatabaseError,
   scratchWorkspacePath,
   scratchWorkspacesRoot,
+  worktreesRoot,
   type CodevisorDatabaseService
 } from "@codevisor/db"
 import {
@@ -22,6 +24,7 @@ import {
   listCodevisorWorktreeBranchNames,
   listProjectGitBranches,
   rollbackFailedWorktree,
+  trashDirectory,
   worktreeStartPoint
 } from "@codevisor/worktrees"
 import { availableDevelopmentWorktreeName } from "@codevisor/worktrees"
@@ -29,6 +32,7 @@ import { availableProductionWorktreeName } from "@codevisor/worktrees"
 
 import {
   appendAndPublish,
+  archiveJobs,
   discardProjectWorktrees,
   assertLocationFolderExists,
   existingDirectory,
@@ -40,6 +44,7 @@ import {
   readSchema,
   run,
   swallowError,
+  worktreeTrashRoot,
   writeJson,
   type CodevisorServerConfig,
   type CodevisorServerServices,
@@ -184,13 +189,24 @@ export const routeProjects = async (
     await appendAndPublish(services.db, fanout, "project.deleted", projectId, {
       id: projectId
     })
-    // Deleting a scratch project retires its workspace folder too — but only
-    // when the folder is still empty. Anything the user put there stays on
-    // disk rather than vanishing with the row.
     const folderPath = targets
       .flatMap((target) => target.locations)
       .find((location) => location.serverId === serverId)?.folderPath
-    if (folderPath !== undefined && dirname(folderPath) === scratchWorkspacesRoot()) {
+    if (
+      folderPath !== undefined &&
+      url.searchParams.get("deleteFiles") === "true" &&
+      isDeletableProjectFolder(folderPath)
+    ) {
+      // "Delete Project and Files": the checkout itself goes too.
+      const trashed = await trashDirectory(folderPath, {
+        trashRoot: worktreeTrashRoot(),
+        id: `project-${projectId}`
+      })
+      archiveJobs(services).track(trashed.purged)
+    } else if (folderPath !== undefined && dirname(folderPath) === scratchWorkspacesRoot()) {
+      // Deleting a scratch project retires its workspace folder too — but
+      // only when the folder is still empty. Anything the user put there
+      // stays on disk rather than vanishing with the row.
       try {
         rmdirSync(folderPath)
       } catch {
@@ -412,4 +428,18 @@ const makeWorktreeSetupPublisher = (
     chain = next.catch(() => undefined)
     return next
   }
+}
+
+/// A project folder the server may delete along with its project. Never the
+/// filesystem root, the home folder, or anything that contains them or
+/// Codevisor's own worktree root: a project registered at such a path would
+/// otherwise take far more than its checkout with it.
+export const isDeletableProjectFolder = (folderPath: string): boolean => {
+  if (!isAbsolute(folderPath)) return false
+  const folder = resolve(folderPath)
+  const contains = (path: string): boolean => {
+    const inside = relative(folder, resolve(path))
+    return inside === "" || (!inside.startsWith("..") && !isAbsolute(inside))
+  }
+  return ![homedir(), worktreesRoot()].some(contains)
 }

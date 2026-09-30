@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest"
 import { makeGitRepo } from "./git-test-support.js"
 import { addWorktree, listCodevisorWorktreeBranchNames, runGit } from "./git.js"
 import { removeArchivedWorktreeFiles } from "./worktree-archive.js"
-import { sweepWorktreeTrash, trashWorktree } from "./worktree-trash.js"
+import { sweepWorktreeTrash, trashDirectory, trashWorktree } from "./worktree-trash.js"
 
 const registered = async (repo: string, path: string): Promise<boolean> =>
   (await runGit("worktree-list", ["worktree", "list", "--porcelain"], repo)).includes(path)
@@ -82,6 +82,32 @@ describe("worktree trash", () => {
       trashWorktree(repo, unregistered, { trashRoot, id: "wt-stranger" })
     ).rejects.toThrow()
     expect(existsSync(unregistered)).toBe(true)
+  })
+
+  it("trashes a plain directory, deleting in place when the trash cannot be used", async () => {
+    const { root } = makeGitRepo()
+    const moved = join(root, "project-a")
+    mkdirSync(join(moved, "src"), { recursive: true })
+    writeFileSync(join(moved, "src", "index.ts"), "x")
+    const trashRoot = join(root, ".trash")
+
+    const trashed = await trashDirectory(moved, { trashRoot, id: "project-a" })
+    expect(existsSync(moved)).toBe(false)
+    await trashed.purged
+    expect(readdirSync(trashRoot)).toEqual([".metadata_never_index"])
+
+    const inPlace = join(root, "project-b")
+    mkdirSync(inPlace)
+    const blocked = join(root, "blocked")
+    writeFileSync(blocked, "")
+    await (
+      await trashDirectory(inPlace, { trashRoot: blocked, id: "project-b" })
+    ).purged
+    expect(existsSync(inPlace)).toBe(false)
+
+    await (
+      await trashDirectory(join(root, "missing"), { trashRoot, id: "missing" })
+    ).purged
   })
 
   it("sweeps what an earlier run left behind and tolerates a missing trash", async () => {

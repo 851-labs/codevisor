@@ -47,8 +47,8 @@ struct SettingsSheet: View {
   }
 
   static let clientSections = [
-    "root", "account", "machines", "updates", "general", "appearance", "agents", "mcps", "skills",
-    "plugins",
+    "root", "account", "machines", "projects", "updates", "general", "appearance", "agents", "mcps",
+    "skills", "plugins",
   ]
 
   init(initialDestination: SettingsDestination = .root, onSectionChange: ((String) -> Void)? = nil) {
@@ -158,6 +158,9 @@ struct SettingsSheet: View {
       NavigationLink(value: SettingsDestination.machines(focusedMachineID: nil)) {
         settingsLabel("Machines", systemImage: "desktopcomputer")
       }
+      NavigationLink(value: SettingsDestination.section("projects")) {
+        settingsLabel("Projects", systemImage: "folder")
+      }
     }
     Section {
       NavigationLink(value: SettingsDestination.section("updates")) {
@@ -249,6 +252,7 @@ struct SettingsSheet: View {
   private func clientSection(_ section: String) -> some View {
     switch section {
     case "account": CloudAccountScreen()
+    case "projects": ProjectsSettingsScreen()
     case "updates": UpdatesSettingsScreen()
     case "general": GeneralSettingsScreen(dismissSettings: { dismiss() })
     case "appearance": AppearanceSettingsScreen()

@@ -287,15 +287,7 @@ struct ComposerBar: View {
       SettingsSheet(initialDestination: .machines(focusedMachineID: nil))
     }
     .sheet(item: $managedProject) { project in
-      ManageProjectSheet(
-        project: project,
-        client: environment.machines.client(for: project.serverId),
-        didUpdate: {
-          await environment.projectList.refreshFromServer(
-            serverId: project.serverId, client: environment.machines.client(for: project.serverId))
-        },
-        onDelete: { deleteManagedProject(project) }
-      )
+      ProjectSettingsSheet(groupId: ProjectGroup.routeID(for: project), onDeleted: projectDeleted)
     }
     .alert(
       "Clear this goal?",

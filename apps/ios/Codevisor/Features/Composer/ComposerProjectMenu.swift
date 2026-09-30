@@ -8,7 +8,7 @@ struct ComposerProjectMenu<MenuLabel: View>: View {
 
   let currentProject: Project
   let onSelected: (Project) -> Void
-  let onDeleteProject: (Project) -> Void
+  let onProjectDeleted: (ProjectGroup) -> Void
   @ViewBuilder let label: () -> MenuLabel
 
   @State private var isLoading = true
@@ -75,7 +75,7 @@ struct ComposerProjectMenu<MenuLabel: View>: View {
     .menuOrder(.fixed)
     .task(id: serverId) { await load() }
     .sheet(isPresented: $showsProjectManagement) {
-      ManageProjectsSheet(serverId: serverId, onDelete: onDeleteProject)
+      ManageProjectsSheet(serverId: serverId, onDeleted: onProjectDeleted)
         // The run-target bar makes its menus plain buttons; the sheet's
         // own buttons keep the system style.
         .buttonStyle(.automatic)

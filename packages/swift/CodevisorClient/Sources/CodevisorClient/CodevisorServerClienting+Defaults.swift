@@ -3,6 +3,12 @@ import CodevisorProtocol
 import Foundation
 
 public extension CodevisorServerClienting {
+  /// Fakes and relays that can't delete folders only ever remove the record.
+  func deleteProject(id: UUID, deletingFiles: Bool) async throws {
+    guard !deletingFiles else { throw CodevisorServerClientError.invalidResponse }
+    try await deleteProject(id: id)
+  }
+
   func listProjectGitBranches(projectId: UUID) async throws -> [ServerProjectGitBranch] { [] }
 
   func updateProjectWorktreeBase(

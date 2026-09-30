@@ -32,6 +32,14 @@ struct FakeServerSnapshot: Sendable {
   var deletedProjectIDs: [String]
   var deletedSessionIDs: [String]
   var readRequests: [FakeReadRequest]
+  /// Projects deleted along with their folder.
+  var filesDeletedProjectIDs: [String] = []
+  var worktreeBaseUpdates: [FakeWorktreeBaseUpdate] = []
+}
+
+struct FakeWorktreeBaseUpdate: Equatable, Sendable {
+  var projectId: String
+  var worktreeBase: ProjectWorktreeBase?
 }
 
 struct FakeReadRequest: Equatable, Sendable {
@@ -57,6 +65,8 @@ actor FakeServerClient: CodevisorServerClienting {
   private var deletedProjectIDs: [String] = []
   private var deletedSessionIDs: [String] = []
   private var readRequests: [FakeReadRequest] = []
+  private var filesDeletedProjectIDs: [String] = []
+  private var worktreeBaseUpdates: [FakeWorktreeBaseUpdate] = []
   /// When set, `listProjects` suspends on this first — lets tests hold a
   /// "network" call in flight while the app state changes underneath it.
   private var listDelay: (@Sendable () async -> Void)?
@@ -123,6 +133,20 @@ actor FakeServerClient: CodevisorServerClienting {
     deletedProjectIDs.append(id.uuidString)
     changed.signal()
     projects.removeAll { $0.id == id.uuidString }
+  }
+
+  func deleteProject(id: UUID, deletingFiles: Bool) async throws {
+    if deletingFiles { filesDeletedProjectIDs.append(id.uuidString) }
+    try await deleteProject(id: id)
+  }
+
+  func updateProjectWorktreeBase(id: UUID, worktreeBase: ProjectWorktreeBase?) async throws -> ServerProject {
+    worktreeBaseUpdates.append(FakeWorktreeBaseUpdate(projectId: id.uuidString, worktreeBase: worktreeBase))
+    changed.signal()
+    guard let project = projects.first(where: { $0.id == id.uuidString }) else {
+      throw CodevisorServerClientError.httpStatus(404, "missing")
+    }
+    return project
   }
 
   func listSessions() async throws -> [ServerSession] { sessions }
@@ -207,7 +231,9 @@ actor FakeServerClient: CodevisorServerClienting {
       upsertedSessionIDs: upsertedSessionIDs,
       deletedProjectIDs: deletedProjectIDs,
       deletedSessionIDs: deletedSessionIDs,
-      readRequests: readRequests
+      readRequests: readRequests,
+      filesDeletedProjectIDs: filesDeletedProjectIDs,
+      worktreeBaseUpdates: worktreeBaseUpdates
     )
   }
 }
