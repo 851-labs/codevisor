@@ -10,7 +10,7 @@
 // Everything is cached under ~/.codevisor-development/artifacts/net and
 // shared across worktrees with the same cross-process lock as Ghostty.
 //
-// Usage: node scripts/net-artifact.mjs <stamp|ensure-node|ensure-relay|ensure-swift|relay-build-args>
+// Usage: node scripts/net-artifact.mjs <stamp|ensure-node|ensure-relay|ensure-swift|relay-build-args|cargo ARGS…>
 import { spawn } from "node:child_process"
 import { createHash } from "node:crypto"
 import {
@@ -92,10 +92,48 @@ function run(command, args, options = {}) {
   })
 }
 
-const cargoEnv = () => ({
-  ...process.env,
-  PATH: `${join(homedir(), ".cargo", "bin")}:${process.env.PATH ?? ""}`
-})
+/// Where rustup's `cargo`/`rustc` proxies live: rustup's own installer puts them in
+/// ~/.cargo/bin, Homebrew's (keg-only) `rustup` formula in its opt prefix. Anything else on PATH
+/// named cargo may be a standalone toolchain (Homebrew's `rust`) that has none of the targets
+/// rustup installs and, on macOS 27, builds proc-macros the loader rejects.
+export const rustupProxyDirectories = (home = homedir()) => [
+  join(home, ".cargo", "bin"),
+  "/opt/homebrew/opt/rustup/bin",
+  "/usr/local/opt/rustup/bin"
+]
+
+/// The first directory holding both rustup and its cargo proxy, else undefined.
+export async function findRustup(directories = rustupProxyDirectories()) {
+  for (const directory of directories) {
+    if ((await exists(join(directory, "rustup"))) && (await exists(join(directory, "cargo")))) {
+      return directory
+    }
+  }
+  return undefined
+}
+
+/// The environment every cargo invocation runs in: rustup's proxies first on PATH and the
+/// toolchain pinned in net-build.lock.json selected, so the build never depends on which cargo
+/// happens to be first on PATH or on rustup's default. Installs the pinned toolchain if missing.
+export async function cargoEnv(environment = process.env, directories = rustupProxyDirectories()) {
+  const directory = await findRustup(directories)
+  if (directory === undefined) {
+    throw new Error(
+      "The tunnel's native code builds with rustup. Install it (brew install rustup, or " +
+        "https://rustup.rs); the Rust version is pinned in scripts/net-build.lock.json."
+    )
+  }
+  const { rust } = await readNetLock()
+  const env = {
+    ...environment,
+    PATH: `${directory}:${environment.PATH ?? ""}`,
+    RUSTUP_TOOLCHAIN: rust
+  }
+  await run(join(directory, "rustup"), ["toolchain", "install", rust, "--profile", "minimal"], {
+    env
+  })
+  return env
+}
 
 /// Builds (or reuses) the Node addon for this host and installs it into
 /// packages/net/native/<target>/. Returns the installed path.
@@ -118,13 +156,13 @@ export async function ensureNodeAddon(environment = process.env) {
         const args = ["--release", "--locked", "-p", "codevisor-net-node"]
         await run("cargo", ["zigbuild", ...args, "--target", `${triple}.${lock.linuxGlibc}`], {
           cwd: netRoot,
-          env: cargoEnv()
+          env: await cargoEnv(environment)
         })
         library = join(netRoot, "target", triple, "release", "libcodevisor_net_node.so")
       } else {
         await run("cargo", ["build", "--release", "--locked", "-p", "codevisor-net-node"], {
           cwd: netRoot,
-          env: cargoEnv()
+          env: await cargoEnv(environment)
         })
         library = join(netRoot, "target", "release", "libcodevisor_net_node.dylib")
       }
@@ -247,7 +285,7 @@ export async function ensureSwiftFramework(environment = process.env) {
       await rm(`${cached}.staging`, { recursive: true, force: true })
       await run("bash", [join(repoRoot, "scripts", "build-net-swift.sh"), `${cached}.staging`], {
         cwd: netRoot,
-        env: cargoEnv()
+        env: await cargoEnv(environment)
       })
       await rm(cached, { recursive: true, force: true })
       await rename(`${cached}.staging`, cached)
@@ -285,6 +323,10 @@ async function main(command) {
     case "ensure-swift":
       console.log(await ensureSwiftFramework())
       return
+    case "cargo":
+      // `net-artifact.mjs cargo ARGS…`: cargo with the pinned toolchain, for scripts like net:test.
+      await run("cargo", process.argv.slice(3), { cwd: repoRoot, env: await cargoEnv() })
+      return
     case "relay-build-args": {
       const lock = await readNetLock()
       const asset = lock.relay.assets["linux-x64"]
@@ -295,7 +337,7 @@ async function main(command) {
     }
     default:
       throw new Error(
-        "usage: net-artifact.mjs <stamp|ensure-node|ensure-relay|ensure-swift|relay-build-args>"
+        "usage: net-artifact.mjs <stamp|ensure-node|ensure-relay|ensure-swift|relay-build-args|cargo ARGS…>"
       )
   }
 }
