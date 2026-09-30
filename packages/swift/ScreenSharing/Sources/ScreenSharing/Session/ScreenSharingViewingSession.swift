@@ -14,6 +14,8 @@ public struct ScreenSharingCapabilities: OptionSet, Sendable, Hashable {
   public static let clipboard = ScreenSharingCapabilities(rawValue: 1 << 1)
   /// `statistics()` returns transport statistics worth showing.
   public static let statistics = ScreenSharingCapabilities(rawValue: 1 << 2)
+  /// The host is a Mac that presses Apps, Mission Control and Show Desktop (`ScreenSharingSystemKey`).
+  public static let systemKeys = ScreenSharingCapabilities(rawValue: 1 << 3)
 }
 
 /// The remote pointer, for a backend that reports it separately from the
