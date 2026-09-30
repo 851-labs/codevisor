@@ -103,7 +103,8 @@ export class DirectChannelHost {
           hello = accepted
           cancelHelloTimeout?.()
           cancelHelloTimeout = undefined
-          socket.send(
+          this.#send(
+            socket,
             encodeCloudFrame({ t: "welcome", protocol: CLOUD_PROTOCOL_VERSION, connectionId })
           )
         })
@@ -157,7 +158,7 @@ export class DirectChannelHost {
       return
     }
     if (frame.t === "ping") {
-      socket.send(encodeCloudFrame({ t: "pong" }))
+      this.#send(socket, encodeCloudFrame({ t: "pong" }))
       return
     }
     if (hello !== undefined) return // duplicate hello — ignore
@@ -184,12 +185,22 @@ export class DirectChannelHost {
     frame: RelayFrameHeader,
     payload: Uint8Array = new Uint8Array(0)
   ): void {
+    this.#send(
+      socket,
+      encodeRelayEnvelopes([{ header: { machineId: this.options.deviceId, frame }, payload }])
+    )
+  }
+
+  /// Every write onto the pipe goes through here. A socket may already be
+  /// closing when a queued message is answered (a ping still in flight when
+  /// a send failed), and its send then throws. Dropping the write is right:
+  /// the socket's close event tears the connection's channels down, and a
+  /// throw escaping a message handler would take the whole server with it.
+  #send(socket: CloudSocket, data: string | Uint8Array): void {
     try {
-      socket.send(
-        encodeRelayEnvelopes([{ header: { machineId: this.options.deviceId, frame }, payload }])
-      )
+      socket.send(data)
     } catch {
-      // The socket's close event tears the connection's channels down.
+      // Closing; onclose reports it.
     }
   }
 }

@@ -144,6 +144,27 @@ describe("tunnelSocket", () => {
     expect(() => socket.send("late")).toThrow(/closed/)
     expect(await closed).toBe(4202)
   })
+
+  it("ends the connection, not the server, when a message handler throws", async () => {
+    const stream = new FakeStream()
+    const conn = connection(TUNNEL_ALPN_CHANNELS, undefined, undefined, stream)
+    const socket = tunnelSocket(stream, conn)
+    const received: (string | Uint8Array)[] = []
+    // oxlint-disable-next-line unicorn/prefer-add-event-listener -- CloudSocket is a callback-property interface with no addEventListener
+    socket.onmessage = (data) => {
+      received.push(data)
+      throw new Error("tunnel stream is closed")
+    }
+    const closed = closeCode(socket)
+    // Both arrive before the loop runs: the second is already queued when
+    // the first handler's failure closes the socket.
+    stream.incoming.push({ value: { kind: 0, payload: Buffer.from('{"t":"ping"}') } })
+    stream.incoming.push({ value: { kind: 0, payload: Buffer.from('{"t":"ping"}') } })
+    expect(await closed).toBe(1011)
+    expect(conn.close).toHaveBeenCalledExactlyOnceWith(1011, "message handler failed")
+    // A closed socket delivers nothing further.
+    expect(received).toEqual(['{"t":"ping"}'])
+  })
 })
 
 describe("admitTunnelHello", () => {

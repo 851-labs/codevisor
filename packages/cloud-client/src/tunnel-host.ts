@@ -27,6 +27,8 @@ const BINARY = 1
 /// hosts speak. Sends are chained so messages keep their order. Closing (or a
 /// failed send) closes the QUIC connection, which ends the stream; the read
 /// loop is the one place that reports `onclose`, so it fires exactly once.
+/// The read loop runs detached, so nothing thrown by the owner's handlers may
+/// escape it: that would be an unhandled rejection, and it exits the server.
 export const tunnelSocket = (
   stream: TunnelMessageStream,
   connection: Pick<TunnelConnection, "close">
@@ -69,18 +71,31 @@ export const tunnelSocket = (
         break
       }
       if (message === null) break
-      socket.onmessage?.(
-        message.kind === TEXT
-          ? message.payload.toString("utf8")
-          : new Uint8Array(
-              message.payload.buffer,
-              message.payload.byteOffset,
-              message.payload.byteLength
-            )
-      )
+      // A socket its owner closed delivers nothing further (as a browser
+      // WebSocket drops messages once it leaves OPEN); keep draining so the
+      // stream's end still reports onclose.
+      if (requestedClose !== undefined) continue
+      try {
+        socket.onmessage?.(
+          message.kind === TEXT
+            ? message.payload.toString("utf8")
+            : new Uint8Array(
+                message.payload.buffer,
+                message.payload.byteOffset,
+                message.payload.byteLength
+              )
+        )
+      } catch {
+        // A handler that fails ends this connection, not the server.
+        socket.close(1011, "message handler failed")
+      }
     }
     ended = true
-    socket.onclose?.(requestedClose ?? endCode)
+    try {
+      socket.onclose?.(requestedClose ?? endCode)
+    } catch {
+      // Same detached loop: a failing close handler must not exit the server.
+    }
   })()
   return socket
 }

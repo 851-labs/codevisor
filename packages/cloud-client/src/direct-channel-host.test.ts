@@ -400,4 +400,18 @@ describe("DirectChannelHost", () => {
       vi.useRealTimers()
     }
   })
+
+  it("drops control replies onto a socket that is already closing", () => {
+    // A ping still in flight when the pipe's send failed gets answered onto
+    // a socket whose send throws; that throw used to escape the tunnel's
+    // read loop and exit the whole server.
+    const { host } = makeHost()
+    const closing = new FakeDirectSocket()
+    closing.send = () => {
+      throw new Error("tunnel stream is closed")
+    }
+    host.accept(closing)
+    expect(() => closing.hello({ deviceId: "app-1", publicKey: appKeys.publicKey })).not.toThrow()
+    expect(() => closing.onmessage?.(encodeCloudFrame({ t: "ping" }))).not.toThrow()
+  })
 })
