@@ -7,7 +7,7 @@ import { codevisorTools, makeCodevisorProvider } from "./codevisor-provider.js"
 describe("Codevisor native action parity", () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  it("exposes the pane, plugin and prompt queue HTTP actions used by native clients", () => {
+  it("exposes the pane, plugin, machine and prompt queue HTTP actions used by native clients", () => {
     const equivalents = new Set([
       // Native transport, not an agent operation.
       "GET /v1/clients/:clientId/socket",
@@ -23,6 +23,8 @@ describe("Codevisor native action parity", () => {
     const actions = endpoints.filter(
       (endpoint) =>
         endpoint.includes("/v1/clients") ||
+        endpoint.startsWith("POST /v1/machines") ||
+        endpoint.startsWith("DELETE /v1/machines") ||
         endpoint.includes("/v1/plugins") ||
         endpoint.includes("/v1/workspace") ||
         endpoint.includes("/queue")

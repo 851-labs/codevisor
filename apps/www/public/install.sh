@@ -21,6 +21,13 @@
 #   CODEVISOR_NO_SERVICE     set to 1 to skip systemd setup on Linux
 #   CODEVISOR_INSTALL_SERVER set to 1 to install the server on an Intel Mac
 #                            without the confirmation prompt
+#   CODEVISOR_NO_SETUP       set to 1 to skip the interactive onboarding (it
+#                            also never runs without a terminal)
+#   CODEVISOR_INVITE         one-time invite from a machine already on your
+#                            account (`codevisor machines invite`): joins this
+#                            machine to the account without a prompt
+#   CODEVISOR_MACHINE_NAME   name for this machine when joining with an invite
+#                            (default: the hostname)
 #
 # The former HERDMAN_* option names remain accepted for upgrade compatibility.
 
@@ -231,7 +238,10 @@ install_server() {
     note "Start it with:"
     note "  codevisor start"
     note "Run it again after a reboot; it does not start automatically on macOS."
-  elif [ "$no_service" = "1" ] || ! command -v systemctl >/dev/null 2>&1; then
+  # A systemctl binary alone isn't systemd: containers and WSL often ship
+  # one without running systemd, and every unit command then fails.
+  elif [ "$no_service" = "1" ] || ! command -v systemctl >/dev/null 2>&1 ||
+    ! systemctl show --property=Version >/dev/null 2>&1; then
     say "codevisor-server $version installed"
     note "Start it with:"
     note "  codevisor start"
@@ -287,10 +297,22 @@ UNIT
     note "  sudo loginctl enable-linger $USER"
   fi
 
-  # Onboarding: sign this machine into the user's Codevisor account (device
-  # code, approved in a browser or by scanning the QR code with the iOS app).
-  # `curl | sh` leaves stdin as the script, so setup reads /dev/tty.
-  if [ "${CODEVISOR_NO_SETUP:-0}" = "1" ]; then
+  # Onboarding: sign this machine into the user's Codevisor account. With an
+  # invite from another machine on the account, join without a prompt (the
+  # code goes over stdin, never argv). Otherwise a device code, approved in a
+  # browser or by scanning the QR code with the iOS app; `curl | sh` leaves
+  # stdin as the script, so setup reads /dev/tty.
+  if [ -n "${CODEVISOR_INVITE:-}" ]; then
+    say "Joining your Codevisor account"
+    invite="$CODEVISOR_INVITE"
+    unset CODEVISOR_INVITE
+    if [ -n "${CODEVISOR_MACHINE_NAME:-}" ]; then
+      printf '%s\n' "$invite" |
+        "$bin_dir/codevisor" auth login --invite - --name "$CODEVISOR_MACHINE_NAME" --port "$port"
+    else
+      printf '%s\n' "$invite" | "$bin_dir/codevisor" auth login --invite - --port "$port"
+    fi
+  elif [ "${CODEVISOR_NO_SETUP:-0}" = "1" ]; then
     note "Finish onboarding later with: codevisor setup"
   elif [ -t 1 ] && [ -r /dev/tty ]; then
     say "Finishing setup"

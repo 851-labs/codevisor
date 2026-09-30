@@ -40,11 +40,19 @@ export const routeCloud = async (
     const body = (await readJson(request)) as {
       readonly serverUrl?: unknown
       readonly sessionToken?: unknown
+      readonly inviteCode?: unknown
       readonly managedBy?: unknown
       readonly machineName?: unknown
     }
-    if (typeof body.serverUrl !== "string" || typeof body.sessionToken !== "string") {
-      throw new HttpFailure(400, "serverUrl and sessionToken are required")
+    const withInvite = typeof body.inviteCode === "string"
+    if (
+      !withInvite &&
+      (typeof body.serverUrl !== "string" || typeof body.sessionToken !== "string")
+    ) {
+      throw new HttpFailure(400, "serverUrl and sessionToken (or inviteCode) are required")
+    }
+    if (withInvite && control.connectWithInvite === undefined) {
+      throw new HttpFailure(501, "This server cannot join an account with an invite")
     }
     if (body.managedBy !== undefined && body.managedBy !== "app" && body.managedBy !== "external") {
       throw new HttpFailure(400, "managedBy must be app or external")
@@ -57,14 +65,17 @@ export const routeCloud = async (
     ) {
       throw new HttpFailure(400, "machineName must contain 1 to 120 characters")
     }
+    const registration = {
+      ...(body.managedBy === undefined ? {} : { managedBy: body.managedBy as "app" | "external" }),
+      ...(body.machineName === undefined
+        ? {}
+        : { machineName: (body.machineName as string).trim() })
+    }
     let deviceId: string
     try {
-      deviceId = await control.connect(body.serverUrl, body.sessionToken, {
-        ...(body.managedBy === undefined ? {} : { managedBy: body.managedBy }),
-        ...(body.machineName === undefined
-          ? {}
-          : { machineName: (body.machineName as string).trim() })
-      })
+      deviceId = withInvite
+        ? await control.connectWithInvite!(body.inviteCode as string, registration)
+        : await control.connect(body.serverUrl as string, body.sessionToken as string, registration)
     } catch (cause) {
       throw new HttpFailure(
         502,

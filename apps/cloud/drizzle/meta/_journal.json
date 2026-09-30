@@ -50,6 +50,13 @@
       "when": 1790409870883,
       "tag": "0006_tunnel_endpoints",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1790724186051,
+      "tag": "0007_machine_invites",
+      "breakpoints": true
     }
   ]
 }

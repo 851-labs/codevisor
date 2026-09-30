@@ -1,5 +1,6 @@
 import {
   CloudApiError,
+  decodeMachineInviteCode,
   discoverInstance,
   pollDeviceToken,
   requestDeviceCode,
@@ -29,6 +30,9 @@ export interface CloudAuthOptions extends CommandOptions {
   readonly server?: string
   readonly fetchImpl?: FetchLike
   readonly machineName?: string
+  /// A one-time invite from another machine on the account
+  /// (`codevisor machines invite`): joins without a person approving.
+  readonly inviteCode?: string
 }
 
 /// The absolute approval URL with the code filled in, so opening it (or
@@ -45,6 +49,41 @@ const resolveServer = (deps: CliDeps, options: CloudAuthOptions): string =>
 const resolveFetch = (options: CloudAuthOptions): FetchLike =>
   options.fetchImpl ?? ((input, init) => globalThis.fetch(input, init))
 
+/// Hands the invite to the running server, which redeems it for this
+/// machine's own credential and connects; succeeds once the relay is up.
+const joinWithInvite = async (
+  deps: CliDeps,
+  port: number,
+  inviteCode: string,
+  machineName: string | undefined
+): Promise<number> => {
+  const invite = decodeMachineInviteCode(inviteCode)
+  if (invite === undefined) {
+    deps.error("That isn't a Codevisor machine invite. Create one with: codevisor machines invite")
+    return 1
+  }
+  deps.log(`Joining the account on ${invite.serverUrl} with a machine invite…`)
+  const response = await deps.fetchJson(`${cloudUrl(port)}/connect`, {
+    method: "POST",
+    timeoutMs: 30_000,
+    body: {
+      inviteCode,
+      managedBy: "external",
+      ...(machineName === undefined ? {} : { machineName })
+    }
+  })
+  const body = response?.body as { deviceId?: string; error?: string } | undefined
+  if (response?.status !== 200 || typeof body?.deviceId !== "string") {
+    deps.error(`Couldn't join with the invite: ${body?.error ?? "the server did not answer"}`)
+    deps.error("Invites work once and expire after 10 minutes; create a new one and retry.")
+    return 1
+  }
+  await waitForCloudConnection(deps, port, body.deviceId)
+  deps.log(`✓ Connected${machineName === undefined ? "" : ` as ${machineName}`}.`)
+  deps.log("This machine is online in your Codevisor apps.")
+  return 0
+}
+
 export const authLoginCommand = async (
   deps: CliDeps,
   options: CloudAuthOptions = {}
@@ -59,6 +98,9 @@ export const authLoginCommand = async (
       deps.log(`This machine is already connected to ${existing.serverUrl ?? "Codevisor Cloud"}.`)
       deps.log("Run `codevisor auth logout` first to connect it to a different account.")
       return 0
+    }
+    if (options.inviteCode !== undefined) {
+      return await joinWithInvite(deps, port, options.inviteCode, options.machineName)
     }
     const instance = await discoverInstance(fetchImpl, serverUrl)
     deps.log(`Logging this machine in to ${instance.instance} (${serverUrl})`)

@@ -7,6 +7,7 @@ import {
   writeJson,
   type CodevisorServerServices
 } from "../server-context.js"
+import { routeMachineEnrollment } from "./machines.js"
 
 /// The machines surface: GET /v1/machines lists every machine on the
 /// account (this one and its cloud peers), and
@@ -77,6 +78,7 @@ export const routeGatewayInvoke = async (
     writeJson(response, 200, { machines: await services.machines.list() })
     return true
   }
+  if (await routeMachineEnrollment(services, request, response, url)) return true
   if (request.method !== "POST" || url.pathname !== "/v1/gateway/invoke") return false
   const mcp = services.mcp
   if (mcp === undefined) {

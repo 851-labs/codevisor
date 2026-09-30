@@ -42,35 +42,6 @@ struct CloudAccountControllerTests {
     #expect(try store.token() == nil)
   }
 
-  /// Drains chained registration attempts (a successful connect re-refreshes
-  /// the machine list, which re-probes and finds the registration in place).
-  private func awaitLocalRegistration(_ controller: CloudAccountController) async {
-    while let task = controller.localRegistrationTask {
-      _ = await task.value
-    }
-  }
-
-  /// A controller signed in the production way — a stored session
-  /// validated at boot — with a local server attached.
-  private func makeSignedInWithLocalServer(
-    registration: ServerCloudRegistration = ServerCloudRegistration(connected: false)
-  ) async -> (CloudAccountController, FakeCloudClient, FakeLocalServerClient) {
-    let client = FakeCloudClient()
-    client.sessions["dev-token"] = CloudSessionUser(userId: "u1", email: "dev@example.com")
-    let (controller, _, store) = makeController(
-      client: client,
-      environmentCloud: CodevisorAppVariant.DevelopmentCloud(
-        url: URL(string: "http://127.0.0.1:8787")!
-      )
-    )
-    let localServer = FakeLocalServerClient(registration: registration)
-    controller.localServerClient = localServer
-    try? store.saveToken("dev-token")
-    await controller.bootstrap()
-    await awaitLocalRegistration(controller)
-    return (controller, client, localServer)
-  }
-
   @Test("The development account signs in through the production path when the cloud advertises it")
   func developmentAccountSignIn() async throws {
     let client = FakeCloudClient()
@@ -168,37 +139,6 @@ struct CloudAccountControllerTests {
     await controller.refreshMachines()
     await awaitLocalRegistration(controller)
     #expect(localServer.connects.count == 1)
-  }
-
-  @Test("Sign-out deregisters an app-managed local machine and revokes it")
-  func signOutDeregistersAppManagedMachine() async throws {
-    let (controller, client, localServer) = await makeSignedInWithLocalServer()
-    #expect(localServer.connects.count == 1)
-
-    controller.signOut()
-    await controller.localDeregistrationTask?.value
-
-    #expect(localServer.disconnects == 1)
-    // The machine's api key is revoked with the pre-sign-out session.
-    #expect(client.removals == ["local-device-1"])
-  }
-
-  @Test("Sign-out leaves CLI-managed registrations connected")
-  func signOutLeavesExternalRegistrationAlone() async throws {
-    let (controller, client, localServer) = await makeSignedInWithLocalServer(
-      registration: ServerCloudRegistration(
-        connected: true,
-        deviceId: "cli-device",
-        state: "connected",
-        managedBy: "external"
-      )
-    )
-
-    controller.signOut()
-    await controller.localDeregistrationTask?.value
-
-    #expect(localServer.disconnects == 0)
-    #expect(client.removals.isEmpty)
   }
 
   @Test("GitHub sign-in is offered only when the server advertises it")

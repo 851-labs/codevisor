@@ -15,6 +15,9 @@ import { isDevAuthEnabled, type CloudEnv } from "./env.js"
 /// device-flow consumer today; native apps use email, Apple, or the browser OAuth handoff.
 export const MACHINE_CLIENT_ID = "codevisor-machine"
 
+/// A year: see `session` below.
+export const SESSION_LIFETIME_SECONDS = 60 * 60 * 24 * 365
+
 /// D1 bindings only exist per-request, so auth must be built per request (and
 /// per DO call) rather than at module scope.
 export const createAuth = (env: CloudEnv) => {
@@ -82,6 +85,11 @@ export const createAuth = (env: CloudEnv) => {
       sendOnSignIn: false,
       autoSignInAfterVerification: true
     },
+    /// Signing in once should last until the user signs out. Each use a day
+    /// or more after the last pushes expiry a year out, so any app opened
+    /// at least once a year stays signed in. Sensitive actions (account
+    /// deletion) still demand a recent sign-in via the default `freshAge`.
+    session: { expiresIn: SESSION_LIFETIME_SECONDS, updateAge: 60 * 60 * 24 },
     rateLimit: { enabled: !devAuth, storage: "database" },
     advanced: { ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] } },
     plugins: [

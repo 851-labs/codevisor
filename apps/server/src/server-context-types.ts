@@ -127,6 +127,18 @@ export interface CloudServerControl {
     sessionToken: string,
     options?: { readonly managedBy?: "app" | "external"; readonly machineName?: string }
   ) => Promise<string>
+  /// Like `connect`, authorized by a one-time invite another machine on the
+  /// account minted instead of a person's session. The code names its cloud.
+  readonly connectWithInvite?: (
+    inviteCode: string,
+    options?: { readonly managedBy?: "app" | "external"; readonly machineName?: string }
+  ) => Promise<string>
+  /// Mints a one-time invite as this machine. Rejects with
+  /// @codevisor/cloud-client CloudApiError, or when this machine is not
+  /// connected.
+  readonly invite?: () => Promise<import("@codevisor/cloud-client").MachineInvite>
+  /// Removes another machine (by cloud device id) from this account.
+  readonly removePeer?: (deviceId: string) => Promise<void>
   /// Removes this machine from its cloud account (best effort), stops the
   /// bridge, and forgets the stored credential. The local credential is
   /// always forgotten; `removedFromAccount` is false when the cloud could not
@@ -197,6 +209,9 @@ export interface CodevisorServerServices {
   /// Every machine on the account and the cross-machine gateway transport
   /// (GET /v1/machines). Absent on hosts without it — the route 501s.
   readonly machines?: import("./infra/machine-link.js").MachineLink
+  /// Adding and removing machines on the account (/v1/machines/invite, add,
+  /// and DELETE). Absent on hosts without a cloud connection — the routes 501.
+  readonly machineEnrollment?: import("./infra/machine-enrollment.js").MachineEnrollment
 }
 
 export interface RunningCodevisorServer {

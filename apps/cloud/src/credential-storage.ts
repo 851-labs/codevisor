@@ -33,7 +33,9 @@ export const deleteHubAccount = async (
 ): Promise<void> => {
   await ctx.storage.put("account_deleted", true)
   for (const socket of ctx.getWebSockets()) socket.close(closeCode, "cloud account deleted")
-  ctx.storage.sql.exec("DELETE FROM session_buffers; DELETE FROM sessions; DELETE FROM machines")
+  ctx.storage.sql.exec(
+    "DELETE FROM session_buffers; DELETE FROM sessions; DELETE FROM machines; DELETE FROM machine_origins"
+  )
   await deleteStoredCredentials(ctx.storage)
   await ctx.storage.deleteAlarm()
 }

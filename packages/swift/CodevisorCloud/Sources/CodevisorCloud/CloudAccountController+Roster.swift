@@ -160,7 +160,7 @@ extension CloudAccountController {
       Log.cloud.error("Cloud session validation failed: \(String(describing: error), privacy: .public)")
       lastError = error.localizedDescription
       if Self.isSessionRejection(error) {
-        signOut()
+        sessionEnded()
         return
       }
       if !state.isSignedIn { state = .signedIn(userEmail: nil) }
@@ -170,7 +170,7 @@ extension CloudAccountController {
     guard authenticationRevision == revision else { return }
     guard let user else {
       // The server answered and holds no such session: revoked elsewhere.
-      signOut()
+      sessionEnded()
       return
     }
     state = .signedIn(userEmail: user.email)

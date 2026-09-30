@@ -41,6 +41,41 @@ describe("cloud routes", () => {
     expect((await jsonRequest(server, "/v1/unknown", { method: "GET" })).status).toBe(404)
   })
 
+  it("joins an account with a machine invite instead of a session", async () => {
+    const { services } = await makeServices("server-cloud-invite")
+    const joins: { inviteCode: string; options?: unknown }[] = []
+    const cloud = {
+      deviceId: () => undefined,
+      state: () => undefined,
+      managedBy: () => undefined,
+      connect: () => Promise.reject(new Error("the session path must not run")),
+      connectWithInvite: (inviteCode: string, options?: unknown) => {
+        joins.push({ inviteCode, options })
+        return Promise.resolve("device-invited")
+      },
+      disconnect: () => Promise.resolve({ removedFromAccount: true })
+    }
+    const server = await run(
+      startCodevisorServer(
+        services,
+        defaultServerConfig({ bootId: "test-boot", id: "server-cloud-invite", port: 0, cloud })
+      )
+    )
+    runningServers.push(server)
+    const joined = await jsonRequest(server, "/v1/cloud/connect", {
+      method: "POST",
+      body: JSON.stringify({
+        inviteCode: "cvi1.x.y",
+        machineName: " hetzner-1 ",
+        managedBy: "external"
+      })
+    })
+    expect(joined).toEqual({ status: 200, body: { deviceId: "device-invited" } })
+    expect(joins).toEqual([
+      { inviteCode: "cvi1.x.y", options: { managedBy: "external", machineName: "hetzner-1" } }
+    ])
+  })
+
   it("drives the machine's cloud registration through live cloud control", async () => {
     const { services } = await makeServices("server-cloud-live")
     let bridgeDeviceId: string | undefined
@@ -75,6 +110,13 @@ describe("cloud routes", () => {
     expect((await jsonRequest(server, "/v1/info")).body).not.toHaveProperty("cloudDeviceId")
     expect((await jsonRequest(server, "/v1/cloud")).body).toEqual({ connected: false })
     expect((await jsonRequest(server, "/v1/discovery")).body).toMatchObject({ cloudLinked: false })
+
+    // A control that can't redeem invites says so rather than trying.
+    const noInvites = await jsonRequest(server, "/v1/cloud/connect", {
+      method: "POST",
+      body: JSON.stringify({ inviteCode: "cvi1.x.y" })
+    })
+    expect(noInvites.status).toBe(501)
 
     // Bad payloads are rejected before touching the control.
     expect(

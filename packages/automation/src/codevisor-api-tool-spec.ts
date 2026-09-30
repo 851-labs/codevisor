@@ -55,9 +55,13 @@ export const objectSchema = (schema: Schema.Constraint): JsonSchema => {
 }
 
 export const enabledBody = Schema.Struct({ enabled: Schema.Boolean })
+/// Either a person's session (serverUrl + sessionToken) or a one-time
+/// machine invite (inviteCode, from `machines.invite` on another machine).
 export const cloudConnectBody = Schema.Struct({
-  serverUrl: Schema.String,
-  sessionToken: Schema.String
+  serverUrl: Schema.optional(Schema.String),
+  sessionToken: Schema.optional(Schema.String),
+  inviteCode: Schema.optional(Schema.String),
+  machineName: Schema.optional(Schema.String)
 })
 export const harnessInstallBody = Schema.Struct({ methodId: Schema.optional(Schema.String) })
 

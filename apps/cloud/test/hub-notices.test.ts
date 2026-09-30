@@ -18,7 +18,9 @@ describe("abandoned machine session", () => {
       server_id: null,
       peer_aware: 0,
       tunnel_endpoint_id: null,
-      tunnel_addr: null
+      tunnel_addr: null,
+      added_by_device_id: null,
+      added_by_name: null
     }
     const machineSocket = { readyState: WebSocket.OPEN } as WebSocket
     const appSocket = { readyState: WebSocket.OPEN } as WebSocket

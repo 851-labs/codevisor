@@ -12,7 +12,15 @@ extension CloudAccountController {
       guard let self else { return nil }
       defer { self.localRegistrationTask = nil }
       do {
-        let registration = try await localClient.cloudRegistration()
+        var registration = try await localClient.cloudRegistration()
+        // A machine this app registered keeps its credential when the app's
+        // session ends on its own. If the cloud has since refused that
+        // credential, replace it with one from this sign-in.
+        if registration.connected, registration.state == "revoked", registration.managedBy == "app" {
+          guard !Task.isCancelled else { return nil }
+          try await localClient.disconnectCloud()
+          registration = try await localClient.cloudRegistration()
+        }
         let resolution: LocalRegistrationResolution
         if registration.connected {
           guard let deviceId = registration.deviceId else {

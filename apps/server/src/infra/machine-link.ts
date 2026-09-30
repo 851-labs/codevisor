@@ -35,6 +35,14 @@ export interface MachineLinkOptions {
 
 export interface MachineLink {
   readonly list: () => Promise<ReadonlyArray<MachineSummary>>
+  /// Finds a machine by id or case-insensitive name (ids win): "self" for
+  /// this machine, its cloud presence for another, undefined when unknown.
+  readonly resolve: (
+    machine: string
+  ) =>
+    | "self"
+    | { readonly id: string; readonly name: string; readonly deviceId: string }
+    | undefined
   /// Runs gateway `path` with `args` on `machine` (an id, or a
   /// case-insensitive name). Throws CodeExecutionToolError: the target's own
   /// tool error, or code "machine_unavailable" with details
@@ -99,7 +107,8 @@ const summarize = (peer: Peer): MachineSummary => ({
   ...(peer.presence.os === undefined ? {} : { os: peer.presence.os }),
   online: peer.presence.online,
   lastSeen: peer.presence.lastSeenAt,
-  isCurrent: false
+  isCurrent: false,
+  ...(peer.presence.addedBy === undefined ? {} : { addedBy: peer.presence.addedBy.name })
 })
 
 export const makeMachineLink = (options: MachineLinkOptions): MachineLink => {
@@ -114,6 +123,17 @@ export const makeMachineLink = (options: MachineLinkOptions): MachineLink => {
       byId.set(id, { id, name: presence.name, presence })
     }
     return [...byId.values()]
+  }
+
+  const find = (machine: string): "self" | Peer | undefined => {
+    const lowered = machine.toLowerCase()
+    const all = peers()
+    // Ids win over names; this machine is matched like any other.
+    if (machine === self.id) return "self"
+    const byId = all.find((candidate) => candidate.id === machine)
+    if (byId !== undefined) return byId
+    if (self.name().toLowerCase() === lowered) return "self"
+    return all.find((candidate) => candidate.name.toLowerCase() === lowered)
   }
 
   const unavailable = (
@@ -176,20 +196,15 @@ export const makeMachineLink = (options: MachineLinkOptions): MachineLink => {
         { id: self.id, name: self.name(), os: self.os, online: true, isCurrent: true },
         ...peers().map(summarize)
       ]),
+    resolve: (machine) => {
+      const found = find(machine)
+      if (found === undefined || found === "self") return found
+      return { id: found.id, name: found.name, deviceId: found.presence.deviceId }
+    },
     invoke: async (machine, path, args, origin, signal) => {
-      const lowered = machine.toLowerCase()
-      const all = peers()
-      const selfName = self.name()
-      // Ids win over names; this machine is matched like any other.
-      const peer =
-        machine === self.id
-          ? "self"
-          : (all.find((candidate) => candidate.id === machine) ??
-            (selfName.toLowerCase() === lowered
-              ? "self"
-              : all.find((candidate) => candidate.name.toLowerCase() === lowered)))
+      const peer = find(machine)
       if (peer === "self") {
-        throw toolError(`${selfName} is the current machine; call its tools directly`)
+        throw toolError(`${self.name()} is the current machine; call its tools directly`)
       }
       if (peer === undefined) {
         throw unavailable(

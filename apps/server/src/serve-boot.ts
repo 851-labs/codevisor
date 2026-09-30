@@ -21,6 +21,7 @@ import {
   wrapBackgroundCommand
 } from "./infra/background-terminal-host.js"
 import { makeCloudServerControl, startCloudBridge } from "./infra/cloud-bridge.js"
+import { makeMachineEnrollment } from "./infra/machine-enrollment.js"
 import { makeMachineLink } from "./infra/machine-link.js"
 import { machineReleaseChannel } from "./infra/release-channel.js"
 import type { ServerLease } from "./infra/server-lease.js"
@@ -420,5 +421,12 @@ export const startMachineNetwork = async (options: {
     },
     now: Date.now
   })
-  return { cloudControl, machine, machineLink }
+  const machineEnrollment = makeMachineEnrollment({
+    cloud: cloudControl,
+    link: machineLink,
+    ...(process.env["CODEVISOR_INSTALL_URL"] === undefined
+      ? {}
+      : { installUrl: process.env["CODEVISOR_INSTALL_URL"] })
+  })
+  return { cloudControl, machine, machineLink, machineEnrollment }
 }

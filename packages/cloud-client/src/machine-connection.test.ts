@@ -2,7 +2,7 @@ import { CLOUD_PROTOCOL_VERSION, MACHINE_PEERS_FEATURE } from "@codevisor/api"
 import type { MachineToHub } from "@codevisor/api"
 import { describe, expect, it, vi } from "vitest"
 
-import { CloudMachineConnection, reconnectDelayMs } from "./index.js"
+import { CloudMachineConnection, reconnectDelayMs, REVOKED_RECHECK_MS } from "./index.js"
 import {
   FakeSocket,
   machineKeys,
@@ -183,31 +183,63 @@ describe("connection lifecycle", () => {
     ).toBe(false)
   })
 
-  it("treats hub 42xx close codes as fatal", () => {
+  it("re-checks a revoked credential slowly, and gives up only on an old protocol", () => {
     const revoked = harness()
     connect(revoked)
     revoked.sockets[0]!.onclose?.(4201)
     expect(revoked.connection.state).toBe("revoked")
-    expect(revoked.reconnects).toHaveLength(0)
+    expect(revoked.reconnects.map((entry) => entry.delayMs)).toEqual([REVOKED_RECHECK_MS])
 
     const outdated = harness()
     connect(outdated)
     outdated.sockets[0]!.onclose?.(4200)
     expect(outdated.connection.state).toBe("unsupported-protocol")
+    expect(outdated.reconnects).toHaveLength(0)
   })
 
-  it("stops retrying when the relay refuses the credential at the upgrade", () => {
+  it("offers a refused credential again and recovers when the hub accepts it", () => {
     for (const status of [401, 403]) {
       const h = harness()
       h.connection.start()
       h.sockets[0]!.onrejected?.(status)
       expect(h.connection.state).toBe("revoked")
-      expect(h.reconnects).toHaveLength(0)
       expect(h.disconnects).toEqual([{ kind: "upgrade-rejected", status }])
       // The aborted request may still report a close; it belongs to nobody now.
       h.sockets[0]!.onclose?.(1006)
-      expect(h.reconnects).toHaveLength(0)
+      expect(h.reconnects.map((entry) => entry.delayMs)).toEqual([REVOKED_RECHECK_MS])
+
+      // Still refused: the machine stays "revoked" (no flapping) and waits again.
+      const statesBefore = [...h.states]
+      h.reconnects[0]!.callback()
+      expect(h.connection.state).toBe("revoked")
+      h.sockets[1]!.onrejected?.(status)
+      expect(h.connection.state).toBe("revoked")
+      expect(h.reconnects.map((entry) => entry.delayMs)).toEqual([
+        REVOKED_RECHECK_MS,
+        REVOKED_RECHECK_MS
+      ])
+      expect(h.states).toEqual(statesBefore)
+
+      // Accepted after all (the refusal was the cloud's mistake): back online.
+      h.reconnects[1]!.callback()
+      h.sockets[2]!.onopen?.()
+      h.sockets[2]!.receive({
+        t: "welcome",
+        protocol: CLOUD_PROTOCOL_VERSION,
+        connectionId: "conn-m"
+      })
+      expect(h.connection.state).toBe("connected")
     }
+  })
+
+  it("stops re-checking once stopped", () => {
+    const h = harness()
+    h.connection.start()
+    h.sockets[0]!.onrejected?.(401)
+    h.connection.stop()
+    h.reconnects[0]!.callback()
+    expect(h.sockets).toHaveLength(1)
+    expect(h.connection.state).toBe("stopped")
   })
 
   it("keeps retrying after other upgrade failures", () => {

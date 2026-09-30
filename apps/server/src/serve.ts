@@ -245,7 +245,7 @@ export const runServe = (
     // account for cross-machine gateway calls. Optional — local operation
     // never depends on it.
     const machineName = args.name ?? hostname()
-    const { cloudControl, machine, machineLink } = yield* Effect.promise(() =>
+    const { cloudControl, machine, machineLink, machineEnrollment } = yield* Effect.promise(() =>
       startMachineNetwork({ databasePath, port, serverId, machineName, version, db })
     )
     // Start resolving the GUI process's minimal environment without delaying
@@ -416,7 +416,8 @@ export const runServe = (
         ...(pluginRegistry === undefined ? {} : { pluginRegistry }),
         ...(skills === undefined ? {} : { skills }),
         syncBlobs,
-        machines: machineLink
+        machines: machineLink,
+        machineEnrollment
       },
       defaultServerConfig({
         host,

@@ -235,9 +235,22 @@ public final class CloudAccountController {
     }
   }
 
-  /// Signs out locally: the token is cleared (a custom server choice is
-  /// kept), the machine list emptied, and the relay connection torn down.
+  /// The user signed out: the token is cleared (a custom server choice is
+  /// kept), the machine list emptied, the relay connection torn down, and a
+  /// local machine this app registered is taken off the account with it.
   public func signOut() {
+    endSession(deregisterLocalMachine: true)
+  }
+
+  /// The cloud ended the session without the user signing out (revoked
+  /// elsewhere, or unused past its lifetime). The app signs out, but the
+  /// local machine keeps its own credential and stays on the account:
+  /// only an explicit sign-out removes it.
+  func sessionEnded() {
+    endSession(deregisterLocalMachine: false)
+  }
+
+  private func endSession(deregisterLocalMachine: Bool) {
     authenticationRevision &+= 1
     linkedProviders = nil
     lastError = nil
@@ -270,11 +283,11 @@ public final class CloudAccountController {
       self.hub = nil
       Task { await hub.shutdown() }
     }
-    // Best-effort: a registration this app created follows its account
-    // session, so signing out disconnects the local machine and revokes
+    // Best-effort: a registration this app created follows the user's
+    // sign-out, so signing out disconnects the local machine and revokes
     // its credential. CLI (`codevisor auth login`) and dev-provisioned
     // registrations are external — leave them alone.
-    if let localClient {
+    if deregisterLocalMachine, let localClient {
       localDeregistrationTask = Task {
         do {
           let registration = try await localClient.cloudRegistration()
@@ -379,7 +392,7 @@ public final class CloudAccountController {
       if case CloudAccountClientError.httpStatus(401) = error {
         // The session was revoked elsewhere — reflect it instead of
         // showing a stale signed-in pane forever.
-        signOut()
+        sessionEnded()
       }
       return .failed(error)
     }

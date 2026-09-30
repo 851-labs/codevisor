@@ -186,3 +186,122 @@ export const discoverInstance = async (
   }
   return body
 }
+
+// -- Machine invites -----------------------------------------------------------
+
+/// Prefix of a machine invite code. The code carries the cloud's URL so the
+/// new machine joins the same instance (hosted, self-hosted, or dev) as the
+/// machine that minted it: `cvi1.<base64url(serverUrl)>.<secret>`.
+const INVITE_PREFIX = "cvi1"
+
+const toBase64Url = (text: string): string =>
+  btoa(String.fromCharCode(...new TextEncoder().encode(text)))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/, "")
+
+const fromBase64Url = (value: string): string => {
+  const padded = value.replaceAll("-", "+").replaceAll("_", "/")
+  const binary = atob(padded + "=".repeat((4 - (padded.length % 4)) % 4))
+  return new TextDecoder().decode(Uint8Array.from(binary, (char) => char.charCodeAt(0)))
+}
+
+export interface MachineInvite {
+  /// Pass to `codevisor auth login --invite` on the new machine. Secret:
+  /// anyone holding it can add one machine to the account until it expires.
+  readonly code: string
+  readonly expiresAt: string
+}
+
+export const encodeMachineInviteCode = (serverUrl: string, token: string): string =>
+  `${INVITE_PREFIX}.${toBase64Url(serverUrl.replace(/\/+$/, ""))}.${token}`
+
+/// The cloud URL and secret inside an invite code; undefined when malformed.
+export const decodeMachineInviteCode = (
+  code: string
+): { readonly serverUrl: string; readonly token: string } | undefined => {
+  const [prefix, server, token, ...rest] = code.trim().split(".")
+  if (prefix !== INVITE_PREFIX || server === undefined || token === undefined || rest.length > 0) {
+    return undefined
+  }
+  if (!/^[A-Za-z0-9_-]{20,200}$/.test(token)) return undefined
+  try {
+    const serverUrl = fromBase64Url(server)
+    const parsed = new URL(serverUrl)
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return undefined
+    return { serverUrl, token }
+  } catch {
+    return undefined
+  }
+}
+
+/// Mint a one-time invite as this machine (authenticated by its api key).
+export const createMachineInvite = async (
+  fetchImpl: FetchLike,
+  credentials: Pick<MachineCredentials, "serverUrl" | "apiKey">
+): Promise<MachineInvite> => {
+  const serverUrl = credentials.serverUrl.replace(/\/+$/, "")
+  const response = await fetchImpl(`${serverUrl}/api/machine/invites`, {
+    method: "POST",
+    headers: { "x-api-key": credentials.apiKey }
+  })
+  const body = (await response.json().catch(() => ({}))) as {
+    token?: string
+    expiresAt?: string
+    error?: string
+  }
+  if (!response.ok || body.token === undefined || body.expiresAt === undefined) {
+    throw new CloudApiError(body.error ?? "machine invite failed", response.status)
+  }
+  return {
+    code: encodeMachineInviteCode(serverUrl, body.token),
+    expiresAt: body.expiresAt
+  }
+}
+
+/// Redeem an invite code for this machine's durable identity: a fresh device
+/// keypair (the secret key never leaves this machine) and its own api key.
+export const redeemMachineInvite = async (
+  fetchImpl: FetchLike,
+  code: string,
+  machineName: string
+): Promise<MachineCredentials> => {
+  const invite = decodeMachineInviteCode(code)
+  if (invite === undefined) throw new CloudApiError("not a Codevisor machine invite code", 400)
+  const deviceId = crypto.randomUUID()
+  const keys = generateDeviceKeyPair()
+  const response = await postJson(fetchImpl, `${invite.serverUrl}/api/machine/invites/redeem`, {
+    token: invite.token,
+    name: machineName,
+    deviceId,
+    publicKey: keys.publicKey
+  })
+  const body = (await response.json().catch(() => ({}))) as { key?: string; error?: string }
+  if (!response.ok || body.key === undefined) {
+    throw new CloudApiError(body.error ?? "machine invite redemption failed", response.status)
+  }
+  return {
+    serverUrl: invite.serverUrl,
+    deviceId,
+    publicKey: keys.publicKey,
+    secretKey: keys.secretKey,
+    apiKey: body.key
+  }
+}
+
+/// Removes another machine from this machine's account. 404 when the account
+/// has no such machine.
+export const removeMachinePeer = async (
+  fetchImpl: FetchLike,
+  credentials: Pick<MachineCredentials, "serverUrl" | "apiKey">,
+  deviceId: string
+): Promise<void> => {
+  const response = await fetchImpl(
+    `${credentials.serverUrl}/api/machine/peers/${encodeURIComponent(deviceId)}`,
+    { method: "DELETE", headers: { "x-api-key": credentials.apiKey } }
+  )
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as { error?: string }
+    throw new CloudApiError(body.error ?? "machine removal failed", response.status)
+  }
+}

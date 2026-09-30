@@ -1,7 +1,8 @@
 import { CLOUD_PROTOCOL_VERSION, type CloudMachinePresence } from "@codevisor/api"
 import { env, SELF } from "cloudflare:test"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
+import { SESSION_LIFETIME_SECONDS } from "../src/auth.js"
 import type { CloudEnv } from "../src/env.js"
 import worker from "../src/index.js"
 import { BASE, devLogin, authed, connectMachine } from "./cloud-test-support.js"
@@ -59,6 +60,23 @@ describe("auth", () => {
     const session = await SELF.fetch(`${BASE}/api/auth/get-session`, { headers: authed(token) })
     const body = (await session.json()) as { user?: { email?: string } } | null
     expect(body?.user?.email).toBe("dev@codevisor.local")
+  })
+
+  it("keeps a used session signed in: each day's use pushes expiry a year out", async () => {
+    const token = await devLogin()
+    const expiry = async (): Promise<number | undefined> => {
+      const response = await SELF.fetch(`${BASE}/api/auth/get-session`, { headers: authed(token) })
+      const body = (await response.json()) as { session?: { expiresAt: string } } | null
+      return body?.session === undefined ? undefined : Date.parse(body.session.expiresAt)
+    }
+    const year = SESSION_LIFETIME_SECONDS * 1000
+    expect(await expiry()).toBe(Date.now() + year)
+    // Well past the old 7-day lifetime, a use slides the expiry forward.
+    vi.setSystemTime(Date.now() + 200 * 24 * 60 * 60 * 1000)
+    expect(await expiry()).toBe(Date.now() + year)
+    // Unused for over a year, it does expire.
+    vi.setSystemTime(Date.now() + year + 1000)
+    expect(await expiry()).toBeUndefined()
   })
 
   it("completes the RFC 8628 device flow end-to-end", async () => {

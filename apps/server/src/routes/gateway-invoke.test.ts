@@ -2,7 +2,9 @@ import { CodeExecutionToolError } from "@codevisor/automation"
 import type { McpManager } from "@codevisor/mcp"
 import { describe, expect, it } from "vitest"
 
+import type { MachineEnrollment } from "../infra/machine-enrollment.js"
 import type { MachineLink } from "../infra/machine-link.js"
+import { HttpFailure } from "../server-context.js"
 import type { CodevisorServerServices } from "../server-context.js"
 import { defaultServerConfig, startCodevisorServer } from "../server.js"
 import { jsonRequest, makeServices, run, runningServers } from "../test-support.js"
@@ -14,12 +16,16 @@ type RemoteCall = McpManager["invokeRemoteGatewayCall"]
 /// A real server whose gateway's remote-call entry point is scripted.
 const serve = async (options: {
   machines?: MachineLink
+  machineEnrollment?: MachineEnrollment
   remote?: RemoteCall
   withoutGateway?: boolean
 }) => {
   const { services } = await makeServices("server-machines")
   const overrides: Partial<CodevisorServerServices> = {
     ...(options.machines === undefined ? {} : { machines: options.machines }),
+    ...(options.machineEnrollment === undefined
+      ? {}
+      : { machineEnrollment: options.machineEnrollment }),
     ...(options.remote === undefined
       ? {}
       : { mcp: { ...services.mcp, invokeRemoteGatewayCall: options.remote } })
@@ -39,9 +45,53 @@ const invoke = (server: Awaited<ReturnType<typeof serve>>, body: unknown) =>
   jsonRequest(server, "/v1/gateway/invoke", { method: "POST", body: JSON.stringify(body) })
 
 describe("machines routes", () => {
+  it("routes invite, add, and remove to the enrollment service", async () => {
+    const calls: unknown[] = []
+    const hetzner = { id: "machine-h", name: "hetzner-1", online: true, isCurrent: false }
+    const enrollment: MachineEnrollment = {
+      invite: async () => ({ code: "cvi1.x.y", expiresAt: "2100-01-01T00:10:00Z" }),
+      add: async (request) => {
+        calls.push(request)
+        return { ...hetzner, addedBy: "mac-studio" }
+      },
+      remove: async (machine) => {
+        if (machine !== "hetzner 1") throw new HttpFailure(404, `No machine "${machine}"`)
+        calls.push(machine)
+        return []
+      }
+    }
+    const server = await serve({ machineEnrollment: enrollment })
+    const post = (path: string, body?: unknown) =>
+      jsonRequest(server, path, {
+        method: "POST",
+        ...(body === undefined ? {} : { body: JSON.stringify(body) })
+      })
+    expect(await post("/v1/machines/invite")).toEqual({
+      status: 201,
+      body: { code: "cvi1.x.y", expiresAt: "2100-01-01T00:10:00Z" }
+    })
+    expect(await post("/v1/machines/add", { ssh: "root@h", name: "hetzner-1" })).toEqual({
+      status: 201,
+      body: { machine: { ...hetzner, addedBy: "mac-studio" } }
+    })
+    expect((await post("/v1/machines/add", { name: "no-destination" })).status).toBe(400)
+    const removed = await jsonRequest(server, "/v1/machines/hetzner%201", { method: "DELETE" })
+    expect(removed).toEqual({ status: 200, body: { machines: [] } })
+    expect((await jsonRequest(server, "/v1/machines/other", { method: "DELETE" })).status).toBe(404)
+    expect(calls).toEqual([{ ssh: "root@h", name: "hetzner-1" }, "hetzner 1"])
+
+    // Without a cloud connection the routes say so.
+    const bare = await serve({})
+    expect((await jsonRequest(bare, "/v1/machines/invite", { method: "POST" })).status).toBe(501)
+  })
+
   it("lists the account's machines", async () => {
     const machines = [{ id: "machine-a", name: "A", online: true, isCurrent: true }]
-    const link: MachineLink = { list: async () => machines, invoke: async () => undefined }
+    const link: MachineLink = {
+      list: async () => machines,
+      resolve: () => undefined,
+      invoke: async () => undefined
+    }
     const server = await serve({ machines: link })
     expect(await jsonRequest(server, "/v1/machines")).toEqual({ status: 200, body: { machines } })
 
@@ -121,6 +171,37 @@ describe("machines routes", () => {
     expect(response.status).toBe(400)
     const bare = await serve({ withoutGateway: true })
     expect((await invoke(bare, { path: "x", origin })).status).toBe(501)
+  })
+
+  it("cancels adding a machine when the caller hangs up", async () => {
+    let started!: () => void
+    const running = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    let cancelled!: (reason: unknown) => void
+    const aborted = new Promise<unknown>((resolve) => {
+      cancelled = resolve
+    })
+    const enrollment: MachineEnrollment = {
+      invite: () => Promise.reject(new Error("unused")),
+      remove: () => Promise.reject(new Error("unused")),
+      add: (_request, signal) => {
+        signal!.addEventListener("abort", () => cancelled(signal!.reason))
+        started()
+        return new Promise(() => undefined)
+      }
+    }
+    const server = await serve({ machineEnrollment: enrollment })
+    const caller = new AbortController()
+    const request = fetch(`${server.url}/v1/machines/add`, {
+      method: "POST",
+      body: JSON.stringify({ ssh: "box" }),
+      signal: caller.signal
+    }).catch(() => undefined)
+    await running
+    caller.abort()
+    await request
+    expect(await aborted).toBeInstanceOf(Error)
   })
 
   it("cancels the call when the calling machine hangs up", async () => {

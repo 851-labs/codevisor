@@ -20,6 +20,7 @@ import { HubMetrics } from "./hub-metrics.js"
 import { abandonSession, announceExpired, type HubNoticesPort } from "./hub-notices.js"
 import {
   listHubMachines,
+  recordMachineOrigin,
   registerMachine,
   removeHubMachine,
   renameHubMachine
@@ -123,6 +124,11 @@ export class UserHub extends DurableObject<CloudEnv> {
 
   renameMachine(deviceId: string, name: string): boolean {
     return renameHubMachine(this.#notices(), deviceId, name)
+  }
+
+  /// See recordMachineOrigin: the machine-invite redemption path.
+  recordMachineOrigin(deviceId: string, addedBy: { deviceId: string; name: string }): void {
+    recordMachineOrigin(this.ctx.storage.sql, deviceId, addedBy)
   }
 
   // -- WebSocket lifecycle ---------------------------------------------------

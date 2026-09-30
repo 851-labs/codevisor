@@ -19,6 +19,7 @@ import { MachinePeers } from "./machine-peers.js"
 import {
   RelayOutbox,
   reconnectDelayMs,
+  REVOKED_RECHECK_MS,
   type CancelTimeout,
   type CloudSocket,
   type MachineConnectionState,
@@ -146,7 +147,11 @@ export class CloudMachineConnection {
 
   #connect(): void {
     const { credentials } = this.options
-    this.#setState(this.#attempt === 0 ? "connecting" : "reconnecting")
+    // A re-check of a refused credential stays "revoked" until the hub
+    // welcomes it, so a machine that really was removed doesn't flap.
+    if (this.#state !== "revoked") {
+      this.#setState(this.#attempt === 0 ? "connecting" : "reconnecting")
+    }
     const url = `${credentials.serverUrl.replace(/^http/, "ws")}/connect`
     const tunnelEndpointId = this.options.tunnelEndpointId
     const socket = this.options.socketFactory(url, {
@@ -364,12 +369,15 @@ export class CloudMachineConnection {
     this.#scheduleReconnect()
   }
 
-  /// Terminal: the hub will not take these credentials back. Drop everything
-  /// held for resume and stop reconnecting; a new start() begins afresh.
+  /// The hub refused us: drop everything held for resume. An unsupported
+  /// protocol is terminal (a new start() begins afresh); a refused credential
+  /// is offered again every REVOKED_RECHECK_MS, since a refusal can be the
+  /// cloud's mistake rather than a real removal.
   #fail(state: "revoked" | "unsupported-protocol"): void {
     this.#discardResumeState()
     this.#dropChannels()
     this.#setState(state)
+    if (state === "revoked") this.#connectAfter(REVOKED_RECHECK_MS)
   }
 
   #forceReconnect(socket: CloudSocket, reason: MachineDisconnectReason): void {
@@ -392,13 +400,18 @@ export class CloudMachineConnection {
     const delay = reconnectDelayMs(this.#attempt, this.options.random ?? Math.random)
     this.#attempt += 1
     this.#setState("reconnecting")
+    this.#connectAfter(delay)
+  }
+
+  /// One pending connect attempt; a later schedule or stop() supersedes it.
+  #connectAfter(delayMs: number): void {
     const schedule =
       this.options.scheduleReconnect ??
       ((callback: () => void, ms: number) => void setTimeout(callback, ms))
     const generation = ++this.#reconnectGeneration
     schedule(() => {
       if (!this.#stopped && generation === this.#reconnectGeneration) this.#connect()
-    }, delay)
+    }, delayMs)
   }
 
   #scheduleTimeout(callback: () => void, delayMs: number): CancelTimeout {

@@ -28,9 +28,11 @@ const install = (t, options = {}) => {
   const os = options.platform === "Darwin" ? "darwin" : "linux"
   const target = `${os}-${architecture === "x86_64" ? "x64" : "arm64"}`
   for (const name of ["codevisor", "codevisor-server", "codevisor-terminal-proxy"]) {
-    writeFileSync(join(archiveRoot, "bin", name), `#!/bin/sh\nprintf 'codevisor ${version}\\n'\n`, {
-      mode: 0o755
-    })
+    const body =
+      name === "codevisor" && options.cli !== undefined
+        ? options.cli
+        : `printf 'codevisor ${version}\\n'`
+    writeFileSync(join(archiveRoot, "bin", name), `#!/bin/sh\n${body}\n`, { mode: 0o755 })
   }
   const archive = join(root, "server.tar.gz")
   execFileSync("tar", ["-czf", archive, "-C", archiveRoot, "."])
@@ -57,7 +59,7 @@ const install = (t, options = {}) => {
     uname:
       'case "$1" in -s) printf "%s\\n" "$TEST_PLATFORM";; -m) printf "%s\\n" "$TEST_ARCH";; *) exit 1;; esac',
     id: 'printf "%s\\n" "$TEST_UID"',
-    systemctl: 'printf "%s\\n" "$*" >> "$TEST_SERVICES"',
+    systemctl: options.systemctl ?? 'printf "%s\\n" "$*" >> "$TEST_SERVICES"',
     launchctl: 'printf "launchctl %s\\n" "$*" >> "$TEST_SERVICES"',
     osascript: "exit 0",
     sysctl: 'printf "%s\\n" "${TEST_HW_ARM64:-}"',
@@ -135,6 +137,54 @@ for (const uid of [0, 1000]) {
     assert.equal(result.services, "")
   })
 }
+
+test("an invite joins the account without a prompt, passing the code on stdin", (t) => {
+  // The fake CLI records how it was called: args, stdin, and whether the
+  // secret leaked into its environment.
+  const cli = [
+    'printf "args=%s\\n" "$*" >> "$TEST_ROOT/cli.log"',
+    'printf "stdin=%s\\n" "$(cat)" >> "$TEST_ROOT/cli.log"',
+    'printf "env=%s\\n" "${CODEVISOR_INVITE:-}" >> "$TEST_ROOT/cli.log"'
+  ].join("\n")
+  const result = install(t, {
+    cli,
+    env: {
+      CODEVISOR_NO_SERVICE: "1",
+      CODEVISOR_INVITE: "cvi1.aHR0cHM6Ly9jbG91ZC5leGFtcGxl.secret",
+      CODEVISOR_MACHINE_NAME: "hetzner 1"
+    }
+  })
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(
+    readFileSync(join(result.root, "cli.log"), "utf8"),
+    [
+      "args=auth login --invite - --name hetzner 1 --port 49361",
+      "stdin=cvi1.aHR0cHM6Ly9jbG91ZC5leGFtcGxl.secret",
+      "env=",
+      ""
+    ].join("\n")
+  )
+})
+
+test("a systemctl without a running systemd (containers, WSL) installs without a service", (t) => {
+  const result = install(t, {
+    systemctl: [
+      'case "$1" in show) echo "System has not been booted with systemd" >&2; exit 1;; esac',
+      'printf "%s\\n" "$*" >> "$TEST_SERVICES"'
+    ].join("\n")
+  })
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(result.services, "")
+  assert.match(result.stdout, /codevisor start/)
+})
+
+test("without an invite or a terminal, the installer only prints how to finish", (t) => {
+  const cli = 'printf "called %s\\n" "$*" >> "$TEST_ROOT/cli.log"'
+  const result = install(t, { cli, env: { CODEVISOR_NO_SERVICE: "1", CODEVISOR_NO_SETUP: "0" } })
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(existsSync(join(result.root, "cli.log")), false)
+  assert.match(result.stdout, /codevisor setup/)
+})
 
 for (const architecture of ["x86_64", "aarch64"]) {
   test(`Linux ${architecture} installs current stable despite a stale GitHub latest pointer`, (t) => {

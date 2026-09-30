@@ -2,11 +2,16 @@ import { describe, expect, it } from "vitest"
 
 import {
   CloudApiError,
+  createMachineInvite,
+  decodeMachineInviteCode,
   discoverInstance,
   MACHINE_CLIENT_ID,
   pollDeviceToken,
   provisionMachine,
+  encodeMachineInviteCode,
+  redeemMachineInvite,
   removeMachineFromAccount,
+  removeMachinePeer,
   requestDeviceCode,
   type FetchLike
 } from "./index.js"
@@ -190,5 +195,100 @@ describe("removeMachineFromAccount", () => {
     await expect(
       removeMachineFromAccount(fetch, { serverUrl: "https://cloud.example", apiKey: "revoked" })
     ).rejects.toMatchObject({ name: "CloudApiError", status: 401 })
+  })
+})
+
+describe("machine invites", () => {
+  const token = "t".repeat(43)
+
+  it("mints a code that carries its cloud and redeems it there", async () => {
+    const minted = fetchStub(() => jsonResponse({ token, expiresAt: "2100-01-01T00:10:00.000Z" }))
+    const invite = await createMachineInvite(minted.fetch, {
+      serverUrl: "http://localhost:8787/",
+      apiKey: "machine-key"
+    })
+    expect(minted.calls[0]?.input).toBe("http://localhost:8787/api/machine/invites")
+    expect(new Headers(minted.calls[0]?.init?.headers).get("x-api-key")).toBe("machine-key")
+    expect(decodeMachineInviteCode(invite.code)).toEqual({
+      serverUrl: "http://localhost:8787",
+      token
+    })
+
+    const redeemed = fetchStub(() => jsonResponse({ key: "new-key" }))
+    const credentials = await redeemMachineInvite(redeemed.fetch, invite.code, "hetzner-1")
+    expect(redeemed.calls[0]?.input).toBe("http://localhost:8787/api/machine/invites/redeem")
+    const sent = JSON.parse(redeemed.calls[0]?.init?.body as string) as Record<string, string>
+    // The secret key stays here; the cloud only learns the public half.
+    expect(sent).toEqual({
+      token,
+      name: "hetzner-1",
+      deviceId: credentials.deviceId,
+      publicKey: credentials.publicKey
+    })
+    expect(credentials).toMatchObject({ serverUrl: "http://localhost:8787", apiKey: "new-key" })
+    expect(credentials.secretKey).toBeTruthy()
+  })
+
+  it("rejects malformed codes without a request", async () => {
+    const valid = encodeMachineInviteCode("https://cloud.example", token)
+    for (const code of [
+      "",
+      "cvi1.x",
+      `cvi2.aGk.${token}`,
+      `cvi1.bm90IGEgdXJs.${token}`,
+      `${valid}.extra`,
+      encodeMachineInviteCode("https://cloud.example", "short"),
+      encodeMachineInviteCode("ftp://cloud.example", token),
+      `cvi1.@@@@.${token}`
+    ]) {
+      expect(decodeMachineInviteCode(code)).toBeUndefined()
+    }
+    const never = fetchStub(() => jsonResponse({}))
+    await expect(redeemMachineInvite(never.fetch, "nope", "box")).rejects.toThrow(CloudApiError)
+    expect(never.calls).toHaveLength(0)
+  })
+
+  it("surfaces a refused redemption, with or without a reason", async () => {
+    const code = encodeMachineInviteCode("https://cloud.example", token)
+    const refused = fetchStub(() => jsonResponse({ error: "This invite is invalid" }, 401))
+    await expect(redeemMachineInvite(refused.fetch, code, "box")).rejects.toMatchObject({
+      message: "This invite is invalid",
+      status: 401
+    })
+    const garbled = fetchStub(() => new Response("<html>bad gateway</html>", { status: 502 }))
+    await expect(redeemMachineInvite(garbled.fetch, code, "box")).rejects.toMatchObject({
+      message: "machine invite redemption failed",
+      status: 502
+    })
+    await expect(
+      createMachineInvite(garbled.fetch, { serverUrl: "https://c.example", apiKey: "k" })
+    ).rejects.toMatchObject({ message: "machine invite failed", status: 502 })
+  })
+
+  it("removes another machine as this one, reporting why it couldn't", async () => {
+    const credentials = { serverUrl: "https://cloud.example", apiKey: "machine-key" }
+    const removed = fetchStub(() => jsonResponse({ ok: true }))
+    await removeMachinePeer(removed.fetch, credentials, "device/1")
+    expect(removed.calls[0]?.input).toBe("https://cloud.example/api/machine/peers/device%2F1")
+    expect(removed.calls[0]?.init?.method).toBe("DELETE")
+    expect(new Headers(removed.calls[0]?.init?.headers).get("x-api-key")).toBe("machine-key")
+
+    const unknown = fetchStub(() => jsonResponse({ error: "unknown machine" }, 404))
+    await expect(removeMachinePeer(unknown.fetch, credentials, "gone")).rejects.toMatchObject({
+      message: "unknown machine",
+      status: 404
+    })
+    const garbled = fetchStub(() => new Response("oops", { status: 500 }))
+    await expect(removeMachinePeer(garbled.fetch, credentials, "x")).rejects.toMatchObject({
+      message: "machine removal failed",
+      status: 500
+    })
+  })
+
+  it("surfaces the cloud's refusal", async () => {
+    const refused = fetchStub(() => jsonResponse({ error: "invalid machine credential" }, 401))
+    await expect(
+      createMachineInvite(refused.fetch, { serverUrl: "https://c.example", apiKey: "k" })
+    ).rejects.toMatchObject({ message: "invalid machine credential", status: 401 })
   })
 })

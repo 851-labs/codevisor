@@ -1,4 +1,4 @@
-import type { FetchLike } from "@codevisor/cloud-client"
+import { encodeMachineInviteCode, type FetchLike } from "@codevisor/cloud-client"
 import { describe, expect, it, vi } from "vitest"
 
 import { authLoginCommand, authLogoutCommand, authStatusCommand } from "./cloud-auth.js"
@@ -106,7 +106,60 @@ const grantBody = (overrides: Record<string, unknown> = {}) => ({
   ...overrides
 })
 
+const noFetch: FetchLike = () => Promise.reject(new Error("no cloud call expected"))
+
 describe("authLoginCommand", () => {
+  it("joins with a machine invite without a device code or any cloud call of its own", async () => {
+    const world = makeWorld()
+    const code = encodeMachineInviteCode("https://cloud.example", "s".repeat(43))
+    expect(
+      await authLoginCommand(world.deps, {
+        inviteCode: code,
+        machineName: "hetzner-1",
+        fetchImpl: noFetch
+      })
+    ).toBe(0)
+    expect(world.httpCalls.find((call) => call.url.endsWith("/v1/cloud/connect"))?.body).toEqual({
+      inviteCode: code,
+      managedBy: "external",
+      machineName: "hetzner-1"
+    })
+    expect(world.logs.join("\n")).toContain("✓ Connected as hetzner-1")
+    expect(world.logs.join("\n")).not.toContain("Scan to log in")
+
+    // Without --name the server picks the name; a refused or missing answer fails cleanly.
+    const unnamed = makeWorld()
+    expect(await authLoginCommand(unnamed.deps, { inviteCode: code, fetchImpl: noFetch })).toBe(0)
+    expect(unnamed.httpCalls.find((call) => call.url.endsWith("/connect"))?.body).toEqual({
+      inviteCode: code,
+      managedBy: "external"
+    })
+    expect(unnamed.logs.join("\n")).toContain("✓ Connected.")
+    for (const answer of [
+      { status: 502, body: { error: "This invite is invalid, expired, or already used." } },
+      undefined
+    ]) {
+      const refused = makeWorld()
+      const deps: CliDeps = {
+        ...refused.deps,
+        fetchJson: (url, init) =>
+          url.endsWith("/connect") ? Promise.resolve(answer) : refused.deps.fetchJson(url, init)
+      }
+      expect(await authLoginCommand(deps, { inviteCode: code, fetchImpl: noFetch })).toBe(1)
+      expect(refused.errors[0]).toBe(
+        `Couldn't join with the invite: ${answer?.body.error ?? "the server did not answer"}`
+      )
+      expect(refused.logs.join("\n")).not.toContain("✓ Connected")
+    }
+
+    const malformed = makeWorld()
+    expect(await authLoginCommand(malformed.deps, { inviteCode: "nope", fetchImpl: noFetch })).toBe(
+      1
+    )
+    expect(malformed.errors.join("\n")).toContain("isn't a Codevisor machine invite")
+    expect(malformed.httpCalls.some((call) => call.url.endsWith("/connect"))).toBe(false)
+  })
+
   it("reports server provisioning failures without announcing success", async () => {
     for (const response of [
       undefined,

@@ -30,8 +30,11 @@ export type MachineConnectionState =
   | "connected"
   | "reconnecting"
   | "stopped"
-  /// Fatal states — the hub told us not to come back with these credentials.
+  /// The hub refused this machine's credential. Not final: a machine that
+  /// was really removed keeps being refused, but a wrongful refusal (a cloud
+  /// incident) heals on a periodic re-check (REVOKED_RECHECK_MS).
   | "revoked"
+  /// Fatal — the hub needs a newer server; retrying can't help.
   | "unsupported-protocol"
 
 export type MachineDisconnectReason =
@@ -43,10 +46,16 @@ export type MachineDisconnectReason =
 
 export type CancelTimeout = () => void
 
-/// HTTP statuses on the upgrade that mean the relay will never accept this
-/// credential again (revoked or unknown key). Everything else — 429, 5xx, a
-/// Cloudflare interstitial — is treated as transient and retried.
+/// HTTP statuses on the upgrade that mean the relay refused this credential
+/// (revoked or unknown key): re-checked slowly, not retried with backoff.
+/// Everything else — 429, 5xx, a Cloudflare interstitial — is treated as
+/// transient and retried.
 export const isCredentialRejection = (status: number): boolean => status === 401 || status === 403
+
+/// How long a refused machine waits before offering its credential again.
+/// Slow enough to cost nothing for a machine that was really removed, quick
+/// enough that one refused by mistake is back within minutes.
+export const REVOKED_RECHECK_MS = 5 * 60 * 1000
 
 /// Exponential backoff with full jitter; exported for tests and reuse.
 export const reconnectDelayMs = (

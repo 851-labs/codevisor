@@ -16,6 +16,9 @@ export const endpoints = [
   "GET /v1/discovery",
   "GET /v1/info",
   "GET /v1/machines",
+  "POST /v1/machines/invite",
+  "POST /v1/machines/add",
+  "DELETE /v1/machines/:machineId",
   "POST /v1/gateway/invoke",
   "GET /v1/openapi.json",
   "GET /v1/update",
@@ -179,6 +182,9 @@ export const summaries: Partial<Record<Endpoint, string>> = {
   "GET /v1/discovery": "Get the tokenless discovery manifest",
   "GET /v1/info": "Get server information",
   "GET /v1/machines": "List every machine on the account",
+  "POST /v1/machines/invite": "Create a one-time code that adds a new machine to the account",
+  "POST /v1/machines/add": "Install Codevisor on a host over SSH and add it to the account",
+  "DELETE /v1/machines/:machineId": "Remove another machine from the account",
   "POST /v1/gateway/invoke": "Run a gateway tool call from another machine's sandbox",
   "GET /v1/openapi.json": "Get the OpenAPI document",
   "GET /v1/restart/drain": "Get the restart drain state (live turns the server is waiting on)",
@@ -207,6 +213,8 @@ export const noContent = new Set<Endpoint>([
 ])
 
 export const created = new Set<Endpoint>([
+  "POST /v1/machines/invite",
+  "POST /v1/machines/add",
   "POST /v1/auth/pairing-token",
   "POST /v1/auth/connection-token/rotate",
   "POST /v1/projects",

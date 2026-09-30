@@ -12,7 +12,10 @@ import {
   HTTP_CHANNEL_TYPE,
   makePeerKeyPinStore,
   parsePeerKeyPins,
+  createMachineInvite,
   provisionMachine,
+  redeemMachineInvite,
+  removeMachinePeer,
   requestOverGatewayChannel,
   serializePeerKeyPins,
   WS_CHANNEL_TYPE,
@@ -280,8 +283,8 @@ const makeBridge = async (
       if (state === "reconnecting") options.log("Cloud: reconnecting to relay")
       if (state === "revoked") {
         options.log(
-          "Cloud: the relay no longer accepts this machine's credential; disconnecting. " +
-            "Reconnect from Settings › Cloud or run `codevisor auth login`."
+          "Cloud: the relay refused this machine's credential; re-checking every 5 minutes. " +
+            "If this machine was removed from the account, run `codevisor auth logout` and then `codevisor auth login` to add it again."
         )
       }
       if (state === "unsupported-protocol") {
@@ -360,24 +363,33 @@ export const startCloudBridge = async (
 /// /v1/cloud/connect) after cloud sign-in so the local machine appears on the
 /// account without a separate `codevisor auth login`. The stored credential
 /// is tagged app-managed so sign-out knows it may disconnect it.
+/// How a machine proves it may join an account: a signed-in person's session
+/// (the app, or `codevisor auth login`'s device flow), or a one-time invite
+/// another machine on the account minted (`codevisor machines invite`).
+export type CloudJoinGrant =
+  | { readonly serverUrl: string; readonly sessionToken: string }
+  | { readonly inviteCode: string }
+
 export const connectCloudBridge = async (
   options: CloudBridgeOptions,
-  params: {
-    readonly serverUrl: string
-    readonly sessionToken: string
+  params: CloudJoinGrant & {
     readonly managedBy?: CloudBridgeManagedBy
     readonly machineName?: string
   }
 ): Promise<CloudBridge> => {
-  const serverUrl = params.serverUrl.replace(/\/+$/, "")
   const managedBy = params.managedBy ?? "app"
   const bridgeOptions = { ...options, machineName: params.machineName ?? options.machineName }
-  const credentials = await provisionMachine(
-    options.fetchImpl ?? ((input, init) => fetch(input, init)),
-    serverUrl,
-    params.sessionToken,
-    bridgeOptions.machineName === "" ? hostname() : bridgeOptions.machineName
-  )
+  const fetchImpl = options.fetchImpl ?? ((input, init) => fetch(input, init))
+  const machineName = bridgeOptions.machineName === "" ? hostname() : bridgeOptions.machineName
+  const credentials =
+    "inviteCode" in params
+      ? await redeemMachineInvite(fetchImpl, params.inviteCode, machineName)
+      : await provisionMachine(
+          fetchImpl,
+          params.serverUrl.replace(/\/+$/, ""),
+          params.sessionToken,
+          machineName
+        )
   await writeFile(
     options.credentialsPath,
     JSON.stringify({ ...credentials, managedBy, machineName: params.machineName }, null, 2),
@@ -403,24 +415,48 @@ export const makeCloudServerControl = (
   options: CloudBridgeOptions,
   initial: CloudBridge | undefined
 ): CloudServerControl &
-  Required<Pick<CloudServerControl, "machineName" | "machines" | "requestGateway">> => {
+  Required<
+    Pick<
+      CloudServerControl,
+      "machineName" | "machines" | "requestGateway" | "connectWithInvite" | "invite" | "removePeer"
+    >
+  > => {
   let current = initial
   let connecting: Promise<string> | undefined
+  const fetchImpl = (): FetchLike => options.fetchImpl ?? ((input, init) => fetch(input, init))
+  /// Idempotent (see CloudServerControl.connect): concurrent callers share
+  /// one registration; switching accounts is an explicit disconnect first.
+  const join = (
+    grant: CloudJoinGrant,
+    registration: { readonly managedBy?: CloudBridgeManagedBy; readonly machineName?: string } = {}
+  ): Promise<string> => {
+    if (current !== undefined) return Promise.resolve(current.deviceId)
+    connecting ??= connectCloudBridge(options, { ...grant, ...registration })
+      .then((bridge) => (current = bridge).deviceId)
+      .finally(() => (connecting = undefined))
+    return connecting
+  }
+  /// This machine's own credential, for calls it makes as itself.
+  const storedCredentials = async (): Promise<MachineCredentials> => {
+    const stored =
+      current === undefined ? undefined : await readCredentials(options.credentialsPath)
+    if (stored === undefined) {
+      throw new Error("This machine is not connected to a Codevisor Cloud account")
+    }
+    return stored.credentials
+  }
   return {
     deviceId: () => current?.deviceId,
     state: () => current?.state(),
     serverUrl: () => current?.serverUrl,
     managedBy: () => current?.managedBy,
     machineName: () => current?.machineName,
-    /// Idempotent (see CloudServerControl.connect): concurrent callers share
-    /// one registration; switching accounts is an explicit disconnect first.
-    connect: (serverUrl, sessionToken, registration) => {
-      if (current !== undefined) return Promise.resolve(current.deviceId)
-      connecting ??= connectCloudBridge(options, { serverUrl, sessionToken, ...registration })
-        .then((bridge) => (current = bridge).deviceId)
-        .finally(() => (connecting = undefined))
-      return connecting
-    },
+    connect: (serverUrl, sessionToken, registration) =>
+      join({ serverUrl, sessionToken }, registration),
+    connectWithInvite: (inviteCode, registration) => join({ inviteCode }, registration),
+    invite: async () => createMachineInvite(fetchImpl(), await storedCredentials()),
+    removePeer: async (deviceId) =>
+      removeMachinePeer(fetchImpl(), await storedCredentials(), deviceId),
     disconnect: async () => {
       current?.stop()
       current = undefined

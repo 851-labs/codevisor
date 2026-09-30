@@ -257,3 +257,24 @@ export const tunnelEndpoint = sqliteTable(
   },
   (table) => [index("tunnel_endpoint_user_device").on(table.userId, table.deviceId)]
 )
+
+/// One-time invites a machine mints so a new machine can join the account
+/// without a human approval (`codevisor machines invite`). Only the SHA-256
+/// of the secret is stored; redemption is a single conditional UPDATE, so an
+/// invite can never register two machines. Rows cascade with the user.
+export const machineInvite = sqliteTable(
+  "machine_invite",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    createdByDeviceId: text("created_by_device_id").notNull(),
+    createdByName: text("created_by_name").notNull(),
+    createdAt: integer("created_at").notNull(),
+    expiresAt: integer("expires_at").notNull(),
+    redeemedAt: integer("redeemed_at"),
+    redeemedDeviceId: text("redeemed_device_id")
+  },
+  (table) => [index("machine_invite_user_expires").on(table.userId, table.expiresAt)]
+)

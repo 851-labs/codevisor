@@ -89,6 +89,7 @@ export const removeHubMachine = (
   const existing = machineRow(hub.sql, deviceId)
   if (existing === undefined) return false
   hub.sql.exec("DELETE FROM machines WHERE device_id = ?", deviceId)
+  hub.sql.exec("DELETE FROM machine_origins WHERE device_id = ?", deviceId)
   for (const connectionId of hub.resume.deleteForMachineDevice(deviceId)) {
     hub.net.broadcastToPeerMachines({ t: "peer-gone", peerId: connectionId })
   }
@@ -100,4 +101,23 @@ export const removeHubMachine = (
     machine: machinePresence({ ...existing, last_seen_at: isoTimestamp() }, false)
   })
   return true
+}
+
+/// Records that `deviceId` joined through `addedBy`'s invite. Written when
+/// the invite is redeemed, so the new machine's first presence carries it.
+export const recordMachineOrigin = (
+  sql: SqlStorage,
+  deviceId: string,
+  addedBy: { readonly deviceId: string; readonly name: string }
+): void => {
+  sql.exec(
+    `INSERT INTO machine_origins (device_id, added_by_device_id, added_by_name)
+     VALUES (?, ?, ?)
+     ON CONFLICT(device_id) DO UPDATE SET
+       added_by_device_id = excluded.added_by_device_id,
+       added_by_name = excluded.added_by_name`,
+    deviceId,
+    addedBy.deviceId,
+    addedBy.name
+  )
 }

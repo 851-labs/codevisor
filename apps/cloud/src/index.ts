@@ -8,6 +8,7 @@ import { hasEmailAuth } from "./email-auth.js"
 import { DEV_USER, isDevAuthEnabled, type CloudEnv } from "./env.js"
 import { relayMap } from "./hub-tunnel.js"
 import { hubLocationHint } from "./location-hint.js"
+import { machineInviteRoutes } from "./machine-invites.js"
 import { connectAccount, nativeHandoff, nativeScheme } from "./pages/account.js"
 import { loginURL, validAuthRedirect } from "./pages/auth-navigation.js"
 import { loginPage } from "./pages/login.js"
@@ -59,6 +60,7 @@ const app = new Hono<HonoEnv>()
 app.route("/", pluginModeration)
 app.route("/", credentialRoutes)
 app.route("/", relayRoutes)
+app.route("/", machineInviteRoutes)
 
 // -- Discovery & liveness ----------------------------------------------------
 
@@ -243,6 +245,20 @@ app.delete("/api/machine/self", async (c) => {
   if (machine === undefined) return c.json({ error: "invalid machine credential" }, 401)
   await removeMachine(c.env, machine.userId, machine.deviceId, c.req.raw.cf)
   return c.json({ ok: true })
+})
+
+/// A machine removing another machine on its account (`codevisor machines
+/// remove`, the `machines_remove` tool). Authenticated by the caller's own
+/// api key; a machine removes itself with DELETE /api/machine/self instead.
+app.delete("/api/machine/peers/:deviceId", async (c) => {
+  const machine = await verifyMachineKey(c.env, c.req.header("x-api-key"))
+  if (machine === undefined) return c.json({ error: "invalid machine credential" }, 401)
+  const target = c.req.param("deviceId")
+  if (target === machine.deviceId) {
+    return c.json({ error: "use DELETE /api/machine/self to remove this machine" }, 400)
+  }
+  const removed = await removeMachine(c.env, machine.userId, target, c.req.raw.cf)
+  return removed ? c.json({ ok: true }) : c.json({ error: "unknown machine" }, 404)
 })
 
 /// Cheap machine-credential probe: lets a machine confirm its stored api key

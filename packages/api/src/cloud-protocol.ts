@@ -81,6 +81,10 @@ export const CloudMachinePresence = Schema.Struct({
   machinePeers: Schema.optional(Schema.Boolean),
   /// Present once the machine has reported a tunnel endpoint.
   tunnel: Schema.optional(CloudTunnelInfo),
+  /// Present when the machine joined the account through another machine's
+  /// invite (`codevisor machines invite` / `machines_add`) rather than a
+  /// human approval: the inviting machine and its name at invite time.
+  addedBy: Schema.optional(Schema.Struct({ deviceId: Schema.String, name: Schema.String })),
   online: Schema.Boolean,
   /// ISO timestamp of the last connect/disconnect the hub observed.
   lastSeenAt: Schema.String

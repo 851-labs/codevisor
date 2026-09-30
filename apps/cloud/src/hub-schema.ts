@@ -49,6 +49,13 @@ export const HUB_MIGRATIONS: readonly string[] = [
      public_key TEXT NOT NULL,
      endpoint_id TEXT NOT NULL,
      last_seen_at TEXT NOT NULL
+   )`,
+  // Machines that joined through another machine's invite, recorded when
+  // the invite is redeemed (before the new machine's first hello).
+  `CREATE TABLE machine_origins (
+     device_id TEXT PRIMARY KEY,
+     added_by_device_id TEXT NOT NULL,
+     added_by_name TEXT NOT NULL
    )`
 ]
 
@@ -65,6 +72,9 @@ export interface MachineRow extends Record<string, SqlStorageValue> {
   peer_aware: number
   tunnel_endpoint_id: string | null
   tunnel_addr: string | null
+  /// From machine_origins (LEFT JOIN): the machine whose invite added it.
+  added_by_device_id: string | null
+  added_by_name: string | null
 }
 
 export interface SocketAttachment {
@@ -90,11 +100,15 @@ export interface SocketAttachment {
   helloDone: boolean
 }
 
+const MACHINE_SELECT = `SELECT machines.*, machine_origins.added_by_device_id,
+    machine_origins.added_by_name
+  FROM machines LEFT JOIN machine_origins USING (device_id)`
+
 export const machineRows = (sql: SqlStorage): MachineRow[] =>
-  sql.exec<MachineRow>("SELECT * FROM machines ORDER BY name, device_id").toArray()
+  sql.exec<MachineRow>(`${MACHINE_SELECT} ORDER BY name, device_id`).toArray()
 
 export const machineRow = (sql: SqlStorage, deviceId: string): MachineRow | undefined =>
-  sql.exec<MachineRow>("SELECT * FROM machines WHERE device_id = ?", deviceId).toArray()[0]
+  sql.exec<MachineRow>(`${MACHINE_SELECT} WHERE device_id = ?`, deviceId).toArray()[0]
 
 export const machinePresence = (row: MachineRow, online: boolean): CloudMachinePresence => {
   const tunnel = machineTunnel(row.tunnel_endpoint_id, row.tunnel_addr)
@@ -107,6 +121,9 @@ export const machinePresence = (row: MachineRow, online: boolean): CloudMachineP
     ...(row.server_id === null || row.server_id === undefined ? {} : { serverId: row.server_id }),
     ...(row.peer_aware === 1 ? { machinePeers: true } : {}),
     ...(tunnel === undefined ? {} : { tunnel }),
+    ...(row.added_by_device_id == null || row.added_by_name == null
+      ? {}
+      : { addedBy: { deviceId: row.added_by_device_id, name: row.added_by_name } }),
     online,
     lastSeenAt: row.last_seen_at
   }

@@ -1,4 +1,5 @@
 import {
+  AddMachineRequest,
   CreateProjectFromGitRequest,
   CreateProjectRequest,
   CreateScratchProjectRequest,
@@ -42,6 +43,39 @@ export const codevisorServerApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     "List every machine on this account (this one and every cloud-connected machine) with its stable id, name, OS, online state, and last-seen time. `isCurrent` marks the machine this call runs on.",
     "GET",
     "/v1/machines"
+  ),
+  apiTool(
+    "machines.add",
+    "Add a host to the user's Codevisor account over SSH, with no human approval: from this " +
+      "machine (using its SSH keys and ~/.ssh/config), install Codevisor on the host, join it " +
+      "to the account with a one-time invite, and wait until it's online. Use for requests like " +
+      "'set up my new VPS as a Codevisor machine'. `ssh` is a destination like root@203.0.113.7 " +
+      "or a Host alias; the host needs curl and key-based SSH access from this machine. " +
+      "Takes a few minutes. Returns the new machine (also in machines.list()). Same as " +
+      "`codevisor machines add`.",
+    "POST",
+    "/v1/machines/add",
+    { body: AddMachineRequest }
+  ),
+  apiTool(
+    "machines.invite",
+    "Create a one-time code (valid ~10 minutes) that adds one new machine to the user's " +
+      "account without a human approval, for hosts machines.add can't reach over SSH (cloud-init " +
+      "user data, a web console, a container). On the new host: install Codevisor with " +
+      "CODEVISOR_INVITE=<code> set, or run `codevisor auth login --invite -` with the code on " +
+      "stdin. The code is a secret: never print it to the user or write it to a file you keep. " +
+      "Same as `codevisor machines invite`.",
+    "POST",
+    "/v1/machines/invite"
+  ),
+  apiTool(
+    "machines.remove",
+    "Remove another machine (by id or name from machines.list()) from the user's account: it " +
+      "disconnects and must sign in again to come back. Confirm with the user first. Same as " +
+      "`codevisor machines remove`.",
+    "DELETE",
+    "/v1/machines/:machineId",
+    { confirm: true }
   ),
   apiTool("server.update_status", "Check for a Codevisor server update.", "GET", "/v1/update", {
     query: [
@@ -97,7 +131,8 @@ export const codevisorServerApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   ),
   apiTool(
     "machines.cloud_connect",
-    "Connect this machine to a Codevisor Cloud account.",
+    "Connect this machine to a Codevisor Cloud account, with a person's session (serverUrl + " +
+      "sessionToken) or a one-time machine invite (inviteCode from machines.invite).",
     "POST",
     "/v1/cloud/connect",
     {

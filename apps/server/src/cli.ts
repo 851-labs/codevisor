@@ -37,7 +37,13 @@ import {
   updateCommand,
   type CliDeps
 } from "./cli/support.js"
-import { makeAuthCommand, optionalString, portFlag, runPrompt } from "./cli/wiring.js"
+import {
+  makeAuthCommand,
+  makeMachinesCommand,
+  optionalString,
+  portFlag,
+  runPrompt
+} from "./cli/wiring.js"
 import { resolveDataDir, resolveLogsDir } from "./infra/data-dir.js"
 import { bundledVersion, runServe } from "./serve.js"
 
@@ -402,6 +408,7 @@ const plugin = Command.make("plugin").pipe(
 )
 
 const auth = makeAuthCommand(runCli)
+const machines = makeMachinesCommand(runCli)
 
 const root = Command.make("codevisor").pipe(
   Command.withDescription("Control the Codevisor server on this machine"),
@@ -409,6 +416,7 @@ const root = Command.make("codevisor").pipe(
     serve,
     setup,
     auth,
+    machines,
     plugin,
     start,
     stop,

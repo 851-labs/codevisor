@@ -119,7 +119,14 @@ import {
   WorkspaceSnapshot,
   Worktree
 } from "./index.js"
-import { GatewayInvokeRequest, GatewayInvokeResponse, MachinesResponse } from "./machines.js"
+import {
+  AddMachineRequest,
+  AddMachineResponse,
+  GatewayInvokeRequest,
+  GatewayInvokeResponse,
+  MachineInviteResponse,
+  MachinesResponse
+} from "./machines.js"
 import { MachineMcpState, SetMachineMcpEnabledRequest } from "./mcps.js"
 import { NavigationSnapshot } from "./navigation.js"
 import type { Endpoint } from "./openapi-endpoints.js"
@@ -193,6 +200,7 @@ export const requestSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> =
   "PUT /v1/skills/:name/harnesses/:harnessId": SetSkillInstalledRequest,
   "POST /v1/sessions": CreateSessionRequest,
   "POST /v1/sessions/wait": WaitForSessionsRequest,
+  "POST /v1/machines/add": AddMachineRequest,
   "POST /v1/gateway/invoke": GatewayInvokeRequest,
   "POST /v1/sessions/:id/open": OpenSessionRequest,
   "PATCH /v1/sessions/:id": UpdateSessionRequest,
@@ -321,6 +329,9 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
   "POST /v1/sessions": SessionSummary,
   "POST /v1/sessions/wait": WaitForSessionsResponse,
   "GET /v1/machines": MachinesResponse,
+  "POST /v1/machines/invite": MachineInviteResponse,
+  "POST /v1/machines/add": AddMachineResponse,
+  "DELETE /v1/machines/:machineId": MachinesResponse,
   "POST /v1/gateway/invoke": GatewayInvokeResponse,
   "GET /v1/sessions/:id": SessionDetail,
   "GET /v1/sessions/:id/usage-limits": HarnessUsageLimits,
