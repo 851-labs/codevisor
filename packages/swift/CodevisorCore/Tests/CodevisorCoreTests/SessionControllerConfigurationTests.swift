@@ -82,7 +82,7 @@ struct SessionControllerConfigurationTests {
     controller.selectedHarnessId = capability.harness.id
     controller.configOptionsByHarness[capability.harness.id] = capability.configOptions
     // The mounted draft's model is the user's pick.
-    controller.pendingConfigByHarness[capability.harness.id] = ["model": "stale-model"]
+    controller.pendingConfiguration.replaceValues(["model": "stale-model"], for: capability.harness.id)
     controller.modeStateByHarness[capability.harness.id] = SessionModeState(
       currentModeId: "default",
       availableModes: [SessionMode(id: "default", name: "Default")]

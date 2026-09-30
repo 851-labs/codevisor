@@ -187,21 +187,21 @@ struct SessionControllerFirstSendTests {
         options: [SessionConfigSelectOption(value: "fast", name: "Fast")]
       ),
     ]
-    controller.pendingConfigByHarness["codex"] = ["speed": "fast", "effort": "high", "model": "new"]
-    controller.pendingModeId = "plan"
+    controller.pendingConfiguration.replaceValues(["speed": "fast", "effort": "high", "model": "new"], for: "codex")
+    controller.pendingConfiguration.setMode("plan")
     controller.model = try await controller.connect(harnessId: "codex")
     defer { controller.model?.shutdown() }
 
     #expect(fixture.client.runtimeRequests.isEmpty)
     #expect(controller.modelOption?.currentValue == "new")
-    #expect(controller.pendingModeId == "plan")
+    #expect(controller.pendingConfiguration.modeId == "plan")
     await controller.send()
     #expect(
       fixture.client.runtimeRequests == [
         "mode:plan", "config:model:new", "config:effort:high", "config:speed:fast", "prompt",
       ])
-    #expect(controller.pendingConfigByHarness["codex"] == nil)
-    #expect(controller.pendingModeId == nil)
+    #expect(controller.pendingConfiguration.values(for: "codex") == nil)
+    #expect(controller.pendingConfiguration.modeId == nil)
   }
 
   private func userMessages(in controller: SessionController) -> [UserMessage] {

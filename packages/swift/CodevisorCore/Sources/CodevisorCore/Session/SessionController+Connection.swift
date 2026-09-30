@@ -260,7 +260,7 @@ extension SessionController {
     configOptionsByHarness = [:]
     modeStateByHarness = [:]
     supportsGoalsByHarness = [:]
-    pendingConfigByHarness = [:]
+    pendingConfiguration.restoreValues([:])
     selectedHarnessId = nil
     if seedFromCachedServerCapabilities() {
       preparationState = .ready

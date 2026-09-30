@@ -65,7 +65,7 @@ extension SessionController {
     else { return }
 
     if let model {
-      await applyPendingRuntimeConfiguration(to: model)
+      await pendingConfiguration.apply(to: model)
       guard await model.setGoal(objective: objective) else { return }
       isGoalComposerArmed = false
       isGoalEditing = false
@@ -123,7 +123,7 @@ extension SessionController {
       // Opening saved state stays read-only; this explicit submission starts work.
       let model = try await connect(harnessId: harness.id)
       self.model = model
-      await applyPendingRuntimeConfiguration(to: model)
+      await pendingConfiguration.apply(to: model)
       await applyPendingGoal(to: model)
       setupPhases.removeAll { $0.id == SessionSetupPhase.agentPhaseId }
       status = .idle
@@ -137,7 +137,7 @@ extension SessionController {
   @discardableResult
   public func setGoal(objective: String? = nil, status: GoalStatus? = nil) async -> Bool {
     if let model {
-      await applyPendingRuntimeConfiguration(to: model)
+      await pendingConfiguration.apply(to: model)
       return await model.setGoal(objective: objective, status: status)
     } else if let objective {
       pendingGoal = objective

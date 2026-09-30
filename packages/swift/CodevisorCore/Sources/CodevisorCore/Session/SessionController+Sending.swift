@@ -126,7 +126,7 @@ extension SessionController {
     }
 
     if let model {
-      await applyPendingRuntimeConfiguration(to: model)
+      await pendingConfiguration.apply(to: model)
       await applyPendingGoal(to: model)
       await model.send(outgoingMessage)
       // The message holds server refs now; the staged copies are spent.
@@ -155,7 +155,7 @@ extension SessionController {
       let model = try await connect(harnessId: harness.id)
       self.model = model
       status = .idle
-      await applyPendingRuntimeConfiguration(to: model)
+      await pendingConfiguration.apply(to: model)
       await applyPendingGoal(to: model)
       await model.send(outgoingMessage)
       // The message holds server refs now; the staged copies are spent.
@@ -344,10 +344,10 @@ extension SessionController {
 
   public func setMode(_ modeId: String) async {
     if let model {
-      pendingModeId = nil
+      pendingConfiguration.setMode(nil)
       await model.setMode(modeId)
     } else {
-      pendingModeId = modeId
+      pendingConfiguration.setMode(modeId)
     }
   }
 }

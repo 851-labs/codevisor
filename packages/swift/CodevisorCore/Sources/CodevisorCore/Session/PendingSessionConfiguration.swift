@@ -1,6 +1,67 @@
 import ACPKit
+import Observation
 
-extension SessionController {
+/// Owns selections awaiting a runtime, including picks made during an apply.
+/// A completed request clears only the value it sent, preserving newer picks.
+@MainActor
+@Observable
+final class PendingSessionConfiguration {
+  private(set) var valuesByHarness: [String: [String: String]] = [:] {
+    didSet { onChange() }
+  }
+  private(set) var modeId: String? { didSet { onChange() } }
+  @ObservationIgnored private let currentHarness: () -> String?
+  @ObservationIgnored private let fallbackOptions: () -> [SessionConfigOption]
+  @ObservationIgnored private let onChange: () -> Void
+
+  init(
+    currentHarness: @escaping () -> String?,
+    fallbackOptions: @escaping () -> [SessionConfigOption],
+    onChange: @escaping () -> Void
+  ) {
+    self.currentHarness = currentHarness
+    self.fallbackOptions = fallbackOptions
+    self.onChange = onChange
+  }
+
+  func values(for harnessId: String) -> [String: String]? {
+    valuesByHarness[harnessId]
+  }
+
+  func value(for configId: String, in harnessId: String) -> String? {
+    valuesByHarness[harnessId]?[configId]
+  }
+
+  func restoreValues(_ values: [String: [String: String]]) {
+    valuesByHarness = values
+  }
+
+  func replaceValues(_ values: [String: String]?, for harnessId: String) {
+    valuesByHarness[harnessId] = values
+  }
+
+  func stage(_ value: String, for configId: String, in harnessId: String) {
+    valuesByHarness[harnessId, default: [:]][configId] = value
+  }
+
+  func removeValue(for configId: String, in harnessId: String) {
+    valuesByHarness[harnessId]?[configId] = nil
+  }
+
+  func clearAppliedValue(_ value: String, for configId: String, in harnessId: String) {
+    if valuesByHarness[harnessId]?[configId] == value {
+      removeValue(for: configId, in: harnessId)
+    }
+  }
+
+  func mergeDefaults(_ values: [String: String], for harnessId: String) {
+    valuesByHarness[harnessId, default: [:]].merge(values) { current, _ in current }
+  }
+
+  func setMode(_ modeId: String?) {
+    self.modeId = modeId
+  }
+
   /// Viewing a transcript only loads saved state. Runtime selections are
   /// applied when the user submits work, immediately before the prompt or goal.
   ///
@@ -8,12 +69,12 @@ extension SessionController {
   /// key is re-read right before it is applied, and a key is cleared only
   /// when its staged value is still the one that was applied, so a newer
   /// pick is never dropped: it is applied by a later pass.
-  func applyPendingRuntimeConfiguration(to model: SessionModel) async {
-    guard let harnessId = connectedHarnessId ?? selectedHarnessId else { return }
-    if let pendingModeId {
-      await model.setMode(pendingModeId)
+  func apply(to model: SessionModel) async {
+    guard let harnessId = currentHarness() else { return }
+    if let modeId {
+      await model.setMode(modeId)
     }
-    pendingModeId = nil
+    modeId = nil
 
     // Bounded: each pass only repeats for picks made during the previous.
     for _ in 0..<4 {
@@ -28,7 +89,7 @@ extension SessionController {
     to model: SessionModel,
     harnessId: String
   ) async -> Bool {
-    let pendingConfig = pendingConfigByHarness[harnessId] ?? [:]
+    let pendingConfig = valuesByHarness[harnessId] ?? [:]
     guard !pendingConfig.isEmpty else { return false }
     let runtimeCategories = Dictionary(
       model.configOptions.map { ($0.id, $0.category ?? "") }
@@ -37,7 +98,7 @@ extension SessionController {
     // composer showed.
     let optionCategories =
       runtimeCategories.isEmpty
-      ? Dictionary(configOptions.map { ($0.id, $0.category ?? "") }) { first, _ in first }
+      ? Dictionary(fallbackOptions().map { ($0.id, $0.category ?? "") }) { first, _ in first }
       : runtimeCategories
     // A runtime that has not reported its options yet cannot reject
     // anything; otherwise never replay a stale selection the runtime no
@@ -68,23 +129,19 @@ extension SessionController {
     for configId in orderedKeys {
       // A pick made while an earlier key was applying may have replaced
       // or already applied this one.
-      guard let value = pendingConfigByHarness[harnessId]?[configId], !value.isEmpty else {
+      guard let value = valuesByHarness[harnessId]?[configId], !value.isEmpty else {
         continue
       }
       appliedAny = true
       await model.setConfigOption(configId: configId, value: value)
-      if pendingConfigByHarness[harnessId]?[configId] == value {
-        pendingConfigByHarness[harnessId]?[configId] = nil
-      }
+      clearAppliedValue(value, for: configId, in: harnessId)
     }
     // Drop what the runtime cannot apply, keeping anything newer.
     for (configId, value) in pendingConfig where supportedPendingConfig[configId] == nil {
-      if pendingConfigByHarness[harnessId]?[configId] == value {
-        pendingConfigByHarness[harnessId]?[configId] = nil
-      }
+      clearAppliedValue(value, for: configId, in: harnessId)
     }
-    if pendingConfigByHarness[harnessId]?.isEmpty == true {
-      pendingConfigByHarness[harnessId] = nil
+    if valuesByHarness[harnessId]?.isEmpty == true {
+      valuesByHarness[harnessId] = nil
     }
     return appliedAny
   }

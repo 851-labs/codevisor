@@ -51,7 +51,7 @@ struct DefaultModelSelectionTests {
     #expect(controller.modelPickerPresentation.modelChip == .selectModel)
     #expect(controller.requiresModelSelection)
     #expect(!controller.canSend)
-    #expect(controller.pendingConfigByHarness[harnessId] == nil)
+    #expect(controller.pendingConfiguration.values(for: harnessId) == nil)
   }
 
   @Test("Retargeting to another machine never keeps the old catalog")
@@ -142,7 +142,7 @@ struct DefaultModelSelectionTests {
     controller.selectedHarnessId = "codex"
     controller.configOptionsByHarness["codex"] = sourceCodex.configOptions
     // The source draft's model is the user's own pick, staged like any pick.
-    controller.pendingConfigByHarness["codex"] = ["model": "gpt-5.6-sol", "reasoning": "xhigh"]
+    controller.pendingConfiguration.replaceValues(["model": "gpt-5.6-sol", "reasoning": "xhigh"], for: "codex")
     controller.preparationState = .ready
 
     await controller.retarget(
@@ -211,7 +211,7 @@ struct DefaultModelSelectionTests {
     controller.selectedHarnessId = "codex"
     controller.configOptionsByHarness["codex"] = sourceCodex.configOptions
     // The source draft's model is the user's own pick, staged like any pick.
-    controller.pendingConfigByHarness["codex"] = ["model": "gpt-5.6-sol", "reasoning": "xhigh"]
+    controller.pendingConfiguration.replaceValues(["model": "gpt-5.6-sol", "reasoning": "xhigh"], for: "codex")
 
     await controller.retarget(
       to: project(serverId: "machine-b"),
@@ -274,7 +274,7 @@ struct DefaultModelSelectionTests {
     controller.selectedHarnessId = "codex"
     controller.configOptionsByHarness["codex"] = sourceCodex.configOptions
     // The source draft's model is the user's own pick, staged like any pick.
-    controller.pendingConfigByHarness["codex"] = ["model": "gpt-5.6-sol", "reasoning": "xhigh"]
+    controller.pendingConfiguration.replaceValues(["model": "gpt-5.6-sol", "reasoning": "xhigh"], for: "codex")
 
     await controller.retarget(
       to: project(serverId: "machine-b"),

@@ -43,7 +43,7 @@ struct ComposerMachineSelectionPersistenceTests {
     controller.selectedHarnessId = "codex"
     controller.configOptionsByHarness["codex"] = sourceCodex.configOptions
     // The source draft's model is the user's own pick, staged like any pick.
-    controller.pendingConfigByHarness["codex"] = ["model": "gpt-5.6-sol", "reasoning": "xhigh"]
+    controller.pendingConfiguration.replaceValues(["model": "gpt-5.6-sol", "reasoning": "xhigh"], for: "codex")
 
     async let retarget: Void = controller.retarget(
       to: project(serverId: "machine-b"),

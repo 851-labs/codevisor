@@ -20,8 +20,8 @@ extension SessionController {
         )
       },
       selectedHarnessId: selectedHarnessId,
-      configByHarness: pendingConfigByHarness,
-      modeId: pendingModeId,
+      configByHarness: pendingConfiguration.valuesByHarness,
+      modeId: pendingConfiguration.modeId,
       isGoalComposerArmed: isGoalComposerArmed,
       isGoalEditing: isGoalEditing,
       composerTextBeforeGoalEdit: composerTextBeforeGoalEdit,
@@ -45,8 +45,8 @@ extension SessionController {
     }
     attachments.restore(restoredAttachments)
     selectedHarnessId = draft.selectedHarnessId
-    pendingConfigByHarness = draft.configByHarness
-    pendingModeId = draft.modeId
+    pendingConfiguration.restoreValues(draft.configByHarness)
+    pendingConfiguration.setMode(draft.modeId)
     isGoalComposerArmed = draft.isGoalComposerArmed
     isGoalEditing = draft.isGoalEditing
     composerTextBeforeGoalEdit = draft.composerTextBeforeGoalEdit
@@ -124,7 +124,7 @@ extension SessionController {
   func currentComposerSelectionIntent() -> ComposerSelectionIntent? {
     guard let harnessId = selectedHarnessId, !harnessId.isEmpty else { return nil }
     var configValues = rememberedConfigValues
-    configValues.merge(pendingConfigByHarness[harnessId] ?? [:]) { _, pending in pending }
+    configValues.merge(pendingConfiguration.values(for: harnessId) ?? [:]) { _, pending in pending }
     let selectedModel = Self.modelOption(in: configOptions)
     if let selectedModel, !selectedModel.currentValue.isEmpty {
       configValues[selectedModel.id] = selectedModel.currentValue
@@ -162,7 +162,7 @@ extension SessionController {
       {
         carried[model.id] = modelValue
       }
-      pendingConfigByHarness[intent.harnessId] = carried
+      pendingConfiguration.replaceValues(carried, for: intent.harnessId)
       // Add destination-only remembered values (for example a speed
       // tier absent from the source snapshot) without replacing carried
       // values. The live resolver validates the complete set below.
@@ -182,12 +182,13 @@ extension SessionController {
         let destinationOptions =
           capabilities.first { $0.harness.id == intent.harnessId }?.configOptions ?? []
         // Other carried settings survive where the destination offers them.
-        pendingConfigByHarness[intent.harnessId] = intent.configValues.filter { configId, value in
-          guard let option = destinationOptions.first(where: { $0.id == configId }) else {
-            return false
-          }
-          return !Self.isModelOption(option) && option.options.contains { $0.value == value }
-        }
+        pendingConfiguration.replaceValues(
+          intent.configValues.filter { configId, value in
+            guard let option = destinationOptions.first(where: { $0.id == configId }) else {
+              return false
+            }
+            return !Self.isModelOption(option) && option.options.contains { $0.value == value }
+          }, for: intent.harnessId)
         markDraftModel(
           modelValue,
           name: intent.modelName ?? modelValue,
@@ -196,7 +197,7 @@ extension SessionController {
         )
         return
       }
-      pendingConfigByHarness[intent.harnessId] = nil
+      pendingConfiguration.replaceValues(nil, for: intent.harnessId)
       applyDestinationMachineDefaults(availableHarnessIds: availableIds)
       return
     }
@@ -258,7 +259,7 @@ extension SessionController {
       configOptionsByHarness[harnessId]
       ?? configCache.options(forHarness: harnessId, onServer: project.serverId)
     guard !options.isEmpty else {
-      pendingConfigByHarness[harnessId, default: [:]].merge(remembered) { current, _ in current }
+      pendingConfiguration.mergeDefaults(remembered, for: harnessId)
       return
     }
     // The catalog's settings describe the harness's own default model. When
@@ -268,7 +269,7 @@ extension SessionController {
     // drops the rest to the model's defaults.
     let catalogModel = Self.modelOption(in: options)
     let wantedModel = catalogModel.flatMap { model in
-      (pendingConfigByHarness[harnessId]?[model.id]).flatMap { $0.isEmpty ? nil : $0 }
+      (pendingConfiguration.value(for: model.id, in: harnessId)).flatMap { $0.isEmpty ? nil : $0 }
         ?? remembered[model.id]
     }
     let catalogDescribesModel = wantedModel == nil || wantedModel == catalogModel?.currentValue
@@ -278,9 +279,9 @@ extension SessionController {
       // after the model change makes the option available.
       guard let option = options.first(where: { $0.id == configId }) else {
         if configId == "speed" || !catalogDescribesModel,
-          pendingConfigByHarness[harnessId]?[configId] == nil
+          pendingConfiguration.value(for: configId, in: harnessId) == nil
         {
-          pendingConfigByHarness[harnessId, default: [:]][configId] = value
+          pendingConfiguration.stage(value, for: configId, in: harnessId)
         }
         continue
       }
@@ -289,8 +290,8 @@ extension SessionController {
       guard !catalogDescribesModel || option.options.contains(where: { $0.value == value }) else {
         continue
       }
-      if pendingConfigByHarness[harnessId]?[configId] == nil {
-        pendingConfigByHarness[harnessId, default: [:]][configId] = value
+      if pendingConfiguration.value(for: configId, in: harnessId) == nil {
+        pendingConfiguration.stage(value, for: configId, in: harnessId)
       }
     }
     validateDraftModel(harnessId: harnessId, options: options, remembered: remembered)
@@ -302,20 +303,20 @@ extension SessionController {
     remembered: [String: String]
   ) {
     guard let modelOption = Self.modelOption(in: options) else { return }
-    let staged = pendingConfigByHarness[harnessId]?[modelOption.id]
+    let staged = pendingConfiguration.value(for: modelOption.id, in: harnessId)
     let wanted =
       staged.flatMap { $0.isEmpty ? nil : $0 }
       ?? remembered[modelOption.id]
       ?? (draftModelAvailability?.harnessId == harnessId ? draftModelAvailability?.value : nil)
     guard let wanted, !wanted.isEmpty else { return }
     if modelOption.options.contains(where: { $0.value == wanted }) {
-      pendingConfigByHarness[harnessId, default: [:]][modelOption.id] = wanted
+      pendingConfiguration.stage(wanted, for: modelOption.id, in: harnessId)
       if draftModelAvailability?.harnessId == harnessId { draftModelAvailability = nil }
       return
     }
     // Already being checked or known unavailable for this value.
     if draftModelAvailability?.harnessId == harnessId, draftModelAvailability?.value == wanted {
-      pendingConfigByHarness[harnessId]?[modelOption.id] = nil
+      pendingConfiguration.removeValue(for: modelOption.id, in: harnessId)
       return
     }
     let name =
@@ -330,7 +331,7 @@ extension SessionController {
   /// it for the "Select a model" chip (and, once confirmed, the notice).
   func markDraftModel(_ value: String, name: String, harnessId: String, checking: Bool) {
     let modelId = modelConfigId(forHarness: harnessId)
-    pendingConfigByHarness[harnessId]?[modelId] = nil
+    pendingConfiguration.removeValue(for: modelId, in: harnessId)
     draftModelAvailability =
       checking
       ? .checking(harnessId: harnessId, value: value, name: name)
@@ -352,7 +353,7 @@ extension SessionController {
       markUnavailable()
       return
     }
-    var requested = pendingConfigByHarness[harnessId] ?? [:]
+    var requested = pendingConfiguration.values(for: harnessId) ?? [:]
     requested[modelId] = value
     let serverId = project.serverId
     do {
@@ -378,7 +379,7 @@ extension SessionController {
       }
       draftModelAvailability = nil
       configOptionsByHarness[harnessId] = capability.configOptions
-      pendingConfigByHarness[harnessId, default: [:]][resolved.id] = resolved.currentValue
+      pendingConfiguration.stage(resolved.currentValue, for: resolved.id, in: harnessId)
       if acceptsNewChatDefaults,
         composerDefaults?.configSelections(
           forHarness: harnessId,

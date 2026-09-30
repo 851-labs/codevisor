@@ -94,7 +94,7 @@ struct ModelSelectionTests {
     #expect(controller.isConnectingToHarness)
     await controller.setConfigOption("model", "gpt-5.7")
     #expect(controller.modelOption?.currentValue == "gpt-5.7")
-    #expect(controller.pendingConfigByHarness["codex"]?["model"] == "gpt-5.7")
+    #expect(controller.pendingConfiguration.value(for: "model", in: "codex") == "gpt-5.7")
     #expect(
       defaults.configSelections(forHarness: "codex", in: .newWorkspace(serverId: "machine-a"))
         == ["model": "gpt-5.6"])
@@ -315,9 +315,9 @@ struct ModelSelectionTests {
       configOptions: catalog(currentModel: "gpt-5.5").configOptions
     )
     controller.model = model
-    controller.pendingConfigByHarness["codex"] = ["model": "gpt-5.6", "effort": "high"]
+    controller.pendingConfiguration.replaceValues(["model": "gpt-5.6", "effort": "high"], for: "codex")
 
-    let apply = Task { await controller.applyPendingRuntimeConfiguration(to: model) }
+    let apply = Task { await controller.pendingConfiguration.apply(to: model) }
     await awaitObserved { client.configUpdates.count == 1 }
     // The runtime is still validating, so this pick is staged.
     #expect(controller.isConnectingToHarness)
@@ -328,7 +328,7 @@ struct ModelSelectionTests {
 
     #expect(client.configUpdates.map(\.0) == ["model", "effort"])
     #expect(client.configUpdates.map(\.1) == ["gpt-5.6", "low"])
-    #expect(controller.pendingConfigByHarness["codex"] == nil)
+    #expect(controller.pendingConfiguration.values(for: "codex") == nil)
   }
 
   // MARK: - Fixtures

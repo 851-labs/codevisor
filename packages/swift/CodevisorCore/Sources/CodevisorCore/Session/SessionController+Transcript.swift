@@ -85,7 +85,7 @@ extension SessionController {
   public var modeState: SessionModeState? {
     if let live = model?.modeState { return live }
     guard let selectedHarnessId, var state = modeStateByHarness[selectedHarnessId] else { return nil }
-    if let pendingModeId { state.currentModeId = pendingModeId }
+    if let modeId = pendingConfiguration.modeId { state.currentModeId = modeId }
     return state
   }
   public var errorMessage: String? { model?.errorMessage }

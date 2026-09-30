@@ -15,7 +15,7 @@ extension SessionController {
     let modelId = modelConfigId(forHarness: harnessId)
     guard let value = unavailable[modelId], !value.isEmpty,
       value != acknowledgedUnavailableModelValue,
-      pendingConfigByHarness[harnessId]?[modelId] == nil
+      pendingConfiguration.value(for: modelId, in: harnessId) == nil
     else { return nil }
     return value
   }
@@ -120,7 +120,7 @@ extension SessionController {
       configOptionsByHarness[harnessId].flatMap { $0.isEmpty ? nil : $0 }
       ?? configCache.options(forHarness: harnessId, onServer: project.serverId)
     guard let catalogModel = Self.modelOption(in: catalog),
-      let staged = pendingConfigByHarness[harnessId]?[catalogModel.id], !staged.isEmpty,
+      let staged = pendingConfiguration.value(for: catalogModel.id, in: harnessId), !staged.isEmpty,
       catalogModel.options.contains(where: { $0.value == staged }),
       staged != catalogModel.currentValue
     else { return nil }
@@ -142,7 +142,7 @@ extension SessionController {
       if resolvingDraftModelSettingsKey == target.key { resolvingDraftModelSettingsKey = nil }
     }
     let serverId = project.serverId
-    let requested = pendingConfigByHarness[target.harnessId] ?? [:]
+    let requested = pendingConfiguration.values(for: target.harnessId) ?? [:]
     guard
       let response = try? await client.capabilities(
         cwd: capabilityCwd,
@@ -156,13 +156,13 @@ extension SessionController {
     else { return }
     draftModelSettings[target.key] = capability.configOptions
     // Drop staged settings the model does not accept; its default shows.
-    guard var pending = pendingConfigByHarness[target.harnessId] else { return }
+    guard var pending = pendingConfiguration.values(for: target.harnessId) else { return }
     for option in capability.configOptions where !Self.isModelOption(option) {
       if let value = pending[option.id], !option.options.contains(where: { $0.value == value }) {
         pending[option.id] = nil
       }
     }
-    pendingConfigByHarness[target.harnessId] = pending
+    pendingConfiguration.replaceValues(pending, for: target.harnessId)
   }
 
   /// The model picker's action. The chip names the pick immediately; the

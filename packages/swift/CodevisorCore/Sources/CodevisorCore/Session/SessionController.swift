@@ -274,7 +274,11 @@ final public class SessionController {
   /// Config changes made before connecting, applied once the agent connects.
   /// Keep these scoped to their harness so switching away and back does not
   /// discard that harness's model, thinking, or speed selection.
-  var pendingConfigByHarness: [String: [String: String]] = [:] { didSet { draftDidChange() } }
+  @ObservationIgnored private(set) lazy var pendingConfiguration = PendingSessionConfiguration(
+    currentHarness: { [weak self] in self?.connectedHarnessId ?? self?.selectedHarnessId },
+    fallbackOptions: { [weak self] in self?.configOptions ?? [] },
+    onChange: { [weak self] in self?.draftDidChange() }
+  )
   /// A compatible selection carried from another machine. Only ids and
   /// selected values cross the boundary; destination capability metadata
   /// remains the sole authority for whether they can be used. This stays
@@ -282,7 +286,6 @@ final public class SessionController {
   /// transient selection from the destination's durable fallback profile.
   @ObservationIgnored var automaticSelectionIntent: ComposerSelectionIntent?
   @ObservationIgnored var automaticSelectionNeedsResolution = false
-  var pendingModeId: String? { didSet { draftDidChange() } }
   @ObservationIgnored public var onDraftChange: ((ComposerDraftStore.Draft) -> Void)?
   @ObservationIgnored var isRestoringDraft = false
   /// Set only while a promoted new-chat draft is waiting for a successful

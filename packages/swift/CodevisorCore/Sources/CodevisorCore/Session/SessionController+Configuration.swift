@@ -119,7 +119,7 @@ extension SessionController {
 
   private var draftConfigOptions: [SessionConfigOption] {
     guard let harnessId = activeHarnessId else { return [] }
-    let pendingConfig = pendingConfigByHarness[harnessId] ?? [:]
+    let pendingConfig = pendingConfiguration.values(for: harnessId) ?? [:]
     // Onboarding first seeds the controller with a harness-only catalog,
     // then warms the shared cache with model metadata in the background.
     // Do not let that provisional empty controller snapshot hide the
@@ -154,7 +154,7 @@ extension SessionController {
 
   private var existingChatConfigOptions: [SessionConfigOption] {
     guard let harnessId = activeHarnessId else { return [] }
-    let pending = pendingConfigByHarness[harnessId] ?? [:]
+    let pending = pendingConfiguration.values(for: harnessId) ?? [:]
     var options: [SessionConfigOption]
     if let model, !model.configOptions.isEmpty {
       options = model.configOptions
@@ -366,11 +366,9 @@ extension SessionController {
     if let model, !isConnectingToHarness, let harnessId {
       // Keep the pick visible while it is in flight, even when the
       // runtime has not reported this option yet.
-      pendingConfigByHarness[harnessId, default: [:]][configId] = value
+      pendingConfiguration.stage(value, for: configId, in: harnessId)
       accepted = await model.setConfigOption(configId: configId, value: value)
-      if pendingConfigByHarness[harnessId]?[configId] == value {
-        pendingConfigByHarness[harnessId]?[configId] = nil
-      }
+      pendingConfiguration.clearAppliedValue(value, for: configId, in: harnessId)
       if let connectedHarnessId, !model.configOptions.isEmpty {
         configOptionsByHarness[connectedHarnessId] = model.configOptions
       }
@@ -381,7 +379,7 @@ extension SessionController {
       // whenever the process could not honor the request, it silently
       // replaced the choice with the harness default. First send
       // validates against the real runtime instead.
-      pendingConfigByHarness[harnessId, default: [:]][configId] = value
+      pendingConfiguration.stage(value, for: configId, in: harnessId)
     }
     if accepted, isModelChange {
       if previousValue != value {
@@ -533,7 +531,7 @@ extension SessionController {
         resolvedValues[option.id] = value
       }
       configOptionsByHarness[intent.harnessId] = options
-      pendingConfigByHarness[intent.harnessId] = resolvedValues
+      pendingConfiguration.replaceValues(resolvedValues, for: intent.harnessId)
       automaticSelectionIntent = ComposerSelectionIntent(
         harnessId: intent.harnessId,
         configValues: resolvedValues,
