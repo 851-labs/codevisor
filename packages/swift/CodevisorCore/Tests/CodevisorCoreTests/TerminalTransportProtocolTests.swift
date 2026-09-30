@@ -172,29 +172,39 @@ struct TerminalTransportProtocolTests {
     let first = ProtocolSocket(messages: [
       .string(#"{"type":"ready","seq":0,"protocol":2}"#),
       .string(#"{"type":"ack","seq":0,"clientSeq":1}"#),
+      .string(#"{"type":"size","seq":0,"cols":80,"rows":24}"#),
     ])
     let second = ProtocolSocket(messages: [.string(#"{"type":"ready","seq":0,"protocol":2}"#)])
     let sockets = SocketSequence([first, second])
+    let clock = TestClock()
+    let acknowledged = TestSignal()
     let transport = TerminalTransport(
       config: CodevisorServerConfig(
         baseURL: URL(string: "https://fixture.invalid")!,
         requestTransport: FreshTerminal(),
         webSocketTransport: sockets
       ),
-      sleep: { _ in },
-      onEvent: { _ in }
+      // Reconnect immediately, but hold recurring pings at their real interval.
+      sleep: { duration in
+        if duration >= .seconds(5) { try await clock.sleep(for: duration) }
+      },
+      onEvent: { event in
+        // Receive order makes the size event acknowledge the preceding ack.
+        if case .ptySize = event { acknowledged.signal() }
+      }
     )
     transport.sendResize(cols: 80, rows: 24)
     try await transport.open(sessionId: "s", cwd: "/", cols: 80, rows: 24)
     // The resize (clientSeq 1) is acknowledged; "ls" is sent but never is.
-    // (The ping shows `ready` was handled.)
+    await acknowledged.wait()
     await first.didSend.wait(for: 2)
     transport.sendInput("ls")
     await first.didSend.wait(for: 3)
     // The socket dies.
     first.cancel(with: .abnormalClosure, reason: nil)
     await sockets.didConnect.wait(for: 2)
-    await second.didSend.wait(for: 2)
+    // Input and resize plus at most one ping; two sends could include a ping.
+    await second.didSend.wait(for: 3)
 
     let resent = second.sentFrames.filter { $0["type"] as? String != "ping" }
     #expect(resent.first?["type"] as? String == "input")
