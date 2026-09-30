@@ -1,6 +1,7 @@
 #if os(macOS)
   import CodevisorCoreMac
   import ComposableArchitecture
+  import ScreenSharing
   import SwiftUI
 
   /// The product's Screen Sharing window toolbar
@@ -23,8 +24,10 @@
       }
       // Only where the buttons do something (a native Mac host), so no empty pill otherwise.
       if store.endpoint?.supportsSystemKeys == true {
-        ToolbarItem(id: "screenSharing.macControls", placement: .principal) {
-          ScreenSharingSystemKeyButtons(store: store)
+        ForEach(ScreenSharingSystemKey.allCases, id: \.self) { key in
+          ToolbarItem(id: "screenSharing.macControls.\(key.rawValue)", placement: .principal) {
+            ScreenSharingSystemKeyButton(store: store, key: key)
+          }
         }
       }
       ToolbarItem(id: "screenSharing.display", placement: .primaryAction) {
