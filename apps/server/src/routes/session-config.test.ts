@@ -3,13 +3,11 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import type { SessionConfigOption } from "@codevisor/api"
 import type { HarnessAuthManager } from "@codevisor/harness-manager"
 import { Effect } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
 import {
-  configSelectionsFromTestOptions,
   jsonRequest,
   makeServices,
   run,
@@ -22,151 +20,6 @@ import {
 } from "../test-support.js"
 
 describe("session configuration routes", () => {
-  it("persists session config and restores model before dependent reasoning and speed", async () => {
-    const { agents, services } = await makeServices("server-a")
-    const folder = mkdtempSync(join(tmpdir(), "codevisor-session-config-"))
-    tempDirs.push(folder)
-    const project = await run(services.db.createProject({ folderPath: folder }))
-    const session = await run(
-      services.db.createSession({
-        projectId: project.id,
-        harnessId: "codex",
-        agentSessionId: "agent-session-config"
-      })
-    )
-    const server = await startWithApp(services)
-    runningServers.push(server)
-
-    expect(
-      (await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })).status
-    ).toBe(200)
-    for (const [configId, value] of [
-      ["model", "model-saved"],
-      ["reasoning", "high"],
-      ["speed", "fast"],
-      ["tone", "detailed"]
-    ] as const) {
-      expect(
-        (
-          await jsonRequest(server, `/v1/sessions/${session.id}/config`, {
-            body: JSON.stringify({ configId, value }),
-            method: "POST"
-          })
-        ).status
-      ).toBe(202)
-    }
-    expect(await run(services.db.getSessionConfigSelections(session.id))).toEqual({
-      model: "model-saved",
-      reasoning: "high",
-      speed: "fast",
-      tone: "detailed"
-    })
-    expect((await jsonRequest(server, `/v1/sessions/${session.id}`)).body).toMatchObject({
-      session: {
-        configSelections: {
-          model: "model-saved",
-          reasoning: "high",
-          speed: "fast",
-          tone: "detailed"
-        }
-      }
-    })
-
-    agents.configs.splice(0)
-    const restored = (
-      await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })
-    ).body as { readonly configOptions: ReadonlyArray<SessionConfigOption> }
-    expect(agents.configs).toEqual([
-      [session.agentSessionId, "model", "model-saved"],
-      [session.agentSessionId, "reasoning", "high"],
-      [session.agentSessionId, "speed", "fast"],
-      [session.agentSessionId, "tone", "detailed"]
-    ])
-    expect(configSelectionsFromTestOptions(restored.configOptions)).toEqual({
-      model: "model-saved",
-      reasoning: "high",
-      speed: "fast",
-      tone: "detailed"
-    })
-
-    await run(
-      services.db.replaceSessionConfigSelections(session.id, {
-        model: "model-removed",
-        reasoning: "high",
-        speed: "fast",
-        tone: "tone-removed",
-        "zzz-removed": "unavailable"
-      })
-    )
-    agents.configs.splice(0)
-    const fallback = (
-      await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })
-    ).body as { readonly configOptions: ReadonlyArray<SessionConfigOption> }
-    expect(agents.configs).toEqual([])
-    expect(configSelectionsFromTestOptions(fallback.configOptions)).toEqual({
-      model: "model-default",
-      reasoning: "low",
-      speed: "standard",
-      tone: "brief"
-    })
-    expect(await run(services.db.getSessionConfigSelections(session.id))).toEqual({
-      model: "model-default",
-      reasoning: "low",
-      speed: "standard",
-      tone: "brief"
-    })
-
-    await run(
-      services.db.replaceSessionConfigSelections(session.id, {
-        model: "model-saved"
-      })
-    )
-    agents.configFailures.push(["agent-session-config", "model", "model-saved"])
-    const transientFallback = (
-      await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })
-    ).body as { readonly configOptions: ReadonlyArray<SessionConfigOption> }
-    expect(configSelectionsFromTestOptions(transientFallback.configOptions).model).toBe(
-      "model-default"
-    )
-    expect(await run(services.db.getSessionConfigSelections(session.id))).toEqual({
-      model: "model-saved",
-      reasoning: "low",
-      speed: "standard",
-      tone: "brief"
-    })
-  })
-
-  it("keeps saved config selections when a session opens with no config options", async () => {
-    const { agents, services } = await makeServices("server-a")
-    const folder = mkdtempSync(join(tmpdir(), "codevisor-no-config-options-"))
-    tempDirs.push(folder)
-    const project = await run(services.db.createProject({ folderPath: folder }))
-    const session = await run(
-      services.db.createSession({
-        projectId: project.id,
-        harnessId: "claude-code",
-        agentSessionId: "agent-no-config-options"
-      })
-    )
-    const saved = { effort: "high", model: "opus[1m]", speed: "standard" }
-    await run(services.db.replaceSessionConfigSelections(session.id, saved))
-    const server = await startWithApp(services)
-    runningServers.push(server)
-
-    const opened = await jsonRequest(server, `/v1/sessions/${session.id}/connect`, {
-      method: "POST"
-    })
-    expect(opened.status).toBe(200)
-    expect((opened.body as { readonly configOptions: unknown }).configOptions).toEqual([])
-    // Nothing to validate against, so nothing is applied — and, above all,
-    // nothing is overwritten.
-    expect(agents.configs).toEqual([])
-    expect(await run(services.db.getSessionConfigSelections(session.id))).toEqual(saved)
-    expect((await jsonRequest(server, `/v1/sessions/${session.id}`)).body).toMatchObject({
-      session: { configSelections: saved }
-    })
-  })
-
   it("shares session read and action-required state through the HTTP API", async () => {
     const { server, services } = await start()
     const project = await run(

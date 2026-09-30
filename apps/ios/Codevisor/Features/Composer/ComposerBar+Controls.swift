@@ -145,6 +145,7 @@ extension ComposerBar {
     .pointerHighlight(Circle())
     .disabled(!canSend)
     .accessibilityLabel(controller.isGoalEditing ? "Save goal" : "Send")
+    .accessibilityHint(controller.requiresModelSelection ? "Select a model" : "")
   }
 
   /// An active Goal chip. Goal is entered through `/goal`; this chip only

@@ -174,15 +174,17 @@ extension SessionController {
       // Start the new harness from its own remembered selections rather
       // than pending edits made under the previous harness.
       seedRememberedConfig()
+      composerDefaults?.rememberHarnessSelection(
+        in: resolvedComposerDefaultsScope,
+        harnessId: id
+      )
     }
-    composerDefaults?.rememberHarnessSelection(
-      in: resolvedComposerDefaultsScope,
-      harnessId: id
-    )
     if var serverSession {
       serverSession.harnessId = id
       self.serverSession = serverSession
     }
+    await resolveDraftModelAvailabilityIfNeeded()
+    await resolveDraftModelSettingsIfNeeded()
     await reconnect()
   }
 
@@ -235,7 +237,8 @@ extension SessionController {
     harnessCapabilityRequestRevision &+= 1
     isRefreshingHarnessCapabilities = false
     serverClient = client
-    composerDefaultsScope = .newWorkspace(serverId: project.serverId)
+    // The carried pick is re-validated against the destination's catalog.
+    draftModelAvailability = nil
     self.project = project
     // Staged attachments were uploaded to the old machine, and file ids
     // are machine-local: sending their refs to the new machine fails its
@@ -363,11 +366,7 @@ extension SessionController {
 
     var preloadedTranscript: ServerTranscriptPage?
     var persistedRuntime: ServerSessionRuntimeMetadata?
-    let workspaceId: UUID? =
-      switch resolvedComposerDefaultsScope {
-      case let .workspace(id, _): id
-      case .newWorkspace: nil
-      }
+    let workspaceId = hostWorkspaceId
     let transport: ServerSessionTransport
     let model: SessionModel
     let showsCachedHistory: Bool
@@ -443,10 +442,10 @@ extension SessionController {
 
     captureChatCreatedIfNeeded(model: model, harnessId: harnessId)
 
-    // A runtime that reported no options (see `configOptions`) must not
-    // erase the cached catalog the composer is falling back to.
+    // The runtime's options are this chat's own. They refresh this
+    // controller's lists but never the shared catalog cache, which New
+    // Chat composers read their defaults from.
     if !model.configOptions.isEmpty {
-      configCache.store(model.configOptions, forHarness: harnessId, onServer: project.serverId)
       configOptionsByHarness[harnessId] = model.configOptions
     }
 

@@ -146,6 +146,7 @@ struct ComposerBar: View {
       && !controller.composerAttachments.contains { $0.state == .loading }
       && !isClearingGoal
       && controller.configurationValidationState == .ready
+      && !controller.requiresModelSelection
   }
 
   /// The editor's frame reaches up through the card's top padding to its

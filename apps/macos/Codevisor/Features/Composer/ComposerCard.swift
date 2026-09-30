@@ -411,6 +411,7 @@ private extension ComposerCard {
             && (controller.isConnected || controller.selectedHarness != nil)
             && !controller.isConnecting
             && !controller.isConnectingToHarness
+            && !controller.requiresModelSelection
           : !controller.isConnectingToHarness
             && (controller.canSend || !visibleSlashMatches.isEmpty))
       ComposerSubmitButton(
@@ -421,7 +422,7 @@ private extension ComposerCard {
             ? "Connecting to harness…"
             : controller.isConnecting
               ? "Connecting… you can send once the agent is ready."
-              : "Send (↩)",
+              : controller.requiresModelSelection ? "Select a model" : "Send (↩)",
         accessibilityLabel: "Send"
       ) {
         submitOrAcceptSlash()

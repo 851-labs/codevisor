@@ -227,9 +227,9 @@ public final class AppEnvironment {
     }
   }
 
-  /// V4 introduced an explicit standalone-page project and restored
-  /// workspace-scoped chat inheritance. Seed missing profiles from durable
-  /// sessions once; picker/focus writes remain authoritative thereafter.
+  /// Seeds the standalone page's project and legacy worktree choice once,
+  /// for clients that predate that memory. Chat configuration is never
+  /// copied into New Chat defaults: only explicit draft picks write them.
   private func backfillComposerDefaultsFromPersistedState() {
     var latestByServer: [String: ChatSession] = [:]
     for session in projectList.sessions where session.origin == .codevisor {
@@ -242,41 +242,7 @@ public final class AppEnvironment {
       composerDefaults.backfillNewWorkspaceDefaults(
         serverId: session.serverId,
         projectId: session.projectId,
-        createsWorktree: session.worktreeName?.isEmpty == false,
-        harnessId: session.harnessId,
-        configValues: session.configSelections ?? [:]
-      )
-    }
-
-    for workspace in workspaces.loadAll() {
-      let selectedChatId = workspace.selectedCenterTab
-        .flatMap { tab in tab.root.group(id: tab.activeLeafId) }
-        .flatMap(\.selectedPane)
-        .flatMap { $0.kind == .chat ? $0.chatSessionId : nil }
-      let candidateIds =
-        [selectedChatId].compactMap { $0 }
-        + workspace.chatSessionIds.filter { $0 != selectedChatId }
-      let candidates = candidateIds.compactMap { id in
-        projectList.sessions.first {
-          $0.serverId == workspace.serverId && $0.id == id
-        }
-      }
-      let source =
-        candidates.first
-        ?? projectList.sessions
-        .filter {
-          $0.serverId == workspace.serverId
-            && workspaces.workspaceId(forSession: $0.id) == workspace.id
-        }
-        .max {
-          ($0.updatedAt ?? $0.createdAt) < ($1.updatedAt ?? $1.createdAt)
-        }
-      guard let source else { continue }
-      composerDefaults.backfillWorkspaceDefaults(
-        workspaceId: workspace.id,
-        serverId: workspace.serverId,
-        harnessId: source.harnessId,
-        configValues: source.configSelections ?? [:]
+        createsWorktree: session.worktreeName?.isEmpty == false
       )
     }
   }

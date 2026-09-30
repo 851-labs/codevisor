@@ -149,7 +149,8 @@ export const makeClaudeProvider = (
       cwd,
       emit,
       account,
-      toolGateway
+      toolGateway,
+      sessionOptions
     ): Effect.Effect<LoadedAgentSession, AgentRuntimeError> =>
       adapterPromise("loadSession", async () => {
         const session = await startSession(
@@ -158,7 +159,8 @@ export const makeClaudeProvider = (
           emit,
           agentSessionId,
           account,
-          toolGateway
+          toolGateway,
+          sessionOptions
         )
         return {
           handle: handleFor(session),

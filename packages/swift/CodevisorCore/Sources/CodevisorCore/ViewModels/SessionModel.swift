@@ -124,6 +124,9 @@ public final class SessionModel {
   /// Monotonic per-picker revisions keep a failed, slower request from
   /// rolling back a newer optimistic selection for the same option.
   @ObservationIgnored var configMutationRevisions: [String: UInt64] = [:]
+  /// User picks the server has not acknowledged yet, by option id. A
+  /// config update from before the pick must not paint the old value back.
+  @ObservationIgnored var inFlightConfigValues: [String: String] = [:]
   public internal(set) var errorMessage: String? {
     didSet {
       if errorMessage != oldValue { transcriptProjectionRevision &+= 1 }

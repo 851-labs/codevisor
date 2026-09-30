@@ -39,7 +39,10 @@ struct SessionControllerConfigurationTests {
     // directly applying another snapshot to this controller.
     cache.store([warmedCapability], forServer: project.serverId)
 
-    #expect(controller.modelOption?.currentValue == "gpt-5.6")
+    // The list is usable, but the harness's own default is not the
+    // user's pick: the chip asks for a model.
+    #expect(controller.modelOption?.options.isEmpty == false)
+    #expect(controller.modelOption?.currentValue == "")
 
     // This is the model-row click path from the recording. It must stage
     // and resolve the selected value even though the controller's older
@@ -78,6 +81,8 @@ struct SessionControllerConfigurationTests {
     controller.harnesses = [capability.harness]
     controller.selectedHarnessId = capability.harness.id
     controller.configOptionsByHarness[capability.harness.id] = capability.configOptions
+    // The mounted draft's model is the user's pick.
+    controller.pendingConfigByHarness[capability.harness.id] = ["model": "stale-model"]
     controller.modeStateByHarness[capability.harness.id] = SessionModeState(
       currentModeId: "default",
       availableModes: [SessionMode(id: "default", name: "Default")]
@@ -97,37 +102,42 @@ struct SessionControllerConfigurationTests {
     #expect(!controller.isLoadingModelMenu)
   }
 
-  @Test("A connected runtime with no options falls back to the cached catalog")
-  func connectedRuntimeWithoutOptionsUsesCachedCatalog() {
+  @Test("An existing chat shows its own saved model until its runtime reports options")
+  func existingChatUsesOwnValuesOverCatalogLists() {
     let cache = ConfigOptionCache(store: InMemoryStore())
-    let capability = capability(model: "opus[1m]")
-    let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/project"))
-    cache.store([capability], forServer: project.serverId)
+    // The catalog's current value is a fresh-session default.
+    var catalog = capability(model: "sonnet")
+    catalog.configOptions[0].options.append(SessionConfigSelectOption(value: "opus[1m]", name: "Opus"))
+    var chat = session()
+    chat.harnessId = catalog.harness.id
+    chat.configSelections = ["model": "opus[1m]"]
+    let project = Project.fromFolder(
+      URL(fileURLWithPath: "/remote/project"),
+      id: chat.projectId,
+      serverId: chat.serverId
+    )
+    cache.store([catalog], forServer: project.serverId)
     let controller = SessionController(project: project, configCache: cache)
-    controller.harnesses = [capability.harness]
-    controller.selectedHarnessId = capability.harness.id
-    controller.connectedHarnessId = capability.harness.id
-    controller.preparationState = .ready
-    let sessionId = UUID()
+    controller.configureExistingSession(chat)
+    controller.connectedHarnessId = catalog.harness.id
     // Claude's runtime reports NO options when its model list loses the
     // startup race, and publishes the list later as a config update.
     let model = SessionModel(
       serverTransport: ServerSessionTransport(
-        client: FakeSessionServerClient(sessionId: sessionId),
-        sessionId: sessionId
+        client: FakeSessionServerClient(sessionId: chat.id),
+        sessionId: chat.id
       ),
-      sessionId: sessionId.uuidString,
+      sessionId: chat.id.uuidString,
       configOptions: []
     )
     controller.model = model
 
-    #expect(controller.configOptions == capability.configOptions)
     #expect(controller.modelOption?.currentValue == "opus[1m]")
-    #expect(controller.hasModelMenu)
-    #expect(!controller.isLoadingModelMenu)
+    #expect(controller.modelOption?.options.map(\.value) == ["sonnet", "opus[1m]"])
+    #expect(controller.modelPickerPresentation.modelChip == .model(name: "Opus"))
 
-    // The late list replaces the cached stand-in.
-    var live = capability.configOptions
+    // The late list replaces the stand-in.
+    var live = catalog.configOptions
     live[0].currentValue = "sonnet"
     live[0].options = [SessionConfigSelectOption(value: "sonnet", name: "Sonnet")]
     model.applyRuntimeMetadata(modeState: nil, configOptions: live)
@@ -230,7 +240,7 @@ struct SessionControllerConfigurationTests {
     #expect(controller.project.serverId == "remote-b")
     #expect(controller.serverClient as? FakeSessionServerClient === remoteClient)
     #expect(
-      controller.composerDefaultsScope == .newWorkspace(serverId: "remote-b")
+      controller.resolvedComposerDefaultsScope == .newWorkspace(serverId: "remote-b")
     )
     #expect(controller.composerText == "typed before picking the studio machine")
     let snapshot = controller.draftSnapshot()

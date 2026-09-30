@@ -86,14 +86,6 @@ struct WorkspacePaneContentView: View {
           if !isNewChatPresentation {
             onWorkspaceReady?(chatId)
           }
-          if transcriptPresentationRole == .foreground {
-            controller.rememberCurrentComposerConfiguration()
-          }
-        }
-        .onChange(of: transcriptPresentationRole) { _, role in
-          if role == .foreground {
-            controller.rememberCurrentComposerConfiguration()
-          }
         }
       } else if let chatId = pane.chatSessionId ?? activeSessionId {
         DelayedWorkspaceLoadingView()

@@ -6,16 +6,15 @@ extension SessionController {
   func makeServerSessionModel(
     transport: ServerSessionTransport, harnessId: String, sessionId: UUID
   ) -> SessionModel {
-    // Build the composer from saved option definitions. Opening history
-    // never starts the provider; explicit runtime actions validate selections.
-    let initialConfigOptions =
-      configOptionsByHarness[harnessId]
-      ?? configCache.options(forHarness: harnessId, onServer: project.serverId)
+    // The model starts without options: only the chat's runtime reports
+    // them. Until it does, the composer shows the chat's saved values over
+    // catalog option lists (`existingChatConfigOptions`) — never a
+    // catalog or inspection default.
     let model = SessionModel(
       serverTransport: transport,
       sessionId: sessionId.uuidString,
       modeState: modeStateByHarness[harnessId],
-      configOptions: initialConfigOptions
+      configOptions: []
     )
     model.onTurnEnded = { [weak self, weak model] in
       self?.liveTurnEndRevision &+= 1

@@ -260,13 +260,21 @@ export const makeSessionsService = (
           )
         return getSession(id)
       }),
-    replaceSessionConfigSelections: (rawId, selections) =>
+    replaceSessionConfigSelections: (rawId, selections, unavailable) =>
       attempt("replaceSessionConfigSelections", () => {
         const id = canonicalUuid(rawId)
         getSession(id)
+        if (unavailable === undefined) {
+          sqlite
+            .prepare("update sessions set config_selections = ? where id = ?")
+            .run(JSON.stringify(selections), id)
+          return
+        }
         sqlite
-          .prepare("update sessions set config_selections = ? where id = ?")
-          .run(JSON.stringify(selections), id)
+          .prepare(
+            "update sessions set config_selections = ?, unavailable_config_selections = ? where id = ?"
+          )
+          .run(JSON.stringify(selections), JSON.stringify(unavailable), id)
       }),
     // This condition lives in the UPDATE itself so a user rename and a
     // harness title arriving concurrently cannot pass a stale read/check.

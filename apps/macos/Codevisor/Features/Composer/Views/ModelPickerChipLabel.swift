@@ -2,15 +2,15 @@ import SwiftUI
 
 struct ModelPickerChipLabel: View {
   let group: ModelMenuGroup?
-  let modelName: String?
-  /// A pick is on its way to the harness; the name is already the chosen
-  /// one, the spinner says it has not been confirmed yet.
-  var isLoading = false
+  /// The selected model's name, or "Select a model" (see
+  /// `ModelPickerPresentation`).
+  let title: String
+  let hasSelection: Bool
 
   var body: some View {
     HStack(spacing: 5) {
-      if let modelName {
-        if let group {
+      if let group {
+        if hasSelection {
           HarnessIcon(
             harnessId: group.id,
             fallbackSymbolName: group.symbolName,
@@ -21,16 +21,12 @@ struct ModelPickerChipLabel: View {
           .accessibilityHidden(true)
         }
 
-        Text(modelName)
-          .foregroundStyle(.primary)
+        Text(title)
+          .foregroundStyle(hasSelection ? .primary : .secondary)
           .lineLimit(1)
           .truncationMode(.tail)
-        if isLoading {
-          ProgressView()
-            .controlSize(.mini)
-            .accessibilityHidden(true)
-        }
       } else {
+        // No harness offers models (for example, only sign-in rows).
         Text("Select a harness")
           .foregroundStyle(.secondary)
           .lineLimit(1)

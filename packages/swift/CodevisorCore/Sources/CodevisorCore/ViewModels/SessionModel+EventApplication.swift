@@ -30,7 +30,7 @@ extension SessionModel {
           historicalConfigSelections[option.id] = option.currentValue
         }
       } else {
-        configOptions = options
+        configOptions = preservingInFlightPicks(options)
       }
     case let .usageUpdate(usage):
       self.usage = usage

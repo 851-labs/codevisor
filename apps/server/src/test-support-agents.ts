@@ -11,6 +11,7 @@ import type { Harness, SessionConfigOption } from "@codevisor/api"
 import { Effect } from "effect"
 
 import { observableFixture } from "./changes-test-support.js"
+import { dependencyConfigOptions } from "./test-support-config-options.js"
 
 /// The fake agent runtime the server tests drive: scripted harnesses,
 /// sessions, prompts, and the event emitter tests use to simulate agents.
@@ -35,65 +36,6 @@ export const harnesses: ReadonlyArray<Harness> = [
   }
 ]
 
-const dependencyConfigOptions = (
-  model = "model-default",
-  reasoning = "low",
-  speed = "standard"
-): ReadonlyArray<SessionConfigOption> => [
-  {
-    category: "model",
-    currentValue: model,
-    id: "model",
-    name: "Model",
-    options: [
-      { name: "Default model", value: "model-default" },
-      { name: "Saved model", value: "model-saved" }
-    ]
-  },
-  {
-    category: "thought_level",
-    currentValue: reasoning,
-    id: "reasoning",
-    name: "Reasoning",
-    options:
-      model === "model-saved"
-        ? [
-            { name: "Low", value: "low" },
-            { name: "High", value: "high" }
-          ]
-        : [{ name: "Low", value: "low" }]
-  },
-  {
-    category: "speed",
-    currentValue: speed,
-    id: "speed",
-    name: "Speed",
-    options:
-      model === "model-saved"
-        ? [
-            { name: "Standard", value: "standard" },
-            { name: "Fast", value: "fast" }
-          ]
-        : [{ name: "Standard", value: "standard" }]
-  },
-  {
-    category: "tone",
-    currentValue: "brief",
-    id: "tone",
-    name: "Tone",
-    options: [
-      {
-        group: "response-style",
-        name: "Response style",
-        options: [
-          { name: "Brief", value: "brief" },
-          { name: "Detailed", value: "detailed" }
-        ]
-      }
-    ]
-  }
-]
-
 export const makeAgents = (): AgentRuntimeService & {
   readonly loads: Array<readonly [string, string, string]>
   readonly prompts: Array<readonly [string, string | PromptInput]>
@@ -107,6 +49,8 @@ export const makeAgents = (): AgentRuntimeService & {
   readonly questionAnswers: Array<readonly [string, string, QuestionAnswer]>
   readonly inspections: Array<readonly [string, string]>
   readonly inspectionConfigs: Array<Readonly<Record<string, string>> | undefined>
+  /// Saved selections each create/load was asked to start the process with.
+  readonly startSelections: Array<Readonly<Record<string, string>> | undefined>
   readonly creations: Array<readonly [string, string]>
   readonly environmentRefreshes: Array<number>
   readonly sinks: Map<string, RuntimeEventSink>
@@ -128,6 +72,7 @@ export const makeAgents = (): AgentRuntimeService & {
     []
   )
   const creations: Array<readonly [string, string]> = observableFixture([])
+  const startSelections: Array<Readonly<Record<string, string>> | undefined> = observableFixture([])
   const environmentRefreshes: Array<number> = observableFixture([])
   const sinks = new Map<string, RuntimeEventSink>()
   const configOptionsBySession = new Map<string, ReadonlyArray<SessionConfigOption>>()
@@ -153,6 +98,7 @@ export const makeAgents = (): AgentRuntimeService & {
     questionAnswers,
     inspections,
     inspectionConfigs,
+    startSelections,
     creations,
     environmentRefreshes,
     sinks,
@@ -176,9 +122,10 @@ export const makeAgents = (): AgentRuntimeService & {
         state: "unavailable" as const,
         windows: []
       }),
-    createAgentSession: (harnessId, cwd, sink) =>
+    createAgentSession: (harnessId, cwd, sink, _account, _toolGateway, sessionOptions) =>
       Effect.sync(() => {
         creations.push([harnessId, cwd])
+        startSelections.push(sessionOptions?.configSelections)
         const sessionId = `agent-${harnessId}-${cwd.split("/").at(-1) ?? "root"}`
         sinks.set(sessionId, sink)
         return sessionId
@@ -198,8 +145,12 @@ export const makeAgents = (): AgentRuntimeService & {
             configOptions: []
           }
         }
-        const model = configSelections?.model ?? "gpt-5"
+        // A requested model the harness does not offer is reported back,
+        // not substituted.
+        const unapplied = configSelections?.model === "gpt-gone"
+        const model = unapplied ? "gpt-5" : (configSelections?.model ?? "gpt-5")
         return {
+          ...(unapplied ? { unappliedConfigSelections: { model: "gpt-gone" } } : {}),
           sessionId: `inspect-${harnessId}`,
           supportsGoals: true,
           modes: {
@@ -227,9 +178,18 @@ export const makeAgents = (): AgentRuntimeService & {
           ]
         }
       }),
-    loadAgentSession: (harnessId, agentSessionId, cwd, sink) =>
+    loadAgentSession: (
+      harnessId,
+      agentSessionId,
+      cwd,
+      sink,
+      _account,
+      _toolGateway,
+      sessionOptions
+    ) =>
       Effect.sync(() => {
         loads.push([harnessId, agentSessionId, cwd])
+        startSelections.push(sessionOptions?.configSelections)
         sinks.set(agentSessionId, sink)
         // A runtime whose option list never arrived (Claude's model list
         // losing its startup race) reports no options at all.

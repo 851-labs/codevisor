@@ -56,6 +56,7 @@ struct AppEnvironmentTests {
       project: .runTargetPlaceholder(serverId: serverId), configCache: environment.configCache,
       serverClient: environment.machines.client(for: serverId))
     await controller.prepare()
+    await controller.setConfigOption("model", "demo")
     #expect(controller.modelOption?.currentName == "Demo model")
     controller.invalidateHarnessCapabilities()
     await controller.prepare()

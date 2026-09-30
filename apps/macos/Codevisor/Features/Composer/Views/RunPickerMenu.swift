@@ -23,6 +23,7 @@ struct RunPickerMenu: View {
       }
     }
     .buttonStyle(HoverIconButtonStyle(shape: .chip))
+    .hoverChipOverflow()
     .fixedSize()
   }
 }

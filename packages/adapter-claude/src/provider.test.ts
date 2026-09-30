@@ -139,9 +139,16 @@ describe("ClaudeProvider", () => {
     const emit = async (event: RuntimeEvent): Promise<void> => {
       events.push(event)
     }
-    const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    fake.push(initMessage())
+    const createPromise = run(
+      provider.createSession(definition, "/tmp", emit, undefined, undefined, {
+        configSelections: { model: "claude-opus-4-8" }
+      })
+    )
+    fake.push(initMessage("sdk-session-1", "claude-opus-4-8"))
     const created = await createPromise
+    // Picked after start: the restart must carry this, not the start model.
+    await run(created.handle.setConfigOption("model", "claude-fable-5"))
+    await run(created.handle.setConfigOption("effort", "xhigh"))
 
     const promptPromise = run(created.handle.prompt("do work"))
     await fake.nextPrompt()
@@ -168,6 +175,10 @@ describe("ClaudeProvider", () => {
     expect(resumed.options?.resume).toBe(fake.options?.extraArgs?.["session-id"])
     expect(resumed.options?.resume).toBeTypeOf("string")
     expect(resumed.options?.extraArgs).toBeUndefined()
+    expect(resumed.options).toMatchObject({
+      model: "claude-fable-5",
+      settings: { effortLevel: "xhigh", fastMode: false }
+    })
     // The nudge tells the model its process was interrupted, so it re-runs a
     // cut-off tool call instead of waiting on results that will never come.
     expect(resumed.userMessages).toHaveLength(1)
@@ -265,14 +276,25 @@ describe("ClaudeProvider", () => {
     const fake = new FakeQuery()
     const provider = makeProvider(fake)
     const loadPromise = run(
-      provider.loadSession(definition, "previous-session", "/tmp", async () => undefined)
+      provider.loadSession(
+        definition,
+        "previous-session",
+        "/tmp",
+        async () => undefined,
+        undefined,
+        undefined,
+        { configSelections: { effort: "low", model: "claude-opus-4-8" } }
+      )
     )
-    fake.push(initMessage("sdk-session-resumed"))
     const loaded = await loadPromise
     expect(loaded.sessionId).toBe("previous-session")
     expect(loaded.metadata?.sessionId).toBe("previous-session")
-    expect(loaded.metadata?.configOptions.length).toBeGreaterThan(0)
     expect(fake.options?.resume).toBe("previous-session")
+    // The resumed process runs the chat's saved model from its first turn.
+    expect(fake.options?.model).toBe("claude-opus-4-8")
+    expect(loaded.metadata?.configOptions).toContainEqual(
+      expect.objectContaining({ currentValue: "claude-opus-4-8", id: "model" })
+    )
   })
 
   it("reports readiness from binary presence", () => {

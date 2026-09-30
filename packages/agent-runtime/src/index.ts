@@ -6,6 +6,7 @@ import { makeAgentRuntimeCore, withoutBuiltinCollisions } from "./agent-runtime-
 import { makeAgentSessionOperations } from "./agent-runtime-sessions.js"
 import type { AgentRuntimeConfig, AgentRuntimeService } from "./agent-runtime-types.js"
 import { harnessCatalog } from "./harness-catalog.js"
+import { placeConfigValue } from "./model-selection.js"
 import { adapterPromise, runtimeError } from "./types.js"
 
 export * from "./types.js"
@@ -142,7 +143,7 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
         })
       return state.envRefresh
     }),
-    createAgentSession: (harnessId, cwd, sink, account, toolGateway) =>
+    createAgentSession: (harnessId, cwd, sink, account, toolGateway, sessionOptions) =>
       Effect.gen(function* () {
         const { definition, provider } = yield* definitionFor(harnessId)
         const events = createSessionEmitter()
@@ -151,7 +152,8 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
           cwd,
           events.emit,
           account,
-          toolGateway
+          toolGateway,
+          sessionOptions
         )
         manageSession(
           harnessId,
@@ -178,7 +180,10 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
             undefined,
             // Inspection's whole point is the option list: grant it most of
             // the outer timeout instead of the snappy interactive default.
-            { modelListTimeoutMs: Math.max(3_000, timeoutMs - 3_000) }
+            {
+              modelListTimeoutMs: Math.max(3_000, timeoutMs - 3_000),
+              ...(configSelections === undefined ? {} : { configSelections })
+            }
           )
           .pipe(
             Effect.timeout(timeoutMs),
@@ -197,29 +202,46 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
           if (right === "model") return 1
           return left.localeCompare(right)
         })
+        // Requested values that did not land are reported, never silently
+        // replaced by whatever the harness defaulted to.
+        const unapplied: Record<string, string> = {}
+        const reconcile = provider.reconcileConfigValue
         for (const [configId, value] of selections) {
           const option = configOptions.find((candidate) => candidate.id === configId)
-          const selectableValues =
-            option?.options.flatMap((entry) =>
-              "value" in entry ? [entry.value] : entry.options.map((nested) => nested.value)
-            ) ?? []
-          if (!selectableValues.includes(value) || option?.currentValue === value) continue
-          configOptions = yield* created.handle.setConfigOption(configId, value).pipe(
+          const target =
+            option === undefined ? undefined : placeConfigValue(option, value, reconcile)
+          if (target === undefined) {
+            unapplied[configId] = value
+            continue
+          }
+          if (option?.currentValue === target) continue
+          configOptions = yield* created.handle.setConfigOption(configId, target).pipe(
             Effect.catchCause((cause) => {
-              // Report, don't pretend: the returned snapshot shows what was
-              // actually applied, and the log says why the request wasn't.
               console.error(
-                `[agent-runtime] inspectHarness(${harnessId}) could not apply ${configId}=${value}: ${Cause.pretty(cause)}`
+                `[agent-runtime] inspectHarness(${harnessId}) could not apply ${configId}=${target}: ${Cause.pretty(cause)}`
               )
+              unapplied[configId] = value
               return Effect.succeed(configOptions)
             })
           )
         }
         void Effect.runPromise(created.handle.close).catch(() => undefined)
-        return { ...created.metadata, configOptions }
+        return {
+          ...created.metadata,
+          configOptions,
+          ...(Object.keys(unapplied).length === 0 ? {} : { unappliedConfigSelections: unapplied })
+        }
       }),
     loadedAgentSessionIds: () => [...sessions.keys()],
-    loadAgentSession: (harnessId, agentSessionId, cwd, sink, account, toolGateway) =>
+    loadAgentSession: (
+      harnessId,
+      agentSessionId,
+      cwd,
+      sink,
+      account,
+      toolGateway,
+      sessionOptions
+    ) =>
       adapterPromise("loadAgentSession", () =>
         withSessionLifecycle(agentSessionId, async () => {
           const existing = sessions.get(agentSessionId)
@@ -250,7 +272,15 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
           const { definition, provider } = await Effect.runPromise(definitionFor(harnessId))
           const events = createSessionEmitter()
           const loaded = await Effect.runPromise(
-            provider.loadSession(definition, agentSessionId, cwd, events.emit, account, toolGateway)
+            provider.loadSession(
+              definition,
+              agentSessionId,
+              cwd,
+              events.emit,
+              account,
+              toolGateway,
+              sessionOptions
+            )
           )
           const metadata = loaded.metadata ?? { configOptions: [], sessionId: loaded.sessionId }
           return manageSession(

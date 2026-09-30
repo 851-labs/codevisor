@@ -18,17 +18,21 @@ import {
 import { emitBackgroundTasks, wrapBackgroundBash } from "./background-tasks.js"
 import { emitAuthoritativeDiff } from "./diff-stats.js"
 import { handleMessage } from "./messages.js"
-import { applyClaudeModelFromProvider, currentClaudeModelFor, metadataFor } from "./models.js"
+import {
+  alignStartModel,
+  applyClaudeModelFromProvider,
+  claudeStartOptions,
+  emitModelFallback,
+  currentClaudeModelFor,
+  metadataFor,
+  resolveClaudeModel,
+  SETTABLE_EFFORT_LEVELS
+} from "./models.js"
 import { holdClaudeApproval, holdClaudePlanApproval, holdClaudeQuestion } from "./questions.js"
-import { InputQueue, type ClaudeQueryFn, type ClaudeSession } from "./session.js"
+import { InputQueue, type ClaudeModel, type ClaudeQueryFn, type ClaudeSession } from "./session.js"
 import { resumeSessionAfterStreamDeath } from "./stream-recovery.js"
 import { applyTaskCreate, emitTaskPlanUpdate } from "./tasks.js"
 import { failDeferredPrompts, finishActiveTurn } from "./turn-lifecycle.js"
-
-/// Effort levels the CLI's flag settings accept. `max` is valid (verified
-/// against a live CLI) even though the SDK's `Settings` type lags its own
-/// `EffortLevel` union.
-const SETTABLE_EFFORT_LEVELS = new Set(["low", "medium", "high", "xhigh", "max"])
 
 const CLAUDE_AUTH_OVERRIDE_ENV_VARS = [
   "ANTHROPIC_API_KEY",
@@ -61,6 +65,11 @@ export const makeStartSession = (deps: StartSessionDeps) => {
     readFile,
     wrapCommand
   } = deps
+  /// The model list the last process reported. A saved model is checked
+  /// against it before being handed to a new process: a value no current
+  /// row can name is left for restore to report as unavailable instead of
+  /// being started blind.
+  let knownModels: ReadonlyArray<ClaudeModel> = []
 
   const startSession = async (
     definition: HarnessDefinition,
@@ -91,9 +100,22 @@ export const makeStartSession = (deps: StartSessionDeps) => {
     }
     for (const name of account?.unsetEnv ?? []) delete accountEnv[name]
     Object.assign(accountEnv, account?.env)
+    // The chat's saved selections start the process, so it never runs a
+    // turn on the CLI default while restore catches up.
+    const saved = sessionOptions?.configSelections ?? {}
+    const savedModel =
+      saved.model === undefined || knownModels.length === 0
+        ? saved.model
+        : resolveClaudeModel(knownModels, saved.model)?.value
+    const startOptions = claudeStartOptions({
+      effort: saved.effort,
+      model: savedModel,
+      speed: saved.speed
+    })
     // Filled in below; the hook and pump close over it.
     let session: ClaudeSession | undefined
     const options: ClaudeOptions = {
+      ...startOptions,
       abortController: abort,
       cwd,
       env: accountEnv,
@@ -246,12 +268,15 @@ export const makeStartSession = (deps: StartSessionDeps) => {
       backgroundShellKeys: new Map(),
       backgroundTasks: new Map(),
       hiddenBackgroundTaskIds: new Set(),
-      currentEffort: "default",
+      currentEffort:
+        saved.effort !== undefined && SETTABLE_EFFORT_LEVELS.has(saved.effort)
+          ? saved.effort
+          : "default",
       currentMessageId: undefined,
       currentMessageTextStreamed: false,
-      currentModel: "",
+      currentModel: startOptions.model ?? "",
       currentModeId: "bypassPermissions",
-      currentSpeed: "standard",
+      currentSpeed: saved.speed === "fast" ? "fast" : "standard",
       cwd,
       emit,
       getSessionInfo,
@@ -297,9 +322,21 @@ export const makeStartSession = (deps: StartSessionDeps) => {
       try {
         for await (const message of query) {
           if (message.type === "system" && message.subtype === "init") {
+            const expectedModel = created.currentModel
             applyClaudeModelFromProvider(created, message.model)
             if (message.fast_mode_state !== undefined) {
               created.currentSpeed = message.fast_mode_state === "on" ? "fast" : "standard"
+            }
+            // The CLI started on a different model than the one it was
+            // given (e.g. a usage-limit fallback): say so, and publish what
+            // is really running. Never persisted as the chat's selection.
+            if (
+              !created.retired &&
+              expectedModel.length > 0 &&
+              created.models.length > 0 &&
+              created.currentModel !== expectedModel
+            ) {
+              emitModelFallback(created, expectedModel, created.currentModel, null)
             }
             continue
           }
@@ -312,43 +349,23 @@ export const makeStartSession = (deps: StartSessionDeps) => {
             // Claude Code re-ran the turn on a fallback model. Handled here
             // rather than in `handleSystemMessage` for the same reason `init`
             // is: correcting the model needs this scope's `metadataFor` and
-            // model-matching helpers.
+            // model-matching helpers. The swap is sticky for the CLI session,
+            // so the picker reports it; the chat's saved pick is untouched and
+            // restore re-applies it before the next prompt.
             //
-            // Two separate emits, deliberately: the client's `session.updated`
-            // dispatch duck-types the payload and stops at the first arm that
-            // matches, so folding the notice and the option snapshot into one
-            // payload would drop whichever arm loses.
+            // Prefer the picker's canonical value when the provider's
+            // concrete id can be reconciled with it. If it cannot, keep the
+            // provider id: reporting an unfamiliar fallback is more truthful
+            // than substituting the model that just refused.
             const fallbackModel = applyClaudeModelFromProvider(created, message.fallback_model)
-            void created.emit({
-              kind: "session.updated",
-              payload: {
-                modelFallback: {
-                  originalModel: message.original_model,
-                  // Prefer the picker's canonical value when the provider's
-                  // concrete id can be reconciled with it. If it cannot, keep
-                  // the provider id: reporting an unfamiliar fallback is more
-                  // truthful than substituting the model that just refused.
-                  fallbackModel,
-                  // Open string on the wire — new categories ship ahead of
-                  // schema updates, so this passes through untouched.
-                  category: message.api_refusal_category ?? null
-                }
-              },
-              subjectId: created.key
-            })
-            // The swap is sticky for the session, so a picker still
-            // advertising the original model would be lying for every later
-            // turn. Re-emitting the whole snapshot also refreshes the
-            // effort/speed lists, which derive from the current model.
-            void created.emit({
-              kind: "session.updated",
-              payload: {
-                configId: "model",
-                configOptions: metadataFor(created).configOptions,
-                value: created.currentModel
-              },
-              subjectId: created.key
-            })
+            emitModelFallback(
+              created,
+              message.original_model,
+              fallbackModel,
+              // Open string on the wire — new categories ship ahead of
+              // schema updates, so this passes through untouched.
+              message.api_refusal_category ?? null
+            )
             continue
           }
           if (!created.retired) handleMessage(created, message, readFile)
@@ -410,7 +427,9 @@ export const makeStartSession = (deps: StartSessionDeps) => {
       ]).finally(() => clearTimeout(timeout))
       if (models !== undefined) {
         adoptModelList(created, models)
+        knownModels = created.models
         currentClaudeModelFor(created)
+        await alignStartModel(created, startOptions.model)
       } else {
         // Losing the race does not cancel the request: the CLI still answers
         // on its control channel, typically a few seconds later on a busy
@@ -424,9 +443,11 @@ export const makeStartSession = (deps: StartSessionDeps) => {
           (lateModels) => {
             if (created.retired || created.models.length > 0) return
             adoptModelList(created, lateModels)
+            knownModels = created.models
             // Init may already have reported the concrete model id; reconcile
             // it against the picker rather than resetting to the first entry.
             applyClaudeModelFromProvider(created, created.currentModel)
+            void alignStartModel(created, startOptions.model)
             void created.emit({
               kind: "session.updated",
               payload: {

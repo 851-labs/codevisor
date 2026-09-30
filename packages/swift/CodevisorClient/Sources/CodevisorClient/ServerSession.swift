@@ -177,6 +177,8 @@ public struct ServerSession: Codable, Equatable, Sendable {
   public var workspaceId: String? = nil
   public var cwd: String?
   public var configSelections: [String: String]? = nil
+  /// Saved `configSelections` the chat's runtime no longer offers.
+  public var unavailableConfigSelections: [String: String]? = nil
   public var createdAt: String
   public var updatedAt: String?
   public var sidebarState: SessionSidebarState? = nil
@@ -221,6 +223,7 @@ public struct ServerSession: Codable, Equatable, Sendable {
       worktreeName: worktreeName,
       cwd: cwd,
       configSelections: configSelections,
+      unavailableConfigSelections: unavailableConfigSelections,
       createdAt: try ServerDateCoding.date(from: createdAt),
       updatedAt: try updatedAt.map(ServerDateCoding.date),
       sidebarState: sidebarState ?? .idle,
@@ -253,6 +256,7 @@ public struct ServerSession: Codable, Equatable, Sendable {
     workspaceId: String? = nil,
     cwd: String? = nil,
     configSelections: [String: String]? = nil,
+    unavailableConfigSelections: [String: String]? = nil,
     createdAt: String,
     updatedAt: String? = nil,
     sidebarState: SessionSidebarState? = nil,
@@ -278,6 +282,7 @@ public struct ServerSession: Codable, Equatable, Sendable {
     self.workspaceId = workspaceId
     self.cwd = cwd
     self.configSelections = configSelections
+    self.unavailableConfigSelections = unavailableConfigSelections
     self.createdAt = createdAt
     self.updatedAt = updatedAt
     self.sidebarState = sidebarState

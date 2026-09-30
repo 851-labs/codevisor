@@ -2,7 +2,7 @@ import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import type { SessionConfigOption } from "@codevisor/api"
+import type { SessionConfigOption, SessionSummary } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
 import {
@@ -16,6 +16,188 @@ import {
 } from "../test-support.js"
 
 describe("session configuration picks", () => {
+  it("persists session config and restores model before dependent reasoning and speed", async () => {
+    const { agents, services } = await makeServices("server-a")
+    const folder = mkdtempSync(join(tmpdir(), "codevisor-session-config-"))
+    tempDirs.push(folder)
+    const project = await run(services.db.createProject({ folderPath: folder }))
+    const session = await run(
+      services.db.createSession({
+        projectId: project.id,
+        harnessId: "codex",
+        agentSessionId: "agent-session-config"
+      })
+    )
+    const server = await startWithApp(services)
+    runningServers.push(server)
+
+    expect(
+      (await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })).status
+    ).toBe(200)
+    for (const [configId, value] of [
+      ["model", "model-saved"],
+      ["reasoning", "high"],
+      ["speed", "fast"],
+      ["tone", "detailed"]
+    ] as const) {
+      expect(
+        (
+          await jsonRequest(server, `/v1/sessions/${session.id}/config`, {
+            body: JSON.stringify({ configId, value }),
+            method: "POST"
+          })
+        ).status
+      ).toBe(202)
+    }
+    expect(await run(services.db.getSessionConfigSelections(session.id))).toEqual({
+      model: "model-saved",
+      reasoning: "high",
+      speed: "fast",
+      tone: "detailed"
+    })
+    expect((await jsonRequest(server, `/v1/sessions/${session.id}`)).body).toMatchObject({
+      session: {
+        configSelections: {
+          model: "model-saved",
+          reasoning: "high",
+          speed: "fast",
+          tone: "detailed"
+        }
+      }
+    })
+
+    agents.configs.splice(0)
+    const restored = (
+      await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })
+    ).body as { readonly configOptions: ReadonlyArray<SessionConfigOption> }
+    expect(agents.configs).toEqual([
+      [session.agentSessionId, "model", "model-saved"],
+      [session.agentSessionId, "reasoning", "high"],
+      [session.agentSessionId, "speed", "fast"],
+      [session.agentSessionId, "tone", "detailed"]
+    ])
+    expect(configSelectionsFromTestOptions(restored.configOptions)).toEqual({
+      model: "model-saved",
+      reasoning: "high",
+      speed: "fast",
+      tone: "detailed"
+    })
+
+    await run(
+      services.db.replaceSessionConfigSelections(
+        session.id,
+        {
+          model: "model-removed",
+          reasoning: "high",
+          speed: "fast",
+          tone: "tone-removed",
+          "zzz-removed": "unavailable"
+        },
+        { "zzz-removed": "unavailable" }
+      )
+    )
+    agents.configs.splice(0)
+    const fallback = (
+      await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })
+    ).body as { readonly configOptions: ReadonlyArray<SessionConfigOption> }
+    expect(agents.configs).toEqual([])
+    expect(configSelectionsFromTestOptions(fallback.configOptions)).toEqual({
+      model: "model-default",
+      reasoning: "low",
+      speed: "standard",
+      tone: "brief"
+    })
+    // The runtime's fallback never replaces the picks: they stay saved, and
+    // the ones it does not offer are reported as unavailable. An option the
+    // runtime lacks altogether is kept, and an earlier verdict on it stands.
+    const { session: afterFallback } = (await jsonRequest(server, `/v1/sessions/${session.id}`))
+      .body as { readonly session: SessionSummary }
+    expect(afterFallback.configSelections).toEqual({
+      model: "model-removed",
+      reasoning: "high",
+      speed: "fast",
+      tone: "tone-removed",
+      "zzz-removed": "unavailable"
+    })
+    expect(afterFallback.unavailableConfigSelections).toEqual({
+      model: "model-removed",
+      reasoning: "high",
+      speed: "fast",
+      tone: "tone-removed",
+      "zzz-removed": "unavailable"
+    })
+
+    // Picking the option answers its unavailable mark; a model pick also
+    // settles the options that depend on the model.
+    expect(
+      (
+        await jsonRequest(server, `/v1/sessions/${session.id}/config`, {
+          body: JSON.stringify({ configId: "model", value: "model-default" }),
+          method: "POST"
+        })
+      ).status
+    ).toBe(202)
+    const afterPick = await run(services.db.getSessionSummary(session.id))
+    expect(afterPick.configSelections).toEqual({
+      model: "model-default",
+      reasoning: "low",
+      speed: "standard",
+      tone: "tone-removed",
+      "zzz-removed": "unavailable"
+    })
+    expect(afterPick.unavailableConfigSelections).toEqual({
+      tone: "tone-removed",
+      "zzz-removed": "unavailable"
+    })
+
+    await run(
+      services.db.replaceSessionConfigSelections(session.id, {
+        model: "model-saved"
+      })
+    )
+    agents.configFailures.push(["agent-session-config", "model", "model-saved"])
+    const transientFallback = (
+      await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })
+    ).body as { readonly configOptions: ReadonlyArray<SessionConfigOption> }
+    expect(configSelectionsFromTestOptions(transientFallback.configOptions).model).toBe(
+      "model-default"
+    )
+    const afterFailure = await run(services.db.getSessionSummary(session.id))
+    expect(afterFailure.configSelections).toEqual({ model: "model-saved" })
+    expect(afterFailure.unavailableConfigSelections).toBeUndefined()
+  })
+
+  it("keeps saved config selections when a session opens with no config options", async () => {
+    const { agents, services } = await makeServices("server-a")
+    const folder = mkdtempSync(join(tmpdir(), "codevisor-no-config-options-"))
+    tempDirs.push(folder)
+    const project = await run(services.db.createProject({ folderPath: folder }))
+    const session = await run(
+      services.db.createSession({
+        projectId: project.id,
+        harnessId: "claude-code",
+        agentSessionId: "agent-no-config-options"
+      })
+    )
+    const saved = { effort: "high", model: "opus[1m]", speed: "standard" }
+    await run(services.db.replaceSessionConfigSelections(session.id, saved))
+    const server = await startWithApp(services)
+    runningServers.push(server)
+
+    const opened = await jsonRequest(server, `/v1/sessions/${session.id}/connect`, {
+      method: "POST"
+    })
+    expect(opened.status).toBe(200)
+    expect((opened.body as { readonly configOptions: unknown }).configOptions).toEqual([])
+    // Nothing to validate against, so nothing is applied — and, above all,
+    // nothing is overwritten.
+    expect(agents.configs).toEqual([])
+    expect(await run(services.db.getSessionConfigSelections(session.id))).toEqual(saved)
+    expect((await jsonRequest(server, `/v1/sessions/${session.id}`)).body).toMatchObject({
+      session: { configSelections: saved }
+    })
+  })
+
   it("records a pick without starting the agent when no runtime is loaded", async () => {
     const { agents, services } = await makeServices("server-a")
     const folder = mkdtempSync(join(tmpdir(), "codevisor-session-config-"))
@@ -55,6 +237,8 @@ describe("session configuration picks", () => {
     const restored = (
       await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })
     ).body as { readonly configOptions: ReadonlyArray<SessionConfigOption> }
+    // The process starts on the saved picks rather than its default.
+    expect(agents.startSelections).toEqual([{ model: "model-saved", reasoning: "low" }])
     expect(agents.configs).toEqual([[session.agentSessionId, "model", "model-saved"]])
     expect(configSelectionsFromTestOptions(restored.configOptions).model).toBe("model-saved")
   })
@@ -80,8 +264,9 @@ describe("session configuration picks", () => {
     await run(services.agents.closeAgentSession("agent-session-config-closed"))
     agents.configs.splice(0)
 
+    // A drifted id lands on the entry the last known list offers.
     const picked = await jsonRequest(server, `/v1/sessions/${session.id}/config`, {
-      body: JSON.stringify({ configId: "model", value: "model-saved" }),
+      body: JSON.stringify({ configId: "model", value: "model-saved-legacy" }),
       method: "POST"
     })
     expect(picked.status).toBe(202)
@@ -94,6 +279,14 @@ describe("session configuration picks", () => {
     expect((await run(services.db.getSessionConfigSelections(session.id))).model).toBe(
       "model-saved"
     )
+
+    // A value that list does not know is still the user's pick: the list may
+    // be stale, and the next restore judges it against the live runtime.
+    await jsonRequest(server, `/v1/sessions/${session.id}/config`, {
+      body: JSON.stringify({ configId: "model", value: "model-next" }),
+      method: "POST"
+    })
+    expect((await run(services.db.getSessionConfigSelections(session.id))).model).toBe("model-next")
   })
 
   it("records a pick for a chat with no agent session or usable snapshot", async () => {

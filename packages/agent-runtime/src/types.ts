@@ -75,6 +75,9 @@ export interface AgentSessionMetadata {
   readonly configOptions: ReadonlyArray<SessionConfigOption>
   /// Whether the harness supports persistent session goals (codex goal mode).
   readonly supportsGoals?: boolean
+  /// Requested selections (config id → requested value) that could not be
+  /// applied to this snapshot. Only inspection reports it.
+  readonly unappliedConfigSelections?: Readonly<Record<string, string>>
 }
 
 /// Partial goal update mirroring codex `thread/goal/set`: omitted fields keep
@@ -369,6 +372,11 @@ export interface CreateSessionOptions {
   /// grants most of its own timeout — a cold CLI spawn on a slow machine
   /// (a containerized Linux server) routinely needs more than the default.
   readonly modelListTimeoutMs?: number
+  /// The chat's saved picker selections (config id → value). Harnesses that
+  /// can take them as process start options (Claude's model, effort, and
+  /// speed) start with them, so a fresh or resumed process never runs on
+  /// its own default before the selections are restored.
+  readonly configSelections?: Readonly<Record<string, string>>
 }
 
 export interface AgentProvider {
@@ -388,7 +396,8 @@ export interface AgentProvider {
     cwd: string,
     emit: RuntimeEmit,
     account?: HarnessAccountContext,
-    toolGateway?: ToolGatewayConfig
+    toolGateway?: ToolGatewayConfig,
+    sessionOptions?: CreateSessionOptions
   ) => Effect.Effect<LoadedAgentSession, AgentRuntimeError>
   /// Sessions from the harness's own on-disk store (run before/outside
   /// Codevisor) — powers onboarding's workspace suggestions and "import

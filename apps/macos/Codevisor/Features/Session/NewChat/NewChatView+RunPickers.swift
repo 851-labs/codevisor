@@ -283,7 +283,7 @@ extension NewChatView {
     }
   }
 
-  /// A picked project carries the machine's remembered worktree preference
+  /// A picked project carries its own remembered worktree preference
   /// (worktrees only make sense for git projects) unless the caller pins
   /// the run location — a machine switch keeping the draft's own choice.
   func selectTargetProject(
@@ -300,7 +300,8 @@ extension NewChatView {
       wantsWorktree
       ?? (project.isGitRepository
         && environment.composerDefaults.prefersWorktreeForNewWorkspaces(
-          forServer: project.serverId
+          forServer: project.serverId,
+          projectId: project.id
         ))
     Task {
       if project.serverId != controller.project.serverId {
@@ -342,6 +343,7 @@ extension NewChatView {
   private func selectRunLocation(newWorktree: Bool, controller: SessionController) {
     environment.composerDefaults.rememberNewWorkspaceWorktreePreference(
       serverId: controller.project.serverId,
+      projectId: controller.project.id,
       createsWorktree: newWorktree
     )
     controller.wantsNewWorktree = newWorktree

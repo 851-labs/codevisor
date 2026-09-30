@@ -236,7 +236,6 @@ struct SessionContainerView: View {
           if leaf != activeLeafId {
             activateLeaf(leaf)
           }
-          rememberWorkspaceDefaults(from: chatId)
           if chatId != session?.id {
             onFocusedChatChanged?(chatId)
           }

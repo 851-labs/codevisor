@@ -40,11 +40,9 @@ extension SessionStore {
     let controller = SessionController(
       project: project,
       configCache: environment.configCache,
+      // New tabs and splits start from the machine's New Chat defaults.
       composerDefaults: environment.composerDefaults,
-      composerDefaultsScope: .workspace(
-        id: workspaceId,
-        serverId: project.serverId
-      ),
+      hostWorkspaceId: workspaceId,
       serverClient: environment.machines.client(for: project.serverId),
       machines: environment.machines,
       notificationDelivery: notificationDelivery,

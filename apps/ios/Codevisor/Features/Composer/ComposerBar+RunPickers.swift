@@ -76,6 +76,7 @@ extension ComposerBar {
     if project.isGitRepository {
       environment.composerDefaults.rememberNewWorkspaceWorktreePreference(
         serverId: project.serverId,
+        projectId: project.id,
         createsWorktree: effectiveWorktree
       )
     }
@@ -107,7 +108,10 @@ extension ComposerBar {
     else { return }
     let prefersWorktree =
       wantsWorktree
-      ?? environment.composerDefaults.prefersWorktreeForNewWorkspaces(forServer: project.serverId)
+      ?? environment.composerDefaults.prefersWorktreeForNewWorkspaces(
+        forServer: project.serverId,
+        projectId: project.id
+      )
     applyRunTarget(project, wantsWorktree: prefersWorktree)
   }
 
@@ -115,6 +119,7 @@ extension ComposerBar {
     guard liveProject.isGitRepository else { return }
     environment.composerDefaults.rememberNewWorkspaceWorktreePreference(
       serverId: controller.project.serverId,
+      projectId: controller.project.id,
       createsWorktree: newWorktree
     )
     controller.wantsNewWorktree = newWorktree

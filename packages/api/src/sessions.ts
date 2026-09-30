@@ -91,18 +91,17 @@ export const SessionSummary = Schema.Struct({
   title: Schema.String,
   origin: SessionOrigin,
   worktreeName: Schema.optional(Schema.String),
-  /// The pane workspace this session belongs to, when a client has assigned
-  /// one. Optional for sessions created before workspaces existed.
+  /// The client-assigned pane workspace; absent for pre-workspace sessions.
   workspaceId: Schema.optional(Schema.String),
   cwd: Schema.optional(Schema.String),
-  /// Last configuration values accepted for this chat. Clients combine this
-  /// small snapshot with cached option metadata to paint the previous
-  /// composer configuration while the harness validates it.
+  /// The user's picks for this chat (clients paint the composer from them
+  /// while the harness validates), and the saved picks the runtime no longer
+  /// offers: kept saved, recorded by restore, cleared by picking that option.
   configSelections: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  unavailableConfigSelections: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   createdAt: Schema.String,
   updatedAt: Schema.optional(Schema.String),
-  /** Native-sidebar state and the moment that visible state was entered.
-   *  Optional while native clients may connect to older servers. */
+  /** Native-sidebar state and when it was entered; optional for old servers. */
   sidebarState: Schema.optional(SessionSidebarState),
   sidebarStateChangedAt: Schema.optional(Schema.String),
   usage: Schema.optional(SessionUsage),

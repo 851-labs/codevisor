@@ -102,6 +102,15 @@ extension ChatScreen {
         onDismiss: { controller.dismissConfigurationAdjustment() }
       )
     }
+    // The chat's model was withdrawn: shown until the user picks another
+    // model or dismisses it.
+    if let message = controller.modelUnavailableMessage {
+      ComposerNoticeRail(
+        message,
+        kind: .warning,
+        onDismiss: { controller.dismissModelUnavailableNotice() }
+      )
+    }
     // A refusal-driven model swap is independent of the two notices above:
     // it can happen mid-chat long after configuration settled, so it gets
     // its own slot rather than another branch.

@@ -123,6 +123,7 @@ export interface SessionRow {
   readonly background_tasks: string
   readonly session_plan: string | null
   readonly config_selections: string
+  readonly unavailable_config_selections: string
   readonly attention_latest_sequence: number
   readonly attention_last_seen_sequence: number
   readonly attention_unread_count: number

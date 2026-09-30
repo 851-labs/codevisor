@@ -20,7 +20,20 @@ extension SessionModel {
     configOptions: [SessionConfigOption]
   ) {
     if let modeState { self.modeState = modeState }
-    if !configOptions.isEmpty { self.configOptions = configOptions }
+    if !configOptions.isEmpty { self.configOptions = preservingInFlightPicks(configOptions) }
+  }
+
+  /// A runtime snapshot produced before an in-flight pick reached the
+  /// server still carries the previous value; keep the user's pick until
+  /// its own request settles. Everything else in the snapshot applies.
+  func preservingInFlightPicks(_ options: [SessionConfigOption]) -> [SessionConfigOption] {
+    guard !inFlightConfigValues.isEmpty else { return options }
+    return options.map { option in
+      guard let value = inFlightConfigValues[option.id] else { return option }
+      var updated = option
+      updated.currentValue = value
+      return updated
+    }
   }
 
   /// Sets a config option optimistically, then asks the server to persist it.
@@ -30,6 +43,12 @@ extension SessionModel {
   public func setConfigOption(configId: String, value: String) async -> Bool {
     let revision = (configMutationRevisions[configId] ?? 0) &+ 1
     configMutationRevisions[configId] = revision
+    inFlightConfigValues[configId] = value
+    defer {
+      if configMutationRevisions[configId] == revision {
+        inFlightConfigValues[configId] = nil
+      }
+    }
     let previousValue: String?
     if let index = configOptions.firstIndex(where: { $0.id == configId }) {
       previousValue = configOptions[index].currentValue

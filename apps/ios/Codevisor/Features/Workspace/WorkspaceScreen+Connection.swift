@@ -162,6 +162,8 @@ extension WorkspaceScreen {
       ),
       legacyGroups: environment.paneGroups
     )
+    controller.hostWorkspaceId = workspace.id
+    // Sending never writes model defaults: only explicit picks do.
     environment.composerDefaults.performPersistenceBatch(flushImmediately: true) {
       // A scratch folder is single-use; remember the CHOICE of no
       // project rather than the folder it happened to get.
@@ -169,14 +171,13 @@ extension WorkspaceScreen {
         serverId: project.serverId,
         projectId: project.isScratch ? Project.runTargetPlaceholderID : project.id
       )
-      environment.composerDefaults.rememberNewWorkspaceWorktreePreference(
-        serverId: project.serverId,
-        createsWorktree: controller.wantsNewWorktree
-      )
-      controller.rememberCurrentComposerConfiguration()
-      controller.moveComposerDefaults(
-        to: .workspace(id: workspace.id, serverId: session.serverId)
-      )
+      if project.isGitRepository, !project.isScratch {
+        environment.composerDefaults.rememberNewWorkspaceWorktreePreference(
+          serverId: project.serverId,
+          projectId: project.id,
+          createsWorktree: controller.wantsNewWorktree
+        )
+      }
     }
     // Save the draft pane under the real session before Home mounts the
     // normal workspace route. Both containers resolve the same cached

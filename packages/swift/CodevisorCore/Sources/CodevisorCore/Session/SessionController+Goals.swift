@@ -60,6 +60,7 @@ extension SessionController {
     let objective = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !objective.isEmpty, !isConnecting, !isSubmitting,
       isServerReady, configurationValidationState == .ready,
+      !requiresModelSelection,
       model != nil || selectedHarness != nil
     else { return }
 
@@ -84,6 +85,7 @@ extension SessionController {
       && resumeAgentSessionId?.isEmpty != false
     // Navigate first, exactly like a first prompt send.
     if !hasSentFirst {
+      firstSendSelections = rememberedConfigValues
       hasSentFirst = true
       if onFirstSend != nil {
         pendingNewChatAnalytics = true

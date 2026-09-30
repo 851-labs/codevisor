@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest"
 import { makeAcpAgentRuntime, run } from "./test-support.js"
 
 describe("@codevisor/agent-runtime inspection configuration", () => {
-  it("preserves settings when selections are unchanged, invalid, or rejected", async () => {
+  it("reports selections that are unoffered or rejected instead of dropping them", async () => {
     let closeCount = 0
     const applied: Array<readonly [string, string]> = []
     const configOptions = [
@@ -74,7 +74,51 @@ describe("@codevisor/agent-runtime inspection configuration", () => {
 
     expect(applied).toEqual([["model", "pro"]])
     expect(inspected.configOptions).toEqual(configOptions)
+    expect(inspected.unappliedConfigSelections).toEqual({ missing: "value", model: "pro" })
     expect(closeCount).toBe(1)
+  })
+
+  it("applies a drifted requested id under the provider's reconciliation", async () => {
+    const applied: Array<readonly [string, string]> = []
+    const handle = {
+      cancel: Effect.succeed({ runtimeState: "reusable" as const }),
+      close: Effect.void,
+      prompt: () => Effect.succeed({ stopReason: "end_turn" }),
+      setConfigOption: (configId: string, value: string) =>
+        Effect.sync(() => {
+          applied.push([configId, value])
+          return [fableModelOption(value)]
+        }),
+      setMode: () => Effect.void
+    }
+    const custom = {
+      createSession: () =>
+        Effect.succeed({
+          handle,
+          metadata: { configOptions: [fableModelOption("")], sessionId: "i" }
+        }),
+      id: "claude" as const,
+      loadSession: () => Effect.die("unused"),
+      readiness: () => ({ state: "ready" }) as const,
+      reconcileConfigValue: (_option: unknown, value: string) =>
+        value === "claude-fable-5[1m]" ? "claude-fable-5-1[1m]" : undefined
+    }
+    const runtime = makeAcpAgentRuntime({
+      env: { PATH: "/bin" },
+      executableExists: () => true,
+      locateExecutable: (name) => `/bin/${name}`,
+      providers: { claude: custom as never }
+    })
+
+    const inspected = await run(
+      runtime.inspectHarness("claude-code", "/tmp/project", undefined, {
+        model: "claude-fable-5[1m]"
+      })
+    )
+
+    expect(applied).toEqual([["model", "claude-fable-5-1[1m]"]])
+    expect(inspected.configOptions[0]?.currentValue).toBe("claude-fable-5-1[1m]")
+    expect(inspected.unappliedConfigSelections).toBeUndefined()
   })
 
   it("routes saved-value reconciliation to the harness's provider", () => {
@@ -110,4 +154,15 @@ describe("@codevisor/agent-runtime inspection configuration", () => {
     expect(runtime.reconcileConfigValue("codex", option, "pro-legacy")).toBeUndefined()
     expect(runtime.reconcileConfigValue("not-a-harness", option, "pro-legacy")).toBeUndefined()
   })
+})
+
+const fableModelOption = (currentValue: string) => ({
+  category: "model",
+  currentValue,
+  id: "model",
+  name: "Model",
+  options: [
+    { name: "Sonnet", value: "sonnet" },
+    { name: "Fable", value: "claude-fable-5-1[1m]" }
+  ]
 })

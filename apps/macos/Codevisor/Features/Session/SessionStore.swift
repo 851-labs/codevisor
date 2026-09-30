@@ -214,10 +214,10 @@ final class SessionStore {
     let controller = SessionController(
       project: project,
       configCache: environment.configCache,
-      composerDefaults: workspaceId == nil ? nil : environment.composerDefaults,
-      composerDefaultsScope: workspaceId.map {
-        .workspace(id: $0, serverId: session.serverId)
-      },
+      // Existing chats never read New Chat defaults; the store is only
+      // consulted while a chat is still an unsent draft.
+      composerDefaults: environment.composerDefaults,
+      hostWorkspaceId: workspaceId,
       serverClient: environment.machines.client(for: session.serverId),
       machines: environment.machines,
       notificationDelivery: notificationDelivery,

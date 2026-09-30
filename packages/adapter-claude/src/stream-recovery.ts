@@ -1,6 +1,7 @@
 import type { Options as ClaudeOptions, Query } from "@anthropic-ai/claude-agent-sdk"
 
 import { emitBackgroundTasks } from "./background-tasks.js"
+import { claudeStartOptions } from "./models.js"
 import { cancelClaudePendingQuestions } from "./questions.js"
 import { InputQueue, type ClaudeQueryFn, type ClaudeSession } from "./session.js"
 import { pushResumeAfterInterruptionPrompt } from "./turn-recovery.js"
@@ -56,14 +57,29 @@ export const resumeSessionAfterStreamDeath = async (
   }
   // A fresh session was started with `--session-id`; the resumed one must
   // name the same id through `resume` instead, never both.
-  const { extraArgs: _fresh, ...resumeOptions } = deps.options
+  // The process restarts on what the session is running now — the model,
+  // effort, and speed the chat applied since start — not the start options.
+  const {
+    extraArgs: _fresh,
+    model: _startModel,
+    settings: _startSettings,
+    ...resumeOptions
+  } = deps.options
   const nextInput = new InputQueue()
   session.input.end()
   session.input = nextInput
   session.streamEnded = false
   session.q = deps.queryFn({
     prompt: nextInput,
-    options: { ...resumeOptions, resume: session.sdkSessionId }
+    options: {
+      ...resumeOptions,
+      ...claudeStartOptions({
+        effort: session.currentEffort,
+        model: session.currentModel,
+        speed: session.currentSpeed
+      }),
+      resume: session.sdkSessionId
+    }
   })
   deps.pump(session.q).catch(() => undefined)
   pushResumeAfterInterruptionPrompt(session)

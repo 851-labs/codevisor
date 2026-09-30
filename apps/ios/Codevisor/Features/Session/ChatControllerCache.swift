@@ -65,11 +65,10 @@ final class ChatControllerCache {
     let controller = SessionController(
       project: project,
       configCache: environment.configCache,
+      // Consulted only while the chat is still an unsent draft; new tabs
+      // start from the machine's New Chat defaults.
       composerDefaults: environment.composerDefaults,
-      composerDefaultsScope: .workspace(
-        id: workspaceId,
-        serverId: session.serverId
-      ),
+      hostWorkspaceId: workspaceId,
       serverClient: environment.machines.client(for: session.serverId),
       machines: environment.machines,
       attachmentFiles: environment.composerDrafts.attachmentFiles
@@ -142,7 +141,6 @@ final class ChatControllerCache {
       project: restoredProject,
       configCache: environment.configCache,
       composerDefaults: environment.composerDefaults,
-      composerDefaultsScope: .newWorkspace(serverId: restoredProject.serverId),
       // The restored project's OWN machine — a retargeted draft keeps
       // talking to the machine it was pointed at across relaunches.
       serverClient: environment.machines.client(for: restoredProject.serverId),
@@ -156,7 +154,8 @@ final class ChatControllerCache {
     controller.wantsNewWorktree =
       restoredProject.isGitRepository
       && environment.composerDefaults.prefersWorktreeForNewWorkspaces(
-        forServer: restoredProject.serverId
+        forServer: restoredProject.serverId,
+        projectId: restoredProject.id
       )
     if let persisted { controller.restoreDraft(persisted) }
     controller.onDraftChange = { [weak drafts = environment.composerDrafts] draft in

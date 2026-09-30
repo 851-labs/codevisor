@@ -331,7 +331,10 @@ export const discoverCapabilities = async (
             configOptions: metadata.configOptions,
             ...(metadata.supportsGoals === undefined
               ? {}
-              : { supportsGoals: metadata.supportsGoals })
+              : { supportsGoals: metadata.supportsGoals }),
+            ...(metadata.unappliedConfigSelections === undefined
+              ? {}
+              : { unappliedConfigSelections: metadata.unappliedConfigSelections })
           }
         } catch (cause) {
           // The picker hides a harness with no model option, so a swallowed

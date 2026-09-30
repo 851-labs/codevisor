@@ -16,35 +16,23 @@ struct ModelConfigMenu: View {
   private var favoriteModelIDs: [ModelPickerFavorite]
   @State private var isPresented = false
   @State private var isParametersPresented = false
-  /// The pick most recently handed to the controller. The chip shows it
-  /// (with a spinner) until the task that applied it finishes; a newer
-  /// pick supersedes an older in-flight one instead of waiting on it.
-  @State private var pendingSelection: PendingSelection?
-  @State private var selectionRevision: UInt64 = 0
-
-  private struct PendingSelection {
-    let groupId: String
-    let modelValue: String
-    let modelName: String
-  }
 
   var body: some View {
-    // A background revalidation must not replace an already-usable model
-    // control (or dismiss its open popover) with a spinner. Reserve the
-    // loading placeholder only for a true cache miss.
-    if controller.isLoadingModelMenu, modelGroups.isEmpty {
+    let presentation = controller.modelPickerPresentation
+    // One spinner at most across both chips (see ModelPickerPresentation).
+    if presentation.modelChip == .loading {
       ProgressView()
         .controlSize(.small)
         .frame(minWidth: 96)
-        .help("Loading model settings")
-        .accessibilityLabel("Loading model settings")
+        .help("Loading models")
+        .accessibilityLabel("Loading models")
     } else if !modelGroups.isEmpty || !signInRequiredHarnesses.isEmpty || !settingsOptions.isEmpty {
       HStack(spacing: 10) {
         if !modelGroups.isEmpty || !signInRequiredHarnesses.isEmpty {
-          modelButton
+          modelButton(presentation)
         }
-        if !settingsOptions.isEmpty {
-          parametersMenu
+        if presentation.showsSettingsChip, !settingsOptions.isEmpty || presentation.showsSettingsSpinner {
+          parametersMenu(presentation)
         }
       }
     }
@@ -52,7 +40,7 @@ struct ModelConfigMenu: View {
 }
 
 private extension ModelConfigMenu {
-  private var modelButton: some View {
+  private func modelButton(_ presentation: ModelPickerPresentation) -> some View {
     Autocomplete.Menu(isPresented: $isPresented) {
       for group in modelGroups {
         Autocomplete.Picker(group.name, id: group.id, selection: modelSelection, options: group.modelOption.options) {
@@ -81,29 +69,28 @@ private extension ModelConfigMenu {
           .help("Open Harness Settings")
       }
     } label: {
-      modelChipLabel
+      modelChipLabel(presentation)
     }
     .autocompleteSearchLabel("Search models")
     .autocompleteEmptyMessage("No matching models")
     .buttonStyle(HoverIconButtonStyle(shape: .chip))
+    .hoverChipOverflow()
     .fixedSize(horizontal: false, vertical: true)
     .help("Choose model")
     .accessibilityLabel("Model")
-    .accessibilityValue(controller.modelOption?.currentName ?? "No model selected")
+    .accessibilityValue(presentation.modelChipTitle ?? "Loading")
   }
 
   private var modelSelection: Binding<ModelPickerFavorite> {
     Binding(
       get: {
-        if let pendingSelection {
-          return ModelPickerFavorite(
-            harnessID: pendingSelection.groupId,
-            modelValue: pendingSelection.modelValue
-          )
+        if let pick = controller.pendingModelPick {
+          return ModelPickerFavorite(harnessID: pick.harnessId, modelValue: pick.value)
         }
         return ModelPickerFavorite(
           harnessID: controller.activeHarnessId ?? "active",
-          modelValue: controller.modelOption?.currentValue ?? ""
+          modelValue: controller.selectedModelName == nil
+            ? "" : controller.modelOption?.currentValue ?? ""
         )
       },
       set: { favorite in
@@ -116,7 +103,7 @@ private extension ModelConfigMenu {
     )
   }
 
-  private var parametersMenu: some View {
+  private func parametersMenu(_ presentation: ModelPickerPresentation) -> some View {
     Autocomplete.Menu(isPresented: $isParametersPresented) {
       for option in settingsOptions {
         Autocomplete.Picker(option.name, id: option.id, selection: parameterSelection(option), options: option.options)
@@ -125,15 +112,16 @@ private extension ModelConfigMenu {
         }
       }
     } label: {
-      parameterChipLabel
+      parameterChipLabel(presentation)
     }
     .autocompleteSearchLabel("Search model parameters")
     .autocompleteEmptyMessage("No matching parameters")
     .buttonStyle(HoverIconButtonStyle(shape: .chip))
+    .hoverChipOverflow()
     .fixedSize()
     .help("Model parameters")
     .accessibilityLabel("Model parameters")
-    .accessibilityValue(parameterAccessibilityValue)
+    .accessibilityValue(parameterAccessibilityValue(presentation))
   }
 
   private func parameterSelection(_ option: SessionConfigOption) -> Binding<String> {
@@ -223,73 +211,58 @@ private extension ModelConfigMenu {
     _ model: SessionConfigSelectOption,
     in group: ModelMenuGroup
   ) -> Bool {
-    if let pendingSelection {
-      return pendingSelection.groupId == group.id && pendingSelection.modelValue == model.value
+    if let pick = controller.pendingModelPick {
+      return pick.harnessId == group.id && pick.value == model.value
     }
     return controller.activeHarnessId == group.id
+      && controller.selectedModelName != nil
       && group.modelOption.currentValue == model.value
   }
 
+  /// The controller names the pick on the chip immediately, validates it
+  /// against the live list after any harness switch (staging it if the list
+  /// lags), and resolves the model's settings behind a single spinner.
   private func choose(_ model: SessionConfigSelectOption, in group: ModelMenuGroup) {
-    selectionRevision &+= 1
-    let revision = selectionRevision
-    pendingSelection = PendingSelection(
-      groupId: group.id,
-      modelValue: model.value,
-      modelName: model.name
-    )
     isPresented = false
     Task {
-      if controller.activeHarnessId != group.id, controller.canChooseHarness {
-        await controller.selectHarness(group.id)
-      }
-      if let liveModel = controller.modelOption {
-        await controller.setConfigOption(liveModel.id, model.value)
-      }
-      // Only the newest pick clears the pending state: an older one
-      // finishing late must not flash its outcome over a newer choice.
-      guard revision == selectionRevision else { return }
-      pendingSelection = nil
+      await controller.chooseModel(model.value, name: model.name, harnessId: group.id)
     }
-  }
-
-  /// The parameter list can change with the model, so it reads as
-  /// refreshing while a model pick (here or a machine switch) is settling.
-  private var isRefreshingParameters: Bool {
-    pendingSelection != nil || controller.isResolvingModelConfiguration
   }
 
   private var settingsOptions: [SessionConfigOption] {
     ModelParameterMenu.options(from: controller.configOptions)
   }
 
-  private var parameterAccessibilityValue: String {
+  private func parameterAccessibilityValue(_ presentation: ModelPickerPresentation) -> String {
     let summary = summarizedSettingsOptions.map { "\($0.name), \($0.currentName)" }
       .joined(separator: ", ")
-    let value = summary.isEmpty ? "Default" : summary
-    return isRefreshingParameters ? "\(value), updating" : value
+    guard !summary.isEmpty else { return presentation.showsSettingsSpinner ? "Loading" : "Default" }
+    return presentation.showsSettingsSpinner ? "\(summary), updating" : summary
   }
 
   private var summarizedSettingsOptions: [SessionConfigOption] {
     ModelParameterMenu.summarized(settingsOptions)
   }
 
-  private var parameterChipSummary: String {
+  /// The chip's text. While settings are loading with nothing to name yet,
+  /// the spinner alone is the label.
+  private func parameterChipSummary(_ presentation: ModelPickerPresentation) -> String? {
     let summary = summarizedSettingsOptions.map(\.currentName).joined(separator: " · ")
-    return summary.isEmpty ? "Options" : summary
+    guard summary.isEmpty else { return summary }
+    return presentation.showsSettingsSpinner ? nil : "Options"
   }
 
-  private var modelChipLabel: some View {
+  private func modelChipLabel(_ presentation: ModelPickerPresentation) -> some View {
     ModelPickerChipLabel(
       group: pendingModelGroup ?? activeModelGroup,
-      modelName: pendingSelection?.modelName ?? controller.modelOption?.currentName,
-      isLoading: pendingSelection != nil
+      title: presentation.modelChipTitle ?? "Select a model",
+      hasSelection: controller.selectedModelName != nil
     )
   }
 
   private var pendingModelGroup: ModelMenuGroup? {
-    guard let pendingSelection else { return nil }
-    return modelGroups.first { $0.id == pendingSelection.groupId }
+    guard let pick = controller.pendingModelPick else { return nil }
+    return modelGroups.first { $0.id == pick.harnessId }
   }
 
   private var activeModelGroup: ModelMenuGroup? {
@@ -297,12 +270,14 @@ private extension ModelConfigMenu {
     return modelGroups.first { $0.id == activeHarnessId } ?? modelGroups.first
   }
 
-  private var parameterChipLabel: some View {
+  private func parameterChipLabel(_ presentation: ModelPickerPresentation) -> some View {
     HStack(spacing: 5) {
-      Text(parameterChipSummary)
-        .foregroundStyle(.secondary)
-        .lineLimit(1)
-      if isRefreshingParameters {
+      if let summary = parameterChipSummary(presentation) {
+        Text(summary)
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+      }
+      if presentation.showsSettingsSpinner {
         ProgressView()
           .controlSize(.mini)
           .accessibilityHidden(true)

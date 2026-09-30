@@ -11,6 +11,7 @@ extension SessionController {
       !isConnecting,
       isServerReady,
       configurationValidationState == .ready,
+      !requiresModelSelection,
       !isSubmitting
     else { return }
     showsNewChatAfterSetupFailure = false
@@ -93,6 +94,9 @@ extension SessionController {
     // Materialize the durable session before setup so the workspace and
     // pane keep a stable identity even if setup fails.
     if !hasSentFirst {
+      // The draft's visible selection becomes the new chat's own value
+      // until the server or runtime reports one.
+      firstSendSelections = rememberedConfigValues
       hasSentFirst = true
       if onFirstSend != nil {
         pendingNewChatAnalytics = true

@@ -1,3 +1,4 @@
+import type { Options as ClaudeOptions, Settings } from "@anthropic-ai/claude-agent-sdk"
 import { findKnownModel, sanitizeModelValue } from "@codevisor/agent-runtime"
 import type { SessionConfigOption, SessionModeState } from "@codevisor/api"
 
@@ -184,17 +185,91 @@ export const currentClaudeModelFor = (session: ClaudeSession): ClaudeModel | und
     session.currentModel = matched.value
     return matched
   }
-  // A model the session was told about but the picker cannot name stays
-  // as reported: presenting it as the list's first row would misreport
-  // what the CLI is actually running. Only an unset model takes the
-  // first entry, which is the CLI's own default.
-  if (session.currentModel.length > 0 && session.currentModel !== "default") return undefined
-  const fallback = session.models[0]
-  if (fallback === undefined) return undefined
-  session.currentModel = fallback.value
-  return fallback
+  // A model the picker cannot name stays as reported, and an unset model
+  // stays unset (reported as "", meaning unknown): until the CLI's init
+  // names its model, presenting some row of the list would be a guess, and
+  // a guess read back as the chat's selection is how picks got replaced.
+  return undefined
+}
+
+/// Effort levels the CLI's flag settings accept. `max` is valid (verified
+/// against a live CLI) even though the SDK's `Settings` type lags its own
+/// `EffortLevel` union.
+export const SETTABLE_EFFORT_LEVELS: ReadonlySet<string> = new Set([
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max"
+])
+
+export interface ClaudeStartSelections {
+  readonly model?: string | undefined
+  readonly effort?: string | undefined
+  readonly speed?: string | undefined
+}
+
+/// Query options that start a CLI process on the chat's selections instead
+/// of the CLI's defaults. Effort and fast mode go through the flag-settings
+/// layer — the same layer live changes use (`applyFlagSettings`) — so a
+/// later live change replaces them rather than competing with a CLI flag.
+export const claudeStartOptions = (
+  selections: ClaudeStartSelections
+): Pick<ClaudeOptions, "model" | "settings"> => {
+  const model = selections.model === undefined ? "" : sanitizeModelValue(selections.model)
+  const settings: Record<string, unknown> = {}
+  if (selections.effort !== undefined && SETTABLE_EFFORT_LEVELS.has(selections.effort)) {
+    settings.effortLevel = selections.effort
+  }
+  if (selections.speed === "fast" || selections.speed === "standard") {
+    settings.fastMode = selections.speed === "fast"
+  }
+  return {
+    ...(model.length === 0 || model === "default" ? {} : { model }),
+    ...(Object.keys(settings).length === 0 ? {} : { settings: settings as Settings })
+  }
 }
 
 /// The CLI's default effort for effort-capable models is "high".
 const defaultEffortFor = (levels: ReadonlyArray<string>): string =>
   levels.includes("high") ? "high" : (levels[0] ?? "high")
+
+/// A saved model id from an older CLI release reconciles onto the current
+/// row's id (Fable's id drifts between releases). The process was started
+/// with the saved id, so hand it the id the picker now reports.
+export const alignStartModel = async (
+  session: ClaudeSession,
+  startModel: string | undefined
+): Promise<void> => {
+  if (startModel === undefined || session.currentModel === startModel) return
+  if (!session.models.some((model) => model.value === session.currentModel)) return
+  await session.q.setModel(session.currentModel).catch(() => undefined)
+}
+
+/// Two separate emits, deliberately: the client's `session.updated` dispatch
+/// duck-types the payload and stops at the first arm that matches, so
+/// folding the notice and the option snapshot into one payload would drop
+/// whichever arm loses. The snapshot refreshes the picker (and the
+/// effort/speed lists, which derive from the model) to what is really
+/// running; it is a runtime report, never a change to the chat's saved pick.
+export const emitModelFallback = (
+  session: ClaudeSession,
+  originalModel: string,
+  fallbackModel: string,
+  category: string | null
+): void => {
+  void session.emit({
+    kind: "session.updated",
+    payload: { modelFallback: { originalModel, fallbackModel, category } },
+    subjectId: session.key
+  })
+  void session.emit({
+    kind: "session.updated",
+    payload: {
+      configId: "model",
+      configOptions: metadataFor(session).configOptions,
+      value: session.currentModel
+    },
+    subjectId: session.key
+  })
+}

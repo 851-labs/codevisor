@@ -108,7 +108,8 @@ export interface AgentRuntimeService {
     cwd: string,
     sink: RuntimeEventSink,
     account?: HarnessAccountContext,
-    toolGateway?: import("./types.js").ToolGatewayConfig
+    toolGateway?: import("./types.js").ToolGatewayConfig,
+    sessionOptions?: import("./types.js").CreateSessionOptions
   ) => Effect.Effect<string, AgentRuntimeError>
   readonly inspectHarness: (
     harnessId: string,
@@ -122,7 +123,8 @@ export interface AgentRuntimeService {
     cwd: string,
     sink: RuntimeEventSink,
     account?: HarnessAccountContext,
-    toolGateway?: import("./types.js").ToolGatewayConfig
+    toolGateway?: import("./types.js").ToolGatewayConfig,
+    sessionOptions?: import("./types.js").CreateSessionOptions
   ) => Effect.Effect<AgentSessionMetadata, AgentRuntimeError>
   readonly prompt: (
     sessionId: string,

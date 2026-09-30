@@ -28,6 +28,8 @@ extension SessionController {
     if seedFromCachedServerCapabilities() {
       preparationState = .ready
       await resolveAutomaticSelectionIfNeeded()
+      await resolveDraftModelAvailabilityIfNeeded()
+      await resolveDraftModelSettingsIfNeeded()
       guard
         configCache.needsCapabilityRevalidation(
           forServer: target.serverId,
@@ -42,6 +44,8 @@ extension SessionController {
           requestRevision: requestRevision
         )
         await self.resolveAutomaticSelectionIfNeeded()
+        await self.resolveDraftModelAvailabilityIfNeeded()
+        await self.resolveDraftModelSettingsIfNeeded()
       }
       return
     }
@@ -56,6 +60,8 @@ extension SessionController {
       requestRevision: requestRevision
     )
     await resolveAutomaticSelectionIfNeeded()
+    await resolveDraftModelAvailabilityIfNeeded()
+    await resolveDraftModelSettingsIfNeeded()
   }
 
   /// Refreshes only the harness used by a resumed chat. This runs beside
@@ -78,32 +84,13 @@ extension SessionController {
         logExistingChatPhase("capabilities_missing", harnessId: harnessId, startedAt: startedAt)
         return
       }
-      var validatedCapability = capability
-      validatedCapability.configOptions = Self.configurationOptions(
-        restoring: serverSession?.configSelections,
-        from: capability.configOptions
-      )
-      // Deliberately NOT deriving `configurationAdjustmentMessage` here.
-      // This is a throwaway fresh-harness inspection: it runs under the
-      // harness's *active* account rather than the chat's bound one, its
-      // model list is a best-effort race that yields an empty list on
-      // timeout, and its effort/speed lists are derived from the
-      // inspection's own default model. Any of those makes the chat's
-      // saved selection look missing, and because this call beats the
-      // runtime connect (which can cold-spawn the agent), the false
-      // claim was what the user actually read. Only the resumed
-      // runtime's own snapshot can answer "is this still available".
-      configCache.store(validatedCapability, forServer: project.serverId)
-      applyHarnessCapabilities([validatedCapability])
-      // A late generic inspection must not leave its fresh-session
-      // defaults in the fast cache after the actual resumed runtime won.
-      if let model, let connectedHarnessId {
-        configCache.store(
-          model.configOptions,
-          forHarness: connectedHarnessId,
-          onServer: project.serverId
-        )
-      }
+      // A fresh-harness inspection supplies option LISTS only. Its
+      // `currentValue`s are fresh-session defaults and never stand in for
+      // this chat's own values (see `existingChatConfigOptions`), so it
+      // is safe to share as catalog data. Only the chat's saved record and
+      // its runtime can answer "is this still available".
+      configCache.store(capability, forServer: project.serverId)
+      applyHarnessCapabilities([capability])
       didLoadExistingHarnessCapabilities = true
       existingConfigurationError = nil
       updateConfigurationValidationState()
@@ -142,6 +129,8 @@ extension SessionController {
       force: true
     )
     await resolveAutomaticSelectionIfNeeded()
+    await resolveDraftModelAvailabilityIfNeeded()
+    await resolveDraftModelSettingsIfNeeded()
   }
 
   /// Marks a mounted draft stale after authentication, account, enablement,
@@ -170,63 +159,6 @@ extension SessionController {
       return !configCache.signInRequired(forServer: project.serverId).isEmpty
     }
     return harnesses.contains { !(configOptionsByHarness[$0.id] ?? []).isEmpty }
-  }
-
-  static func configurationAdjustmentMessage(
-    saved: [String: String]?,
-    validated: [SessionConfigOption]
-  ) -> String? {
-    guard let saved, !saved.isEmpty else { return nil }
-    // An option the snapshot does not advertise at all is not evidence of
-    // loss: several (`speed`, model-specific effort tiers) exist only for
-    // certain models, so their absence is routine. Only an option that is
-    // still present AND now reports a different value means the saved
-    // selection could not be restored.
-    let changed = saved.compactMap { configId, previousValue -> (String, SessionConfigOption)? in
-      guard let option = validated.first(where: { $0.id == configId }),
-        option.currentValue != previousValue
-      else { return nil }
-      return (previousValue, option)
-    }
-    guard !changed.isEmpty else { return nil }
-    if let (previousValue, model) = changed.first(where: {
-      $0.1.category == SessionConfigOption.Category.model || $0.1.id == "model"
-    }) {
-      // A different current value does not prove the saved model was
-      // withdrawn. Providers can advertise a model while transiently
-      // rejecting its automatic restore; the picker may successfully
-      // apply that same value moments later.
-      if let previous = model.options.first(where: { $0.value == previousValue }) {
-        return "\(previous.name) couldn’t be restored. Using \(model.currentName)."
-      }
-      return "\(previousValue) is no longer available. Using \(model.currentName)."
-    }
-    let hasUnavailableValue = changed.contains { previousValue, option in
-      !option.options.contains { $0.value == previousValue }
-    }
-    if !hasUnavailableValue {
-      return "Some saved settings couldn’t be restored. Current harness values are being used."
-    }
-    return "Some saved settings are no longer available. Current harness defaults are being used."
-  }
-
-  /// A capability inspection represents a fresh session, so its
-  /// `currentValue`s are defaults. Preserve persisted values only when the
-  /// freshly inspected option list still advertises them; removed values
-  /// deliberately fall back to the harness default.
-  private static func configurationOptions(
-    restoring saved: [String: String]?,
-    from inspected: [SessionConfigOption]
-  ) -> [SessionConfigOption] {
-    guard let saved, !saved.isEmpty else { return inspected }
-    var restored = inspected
-    for (configId, previousValue) in saved {
-      guard let index = restored.firstIndex(where: { $0.id == configId }),
-        restored[index].options.contains(where: { $0.value == previousValue })
-      else { continue }
-      restored[index].currentValue = previousValue
-    }
-    return restored
   }
 
   func finishInitialHistoryLoading(sessionId: UUID, outcome: String) {
@@ -329,7 +261,6 @@ extension SessionController {
 
   private func applyHarnessCapabilities(_ capabilities: [ServerHarnessCapability]) {
     let available = capabilities.map(\.harness)
-    let isNewChat = resumeAgentSessionId?.isEmpty != false
     // Capabilities come from the project server and have already been
     // filtered to enabled, ready harnesses. Applying the app's legacy
     // global harness preference here leaks one machine's choice into all
@@ -337,10 +268,9 @@ extension SessionController {
     harnesses = available
     for capability in capabilities {
       // Inspection describes a fresh harness and carries its defaults.
-      // Once a runtime is connected, its session-specific metadata is
-      // authoritative: a late capability refresh must not replace a
-      // resumed chat's persisted model/effort/speed with fresh-session
-      // defaults (for example, changing Codex `high` back to `low`).
+      // Existing chats read only option lists from it; once a runtime is
+      // connected, its session-specific metadata is authoritative for
+      // the lists too.
       let isConnectedHarness =
         model != nil
         && connectedHarnessId == capability.harness.id
@@ -352,11 +282,10 @@ extension SessionController {
       }
       supportsGoalsByHarness[capability.harness.id] = capability.supportsGoals ?? false
     }
-    if isNewChat {
+    if acceptsNewChatDefaults {
       applyNewChatSelectionPolicy(capabilities)
     } else if selectedHarnessId == nil {
       selectedHarnessId = harnesses.first?.id
     }
-    ensureDefaultModelSelection()
   }
 }

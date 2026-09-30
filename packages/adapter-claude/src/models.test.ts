@@ -2,10 +2,12 @@ import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
+  configUpdates,
   definition,
   FakeQuery,
   initMessage,
   makeProvider,
+  RELEASE_MODELS,
   run,
   systemMessage
 } from "./test-support.js"
@@ -52,6 +54,7 @@ describe("ClaudeProvider", () => {
     }
 
     const created = await run(provider.createSession(definition, "/tmp", emit))
+    await run(created.handle.setConfigOption("model", "claude-fable-5"))
     fake.push(initMessage("sdk-session-1", "claude-not-in-picker"))
     await fake.drain()
     await run(created.handle.setConfigOption("speed", "fast"))
@@ -104,23 +107,23 @@ describe("ClaudeProvider", () => {
     ])
     await fake.drain()
 
+    // Nothing named a model yet, so none is reported as selected ("" is
+    // unknown); the list's first row is not the CLI's model.
     expect(configUpdates(events)).toEqual([
       {
         configId: "model",
-        value: "sonnet",
+        value: "",
         configOptions: [
           expect.objectContaining({
-            currentValue: "sonnet",
+            currentValue: "",
             id: "model",
             options: [{ name: "Sonnet", value: "sonnet" }]
-          }),
-          expect.objectContaining({ currentValue: "high", id: "effort" }),
-          expect.objectContaining({ currentValue: "standard", id: "speed" })
+          })
         ]
       }
     ])
     // The handle's own snapshots carry the list from here on.
-    await run(created.handle.setConfigOption("effort", "low"))
+    await run(created.handle.setConfigOption("model", "sonnet"))
     const latest = events.at(-1)?.payload as { configOptions?: Array<{ id: string }> }
     expect(latest.configOptions?.map((option) => option.id)).toEqual(["model", "effort", "speed"])
   })
@@ -435,32 +438,3 @@ const createWithLostModelListRace = async (fake: FakeQuery, events: Array<Runtim
   await vi.advanceTimersByTimeAsync(3000)
   return pending
 }
-
-/// The list a current Claude CLI release offers: aliases for every family
-/// except Fable, whose row carries a concrete id that changes per release.
-const RELEASE_MODELS: SupportedModels = [
-  {
-    description: "",
-    displayName: "Sonnet",
-    supportedEffortLevels: ["low", "medium", "high"],
-    supportsEffort: true,
-    value: "sonnet"
-  },
-  { description: "", displayName: "Sonnet 5 (1M context)", value: "sonnet[1m]" },
-  {
-    description: "",
-    displayName: "Fable",
-    supportedEffortLevels: ["low", "medium", "high", "xhigh", "max"],
-    supportsEffort: true,
-    value: "claude-fable-5-1[1m]"
-  },
-  { description: "", displayName: "Opus", value: "opus" },
-  { description: "", displayName: "Opus (1M context)", value: "opus[1m]" },
-  { description: "", displayName: "Haiku", value: "haiku" }
-]
-
-const configUpdates = (events: ReadonlyArray<RuntimeEvent>): Array<Record<string, unknown>> =>
-  events
-    .filter((event) => event.kind === "session.updated")
-    .map((event) => event.payload as Record<string, unknown>)
-    .filter((payload) => Array.isArray(payload.configOptions))

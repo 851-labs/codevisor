@@ -166,6 +166,9 @@ export const workspacePaneFromRow = (row: WorkspacePaneRow): WorkspacePane => ({
 export const sessionFromRow = (row: SessionRow, folderPath: string | undefined): SessionSummary => {
   const cwd = resolveSessionCwd(folderPath, row.project_id, row.worktree_name ?? undefined)
   const configSelections = sessionConfigSelectionsFromRaw(row.config_selections)
+  const unavailableConfigSelections = sessionConfigSelectionsFromRaw(
+    row.unavailable_config_selections
+  )
   const labels = parseLabels(row.labels)
   return {
     id: row.id,
@@ -180,6 +183,9 @@ export const sessionFromRow = (row: SessionRow, folderPath: string | undefined):
     ...(row.workspace_id === null ? {} : { workspaceId: row.workspace_id }),
     ...(cwd === undefined ? {} : { cwd }),
     ...(Object.keys(configSelections).length === 0 ? {} : { configSelections }),
+    ...(Object.keys(unavailableConfigSelections).length === 0
+      ? {}
+      : { unavailableConfigSelections }),
     createdAt: row.created_at,
     ...(row.updated_at === null ? {} : { updatedAt: row.updated_at }),
     sidebarState: row.sidebar_state,

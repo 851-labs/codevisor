@@ -360,6 +360,7 @@ extension SessionController {
       && isServerReady
       && !composerAttachments.contains { $0.state == .loading }
       && configurationValidationState == .ready
+      && !requiresModelSelection
       && (isConnected || selectedHarness != nil)
   }
 }

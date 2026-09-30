@@ -5,7 +5,7 @@ import type {
   SDKMessage,
   SDKUserMessage
 } from "@anthropic-ai/claude-agent-sdk"
-import type { HarnessDefinition, ProviderEnvironment } from "@codevisor/agent-runtime"
+import type { HarnessDefinition, ProviderEnvironment, RuntimeEvent } from "@codevisor/agent-runtime"
 import { Effect } from "effect"
 
 import { makeClaudeProvider, type ClaudeProviderConfig } from "./claude.js"
@@ -305,3 +305,36 @@ export const makeProvider = (
     },
     readFile: (path) => (path === "/tmp/existing.txt" ? "line1\nline2\nline3\n" : undefined)
   })
+
+type SupportedModels = Awaited<ReturnType<FakeQuery["supportedModels"]>>
+
+/// The list a current Claude CLI release offers: aliases for every family
+/// except Fable, whose row carries a concrete id that changes per release.
+export const RELEASE_MODELS: SupportedModels = [
+  {
+    description: "",
+    displayName: "Sonnet",
+    supportedEffortLevels: ["low", "medium", "high"],
+    supportsEffort: true,
+    value: "sonnet"
+  },
+  { description: "", displayName: "Sonnet 5 (1M context)", value: "sonnet[1m]" },
+  {
+    description: "",
+    displayName: "Fable",
+    supportedEffortLevels: ["low", "medium", "high", "xhigh", "max"],
+    supportsEffort: true,
+    value: "claude-fable-5-1[1m]"
+  },
+  { description: "", displayName: "Opus", value: "opus" },
+  { description: "", displayName: "Opus (1M context)", value: "opus[1m]" },
+  { description: "", displayName: "Haiku", value: "haiku" }
+]
+
+export const configUpdates = (
+  events: ReadonlyArray<RuntimeEvent>
+): Array<Record<string, unknown>> =>
+  events
+    .filter((event) => event.kind === "session.updated")
+    .map((event) => event.payload as Record<string, unknown>)
+    .filter((payload) => Array.isArray(payload.configOptions))

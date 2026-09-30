@@ -5,9 +5,9 @@ import CodevisorTestSupport
 
 @testable import CodevisorCore
 
-/// A draft composer must never render an empty model chip: with options
-/// available but no usable current choice, the first option becomes the
-/// pending selection — exactly what the send would use.
+/// Draft model selection across catalogs and machine switches. A draft never
+/// substitutes a model the user did not pick: a missing one reads "Select a
+/// model" instead.
 @MainActor
 @Suite("DefaultModelSelection")
 struct DefaultModelSelectionTests {
@@ -29,8 +29,8 @@ struct DefaultModelSelectionTests {
     #expect(controller.preparationState == .ready)
   }
 
-  @Test("A draft with no usable model choice pends the first option")
-  func defaultsToFirstModel() throws {
+  @Test("A draft with no valid model pick asks for one instead of choosing the first")
+  func noAutomaticModelPick() throws {
     let controller = SessionController.preview()
     let harnessId = try #require(controller.selectedHarnessId)
     controller.configOptionsByHarness[harnessId] = [
@@ -45,19 +45,13 @@ struct DefaultModelSelectionTests {
         ]
       )
     ]
-    controller.ensureDefaultModelSelection()
-    #expect(controller.modelOption?.currentValue == "gpt-x")
+    controller.composerText = "hello"
 
-    // An existing valid (pending) choice is never overridden.
-    controller.pendingConfigByHarness[harnessId] = ["model": "gpt-y"]
-    controller.ensureDefaultModelSelection()
-    #expect(controller.modelOption?.currentValue == "gpt-y")
-
-    // A harness with no model options stays untouched.
-    controller.configOptionsByHarness[harnessId] = []
-    controller.pendingConfigByHarness[harnessId] = [:]
-    controller.ensureDefaultModelSelection()
-    #expect(controller.modelOption == nil)
+    #expect(controller.modelOption?.currentValue == "")
+    #expect(controller.modelPickerPresentation.modelChip == .selectModel)
+    #expect(controller.requiresModelSelection)
+    #expect(!controller.canSend)
+    #expect(controller.pendingConfigByHarness[harnessId] == nil)
   }
 
   @Test("Retargeting to another machine never keeps the old catalog")
@@ -147,6 +141,8 @@ struct DefaultModelSelectionTests {
     controller.harnesses = [sourceCodex.harness]
     controller.selectedHarnessId = "codex"
     controller.configOptionsByHarness["codex"] = sourceCodex.configOptions
+    // The source draft's model is the user's own pick, staged like any pick.
+    controller.pendingConfigByHarness["codex"] = ["model": "gpt-5.6-sol", "reasoning": "xhigh"]
     controller.preparationState = .ready
 
     await controller.retarget(
@@ -165,8 +161,8 @@ struct DefaultModelSelectionTests {
       ])
   }
 
-  @Test("An unavailable carried model falls back to that machine's profile")
-  func retargetFallsBackToDestinationProfile() async {
+  @Test("A carried model the destination does not offer asks for another model")
+  func retargetMissingModelAsksForPick() async {
     let defaults = ComposerDefaultsStore(store: InMemoryStore())
     defaults.rememberHarnessSelection(serverId: "machine-b", harnessId: "codex")
     defaults.rememberConfigSelections(
@@ -201,6 +197,10 @@ struct DefaultModelSelectionTests {
       // Claude being first reproduces the catalog-order regression.
       ServerCapabilities(harnesses: [destinationClaude, destinationCodex])
     }
+    // The server confirms it could not apply the carried model.
+    var resolved = destinationCodex
+    resolved.unappliedConfigSelections = ["model": "gpt-5.6-sol"]
+    client.resolvedCapabilitiesHandler = { [resolved] _, _, _ in ServerCapabilities(harnesses: [resolved]) }
 
     let controller = SessionController(
       project: project(serverId: "machine-a"),
@@ -210,15 +210,27 @@ struct DefaultModelSelectionTests {
     controller.harnesses = [sourceCodex.harness]
     controller.selectedHarnessId = "codex"
     controller.configOptionsByHarness["codex"] = sourceCodex.configOptions
+    // The source draft's model is the user's own pick, staged like any pick.
+    controller.pendingConfigByHarness["codex"] = ["model": "gpt-5.6-sol", "reasoning": "xhigh"]
 
     await controller.retarget(
       to: project(serverId: "machine-b"),
       serverClient: client
     )
 
+    // The carried harness stays; the model is not replaced by the
+    // destination's default or its remembered model.
     #expect(controller.selectedHarnessId == "codex")
-    #expect(controller.modelOption?.currentValue == "gpt-5.5")
-    #expect(controller.thoughtLevelOptions.first?.currentValue == "high")
+    #expect(controller.modelPickerPresentation.modelChip == .selectModel)
+    #expect(controller.requiresModelSelection)
+    #expect(
+      controller.modelUnavailableMessage
+        == "gpt-5.6-sol is no longer available. Select another model.")
+
+    // Picking a model clears the notice.
+    await controller.chooseModel("gpt-5.5", name: "gpt-5.5", harnessId: "codex")
+    #expect(controller.modelUnavailableMessage == nil)
+    #expect(controller.modelPickerPresentation.modelChip == .model(name: "gpt-5.5"))
   }
 
   @Test("Unavailable carried settings use the destination harness profile")
@@ -261,6 +273,8 @@ struct DefaultModelSelectionTests {
     controller.harnesses = [sourceCodex.harness]
     controller.selectedHarnessId = "codex"
     controller.configOptionsByHarness["codex"] = sourceCodex.configOptions
+    // The source draft's model is the user's own pick, staged like any pick.
+    controller.pendingConfigByHarness["codex"] = ["model": "gpt-5.6-sol", "reasoning": "xhigh"]
 
     await controller.retarget(
       to: project(serverId: "machine-b"),

@@ -25,26 +25,34 @@ struct ErrorBannerLayer: View {
   }
 }
 
+/// The window-level error toast. It uses the same banner language as the
+/// chat's notices (`ComposerNoticeRail`): the composer card's shape, caption
+/// type, and an error tint over an opaque base. Only the floating shadow and
+/// fixed width are its own, because it overlays arbitrary window content.
 private struct ErrorBannerView: View {
   @Environment(\.theme) private var theme
+  private var cardStyle = ComposerCardStyle()
   let entry: ErrorReporter.Entry
   let onDismiss: () -> Void
   @State private var isHovered = false
 
+  init(entry: ErrorReporter.Entry, onDismiss: @escaping () -> Void) {
+    self.entry = entry
+    self.onDismiss = onDismiss
+  }
+
   var body: some View {
-    HStack(alignment: .top, spacing: 10) {
+    HStack(alignment: .firstTextBaseline, spacing: 8) {
       Image(systemName: "exclamationmark.triangle.fill")
-        .font(.body)
-        .foregroundStyle(theme.statusError)
+        .font(.caption)
         .accessibilityHidden(true)
 
       VStack(alignment: .leading, spacing: 2) {
         Text(entry.title)
-          .font(.callout.weight(.semibold))
-          .foregroundStyle(.primary)
+          .font(.caption.weight(.semibold))
         if let message = entry.message, !message.isEmpty {
           Text(message)
-            .font(.callout)
+            .font(.caption)
             .foregroundStyle(.secondary)
             .lineLimit(4)
         }
@@ -54,20 +62,21 @@ private struct ErrorBannerView: View {
       Button(action: onDismiss) {
         Image(systemName: "xmark")
           .font(.caption.weight(.semibold))
-          .foregroundStyle(.secondary)
       }
       .buttonStyle(.plain)
-      .opacity(isHovered ? 1 : 0.5)
+      .opacity(isHovered ? 1 : 0.6)
       .help("Dismiss")
       .accessibilityLabel("Dismiss")
     }
-    .padding(12)
+    .foregroundStyle(theme.statusError)
+    .padding(ComposerCardStyle.contentPadding)
     .frame(width: 360, alignment: .leading)
-    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-    .overlay(
-      RoundedRectangle(cornerRadius: 10, style: .continuous)
-        .strokeBorder(.separator, lineWidth: 1)
-    )
+    .background {
+      ZStack {
+        cardStyle.shape.fill(theme.windowBackground)
+        cardStyle.shape.fill(theme.statusError.opacity(0.08))
+      }
+    }
     .shadow(color: .black.opacity(0.18), radius: 14, y: 4)
     .onHover { isHovered = $0 }
     .accessibilityElement(children: .combine)

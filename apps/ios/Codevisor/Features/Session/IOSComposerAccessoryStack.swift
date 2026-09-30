@@ -33,6 +33,7 @@ struct IOSComposerAccessoryStack: View {
       || (controller.configurationValidationError == nil
         && controller.configurationAdjustmentMessage != nil)
       || controller.modelFallbackMessage != nil
+      || controller.modelUnavailableMessage != nil
   }
 
   private var hasVisibleAccessory: Bool {
@@ -87,6 +88,17 @@ struct IOSComposerAccessoryStack: View {
           .transition(.opacity)
         }
 
+        // The model was withdrawn: shown until the user picks another
+        // model or dismisses it.
+        if let message = controller.modelUnavailableMessage {
+          ComposerNoticeRail(
+            message,
+            kind: .warning,
+            onDismiss: { controller.dismissModelUnavailableNotice() }
+          )
+          .transition(.opacity)
+        }
+
         if let message = controller.modelFallbackMessage {
           ComposerNoticeRail(
             message,
@@ -121,6 +133,7 @@ struct IOSComposerAccessoryStack: View {
       value: controller.queuedPrompts.map(\.id)
     )
     .animation(Motion.quick(reduceMotion: reduceMotion), value: controller.modelFallbackMessage)
+    .animation(Motion.quick(reduceMotion: reduceMotion), value: controller.modelUnavailableMessage)
     .animation(
       Motion.quick(reduceMotion: reduceMotion),
       value: controller.configurationValidationError

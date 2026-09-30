@@ -41,9 +41,6 @@ extension SessionContainerView {
       activateLeaf(leafId)
       if let model {
         sessionFocus.centerGroup = model
-        if let chatId = model.state.selectedPane?.chatSessionId {
-          rememberWorkspaceDefaults(from: chatId)
-        }
       }
     }
     model.isFocusCurrent = {
@@ -205,36 +202,6 @@ extension SessionContainerView {
     guard let leafId else { return }
     let workspace = selectedWorkspace
     store.selectDestination(.leaf(leafId), in: workspace.id)
-  }
-
-  /// Promotes the focused chat's live configuration into the workspace
-  /// inheritance profile. An eagerly-created unsent chat has its separate
-  /// pane-draft controller and already writes to this scope directly, so do
-  /// not mint a duplicate session controller for it.
-  func rememberWorkspaceDefaults(fromLeaf leafId: UUID, in workspace: Workspace) {
-    guard let selected = workspace.selectedPane(inLeaf: leafId),
-      selected.kind == .chat
-    else { return }
-    if let chatId = selected.chatSessionId {
-      rememberWorkspaceDefaults(from: chatId)
-    } else {
-      store.paneDraftController(forPane: selected.id)?
-        .rememberCurrentComposerConfiguration()
-    }
-  }
-
-  func rememberWorkspaceDefaults(from chatId: UUID) {
-    guard let chat = environment.projectList.session(chatId, serverId: selectedWorkspace.serverId) else { return }
-    if let live = store.activeController(for: chat) {
-      if let chatProject = environment.projectList.projects.first(where: {
-        $0.serverId == chat.serverId && $0.id == chat.projectId
-      }) {
-        store.reconcile(live, for: chat, project: chatProject)
-      }
-      live.rememberCurrentComposerConfiguration()
-      return
-    }
-
   }
 
   /// Browser titles follow this client's page; chat titles follow their session.

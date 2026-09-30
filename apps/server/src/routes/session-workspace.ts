@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto"
 
-import type { AgentSessionMetadata, HarnessAccountContext } from "@codevisor/agent-runtime"
+import {
+  placeConfigValue,
+  type AgentSessionMetadata,
+  type HarnessAccountContext
+} from "@codevisor/agent-runtime"
 import type {
   CreateSessionRequest,
   UpdateSessionRequest,
@@ -298,11 +302,21 @@ export const ensureAgentSessionFor = async (
   if (session.harnessAccountId === undefined && accountContext !== undefined) {
     await run(services.db.bindSessionHarnessAccount(session.id, accountContext.id))
   }
+  // The chat's saved picks start the harness process, so it never runs on
+  // the harness default while restore catches up.
+  const startOptions = { configSelections: session.configSelections ?? {} }
   if (session.agentSessionId === "") {
     const sink = sessionEventSink(services, fanout, serverId, sessionId)
     const toolGateway = await services.mcp?.issueGateway(session.id, session.projectId, sink)
     const agentSessionId = await run(
-      services.agents.createAgentSession(session.harnessId, cwd, sink, accountContext, toolGateway)
+      services.agents.createAgentSession(
+        session.harnessId,
+        cwd,
+        sink,
+        accountContext,
+        toolGateway,
+        startOptions
+      )
     )
     const updatedSession = await run(services.db.updateSession(sessionId, { agentSessionId }))
     await appendAndPublish(
@@ -319,7 +333,8 @@ export const ensureAgentSessionFor = async (
         cwd,
         sink,
         accountContext,
-        toolGateway
+        toolGateway,
+        startOptions
       )
     )
     if (await sessionIsArchived(services, await run(services.db.getSessionSummary(sessionId)))) {
@@ -338,7 +353,8 @@ export const ensureAgentSessionFor = async (
       cwd,
       sink,
       accountContext,
-      toolGateway
+      toolGateway,
+      startOptions
     )
   )
   if (await sessionIsArchived(services, await run(services.db.getSessionSummary(sessionId)))) {
@@ -348,19 +364,7 @@ export const ensureAgentSessionFor = async (
   return restoreSessionConfigSelections(services, sessionId, session.harnessId, metadata)
 }
 
-const selectableValues = (option: SessionConfigOption): ReadonlySet<string> =>
-  new Set(
-    option.options.flatMap((entry) =>
-      "value" in entry ? [entry.value] : entry.options.map((nested) => nested.value)
-    )
-  )
-
-export const configSelectionsFromOptions = (
-  options: ReadonlyArray<SessionConfigOption>
-): Readonly<Record<string, string>> =>
-  Object.fromEntries(options.map((option) => [option.id, option.currentValue]))
-
-const configRestorePriority = (option: SessionConfigOption | undefined): number => {
+export const configRestorePriority = (option: SessionConfigOption | undefined): number => {
   if (option?.category === "model" || option?.id === "model") return 0
   if (option?.category === "thought_level") return 1
   if (option?.category === "speed" || option?.id === "speed") return 2
@@ -370,8 +374,13 @@ const configRestorePriority = (option: SessionConfigOption | undefined): number 
 /// Rehydrates durable per-chat picker values after the provider has resumed
 /// its native thread. Model goes first because it can replace the available
 /// reasoning and speed lists. Every later value is validated against the
-/// latest options returned by the provider; removed values fall through to
-/// the provider's current default and the resolved snapshot replaces them.
+/// latest options returned by the provider.
+///
+/// The saved selections are the user's picks, and restore never replaces
+/// them with what the runtime happens to be running: a value the runtime no
+/// longer offers is kept and recorded as unavailable, and a value it rejects
+/// is kept for the next reconnect to retry. The only rewrite is a drifted id
+/// the provider reconciles onto its current entry for the same pick.
 const restoreSessionConfigSelections = async (
   services: CodevisorServerServices,
   sessionId: string,
@@ -379,16 +388,25 @@ const restoreSessionConfigSelections = async (
   metadata: AgentSessionMetadata
 ): Promise<AgentSessionMetadata> => {
   // No option list is not an answer: the Claude adapter returns none when its
-  // model list loses the startup race, and a snapshot derived from it would
-  // wipe the chat's saved model/effort. Leave the saved selections untouched
-  // so the next reconnect (or a late config update) can still restore them.
+  // model list loses the startup race, and nothing can be validated against
+  // it. Leave the saved selections untouched so the next reconnect (or a
+  // late config update) can still restore them.
   if (metadata.configOptions.length === 0) {
     await run(services.db.saveSessionRuntimeState(sessionId, metadata))
     return metadata
   }
-  const saved = await run(services.db.getSessionConfigSelections(sessionId))
+  const summary = await run(services.db.getSessionSummary(sessionId))
+  const saved = summary.configSelections ?? {}
+  const previouslyUnavailable = summary.unavailableConfigSelections ?? {}
+  const reconcile = (option: SessionConfigOption, value: string): string | undefined =>
+    services.agents.reconcileConfigValue(harnessId, option, value)
   let configOptions = metadata.configOptions
-  let restoreFailed = false
+  const migrated: Record<string, string> = {}
+  // An earlier verdict stands while its pick is unchanged and nothing here
+  // contradicts it (an option absent from this runtime is not re-judged).
+  const unavailable: Record<string, string> = Object.fromEntries(
+    Object.entries(previouslyUnavailable).filter(([configId, value]) => saved[configId] === value)
+  )
   const ordered = Object.entries(saved).toSorted(([leftId], [rightId]) => {
     const left = configOptions.find((option) => option.id === leftId)
     const right = configOptions.find((option) => option.id === rightId)
@@ -397,20 +415,26 @@ const restoreSessionConfigSelections = async (
   })
   for (const [configId, value] of ordered) {
     const option = configOptions.find((candidate) => candidate.id === configId)
-    if (option === undefined || option.currentValue === value) continue
+    // The option itself is absent — typically one the current model does
+    // not have (speed on a model without fast mode). The pick stays for a
+    // runtime that offers it again.
+    if (option === undefined) continue
     // A saved value the runtime no longer offers verbatim may still name a
     // current entry under a newer id (Claude's Fable id drifts between CLI
-    // releases). The provider says which; a value it cannot place is gone
-    // and falls through to the runtime's default.
-    const restored = selectableValues(option).has(value)
-      ? value
-      : services.agents.reconcileConfigValue(harnessId, option, value)
-    if (restored === undefined || !selectableValues(option).has(restored)) {
+    // releases). The provider says which.
+    const restored = placeConfigValue(option, value, reconcile)
+    if (restored === undefined) {
       console.error(
-        `[session-config] ${sessionId}: saved ${configId}=${value} is no longer offered; using ${option.currentValue}`
+        `[session-config] ${sessionId}: saved ${configId}=${value} is no longer offered; keeping it as unavailable`
       )
+      unavailable[configId] = value
       continue
     }
+    delete unavailable[configId]
+    if (restored !== value) migrated[configId] = restored
+    // Runtimes report "" for a value they do not know, so a matching current
+    // value is one the runtime is really running (Claude starts on the saved
+    // model), not a default that happens to look like the pick.
     if (option.currentValue === restored) continue
     try {
       configOptions = await run(
@@ -418,24 +442,26 @@ const restoreSessionConfigSelections = async (
       )
     } catch (error) {
       // A harness can reject a value between advertising it and applying it.
-      // Session open must still succeed. Keep its current value for this
-      // runtime, but retain the user's saved snapshot so the
-      // next reconnect can retry instead of turning a transient startup race
-      // into a permanent preference change.
+      // Session open must still succeed; the saved pick stays so the next
+      // reconnect can retry instead of turning a transient startup race into
+      // a permanent preference change.
       console.error(
         `[session-config] ${sessionId}: could not restore ${configId}=${restored}: ${String(error)}`
       )
-      restoreFailed = true
     }
   }
-  const resolvedSelections = configSelectionsFromOptions(configOptions)
-  await run(
-    services.db.replaceSessionConfigSelections(
-      sessionId,
-      restoreFailed ? { ...resolvedSelections, ...saved } : resolvedSelections
-    )
-  )
+  const selections = { ...saved, ...migrated }
+  if (!sameSelections(selections, saved) || !sameSelections(unavailable, previouslyUnavailable)) {
+    await run(services.db.replaceSessionConfigSelections(sessionId, selections, unavailable))
+  }
   const current = { ...metadata, configOptions }
   await run(services.db.saveSessionRuntimeState(sessionId, current))
   return current
 }
+
+const sameSelections = (
+  left: Readonly<Record<string, string>>,
+  right: Readonly<Record<string, string>>
+): boolean =>
+  Object.keys(left).length === Object.keys(right).length &&
+  Object.entries(left).every(([key, value]) => right[key] === value)

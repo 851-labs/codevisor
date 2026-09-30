@@ -110,7 +110,13 @@ export const HarnessCapability = Schema.Struct({
   harness: Harness,
   modes: Schema.optional(SessionModeState),
   configOptions: Schema.Array(SessionConfigOption),
-  supportsGoals: Schema.optional(Schema.Boolean)
+  supportsGoals: Schema.optional(Schema.Boolean),
+  /// Requested selections (config id → requested value) the inspection could
+  /// not apply: the harness does not offer the value (even after reconciling
+  /// a drifted id onto its current entry) or rejected it. A value that was
+  /// reconciled onto a different id is applied, not listed here — the
+  /// option's `currentValue` carries the reconciled id.
+  unappliedConfigSelections: Schema.optional(Schema.Record(Schema.String, Schema.String))
 })
 export type HarnessCapability = typeof HarnessCapability.Type
 

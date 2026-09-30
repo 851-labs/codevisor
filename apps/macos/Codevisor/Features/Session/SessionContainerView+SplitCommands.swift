@@ -81,7 +81,6 @@ extension SessionContainerView {
   func splitLeaf(_ leafId: UUID, edge: SplitEdge) {
     guard openingSplit == nil else { return }
     var workspace = selectedWorkspace
-    rememberWorkspaceDefaults(fromLeaf: leafId, in: workspace)
     guard
       let tabIndex = workspace.centerTabs.firstIndex(where: {
         $0.root.group(id: leafId) != nil

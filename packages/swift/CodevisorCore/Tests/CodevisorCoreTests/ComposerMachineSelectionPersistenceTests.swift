@@ -42,6 +42,8 @@ struct ComposerMachineSelectionPersistenceTests {
     controller.harnesses = [sourceCodex.harness]
     controller.selectedHarnessId = "codex"
     controller.configOptionsByHarness["codex"] = sourceCodex.configOptions
+    // The source draft's model is the user's own pick, staged like any pick.
+    controller.pendingConfigByHarness["codex"] = ["model": "gpt-5.6-sol", "reasoning": "xhigh"]
 
     async let retarget: Void = controller.retarget(
       to: project(serverId: "machine-b"),
@@ -96,7 +98,7 @@ struct ComposerMachineSelectionPersistenceTests {
     #expect(defaults.configSelections(forHarness: "codex", in: .newWorkspace(serverId: "machine-b")).isEmpty)
   }
 
-  @Test("A restored automatic carry still falls back when its model disappeared")
+  @Test("A restored automatic carry whose model disappeared asks for another model")
   func restoredCarryIsRevalidated() async {
     let defaults = ComposerDefaultsStore(store: InMemoryStore())
     defaults.rememberHarnessSelection(serverId: "machine-b", harnessId: "claude-code")
@@ -143,10 +145,18 @@ struct ComposerMachineSelectionPersistenceTests {
 
     await controller.prepare()
 
-    #expect(controller.selectedHarnessId == "claude-code")
-    #expect(controller.modelOption?.currentValue == "fable")
-    #expect(controller.thoughtLevelOptions.first?.currentValue == "low")
+    // The carried harness stays; its missing model is never replaced by
+    // the destination's default or remembered model.
+    #expect(controller.selectedHarnessId == "codex")
+    #expect(controller.modelPickerPresentation.modelChip == .selectModel)
+    #expect(
+      controller.modelUnavailableMessage
+        == "gpt-5.6-sol is no longer available. Select another model.")
+    // A carried setting the destination does not offer is not staged.
+    #expect(controller.thoughtLevelOptions.first?.currentValue == "high")
     #expect(!controller.draftSnapshot().selectionWasAutomaticallyCarried)
+    // The destination's own defaults are untouched.
+    #expect(defaults.lastHarnessId(for: .newWorkspace(serverId: "machine-b")) == "claude-code")
   }
 
   private func project(serverId: String) -> Project {

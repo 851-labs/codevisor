@@ -124,9 +124,6 @@ extension WorkspaceScreen {
 
   /// Adds a New Tab page and shows it; its page offers what to create.
   func addTab() {
-    if let sourcePane = activePane ?? panes.panes.first {
-      chatController(for: sourcePane)?.rememberCurrentComposerConfiguration()
-    }
     var state = panes
     let newPane = state.addNewTabPane()
     state.selectPane(id: newPane.id)

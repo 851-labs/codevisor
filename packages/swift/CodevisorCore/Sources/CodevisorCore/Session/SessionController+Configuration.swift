@@ -24,11 +24,16 @@ extension SessionController {
       || resumeAgentSessionId != session.agentSessionId
     serverSession = session
     resumeAgentSessionId = session.agentSessionId
+    // New Chat defaults stop applying once this is a real chat: a draft's
+    // pending "is the remembered model still offered?" check (and its
+    // notice) belongs to the draft, not to the chat's own model.
+    if session.agentSessionId?.isEmpty == false {
+      draftModelAvailability = nil
+    }
     if !session.harnessId.isEmpty {
       selectedHarnessId = session.harnessId
     }
     guard model == nil else { return }
-    seedExistingSessionConfiguration(from: session)
     // An in-flight connect owns the validation state machine: a refresh
     // snapshot arriving mid-connect usually carries the agent session id
     // that this very connect just minted server-side (`session.updated`
@@ -45,31 +50,6 @@ extension SessionController {
     configurationValidationState = .connecting
     isLoadingInitialHistory = true
     initialHistoryLoadStartedAt = ProcessInfo.processInfo.systemUptime
-  }
-
-  private func seedExistingSessionConfiguration(from session: ChatSession? = nil) {
-    let session = session ?? serverSession
-    guard model == nil,
-      let session,
-      !session.harnessId.isEmpty,
-      let selections = session.configSelections,
-      !selections.isEmpty
-    else { return }
-    var options =
-      configOptionsByHarness[session.harnessId]
-      ?? configCache.options(forHarness: session.harnessId, onServer: project.serverId)
-    for (configId, value) in selections {
-      if let index = options.firstIndex(where: { $0.id == configId }) {
-        // Keep even a now-unknown value visible while validation runs;
-        // SessionConfigOption.currentName falls back to the raw value.
-        options[index].currentValue = value
-      } else {
-        // The value snapshot is enough to paint a disabled provisional
-        // picker even when this machine has no cached definitions yet.
-        options.append(Self.provisionalConfigOption(id: configId, value: value))
-      }
-    }
-    configOptionsByHarness[session.harnessId] = options
   }
 
   private static func provisionalConfigOption(id: String, value: String) -> SessionConfigOption {
@@ -128,22 +108,16 @@ extension SessionController {
     }
   }
 
-  /// Selectable config options: live when connected, otherwise the cached
-  /// (stale) options for the selected harness with any pending edits applied.
+  /// Selectable config options. A draft shows its machine's catalog with
+  /// its own picks (and remembered New Chat defaults) applied. An existing
+  /// chat shows only its own values: the runtime's reported options, or the
+  /// chat's saved selections over the catalog's option lists. Catalog and
+  /// inspection `currentValue`s never stand in for an existing chat's own.
   public var configOptions: [SessionConfigOption] {
-    if let model, !model.configOptions.isEmpty {
-      let pending = pendingConfigByHarness[activeHarnessId ?? ""] ?? [:]
-      return model.configOptions.map { option in
-        var option = option
-        if let value = pending[option.id] { option.currentValue = value }
-        return option
-      }
-    }
-    // A connected runtime with NO options is not an answer to trust: Claude
-    // reports none whenever its model list loses the startup race, and it
-    // publishes the list later as a config update. Until then, show the
-    // cached harness catalog rather than hiding the picker; a harness that
-    // genuinely has no options has nothing cached and still shows nothing.
+    acceptsNewChatDefaults ? draftConfigOptions : existingChatConfigOptions
+  }
+
+  private var draftConfigOptions: [SessionConfigOption] {
     guard let harnessId = activeHarnessId else { return [] }
     let pendingConfig = pendingConfigByHarness[harnessId] ?? [:]
     // Onboarding first seeds the controller with a harness-only catalog,
@@ -152,17 +126,132 @@ extension SessionController {
     // cache's newer usable options while the project-specific refresh is
     // still in flight.
     let cachedOptions = configCache.options(forHarness: harnessId, onServer: project.serverId)
-    let options =
+    var options =
       configOptionsByHarness[harnessId].flatMap {
         $0.isEmpty && !cachedOptions.isEmpty ? nil : $0
       } ?? cachedOptions
-    return
-      options.map { option in
-        guard let pending = pendingConfig[option.id] else { return option }
-        var updated = option
-        updated.currentValue = pending
-        return updated
+    // A staged model the catalog does not describe uses its own inspected
+    // settings once known (see `resolveDraftModelSettingsIfNeeded`).
+    if let catalogModel = Self.modelOption(in: options),
+      let staged = pendingConfig[catalogModel.id], !staged.isEmpty,
+      let resolved = draftModelSettings[
+        Self.draftModelSettingsKey(harnessId: harnessId, model: staged)]
+    {
+      options = resolved
+    }
+    // A draft's model is only ever the user's own: a pick, a remembered
+    // New Chat default, or a carried selection — all staged in
+    // `pendingConfig`. The catalog's current value is the harness's own
+    // default (or a missing model's stand-in), never a choice the user
+    // made, so without a staged model the chip asks for a pick.
+    if let index = options.firstIndex(where: Self.isModelOption),
+      pendingConfig[options[index].id]?.isEmpty != false
+    {
+      options[index].currentValue = ""
+    }
+    return applying(pendingConfig, to: options)
+  }
+
+  private var existingChatConfigOptions: [SessionConfigOption] {
+    guard let harnessId = activeHarnessId else { return [] }
+    let pending = pendingConfigByHarness[harnessId] ?? [:]
+    var options: [SessionConfigOption]
+    if let model, !model.configOptions.isEmpty {
+      options = model.configOptions
+    } else {
+      // A connected runtime with NO options is not an answer to trust:
+      // Claude reports none whenever its model list loses the startup
+      // race, and publishes the list later as a config update. Until
+      // then the catalog supplies option LISTS only; values are the
+      // chat's own, and an option whose value is unknown stays hidden
+      // (the model option stays, empty, so the chip can wait for it).
+      let saved = existingChatSelections
+      let definitions =
+        configOptionsByHarness[harnessId].flatMap { $0.isEmpty ? nil : $0 }
+        ?? configCache.options(forHarness: harnessId, onServer: project.serverId)
+      options = definitions.compactMap { definition in
+        var option = definition
+        if let value = saved[option.id] {
+          option.currentValue = value
+        } else if Self.isModelOption(option) {
+          option.currentValue = ""
+        } else {
+          return nil
+        }
+        return option
       }
+      for (configId, value) in saved.sorted(by: { $0.key < $1.key })
+      where !options.contains(where: { $0.id == configId }) {
+        // The value snapshot is enough to paint a provisional picker
+        // even when this machine has no cached definitions yet.
+        options.append(Self.provisionalConfigOption(id: configId, value: value))
+      }
+      // Keep a saved value visible (by its raw id) when stale catalog
+      // lists do not carry it; the runtime decides its availability.
+      for index in options.indices {
+        let value = options[index].currentValue
+        if !value.isEmpty, !options[index].options.contains(where: { $0.value == value }) {
+          options[index].options.append(SessionConfigSelectOption(value: value, name: value))
+        }
+      }
+    }
+    if unavailableExistingModelValue != nil,
+      let index = options.firstIndex(where: Self.isModelOption)
+    {
+      options[index].currentValue = ""
+    }
+    return applying(pending, to: options)
+  }
+
+  /// The chat's own saved values: the server's record, falling back to the
+  /// selection captured when this device sent the chat's first prompt.
+  var existingChatSelections: [String: String] {
+    var values = firstSendSelections
+    values.merge(serverSession?.configSelections ?? [:]) { _, saved in saved }
+    return values.filter { !$0.value.isEmpty }
+  }
+
+  /// Overlays staged picks. A staged model the list does not carry keeps
+  /// its display name so the chip never rolls back to another model.
+  private func applying(
+    _ pending: [String: String],
+    to options: [SessionConfigOption]
+  ) -> [SessionConfigOption] {
+    guard !pending.isEmpty else { return options }
+    return options.map { option in
+      guard let value = pending[option.id] else { return option }
+      var updated = option
+      updated.currentValue = value
+      if !value.isEmpty, Self.isModelOption(option),
+        !option.options.contains(where: { $0.value == value }),
+        let name = stagedModelNames[value]
+      {
+        updated.options.append(SessionConfigSelectOption(value: value, name: name))
+      }
+      return updated
+    }
+  }
+
+  static func isModelOption(_ option: SessionConfigOption) -> Bool {
+    option.category == SessionConfigOption.Category.model || option.id == "model"
+  }
+
+  /// The model option id for a harness, from whichever definitions exist,
+  /// without consulting `configOptions` (which depends on this).
+  func modelConfigId(forHarness harnessId: String) -> String {
+    let sources: [[SessionConfigOption]] = [
+      model?.configOptions ?? [],
+      configOptionsByHarness[harnessId] ?? [],
+      configCache.options(forHarness: harnessId, onServer: project.serverId),
+    ]
+    for options in sources {
+      if let option = options.first(where: {
+        $0.category == SessionConfigOption.Category.model
+      }) {
+        return option.id
+      }
+    }
+    return "model"
   }
 
   /// Categories folded into the combined model dropdown rather than shown
@@ -182,21 +271,6 @@ extension SessionController {
     SessionConfigOption.Category.speed,
     SessionConfigOption.Category.modelConfig,
   ]
-
-  /// A draft never sits with an empty model chip: when the harness
-  /// reports selectable models but no usable current choice — and nothing
-  /// is pending or remembered — the first option becomes the pending
-  /// selection, which is exactly what the send would use.
-  func ensureDefaultModelSelection() {
-    guard model == nil, let harnessId = selectedHarnessId, let option = modelOption
-    else { return }
-    let isValid = option.options.contains { $0.value == option.currentValue }
-    guard !isValid, let first = option.options.first else { return }
-    var pending = pendingConfigByHarness[harnessId] ?? [:]
-    guard pending[option.id] == nil else { return }
-    pending[option.id] = first.value
-    pendingConfigByHarness[harnessId] = pending
-  }
 
   /// The model choice shown in the combined model dropdown.
   public var modelOption: SessionConfigOption? {
@@ -219,10 +293,14 @@ extension SessionController {
     modelOption != nil || !thoughtLevelOptions.isEmpty || speedOption != nil
   }
 
-  /// Resumed chats intentionally avoid painting generic fresh-session
-  /// defaults while their runtime metadata loads. Reserve the model picker's
-  /// place with a spinner during that gap instead of popping it in later.
+  /// True while the model list — or, for an existing chat, the chat's own
+  /// model — is not known yet. The composer reserves the model chip's place
+  /// with a single spinner during that gap instead of popping it in later
+  /// or painting a value that is not the chat's.
   public var isLoadingModelMenu: Bool {
+    if !acceptsNewChatDefaults {
+      return isAwaitingExistingChatModel
+    }
     guard !hasModelMenu else { return false }
     // A background revalidation is stale-while-revalidate like every
     // other catalog consumer: only spin when there is NO settled answer
@@ -234,16 +312,19 @@ extension SessionController {
     // A draft with no spawned agent yet (new-chat page, deferred chats)
     // fetching harness capabilities: hold the model chip's slot with a
     // spinner too, instead of rendering nothing until options land.
-    // Scoped to agent-less drafts so a connected harness that simply has
-    // no model options can't spin forever on a stale preparation state.
-    if serverSession?.agentSessionId?.isEmpty != false, model == nil,
-      preparationState == .loading
-    {
-      return true
-    }
-    guard model == nil, serverSession?.agentSessionId?.isEmpty == false else { return false }
+    return model == nil && preparationState == .loading
+  }
+
+  /// An existing chat whose own model value has not been reported yet.
+  private var isAwaitingExistingChatModel: Bool {
+    if unavailableExistingModelValue != nil { return false }
+    if let option = modelOption, !option.currentValue.isEmpty { return false }
     if case .failed = status { return false }
-    return true
+    if case .failed = configurationValidationState { return false }
+    if isConnectingToHarness { return true }
+    // Once the runtime connection settled, an empty value is a real
+    // "nothing selected", not a pending answer.
+    return model == nil && (hasExistingAgentSession || hasSentFirst || isConnecting)
   }
 
   /// The config options still shown as individual picker chips (model
@@ -268,64 +349,72 @@ extension SessionController {
       }
   }
 
-  public func setConfigOption(_ configId: String, _ value: String) async {
-    guard !isConnectingToHarness else { return }
+  /// Applies a picker change. A draft stages it and records it as the
+  /// machine's New Chat default; an existing chat applies it to its own
+  /// runtime (or stages it until the runtime connects) and never touches
+  /// New Chat defaults or the shared catalog cache.
+  @discardableResult
+  public func setConfigOption(_ configId: String, _ value: String) async -> Bool {
     clearAutomaticSelection()
     let optionBeforeChange = configOptions.first { $0.id == configId }
     let previousValue = optionBeforeChange?.currentValue
+    let isModelChange =
+      optionBeforeChange.map(Self.isModelOption) ?? (configId == "model")
+    let wasDraft = acceptsNewChatDefaults
+    let harnessId = activeHarnessId
     var accepted = true
-    if let model {
-      if let harnessId = activeHarnessId { pendingConfigByHarness[harnessId]?[configId] = nil }
+    if let model, !isConnectingToHarness, let harnessId {
+      // Keep the pick visible while it is in flight, even when the
+      // runtime has not reported this option yet.
+      pendingConfigByHarness[harnessId, default: [:]][configId] = value
       accepted = await model.setConfigOption(configId: configId, value: value)
-      if let harnessId = connectedHarnessId {
-        configCache.store(model.configOptions, forHarness: harnessId, onServer: project.serverId)
-        configOptionsByHarness[harnessId] = model.configOptions
+      if pendingConfigByHarness[harnessId]?[configId] == value {
+        pendingConfigByHarness[harnessId]?[configId] = nil
       }
-    } else {
-      // Not connected yet: stage it and apply before submitting work. No
-      // temporary harness inspection here: that launched a CLI process per
-      // pick and, whenever the process could not honor the request, it
-      // silently replaced the choice with the harness default. First send
+      if let connectedHarnessId, !model.configOptions.isEmpty {
+        configOptionsByHarness[connectedHarnessId] = model.configOptions
+      }
+    } else if let harnessId = wasDraft ? selectedHarnessId : harnessId {
+      // Not connected yet (or the runtime is still connecting): stage it
+      // and apply it before submitting work. No temporary harness
+      // inspection here: that launched a CLI process per pick and,
+      // whenever the process could not honor the request, it silently
+      // replaced the choice with the harness default. First send
       // validates against the real runtime instead.
-      if let harnessId = selectedHarnessId {
-        pendingConfigByHarness[harnessId, default: [:]][configId] = value
-        var options =
-          configOptionsByHarness[harnessId]
-          ?? configCache.options(forHarness: harnessId, onServer: project.serverId)
-        if let index = options.firstIndex(where: { $0.id == configId }) {
-          options[index].currentValue = value
-          configOptionsByHarness[harnessId] = options
-        }
-      }
+      pendingConfigByHarness[harnessId, default: [:]][configId] = value
     }
-    if accepted,
-      optionBeforeChange?.category == SessionConfigOption.Category.model,
-      previousValue != value
-    {
-      captureModelSelected(modelId: value, previousModelId: previousValue)
+    if accepted, isModelChange {
+      if previousValue != value {
+        captureModelSelected(modelId: value, previousModelId: previousValue)
+      }
       configurationAdjustmentMessage = nil
+      draftModelAvailability = nil
+      acknowledgedUnavailableModelValue =
+        serverSession?.unavailableConfigSelections?[configId] ?? acknowledgedUnavailableModelValue
       // The user just chose a model, so a "we swapped your model" notice
       // no longer describes the current state.
       model?.clearModelFallback()
     }
-    // Explicit picker actions become the next composer's defaults
-    // immediately, including in an unsent draft. Persist the resulting
-    // authoritative option set so model-dependent effort/speed resets are
-    // remembered too.
-    if accepted,
-      Self.rememberedConfigCategories.contains(optionBeforeChange?.category ?? ""),
-      let harnessId = connectedHarnessId ?? selectedHarnessId
+    // Explicit picker actions in an unsent composer become the machine's
+    // New Chat defaults immediately. Existing chats never write them.
+    if accepted, wasDraft, acceptsNewChatDefaults,
+      Self.rememberedConfigCategories.contains(optionBeforeChange?.category ?? "")
+        || isModelChange,
+      let harnessId = selectedHarnessId
     {
+      // Persist the visible selection so model-dependent values the user
+      // accepted alongside this pick are remembered too.
       composerDefaults?.rememberConfigSelections(
         in: resolvedComposerDefaultsScope,
         harnessId: harnessId,
-        configValues: rememberedConfigValues
+        configValues: rememberedConfigValues.merging([configId: value]) { _, picked in picked }
       )
       composerDefaults?.rememberHarnessSelection(
         in: resolvedComposerDefaultsScope,
         harnessId: harnessId
       )
     }
+    return accepted
   }
 
   public func dismissConfigurationAdjustment() {
@@ -362,8 +451,15 @@ extension SessionController {
       let currentModel = Self.modelOption(in: currentOptions),
       currentModel.options.contains(where: { $0.value == modelValue })
     else {
+      // The carried pick stays the draft's choice; a destination that
+      // does not offer it asks for another model.
       clearAutomaticSelection()
-      applyDestinationMachineDefaults()
+      markDraftModel(
+        modelValue,
+        name: intent.modelName ?? modelValue,
+        harnessId: intent.harnessId,
+        checking: false
+      )
       return
     }
 
@@ -400,12 +496,19 @@ extension SessionController {
         !capability.configOptions.isEmpty
       else { return }
 
-      guard let resolvedModel = Self.modelOption(in: capability.configOptions),
-        resolvedModel.currentValue == modelValue
-      else {
-        pendingConfigByHarness[intent.harnessId] = nil
+      guard let resolvedModel = Self.modelOption(in: capability.configOptions) else { return }
+      let resolvedModelValue = resolvedModel.currentValue
+      let modelWasApplied =
+        capability.unappliedConfigSelections?[resolvedModel.id] == nil
+        && resolvedModel.options.contains { $0.value == resolvedModelValue }
+      guard modelWasApplied else {
         clearAutomaticSelection()
-        applyDestinationMachineDefaults()
+        markDraftModel(
+          modelValue,
+          name: intent.modelName ?? modelValue,
+          harnessId: intent.harnessId,
+          checking: false
+        )
         return
       }
 
@@ -414,8 +517,10 @@ extension SessionController {
       for index in options.indices
       where Self.rememberedConfigCategories.contains(options[index].category ?? "") {
         let option = options[index]
+        // A server-reconciled model id (renamed upstream) replaces the
+        // carried one.
         let carriedValue =
-          option.id == resolvedModel.id ? modelValue : intent.configValues[option.id]
+          option.id == resolvedModel.id ? resolvedModelValue : intent.configValues[option.id]
         let acceptedCarriedValue =
           option.currentValue == carriedValue ? carriedValue : nil
         let value = [acceptedCarriedValue, destinationValues[option.id], option.currentValue]
@@ -432,7 +537,8 @@ extension SessionController {
       automaticSelectionIntent = ComposerSelectionIntent(
         harnessId: intent.harnessId,
         configValues: resolvedValues,
-        modelValue: modelValue
+        modelValue: resolvedModelValue,
+        modelName: resolvedModel.currentName
       )
       automaticSelectionNeedsResolution = false
     } catch {
@@ -463,6 +569,7 @@ private struct ExistingSessionRuntimeState: Equatable {
   let worktreeName: String?
   let cwd: String?
   let configSelections: [String: String]?
+  let unavailableConfigSelections: [String: String]?
 
   init(_ session: ChatSession) {
     id = session.id
@@ -474,5 +581,6 @@ private struct ExistingSessionRuntimeState: Equatable {
     worktreeName = session.worktreeName
     cwd = session.cwd
     configSelections = session.configSelections
+    unavailableConfigSelections = session.unavailableConfigSelections
   }
 }

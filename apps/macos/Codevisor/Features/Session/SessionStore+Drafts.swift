@@ -55,7 +55,6 @@ extension SessionStore {
       project: restoredProject,
       configCache: environment.configCache,
       composerDefaults: environment.composerDefaults,
-      composerDefaultsScope: .newWorkspace(serverId: restoredProject.serverId),
       // The restored project's OWN machine — a retargeted draft keeps
       // talking to the machine it was pointed at across relaunches.
       serverClient: environment.machines.client(for: restoredProject.serverId),
@@ -64,13 +63,14 @@ extension SessionStore {
       attachmentFiles: environment.composerDrafts.attachmentFiles
     )
     controller.applyComposerDefaults()
-    // Fresh drafts start from the machine's remembered run-location
+    // Fresh drafts start from the project's remembered run-location
     // choice (worktrees only apply to git projects). Retained drafts
     // returned above keep whatever the user toggled.
     controller.wantsNewWorktree =
       restoredProject.isGitRepository
       && environment.composerDefaults.prefersWorktreeForNewWorkspaces(
-        forServer: restoredProject.serverId
+        forServer: restoredProject.serverId,
+        projectId: restoredProject.id
       )
     if let persisted { controller.restoreDraft(persisted) }
     enableDraftPersistence(for: controller, slotServerId: draftSlotServerId)

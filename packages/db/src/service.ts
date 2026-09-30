@@ -234,9 +234,13 @@ export interface CodevisorDatabaseService {
     id: string,
     request: UpdateSessionRequest
   ) => Effect.Effect<SessionSummary, DatabaseError>
+  /// Replaces the saved selections. `unavailable` (saved config id → value
+  /// the runtime no longer offers) replaces the recorded unavailable set when
+  /// given and is left untouched when omitted.
   readonly replaceSessionConfigSelections: (
     id: string,
-    selections: Readonly<Record<string, string>>
+    selections: Readonly<Record<string, string>>,
+    unavailable?: Readonly<Record<string, string>>
   ) => Effect.Effect<void, DatabaseError>
   readonly updateSessionTitleFromHarness: (
     id: string,

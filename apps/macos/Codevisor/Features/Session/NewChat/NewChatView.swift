@@ -128,6 +128,16 @@ struct NewChatView: View {
             VStack(alignment: .leading, spacing: 8) {
               GlassEffectContainer(spacing: ComposerGlassStyle.clusterSpacing) {
                 VStack(alignment: .leading, spacing: ComposerGlassStyle.clusterSpacing) {
+                  // A remembered or carried model this machine no longer
+                  // offers: shown until the user picks another model or
+                  // dismisses it.
+                  if let message = controller.modelUnavailableMessage {
+                    ComposerNoticeRail(
+                      message,
+                      kind: .warning,
+                      onDismiss: { controller.dismissModelUnavailableNotice() }
+                    )
+                  }
                   ComposerCard(
                     controller: controller,
                     onTextViewReady: { textView in
@@ -468,8 +478,9 @@ struct NewChatView: View {
         // The workspace materializes AROUND the sent chat: rooted in
         // the picked directory, fixed for every tab it ever hosts.
         let workspace = store.createWorkspace(for: session, project: project)
-        // Persist the new-workspace choices and the concrete
-        // workspace inheritance profile as one latest-value snapshot.
+        controller.hostWorkspaceId = workspace.id
+        // Persist the new-workspace choices as one latest-value snapshot.
+        // Sending never writes model defaults: only explicit picks do.
         // The encoder/SQLite work stays on the shared utility queue.
         environment.composerDefaults.performPersistenceBatch(
           flushImmediately: true
@@ -480,14 +491,13 @@ struct NewChatView: View {
             serverId: project.serverId,
             projectId: project.isScratch ? Project.runTargetPlaceholderID : project.id
           )
-          environment.composerDefaults.rememberNewWorkspaceWorktreePreference(
-            serverId: project.serverId,
-            createsWorktree: controller.wantsNewWorktree
-          )
-          controller.rememberCurrentComposerConfiguration()
-          controller.moveComposerDefaults(
-            to: .workspace(id: workspace.id, serverId: session.serverId)
-          )
+          if project.isGitRepository, !project.isScratch {
+            environment.composerDefaults.rememberNewWorkspaceWorktreePreference(
+              serverId: project.serverId,
+              projectId: project.id,
+              createsWorktree: controller.wantsNewWorktree
+            )
+          }
         }
         // Select the locally complete workspace in this send turn.
         // Remote setup continues after this callback and must not

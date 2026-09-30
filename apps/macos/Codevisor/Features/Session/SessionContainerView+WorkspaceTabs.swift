@@ -40,12 +40,6 @@ extension SessionContainerView {
 
   func addCenterTab() {
     var workspace = selectedWorkspace
-    if let current = workspace.selectedCenterTab {
-      rememberWorkspaceDefaults(
-        fromLeaf: activeLeafId ?? current.activeLeafId,
-        in: workspace
-      )
-    }
     var state = PaneGroupState()
     let pane = state.addNewTabPane()
     let tab = WorkspaceTab(root: .leaf(state))

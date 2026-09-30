@@ -99,12 +99,14 @@ extension SessionController {
       && serverSession?.agentSessionId?.isEmpty != false
   }
 
+  /// Every unsent composer — the standalone page, a new tab, or a split —
+  /// reads and writes the New Chat defaults of the machine it targets.
   var resolvedComposerDefaultsScope: ComposerDefaultsStore.Scope {
-    composerDefaultsScope ?? .newWorkspace(serverId: project.serverId)
+    .newWorkspace(serverId: project.serverId)
   }
 
   /// Seeds a new-chat draft from the last explicit selections on this
-  /// machine. Called once by `SessionStore` when a draft is made.
+  /// machine. Called once when a draft composer is made.
   public func applyComposerDefaults() {
     guard let composerDefaults, acceptsNewChatDefaults else { return }
     if let harnessId = composerDefaults.lastHarnessId(for: resolvedComposerDefaultsScope),
@@ -124,13 +126,22 @@ extension SessionController {
     var configValues = rememberedConfigValues
     configValues.merge(pendingConfigByHarness[harnessId] ?? [:]) { _, pending in pending }
     let selectedModel = Self.modelOption(in: configOptions)
-    if let selectedModel {
+    if let selectedModel, !selectedModel.currentValue.isEmpty {
       configValues[selectedModel.id] = selectedModel.currentValue
     }
+    // A model this machine no longer lists is still the draft's choice;
+    // another machine may offer it.
+    let unavailableModel =
+      draftModelAvailability?.harnessId == harnessId ? draftModelAvailability : nil
+    let modelValue =
+      selectedModel.flatMap { $0.currentValue.isEmpty ? nil : $0.currentValue }
+      ?? unavailableModel?.value
+      ?? configValues["model"]
     return ComposerSelectionIntent(
       harnessId: harnessId,
-      configValues: configValues,
-      modelValue: selectedModel?.currentValue ?? configValues["model"]
+      configValues: configValues.filter { !$0.value.isEmpty },
+      modelValue: modelValue,
+      modelName: selectedModelName ?? unavailableModel?.name
     )
   }
 
@@ -161,8 +172,31 @@ extension SessionController {
     }
 
     if let intent = automaticSelectionIntent {
-      pendingConfigByHarness[intent.harnessId] = nil
       clearAutomaticSelection()
+      // The destination runs the carried harness but does not list the
+      // carried model: keep the pick's other values and ask the server
+      // whether the model was renamed or withdrawn (rule: a missing
+      // model is never silently replaced).
+      if availableIds.contains(intent.harnessId), let modelValue = intent.modelValue {
+        selectedHarnessId = intent.harnessId
+        let destinationOptions =
+          capabilities.first { $0.harness.id == intent.harnessId }?.configOptions ?? []
+        // Other carried settings survive where the destination offers them.
+        pendingConfigByHarness[intent.harnessId] = intent.configValues.filter { configId, value in
+          guard let option = destinationOptions.first(where: { $0.id == configId }) else {
+            return false
+          }
+          return !Self.isModelOption(option) && option.options.contains { $0.value == value }
+        }
+        markDraftModel(
+          modelValue,
+          name: intent.modelName ?? modelValue,
+          harnessId: intent.harnessId,
+          checking: true
+        )
+        return
+      }
+      pendingConfigByHarness[intent.harnessId] = nil
       applyDestinationMachineDefaults(availableHarnessIds: availableIds)
       return
     }
@@ -210,37 +244,156 @@ extension SessionController {
   /// pending edits so the pickers show them and the agent applies them on
   /// connect. Values are validated against the known option lists when
   /// available; unknown lists trust the stored values and let the live
-  /// agent correct them.
+  /// agent correct them. A remembered (or staged) model the known list
+  /// does not carry is never replaced by another model: the draft asks the
+  /// server whether it was renamed, else asks the user for a new pick.
   func seedRememberedConfig() {
-    guard let composerDefaults, let harnessId = selectedHarnessId else { return }
-    let remembered = composerDefaults.configSelections(
-      forHarness: harnessId,
-      in: resolvedComposerDefaultsScope
-    )
-    guard !remembered.isEmpty else { return }
-    var options =
+    guard let harnessId = selectedHarnessId else { return }
+    let remembered =
+      composerDefaults?.configSelections(
+        forHarness: harnessId,
+        in: resolvedComposerDefaultsScope
+      ) ?? [:]
+    let options =
       configOptionsByHarness[harnessId]
       ?? configCache.options(forHarness: harnessId, onServer: project.serverId)
     guard !options.isEmpty else {
       pendingConfigByHarness[harnessId, default: [:]].merge(remembered) { current, _ in current }
       return
     }
+    // The catalog's settings describe the harness's own default model. When
+    // the draft's model is a different one, the catalog cannot judge its
+    // settings: keep them queued until that model's settings are inspected
+    // (`resolveDraftModelSettingsIfNeeded`), which keeps valid values and
+    // drops the rest to the model's defaults.
+    let catalogModel = Self.modelOption(in: options)
+    let wantedModel = catalogModel.flatMap { model in
+      (pendingConfigByHarness[harnessId]?[model.id]).flatMap { $0.isEmpty ? nil : $0 }
+        ?? remembered[model.id]
+    }
+    let catalogDescribesModel = wantedModel == nil || wantedModel == catalogModel?.currentValue
     for (configId, value) in remembered {
       // A speed option can be absent until its remembered model is
       // restored. Keep it queued and validate it against the live agent
       // after the model change makes the option available.
-      guard let index = options.firstIndex(where: { $0.id == configId }) else {
-        if configId == "speed" {
+      guard let option = options.first(where: { $0.id == configId }) else {
+        if configId == "speed" || !catalogDescribesModel,
+          pendingConfigByHarness[harnessId]?[configId] == nil
+        {
           pendingConfigByHarness[harnessId, default: [:]][configId] = value
         }
         continue
       }
-      guard options[index].options.contains(where: { $0.value == value }) else { continue }
-      let selectedValue = pendingConfigByHarness[harnessId]?[configId] ?? value
-      pendingConfigByHarness[harnessId, default: [:]][configId] = selectedValue
-      options[index].currentValue = selectedValue
+      // The model is validated below, together with any staged pick.
+      if Self.isModelOption(option) { continue }
+      guard !catalogDescribesModel || option.options.contains(where: { $0.value == value }) else {
+        continue
+      }
+      if pendingConfigByHarness[harnessId]?[configId] == nil {
+        pendingConfigByHarness[harnessId, default: [:]][configId] = value
+      }
     }
-    configOptionsByHarness[harnessId] = options
+    validateDraftModel(harnessId: harnessId, options: options, remembered: remembered)
+  }
+
+  private func validateDraftModel(
+    harnessId: String,
+    options: [SessionConfigOption],
+    remembered: [String: String]
+  ) {
+    guard let modelOption = Self.modelOption(in: options) else { return }
+    let staged = pendingConfigByHarness[harnessId]?[modelOption.id]
+    let wanted =
+      staged.flatMap { $0.isEmpty ? nil : $0 }
+      ?? remembered[modelOption.id]
+      ?? (draftModelAvailability?.harnessId == harnessId ? draftModelAvailability?.value : nil)
+    guard let wanted, !wanted.isEmpty else { return }
+    if modelOption.options.contains(where: { $0.value == wanted }) {
+      pendingConfigByHarness[harnessId, default: [:]][modelOption.id] = wanted
+      if draftModelAvailability?.harnessId == harnessId { draftModelAvailability = nil }
+      return
+    }
+    // Already being checked or known unavailable for this value.
+    if draftModelAvailability?.harnessId == harnessId, draftModelAvailability?.value == wanted {
+      pendingConfigByHarness[harnessId]?[modelOption.id] = nil
+      return
+    }
+    let name =
+      stagedModelNames[wanted]
+      ?? configOptionsByHarness[harnessId].flatMap(Self.modelOption(in:))?
+      .options.first(where: { $0.value == wanted })?.name
+      ?? wanted
+    markDraftModel(wanted, name: name, harnessId: harnessId, checking: true)
+  }
+
+  /// Takes a draft's missing model out of the staged values and records
+  /// it for the "Select a model" chip (and, once confirmed, the notice).
+  func markDraftModel(_ value: String, name: String, harnessId: String, checking: Bool) {
+    let modelId = modelConfigId(forHarness: harnessId)
+    pendingConfigByHarness[harnessId]?[modelId] = nil
+    draftModelAvailability =
+      checking
+      ? .checking(harnessId: harnessId, value: value, name: name)
+      : .unavailable(harnessId: harnessId, value: value, name: name)
+  }
+
+  /// Asks the server about a draft model the catalog does not list. An id
+  /// the server reconciled to a new one is adopted (and becomes the New
+  /// Chat default); anything else is reported as no longer available.
+  func resolveDraftModelAvailabilityIfNeeded() async {
+    guard case let .checking(harnessId, value, name) = draftModelAvailability else { return }
+    let modelId = modelConfigId(forHarness: harnessId)
+    func markUnavailable() {
+      guard draftModelAvailability == .checking(harnessId: harnessId, value: value, name: name)
+      else { return }
+      draftModelAvailability = .unavailable(harnessId: harnessId, value: value, name: name)
+    }
+    guard let client = serverClient else {
+      markUnavailable()
+      return
+    }
+    var requested = pendingConfigByHarness[harnessId] ?? [:]
+    requested[modelId] = value
+    let serverId = project.serverId
+    do {
+      let response = try await client.capabilities(
+        cwd: capabilityCwd,
+        harnessId: harnessId,
+        configSelections: requested
+      )
+      guard draftModelAvailability == .checking(harnessId: harnessId, value: value, name: name),
+        project.serverId == serverId
+      else { return }
+      guard let capability = response.harnesses.first(where: { $0.harness.id == harnessId }),
+        let resolved = Self.modelOption(in: capability.configOptions),
+        capability.unappliedConfigSelections?[resolved.id] == nil,
+        !resolved.currentValue.isEmpty,
+        resolved.options.contains(where: { $0.value == resolved.currentValue }),
+        // Without the field, an older server cannot tell a rename from
+        // a harness default; only an explicit reconciliation counts.
+        capability.unappliedConfigSelections != nil
+      else {
+        markUnavailable()
+        return
+      }
+      draftModelAvailability = nil
+      configOptionsByHarness[harnessId] = capability.configOptions
+      pendingConfigByHarness[harnessId, default: [:]][resolved.id] = resolved.currentValue
+      if acceptsNewChatDefaults,
+        composerDefaults?.configSelections(
+          forHarness: harnessId,
+          in: resolvedComposerDefaultsScope
+        )[resolved.id] == value
+      {
+        composerDefaults?.rememberConfigSelections(
+          in: resolvedComposerDefaultsScope,
+          harnessId: harnessId,
+          configValues: [resolved.id: resolved.currentValue]
+        )
+      }
+    } catch {
+      markUnavailable()
+    }
   }
 
   /// Remembered config categories (model, reasoning, speed, model config)
@@ -249,45 +402,8 @@ extension SessionController {
     let values =
       configOptions
       .filter { Self.rememberedConfigCategories.contains($0.category ?? "") }
+      .filter { !$0.currentValue.isEmpty }
       .map { ($0.id, $0.currentValue) }
     return Dictionary(values) { _, last in last }
-  }
-
-  /// Captures this chat as the inheritance source for its scope. Workspace
-  /// capture replaces the selected harness snapshot so values from a
-  /// previously focused sibling cannot leak into the next chat.
-  public func rememberCurrentComposerConfiguration() {
-    guard let composerDefaults,
-      let harnessId = connectedHarnessId ?? selectedHarnessId ?? serverSession?.harnessId,
-      !harnessId.isEmpty
-    else { return }
-    switch resolvedComposerDefaultsScope {
-    case let .newWorkspace(serverId):
-      composerDefaults.rememberHarnessSelection(
-        in: .newWorkspace(serverId: serverId),
-        harnessId: harnessId
-      )
-      composerDefaults.rememberConfigSelections(
-        in: .newWorkspace(serverId: serverId),
-        harnessId: harnessId,
-        configValues: rememberedConfigValues
-      )
-    case let .workspace(id, serverId):
-      composerDefaults.rememberFocusedChat(
-        workspaceId: id,
-        serverId: serverId,
-        harnessId: harnessId,
-        configValues: rememberedConfigValues
-      )
-    }
-  }
-
-  /// A standalone draft becomes the first chat of a concrete workspace
-  /// before its agent is connected. Snapshot its selected configuration
-  /// into that workspace immediately so a sibling tab opened during setup
-  /// inherits the same values.
-  public func moveComposerDefaults(to scope: ComposerDefaultsStore.Scope) {
-    composerDefaultsScope = scope
-    rememberCurrentComposerConfiguration()
   }
 }

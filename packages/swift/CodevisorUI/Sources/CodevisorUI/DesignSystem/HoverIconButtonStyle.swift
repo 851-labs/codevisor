@@ -22,14 +22,18 @@ public struct HoverIconButtonStyle: ButtonStyle {
       }
     }
 
-    /// The hover background includes these insets even though the button
-    /// gives them back to its parent to keep the toolbar compact.
+    /// The hover background includes these insets even though the chip
+    /// gives them back to its parent (`hoverChipOverflow()`) to keep the
+    /// toolbar compact.
     fileprivate var chipInsets: CGSize {
-      self == .chip ? CGSize(width: 5, height: 3) : .zero
+      self == .chip ? HoverIconButtonStyle.chipOverflow : .zero
     }
   }
 
   var shape: HighlightShape = .circle
+
+  /// How far a chip's hover fill reaches past its label on each side.
+  public static let chipOverflow = CGSize(width: 5, height: 3)
 
   public init(shape: HighlightShape = .circle) {
     self.shape = shape
@@ -56,12 +60,15 @@ private struct HoverIconButtonBody: View {
       // highlights read as one family.
       .frame(minHeight: shape == .chip ? 26 : nil)
       .background(shape.fill(isHovered ? Color.primary.opacity(0.06) : .clear))
-      // Chips give the padding back so the fill overflows the label
-      // instead of pushing the row apart.
-      .padding(.horizontal, -chipInsets.width)
-      .padding(.vertical, -chipInsets.height)
-      .opacity(configuration.isPressed ? 0.8 : 1)
+      // The whole visible fill is the click target, and hovering it is
+      // what lights it up. The button keeps this full size: SwiftUI only
+      // delivers clicks inside a button's own frame, so giving the chip
+      // padding back here (as this style once did) left the fill's edges
+      // highlighting but ignoring clicks. Chips give it back outside the
+      // button instead, with `hoverChipOverflow()`.
+      .contentShape(Rectangle())
       .onHover { isHovered = $0 }
+      .opacity(configuration.isPressed ? 0.8 : 1)
   }
 
   private var edgePadding: CGFloat {
@@ -70,5 +77,16 @@ private struct HoverIconButtonBody: View {
 
   private var chipInsets: CGSize {
     shape.chipInsets
+  }
+}
+
+extension View {
+  /// Gives a `.chip`-styled button's hover padding back to its parent so the
+  /// fill overflows the label instead of pushing the row apart. Apply it to
+  /// the button itself (after `buttonStyle`), never inside the style, so the
+  /// button's clickable frame still covers the whole fill.
+  public func hoverChipOverflow() -> some View {
+    padding(.horizontal, -HoverIconButtonStyle.chipOverflow.width)
+      .padding(.vertical, -HoverIconButtonStyle.chipOverflow.height)
   }
 }

@@ -62,6 +62,25 @@ describe("@codevisor/db", () => {
       reasoning: "high",
       speed: "standard"
     })
+    // Unavailable entries replace only when given; a plain selection write
+    // leaves them in place.
+    await run(
+      db.replaceSessionConfigSelections(
+        session.id,
+        { model: "gpt-5.6-sol", reasoning: "high", speed: "standard" },
+        { model: "gpt-5.6-sol" }
+      )
+    )
+    await run(
+      db.replaceSessionConfigSelections(session.id, {
+        model: "gpt-5.6-sol",
+        reasoning: "high",
+        speed: "standard"
+      })
+    )
+    expect((await run(db.getSessionSummary(session.id))).unavailableConfigSelections).toEqual({
+      model: "gpt-5.6-sol"
+    })
     await Effect.runPromise(db.close)
 
     const reopened = await run(makeDatabase({ filename, serverId: "local" }))
@@ -70,6 +89,10 @@ describe("@codevisor/db", () => {
       reasoning: "high",
       speed: "standard"
     })
+    await run(reopened.replaceSessionConfigSelections(session.id, { model: "gpt-5.6-sol" }, {}))
+    expect(
+      (await run(reopened.getSessionSummary(session.id))).unavailableConfigSelections
+    ).toBeUndefined()
     await Effect.runPromise(reopened.close)
 
     const sqlite = new Database(filename)

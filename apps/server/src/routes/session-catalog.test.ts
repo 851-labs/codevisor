@@ -98,6 +98,21 @@ describe("session catalog routes", () => {
       ]
     })
     expect(agents.inspectionConfigs.at(-1)).toEqual({ model: "gpt-next" })
+    expect(
+      (
+        await jsonRequest(
+          server,
+          `/v1/capabilities?cwd=${encodeURIComponent(workspaceFolder)}&harnessId=codex&config.model=gpt-gone`
+        )
+      ).body
+    ).toMatchObject({
+      harnesses: [
+        {
+          configOptions: [{ currentValue: "gpt-5", id: "model" }, { id: "reasoning" }],
+          unappliedConfigSelections: { model: "gpt-gone" }
+        }
+      ]
+    })
     expect((await jsonRequest(server, "/v1/capabilities")).body).toMatchObject({
       harnesses: [{ harness: { id: "codex" } }]
     })

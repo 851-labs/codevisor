@@ -249,11 +249,14 @@ final public class SessionController {
   public internal(set) var connectedAgentSessionId: String?
 
   let configCache: ConfigOptionCache
+  /// New Chat defaults for the draft's machine. Read and written only while
+  /// this controller is an unsent draft (`acceptsNewChatDefaults`): an
+  /// existing chat's configuration is its own and lives on the server.
   let composerDefaults: ComposerDefaultsStore?
-  /// New-workspace drafts and in-workspace chats deliberately write to
-  /// different inheritance profiles. Promotion changes this from the
-  /// machine profile to the newly-created workspace profile.
-  var composerDefaultsScope: ComposerDefaultsStore.Scope?
+  /// The workspace hosting this chat, sent with the session's open request
+  /// so the server records the association. Nil for a standalone draft
+  /// until its first send creates the workspace around it.
+  public var hostWorkspaceId: UUID?
   /// The machine this chat talks to. Mutable for exactly one flow: a DRAFT
   /// retargeting to a project on another machine (`retarget(to:serverClient:)`).
   var serverClient: (any CodevisorServerClienting)?
@@ -315,6 +318,31 @@ final public class SessionController {
   /// an explicit loading state instead of briefly presenting stale settings.
   public internal(set) var isResolvingModelConfiguration = false
   var modelConfigurationResolutionRevision: UInt64 = 0
+  /// The model the user just picked, named on the chip immediately while
+  /// the controller applies it (and resolves that model's settings).
+  public internal(set) var pendingModelPick: PendingModelPick?
+  @ObservationIgnored var modelPickRevision: UInt64 = 0
+  /// Display names of staged picks, for values a refreshed option list no
+  /// longer carries while the pick is still being applied.
+  @ObservationIgnored var stagedModelNames: [String: String] = [:]
+  /// A draft's remembered or carried model that the machine's catalog does
+  /// not list: being checked with the server, or confirmed unavailable.
+  public internal(set) var draftModelAvailability: DraftModelAvailability?
+  /// A draft's staged model's own settings (thinking, speed, …), keyed by
+  /// "harness|model". The machine catalog describes the harness's default
+  /// model (or none at all), so another model's settings come from one
+  /// inspection of that model.
+  var draftModelSettings: [String: [SessionConfigOption]] = [:]
+  /// The "harness|model" key whose settings are being inspected.
+  public internal(set) var resolvingDraftModelSettingsKey: String?
+  /// An existing chat's unavailable model the user already replaced.
+  var acknowledgedUnavailableModelValue: String?
+  /// The unavailable model whose notice the user dismissed. The chip still
+  /// asks for a pick; only the banner is hidden, and only for this value.
+  var dismissedUnavailableModelNotice: String?
+  /// The draft's visible configuration captured at first send. It is the
+  /// new chat's own value until the server or runtime reports one.
+  var firstSendSelections: [String: String] = [:]
   var didLoadExistingHarnessCapabilities = false
   var didFinishExistingRuntimeConfiguration = false
   var didLoadExistingRuntimeConfiguration = false
@@ -356,7 +384,7 @@ final public class SessionController {
     project: Project,
     configCache: ConfigOptionCache,
     composerDefaults: ComposerDefaultsStore? = nil,
-    composerDefaultsScope: ComposerDefaultsStore.Scope? = nil,
+    hostWorkspaceId: UUID? = nil,
     serverClient: (any CodevisorServerClienting)? = nil,
     machines: MachineController? = nil,
     notificationDelivery: (any ChatNotificationDelivering)? = nil,
@@ -366,9 +394,7 @@ final public class SessionController {
     self.attachmentFiles = attachmentFiles
     self.configCache = configCache
     self.composerDefaults = composerDefaults
-    self.composerDefaultsScope =
-      composerDefaultsScope
-      ?? composerDefaults.map { _ in .newWorkspace(serverId: project.serverId) }
+    self.hostWorkspaceId = hostWorkspaceId
     self.serverClient = serverClient
     self.machines = machines
     self.notificationDelivery = notificationDelivery
@@ -382,6 +408,40 @@ struct ComposerSelectionIntent: Equatable {
   let harnessId: String
   let configValues: [String: String]
   let modelValue: String?
+  var modelName: String? = nil
+}
+
+/// A model pick the controller is still applying.
+public struct PendingModelPick: Equatable, Sendable {
+  public let harnessId: String
+  public let value: String
+  public let name: String
+}
+
+/// A draft model choice the machine's catalog does not list.
+public enum DraftModelAvailability: Equatable, Sendable {
+  /// Asking the server whether the id was renamed or withdrawn.
+  case checking(harnessId: String, value: String, name: String)
+  /// Withdrawn: the composer asks for another model.
+  case unavailable(harnessId: String, value: String, name: String)
+
+  var harnessId: String {
+    switch self {
+    case let .checking(harnessId, _, _), let .unavailable(harnessId, _, _): harnessId
+    }
+  }
+
+  var value: String {
+    switch self {
+    case let .checking(_, value, _), let .unavailable(_, value, _): value
+    }
+  }
+
+  var name: String {
+    switch self {
+    case let .checking(_, _, name), let .unavailable(_, _, name): name
+    }
+  }
 }
 
 public enum SessionControllerError: Error {

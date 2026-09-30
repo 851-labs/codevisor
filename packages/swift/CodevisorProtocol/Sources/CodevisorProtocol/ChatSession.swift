@@ -71,6 +71,10 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
   /// come from the harness cache/live runtime; these values let the composer
   /// paint the chat's actual previous selections while reconnecting.
   public var configSelections: [String: String]?
+  /// Saved `configSelections` values the chat's runtime no longer offers
+  /// (for example, a withdrawn model). The composer asks the user to pick
+  /// a replacement instead of silently substituting one.
+  public var unavailableConfigSelections: [String: String]?
   public var createdAt: Date
   public var updatedAt: Date?
   public var sidebarState: SessionSidebarState
@@ -106,6 +110,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     worktreeName: String? = nil,
     cwd: String? = nil,
     configSelections: [String: String]? = nil,
+    unavailableConfigSelections: [String: String]? = nil,
     createdAt: Date = Date(),
     updatedAt: Date? = nil,
     sidebarState: SessionSidebarState = .idle,
@@ -129,6 +134,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     self.worktreeName = worktreeName
     self.cwd = cwd
     self.configSelections = configSelections
+    self.unavailableConfigSelections = unavailableConfigSelections
     self.createdAt = createdAt
     self.updatedAt = updatedAt
     self.sidebarState = sidebarState
@@ -144,7 +150,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
 
   private enum Keys: String, CodingKey {
     case id, projectId, serverId, harnessId, harnessAccountId, agentSessionId, title, origin
-    case worktreeName, cwd, configSelections, createdAt, updatedAt
+    case worktreeName, cwd, configSelections, unavailableConfigSelections, createdAt, updatedAt
     case sidebarState, sidebarStateChangedAt
     case latestAttentionSequence, lastSeenAttentionSequence, unreadCount, hasUnreadError
     case actionRequired, actionRequiredKind, pendingPlanApproval
@@ -170,6 +176,10 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     worktreeName = try container.decodeIfPresent(String.self, forKey: .worktreeName)
     cwd = try container.decodeIfPresent(String.self, forKey: .cwd)
     configSelections = try container.decodeIfPresent([String: String].self, forKey: .configSelections)
+    unavailableConfigSelections = try container.decodeIfPresent(
+      [String: String].self,
+      forKey: .unavailableConfigSelections
+    )
     createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
     updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt)
     sidebarState = try container.decodeIfPresent(SessionSidebarState.self, forKey: .sidebarState) ?? .idle
@@ -199,6 +209,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     try container.encodeIfPresent(worktreeName, forKey: .worktreeName)
     try container.encodeIfPresent(cwd, forKey: .cwd)
     try container.encodeIfPresent(configSelections, forKey: .configSelections)
+    try container.encodeIfPresent(unavailableConfigSelections, forKey: .unavailableConfigSelections)
     try container.encode(createdAt, forKey: .createdAt)
     try container.encodeIfPresent(updatedAt, forKey: .updatedAt)
     try container.encode(sidebarState, forKey: .sidebarState)
