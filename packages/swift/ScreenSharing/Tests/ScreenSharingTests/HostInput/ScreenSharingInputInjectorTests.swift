@@ -26,6 +26,25 @@ struct ScreenSharingInputInjectorTests {
     #expect(injector.location(.init(x: 0.5, y: 0.5)) == CGPoint(x: -960, y: 440))
   }
 
+  /// 851-2477: macOS ignores Apps, Mission Control and Show Desktop from a private-state source;
+  /// they come from the HID system state, as from a keyboard. Other keys stay private.
+  @Test func systemKeysComeFromTheHIDStateAndOtherKeysFromThePrivateState() throws {
+    let recorder = InjectionRecorder()
+    let injector = ScreenSharingInputInjector(displayBounds: Self.display, deliver: recorder.deliver)
+    for key in ScreenSharingSystemKey.allCases {
+      injector.post(.key(code: key.rawValue, down: true, repeatKey: false, modifiers: 0))
+    }
+    injector.post(.key(code: 12, down: true, repeatKey: false, modifiers: 0))
+    let states = recorder.events.map { $0.getIntegerValueField(.eventSourceStateID) }
+    let hid = Int64(CGEventSourceStateID.hidSystemState.rawValue)
+    #expect(states.dropLast() == Array(repeating: hid, count: ScreenSharingSystemKey.allCases.count)[...])
+    // A private-state source reports its own ID rather than a shared one; it isn't the HID state.
+    #expect(states.last != hid)
+    // Posted as a keyboard's, untouched; ordinary keys keep the injected-event tag.
+    #expect(recorder.events.dropLast().allSatisfy { $0.getIntegerValueField(.eventSourceUserData) == 0 })
+    #expect(recorder.events.last?.getIntegerValueField(.eventSourceUserData) == ScreenSharingInputInjector.eventTag)
+  }
+
   @Test func aClickCarriesItsButtonLocationAndClickCount() throws {
     let recorder = InjectionRecorder()
     let injector = ScreenSharingInputInjector(displayBounds: Self.display, deliver: recorder.deliver)

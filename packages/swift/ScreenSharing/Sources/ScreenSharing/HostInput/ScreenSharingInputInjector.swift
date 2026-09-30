@@ -7,6 +7,12 @@
   public final class ScreenSharingInputInjector {
     public static let eventTag: Int64 = 0x435653435245454E
     private let source = CGEventSource(stateID: .privateState)
+    /// System keys (Apps, Mission Control, Show Desktop) are posted exactly as a keyboard's: from the
+    /// HID system state, with the flags and user data the source gives them. From the private state
+    /// macOS ignores them: on tuftlord the private-state key 160 did nothing and the HID-state one
+    /// opened Mission Control; the same for 131 and F11 (851-2477). They're never captured by a
+    /// viewer, so they don't need the injected-event tag.
+    private let systemKeySource = CGEventSource(stateID: .hidSystemState)
     private let displayBounds: CGRect
     private var buttons = Set<UInt8>()
     private let deliver: (CGEvent) -> Void
@@ -17,6 +23,7 @@
       self.displayBounds = displayBounds
       source?.userData = Self.eventTag
       source?.localEventsSuppressionInterval = 0
+      systemKeySource?.localEventsSuppressionInterval = 0
     }
 
     public func post(_ input: ScreenSharingInputEvent) {
@@ -51,6 +58,12 @@
         event?.location = location(pointer)
         emit(event, modifiers: modifiers)
       case .key(let code, let down, let repeated, let modifiers):
+        if ScreenSharingSystemKey(rawValue: code) != nil, let systemKeySource {
+          if let event = CGEvent(keyboardEventSource: systemKeySource, virtualKey: code, keyDown: down) {
+            deliver(event)
+          }
+          return
+        }
         let event = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: down)
         event?.setIntegerValueField(.keyboardEventAutorepeat, value: repeated ? 1 : 0)
         emit(event, modifiers: modifiers)
