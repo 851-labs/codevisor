@@ -79,9 +79,12 @@ public enum NavigationPresentation {
     return .loading
   }
 
-  public static func indicator(machines: [Machine]) -> SyncIndicator {
+  /// The quiet "Syncing…" line only accompanies content already on screen:
+  /// with nothing shown yet, the launch spinner is the one loading state.
+  public static func indicator(machines: [Machine], hasVisibleContent: Bool = true) -> SyncIndicator {
     SyncIndicator(
-      isSyncing: machines.contains { $0.syncState == .cached || $0.syncState == .catchingUp },
+      isSyncing: hasVisibleContent
+        && machines.contains { $0.syncState == .cached || $0.syncState == .catchingUp },
       unreachableMachineNames: machines.filter(\.isUnreachable).map(\.name).sorted())
   }
 }

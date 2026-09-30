@@ -22,7 +22,7 @@ struct HomeNavigationPresentation: Equatable {
     }
     return HomeNavigationPresentation(
       launch: environment.navigationLaunch(hasVisibleContent: hasVisibleContent),
-      syncIndicator: environment.navigationSyncIndicator
+      syncIndicator: environment.navigationSyncIndicator(hasVisibleContent: hasVisibleContent)
     )
   }
 }

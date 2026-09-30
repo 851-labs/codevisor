@@ -23,7 +23,12 @@ extension AppEnvironment {
   }
 
   public var navigationSyncIndicator: NavigationPresentation.SyncIndicator {
-    NavigationPresentation.indicator(machines: navigationPresentationMachines)
+    navigationSyncIndicator(hasVisibleContent: true)
+  }
+
+  public func navigationSyncIndicator(hasVisibleContent: Bool) -> NavigationPresentation.SyncIndicator {
+    NavigationPresentation.indicator(
+      machines: navigationPresentationMachines, hasVisibleContent: hasVisibleContent)
   }
 
   public func navigationLaunch(hasVisibleContent: Bool) -> NavigationPresentation.Launch {

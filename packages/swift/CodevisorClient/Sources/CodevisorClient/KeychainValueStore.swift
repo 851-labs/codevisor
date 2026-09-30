@@ -129,8 +129,16 @@ public final class KeychainValueStore: @unchecked Sendable {
     insert[kSecValueData as String] = data
     insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
     let insertStatus = operations.add(insert)
-    guard insertStatus == errSecSuccess else {
+    if insertStatus == errSecSuccess { return }
+    // Another writer inserted the item between our update and add (two
+    // first-launch callers racing to store the same value). The item exists
+    // now, so this is an update, not a failure.
+    guard insertStatus == errSecDuplicateItem else {
       throw KeychainStorageFailure(operation: "insert", status: insertStatus)
+    }
+    let retryStatus = operations.update(query, [kSecValueData as String: data])
+    guard retryStatus == errSecSuccess else {
+      throw KeychainStorageFailure(operation: "update", status: retryStatus)
     }
   }
 

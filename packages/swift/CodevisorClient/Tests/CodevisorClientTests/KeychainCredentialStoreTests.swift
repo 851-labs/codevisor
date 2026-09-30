@@ -83,6 +83,36 @@ struct KeychainCredentialStoreTests {
     #expect(try cloud.token() == nil)
   }
 
+  @Test("A save that loses an insert race to another writer still lands")
+  func saveSurvivesConcurrentInsert() throws {
+    let keychain = FakeKeychain()
+    // Another writer inserts the item between this save's update (not found)
+    // and its add — the first-launch race that surfaced as -25299.
+    keychain.beforeNextAdd = { keychain.insert("theirs", service: "cloud.dev-a", account: "app-device-id") }
+    let cloud = KeychainCloudCredentialStore(service: "cloud.dev-a", operations: keychain.operations)
+
+    try cloud.saveAppDeviceId("ours")
+
+    #expect(try cloud.appDeviceId() == "ours")
+  }
+
+  @Test("Concurrent first launches agree on one app device identity")
+  func concurrentIdentityMintingConverges() throws {
+    let keychain = FakeKeychain()
+    let cloud = KeychainCloudCredentialStore(service: "cloud.dev-a", operations: keychain.operations)
+    let results = LockedArray<Result<CloudAppDeviceIdentity, any Error>>()
+
+    DispatchQueue.concurrentPerform(iterations: 8) { _ in
+      results.append(Result { try cloud.ensureAppDeviceIdentity() })
+    }
+
+    let identities = try results.values.map { try $0.get() }
+    #expect(identities.count == 8)
+    #expect(Set(identities.map(\.deviceId)).count == 1)
+    #expect(Set(identities.map(\.secretKey)).count == 1)
+    #expect(try cloud.appDeviceId() == identities.first?.deviceId)
+  }
+
   private func scopedDevelopmentService(
     _ productionService: String,
     instanceID: String
@@ -111,6 +141,12 @@ private final class FakeKeychain: @unchecked Sendable {
   private let lock = NSLock()
   private var items: [Item: Data] = [:]
   private var recordedQueries: [QueryRecord] = []
+  /// Runs once, just before the next add — a competing writer's insert.
+  var beforeNextAdd: (() -> Void)?
+
+  func insert(_ value: String, service: String, account: String) {
+    lock.withLock { items[Item(service: service, account: account)] = Data(value.utf8) }
+  }
 
   var operations: KeychainOperations {
     KeychainOperations(
@@ -154,7 +190,12 @@ private final class FakeKeychain: @unchecked Sendable {
   }
 
   private func add(_ attributes: [String: Any]) -> OSStatus {
-    lock.withLock {
+    let competingWriter = lock.withLock { () -> (() -> Void)? in
+      defer { beforeNextAdd = nil }
+      return beforeNextAdd
+    }
+    competingWriter?()
+    return lock.withLock {
       recordedQueries.append(record(attributes))
       let key = item(attributes)
       guard items[key] == nil else { return errSecDuplicateItem }
@@ -186,4 +227,12 @@ private final class FakeKeychain: @unchecked Sendable {
         query[kSecUseDataProtectionKeychain as String] as? Bool == true
     )
   }
+}
+
+private final class LockedArray<Element>: @unchecked Sendable {
+  private let lock = NSLock()
+  private var storage: [Element] = []
+
+  func append(_ element: Element) { lock.withLock { storage.append(element) } }
+  var values: [Element] { lock.withLock { storage } }
 }

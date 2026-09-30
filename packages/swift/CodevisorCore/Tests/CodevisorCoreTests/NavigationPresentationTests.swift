@@ -70,4 +70,11 @@ struct NavigationPresentationTests {
     #expect(offline.unreachableMachineNames == ["Linux Box"])
     #expect(offline.label?.contains("Linux Box") == true)
   }
+
+  @Test("With nothing on screen yet, the launch spinner is the only loading state")
+  func indicatorNeedsVisibleContent() {
+    let catchingUp = [Self.machine("Mac", state: .catchingUp)]
+    #expect(!NavigationPresentation.indicator(machines: catchingUp, hasVisibleContent: false).isSyncing)
+    #expect(NavigationPresentation.indicator(machines: catchingUp, hasVisibleContent: true).isSyncing)
+  }
 }

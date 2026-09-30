@@ -238,12 +238,16 @@ public actor CloudHubConnection {
           handle(message)
           if isWelcomed { failures = 0 }
         }
-      } catch let error as CloudHubConnectionError
-        where error == .notSignedIn || error == .credentialsUnavailable
-      {
-        // Credential failures cannot be repaired by reconnecting this
-        // hub. A sign-in/retry creates a fresh instance.
+      } catch let error as CloudHubConnectionError where error == .notSignedIn {
+        // No session: reconnecting cannot repair it. Signing in creates a
+        // fresh instance.
         becomeFatal(error)
+      } catch let error as CloudHubConnectionError where error == .credentialsUnavailable {
+        // A Keychain read or write that failed (locked device, a transient
+        // error). Nothing was cached, so the backoff below retries it; a
+        // permanent failure here would leave every machine unreachable
+        // until the app relaunched.
+        Log.cloud.error("Cloud hub credentials unavailable; retrying")
       } catch {
         if !Task.isCancelled {
           Log.cloud.error("Cloud hub connection failed: \(String(describing: error), privacy: .public)")
@@ -291,7 +295,9 @@ public actor CloudHubConnection {
       }
     } catch {
       Log.cloud.error("Cloud session credential load failed: \(String(describing: error), privacy: .public)")
-      result = .failure(.credentialsUnavailable)
+      // Not cached: a Keychain failure may be transient, so the next
+      // reconnect reads again.
+      throw CloudHubConnectionError.credentialsUnavailable
     }
     cachedSessionToken = result
     return try result.get()
@@ -299,15 +305,16 @@ public actor CloudHubConnection {
 
   private func appDeviceIdentity() throws -> CloudAppDeviceIdentity {
     if let cachedIdentity { return try cachedIdentity.get() }
-    let result: Result<CloudAppDeviceIdentity, CloudHubConnectionError>
     do {
-      result = .success(try credentialStore.ensureAppDeviceIdentity())
+      let identity = try credentialStore.ensureAppDeviceIdentity()
+      cachedIdentity = .success(identity)
+      return identity
     } catch {
       Log.cloud.error("Cloud device credential load failed: \(String(describing: error), privacy: .public)")
-      result = .failure(.credentialsUnavailable)
+      // Not cached: a Keychain failure may be transient, so the next
+      // reconnect reads again.
+      throw CloudHubConnectionError.credentialsUnavailable
     }
-    cachedIdentity = result
-    return try result.get()
   }
 
   /// RFC 3986 unreserved characters — everything else in the token is

@@ -69,9 +69,20 @@ public struct CloudAppDeviceIdentity: Sendable {
   }
 }
 
+/// Serializes first-use identity minting across every caller in the process.
+/// The hub, the tunnel, and direct pipes all ask for the identity at launch;
+/// unserialized, each minted its own id and key, one save lost the race, and
+/// the loser surfaced as a fatal credential failure.
+private let appDeviceIdentityLock = NSLock()
+
 extension CloudCredentialStore {
   /// Returns the persisted app device identity, minting one on first use.
+  /// Every caller gets the same identity, including concurrent first calls.
   public func ensureAppDeviceIdentity() throws -> CloudAppDeviceIdentity {
+    try appDeviceIdentityLock.withLock { try loadOrMintAppDeviceIdentity() }
+  }
+
+  private func loadOrMintAppDeviceIdentity() throws -> CloudAppDeviceIdentity {
     let deviceId: String
     if let stored = try appDeviceId() {
       deviceId = stored
