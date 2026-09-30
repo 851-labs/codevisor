@@ -130,3 +130,24 @@ extension ScreenSharingHostService {
     }
   }
 }
+
+extension ScreenSharingHostService {
+  /// A display change ends the session only when it took away what the session shows (851-2376).
+  /// Any change used to end it once 5 s had passed since the host's own: on tuftlord a late
+  /// notification from the host's own virtual display arrived just after, and a session ended
+  /// 3 s after connecting with "Screen sharing was stopped on the host Mac" (alpha 1118).
+  func screenParametersChanged() {
+    guard let current else { return }
+    if ProcessInfo.processInfo.systemUptime < current.ownDisplayChangeUntil { return }
+    let online = ScreenSharingDisplayIdentity.online()
+    guard
+      ScreenSharingDisplayIdentity.sessionSurvives(
+        shared: current.displayID, identity: current.displayIdentity,
+        virtual: current.virtualDisplay?.displayID, online: online)
+    else {
+      Self.logger.notice("The shared display went away; ending the session")
+      return systemStopped()
+    }
+    followDisplay(current)
+  }
+}

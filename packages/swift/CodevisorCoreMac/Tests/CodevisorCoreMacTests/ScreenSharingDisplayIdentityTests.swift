@@ -48,4 +48,29 @@ struct ScreenSharingDisplayIdentityTests {
     let onlyVirtual = [Self.online(191, Self.virtual, virtual: true)]
     #expect(ScreenSharingDisplayIdentity.follow(188, identity: Self.studioDisplay, online: onlyVirtual) == nil)
   }
+
+  /// tuftlord, alpha 1118: a late display-change notification from the host's own virtual display
+  /// ended a session 3 s in. A change that leaves the shared and virtual displays online doesn't.
+  @Test("A display change that keeps both displays online doesn't end the session")
+  func survivesOwnChange() {
+    let online = [Self.online(1, Self.studioDisplay, main: true), Self.online(129, Self.virtual, virtual: true)]
+    #expect(
+      ScreenSharingDisplayIdentity.sessionSurvives(
+        shared: 1, identity: Self.studioDisplay, virtual: 129, online: online))
+    #expect(
+      ScreenSharingDisplayIdentity.sessionSurvives(
+        shared: 1, identity: Self.studioDisplay, virtual: nil, online: online))
+  }
+
+  @Test("Losing the shared display, or the virtual display it mirrors onto, ends the session")
+  func endsWhenDisplaysGo() {
+    let noPhysical = [Self.online(129, Self.virtual, virtual: true)]
+    #expect(
+      !ScreenSharingDisplayIdentity.sessionSurvives(
+        shared: 1, identity: Self.studioDisplay, virtual: 129, online: noPhysical))
+    let noVirtual = [Self.online(1, Self.studioDisplay, main: true)]
+    #expect(
+      !ScreenSharingDisplayIdentity.sessionSurvives(
+        shared: 1, identity: Self.studioDisplay, virtual: 129, online: noVirtual))
+  }
 }
