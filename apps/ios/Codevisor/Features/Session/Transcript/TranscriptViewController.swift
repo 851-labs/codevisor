@@ -50,6 +50,6 @@ final class TranscriptViewController: UIViewController {
 
   override func didReceiveMemoryWarning() {
     super.didReceiveMemoryWarning()
-    transcriptScrollView.discardParkedHosts()
+    transcriptScrollView.parkedHosts.removeAll()
   }
 }

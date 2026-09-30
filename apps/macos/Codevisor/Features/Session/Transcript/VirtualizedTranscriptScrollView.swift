@@ -56,10 +56,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   var mountedHosts: [String: TranscriptMountedRowHost] = [:]
   /// The transcript-wide text selection; see `+Selection.swift`.
   let textSelection = TranscriptSelectionState()
-  var recycledHosts: [TranscriptRowHost] = []
-  /// Detached hosts remain immediately reusable. Hosts exceeding the warm
-  /// pool are released one at a time after the gesture.
-  var retiringHosts: [TranscriptRowHost] = []
+  let hostPool = TranscriptHostPool()
   /// Automatic settlement commits final virtual geometry immediately. One
   /// clipped container retains only the already-mounted worked pixels for the
   /// brief collapse, so disclosure motion never depends on cold measurements.
@@ -72,7 +69,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   var pendingDisclosureCollapseOrigins: [String: CGFloat]?
   var pendingDisclosureContainerOrigins: [(view: NSView, viewportY: CGFloat)] = []
   let markdownHostCache = TranscriptMarkdownHostCache()
-  var recycledMarkdownHosts: [TranscriptMarkdownRowHost] = []
   let virtualWindowPolicy = TranscriptVirtualWindowPolicy()
   var windowPlanner: TranscriptWindowPlanner {
     TranscriptWindowPlanner(

@@ -81,7 +81,7 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
     ) { [weak self] in
       self?.requestModelPresentationFrame()
     }
-    if !pendingMeasuredHeights.isEmpty || !retiringHosts.isEmpty {
+    if !pendingMeasuredHeights.isEmpty || hostPool.hasRetiringHosts {
       requestDisplayFrame()
     }
     NotificationCenter.default.addObserver(
@@ -207,8 +207,8 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
     updateInitialPresentationReadiness()
     sendTransitions.advance()
     if !isLiveScrolling, !isHandlingUserInput {
-      drainRetiringHosts(limit: 1)
+      hostPool.drainRetiringHosts(limit: 1)
     }
-    if !retiringHosts.isEmpty { requestDisplayFrame() }
+    if hostPool.hasRetiringHosts { requestDisplayFrame() }
   }
 }

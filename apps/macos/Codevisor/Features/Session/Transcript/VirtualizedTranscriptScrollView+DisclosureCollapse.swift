@@ -152,7 +152,7 @@ extension VirtualizedTranscriptScrollView {
       host.removeFromSuperviewWithoutNeedingDisplay()
       storeDetachedHost(host, for: key)
     }
-    if !retiringHosts.isEmpty { requestDisplayFrame() }
+    if hostPool.hasRetiringHosts { requestDisplayFrame() }
   }
 
   func finishAllDisclosureCollapsePresentations() {

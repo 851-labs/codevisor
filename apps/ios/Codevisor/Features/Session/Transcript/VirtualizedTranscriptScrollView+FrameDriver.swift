@@ -69,7 +69,7 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
     }
     mountedHosts.removeAll(keepingCapacity: false)
     virtualWindowHandoff.reset()
-    discardParkedHosts()
+    parkedHosts.removeAll()
   }
 
   func installPresentationDisplayLink() {

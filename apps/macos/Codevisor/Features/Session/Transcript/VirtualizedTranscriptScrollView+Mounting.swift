@@ -188,17 +188,7 @@ extension VirtualizedTranscriptScrollView {
       )
     }
 
-    let host: TranscriptRowHost
-    if recycledHosts.isEmpty, retiringHosts.isEmpty {
-      host = TranscriptRowHost(frame: .zero)
-    } else {
-      host =
-        if let retiring = retiringHosts.popLast() {
-          retiring
-        } else {
-          recycledHosts.removeLast()
-        }
-    }
+    let host = hostPool.takeHostedRow() ?? TranscriptRowHost(frame: .zero)
     host.prepareForMountedRow()
     observeRowPresentation(host, for: key)
     transcriptDocumentView.addSubview(host)
@@ -266,7 +256,7 @@ extension VirtualizedTranscriptScrollView {
     let host: TranscriptMarkdownRowHost
     if let prepared = markdownHostCache.take(for: key) {
       host = prepared
-    } else if let recycled = recycledMarkdownHosts.popLast() {
+    } else if let recycled = hostPool.takeMarkdownRow() {
       host = recycled
     } else {
       host = TranscriptMarkdownRowHost(frame: .zero)
@@ -389,7 +379,7 @@ extension VirtualizedTranscriptScrollView {
       storeDetachedHost(host, for: key)
     }
     assert(mountedHosts.keys.allSatisfy { rowByKey[$0] != nil })
-    if !retiringHosts.isEmpty { requestDisplayFrame() }
+    if hostPool.hasRetiringHosts { requestDisplayFrame() }
   }
 
   func storeDetachedHost(_ host: TranscriptMountedRowHost, for key: String) {
@@ -407,25 +397,9 @@ extension VirtualizedTranscriptScrollView {
         height: host.frame.height,
         maximumTotalHeight: max(1, contentView.bounds.height * 12)
       )
-      for host in evicted {
-        if recycledMarkdownHosts.count < 8 {
-          recycledMarkdownHosts.append(host)
-        }
-      }
+      hostPool.recycle(evicted)
     } else if let hosted = host as? TranscriptRowHost {
-      retiringHosts.append(hosted)
-    }
-  }
-
-  func drainRetiringHosts(limit: Int) {
-    for _ in 0..<max(0, limit) {
-      guard let host = retiringHosts.popLast() else { return }
-      if recycledHosts.count < 8 {
-        recycledHosts.append(host)
-      }
-      // Once the warm pool is full, dropping this final reference tears
-      // the host down here, outside live scrolling. The per-frame limit
-      // prevents a large abandoned window from becoming one idle hitch.
+      hostPool.retire(hosted)
     }
   }
 

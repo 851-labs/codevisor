@@ -21,7 +21,6 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
   /// synchronously constructing them under the user's finger.
   static let initialRunwayViewportCount: CGFloat = 1.5
   static let atBottomThreshold: CGFloat = 2
-  static let maxParkedHostCount = 16
   let canvasView = UIView()
   let surfaceController = TranscriptSurfaceController()
   let paginationLoadingIndicator = UIActivityIndicatorView(style: .medium)
@@ -50,8 +49,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
   var activeRowsVersion: TranscriptRowSetRevision?
 
   var mountedHosts: [String: TranscriptRowHost] = [:]
-  var parkedHosts: [String: TranscriptRowHost] = [:]
-  var parkedHostLRU: [String] = []
+  let parkedHosts = TranscriptParkedHosts()
   let virtualWindowPolicy = TranscriptVirtualWindowPolicy()
   var windowPlanner: TranscriptWindowPlanner {
     TranscriptWindowPlanner(
@@ -273,7 +271,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
       : nil
     lastViewportSize = bounds.size
     if widthChanged {
-      discardParkedHosts()
+      parkedHosts.removeAll()
       _ = activateMeasurementCacheIfNeeded()
       refreshMountedRootViews()
       rebuildDocumentGeometry()

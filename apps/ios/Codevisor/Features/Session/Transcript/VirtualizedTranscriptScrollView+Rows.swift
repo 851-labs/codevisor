@@ -24,7 +24,7 @@ extension VirtualizedTranscriptScrollView: TranscriptSurfaceOwner, TranscriptSur
   ) {
     removeDeletedMountedHosts(previousRowsByKey: previousRowsByKey)
     if layoutChanged {
-      discardParkedHosts()
+      parkedHosts.removeAll()
     } else {
       evictChangedParkedHosts(previousRowsByKey: previousRowsByKey)
     }
@@ -44,10 +44,7 @@ extension VirtualizedTranscriptScrollView: TranscriptSurfaceOwner, TranscriptSur
       else { return nil }
       return previous.layoutKey
     }
-    for key in staleKeys {
-      parkedHosts.removeValue(forKey: key)?.detachFromParent()
-    }
-    parkedHostLRU.removeAll { staleKeys.contains($0) }
+    parkedHosts.remove(keys: staleKeys)
   }
 
   func resolvedRows(

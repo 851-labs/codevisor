@@ -9,14 +9,6 @@ import UIKit
 // MARK: - Mounting
 
 extension VirtualizedTranscriptScrollView {
-  func discardParkedHosts() {
-    for host in parkedHosts.values {
-      host.detachFromParent()
-    }
-    parkedHosts.removeAll(keepingCapacity: false)
-    parkedHostLRU.removeAll(keepingCapacity: false)
-  }
-
   func plannedMountedRange(scrollDelta: CGFloat = 0) -> Range<Int> {
     windowPlanner.plannedRange(
       layout: virtualLayout,
@@ -129,7 +121,7 @@ extension VirtualizedTranscriptScrollView {
     }
     guard let row = rowByKey[key] else { return false }
 
-    let host = takeParkedHost(for: key) ?? TranscriptRowHost(parent: parent)
+    let host = parkedHosts.take(for: key) ?? TranscriptRowHost(parent: parent)
     host.prepareForMountedRow()
     host.onMeasuredHeight = { [weak self] measurement in
       self?.recordMeasuredHeight(measurement)
@@ -231,34 +223,17 @@ extension VirtualizedTranscriptScrollView {
       host.detachFromParent()
       return
     }
-    parkedHosts[key]?.detachFromParent()
-    parkedHosts[key] = host
-    parkedHostLRU.removeAll { $0 == key }
-    parkedHostLRU.append(key)
-    while parkedHostLRU.count > Self.maxParkedHostCount {
-      let evicted = parkedHostLRU.removeFirst()
-      parkedHosts.removeValue(forKey: evicted)?.detachFromParent()
-    }
-  }
-
-  func takeParkedHost(for key: String) -> TranscriptRowHost? {
-    guard let host = parkedHosts.removeValue(forKey: key) else { return nil }
-    parkedHostLRU.removeAll { $0 == key }
-    return host
+    parkedHosts.insert(host, for: key)
   }
 
   func evictChangedParkedHosts(
     previousRowsByKey: [String: TranscriptVirtualRow],
   ) {
-    let staleKeys = parkedHostLRU.filter { key in
+    parkedHosts.remove { key in
       guard let row = rowByKey[key] else { return true }
       return previousRowsByKey[key]?.content != row.content
         || previousRowsByKey[key]?.measurementRevision != row.measurementRevision
     }
-    for key in staleKeys {
-      parkedHosts.removeValue(forKey: key)?.detachFromParent()
-    }
-    parkedHostLRU.removeAll { staleKeys.contains($0) }
   }
 
   func refreshMountedRootViews() {
