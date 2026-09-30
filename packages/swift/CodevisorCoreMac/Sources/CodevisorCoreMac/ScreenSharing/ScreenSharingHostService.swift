@@ -59,6 +59,10 @@ final class ScreenSharingHostService {
     /// The host's sound, once the viewer subscribed (851-2379).
     var audioEncoder: ScreenSharingAudioEncoder?
     var control: ScreenSharingHostControl?
+    /// The codec the answer settled on; its capture format decides whether HDR is possible (851-2380).
+    var codec: ScreenSharingVideoCodec?
+    /// HDR: what the viewer's screen can show, the switch in progress, what the viewer was told.
+    var hdr = ScreenSharingHostService.DynamicRangeState()
     var clipboard: ScreenSharingClipboardTransfer?
     var stopping = false
     var watchdog: Task<Void, Never>?
@@ -243,6 +247,7 @@ final class ScreenSharingHostService {
           // Main 4:4:4 needs BGRA frames to keep chroma; the others take NV12 (851-2381).
           if let codec = ScreenSharingVideoCodec.negotiated(inDescription: answer.sdp) {
             session.capture.pixelFormat = codec.capturePixelFormat
+            session.codec = codec
             session.metrics.label("negotiatedCodec", codec.rawValue)
           }
           try Task.checkCancellation()
@@ -347,6 +352,7 @@ final class ScreenSharingHostService {
     configureCursor(session)
     configureAudio(session)
     configureDisplay(session)
+    configureVideoFormat(session)
 
     session.capture.onStopped = { [weak self, weak session] message in
       guard let self, let session else { return }

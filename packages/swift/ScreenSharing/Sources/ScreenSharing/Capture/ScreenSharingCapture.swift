@@ -35,6 +35,9 @@
     private var captureIntervalFPS: Int? { requestState.overrideFramesPerSecond }
     /// Whether the pointer is drawn into the frames; off once the viewer draws it from the cursor stream (851-2377).
     public private(set) var showsCursor = true
+    /// Standard: 8-bit sRGB. High (851-2380): ScreenCaptureKit's canonical HDR, 10-bit 4:4:4 in
+    /// Display P3 PQ with SDR white at 203 nits. Only a 4:4:4 (BGRA) capture can switch to it.
+    public private(set) var dynamicRange = ScreenSharingDynamicRange.standard
     /// Whether the system's sound is captured too (851-2379); off until a viewer asks for it.
     public private(set) var capturesAudio = false
     /// Where audio sample buffers go, on the capture's audio queue; set it any time.
@@ -165,10 +168,11 @@
       let interval = try requestState.validated(video: configuration, override: captureIntervalFPS)
       let streamConfiguration = Self.streamConfiguration(
         configuration, interval: interval, queueDepth: queueDepth, pixelFormat: pixelFormat, showsCursor: showsCursor,
-        capturesAudio: capturesAudio)
+        capturesAudio: capturesAudio, dynamicRange: dynamicRange)
       requestState.commit(override: captureIntervalFPS, request: interval, metrics: metrics)
       metrics.label("captureQueueDepth", String(queueDepth))
       metrics.label("capturePixelFormat", String(pixelFormat))
+      metrics.label("captureDynamicRange", dynamicRange.rawValue)
       metrics.label("captureSurface", copySurface ? "separate pool experiment" : "SCK surface")
       let content = target.captureContent
       metrics.label("captureContentStyle", content.style)
@@ -227,7 +231,7 @@
           try await stream.updateConfiguration(
             Self.streamConfiguration(
               configuration, interval: interval, queueDepth: self.queueDepth, pixelFormat: self.pixelFormat,
-              showsCursor: self.showsCursor, capturesAudio: self.capturesAudio))
+              showsCursor: self.showsCursor, capturesAudio: self.capturesAudio, dynamicRange: self.dynamicRange))
         }, isCurrent: { self.generation == generation })
       video = configuration
     }
@@ -242,6 +246,23 @@
         showsCursor = previous
         throw error
       }
+    }
+
+    /// Captures in high dynamic range or standard (851-2380), now and for later starts. A running
+    /// stream is updated in place; the frames' pixel format says which range each one is in, and
+    /// the encoder follows it.
+    public func setDynamicRange(_ range: ScreenSharingDynamicRange) async throws {
+      guard range != dynamicRange else { return }
+      guard range == .standard || pixelFormat == kCVPixelFormatType_32BGRA else {
+        throw ScreenSharingError.invalid("High dynamic range needs a 4:4:4 capture.")
+      }
+      let previous = dynamicRange
+      dynamicRange = range
+      do { try await reconfigure() } catch {
+        dynamicRange = previous
+        throw error
+      }
+      output?.metrics.label("captureDynamicRange", range.rawValue)
     }
 
     /// Captures the system's sound too, or stops, now and for later starts. The audio output
@@ -321,18 +342,27 @@
     /// Builds the stream configuration from an ALREADY VALIDATED interval request. Validation lives in
     /// `ScreenSharingCaptureRequestState`, which both the start and update paths use, so no path can build a
     /// configuration from an unvalidated request.
-    private static func streamConfiguration(
+    static func streamConfiguration(
       _ video: ScreenSharingVideoConfiguration, interval: ScreenSharingCaptureIntervalRequest, queueDepth: Int,
-      pixelFormat: OSType, showsCursor: Bool, capturesAudio: Bool
+      pixelFormat: OSType, showsCursor: Bool, capturesAudio: Bool, dynamicRange: ScreenSharingDynamicRange = .standard
     ) -> SCStreamConfiguration {
-      let config = SCStreamConfiguration()
+      let config: SCStreamConfiguration
+      if dynamicRange == .high {
+        // Canonical rather than local: rendered for a display other than this one, which is what a
+        // viewer is. Its format (10-bit 4:4:4 full range, Display P3 PQ, BT.709 matrix) is what the
+        // encoder tags and the viewer draws.
+        config = SCStreamConfiguration(preset: .captureHDRStreamCanonicalDisplay)
+        config.pixelFormat = ScreenSharingDynamicRange.highCapturePixelFormat
+      } else {
+        config = SCStreamConfiguration()
+        config.pixelFormat = pixelFormat
+        // sRGB, which the viewer's layer shows: Rec. 709's transfer curve brightened mid-tones by
+        // up to 6 levels (sky blue 150 → 156) before anything was encoded (851-2398).
+        config.colorSpaceName = CGColorSpace.sRGB
+      }
       config.width = video.width; config.height = video.height
       config.minimumFrameInterval = interval.minimumFrameInterval
       config.queueDepth = queueDepth
-      config.pixelFormat = pixelFormat
-      // sRGB, which the viewer's layer shows: Rec. 709's transfer curve brightened mid-tones by
-      // up to 6 levels (sky blue 150 → 156) before anything was encoded (851-2398).
-      config.colorSpaceName = CGColorSpace.sRGB
       config.showsCursor = showsCursor
       config.capturesAudio = capturesAudio
       if capturesAudio {

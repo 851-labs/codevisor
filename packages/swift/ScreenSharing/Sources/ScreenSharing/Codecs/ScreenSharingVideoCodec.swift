@@ -11,13 +11,22 @@ public enum ScreenSharingVideoCodec: String, Sendable, CaseIterable {
 
   var mediaType: CMVideoCodecType { self == .h264 ? kCMVideoCodecType_H264 : kCMVideoCodecType_HEVC }
   package var payloadName: String { self == .h264 ? "H264" : "H265" }
-  var decodedPixelFormat: OSType {
-    self == .hevc444 ? kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+  var decodedPixelFormat: OSType { decodedPixelFormat(.standard) }
+  /// What the decoder outputs for a stream in `range`: 10-bit planes for high dynamic range (851-2380).
+  func decodedPixelFormat(_ range: ScreenSharingDynamicRange) -> OSType {
+    switch (self == .hevc444, range) {
+    case (true, .standard): kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange
+    case (false, .standard): kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+    case (true, .high): kCVPixelFormatType_444YpCbCr10BiPlanarVideoRange
+    case (false, .high): kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange
+    }
   }
   /// BGRA preserves all source chroma for the hardware Main444 encoder.
   public var capturePixelFormat: OSType {
     self == .hevc444 ? kCVPixelFormatType_32BGRA : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
   }
+  /// Only Main 4:4:4 carries high dynamic range: its 10-bit profile keeps the chroma (851-2380).
+  public var supportsHighDynamicRange: Bool { self == .hevc444 }
   package var sdpParameters: [String: String] {
     if self == .h264 {
       return ["profile-level-id": "42e034", "packetization-mode": "1", "level-asymmetry-allowed": "1"]
@@ -52,6 +61,24 @@ extension ScreenSharingVideoCodec {
 }
 
 /// Parse the hvcC fields needed to reject silent chroma/depth fallback.
+/// Standard (8-bit sRGB) or high (10-bit Display P3 PQ, 851-2380) dynamic range: what the host
+/// captures and encodes, told apart by the pixel format and the stream's bit depth.
+public enum ScreenSharingDynamicRange: String, Codable, Sendable, Equatable {
+  case standard
+  case high
+
+  /// What ScreenCaptureKit's HDR preset delivers: 10-bit 4:4:4 YCbCr, full range, in Display P3 PQ.
+  public static let highCapturePixelFormat = kCVPixelFormatType_444YpCbCr10BiPlanarFullRange
+
+  static let highPixelFormats: Set<OSType> = [
+    kCVPixelFormatType_444YpCbCr10BiPlanarFullRange, kCVPixelFormatType_444YpCbCr10BiPlanarVideoRange,
+    kCVPixelFormatType_420YpCbCr10BiPlanarFullRange, kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange,
+  ]
+
+  /// The range a captured or decoded frame of this pixel format is in.
+  public init(pixelFormat: OSType) { self = Self.highPixelFormats.contains(pixelFormat) ? .high : .standard }
+}
+
 struct ScreenSharingHEVCFormat: Equatable {
   let profile: Int
   let chroma: Int
@@ -69,18 +96,25 @@ struct ScreenSharingHEVCFormat: Equatable {
     chromaDepth = 8 + Int(bytes[18] & 7)
   }
 
-  /// The HEVC codec this stream is: 8-bit Main 4:2:0 or 8-bit Main 4:4:4, else nil.
+  /// 8-bit is standard dynamic range, 10-bit high (851-2380); nil for any other depth.
+  var dynamicRange: ScreenSharingDynamicRange? {
+    guard lumaDepth == chromaDepth else { return nil }
+    return lumaDepth == 8 ? .standard : lumaDepth == 10 ? .high : nil
+  }
+
+  /// The HEVC codec this stream is: Main 4:2:0 (8-bit Main or 10-bit Main10) or Main 4:4:4 (8-
+  /// or 10-bit, both profile 4), else nil.
   var codec: ScreenSharingVideoCodec? {
-    guard lumaDepth == 8, chromaDepth == 8 else { return nil }
-    if profile == 1, chroma == 1 { return .hevc }
+    guard let dynamicRange else { return nil }
+    if chroma == 1, profile == (dynamicRange == .high ? 2 : 1) { return .hevc }
     if profile == 4, chroma == 3 { return .hevc444 }
     return nil
   }
 
   func validate(for codec: ScreenSharingVideoCodec) throws {
-    guard codec != .h264, profile == (codec == .hevc444 ? 4 : 1),
-      chroma == (codec == .hevc444 ? 3 : 1), lumaDepth == 8, chromaDepth == 8
-    else { throw ScreenSharingError.invalid("HEVC output does not match the negotiated profile, chroma or bit depth.") }
+    guard codec != .h264, self.codec == codec else {
+      throw ScreenSharingError.invalid("HEVC output does not match the negotiated profile, chroma or bit depth.")
+    }
   }
 
   static func read(_ description: CMFormatDescription) throws -> Self {

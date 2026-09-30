@@ -31,6 +31,9 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
   private var output: (@Sendable (ScreenSharingEncodedFrame) -> Void)?
   private let configuration: ScreenSharingVideoConfiguration
   private let codec: ScreenSharingVideoCodec
+  /// Standard: 8-bit, BT.709 primaries, sRGB transfer. High (851-2380): 10-bit Main 4:4:4 in
+  /// Display P3 with the PQ transfer, as ScreenCaptureKit's HDR capture delivers it.
+  public let dynamicRange: ScreenSharingDynamicRange
   private let maximumPendingFrames: Int
   private let completeEachFrame: Bool
   private var currentBitrate: Int
@@ -51,9 +54,11 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
     configuration: ScreenSharingVideoConfiguration, metrics: ScreenSharingMetrics,
     useLowLatencyRateControl requestedLowLatency: Bool = true, codec: ScreenSharingVideoCodec = .h264,
     disableLookAhead: Bool = false, maximumPendingFrames: Int = 2, completeEachFrame: Bool = false,
-    prioritizeSpeed: Bool = false, keyframeIntervalSeconds: Int = 2
+    prioritizeSpeed: Bool = false, keyframeIntervalSeconds: Int = 2,
+    dynamicRange: ScreenSharingDynamicRange = .standard
   ) throws {
     self.configuration = configuration
+    self.dynamicRange = dynamicRange
     let useLowLatencyRateControl = Self.usesLowLatencyRateControl(
       requested: requestedLowLatency, width: configuration.width, height: configuration.height)
     currentBitrate = configuration.bitrate
@@ -73,6 +78,9 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
     metrics.label("encoderInitialBitrate", String(configuration.bitrate))
     metrics.label("encoderInitialFPS", String(configuration.framesPerSecond))
     metrics.label("encoderKeyframeIntervalSeconds", String(keyframeIntervalSeconds))
+    guard dynamicRange == .standard || codec.supportsHighDynamicRange else {
+      throw ScreenSharingError.invalid("High dynamic range requires HEVC Main 4:4:4.")
+    }
     guard codec != .hevc444 || !requestedLowLatency else {
       throw ScreenSharingError.invalid(
         "Main444 requires standard rate control; the low-latency encoder can reduce chroma.")
@@ -106,8 +114,10 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
         let profileInfo =
           (supported as? [String: Any])?[kVTCompressionPropertyKey_ProfileLevel as String] as? [String: Any]
         let profiles = profileInfo?[kVTPropertySupportedValueListKey as String] as? [String] ?? []
-        guard let profile = profiles.first(where: { $0.contains("_Main444_") }) else {
-          throw ScreenSharingError.unavailable("Hardware encoder does not advertise an 8-bit Main444 profile.")
+        let wanted = dynamicRange == .high ? "_Main44410_" : "_Main444_"
+        guard let profile = profiles.first(where: { $0.contains(wanted) }) else {
+          throw ScreenSharingError.unavailable(
+            "Hardware encoder does not advertise a \(dynamicRange == .high ? "10" : "8")-bit Main444 profile.")
         }
         try property(kVTCompressionPropertyKey_ProfileLevel, profile as CFString)
         metrics.label("encoderProfile", profile)
@@ -132,9 +142,15 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
       try property(
         kVTCompressionPropertyKey_MaxKeyFrameInterval,
         (configuration.framesPerSecond * keyframeIntervalSeconds) as CFNumber)
-      try property(kVTCompressionPropertyKey_ColorPrimaries, kCVImageBufferColorPrimaries_ITU_R_709_2)
-      // Capture is sRGB (851-2398): tagged as what it is, so nothing converts it on the way.
-      try property(kVTCompressionPropertyKey_TransferFunction, kCVImageBufferTransferFunction_sRGB)
+      // Tagged as what the capture is, so nothing converts it on the way: sRGB (851-2398), or
+      // ScreenCaptureKit's HDR output, Display P3 PQ with a BT.709 matrix (851-2380).
+      if dynamicRange == .high {
+        try property(kVTCompressionPropertyKey_ColorPrimaries, kCVImageBufferColorPrimaries_P3_D65)
+        try property(kVTCompressionPropertyKey_TransferFunction, kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ)
+      } else {
+        try property(kVTCompressionPropertyKey_ColorPrimaries, kCVImageBufferColorPrimaries_ITU_R_709_2)
+        try property(kVTCompressionPropertyKey_TransferFunction, kCVImageBufferTransferFunction_sRGB)
+      }
       try property(kVTCompressionPropertyKey_YCbCrMatrix, kCVImageBufferYCbCrMatrix_ITU_R_709_2)
       try check(VTCompressionSessionPrepareToEncodeFrames(created), "Prepare encoder")
       var hardware: Unmanaged<CFTypeRef>?
@@ -153,7 +169,8 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
       // RequireHardwareAcceleratedVideoEncoder still forbids software fallback.
       metrics.label("encoderHardware", hardwareStatus == noErr ? "confirmed" : "required; query unsupported")
       metrics.label("encoder", "VideoToolbox \(codec.rawValue) hardware, no frame reordering")
-      metrics.label("encodedColor", "BT.709 primaries, sRGB transfer")
+      metrics.label(
+        "encodedColor", dynamicRange == .high ? "Display P3 primaries, PQ transfer" : "BT.709 primaries, sRGB transfer")
     } catch { stop(); throw error }
   }
 
@@ -316,6 +333,9 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
       if codec != .h264 {
         let actual = try ScreenSharingHEVCFormat.read(format)
         try actual.validate(for: codec)
+        guard actual.dynamicRange == dynamicRange else {
+          throw ScreenSharingError.invalid("HEVC output does not have the requested bit depth.")
+        }
         metrics.label("encodedHEVCProfileIDC", String(actual.profile))
         metrics.label("encodedChroma", actual.chroma == 3 ? "4:4:4" : "4:2:0")
         metrics.label("encodedBitDepth", String(actual.lumaDepth))

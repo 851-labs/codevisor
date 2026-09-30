@@ -24,6 +24,20 @@ struct ScreenSharingHEVCFormatTests {
     #expect(throws: (any Error).self) { try full.validate(for: .h264) }
   }
 
+  /// HDR (851-2380): 10-bit Main 4:4:4 is still profile 4, and 10-bit 4:2:0 is Main10 (2).
+  @Test func tenBitStreamsAreHighDynamicRangeOfTheSameCodec() throws {
+    let full = try ScreenSharingHEVCFormat(configuration: configuration(luma: 2, color: 2))
+    try full.validate(for: .hevc444)
+    #expect(full.codec == .hevc444 && full.dynamicRange == .high)
+    let main10 = try ScreenSharingHEVCFormat(configuration: configuration(profile: 2, chroma: 1, luma: 2, color: 2))
+    #expect(main10.codec == .hevc && main10.dynamicRange == .high)
+    // Main (1) is 8-bit only, and luma and chroma must agree.
+    #expect(
+      try ScreenSharingHEVCFormat(configuration: configuration(profile: 1, chroma: 1, luma: 2, color: 2)).codec == nil)
+    #expect(try ScreenSharingHEVCFormat(configuration: configuration(luma: 2)).dynamicRange == nil)
+    #expect(try ScreenSharingHEVCFormat(configuration: configuration(luma: 4, color: 4)).codec == nil)
+  }
+
   @Test func rejectsSilentChromaAndDepthFallback() throws {
     for bytes in [
       configuration(chroma: 1), configuration(chroma: 2), configuration(profile: 1),

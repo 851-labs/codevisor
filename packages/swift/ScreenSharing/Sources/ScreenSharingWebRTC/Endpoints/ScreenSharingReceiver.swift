@@ -42,6 +42,11 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
       if available { self?.subscribeToCursor() }
     }
     displayChannel.onMessage = { [weak self] in self?.receiveDisplay($0) }
+    videoFormatChannel.onMessage = { [weak self] in self?.receiveVideoFormat($0) }
+    videoFormatChannel.onAvailabilityChanged = { [weak self] available in
+      guard available, let self, let viewerHighDynamicRange = self.viewerHighDynamicRange else { return }
+      self.videoFormatChannel.send(.viewer(highDynamicRange: viewerHighDynamicRange))
+    }
     audioChannel.onMessage = { [weak self] message in
       guard case .packet(let packet) = message else { return }
       self?.audioPacketsReceived += 1
@@ -112,6 +117,23 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
     case .resize, .restore:
       return
     }
+  }
+
+  // MARK: HDR (851-2380)
+
+  /// What the viewer's display can show, as last reported; sent when the channel opens and on each change.
+  private var viewerHighDynamicRange: Bool?
+
+  public func setDisplayHighDynamicRange(_ supported: Bool) {
+    guard supported != viewerHighDynamicRange else { return }
+    viewerHighDynamicRange = supported
+    metrics.label("viewerHighDynamicRange", supported ? "yes" : "no")
+    videoFormatChannel.send(.viewer(highDynamicRange: supported))
+  }
+
+  private func receiveVideoFormat(_ message: ScreenSharingVideoFormatMessage) {
+    guard case .sending(let range, let reason) = message else { return }
+    metrics.label("hostDynamicRange", reason.map { "\(range.rawValue): \($0)" } ?? range.rawValue)
   }
 
   // MARK: Audio (851-2379)

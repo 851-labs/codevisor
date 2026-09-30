@@ -40,6 +40,8 @@ public final class ScreenSharingDecoder: @unchecked Sendable {
   private var parameterSets: [Data] = []
   /// For H265, follows the stream: the profile the parameter sets carry, not the one negotiated.
   private var codec: ScreenSharingVideoCodec
+  /// The stream's dynamic range, from its bit depth: the decoder outputs 10-bit planes for HDR (851-2380).
+  private var dynamicRange = ScreenSharingDynamicRange.standard
   private let output: @Sendable (ScreenSharingVideoFrame) -> Void
   private var refreshSignal: ScreenSharingRefreshSignal?
   public let metrics: ScreenSharingMetrics
@@ -119,7 +121,7 @@ public final class ScreenSharingDecoder: @unchecked Sendable {
     guard let sample else { throw ScreenSharingError.unavailable("No decode sample.") }
     let context = Unmanaged.passRetained(
       Context(
-        frame, metrics: metrics, pixelFormat: codec.decodedPixelFormat, refreshSignal: refreshSignal,
+        frame, metrics: metrics, pixelFormat: codec.decodedPixelFormat(dynamicRange), refreshSignal: refreshSignal,
         sourceTimestampNs: sourceTimestampNs, audit: audit, auditIdentity: auditIdentity, output: output))
     let status = VTDecompressionSessionDecodeFrame(
       session, sampleBuffer: sample, flags: [], frameRefcon: context.toOpaque(), infoFlagsOut: nil)
@@ -169,8 +171,12 @@ public final class ScreenSharingDecoder: @unchecked Sendable {
       // a Main-only sender (the Computer Use live preview), got a 4:4:4 decoder for a Main stream
       // and rejected every frame (851-2471). Both are 8-bit H265 through the same hardware
       // decoder; the parameter sets say which this stream is, and the output format follows.
-      guard let streamCodec = actual.codec else { try actual.validate(for: codec); return }
+      // A 10-bit stream is the host's HDR (851-2380), sent only to a viewer that said it can show it.
+      guard let streamCodec = actual.codec, let range = actual.dynamicRange else {
+        try actual.validate(for: codec); return
+      }
       codec = streamCodec
+      dynamicRange = range
       metrics.label("decodedChroma", actual.chroma == 3 ? "4:4:4" : "4:2:0")
       metrics.label("decodedBitDepth", String(actual.lumaDepth))
     }
@@ -224,7 +230,7 @@ public final class ScreenSharingDecoder: @unchecked Sendable {
       }, decompressionOutputRefCon: nil)
     let specification = [kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder: true] as CFDictionary
     let attributes: [CFString: Any] = [
-      kCVPixelBufferPixelFormatTypeKey: codec.decodedPixelFormat,
+      kCVPixelBufferPixelFormatTypeKey: codec.decodedPixelFormat(dynamicRange),
       kCVPixelBufferMetalCompatibilityKey: true,
       kCVPixelBufferIOSurfacePropertiesKey: [:],
     ]

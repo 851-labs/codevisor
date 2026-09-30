@@ -40,6 +40,9 @@
     var audioEncoder: ScreenSharingAudioEncoder?
     /// The negotiated codec's capture format: BGRA for HEVC Main 4:4:4, NV12 otherwise (851-2381).
     var capturePixelFormat: OSType = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+    /// The negotiated codec, and whether the viewer's screen can show HDR (851-2380).
+    var codec: ScreenSharingVideoCodec?
+    var viewerHighDynamicRange = false
 
     /// The host role's frame sender; the host runner only creates sender sessions.
     var frameSender: ScreenSharingFrameSender {

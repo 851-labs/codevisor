@@ -97,6 +97,7 @@
       peerBuild = offer.build
       installCursorStream(in: session)
       installAudioStream(in: session)
+      installVideoFormat(in: session)
       peer.onConnectionChanged = { [weak self, weak session] state in
         Task { @MainActor in
           guard let self, let session else { return }
@@ -107,6 +108,7 @@
       let answer = try await peer.makeDescription(offer: false)
       if let codec = ScreenSharingVideoCodec.negotiated(inDescription: answer.sdp) {
         session.capturePixelFormat = codec.capturePixelFormat
+        session.codec = codec
         metrics.label("negotiatedCodec", codec.rawValue)
       }
       log("answered \(offer.name) (\(offer.build.label)) for session \(offer.sessionID)")
@@ -260,6 +262,7 @@
       }
       await applyCursorStream(in: session)
       await applyAudioStream(in: session)
+      await applyDynamicRange(in: session)
     }
 
     /// The product host's audio stream (851-2379) for every captured source.
