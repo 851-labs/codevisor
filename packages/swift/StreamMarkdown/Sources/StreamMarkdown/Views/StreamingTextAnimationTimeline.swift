@@ -305,7 +305,7 @@ final class StreamingTextAnimationTimeline {
       .min()
     let firstStart: TimeInterval
     if let lastStarted {
-      firstStart = max(now, lastStarted + StreamingTextAnimationSpec.fastestSegmentDelay)
+      firstStart = max(now, lastStarted + StreamingTextAnimationSpec.queueHeadSpacing)
     } else if let earliestPending {
       // A second provider update can arrive during the initial reserve.
       // Keep the original playback deadline instead of pushing it back

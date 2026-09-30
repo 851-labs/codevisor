@@ -188,6 +188,19 @@ struct StreamingTextAnimationTests {
       })
   }
 
+  @Test("A large single burst finishes revealing within about a second")
+  func largeBurstDrainsQuickly() {
+    let timeline = StreamingTextAnimationTimeline()
+    let now = 10.0
+    timeline.observeSource(String(repeating: "a", count: 9_000), sourceID: "answer", at: now)
+    let fades = timeline.scheduleSegments(
+      characterCounts: Array(repeating: 6, count: 1_500),
+      at: now
+    )
+
+    #expect(try! #require(fades.last).animationEndTime - now < 1.5)
+  }
+
   @Test("Observed stream shape adapts without a harness or model hint")
   func sourceShapeControlsTargetReserve() {
     let fine = StreamingTextAnimationTimeline()

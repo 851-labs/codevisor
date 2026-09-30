@@ -17,7 +17,13 @@ enum StreamingTextAnimationSpec {
   static let minimumTargetQueueLead: TimeInterval = 0.055
   static let defaultTargetQueueLead: TimeInterval = 0.100
   static let maximumTargetQueueLead: TimeInterval = 0.350
-  static let fastestSegmentDelay: TimeInterval = 0.008
+  /// No per-word floor: pacing comes only from the backlog, so a large burst
+  /// drains in roughly one queue lead instead of crawling at a fixed rate
+  /// while its fully laid-out (but still transparent) height sits on screen.
+  static let fastestSegmentDelay: TimeInterval = 0
+  /// Spacing between the most recently started word and the head of the
+  /// pending queue, so trickled appends still enter after the prior word.
+  static let queueHeadSpacing: TimeInterval = 0.008
   static let minimumSlowestSegmentDelay: TimeInterval = 0.032
   static let maximumSlowestSegmentDelay: TimeInterval = 0.120
   static let minimumStartupQueueLead: TimeInterval = 0.020
