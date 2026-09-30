@@ -1,4 +1,5 @@
-import { execFile } from "node:child_process"
+import { type ChildProcess, execFile } from "node:child_process"
+import { finished } from "node:stream"
 
 import type { GitDiffFile } from "@codevisor/api"
 
@@ -20,34 +21,45 @@ const utf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true })
 /// Plumbing whose output is paths and file contents, so it is read as bytes:
 /// `runGit` trims, which would corrupt a path ending in a space or a blob
 /// ending in a newline.
-const gitBytes = (
+///
+/// Settles only once both git has exited and its stdin has finished or
+/// failed, so the outcome never depends on which of the two is noticed first.
+/// Git's own failure wins, since it says why; a git that exited cleanly
+/// without reading every request (its stdin broke) produced partial output,
+/// which is a failure too.
+export const gitBytes = async (
   operation: string,
   args: ReadonlyArray<string>,
   cwd: string,
   env: NodeJS.ProcessEnv | undefined,
   input = ""
-): Promise<Buffer> =>
-  new Promise((resolve, reject) => {
-    const command = withPriority("git", args, heavyGit.priority)
-    const child = execFile(
+): Promise<Buffer> => {
+  const command = withPriority("git", args, heavyGit.priority)
+  let child!: ChildProcess
+  const exited = new Promise<{
+    readonly error: Error | null
+    readonly stdout: Buffer
+    readonly stderr: Buffer
+  }>((resolve) => {
+    child = execFile(
       command.command,
       command.args,
       { cwd, encoding: "buffer", maxBuffer: heavyGit.maxBuffer, env: env ?? process.env },
-      (error, stdout, stderr) => {
-        /* v8 ignore next 4 -- these read objects git itself just named, so
-           failing needs the repository to be damaged mid-request. */
-        if (error !== null) {
-          reject(new GitError(operation, stderr.toString("utf8").trim() || error.message))
-          return
-        }
-        resolve(stdout)
-      }
+      (error, stdout, stderr) => resolve({ error, stdout, stderr })
     )
-    // A git that exits early closes stdin under us; the exit callback above
-    // reports why, so the pipe error only needs to not crash the server.
-    child.stdin?.once("error", reject)
-    child.stdin?.end(input)
   })
+  const stdin = child.stdin!
+  const fed = new Promise<Error | undefined>((resolve) => {
+    finished(stdin, (error) => resolve(error ?? undefined))
+  })
+  stdin.end(input)
+  const [run, stdinError] = await Promise.all([exited, fed])
+  if (run.error !== null) {
+    throw new GitError(operation, run.stderr.toString("utf8").trim() || run.error.message)
+  }
+  if (stdinError !== undefined) throw new GitError(operation, stdinError.message)
+  return run.stdout
+}
 
 interface RawChange {
   readonly oldMode: string
