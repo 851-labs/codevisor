@@ -163,7 +163,7 @@ struct ComposerCard: View {
       allowsMultipleSelection: true
     ) { result in
       guard case let .success(urls) = result else { return }
-      controller.attachFileURLs(urls)
+      controller.attachments.attachFileURLs(urls)
     }
     .onChange(of: controller.activeQuestion?.questionId) { _, _ in
       didStartResolvingQuestion = false
@@ -338,9 +338,9 @@ private extension ComposerCard {
     for item in pasted {
       switch item {
       case let .fileURL(url):
-        controller.attachFileURLs([url])
+        controller.attachments.attachFileURLs([url])
       case let .image(data, suggestedName):
-        controller.attachImageData(data, suggestedName: suggestedName)
+        controller.attachments.attachImageData(data, suggestedName: suggestedName)
       }
     }
     return true

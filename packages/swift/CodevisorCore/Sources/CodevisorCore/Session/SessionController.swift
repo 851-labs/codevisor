@@ -51,8 +51,21 @@ final public class SessionController {
   @ObservationIgnored var transcriptFallbackFrameTask: Task<Void, Never>?
 
   public var composerText: String = "" { didSet { draftDidChange() } }
-  public internal(set) var composerAttachments: [ComposerAttachment] = [] { didSet { draftDidChange() } }
-  var uploadTasks: [UUID: Task<Void, Never>] = [:]
+  public var composerAttachments: [ComposerAttachment] { attachments.items }
+  @ObservationIgnored public private(set) lazy var attachments = ComposerAttachments(
+    files: attachmentFiles,
+    client: { [weak self] in self?.serverClient },
+    uploadLimitBytes: { [weak self] in
+      guard let self else { return MachineStatus.legacyUploadLimitBytes }
+      return self.machines?.statusByMachineId[self.project.serverId]?.uploadLimitBytes
+        ?? MachineStatus.legacyUploadLimitBytes
+    },
+    onChange: { [weak self] in self?.draftDidChange() },
+    reportFailure: { [weak self] message in self?.status = .failed(message) },
+    rememberPreview: { [weak self] preview, fileId in
+      self?.sentAttachmentPreviews.remember(preview, for: fileId)
+    }
+  )
   /// Bytes of images this device just sent, by uploaded file id, so their
   /// transcript thumbnails render from the first frame of the send instead
   /// of after a server round trip. See `filePreview(for:)`.

@@ -71,7 +71,7 @@ struct SessionControllerFirstSendTests {
   func failedSubmissionRemainsInChat() async throws {
     let fixture = try Fixture()
     let staged = try attachment(in: fixture.controller.attachmentFiles)
-    fixture.controller.composerAttachments = [staged]
+    fixture.controller.attachments.restore([staged])
     fixture.client.promptFailure = .httpStatus(503, "Please retry")
 
     await fixture.controller.send()
@@ -95,7 +95,7 @@ struct SessionControllerFirstSendTests {
   func setupFailureRestoresDraft() async throws {
     let fixture = try Fixture()
     let staged = try attachment(in: fixture.controller.attachmentFiles)
-    fixture.controller.composerAttachments = [staged]
+    fixture.controller.attachments.restore([staged])
     fixture.client.openSessionFailure = .httpStatus(503, "Setup failed")
     var didFailSetup = false
     fixture.controller.onSetupFailed = { didFailSetup = true }

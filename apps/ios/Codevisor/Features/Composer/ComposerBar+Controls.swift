@@ -26,7 +26,7 @@ struct ComposerPasteFailureNotice: Equatable {
   }
 
   static let attachmentLimit = Self(
-    message: "A message can carry at most \(SessionController.maxAttachments) attachments.",
+    message: "A message can carry at most \(ComposerAttachments.maxAttachments) attachments.",
     recovery: nil
   )
 
@@ -45,7 +45,7 @@ struct ComposerPasteFailureNotice: Equatable {
 
 extension ComposerBar {
   var remainingAttachmentSlots: Int {
-    max(0, SessionController.maxAttachments - controller.composerAttachments.count)
+    max(0, ComposerAttachments.maxAttachments - controller.composerAttachments.count)
   }
 
   /// Routes file and image pasteboard content through the same staging paths
@@ -55,7 +55,7 @@ extension ComposerBar {
     switch event {
     case let .began(id, name, mimeType, kind):
       guard
-        controller.beginLoadingAttachment(
+        controller.attachments.beginLoadingAttachment(
           id: id,
           name: name,
           mimeType: mimeType,
@@ -76,7 +76,7 @@ extension ComposerBar {
           onFailure: presentPasteFailure
         )
       case let .image(data, suggestedName, mimeType):
-        if let message = controller.resolveLoadingAttachment(
+        if let message = controller.attachments.resolveLoadingAttachment(
           id: id,
           name: suggestedName,
           mimeType: mimeType,
@@ -87,7 +87,7 @@ extension ComposerBar {
         }
       }
     case let .failed(id, message, kind):
-      if controller.discardLoadingAttachment(id: id) {
+      if controller.attachments.discardLoadingAttachment(id: id) {
         presentPasteFailure(message, kind)
       }
     }

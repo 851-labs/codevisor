@@ -13,8 +13,8 @@ struct ComposerAttachmentRow: View {
         ForEach(controller.composerAttachments) { attachment in
           ComposerAttachmentThumb(
             attachment: attachment,
-            onRemove: { controller.removeAttachment(id: attachment.id) },
-            onRetry: { controller.retryAttachment(id: attachment.id) }
+            onRemove: { controller.attachments.removeAttachment(id: attachment.id) },
+            onRetry: { controller.attachments.retryAttachment(id: attachment.id) }
           )
         }
       }

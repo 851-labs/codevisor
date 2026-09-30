@@ -51,12 +51,12 @@ enum ComposerAttachmentStaging {
             files.remove(id: attachmentID)
             let message =
               "Couldn't prepare the pasted image. Try copying it again or choose it from Photos."
-            if controller.discardLoadingAttachment(id: attachmentID) {
+            if controller.attachments.discardLoadingAttachment(id: attachmentID) {
               onFailure(message, .image)
             }
             return
           }
-          if let message = controller.resolveLoadingAttachment(
+          if let message = controller.attachments.resolveLoadingAttachment(
             id: attachmentID,
             name: prepared.name,
             mimeType: prepared.mimeType,
@@ -67,7 +67,7 @@ enum ComposerAttachmentStaging {
           }
           return
         }
-        if let message = controller.resolveLoadingAttachment(
+        if let message = controller.attachments.resolveLoadingAttachment(
           id: attachmentID,
           name: name,
           mimeType: mimeType,
@@ -78,7 +78,7 @@ enum ComposerAttachmentStaging {
         }
       case let .failure(error):
         let message = "Couldn't read “\(url.lastPathComponent)”: \(error.localizedDescription)"
-        if controller.discardLoadingAttachment(id: attachmentID) {
+        if controller.attachments.discardLoadingAttachment(id: attachmentID) {
           onFailure(message, kind)
         }
       }
@@ -92,7 +92,7 @@ enum ComposerAttachmentStaging {
   static func stage(pickedURLs urls: [URL], into controller: SessionController) {
     let scoped = urls.filter { $0.startAccessingSecurityScopedResource() }
     Task {
-      await controller.attachFileURLs(urls).value
+      await controller.attachments.attachFileURLs(urls).value
       for url in scoped { url.stopAccessingSecurityScopedResource() }
     }
   }
@@ -134,7 +134,7 @@ enum ComposerAttachmentStaging {
   /// Stages a file this type wrote to the temporary folder, then deletes
   /// that intermediate copy.
   private static func attachTemporary(_ url: URL, into controller: SessionController) async {
-    await controller.attachFileURLs([url]).value
+    await controller.attachments.attachFileURLs([url]).value
     try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
   }
 
@@ -175,8 +175,8 @@ struct ComposerAttachmentStrip: View {
         ForEach(controller.composerAttachments) { attachment in
           ComposerAttachmentChip(
             attachment: attachment,
-            onRemove: { controller.removeAttachment(id: attachment.id) },
-            onRetry: { controller.retryAttachment(id: attachment.id) }
+            onRemove: { controller.attachments.removeAttachment(id: attachment.id) },
+            onRetry: { controller.attachments.retryAttachment(id: attachment.id) }
           )
         }
       }

@@ -83,7 +83,7 @@ struct ComposerAttachmentTests {
     let id = UUID()
 
     #expect(
-      controller.beginLoadingAttachment(
+      controller.attachments.beginLoadingAttachment(
         id: id,
         name: "Pasted image.jpeg",
         mimeType: "image/jpeg",
@@ -95,7 +95,7 @@ struct ComposerAttachmentTests {
     #expect(controller.draftSnapshot().attachments.isEmpty)
 
     let bytes = Data([0xFF, 0xD8, 0xFF, 0xD9])
-    let resolutionFailure = controller.resolveLoadingAttachment(
+    let resolutionFailure = controller.attachments.resolveLoadingAttachment(
       id: id,
       name: "cat.jpeg",
       mimeType: "image/jpeg",
@@ -114,7 +114,7 @@ struct ComposerAttachmentTests {
     #expect(try Data(contentsOf: fileURL) == bytes)
     #expect(attachment.state == .failed("Server unavailable"))
 
-    controller.removeAttachment(id: id)
+    controller.attachments.removeAttachment(id: id)
     #expect(!FileManager.default.fileExists(atPath: fileURL.path))
   }
 
@@ -164,7 +164,7 @@ struct ComposerAttachmentTests {
     let tooLarge = try sparseFile(named: "capture.mov", bytes: 32 * 1024 * 1024 + 1)
     defer { try? FileManager.default.removeItem(at: tooLarge.deletingLastPathComponent()) }
 
-    await controller.attachFileURLs([tooLarge]).value
+    await controller.attachments.attachFileURLs([tooLarge]).value
 
     #expect(controller.composerAttachments.isEmpty)
     #expect(
@@ -186,7 +186,7 @@ struct ComposerAttachmentTests {
       try? FileManager.default.removeItem(at: aboveAdvertised.deletingLastPathComponent())
     }
 
-    await controller.attachFileURLs([aboveLegacy, aboveAdvertised]).value
+    await controller.attachments.attachFileURLs([aboveLegacy, aboveAdvertised]).value
 
     let accepted = try #require(controller.composerAttachments.first)
     #expect(controller.composerAttachments.count == 1)
@@ -205,9 +205,10 @@ struct ComposerAttachmentTests {
     let (controller, machines) = controller(maxUploadBytes: 1024 * 1024, files: files)
     defer { withExtendedLifetime(machines) {} }
     let id = UUID()
-    #expect(controller.beginLoadingAttachment(id: id, name: "shot.png", mimeType: "image/png", kind: .image))
+    #expect(
+      controller.attachments.beginLoadingAttachment(id: id, name: "shot.png", mimeType: "image/png", kind: .image))
 
-    let failure = controller.resolveLoadingAttachment(
+    let failure = controller.attachments.resolveLoadingAttachment(
       id: id, name: "shot.png", mimeType: "image/png", kind: .image,
       data: Data(count: 1024 * 1024 + 1))
 
@@ -224,7 +225,7 @@ struct ComposerAttachmentTests {
     )
     let url = URL(fileURLWithPath: "/tmp/optimistic-image.png")
 
-    controller.attachFileURLs([url])
+    controller.attachments.attachFileURLs([url])
 
     let attachment = try #require(controller.composerAttachments.first)
     #expect(attachment.name == "optimistic-image.png")
@@ -242,7 +243,7 @@ struct ComposerAttachmentTests {
     )
     let id = UUID()
     #expect(
-      controller.beginLoadingAttachment(
+      controller.attachments.beginLoadingAttachment(
         id: id,
         name: "Pasted image.jpeg",
         mimeType: "image/jpeg",
@@ -250,7 +251,7 @@ struct ComposerAttachmentTests {
       )
     )
 
-    #expect(controller.discardLoadingAttachment(id: id))
+    #expect(controller.attachments.discardLoadingAttachment(id: id))
     #expect(controller.composerAttachments.isEmpty)
     #expect(controller.status == .idle)
   }

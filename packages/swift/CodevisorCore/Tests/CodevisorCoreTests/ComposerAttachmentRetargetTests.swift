@@ -16,7 +16,7 @@ struct ComposerAttachmentRetargetTests {
     let machineB = UploadRecordingClient(prefix: "b")
     let controller = makeController(serverId: "machine-a", client: machineA.client)
 
-    controller.attachImageData(Data([0x89, 0x50, 0x4E, 0x47]), suggestedName: "shot.png")
+    controller.attachments.attachImageData(Data([0x89, 0x50, 0x4E, 0x47]), suggestedName: "shot.png")
     await controller.awaitUploads()
     #expect(uploadedFileIds(controller) == ["a:shot.png"])
 
@@ -24,7 +24,7 @@ struct ComposerAttachmentRetargetTests {
       to: project(serverId: "machine-b"),
       serverClient: machineB.client
     )
-    let sent = await controller.collectAttachmentsForSend()
+    let sent = await controller.attachments.collectAttachmentsForSend()
 
     #expect(sent?.map(\.fileId) == ["b:shot.png"])
     #expect(machineA.uploadedNames == ["shot.png"])
@@ -36,14 +36,14 @@ struct ComposerAttachmentRetargetTests {
     let machineA = UploadRecordingClient(prefix: "a")
     let controller = makeController(serverId: "machine-a", client: machineA.client)
 
-    controller.attachImageData(Data([0x89, 0x50, 0x4E, 0x47]), suggestedName: "shot.png")
+    controller.attachments.attachImageData(Data([0x89, 0x50, 0x4E, 0x47]), suggestedName: "shot.png")
     await controller.awaitUploads()
 
     await controller.retarget(
       to: project(serverId: "machine-a", folder: "other-project"),
       serverClient: machineA.client
     )
-    let sent = await controller.collectAttachmentsForSend()
+    let sent = await controller.attachments.collectAttachmentsForSend()
 
     #expect(sent?.map(\.fileId) == ["a:shot.png"])
     #expect(machineA.uploadedNames == ["shot.png"])
@@ -56,7 +56,7 @@ struct ComposerAttachmentRetargetTests {
     let machineB = UploadRecordingClient(prefix: "b")
     let controller = makeController(serverId: "machine-a", client: machineA.client)
 
-    controller.attachImageData(Data([0x89, 0x50, 0x4E, 0x47]), suggestedName: "shot.png")
+    controller.attachments.attachImageData(Data([0x89, 0x50, 0x4E, 0x47]), suggestedName: "shot.png")
     await gate.awaitWaiter()
 
     await controller.retarget(
@@ -64,7 +64,7 @@ struct ComposerAttachmentRetargetTests {
       serverClient: machineB.client
     )
     await gate.release()
-    let sent = await controller.collectAttachmentsForSend()
+    let sent = await controller.attachments.collectAttachmentsForSend()
 
     #expect(sent?.map(\.fileId) == ["b:shot.png"])
     #expect(uploadedFileIds(controller) == ["b:shot.png"])
@@ -77,7 +77,7 @@ struct ComposerAttachmentRetargetTests {
     let controller = makeController(serverId: "machine-a", client: machineA.client)
 
     let id = UUID()
-    controller.beginLoadingAttachment(id: id, name: "drop.png", mimeType: "image/png", kind: .image)
+    controller.attachments.beginLoadingAttachment(id: id, name: "drop.png", mimeType: "image/png", kind: .image)
 
     await controller.retarget(
       to: project(serverId: "machine-b"),
@@ -87,12 +87,12 @@ struct ComposerAttachmentRetargetTests {
     #expect(machineA.uploadedNames.isEmpty)
     #expect(machineB.uploadedNames.isEmpty)
 
-    controller.resolveLoadingAttachment(
+    controller.attachments.resolveLoadingAttachment(
       id: id, name: "drop.png", mimeType: "image/png", kind: .image,
       data: Data([0x89, 0x50, 0x4E, 0x47])
     )
     await controller.awaitStaged()
-    let sent = await controller.collectAttachmentsForSend()
+    let sent = await controller.attachments.collectAttachmentsForSend()
 
     #expect(sent?.map(\.fileId) == ["b:drop.png"])
     #expect(machineA.uploadedNames.isEmpty)
@@ -161,7 +161,7 @@ extension SessionController {
   /// upload starts; wait for both.
   fileprivate func awaitUploads() async {
     await awaitStaged()
-    for task in uploadTasks.values { await task.value }
+    _ = await attachments.collectAttachmentsForSend()
   }
 
   fileprivate func awaitStaged() async {

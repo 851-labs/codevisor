@@ -33,7 +33,7 @@ extension SessionController {
   public func restoreDraft(_ draft: ComposerDraftStore.Draft) {
     isRestoringDraft = true
     composerText = draft.composerText
-    composerAttachments = draft.attachments.map {
+    let restoredAttachments = draft.attachments.map {
       ComposerAttachment(
         id: $0.id,
         name: $0.name,
@@ -43,6 +43,7 @@ extension SessionController {
         state: .uploading
       )
     }
+    attachments.restore(restoredAttachments)
     selectedHarnessId = draft.selectedHarnessId
     pendingConfigByHarness = draft.configByHarness
     pendingModeId = draft.modeId
@@ -75,8 +76,7 @@ extension SessionController {
 
     // Server file ids are not assumed to survive indefinitely. Re-upload
     // the staged files and produce fresh refs for the next send.
-    reuploadAllAttachments()
-    for attachment in composerAttachments { prepareSentPreview(for: attachment) }
+    attachments.prepareRestoredFiles()
   }
 
   func draftDidChange() {

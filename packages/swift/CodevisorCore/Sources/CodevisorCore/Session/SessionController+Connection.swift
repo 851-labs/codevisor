@@ -244,7 +244,7 @@ extension SessionController {
     // are machine-local: sending their refs to the new machine fails its
     // send-time lookup with "Unknown attachment file". Re-upload from the
     // retained bytes so the refs match the client that will send them.
-    reuploadAllAttachments()
+    attachments.reuploadAllAttachments()
     // Any kept worktree belongs to the old machine's project, and "No
     // project" on the new machine has nothing to cut one from.
     sessionCwdOverride = nil

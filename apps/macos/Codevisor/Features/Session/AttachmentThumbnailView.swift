@@ -289,7 +289,7 @@ struct AttachmentDropModifier: ViewModifier {
           ? .image
           : .file
         guard
-          controller.beginLoadingAttachment(
+          controller.attachments.beginLoadingAttachment(
             id: id,
             name: name,
             mimeType: mimeType,
@@ -302,10 +302,10 @@ struct AttachmentDropModifier: ViewModifier {
             ?? (item as? Data).flatMap { URL(dataRepresentation: $0, relativeTo: nil) }
           Task { @MainActor in
             guard let url, url.isFileURL else {
-              controller.discardLoadingAttachment(id: id)
+              controller.attachments.discardLoadingAttachment(id: id)
               return
             }
-            controller.resolveLoadingAttachment(id: id, fromFileURL: url)
+            controller.attachments.resolveLoadingAttachment(id: id, fromFileURL: url)
           }
         }
       } else if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
@@ -317,7 +317,7 @@ struct AttachmentDropModifier: ViewModifier {
             (name as NSString).pathExtension.isEmpty ? "\(name).png" : name
           } ?? "Dropped image.png"
         guard
-          controller.beginLoadingAttachment(
+          controller.attachments.beginLoadingAttachment(
             id: id,
             name: name,
             mimeType: "image/png",
@@ -327,12 +327,12 @@ struct AttachmentDropModifier: ViewModifier {
         provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, _ in
           guard let data, let png = pngData(from: data) else {
             Task { @MainActor in
-              controller.discardLoadingAttachment(id: id)
+              controller.attachments.discardLoadingAttachment(id: id)
             }
             return
           }
           Task { @MainActor in
-            controller.resolveLoadingAttachmentReportingFailure(
+            controller.attachments.resolveLoadingAttachmentReportingFailure(
               id: id,
               name: name,
               mimeType: "image/png",

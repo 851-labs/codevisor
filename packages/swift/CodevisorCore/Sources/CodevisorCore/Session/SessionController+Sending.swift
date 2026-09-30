@@ -40,7 +40,7 @@ extension SessionController {
     if composerAttachments.isEmpty {
       attachments = []
     } else {
-      guard let collected = await collectAttachmentsForSend() else {
+      guard let collected = await self.attachments.collectAttachmentsForSend() else {
         isSubmitting = false
         return
       }
@@ -74,7 +74,7 @@ extension SessionController {
     // empty -> sent text -> empty pop.
     let staged = composerAttachments
     composerText = ""
-    composerAttachments = []
+    self.attachments.clearAfterCollecting()
     // A chat with no project runs in a fresh single-use folder the server
     // allocates now, so the session is born there like in any project.
     // This round-trip happens AFTER the optimistic row is published: the
@@ -83,7 +83,7 @@ extension SessionController {
     if project.isRunTargetPlaceholder {
       if let failure = await materializeScratchProject() {
         composerText = text
-        composerAttachments = staged
+        self.attachments.restore(staged)
         pendingUserMessage = nil
         cancelUserSendAnimation(for: outgoingMessage.id)
         isSubmitting = false
@@ -108,7 +108,7 @@ extension SessionController {
 
     func restoreComposer() {
       composerText = text
-      composerAttachments = staged
+      self.attachments.restore(staged)
       pendingUserMessage = nil
       cancelUserSendAnimation(for: outgoingMessage.id)
     }
@@ -130,7 +130,7 @@ extension SessionController {
       await applyPendingGoal(to: model)
       await model.send(outgoingMessage)
       // The message holds server refs now; the staged copies are spent.
-      releaseStagedFiles(of: staged)
+      self.attachments.releaseStagedFiles(of: staged)
       if pendingUserMessage?.id == outgoingMessage.id {
         pendingUserMessage = nil
       }
@@ -159,7 +159,7 @@ extension SessionController {
       await applyPendingGoal(to: model)
       await model.send(outgoingMessage)
       // The message holds server refs now; the staged copies are spent.
-      releaseStagedFiles(of: staged)
+      self.attachments.releaseStagedFiles(of: staged)
       if pendingUserMessage?.id == outgoingMessage.id {
         pendingUserMessage = nil
       }
