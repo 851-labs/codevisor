@@ -352,6 +352,10 @@ public protocol CodevisorServerClienting: BrowserStateClienting {
   func fileEntries(path: String, showHidden: Bool) async throws -> ServerFileListing
   func searchFileEntries(path: String, query: String) async throws -> ServerFileSearch
   func documentData(path: String) async throws -> Data
+  /// `revision` is a previous response's; while it is still current the
+  /// server answers `unchanged` without resending files.
+  func gitDiff(path: String, mode: ServerGitDiffMode, base: String?, revision: String?) async throws -> ServerGitDiff
+  func gitRefs(path: String) async throws -> ServerGitRefs
   /// Reads a live file from this machine. Relative paths are resolved by the
   /// server against the specified session's authoritative working directory.
   func fileData(sessionId: UUID, path: String) async throws -> Data

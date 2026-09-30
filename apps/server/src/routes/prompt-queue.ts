@@ -14,7 +14,7 @@ import {
   type EventFanout,
   type RouteState
 } from "../server-context.js"
-import { beginPromptTurn } from "./prompt-turn.js"
+import { beginPromptTurn, recordTurnStart } from "./prompt-turn.js"
 import { materializeRuntimeEvent } from "./session-events.js"
 import { ensureAgentSessionFor } from "./session-workspace.js"
 
@@ -459,6 +459,7 @@ const runPromptInBackground = async (
     await (clientId === undefined
       ? services.mcp?.beginTurn(sessionId)
       : services.mcp?.beginTurn(sessionId, { clientId }))
+    await recordTurnStart(services, sessionId).catch(swallowError)
     const agentSession = await ensureAgentSessionFor(services, fanout, serverId, sessionId)
     // Session output, turn lifecycle, and the final stopReason all flow
     // through the standing sink registered at session create/load time.

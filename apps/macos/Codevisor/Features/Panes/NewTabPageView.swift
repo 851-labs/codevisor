@@ -18,6 +18,7 @@ private struct NewTabOption: Identifiable, Equatable {
     case chat
     case terminal
     case files
+    case review
     case browser
     case screenSharing
     case plugin(pluginId: String, paneType: String, iconPath: String?)
@@ -69,6 +70,7 @@ struct NewTabPageView: View {
       NewTabOption(id: "browser", title: "New Browser", kind: .browser),
       NewTabOption(id: "terminal", title: "New Terminal", kind: .terminal),
       NewTabOption(id: "files", title: "Open File", kind: .files),
+      NewTabOption(id: "review", title: "Review Changes", kind: .review),
     ]
       + (supportsScreenSharing
         ? [NewTabOption(id: "screen-sharing", title: "Screen Sharing", kind: .screenSharing)] : []) + pluginOptions
@@ -127,6 +129,8 @@ struct NewTabPageView: View {
           Autocomplete.Action(option.title, id: option.id, systemImage: "terminal") { open(option) }
         case .files:
           Autocomplete.Action(option.title, id: option.id, systemImage: "doc.text.magnifyingglass") { open(option) }
+        case .review:
+          Autocomplete.Action(option.title, id: option.id, systemImage: "plusminus") { open(option) }
         case let .plugin(pluginId, paneType, iconPath):
           Autocomplete.Action(option.title, id: option.id, action: { open(option) }) {
             if let client {
@@ -163,6 +167,8 @@ struct NewTabPageView: View {
       group?.convertNewTabPane(id: paneId, to: .screenSharing)
     case .browser:
       group?.convertNewTabPane(id: paneId, to: .browser)
+    case .review:
+      group?.convertNewTabPane(id: paneId, to: .review)
     case .terminal:
       group?.convertNewTabPane(id: paneId, to: .terminal)
     case let .plugin(pluginId, paneType, _):

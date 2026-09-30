@@ -167,6 +167,8 @@ export const endpoints = [
   "HEAD /v1/files/:id",
   "GET /v1/fs/list",
   "POST /v1/fs/mkdir",
+  "GET /v1/fs/git/diff",
+  "GET /v1/fs/git/refs",
   "GET /v1/events",
   "GET /v1/events/cursor",
   "GET /v1/events/socket",

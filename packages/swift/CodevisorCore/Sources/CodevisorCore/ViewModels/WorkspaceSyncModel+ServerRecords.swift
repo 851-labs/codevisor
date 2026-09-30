@@ -56,6 +56,13 @@ extension WorkspaceSyncModel {
       if let data = try? JSONEncoder().encode(pane.screenSharing ?? ScreenSharingPanePreferences()) {
         metadata = String(data: data, encoding: .utf8)
       }
+    case .review:
+      paneType = "review"
+      resourceKind = nil
+      resourceId = nil
+      if let data = try? JSONEncoder().encode(pane.review ?? ReviewPanePreferences()) {
+        metadata = String(data: data, encoding: .utf8)
+      }
     case .document:
       paneType = "file"
       resourceKind = "file"
@@ -121,6 +128,12 @@ extension WorkspaceSyncModel {
       return PaneDescriptorState(
         id: id, kind: .browser, name: record.title,
         terminalKey: id.uuidString, browserURL: value?.url)
+    case "review":
+      let preferences = record.metadata.flatMap { $0.data(using: .utf8) }
+        .flatMap { try? JSONDecoder().decode(ReviewPanePreferences.self, from: $0) }
+      return PaneDescriptorState(
+        id: id, kind: .review, name: record.title,
+        terminalKey: id.uuidString, review: preferences ?? ReviewPanePreferences())
     case "file", "markdown":
       guard record.resourceKind == "file", let path = record.resourceId, !path.isEmpty else {
         return nil

@@ -188,7 +188,8 @@ const lineSplitter = (
   }
 }
 
-const branchDiffBaseRefs = ["origin/HEAD", "origin/main", "origin/master", "main", "master"]
+/// Default-branch refs, most specific first; branch totals and reviews use the first found.
+export const branchDiffBaseRefs = ["origin/HEAD", "origin/main", "origin/master", "main", "master"]
 
 export const parseGitNumstat = (numstat: string): BranchDiffTotals => {
   const totals = { added: 0, removed: 0 }

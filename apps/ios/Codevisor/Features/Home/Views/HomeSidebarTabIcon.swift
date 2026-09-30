@@ -53,6 +53,8 @@ struct HomeSidebarTabIcon: View {
         }
       case .screenSharing:
         symbol("display")
+      case .review:
+        symbol("plusminus")
       case .document:
         FileIcon(path: row.title, size: size)
       case .newTab:

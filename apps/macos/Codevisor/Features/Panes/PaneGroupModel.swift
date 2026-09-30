@@ -139,7 +139,7 @@ final class PaneGroupModel: Identifiable {
     guard self.sessionId == nil else { return }
     self.sessionId = sessionId
     self.makeContext = makeContext
-    for pane in state.panes where pane.kind == .document {
+    for pane in state.panes where pane.kind == .document || pane.kind == .review {
       discardLivePane(id: pane.id)
     }
   }
@@ -199,6 +199,15 @@ final class PaneGroupModel: Identifiable {
         onPaneChanged?(state.panes[index])
       }
       pane = document
+    case .review:
+      let review = ReviewPane(context: makeContext(descriptor), descriptor: descriptor)
+      review.model.onPreferencesChange = { [weak self] preferences in
+        guard let self, let index = state.panes.firstIndex(where: { $0.id == descriptor.id }) else { return }
+        state.panes[index].review = preferences
+        persist()
+        onPaneChanged?(state.panes[index])
+      }
+      pane = review
     case .terminal:
       let terminal = TerminalPane(context: makeContext(descriptor))
       terminal.onContentAttached = { [weak self] in self?.requestSelectedPaneFocus() }
@@ -290,7 +299,7 @@ final class PaneGroupModel: Identifiable {
       case .subagent:
         // Read-only: nothing to type into.
         self.requestBackgroundFocus?()
-      case .terminal, .plugin, .document, .browser, .screenSharing:
+      case .terminal, .plugin, .document, .browser, .screenSharing, .review:
         break
       }
     }
@@ -377,6 +386,8 @@ final class PaneGroupModel: Identifiable {
         invalidatedLiveIds.insert(id)
       } else if let sharing = live[id] as? ScreenSharingPane {
         sharing.applyPreferences(next.screenSharing ?? .init())
+      } else if let review = live[id] as? ReviewPane {
+        review.model.apply(next.review ?? .init())
       }
     }
 
@@ -468,7 +479,7 @@ final class PaneGroupModel: Identifiable {
         || previous.pluginPaneType != next.pluginPaneType
     case (.screenSharing, .screenSharing):
       return false
-    case (.browser, .browser):
+    case (.browser, .browser), (.review, .review):
       return false
     case (.document, .document):
       return previous.documentPath != next.documentPath

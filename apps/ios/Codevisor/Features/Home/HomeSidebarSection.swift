@@ -46,6 +46,7 @@ struct HomeSidebarTabRow: Identifiable, Equatable {
     case plugin(pluginId: String, paneType: String?)
     case document
     case screenSharing
+    case review
     case newTab
   }
 

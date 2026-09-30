@@ -1,6 +1,6 @@
 import type { Schema } from "effect"
 
-import { EventEnvelope, TerminalClientFrame, TerminalServerFrame } from "./index.js"
+import { EventEnvelope, GitDiffMode, TerminalClientFrame, TerminalServerFrame } from "./index.js"
 import {
   accepted,
   created,
@@ -111,6 +111,32 @@ const queryParameters = (endpoint: Endpoint): ReadonlyArray<JsonObject> => {
       { name: "field", in: "query", required: true, schema: { type: "string" } },
       { name: "position", in: "query", schema: { type: "integer", minimum: 0, default: 0 } }
     ]
+  }
+  if (endpoint === "GET /v1/fs/git/diff") {
+    return [
+      { name: "path", in: "query", required: true, schema: { type: "string" } },
+      {
+        name: "mode",
+        in: "query",
+        required: true,
+        schema: { type: "string", enum: [...GitDiffMode.literals] }
+      },
+      {
+        name: "base",
+        in: "query",
+        description: "Branch mode's base ref; defaults to the repository's default branch.",
+        schema: { type: "string" }
+      },
+      {
+        name: "revision",
+        in: "query",
+        description: "A previous response's revision; when still current, files are not resent.",
+        schema: { type: "string" }
+      }
+    ]
+  }
+  if (endpoint === "GET /v1/fs/git/refs") {
+    return [{ name: "path", in: "query", required: true, schema: { type: "string" } }]
   }
   if (endpoint === "GET /v1/files/:id") {
     return [{ name: "preview", in: "query", schema: { type: "string", enum: ["1"] } }]

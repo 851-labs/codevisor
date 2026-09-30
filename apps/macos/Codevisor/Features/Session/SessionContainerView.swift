@@ -121,6 +121,8 @@ struct SessionContainerView: View {
             store: store, settings: { pane.machineSettings() }, applySettings: { pane.applyMachineSettings($0) })
         } else if let model = activeFileModel {
           FilePaneToolbar(model: model, onNewTab: addCenterTab)
+        } else if let model = activeReviewModel {
+          ReviewPaneToolbar(model: model, title: activePaneTitle.wrappedValue)
         }
       }
       .focusedSceneValue(\.browserPage, activeBrowserModel)

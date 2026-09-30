@@ -343,7 +343,8 @@ describe("file routes", () => {
       return events.some(
         (event) =>
           event.kind === "session.error" &&
-          String(event.payload.message).includes("Attachment object is missing")
+          // The colon tells this error from the earlier "missing or corrupt".
+          String(event.payload.message).includes("Attachment object is missing:")
       )
     })
   })

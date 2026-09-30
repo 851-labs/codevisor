@@ -1,8 +1,3 @@
-import { constants } from "node:fs"
-import { copyFile, mkdtemp, rm } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
-
 import {
   addWorktree,
   type GitOutputListener,
@@ -12,6 +7,14 @@ import {
   runGit
 } from "./git.js"
 import { worktreeStartPoint } from "./project-branches.js"
+import {
+  copyRealIndex,
+  heavyGit as heavy,
+  type ScratchIndex,
+  scratchIndexConfig as snapshotConfig,
+  withScratchIndex,
+  writeWorkingTree
+} from "./working-state.js"
 import { type TrashedWorktree, trashWorktree } from "./worktree-trash.js"
 
 /// Archiving a chat used to delete its worktree outright, losing any work that
@@ -25,20 +28,6 @@ import { type TrashedWorktree, trashWorktree } from "./worktree-trash.js"
 /// names recycle and cannot identify a snapshot.
 export const snapshotRefFor = (worktreeId: string): string =>
   `refs/codevisor/archived/${worktreeId}`
-
-const snapshotIdentityName = "Codevisor"
-const snapshotIdentityEmail = "noreply@codevisor.app"
-
-/// Snapshot commands read a copy of the worktree's index from a scratch path.
-/// An fsmonitor daemon answers for the real index, not the copy, and a split
-/// index names a shared file beside the real one; both are turned off so git
-/// reads the copy by itself and checks the files on disk.
-const snapshotConfig = ["-c", "core.fsmonitor=false", "-c", "core.splitIndex=false"]
-
-/// Snapshotting stats and hashes a whole checkout. The user may be waiting on
-/// it (an unarchive queues behind it), so it is throttled rather than deferred.
-/// The buffer is raised because listings of a large checkout pass 1MB.
-const heavy = { priority: "utility", maxBuffer: 256 * 1024 * 1024 } as const
 
 export interface WorktreeSnapshot {
   /// The commit the worktree was sitting on. Restore checks out from here, so
@@ -99,38 +88,29 @@ const collectIgnoredPaths = async (
 /// file that still matches, so only changed files are hashed.
 ///
 /// The copy is only an optimization, so any failure (no index yet, an
-/// unmerged index, a split index whose shared file is elsewhere, a git too old
-/// for `--path-format`) falls back to the plain read. So do assume-unchanged
-/// entries: git would trust their stale stat data and miss real edits.
+/// unmerged index, a split index whose shared file is elsewhere) falls back to
+/// the plain read. So do assume-unchanged entries: git would trust their stale
+/// stat data and miss real edits.
 const seedScratchIndex = async (
   worktreeDir: string,
   parentSha: string,
-  indexFile: string,
-  env: NodeJS.ProcessEnv | undefined,
-  scratchEnv: NodeJS.ProcessEnv
+  scratch: ScratchIndex,
+  env: NodeJS.ProcessEnv | undefined
 ): Promise<void> => {
   try {
-    const realIndex = await runGit(
-      "index-path",
-      ["rev-parse", "--path-format=absolute", "--git-path", "index"],
-      worktreeDir,
-      env
-    )
-    // A copy-on-write clone where the filesystem supports it, so even a huge
-    // index costs almost nothing to duplicate.
-    await copyFile(realIndex, indexFile, constants.COPYFILE_FICLONE)
+    await copyRealIndex(worktreeDir, scratch, env)
     await runGit(
       "read-tree",
       [...snapshotConfig, "read-tree", "-m", parentSha],
       worktreeDir,
-      scratchEnv,
+      scratch.env,
       heavy
     )
     const entries = await runGit(
       "ls-files",
       [...snapshotConfig, "ls-files", "-v"],
       worktreeDir,
-      scratchEnv,
+      scratch.env,
       heavy
     )
     // `ls-files -v` tags assume-unchanged entries with a lowercase letter.
@@ -142,7 +122,7 @@ const seedScratchIndex = async (
     "read-tree",
     [...snapshotConfig, "read-tree", parentSha],
     worktreeDir,
-    scratchEnv,
+    scratch.env,
     heavy
   )
 }
@@ -159,41 +139,14 @@ export const snapshotWorktree = async (
   env?: NodeJS.ProcessEnv
 ): Promise<WorktreeSnapshot> => {
   const parentSha = await runGit("rev-parse", ["rev-parse", "HEAD"], worktreeDir, env)
-  // A unique directory per call, NOT a name derived from the worktree id and
-  // commit: two archives can legitimately share both (the same chat archived
-  // on two servers, or identical repos committed in the same second), and a
-  // shared GIT_INDEX_FILE would let them corrupt each other's staging.
-  const scratchDir = await mkdtemp(join(tmpdir(), "codevisor-archive-"))
-  const indexFile = join(scratchDir, "index")
-  const scratchEnv: NodeJS.ProcessEnv = {
-    ...(env ?? process.env),
-    GIT_INDEX_FILE: indexFile,
-    // The snapshot is a machine-written commit, so it carries its own
-    // identity rather than borrowing the user's. That keeps authorship
-    // honest, and — the reason this is not merely cosmetic — makes
-    // `commit-tree` work on a machine with no git identity configured at
-    // all, where it would otherwise abort with "Author identity unknown"
-    // and make archiving impossible.
-    GIT_AUTHOR_NAME: snapshotIdentityName,
-    GIT_AUTHOR_EMAIL: snapshotIdentityEmail,
-    GIT_COMMITTER_NAME: snapshotIdentityName,
-    GIT_COMMITTER_EMAIL: snapshotIdentityEmail
-  }
-  try {
-    await seedScratchIndex(worktreeDir, parentSha, indexFile, env, scratchEnv)
-    await runGit("add", [...snapshotConfig, "add", "-A"], worktreeDir, scratchEnv, heavy)
-    const tree = await runGit(
-      "write-tree",
-      [...snapshotConfig, "write-tree"],
-      worktreeDir,
-      scratchEnv,
-      heavy
-    )
+  return withScratchIndex(env, async (scratch) => {
+    await seedScratchIndex(worktreeDir, parentSha, scratch, env)
+    const tree = await writeWorkingTree(worktreeDir, scratch)
     const snapshotSha = await runGit(
       "commit-tree",
       ["commit-tree", tree, "-p", parentSha, "-m", `codevisor archive ${worktreeId}`],
       worktreeDir,
-      scratchEnv,
+      scratch.env,
       heavy
     )
     const snapshotRef = snapshotRefFor(worktreeId)
@@ -205,11 +158,7 @@ export const snapshotWorktree = async (
       snapshotRef,
       ignoredPaths: await collectIgnoredPaths(worktreeDir, env)
     }
-  } finally {
-    /* v8 ignore next -- scratch dir is ours and `force` already tolerates a
-       missing path, so the rejection arm needs a failing unlink to reach. */
-    await rm(scratchDir, { force: true, recursive: true }).catch(() => undefined)
-  }
+  })
 }
 
 /// The destructive half of archiving, split from `snapshotWorktree` so the

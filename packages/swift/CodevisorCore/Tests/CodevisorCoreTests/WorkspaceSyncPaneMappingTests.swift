@@ -140,4 +140,25 @@ struct WorkspaceSyncPaneMappingTests {
     // publishes it means nothing here.
     #expect(WorkspaceSyncModel.descriptor(from: record(paneType: "new-tab", title: "New tab")) == nil)
   }
+
+  @Test("Review panes sync what they compare; an unknown mode falls back to branch")
+  func reviewPaneRoundTrip() throws {
+    let id = UUID()
+    let pane = PaneDescriptorState(
+      id: id, kind: .review, name: "Review", terminalKey: id.uuidString,
+      review: ReviewPanePreferences(mode: .branch, base: "origin/release"))
+    let record = WorkspaceSyncModel.serverPane(from: pane, workspaceId: workspaceId, createdAt: Date())
+    #expect(record.providerId == "codevisor")
+    #expect(record.paneType == "review")
+    #expect(WorkspaceSyncModel.descriptor(from: record) == pane)
+
+    // A newer build may publish a mode this one doesn't know; the pane
+    // still renders rather than vanishing from the workspace.
+    let future = ServerWorkspacePane(
+      id: id.uuidString, workspaceId: workspaceId.uuidString, providerId: "codevisor",
+      paneType: "review", title: "Review", metadata: #"{"mode":"sinceRelease","base":"v2"}"#,
+      createdAt: "2026-01-01T00:00:00.000Z")
+    let restored = try #require(WorkspaceSyncModel.descriptor(from: future))
+    #expect(restored.review == ReviewPanePreferences(mode: .branch, base: "v2"))
+  }
 }

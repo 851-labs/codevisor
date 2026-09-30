@@ -1,0 +1,215 @@
+import { execFile } from "node:child_process"
+
+import type { GitDiffFile } from "@codevisor/api"
+
+import { GitError } from "./git.js"
+import { withPriority } from "./low-priority.js"
+import { heavyGit } from "./working-state.js"
+
+/// A review response carries whole file texts, so it is bounded in files, per
+/// file, and overall; beyond that the client could not render it usefully.
+const maxFiles = 300
+const maxFileBytes = 1024 * 1024
+const maxTextBytes = 12 * 1024 * 1024
+/// Git's own binary heuristic: a NUL within the first 8000 bytes.
+const binarySniffBytes = 8000
+const gitlinkMode = "160000"
+
+const utf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true })
+
+/// Plumbing whose output is paths and file contents, so it is read as bytes:
+/// `runGit` trims, which would corrupt a path ending in a space or a blob
+/// ending in a newline.
+const gitBytes = (
+  operation: string,
+  args: ReadonlyArray<string>,
+  cwd: string,
+  env: NodeJS.ProcessEnv | undefined,
+  input = ""
+): Promise<Buffer> =>
+  new Promise((resolve, reject) => {
+    const command = withPriority("git", args, heavyGit.priority)
+    const child = execFile(
+      command.command,
+      command.args,
+      { cwd, encoding: "buffer", maxBuffer: heavyGit.maxBuffer, env: env ?? process.env },
+      (error, stdout, stderr) => {
+        /* v8 ignore next 4 -- these read objects git itself just named, so
+           failing needs the repository to be damaged mid-request. */
+        if (error !== null) {
+          reject(new GitError(operation, stderr.toString("utf8").trim() || error.message))
+          return
+        }
+        resolve(stdout)
+      }
+    )
+    // A git that exits early closes stdin under us; the exit callback above
+    // reports why, so the pipe error only needs to not crash the server.
+    child.stdin?.once("error", reject)
+    child.stdin?.end(input)
+  })
+
+interface RawChange {
+  readonly oldMode: string
+  readonly newMode: string
+  readonly oldSha: string
+  readonly newSha: string
+  readonly status: string
+  readonly path: string
+  readonly oldPath: string
+}
+
+/// Parses `diff-tree --raw -z`: `:oldmode newmode oldsha newsha status\0path\0`
+/// with a second path after a rename's status.
+const parseRawDiff = (output: Buffer): ReadonlyArray<RawChange> => {
+  const fields = output.toString("utf8").split("\0")
+  const changes: Array<RawChange> = []
+  let index = 0
+  while (index < fields.length - 1) {
+    const [oldMode, newMode, oldSha, newSha, status] = fields[index]!.slice(1).split(" ") as [
+      string,
+      string,
+      string,
+      string,
+      string
+    ]
+    const renamed = status.startsWith("R")
+    const oldPath = fields[index + 1]!
+    const path = renamed ? fields[index + 2]! : oldPath
+    index += renamed ? 3 : 2
+    changes.push({ oldMode, newMode, oldSha, newSha, status: status[0]!, path, oldPath })
+  }
+  return changes
+}
+
+const isNullSha = (sha: string): boolean => /^0+$/.test(sha)
+
+/// Asks one `cat-file` process for every blob at once rather than a process
+/// per file side.
+const blobSizes = async (
+  dir: string,
+  shas: ReadonlyArray<string>,
+  env: NodeJS.ProcessEnv | undefined
+): Promise<ReadonlyMap<string, number>> => {
+  const output = await gitBytes(
+    "cat-file-check",
+    ["cat-file", "--batch-check"],
+    dir,
+    env,
+    shas.map((sha) => `${sha}\n`).join("")
+  )
+  return new Map(
+    output
+      .toString("utf8")
+      .split("\n")
+      .filter((line) => line.length > 0)
+      .map((line) => {
+        const [sha, , size] = line.split(" ")
+        return [sha!, Number(size)]
+      })
+  )
+}
+
+/// `cat-file --batch` answers `<sha> <type> <size>\n<bytes>\n` per request.
+const blobContents = async (
+  dir: string,
+  shas: ReadonlyArray<string>,
+  env: NodeJS.ProcessEnv | undefined
+): Promise<ReadonlyMap<string, Buffer>> => {
+  const output = await gitBytes(
+    "cat-file",
+    ["cat-file", "--batch"],
+    dir,
+    env,
+    shas.map((sha) => `${sha}\n`).join("")
+  )
+  const blobs = new Map<string, Buffer>()
+  let offset = 0
+  while (offset < output.length) {
+    const headerEnd = output.indexOf(10, offset)
+    const [sha, , size] = output.subarray(offset, headerEnd).toString("latin1").split(" ")
+    const start = headerEnd + 1
+    const end = start + Number(size)
+    blobs.set(sha!, output.subarray(start, end))
+    offset = end + 1
+  }
+  return blobs
+}
+
+const decodeText = (bytes: Buffer): string | undefined => {
+  if (bytes.subarray(0, binarySniffBytes).includes(0)) return undefined
+  try {
+    return utf8.decode(bytes)
+  } catch {
+    return undefined
+  }
+}
+
+const fileStatus = (status: string): GitDiffFile["status"] => {
+  if (status === "A") return "added"
+  if (status === "D") return "deleted"
+  if (status === "R") return "renamed"
+  // M, and T for a type change such as a file becoming a symlink.
+  return "modified"
+}
+
+export const diffFiles = async (
+  dir: string,
+  oldTree: string,
+  newTree: string,
+  env: NodeJS.ProcessEnv | undefined
+): Promise<{ readonly files: ReadonlyArray<GitDiffFile>; readonly truncated: boolean }> => {
+  const raw = await gitBytes(
+    "diff-tree",
+    ["diff-tree", "-r", "-z", "-M", "--raw", oldTree, newTree],
+    dir,
+    env
+  )
+  // Submodule commits are not in this repository, so there is no text to show.
+  const changes = parseRawDiff(raw)
+    .filter((change) => change.oldMode !== gitlinkMode && change.newMode !== gitlinkMode)
+    // Rename detection can emit a renamed file at its old path's position.
+    .toSorted((left, right) => Number(left.path > right.path) - Number(left.path < right.path))
+  const kept = changes.slice(0, maxFiles)
+  const sideShas = (change: RawChange): ReadonlyArray<string> =>
+    [change.oldSha, change.newSha].filter((sha) => !isNullSha(sha))
+  const sizes = await blobSizes(dir, [...new Set(kept.flatMap(sideShas))], env)
+
+  // Files are budgeted in path order, so which ones lose their text is stable
+  // from one refresh to the next.
+  let budget = maxTextBytes
+  const plans = kept.map((change) => {
+    const shaSizes = sideShas(change).map((sha) => sizes.get(sha)!)
+    const total = shaSizes.reduce((sum, size) => sum + size, 0)
+    const tooLarge = shaSizes.some((size) => size > maxFileBytes) || total > budget
+    if (!tooLarge) budget -= total
+    return { change, tooLarge }
+  })
+  const contents = await blobContents(
+    dir,
+    [...new Set(plans.flatMap((plan) => (plan.tooLarge ? [] : sideShas(plan.change))))],
+    env
+  )
+  const text = (sha: string): string | null | undefined =>
+    isNullSha(sha) ? null : decodeText(contents.get(sha)!)
+
+  const files = plans.map(({ change, tooLarge }): GitDiffFile => {
+    const status = fileStatus(change.status)
+    const identity = {
+      path: change.path,
+      ...(status === "renamed" ? { oldPath: change.oldPath } : {}),
+      status,
+      // Both sides' blob ids: identical on every client, and different as
+      // soon as either side's content changes.
+      fingerprint: `${change.oldSha}..${change.newSha}`
+    }
+    if (tooLarge) return { ...identity, oldText: null, newText: null, omitted: "tooLarge" }
+    const oldText = text(change.oldSha)
+    const newText = text(change.newSha)
+    if (oldText === undefined || newText === undefined) {
+      return { ...identity, oldText: null, newText: null, omitted: "binary" }
+    }
+    return { ...identity, oldText, newText }
+  })
+  return { files, truncated: changes.length > maxFiles }
+}

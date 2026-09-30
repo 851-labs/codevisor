@@ -103,6 +103,10 @@ extension SessionContainerView {
       return PaneDescriptorState(
         id: paneId, kind: .screenSharing, name: closed.name,
         terminalKey: paneId.uuidString, screenSharing: closed.screenSharing)
+    case .review:
+      return PaneDescriptorState(
+        id: paneId, kind: .review, name: closed.name,
+        terminalKey: paneId.uuidString, review: closed.review)
     case .document:
       return PaneDescriptorState(
         id: paneId, kind: .document, name: closed.name,

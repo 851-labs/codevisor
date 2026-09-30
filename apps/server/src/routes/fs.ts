@@ -17,6 +17,8 @@ import {
   type CodevisorServerServices
 } from "../server-context.js"
 import { routeFileDocuments } from "./file-documents.js"
+import { expandFsPath } from "./fs-paths.js"
+import { routeGitReview } from "./git-review.js"
 
 const filesystemMimeTypes: Readonly<Record<string, string>> = {
   ".aac": "audio/aac",
@@ -58,22 +60,6 @@ const filesystemMimeTypes: Readonly<Record<string, string>> = {
 export const filesystemMimeType = (path: string): string =>
   filesystemMimeTypes[extname(path).toLowerCase()] ?? "application/octet-stream"
 
-/// Expands "~" / "~/…" against the server's home and requires an absolute
-/// result — shared by every fs surface so path rules cannot drift.
-const expandFsPath = (requested: string): string => {
-  const home = homedir()
-  const expanded =
-    requested === "~"
-      ? home
-      : requested.startsWith("~/")
-        ? join(home, requested.slice(2))
-        : requested
-  if (!expanded.startsWith("/")) {
-    throw new HttpFailure(400, `Path must be absolute: ${requested}`, "invalid_path")
-  }
-  return resolvePath(expanded)
-}
-
 export const routeFs = async (
   services: CodevisorServerServices,
   request: IncomingMessage,
@@ -81,6 +67,7 @@ export const routeFs = async (
   url: URL
 ): Promise<boolean> => {
   if (await routeFileDocuments(request, response, url)) return true
+  if (await routeGitReview(services, request, response, url)) return true
   if (url.pathname === "/v1/fs/file" && (request.method === "GET" || request.method === "HEAD")) {
     const requested = url.searchParams.get("path")
     if (requested === null || requested.length === 0) {

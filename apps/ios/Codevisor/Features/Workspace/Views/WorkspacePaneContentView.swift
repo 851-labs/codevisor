@@ -14,6 +14,7 @@ struct WorkspacePaneContentView: View {
   /// Stable layout namespace for a draft adopting its workspace in place.
   var layoutNamespaceToken: UUID?
   let filePaneModel: (PaneDescriptorState) -> FilePaneModel
+  let reviewPaneModel: (PaneDescriptorState) -> ReviewPaneModel
   var onOpenFiles: (() -> Void)? = nil
   /// Resolved via the cache (and the draft controller) so an already-live
   /// chat renders on the FIRST frame — a just-sent message must never flash
@@ -39,6 +40,7 @@ struct WorkspacePaneContentView: View {
   let onConvertToChat: () -> Void
   let onConvertToTerminal: () -> Void
   let onConvertToBrowser: () -> Void
+  let onConvertToReview: () -> Void
   let onConvertToPlugin: (PluginNewTabOption) -> Void
   let serverConfig: CodevisorServerConfig?
   let workspaceCwd: String
@@ -105,6 +107,7 @@ struct WorkspacePaneContentView: View {
         onNewTerminal: onConvertToTerminal,
         onNewBrowser: onConvertToBrowser,
         onOpenFiles: { onOpenFiles?() },
+        onReviewChanges: onConvertToReview,
         client: machineClient,
         iconCacheNamespace: machineId,
         onOpenPlugin: onConvertToPlugin
@@ -124,6 +127,8 @@ struct WorkspacePaneContentView: View {
       } else {
         ContentUnavailableView("Document unavailable", systemImage: "doc")
       }
+    case .review:
+      ReviewPaneView(model: reviewPaneModel(pane))
     case .plugin:
       PluginPaneView(
         model: pluginPaneModel(pane),

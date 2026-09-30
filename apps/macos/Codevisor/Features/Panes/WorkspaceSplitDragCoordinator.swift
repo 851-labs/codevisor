@@ -254,6 +254,7 @@ struct WorkspaceSplitDragGhost: View {
     case .browser: "globe"
     case .screenSharing: "display"
     case .subagent: "wand.and.sparkles"
+    case .review: "plusminus"
     }
   }
 

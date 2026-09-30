@@ -12,9 +12,20 @@
     let highlights: [Int: AttributedString]
     let theme: Theme
     let revision: String
+    /// The tallest the diff shows before scrolling inside itself. Nil grows
+    /// to the full diff so an enclosing scroll view owns vertical scrolling
+    /// (the Review pane); transcript cards keep the bounded viewport.
+    var maximumHeight: CGFloat? = DiffViewportMetrics.maximumHeight
+    /// Gutter width floor, so separately rendered hunks of one file align.
+    var lineNumberDigits = 2
+    /// Scrolls this hunk sideways together with the rest of its file.
+    var scrollSync: DiffScrollSync?
 
     func makeNSView(context: Context) -> NativeDiffScrollView {
       let scrollView = NativeDiffScrollView()
+      scrollView.maximumHeight = maximumHeight
+      scrollView.lineNumberDigits = lineNumberDigits
+      scrollView.scrollSync = scrollSync
       scrollView.setContent(
         rows: rows,
         highlights: highlights,
@@ -25,6 +36,9 @@
     }
 
     func updateNSView(_ scrollView: NativeDiffScrollView, context: Context) {
+      scrollView.maximumHeight = maximumHeight
+      scrollView.lineNumberDigits = lineNumberDigits
+      scrollView.scrollSync = scrollSync
       scrollView.setContent(
         rows: rows,
         highlights: highlights,
@@ -48,9 +62,27 @@
   @MainActor
   final class NativeDiffScrollView: TranscriptHorizontalScrollView {
     private(set) var diffTextView: NativeDiffTextView
+    /// Line numbers and markers, pinned to the visible left edge while long
+    /// lines scroll sideways beneath them.
+    private let gutterView = NativeDiffGutterView()
+    /// Hides code left of the pinned gutter's right edge, so scrolled text
+    /// disappears under the gutter instead of showing through it.
+    private let codeMask = CALayer()
     private(set) var contentFittingSize = CGSize(width: 1, height: 1)
     private var renderedRevision: String?
     private var renderedTheme: Theme?
+    var maximumHeight: CGFloat? = DiffViewportMetrics.maximumHeight
+    /// Gutter width floor, so separately rendered hunks of one file align.
+    var lineNumberDigits = 2
+    var scrollSync: DiffScrollSync? {
+      didSet {
+        guard scrollSync !== oldValue else { return }
+        oldValue?.unregister(self)
+        scrollSync?.register(self)
+      }
+    }
+    /// Set while following the file's scroll, so the move isn't re-broadcast.
+    private var isApplyingSyncedOffset = false
 
     override init(frame frameRect: NSRect) {
       let textStorage = NSTextStorage()
@@ -99,6 +131,17 @@
       diffTextView.isAutomaticDashSubstitutionEnabled = false
       diffTextView.isAutomaticLinkDetectionEnabled = false
       documentView = diffTextView
+      diffTextView.wantsLayer = true
+      codeMask.backgroundColor = NSColor.black.cgColor
+      diffTextView.layer?.mask = codeMask
+      gutterView.textView = diffTextView
+      // The clip view's bounds origin is the scroll offset, so a subview
+      // placed at its minX stays put horizontally yet scrolls vertically.
+      contentView.addSubview(gutterView)
+      contentView.postsBoundsChangedNotifications = true
+      NotificationCenter.default.addObserver(
+        self, selector: #selector(clipViewBoundsDidChange),
+        name: NSView.boundsDidChangeNotification, object: contentView)
     }
 
     @available(*, unavailable)
@@ -116,7 +159,7 @@
       renderedRevision = revision
       renderedTheme = theme
 
-      let metrics = NativeDiffMetrics(rows: rows)
+      let metrics = NativeDiffMetrics(rows: rows, minimumDigits: lineNumberDigits)
       let text = Self.attributedText(
         rows: rows,
         highlights: highlights,
@@ -124,12 +167,14 @@
         rowHeight: metrics.rowHeight,
         foreground: NSColor(theme.textPrimary)
       )
+      let colors = NativeDiffColors(theme: theme)
       diffTextView.setContent(
         text,
         rows: rows,
         metrics: metrics,
-        colors: NativeDiffColors(theme: theme)
+        colors: colors
       )
+      gutterView.setContent(rows: rows, metrics: metrics, colors: colors)
 
       guard let layoutManager = diffTextView.layoutManager,
         let textContainer = diffTextView.textContainer
@@ -148,12 +193,16 @@
         width: contentWidth,
         height: max(1, ceil(metrics.verticalPadding * 2 + textHeight))
       )
+      scrollSync?.report(contentWidth: contentWidth, from: self)
       fitDocument(
         toViewportSize: CGSize(
           width: max(bounds.width, 1),
           height: visibleContentHeight
         )
       )
+      // A hunk appearing mid-scroll (an expanded fold) joins at the file's
+      // current offset.
+      if let offset = scrollSync?.offset, offset > 0 { applySyncedOffset(offset) }
       invalidateIntrinsicContentSize()
     }
 
@@ -162,6 +211,28 @@
       let viewportSize = CGSize(width: viewportWidth, height: visibleContentHeight)
       fitDocument(toViewportSize: viewportSize)
       return viewportSize
+    }
+
+    @objc private func clipViewBoundsDidChange(_: Notification) {
+      pinGutter()
+      if !isApplyingSyncedOffset {
+        scrollSync?.report(offset: contentView.bounds.minX, from: self)
+      }
+    }
+
+    /// Keeps the gutter at the visible left edge and the code mask just
+    /// right of it, for the current horizontal scroll offset.
+    private func pinGutter() {
+      let offset = contentView.bounds.minX
+      let gutterWidth = diffTextView.gutterWidth
+      let height = diffTextView.frame.height
+      CATransaction.begin()
+      CATransaction.setDisableActions(true)
+      gutterView.frame = CGRect(x: offset, y: 0, width: gutterWidth, height: height)
+      codeMask.frame = CGRect(
+        x: offset + gutterWidth, y: 0,
+        width: max(0, diffTextView.frame.width - offset - gutterWidth), height: height)
+      CATransaction.commit()
     }
 
     override func layout() {
@@ -192,18 +263,25 @@
     }
 
     private var visibleContentHeight: CGFloat {
-      min(contentFittingSize.height, DiffViewportMetrics.maximumHeight)
+      maximumHeight.map { min(contentFittingSize.height, $0) } ?? contentFittingSize.height
     }
 
     private func fitDocument(toViewportSize viewportSize: CGSize) {
+      // Refitting can clamp the scroll position; that isn't the reader
+      // scrolling, so it must not move the rest of the file.
+      isApplyingSyncedOffset = true
+      defer { isApplyingSyncedOffset = false }
+      // Every hunk of a file is as wide as its widest, so they can scroll
+      // together to any offset.
+      let contentWidth = max(contentFittingSize.width, scrollSync?.sharedContentWidth ?? 0)
       let documentSize = CGSize(
-        width: max(viewportSize.width, contentFittingSize.width),
+        width: max(viewportSize.width, contentWidth),
         height: contentFittingSize.height
       )
       if diffTextView.frame.size != documentSize {
         diffTextView.setFrameSize(documentSize)
       }
-      let shouldScrollHorizontally = contentFittingSize.width > viewportSize.width + 0.5
+      let shouldScrollHorizontally = contentWidth > viewportSize.width + 0.5
       if hasHorizontalScroller != shouldScrollHorizontally {
         hasHorizontalScroller = shouldScrollHorizontally
       }
@@ -212,6 +290,7 @@
         hasVerticalScroller = shouldScrollVertically
       }
       reflectScrolledClipView(contentView)
+      pinGutter()
     }
 
     private static func attributedText(
@@ -303,6 +382,23 @@
       super.draw(dirtyRect)
     }
 
+    /// The area a row's fill covers: its line box, except that the first
+    /// and last rows reach the view's edges. TextKit can measure the text a
+    /// little taller than the rows, and that slack must take the edge row's
+    /// color: a trailing addition stays green to the bottom, an unchanged
+    /// last line stays clear.
+    func rowFillRect(at index: Int) -> CGRect? {
+      guard var rect = rowRect(at: index) else { return nil }
+      if index == 0 {
+        rect.size.height += rect.minY - bounds.minY
+        rect.origin.y = bounds.minY
+      }
+      if index == rows.count - 1 {
+        rect.size.height = max(rect.height, bounds.maxY - rect.minY)
+      }
+      return rect
+    }
+
     func rowRect(at index: Int) -> CGRect? {
       guard rows.indices.contains(index) else { return nil }
       return CGRect(
@@ -317,79 +413,28 @@
       guard !rows.isEmpty else { return }
       let contentMinY = max(0, dirtyRect.minY - metrics.verticalPadding)
       let contentMaxY = max(0, dirtyRect.maxY - metrics.verticalPadding)
-      let first = max(0, Int(floor(contentMinY / metrics.rowHeight)))
+      let first = min(rows.count - 1, max(0, Int(floor(contentMinY / metrics.rowHeight))))
       let last = min(rows.count - 1, Int(floor(contentMaxY / metrics.rowHeight)))
       guard first <= last else { return }
 
       for index in first...last {
-        guard let rowRect = rowRect(at: index) else { continue }
-        let row = rows[index]
-        backgroundColor(for: row.kind).setFill()
-        rowRect.fill()
-        drawGutter(for: row, in: rowRect)
+        guard let fillRect = rowFillRect(at: index) else { continue }
+        backgroundColor(for: rows[index].kind).setFill()
+        fillRect.fill()
       }
     }
 
-    private func drawGutter(for row: LineDiff.Row, in rowRect: CGRect) {
-      let numberColor: NSColor
-      switch row.kind {
-      case .context: numberColor = colors.lineNumber
-      case .added: numberColor = colors.addedForeground
-      case .removed: numberColor = colors.removedForeground
-      }
-      let attributes: [NSAttributedString.Key: Any] = [
-        .font: metrics.font,
-        .foregroundColor: numberColor,
-      ]
-      drawRightAligned(
-        row.oldLine.map(String.init) ?? "", in: metrics.oldNumberRect(rowRect), attributes: attributes)
-      drawRightAligned(
-        row.newLine.map(String.init) ?? "", in: metrics.newNumberRect(rowRect), attributes: attributes)
+    /// The pinned gutter's width: everything left of the code.
+    var gutterWidth: CGFloat { metrics.textInset - metrics.gutterSpacing }
 
-      let marker: String
-      let markerColor: NSColor
-      switch row.kind {
-      case .context:
-        return
-      case .added:
-        marker = "+"
-        markerColor = colors.addedForeground
-      case .removed:
-        marker = "-"
-        markerColor = colors.removedForeground
-      }
-      drawCentered(
-        marker,
-        in: metrics.markerRect(rowRect),
-        attributes: [.font: metrics.font, .foregroundColor: markerColor]
-      )
-    }
-
-    private func drawRightAligned(
-      _ string: String,
-      in rect: CGRect,
-      attributes: [NSAttributedString.Key: Any]
-    ) {
-      guard !string.isEmpty else { return }
-      let size = (string as NSString).size(withAttributes: attributes)
-      let point = CGPoint(
-        x: rect.maxX - size.width,
-        y: rect.minY + floor((rect.height - size.height) / 2)
-      )
-      (string as NSString).draw(at: point, withAttributes: attributes)
-    }
-
-    private func drawCentered(
-      _ string: String,
-      in rect: CGRect,
-      attributes: [NSAttributedString.Key: Any]
-    ) {
-      let size = (string as NSString).size(withAttributes: attributes)
-      let point = CGPoint(
-        x: rect.minX + floor((rect.width - size.width) / 2),
-        y: rect.minY + floor((rect.height - size.height) / 2)
-      )
-      (string as NSString).draw(at: point, withAttributes: attributes)
+    /// The row indices a vertical band of the view touches.
+    func rowRange(in dirtyRect: CGRect) -> ClosedRange<Int>? {
+      guard !rows.isEmpty else { return nil }
+      let contentMinY = max(0, dirtyRect.minY - metrics.verticalPadding)
+      let contentMaxY = max(0, dirtyRect.maxY - metrics.verticalPadding)
+      let first = min(rows.count - 1, max(0, Int(floor(contentMinY / metrics.rowHeight))))
+      let last = min(rows.count - 1, Int(floor(contentMaxY / metrics.rowHeight)))
+      return first <= last ? first...last : nil
     }
 
     private func backgroundColor(for kind: LineDiff.Row.Kind) -> NSColor {
@@ -404,14 +449,17 @@
   struct NativeDiffMetrics {
     let font: NSFont
     let rowHeight: CGFloat
-    let verticalPadding: CGFloat = 0
+    /// Breathing room above the first row and below the last. The edge
+    /// rows' fills extend through it (see `rowFillRect`), so a changed first
+    /// or last line is tinted to the card's edge.
+    let verticalPadding: CGFloat = 6
     let horizontalPadding: CGFloat = 8
     let gutterSpacing: CGFloat = 6
     let markerWidth: CGFloat = 8
     let trailingPadding: CGFloat = 8
     let gutterWidth: CGFloat
 
-    init(rows: [LineDiff.Row]) {
+    init(rows: [LineDiff.Row], minimumDigits: Int = 2) {
       font = NSFont.monospacedSystemFont(
         ofSize: NSFont.preferredFont(forTextStyle: .caption1).pointSize,
         weight: .regular
@@ -420,7 +468,7 @@
       let maxLine = rows.reduce(1) { partial, row in
         max(partial, row.oldLine ?? 0, row.newLine ?? 0)
       }
-      let digits = max(2, String(maxLine).count)
+      let digits = max(minimumDigits, String(maxLine).count)
       let digitWidth = ceil(("0" as NSString).size(withAttributes: [.font: font]).width)
       gutterWidth = CGFloat(digits) * digitWidth
     }
@@ -464,6 +512,8 @@
     let removedForeground: NSColor
     let addedBackground: NSColor
     let removedBackground: NSColor
+    /// The gutter's own faint band, so numbers read as chrome, not code.
+    let gutterBackground: NSColor
 
     init(theme: Theme) {
       lineNumber = NSColor(theme.diffLineNumberFg)
@@ -471,6 +521,22 @@
       removedForeground = NSColor(theme.diffRemovedFg)
       addedBackground = NSColor(theme.diffAddedBg)
       removedBackground = NSColor(theme.diffRemovedBg)
+      gutterBackground = NSColor(theme.diffLineNumberFg).withAlphaComponent(0.08)
+    }
+  }
+  extension NativeDiffScrollView: DiffScrollSyncMember {
+    func applySyncedOffset(_ offset: CGFloat) {
+      let maximum = max(0, diffTextView.frame.width - contentView.bounds.width)
+      let target = NSPoint(x: min(offset, maximum), y: contentView.bounds.minY)
+      guard abs(contentView.bounds.minX - target.x) > 0.5 else { return }
+      isApplyingSyncedOffset = true
+      contentView.scroll(to: target)
+      reflectScrolledClipView(contentView)
+      isApplyingSyncedOffset = false
+    }
+
+    func syncedContentWidthChanged() {
+      needsLayout = true
     }
   }
 #endif

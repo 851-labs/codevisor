@@ -26,6 +26,9 @@ public enum PaneKind: String, Codable, Sendable {
   /// devices (and older builds) never see it. `ownerChatSessionId` is the
   /// parent chat; `subagentToolCallId` is the spawning tool call.
   case subagent
+  /// A native diff of the workspace's working state (uncommitted, staged,
+  /// branch, last turn, ...). Its preferences say what to compare.
+  case review
 
   /// Panes that exist only in this device's layout: never published to the
   /// server's pane registry, never pruned by server reconciliation.
@@ -64,6 +67,8 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
   public var screenSharing: ScreenSharingPanePreferences?
   public var browserURL: String?
   public var documentPath: String?
+  /// Review panes only: what the pane compares.
+  public var review: ReviewPanePreferences?
   /// Terminal panes only: the title the running program set, from the
   /// server's pane record. Kept apart from `name`, which this client
   /// publishes back as the record's title.
@@ -86,6 +91,7 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
     documentPath: String? = nil,
     browserURL: String? = nil,
     screenSharing: ScreenSharingPanePreferences? = nil,
+    review: ReviewPanePreferences? = nil,
     liveTitle: String? = nil,
     terminalActivity: TerminalActivity? = nil,
     subagentToolCallId: String? = nil
@@ -102,6 +108,7 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
     self.documentPath = documentPath
     self.browserURL = browserURL
     self.screenSharing = screenSharing
+    self.review = review
     self.liveTitle = liveTitle
     self.terminalActivity = terminalActivity
     self.subagentToolCallId = subagentToolCallId
@@ -129,6 +136,7 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
       documentPath: try container.decodeIfPresent(String.self, forKey: .documentPath),
       browserURL: try container.decodeIfPresent(String.self, forKey: .browserURL),
       screenSharing: try container.decodeIfPresent(ScreenSharingPanePreferences.self, forKey: .screenSharing),
+      review: try container.decodeIfPresent(ReviewPanePreferences.self, forKey: .review),
       liveTitle: try container.decodeIfPresent(String.self, forKey: .liveTitle),
       // Layouts persisted before terminal status carry none.
       terminalActivity: try container.decodeIfPresent(TerminalActivity.self, forKey: .terminalActivity),
@@ -339,6 +347,10 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
       pane = PaneDescriptorState(
         id: paneId, kind: .screenSharing, name: "Screen Sharing",
         terminalKey: paneId.uuidString, screenSharing: ScreenSharingPanePreferences())
+    case .review:
+      pane = PaneDescriptorState(
+        id: paneId, kind: .review, name: "Review Changes",
+        terminalKey: paneId.uuidString, review: ReviewPanePreferences())
     case .newTab, .document, .subagent:
       return nil
     }

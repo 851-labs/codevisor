@@ -30,6 +30,7 @@ extension WorkspaceScreen {
       // page is a draft whose workspace adoption must not relayout.
       layoutNamespaceToken: sessionId == nil ? draftPlaceholderId : nil,
       filePaneModel: { filePaneModel(for: $0) },
+      reviewPaneModel: { reviewPaneModel(for: $0) },
       onOpenFiles: { openFiles(pane) },
       chatController: { chatController(for: $0) },
       activeSessionId: activeSessionId,
@@ -58,6 +59,7 @@ extension WorkspaceScreen {
       onConvertToChat: { convertToChat(pane) },
       onConvertToTerminal: { convertToTerminal(pane) },
       onConvertToBrowser: { convertToBrowser(pane) },
+      onConvertToReview: { convertToReview(pane) },
       onConvertToPlugin: { convertToPlugin(pane, option: $0) },
       serverConfig: serverConfig,
       workspaceCwd: workspaceCwd,

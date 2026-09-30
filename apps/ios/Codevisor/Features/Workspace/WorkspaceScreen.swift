@@ -253,7 +253,7 @@ struct WorkspaceScreen: View {
       return "New Tab"
     case .browser:
       return BrowserPaneCache.shared.localTitle(paneId: pane.id) ?? pane.name
-    case .terminal, .plugin, .document, .screenSharing, .subagent:
+    case .terminal, .plugin, .document, .screenSharing, .subagent, .review:
       return pane.displayName
     }
   }
@@ -348,6 +348,11 @@ struct WorkspaceScreen: View {
       if !blocksServerContent, let model = activeFileModel {
         FilePaneToolbar(model: model, onNewTab: { addTab() })
       } else {
+        // A Review pane adds its title and options menu; the workspace's own
+        // New Tab button stays, just right of the menu.
+        if !blocksServerContent, let model = activeReviewModel {
+          ReviewPaneToolbar(model: model, title: activePane.map(title(for:)) ?? "Review Changes")
+        }
         WorkspaceScreenToolbar(
           isNewChatPresentation: isNewChatPresentation,
           isPromotingNewChat: isPromotingNewChat,

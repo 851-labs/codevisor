@@ -18,13 +18,58 @@
       let natural = scrollView.contentFittingSize
       let visible = scrollView.fitContent(toViewportWidth: natural.width)
 
+      let metrics = NativeDiffMetrics(rows: rows)
+      let textView = scrollView.diffTextView
+
       #expect(countTextViews(in: scrollView) == 1)
-      #expect(natural.height == CGFloat(rows.count) * NativeDiffMetrics(rows: rows).rowHeight)
+      #expect(natural.height == CGFloat(rows.count) * metrics.rowHeight + metrics.verticalPadding * 2)
       #expect(visible.height == natural.height)
       #expect(!scrollView.hasVerticalScroller)
-      #expect(scrollView.diffTextView.frame.height == natural.height)
-      #expect(scrollView.diffTextView.rowRect(at: 0)?.minY == 0)
-      #expect(scrollView.diffTextView.rowRect(at: rows.count - 1)?.maxY == natural.height)
+      #expect(textView.frame.height == natural.height)
+      // Rows sit inside the padding; the edge rows' fills cover it.
+      #expect(textView.rowRect(at: 0)?.minY == metrics.verticalPadding)
+      #expect(textView.rowRect(at: rows.count - 1)?.maxY == natural.height - metrics.verticalPadding)
+      #expect(textView.rowFillRect(at: 0)?.minY == 0)
+      #expect(textView.rowFillRect(at: rows.count - 1)?.maxY == natural.height)
+    }
+
+    @Test("Edge rows fill any slack so a trailing change is tinted to the bottom edge")
+    func edgeRowsFillSlack() throws {
+      let rows = LineDiff.rows(old: "a\nb\n", new: "a\nb\nc\n")
+      let scrollView = makeScrollView(rows: rows)
+      let textView = scrollView.diffTextView
+      // TextKit may measure the text taller than its rows.
+      textView.setFrameSize(
+        CGSize(width: 400, height: scrollView.contentFittingSize.height + 5))
+
+      let last = try #require(textView.rowFillRect(at: rows.count - 1))
+      #expect(rows.last?.kind == .added)
+      #expect(last.maxY == textView.bounds.maxY)
+      #expect(textView.rowFillRect(at: 0)?.minY == textView.bounds.minY)
+      #expect(textView.rowFillRect(at: 1) == textView.rowRect(at: 1))
+    }
+
+    @Test("A file's hunks scroll sideways together and share the widest hunk's width")
+    func hunksOfAFileScrollTogether() {
+      let sync = DiffScrollSync()
+      let short = NativeDiffScrollView(frame: CGRect(x: 0, y: 0, width: 200, height: 40))
+      let wide = NativeDiffScrollView(frame: CGRect(x: 0, y: 0, width: 200, height: 40))
+      for (view, text) in [(short, "let a = 1"), (wide, "let b = \"" + String(repeating: "x", count: 200) + "\"")] {
+        view.maximumHeight = nil
+        view.scrollSync = sync
+        view.setContent(
+          rows: LineDiff.rows(old: nil, new: text), highlights: [:], theme: .system,
+          revision: UUID().uuidString)
+      }
+      _ = short.fitContent(toViewportWidth: 200)
+      _ = wide.fitContent(toViewportWidth: 200)
+
+      // The short hunk can travel as far as the wide one.
+      #expect(short.diffTextView.frame.width == wide.diffTextView.frame.width)
+
+      wide.contentView.scroll(to: NSPoint(x: 120, y: 0))
+      wide.reflectScrolledClipView(wide.contentView)
+      #expect(short.contentView.bounds.minX == 120)
     }
 
     @Test("Horizontal scrolling only activates for overflow")
@@ -72,6 +117,24 @@
       )
       #expect(scrollView.hasVerticalScroller)
       #expect(scrollView.diffTextView.frame.height == scrollView.contentFittingSize.height)
+    }
+
+    @Test("An unbounded diff grows to full height and leaves vertical scrolling to its container")
+    func unboundedDiffGrowsToFullHeight() {
+      let source = (0..<1_000).map { "let value\($0) = \($0)" }.joined(separator: "\n")
+      let rows = LineDiff.rows(old: nil, new: source)
+      let scrollView = NativeDiffScrollView()
+      scrollView.maximumHeight = nil
+      scrollView.setContent(rows: rows, highlights: [:], theme: .system, revision: UUID().uuidString)
+      let visible = scrollView.fitContent(toViewportWidth: 500)
+      scrollView.frame = CGRect(origin: .zero, size: visible)
+      scrollView.layoutSubtreeIfNeeded()
+
+      #expect(visible.height == scrollView.contentFittingSize.height)
+      #expect(visible.height > DiffViewportMetrics.maximumHeight)
+      #expect(!scrollView.hasVerticalScroller)
+      #expect(!scrollView.canConsumeVerticalDelta(1))
+      #expect(!scrollView.canConsumeVerticalDelta(-1))
     }
 
     @Test("Vertical scrolling hands off to the transcript at both boundaries")

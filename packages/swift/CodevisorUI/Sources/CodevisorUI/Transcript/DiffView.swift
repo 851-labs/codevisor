@@ -1,7 +1,6 @@
 #if canImport(AppKit)
   import AppKit
 #endif
-import CodeHighlighter
 import CodevisorCore
 import StreamMarkdown
 import SwiftUI
@@ -514,45 +513,10 @@ public struct DiffView: View {
   }
 
   private func highlightRows() async {
-    guard
-      let highlightTheme,
-      let language = CodeHighlighter.language(forPath: path)
-    else {
-      highlightedRows = [:]
-      return
-    }
-    let rows = cachedRows
-
-    let newTokens = await CodeHighlighter.shared.highlight(
-      code: dedentedNew, language: language,
-      themeKey: highlightTheme.key, themeJSON: highlightTheme.json
-    )
-    var oldTokens: [[CodeHighlighter.Token]]?
-    if let dedentedOld, rows.contains(where: { $0.kind == .removed }) {
-      oldTokens = await CodeHighlighter.shared.highlight(
-        code: dedentedOld, language: language,
-        themeKey: highlightTheme.key, themeJSON: highlightTheme.json
-      )
-    }
+    let highlights = await DiffHighlighting.highlights(
+      rows: cachedRows, old: dedentedOld, new: dedentedNew, path: path, theme: highlightTheme)
     guard !Task.isCancelled else { return }
-
-    // Added/context rows read from the new text's token lines, removed
-    // rows from the old text's — both 1-based like LineDiff.Row.
-    var result: [Int: AttributedString] = [:]
-    for row in rows {
-      let line: [CodeHighlighter.Token]?
-      if let newLine = row.newLine {
-        line = newTokens.flatMap { $0.indices.contains(newLine - 1) ? $0[newLine - 1] : nil }
-      } else if let oldLine = row.oldLine {
-        line = oldTokens.flatMap { $0.indices.contains(oldLine - 1) ? $0[oldLine - 1] : nil }
-      } else {
-        line = nil
-      }
-      if let line, !line.isEmpty {
-        result[row.id] = attributedLine(line)
-      }
-    }
-    highlightedRows = result
+    highlightedRows = highlights
   }
 
   private func marker(for kind: LineDiff.Row.Kind) -> String {

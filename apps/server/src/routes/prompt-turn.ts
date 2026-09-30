@@ -1,3 +1,5 @@
+import { recordTurnStartSnapshot } from "@codevisor/worktrees"
+
 import {
   run,
   swallowError,
@@ -45,4 +47,29 @@ export const beginPromptTurn = async (
   }
   routeState.promptTurnReleases.set(sessionId, release)
   return { harnessId, isReleased: () => released, release }
+}
+
+/// How long a prompt waits for its turn-start snapshot. Capturing a large
+/// checkout can take a while; past this the turn starts anyway and the Review
+/// pane's "last turn" keeps comparing against the previous snapshot.
+const turnStartSnapshotBudgetMs = 2_000
+
+/// Records the session folder's working tree so the Review pane can show what
+/// this turn changed. Bounded because the user is waiting on the prompt, and
+/// the snapshot is abandoned — not written late — once the agent may already
+/// be editing files it would capture. Runs before the agent session is
+/// started or resumed, so the archive check there still guards the prompt.
+export const recordTurnStart = async (
+  services: CodevisorServerServices,
+  sessionId: string
+): Promise<void> => {
+  const { cwd } = await run(services.db.getSessionSummary(sessionId))
+  /* v8 ignore next -- server-created local sessions always retain their project working directory. */
+  if (cwd === undefined) return
+  const env = await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
+  const signal = AbortSignal.timeout(turnStartSnapshotBudgetMs)
+  const expired = new Promise((resolve) => {
+    signal.addEventListener("abort", resolve, { once: true })
+  })
+  await Promise.race([recordTurnStartSnapshot(cwd, { env, signal }), expired])
 }

@@ -69,7 +69,10 @@ describe("archived chats and update turn accounting", () => {
       body: JSON.stringify({ text: "slow prompt" }),
       method: "POST"
     })
-    await waitFor(() => turns.includes("start codex"))
+    // The turn is claimed before the prompt reaches the agent; archive only
+    // once the agent holds it, which is the unsettled prompt under test.
+    await waitFor(() => agents.prompts.some(([, input]) => input === "slow prompt"))
+    expect(turns).toEqual(["start codex"])
 
     await jsonRequest(server, "/v1/workspaces/working", {
       body: JSON.stringify({ isArchived: true }),

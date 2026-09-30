@@ -38,6 +38,11 @@ extension SessionContainerView {
     return (group.selectedPane as? FilePane)?.model
   }
 
+  var activeReviewModel: ReviewPaneModel? {
+    guard let group = activeToolbarGroup, group.state.selectedPane?.kind == .review else { return nil }
+    return (group.selectedPane as? ReviewPane)?.model
+  }
+
   var activeScreenSharingPane: ScreenSharingPane? {
     guard let group = activeToolbarGroup, group.state.selectedPane?.kind == .screenSharing,
       let pane = group.selectedPane as? ScreenSharingPane, pane.store != nil
@@ -46,7 +51,7 @@ extension SessionContainerView {
   }
 
   var paneControlsReplaceTitle: Bool {
-    activePaneDescriptor?.kind == .browser || activeFileModel != nil
+    activePaneDescriptor?.kind == .browser || activeFileModel != nil || activeReviewModel != nil
   }
 
   /// Chats retain the editable title and context previously used in Nous.

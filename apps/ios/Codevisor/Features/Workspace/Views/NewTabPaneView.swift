@@ -21,6 +21,7 @@ struct NewTabPaneView: View {
   let onNewTerminal: () -> Void
   var onNewBrowser: () -> Void = {}
   var onOpenFiles: () -> Void = {}
+  var onReviewChanges: () -> Void = {}
   /// The machine's API client, for the machine-scoped plugin pane rows.
   /// Nil (previews) shows no plugin rows.
   var client: (any CodevisorServerClienting)? = nil
@@ -52,6 +53,9 @@ struct NewTabPaneView: View {
           }
           newTabOption(title: "Open File", action: onOpenFiles) {
             Image(systemName: "doc.text.magnifyingglass")
+          }
+          newTabOption(title: "Review Changes", action: onReviewChanges) {
+            Image(systemName: "plusminus")
           }
           ForEach(pluginOptions) { option in
             newTabOption(

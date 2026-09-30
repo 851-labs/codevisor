@@ -38,9 +38,14 @@ describe("session action routes", () => {
       ).body
     ).toMatchObject({ accepted: true, sessionId: session.id })
     await waitFor(() => agents.prompts.length === promptCountBeforeReturnedEvents + 1)
-    expect(
+    // The fake agent records the prompt before it emits the answer, so wait
+    // for the answer itself rather than assuming it landed with the prompt.
+    const conversationText = async () =>
       (await run(services.db.getSessionDetail(session.id))).conversation.map((item) => item.text)
-    ).toEqual(expect.arrayContaining(["returned events", "Raw answer without id"]))
+    await waitFor(async () => (await conversationText()).includes("Raw answer without id"))
+    expect(await conversationText()).toEqual(
+      expect.arrayContaining(["returned events", "Raw answer without id"])
+    )
     await waitFor(async () => {
       const processing = await run(services.db.listProcessingPromptQueue(session.id))
       const queueEventCount = listSubjectEvents(services, session.id).filter(
