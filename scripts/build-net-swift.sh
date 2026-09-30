@@ -13,6 +13,9 @@ export IPHONEOS_DEPLOYMENT_TARGET=17.0 MACOSX_DEPLOYMENT_TARGET=14.0
 # plan's budget is 8 MB. The server's Node addon keeps opt-level 3.
 export CARGO_PROFILE_RELEASE_OPT_LEVEL=s
 targets=(aarch64-apple-darwin x86_64-apple-darwin aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios)
+# net-artifact.mjs selects the pinned toolchain through rustup; the targets go to that toolchain,
+# and cargo below must be its proxy, not another Rust on PATH.
+: "${RUSTUP_TOOLCHAIN:?run through scripts/net-artifact.mjs ensure-swift}"
 rustup target add "${targets[@]}" >/dev/null
 for target in "${targets[@]}"; do
   cargo build --release --locked -p codevisor-net-ffi --lib --target "$target"
