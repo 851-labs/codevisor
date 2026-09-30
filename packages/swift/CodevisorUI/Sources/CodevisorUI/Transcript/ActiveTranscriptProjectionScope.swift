@@ -52,7 +52,7 @@ public struct ActiveTranscriptProjectionScope<Content: View>: View {
       guard let projectedItem else {
         projectionWorker.cancel()
         projectionStaging.ready = ReadyProjection(key: taskKey, rows: [])
-        controller.requestTranscriptPresentationFrame()
+        controller.presentationClock.requestFrame()
         return
       }
       let key = taskKey
@@ -75,7 +75,7 @@ public struct ActiveTranscriptProjectionScope<Content: View>: View {
           rows: output.rows,
           restorationID: TranscriptStreamingTextIdentity.restorationID(for: output.request.item)
         )
-        controller.requestTranscriptPresentationFrame()
+        controller.presentationClock.requestFrame()
       }
     }
     .onChange(of: presentationFrame, initial: true) { _, _ in

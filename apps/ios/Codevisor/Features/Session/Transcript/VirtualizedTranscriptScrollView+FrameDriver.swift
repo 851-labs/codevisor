@@ -120,7 +120,7 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
       }
       return
     }
-    presentationFrameDriverToken = sessionController.registerTranscriptFrameDriver(
+    presentationFrameDriverToken = sessionController.presentationClock.registerDriver(
       maximumFramesPerSecond: max(1, window.screen.maximumFramesPerSecond)
     ) { [weak self] in
       self?.requestModelPresentationFrame()
@@ -131,7 +131,7 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
 
   func unregisterPresentationFrameDriver() {
     if let presentationFrameDriverToken {
-      sessionController?.unregisterTranscriptFrameDriver(presentationFrameDriverToken)
+      sessionController?.presentationClock.unregisterDriver(presentationFrameDriverToken)
       self.presentationFrameDriverToken = nil
     }
   }
@@ -167,7 +167,7 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
 
   func presentPendingModel() {
     if let presentationFrameDriverToken {
-      sessionController?.transcriptPresentationFrameDidFire(presentationFrameDriverToken)
+      sessionController?.presentationClock.didFire(presentationFrameDriverToken)
     }
   }
 

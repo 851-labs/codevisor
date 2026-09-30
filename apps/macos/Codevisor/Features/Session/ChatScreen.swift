@@ -114,14 +114,14 @@ struct ChatScreen: View {
       .onAppear {
         autoFollow = controller.scrollState?.followMode.followsLatest ?? true
         isAtBottom = controller.scrollState?.isAtBottom ?? true
-        controller.transcriptViewDidAppear()
+        controller.presentationClock.viewDidAppear()
         presentationSurface.appear(owner: presentationVisibilityOwner)
       }
       .onDisappear {
         presentationSurface.disappear(owner: presentationVisibilityOwner)
         historyLoadTask?.cancel()
         historyLoadTask = nil
-        controller.transcriptViewDidDisappear()
+        controller.presentationClock.viewDidDisappear()
       }
       // A warm retained AppKit surface reattaches immediately. Cold
       // surfaces wait for one committed shell frame before constructing

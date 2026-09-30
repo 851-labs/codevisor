@@ -35,20 +35,16 @@ final public class SessionController {
   /// The controller half of the transcript's cheap projection version.
   /// Model-backed row changes carry their own revision below.
   public private(set) var transcriptProjectionRevision: UInt64 = 0
-  /// The only high-frequency presentation signal observed by transcript
-  /// surfaces. It advances from an elected native display-link callback,
-  /// never from ACP arrival or an arbitrary wall-clock timer.
-  public internal(set) var transcriptPresentationFrameRevision: UInt64 = 0
+  /// The presentation signal advances only when the elected clock commits.
+  public var transcriptPresentationFrameRevision: UInt64 { presentationClock.revision }
   @ObservationIgnored let transcriptProjectionID = UUID()
-
-  /// Visible transcript surfaces register their display clocks here. A
-  /// session can appear in several windows at once; electing one driver
-  /// prevents independent 60 Hz and 120 Hz clocks from interleaving model
-  /// publications while still choosing the fastest visible display.
-  @ObservationIgnored var transcriptFrameDrivers: [TranscriptFrameDriverToken: TranscriptFrameDriver] = [:]
-  @ObservationIgnored var electedTranscriptFrameDriver: TranscriptFrameDriverToken?
-  @ObservationIgnored var transcriptPresentationFramePending = false
-  @ObservationIgnored var transcriptFallbackFrameTask: Task<Void, Never>?
+  @ObservationIgnored public private(set) lazy var presentationClock = TranscriptPresentationClock(
+    present: { [weak self] in self?.model?.flushPendingEvents() },
+    preferPending: { [weak self] in self?.model?.preferPresentationFrameIfPending() },
+    reschedulePending: { [weak self] in self?.model?.reschedulePendingEventsForCurrentVisibility() },
+    onAppear: { [weak self] in self?.model?.viewDidAppear() },
+    onDisappear: { [weak self] in self?.model?.viewDidDisappear() }
+  )
 
   public var composerText: String = "" { didSet { draftDidChange() } }
   public var composerAttachments: [ComposerAttachment] { attachments.items }
@@ -111,15 +107,11 @@ final public class SessionController {
       // must start at the visible flush cadence, not the background one.
       guard let model, model !== oldValue else { return }
       model.presentationFrameRequester = { [weak self] in
-        self?.requestTranscriptPresentationFrame() == true
+        self?.presentationClock.requestFrame() == true
       }
-      for _ in 0..<visibleTranscriptViews { model.viewDidAppear() }
+      for _ in 0..<presentationClock.visibleViewCount { model.viewDidAppear() }
     }
   }
-  /// Mounted transcript views for this session, mirrored into the model so
-  /// its stream-flush cadence matches whether anyone can actually see it.
-  /// Kept here too because views can appear before the model connects.
-  @ObservationIgnored var visibleTranscriptViews = 0
   public internal(set) var status: Status = .idle {
     didSet {
       if status != oldValue { transcriptProjectionRevision &+= 1 }

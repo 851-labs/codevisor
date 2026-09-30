@@ -93,17 +93,17 @@ public final class SubagentMirror {
   /// when the parent's own transcript is hidden (iOS pushes over it).
   public func viewDidAppear() {
     visibleViews += 1
-    parent.transcriptViewDidAppear()
+    parent.presentationClock.viewDidAppear()
   }
 
   public func viewDidDisappear() {
     guard visibleViews > 0 else { return }
     visibleViews -= 1
-    parent.transcriptViewDidDisappear()
+    parent.presentationClock.viewDidDisappear()
   }
 
   isolated deinit {
-    for _ in 0..<visibleViews { parent.transcriptViewDidDisappear() }
+    for _ in 0..<visibleViews { parent.presentationClock.viewDidDisappear() }
   }
 
   private func observe() {

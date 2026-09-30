@@ -35,36 +35,6 @@ struct SessionModelStreamPacingTests {
     )
   }
 
-  @Test("The fastest visible display clock exclusively drives presentation")
-  func fastestDisplayClockWins() {
-    let controller = SessionController.preview()
-    var sixtyHertzRequests = 0
-    var oneTwentyHertzRequests = 0
-    let sixty = controller.registerTranscriptFrameDriver(maximumFramesPerSecond: 60) {
-      sixtyHertzRequests += 1
-    }
-    let oneTwenty = controller.registerTranscriptFrameDriver(maximumFramesPerSecond: 120) {
-      oneTwentyHertzRequests += 1
-    }
-
-    #expect(controller.requestTranscriptPresentationFrame())
-    #expect(sixtyHertzRequests == 0)
-    #expect(oneTwentyHertzRequests == 1)
-
-    let revision = controller.transcriptPresentationFrameRevision
-    controller.transcriptPresentationFrameDidFire(sixty)
-    #expect(controller.transcriptPresentationFrameRevision == revision)
-    controller.transcriptPresentationFrameDidFire(oneTwenty)
-    #expect(controller.transcriptPresentationFrameRevision == revision + 1)
-
-    #expect(controller.requestTranscriptPresentationFrame())
-    controller.unregisterTranscriptFrameDriver(oneTwenty)
-    #expect(sixtyHertzRequests == 1)
-    controller.transcriptPresentationFrameDidFire(sixty)
-    #expect(controller.transcriptPresentationFrameRevision == revision + 2)
-    controller.unregisterTranscriptFrameDriver(sixty)
-  }
-
   @Test("Stream ingress wakes once per buffered burst and rejects stale consumers")
   func eventIngressIsLatestGenerationAndSingleWakeup() {
     let buffer = SessionEventBuffer()

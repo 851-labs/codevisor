@@ -198,7 +198,7 @@ struct SessionTranscriptView: View {
         TranscriptPresentationSurfaceCache.shared.scheduleTrim()
         if ownsVisibleTranscriptLifecycle {
           ownsVisibleTranscriptLifecycle = false
-          controller.transcriptViewDidDisappear()
+          controller.presentationClock.viewDidDisappear()
         }
       }
       .environment(\.attachmentImages, attachmentImages)
@@ -287,10 +287,10 @@ struct SessionTranscriptView: View {
     ownsVisibleTranscriptLifecycle = shouldOwnLifecycle
     if shouldOwnLifecycle {
       presentationSurface.appear(owner: presentationOwner)
-      controller.transcriptViewDidAppear()
+      controller.presentationClock.viewDidAppear()
     } else {
       presentationSurface.disappear(owner: presentationOwner)
-      controller.transcriptViewDidDisappear()
+      controller.presentationClock.viewDidDisappear()
     }
   }
 
