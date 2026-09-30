@@ -53,6 +53,22 @@ struct AppSettingsQuitConfirmationTests {
     #expect(decoded == settings)
   }
 
+  @Test("Asks before closing a working chat by default and persists opting out")
+  @MainActor
+  func persistsWorkingChatCloseOptOut() throws {
+    let store = InMemoryStore()
+    let model = AppSettingsModel(store: store)
+    #expect(model.confirmBeforeClosingWorkingChat)
+
+    // The close alert's "Do not ask me again" is independent of ⌘Q's.
+    model.setConfirmBeforeClosingWorkingChat(false)
+    #expect(AppSettingsModel(store: store).confirmBeforeClosingWorkingChat == false)
+    #expect(AppSettingsModel(store: store).confirmBeforeQuitting)
+
+    let legacy = Data(#"{"hasCompletedOnboarding":true}"#.utf8)
+    #expect(try JSONDecoder().decode(AppSettings.self, from: legacy).confirmBeforeClosingWorkingChat)
+  }
+
   @Test("Deleting all data restores the confirmation")
   @MainActor
   func resetRestoresDefault() {

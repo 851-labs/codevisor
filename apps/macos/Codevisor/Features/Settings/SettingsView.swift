@@ -441,10 +441,14 @@ struct GeneralSettingsView: View {
       Section {
         Toggle("Ask before quitting", isOn: confirmBeforeQuitting)
           .toggleStyle(.switch)
+        Toggle("Ask before closing a working chat", isOn: confirmBeforeClosingWorkingChat)
+          .toggleStyle(.switch)
       } header: {
         Text("General")
       } footer: {
-        Text("Shows a confirmation when you press ⌘Q, so a stray keystroke can't close every session at once.")
+        Text(
+          "Shows a confirmation when you press ⌘Q, or close a chat while its agent is still working, so a stray keystroke can't close something you're relying on."
+        )
       }
 
       Section {
@@ -499,6 +503,13 @@ struct GeneralSettingsView: View {
     Binding(
       get: { environment.settings.confirmBeforeQuitting },
       set: { environment.settings.setConfirmBeforeQuitting($0) }
+    )
+  }
+
+  private var confirmBeforeClosingWorkingChat: Binding<Bool> {
+    Binding(
+      get: { environment.settings.confirmBeforeClosingWorkingChat },
+      set: { environment.settings.setConfirmBeforeClosingWorkingChat($0) }
     )
   }
 
