@@ -125,12 +125,15 @@ export class CodexTitleGenerator {
         }
       })
       // If thread/start completes after timeout/close, detach that late thread too.
+      // Nothing awaits this branch, so it must not throw: a malformed reply
+      // would be an unhandled rejection, which exits the server. The awaited
+      // path below turns the same reply into a best-effort failure.
       void start.then(
-        (result) => {
-          if (this.stopped)
-            void this.client
-              .request("thread/unsubscribe", { threadId: result.thread.id })
-              .catch(() => {})
+        (result: unknown) => {
+          const threadId =
+            isRecord(result) && isRecord(result.thread) ? result.thread.id : undefined
+          if (this.stopped && typeof threadId === "string")
+            void this.client.request("thread/unsubscribe", { threadId }).catch(() => {})
         },
         () => {}
       )

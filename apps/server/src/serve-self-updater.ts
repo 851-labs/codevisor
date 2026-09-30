@@ -46,6 +46,24 @@ const writeAppUpdateRequest = (path: string, version: string): void => {
   renameSync(temporary, path)
 }
 
+/// Starts a process that outlives this one and resolves once it is running.
+/// A launch failure (systemctl or bash missing) rejects so the update is
+/// reported as failed and the drain reopens; unheard, that 'error' event
+/// would be an uncaught exception that exits the server mid-update.
+const startDetachedHandoff = (
+  command: string,
+  args: ReadonlyArray<string>,
+  detached: boolean
+): Promise<void> =>
+  new Promise((resolve, reject) => {
+    const child = spawn(command, [...args], { detached, stdio: "ignore" })
+    child.unref()
+    child.on("error", (cause) =>
+      reject(new Error(`Could not hand the update off to ${command}: ${cause.message}`))
+    )
+    child.once("spawn", () => resolve())
+  })
+
 /// Whether a macOS app hosts this server as a child inside its .app bundle.
 const appHosted = (): boolean =>
   process.env.CODEVISOR_APP_HOSTED === "1" || process.env.HERDMAN_APP_HOSTED === "1"
@@ -300,9 +318,11 @@ export const makeSelfUpdater = (options: {
       // survives this process: its stop half takes this server down and its
       // start half boots the swapped install root.
       const managerArgs = plan.userManager ? ["--user"] : []
-      spawn("systemctl", [...managerArgs, "restart", "--no-block", plan.unit], {
-        stdio: "ignore"
-      }).unref()
+      await startDetachedHandoff(
+        "systemctl",
+        [...managerArgs, "restart", "--no-block", plan.unit],
+        false
+      )
       // Failsafe: if the restart job never arrives, exit anyway — the
       // install root is already swapped, so any later start (manual or
       // scheduled) boots the new version.
@@ -315,7 +335,7 @@ export const makeSelfUpdater = (options: {
     // from the swapped install root when there is one so the process and the
     // install agree on the version; dev-style runs use the staged runtime.
     const handoffRoot = installRoot ?? runtimeDir
-    const handoff = spawn(
+    await startDetachedHandoff(
       "/bin/bash",
       [
         "-c",
@@ -326,9 +346,8 @@ export const makeSelfUpdater = (options: {
         "serve",
         ...options.serveArgs
       ],
-      { detached: true, stdio: "ignore" }
+      true
     )
-    handoff.unref()
     setTimeout(() => process.exit(0), 300)
   }
 

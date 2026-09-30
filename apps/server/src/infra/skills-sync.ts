@@ -77,6 +77,10 @@ const tarExec = (args: ReadonlyArray<string>, input?: Buffer): Promise<Buffer> =
     child.once("close", (code) =>
       code === 0 ? resolve(Buffer.concat(chunks)) : reject(new Error(`tar exited with ${code}`))
     )
+    // tar stops reading as soon as the bytes stop parsing, so the rest of a
+    // corrupt archive meets a closed pipe (EPIPE). Unhandled, that 'error'
+    // exits the server; tar's non-zero exit already rejects above.
+    child.stdin.on("error", () => undefined)
     if (input !== undefined) child.stdin.write(input)
     child.stdin.end()
   })
@@ -106,8 +110,13 @@ export const unpackSkillArchive = async (
   bytes: Buffer
 ): Promise<{ readonly path: string; readonly hash: string }> => {
   const path = await mkdtemp(join(tmpdir(), "codevisor-skill-"))
-  await tarExec(["-xzf", "-", "-C", path], bytes)
-  return { path, hash: await treeHash(path, { exclude: EXCLUDED }) }
+  try {
+    await tarExec(["-xzf", "-", "-C", path], bytes)
+    return { path, hash: await treeHash(path, { exclude: EXCLUDED }) }
+  } catch (error) {
+    await rm(path, { recursive: true, force: true })
+    throw error
+  }
 }
 
 export const skillTreeHash = (path: string): Promise<string> =>

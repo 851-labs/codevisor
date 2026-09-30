@@ -129,9 +129,15 @@ export const startBootListener = (
       log(`Early health listener unavailable on ${options.host}:${options.port}: ${error.message}`)
       resolve(undefined)
     }
+    // Once bound, the server still emits 'error' for a failed accept (EMFILE
+    // when descriptors run out); unheard, that would exit the process.
+    const onServerError = (error: Error): void => {
+      log(`Early health listener error: ${error.message}`)
+    }
     server.once("error", onBindError)
     server.listen(options.port, options.host, () => {
       server.off("error", onBindError)
+      server.on("error", onServerError)
       resolve({
         server,
         report: (progress) => {
@@ -141,6 +147,7 @@ export const startBootListener = (
           server.off("request", onRequest)
           server.off("upgrade", onSocket)
           server.off("connect", onSocket)
+          server.off("error", onServerError)
         },
         close: async (closeOptions) => {
           if (closeOptions?.afterMs !== undefined && closeOptions.afterMs > 0) {

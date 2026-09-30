@@ -81,6 +81,7 @@ export const waitForSessions = async (
 
   let woken = false
   let changed = false
+  let failure: { readonly error: unknown } | undefined
   let checks: Promise<void> = Promise.resolve()
   const woke = Promise.withResolvers<void>()
   const wake = (): void => {
@@ -88,15 +89,24 @@ export const waitForSessions = async (
     woke.resolve()
   }
   // Re-evaluate one session. Checks run one at a time and stop once woken.
+  // A check that cannot read the database ends the wait with that error:
+  // the state it needed is unknown, so waiting on would only hang the
+  // caller. The chain itself never rejects — event-driven checks are
+  // detached, and a rejection there would be unhandled and exit the server.
   const check = (id: string): Promise<void> =>
-    (checks = checks.then(async () => {
-      if (woken) return
-      const session = await run(db.getSessionSummary(id)).catch(() => undefined)
-      if (session === undefined || (await settledIn(db, session, until))) {
-        changed = true
+    (checks = checks
+      .then(async () => {
+        if (woken) return
+        const session = await run(db.getSessionSummary(id)).catch(() => undefined)
+        if (session === undefined || (await settledIn(db, session, until))) {
+          changed = true
+          wake()
+        }
+      })
+      .catch((error: unknown) => {
+        failure ??= { error }
         wake()
-      }
-    }))
+      }))
 
   // Subscribe before the first check so no transition slips between them.
   const unsubscribe = fanout.subscribe((event) => {
@@ -109,6 +119,7 @@ export const waitForSessions = async (
     timer = setTimeout(wake, timeoutMs)
     await woke.promise
     await checks
+    if (failure !== undefined) throw failure.error
     const current = await Promise.all(
       ids.map((id) => run(db.getSessionSummary(id)).catch(() => undefined))
     )

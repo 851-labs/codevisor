@@ -134,6 +134,11 @@ const spawnSsh =
         else reject(new HttpFailure(501, `Couldn't run ssh on this machine: ${error.message}`))
       })
       child.on("close", (exitCode) => resolve({ exitCode, output }))
+      // ssh that fails before reading the script (unreachable host, refused
+      // key) closes the pipe; the exit code above reports that. An unhandled
+      // EPIPE here would exit the server instead.
+      /* v8 ignore next -- the script fits in the pipe buffer, so tests' early-exiting fakes never see EPIPE. */
+      child.stdin.on("error", () => undefined)
       child.stdin.end(stdin)
     })
 

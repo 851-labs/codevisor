@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
   DRAINED_WITHOUT_RESTART_GRACE_MS,
   makeMemoryRestartSnapshotStore,
-  makeRestartCoordinator
+  makeRestartCoordinator,
+  type RestartSnapshotStore
 } from "./restart-drain.js"
 import { resumeSessionsAfterRestart } from "./restart-resume.js"
 import { makeEventFanout } from "./server-context.js"
@@ -70,18 +71,22 @@ const makeHarness = async () => {
     logs,
     redrained,
     sessions: { live, fresh, archived },
-    make: (overrides: Partial<AgentRuntimeService> = {}) =>
+    make: (overrides: Partial<AgentRuntimeService> = {}, store: RestartSnapshotStore = snapshot) =>
       makeRestartCoordinator({
         services: { ...services, agents: { ...agents, ...overrides } },
         fanout,
         turns,
-        snapshot,
+        snapshot: store,
         log: (line) => logs.push(line),
         redrain: async (sessionId) => {
           redrained.push(sessionId)
         }
       })
   }
+}
+
+const diskFull = (): never => {
+  throw new Error("ENOSPC: no space left on device")
 }
 
 describe("restart coordinator", () => {
@@ -214,6 +219,26 @@ describe("restart coordinator", () => {
     releaseClose.resolve()
     expect((await started).state).toBe("idle")
     expect(coordinator.isGated()).toBe(false)
+    coordinator.close()
+  })
+
+  it("abandons a drain it cannot snapshot instead of holding prompts forever", async () => {
+    // A full disk fails the snapshot write and its cleanup. The drain used to
+    // reject with the gate still shut: held prompts waited for a restart that
+    // never came, and the detached caller's rejection exited the server.
+    const harness = await makeHarness()
+    harness.turns.restartHeldSessions.add(harness.sessions.fresh.id)
+    const coordinator = harness.make(
+      {},
+      { read: () => undefined, write: diskFull, clear: diskFull }
+    )
+
+    expect((await coordinator.begin()).state).toBe("idle")
+    expect(coordinator.isGated()).toBe(false)
+    expect(harness.redrained).toEqual([harness.sessions.fresh.id])
+    expect(harness.logs).toContain(
+      "Restart drain could not finish: ENOSPC: no space left on device"
+    )
     coordinator.close()
   })
 

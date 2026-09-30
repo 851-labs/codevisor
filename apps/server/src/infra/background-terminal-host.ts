@@ -80,6 +80,12 @@ export const startBackgroundTerminalHost = (options: {
     server.once("error", rejectPromise)
     server.listen(options.socketPath, () => {
       server.removeListener("error", rejectPromise)
+      // A listening server still emits 'error' for a failed accept (EMFILE
+      // when descriptors run out); unheard, that would exit the server.
+      /* v8 ignore next 3 -- needs descriptor exhaustion; boot-listener and server tests drive the same guard. */
+      server.on("error", (error) => {
+        console.error(`Background command socket error: ${error.message}`)
+      })
       resolvePromise({
         socketPath: options.socketPath,
         close: () => {

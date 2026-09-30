@@ -5,6 +5,7 @@ import type { PluginSummary } from "@codevisor/api"
 import { makePluginEnabledState } from "./plugin-enabled-state.js"
 import { fetchPluginIcon } from "./plugin-icon.js"
 import { makePluginInstaller } from "./plugin-install.js"
+import { makePluginMaintenance } from "./plugin-maintenance.js"
 import {
   makePaneTokenStore,
   PANE_TOKEN_QUERY_PARAM,
@@ -54,15 +55,12 @@ const TOOL_TIMEOUT_MS = 30_000
 export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager => {
   const pluginsRoot = config.pluginsRoot ?? defaultPluginsRoot()
   const platform = config.platform ?? process.platform
-  const sleep =
-    config.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
   const isLoopback = config.isLocalhost ?? defaultIsLocalhost
   const pluginDataRoot = `${config.dataDir}/plugin-data`
   const { assertEnabled, isEnabled, persist } = makePluginEnabledState(pluginDataRoot)
   const tokens = makePaneTokenStore(config.now)
   const listeners = new Set<(event: PluginStateEvent) => void>()
   const installedListeners = new Set<() => void>()
-  const maintaining = new Set<string>()
   let isClosing = false
   /// PluginsManagerConfig is a strict widening of the supervisor's config
   /// (minus dataDir/onStateChange, which the manager owns), so it passes
@@ -90,6 +88,15 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
       )
     }
   }
+
+  const { maintain, request: requestMaintenance } = makePluginMaintenance({
+    isClosing: () => isClosing,
+    isEnabled,
+    log: config.log,
+    scan,
+    sleep: config.sleep,
+    supervisor
+  })
 
   const installer = makePluginInstaller({
     pluginDataRoot,
@@ -130,9 +137,17 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
   /// Fans a supervisor state transition out to subscribers as a full summary.
   /// The transition can arrive asynchronously (for example, after a crash), so the
   /// plugin is re-resolved from disk; one uninstalled mid-flight has nothing
-  /// left to describe and is skipped.
+  /// left to describe and is skipped. So is one whose folder can't be read:
+  /// a crash reports its transition from inside the process's exit handler,
+  /// where a throw would exit the whole server.
   const emitState = (pluginId: string): void => {
-    const plugin = scan().plugins.find((candidate) => candidate.id === pluginId)
+    let plugin: InstalledPlugin | undefined
+    try {
+      plugin = scan().plugins.find((candidate) => candidate.id === pluginId)
+    } catch (cause) {
+      config.log?.(`Plugin ${pluginId} state not published: ${String(cause)}`)
+      return
+    }
     if (plugin === undefined) {
       return
     }
@@ -196,43 +211,6 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
     for (const listener of installedListeners) {
       listener()
     }
-  }
-
-  /// Restore the invariant that every compatible installed plugin is
-  /// running. The supervisor owns exponential backoff and the circuit
-  /// breaker; this loop merely retries after each gate until the plugin runs,
-  /// becomes terminally failed, is uninstalled, or the server closes.
-  const maintain = async (pluginId: string): Promise<void> => {
-    if (maintaining.has(pluginId) || isClosing || !isEnabled(pluginId)) {
-      return
-    }
-    maintaining.add(pluginId)
-    try {
-      while (!isClosing) {
-        const plugin = scan().plugins.find((candidate) => candidate.id === pluginId)
-        if (
-          plugin === undefined ||
-          !isEnabled(pluginId) ||
-          supervisor.state(pluginId) === "failed"
-        ) {
-          return
-        }
-        try {
-          await supervisor.ensureRunning(plugin)
-          return
-        } catch {
-          if (supervisor.state(pluginId) === "failed") {
-            return
-          }
-          await sleep(500)
-        }
-      }
-    } finally {
-      maintaining.delete(pluginId)
-    }
-  }
-  const requestMaintenance = (pluginId: string): void => {
-    void maintain(pluginId)
   }
 
   /// Post-install summary: resolved from the unfiltered store scan so an

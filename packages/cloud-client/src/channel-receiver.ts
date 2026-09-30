@@ -17,6 +17,17 @@ import type { PeerKeyPinStore } from "./peer-pins.js"
 
 const utf8Decoder = new TextDecoder()
 
+/// Tells a channel's handler it ended. The channel is already gone, and a
+/// throwing close handler must not stop the pipe's frame loop or teardown of
+/// the other channels.
+const notifyClosed = (live: LiveChannel, reason: ChannelCloseReason | "peer-gone"): void => {
+  try {
+    live.channel.onClosed?.(reason)
+  } catch {
+    // Nothing left to close.
+  }
+}
+
 /// The responder half of the sealed channel protocol, independent of the pipe
 /// that delivers the frames. The hub relay connection is caller #1; a direct
 /// LAN/tailnet listener can feed the same receiver — a channel neither knows
@@ -85,7 +96,7 @@ export class ChannelReceiver {
     }
     if (frame.t === "close") {
       this.#channels.delete(key)
-      live.channel.onClosed?.(frame.reason)
+      notifyClosed(live, frame.reason)
       return
     }
     // credit and data share one opener→responder seq counter (the protocol's
@@ -100,9 +111,11 @@ export class ChannelReceiver {
       live.nextReceiveSeq += 1
       // Credits our send budget (flushing queued gated sends) before the
       // handler's own observer runs; an invalid grant kills the channel.
-      if (!live.receiveCredit(frame.bytes)) {
-        this.#abort(key, peerId, frame.channelId, live, "protocol-error")
-      }
+      this.#runHandler(key, peerId, frame.channelId, live, () => {
+        if (!live.receiveCredit(frame.bytes)) {
+          this.#abort(key, peerId, frame.channelId, live, "protocol-error")
+        }
+      })
       return
     }
     // data — the monotonic seq contract is bound into the AAD.
@@ -127,8 +140,10 @@ export class ChannelReceiver {
       live.inboundCredit -= sealedBytes
     }
     live.nextReceiveSeq += 1
-    if (value instanceof Uint8Array) live.channel.onBytes?.(value, sealedBytes)
-    else live.channel.onData?.(value, sealedBytes)
+    this.#runHandler(key, peerId, frame.channelId, live, () => {
+      if (value instanceof Uint8Array) live.channel.onBytes?.(value, sealedBytes)
+      else live.channel.onData?.(value, sealedBytes)
+    })
   }
 
   /// Tears down one peer's channels (the pipe reported the peer gone).
@@ -136,7 +151,7 @@ export class ChannelReceiver {
     for (const [key, live] of this.#channels) {
       if (key.startsWith(`${peerId}/`)) {
         this.#channels.delete(key)
-        live.channel.onClosed?.("peer-gone")
+        notifyClosed(live, "peer-gone")
       }
     }
   }
@@ -145,7 +160,7 @@ export class ChannelReceiver {
   dropAll(reason: ChannelCloseReason | "peer-gone"): void {
     const channels = [...this.#channels.values()]
     this.#channels.clear()
-    for (const live of channels) live.channel.onClosed?.(reason)
+    for (const live of channels) notifyClosed(live, reason)
   }
 
   #handleOpen(
@@ -239,7 +254,25 @@ export class ChannelReceiver {
         this.options.sendEnvelope(peerId, relayFrame, relayPayload)
     })
     this.#channels.set(key, live)
-    handler(live.channel)
+    this.#runHandler(key, peerId, frame.channelId, live, () => handler(live.channel))
+  }
+
+  /// Runs one channel's handler code. Frames arrive inside the pipe's socket
+  /// callback, where a throw would take down the pipe (and, uncaught, the
+  /// whole server process): a handler that throws closes only its channel.
+  #runHandler(
+    key: string,
+    peerId: string,
+    channelId: string,
+    live: LiveChannel,
+    run: () => void
+  ): void {
+    try {
+      run()
+    } catch {
+      // The handler may have closed the channel itself before failing.
+      if (this.#channels.get(key) === live) this.#abort(key, peerId, channelId, live, "rejected")
+    }
   }
 
   /// Strips the negotiated framing byte, inflating DEFLATE bodies. Throws on
@@ -268,7 +301,7 @@ export class ChannelReceiver {
     const seq = live.nextSendSeq
     live.nextSendSeq += 1
     this.options.sendEnvelope(peerId, { t: "close", channelId, seq, reason })
-    live.channel.onClosed?.(reason)
+    notifyClosed(live, reason)
   }
 
   /// Closes a channel this side never answered (refused open, or a frame

@@ -111,6 +111,17 @@ describe("boot listener", () => {
     expect(await hasExistingListener("127.0.0.1", port)).toBe(false)
   })
 
+  it("logs a failed accept instead of exiting, and keeps answering", async () => {
+    const lines: Array<string> = []
+    const listener = await startBootListener({ ...options, log: (line) => lines.push(line) })
+    open.push(listener!)
+    // Node reports a failed accept (descriptors exhausted) as 'error' on the
+    // listening server.
+    listener!.server.emit("error", Object.assign(new Error("accept EMFILE"), { code: "EMFILE" }))
+    expect(lines).toEqual(["Early health listener error: accept EMFILE"])
+    expect((await fetch(`http://127.0.0.1:${portOf(listener!)}/v1/health`)).status).toBe(200)
+  })
+
   it("steps aside instead of failing when the port is taken", async () => {
     const first = await startBootListener(options)
     open.push(first!)

@@ -31,6 +31,7 @@ import { routeWorkspaces } from "./routes/workspaces.js"
 import {
   appendAndPublish,
   authorize,
+  failureMessage,
   HttpFailure,
   parseRequestUrl,
   readSchema,
@@ -286,12 +287,18 @@ export const handleRequest = async (
         draining: busy
       })
       const updater = config.updater
+      // Detached from the request answered above, so a rejection here would
+      // be unhandled and exit the server with every agent in it.
       void applyAfterDrain(
         routeState.restart,
         { interrupt: url.searchParams.get("interrupt") === "1" },
         () =>
           publishUpdateChanged(services, fanout, routeState, withRestartDrain(routeState, info)),
         () => updater.apply({ channel })
+      ).catch(
+        /* v8 ignore next -- defensive: the drain abandons itself on failure
+           and cancel never rejects, so only a throwing publish lands here. */
+        (cause: unknown) => console.log(`Update apply failed: ${failureMessage(cause)}`)
       )
       return
     }

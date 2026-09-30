@@ -15,11 +15,12 @@ export interface ScalerCommands {
     env: Record<string, string>
   ) => Promise<string>
   /// Starts a command detached from the server (it outlives the request).
+  /// Resolves once it is running; rejects when it could not start.
   readonly spawnDetached: (
     command: string,
     args: readonly string[],
     env: Record<string, string>
-  ) => void
+  ) => Promise<void>
   /// A process's environment, NUL-separated (`/proc/<pid>/environ`).
   readonly environ: (pid: string) => string
 }
@@ -34,13 +35,19 @@ export const systemScalerCommands: ScalerCommands = {
         (error, stdout) => (error ? reject(error) : resolve(String(stdout)))
       )
     ),
-  spawnDetached: (command, args, env) => {
-    spawn(command, [...args], {
-      env: { ...process.env, ...env },
-      detached: true,
-      stdio: "ignore"
-    }).unref()
-  },
+  spawnDetached: (command, args, env) =>
+    new Promise((resolve, reject) => {
+      const child = spawn(command, [...args], {
+        env: { ...process.env, ...env },
+        detached: true,
+        stdio: "ignore"
+      })
+      child.unref()
+      // A command that can't start (not installed) reports through 'error';
+      // unheard, that event is an uncaught exception that exits the server.
+      child.on("error", reject)
+      child.once("spawn", () => resolve())
+    }),
   environ: (pid) => readFileSync(`/proc/${pid}/environ`, "utf8")
 }
 
@@ -93,6 +100,6 @@ export const xfceScaler =
       await xfconf("-c", "xfwm4", "-p", "/general/theme", "-n", "-t", "string", "-s", "Default")
     if (previous !== String(scale)) {
       await commands.run("xfdesktop", ["--quit"], env).catch(() => "")
-      commands.spawnDetached("xfdesktop", [], env)
+      await commands.spawnDetached("xfdesktop", [], env)
     }
   }

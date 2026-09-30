@@ -22,10 +22,11 @@ export interface BrowserUseProvider extends AutomationToolProvider {
   readonly beginTurn: (sessionId: string, backend: BrowserBackend) => Promise<void>
   readonly acceptExtensionConnection: (socket: WebSocket) => void
   readonly onExtensionConnectionChange: (listener: (connected: boolean) => void) => () => void
-  readonly openDevelopmentExtensionFolder: () => void
-  readonly openDevelopmentExtensionPage: () => void
-  readonly openDevelopmentExtensionInstaller: () => void
-  readonly openExtensionWebStore: () => void
+  /** Rejects when the opener (Finder, Chrome, xdg-open) could not be launched. */
+  readonly openDevelopmentExtensionFolder: () => Promise<void>
+  readonly openDevelopmentExtensionPage: () => Promise<void>
+  readonly openDevelopmentExtensionInstaller: () => Promise<void>
+  readonly openExtensionWebStore: () => Promise<void>
   readonly extensionArchivePath: () => string
   readonly extensionIconPath: () => string
   readonly configureExtensionRelay: (serverBaseUrl: string) => void

@@ -16,11 +16,19 @@ class TitleClient extends FakeCodexClient {
   readonly startingThread = deferred<void>()
   readonly unsubscribed = deferred<void>()
   holdStart: Promise<void> | undefined
+  startReply: unknown = { thread: { id: "hidden-title" } }
+  threadStart: Promise<unknown> | undefined
   failConfig = false
   failStart = false
   failCleanup = false
 
-  override async request<T>(method: string, params?: unknown): Promise<T> {
+  override request<T>(method: string, params?: unknown): Promise<T> {
+    const reply = this.reply<T>(method, params)
+    if (method === "thread/start") this.threadStart = reply
+    return reply
+  }
+
+  private async reply<T>(method: string, params?: unknown): Promise<T> {
     this.requests.push({ method, params })
     switch (method) {
       case "config/read":
@@ -30,7 +38,7 @@ class TitleClient extends FakeCodexClient {
         this.startingThread.resolve()
         if (this.failStart) throw new Error("Cannot start temporary thread")
         if (this.holdStart) await this.holdStart
-        return { thread: { id: "hidden-title" } } as T
+        return this.startReply as T
       case "turn/start":
         this.started.resolve()
         return { turn: { id: "title-turn" } } as T
@@ -186,6 +194,22 @@ describe("Codex title generation", () => {
     gate.resolve()
     await client.unsubscribed.promise
     expect(client.requests.some((r) => r.method === "turn/start")).toBe(false)
+  })
+
+  it("ignores a malformed thread start that arrives after the session closes", async () => {
+    const { client, generator } = fixture()
+    const gate = deferred<void>()
+    client.holdStart = gate.promise
+    client.startReply = {}
+    const generation = generator.onTurnCompleted()
+    await client.startingThread.promise
+    generator.close()
+    await generation
+    gate.resolve()
+    // Resumes after the generator's own late-start handler has run; reading
+    // the missing thread id there used to be an unhandled rejection.
+    await client.threadStart
+    expect(client.requests.map((r) => r.method)).toEqual(["config/read", "thread/start"])
   })
 
   it("treats unavailable configuration as a best-effort failure", async () => {

@@ -2,9 +2,11 @@ import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import type { CodevisorDatabaseService } from "@codevisor/db"
+import { DatabaseError, type CodevisorDatabaseService } from "@codevisor/db"
+import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
+import { appendAndPublish } from "../server-context.js"
 import { makeEventFanout } from "../server.js"
 import {
   jsonRequest,
@@ -127,6 +129,33 @@ describe("waiting for sessions", () => {
     await began
     await jsonRequest(server, `/v1/sessions/${doomed.id}`, { method: "DELETE" })
     expect(await waiting).toEqual({ sessions: [], timedOut: false })
+  })
+
+  it("fails the wait, not the server, when a re-check cannot read the database", async () => {
+    const { fanout, services, session } = await fixture()
+    const queued = await session()
+    // Idle with a prompt still queued: the first check is not settled.
+    await run(services.db.createPromptQueueItem(queued.id, "next task"))
+    const firstRead = Promise.withResolvers<void>()
+    let reads = 0
+    const db: CodevisorDatabaseService = {
+      ...services.db,
+      listPromptQueue: (id) => {
+        reads += 1
+        firstRead.resolve()
+        return reads === 1
+          ? services.db.listPromptQueue(id)
+          : Effect.fail(
+              new DatabaseError({ operation: "listPromptQueue", message: "database is locked" })
+            )
+      }
+    }
+    const waiting = waitForSessions(db, fanout, { ids: [queued.id] }, new AbortController().signal)
+    await firstRead.promise
+    // The queue changes; the event-driven re-check's read fails. That used
+    // to be an unhandled rejection and left the waiter hanging.
+    await appendAndPublish(services.db, fanout, "session.queue.updated", queued.id, { queue: [] })
+    await expect(waiting).rejects.toThrow("database is locked")
   })
 
   it("rejects empty and unknown ids", async () => {

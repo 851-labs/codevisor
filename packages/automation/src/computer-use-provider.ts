@@ -200,6 +200,10 @@ const connectLinuxHelper = async (): Promise<HelperClient> => {
     stdio: ["pipe", "pipe", "pipe"]
   })
   let stderr = ""
+  // A request written as the helper dies fails with EPIPE on stdin. Unheard,
+  // that stream error exits the server; the helper's exit already fails
+  // every pending request with a useful message.
+  processHandle.stdin.on("error", () => undefined)
   processHandle.stderr.on("data", (chunk: Buffer) => {
     stderr = `${stderr}${chunk.toString("utf8")}`.slice(-8_000)
   })

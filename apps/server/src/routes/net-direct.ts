@@ -79,12 +79,18 @@ export const adaptDirectSocket = (socket: WebSocket): CloudSocket => {
     onclose: null
   }
   socket.on("message", (data, isBinary) => {
-    if (isBinary) {
-      const bytes = Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data as ArrayBuffer)
-      adapted.onmessage?.(new Uint8Array(bytes))
-      return
+    // A throw here would escape ws's listener and exit the server (every
+    // agent with it); a handler that fails ends only this connection.
+    try {
+      if (isBinary) {
+        const bytes = Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data as ArrayBuffer)
+        adapted.onmessage?.(new Uint8Array(bytes))
+        return
+      }
+      adapted.onmessage?.(String(data))
+    } catch {
+      socket.close(1011, "message handler failed")
     }
-    adapted.onmessage?.(String(data))
   })
   socket.on("close", (code) => adapted.onclose?.(code))
   socket.on("error", () => undefined) // close fires afterwards

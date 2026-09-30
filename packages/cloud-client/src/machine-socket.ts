@@ -1,4 +1,4 @@
-import { encodeRelayEnvelopes } from "@codevisor/api"
+import { decodeHubToMachine, encodeRelayEnvelopes, type HubToMachine } from "@codevisor/api"
 
 /// The machine-side relay connection's transport surface, reconnect policy,
 /// and outgoing-envelope coalescing — split from machine-connection.ts so
@@ -45,6 +45,19 @@ export type MachineDisconnectReason =
   | { kind: "send-failed"; phase: "hello" | "heartbeat" }
 
 export type CancelTimeout = () => void
+
+/// Decodes one hub control frame, or undefined for one this build cannot
+/// read. A newer hub may send frame kinds or values an older machine does not
+/// know; those are ignored, as undecodable relay batches are. A throw would
+/// escape the socket's message listener and exit the server, on every machine
+/// (and again after each reconnect) the moment the hub deployed one.
+export const decodeHubFrame = (data: string): HubToMachine | undefined => {
+  try {
+    return decodeHubToMachine(data)
+  } catch {
+    return undefined
+  }
+}
 
 /// HTTP statuses on the upgrade that mean the relay refused this credential
 /// (revoked or unknown key): re-checked slowly, not retried with backoff.

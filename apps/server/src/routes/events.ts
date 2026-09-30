@@ -65,6 +65,20 @@ export const handleUpgrade = async (
   webSocketServer: WebSocketServer,
   clientControl?: ClientControlBroker
 ): Promise<void> => {
+  // Node drops its own 'error' listener from a socket it hands to 'upgrade'.
+  // Until ws adopts it, a reset (ECONNRESET while authorize or a plugin is
+  // awaited) would be an unhandled 'error' and exit the server.
+  socket.on("error", () => socket.destroy())
+  // ws emits 'error' on an accepted socket for a malformed frame (bad
+  // opcode, invalid UTF-8, oversize) and closes it afterwards; unheard, that
+  // 'error' would exit the server, so every socket accepted here has a
+  // listener before any route sees it.
+  const accept = (onSocket: (webSocket: WebSocket) => void): void => {
+    webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
+      webSocket.on("error", () => undefined)
+      onSocket(webSocket)
+    })
+  }
   try {
     const url = parseRequestUrl(request)
     if (
@@ -74,7 +88,7 @@ export const handleUpgrade = async (
       isLocalhost(request.socket.remoteAddress) &&
       request.headers.origin === `chrome-extension://${CODEVISOR_BROWSER_EXTENSION_ID}`
     ) {
-      webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
+      accept((webSocket) => {
         services.mcp!.acceptBrowserExtension(webSocket)
       })
       return
@@ -89,7 +103,7 @@ export const handleUpgrade = async (
       config.cloud?.acceptDirect !== undefined
     ) {
       const acceptDirect = config.cloud.acceptDirect
-      webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
+      accept((webSocket) => {
         if (!acceptDirect(adaptDirectSocket(webSocket))) {
           webSocket.close(1013, "no cloud identity to serve direct connections")
         }
@@ -117,13 +131,13 @@ export const handleUpgrade = async (
     }
     const clientId = matchRoute(url.pathname, "/v1/clients/:id/socket")
     if (request.method === "GET" && clientId !== undefined && clientControl !== undefined) {
-      webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
+      accept((webSocket) => {
         clientControl.attach(clientId, webSocket)
       })
       return
     }
     if (request.method === "GET" && url.pathname === "/v1/events/socket") {
-      webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
+      accept((webSocket) => {
         void attachEventSocket(
           services.db,
           fanout,
@@ -143,7 +157,7 @@ export const handleUpgrade = async (
 
     const sessionEventId = matchRoute(url.pathname, "/v1/sessions/:id/events/socket")
     if (request.method === "GET" && sessionEventId !== undefined) {
-      webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
+      accept((webSocket) => {
         void attachEventSocket(
           services.db,
           fanout,
@@ -167,7 +181,7 @@ export const handleUpgrade = async (
       return
     }
 
-    webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
+    accept((webSocket) => {
       void attachTerminalSocket(
         services.terminal,
         terminalId,

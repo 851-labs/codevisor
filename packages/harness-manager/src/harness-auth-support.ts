@@ -120,5 +120,8 @@ export const runWithInput = async (
       if (code === 0) resolve()
       else reject(new Error(stderr.trim() || `Authentication command exited with status ${code}`))
     })
+    // A command that exits without reading the key closes the pipe; its exit
+    // status above is the answer. An unhandled EPIPE would exit the server.
+    child.stdin.on("error", () => undefined)
     child.stdin.end(`${input}\n`)
   })

@@ -1,9 +1,12 @@
+import { once } from "node:events"
 import { mkdirSync, mkdtempSync } from "node:fs"
+import { Socket } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { Effect } from "effect"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest"
+import { WebSocket, WebSocketServer } from "ws"
 
 import { makeEventFanout } from "../server.js"
 import {
@@ -18,7 +21,7 @@ import {
   tempDirs,
   listSubjectEvents
 } from "../test-support.js"
-import { attachEventSocket } from "./events.js"
+import { attachEventSocket, handleUpgrade } from "./events.js"
 
 const makeFakeSocket = () => {
   const sent: string[] = []
@@ -436,5 +439,45 @@ describe("event routes", () => {
     } finally {
       socket.close()
     }
+  })
+})
+
+describe("websocket upgrades", () => {
+  it("drops an upgrade socket that resets while a plugin decides on it", async () => {
+    let decide!: (handled: boolean) => void
+    const services = {
+      plugins: { handleUpgrade: () => new Promise<boolean>((resolve) => (decide = resolve)) }
+    }
+    const request = { method: "GET", url: "/v1/plugins/p/socket", headers: {} }
+    const socket = new Socket()
+    const upgraded = handleUpgrade(
+      services as never,
+      {} as never,
+      {} as never,
+      request as never,
+      socket,
+      Buffer.alloc(0),
+      new WebSocketServer({ noServer: true })
+    )
+    // Node took its own 'error' listener off the socket when it emitted
+    // 'upgrade'; the peer resets while the plugin is still deciding.
+    socket.emit("error", Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }))
+    expect(socket.destroyed).toBe(true)
+    decide(true)
+    await upgraded
+  })
+
+  it("closes a socket that sends a malformed frame and keeps serving", async () => {
+    const { server } = await start()
+    const socket = new WebSocket(`${server.url.replace("http:", "ws:")}/v1/events/socket?since=0`)
+    onTestFinished(() => socket.terminate())
+    await once(socket, "open")
+    const closed = once(socket, "close")
+    // The ws client does not validate what it sends: a text frame carrying
+    // invalid UTF-8 is a protocol error the server's socket reports as 'error'.
+    socket.send(Buffer.from([0xff, 0xfe]), { binary: false })
+    const [code] = (await closed) as [number]
+    expect(code).toBe(1007)
+    expect((await jsonRequest(server, "/v1/health")).status).toBe(200)
   })
 })

@@ -25,13 +25,20 @@ export const socketFactory = (url: string, headers: Record<string, string>): Clo
     adapted.onrejected?.(response.statusCode ?? 0)
   })
   socket.on("message", (data, isBinary) => {
-    // Binary frames carry relay envelope batches; text frames JSON control.
-    if (isBinary) {
-      const bytes = Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data as ArrayBuffer)
-      adapted.onmessage?.(new Uint8Array(bytes))
-      return
+    // A throw here would escape ws's listener and exit the server (every
+    // agent with it); a handler that fails drops this hub connection
+    // instead, and its close drives the reconnect.
+    try {
+      // Binary frames carry relay envelope batches; text frames JSON control.
+      if (isBinary) {
+        const bytes = Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data as ArrayBuffer)
+        adapted.onmessage?.(new Uint8Array(bytes))
+        return
+      }
+      adapted.onmessage?.(String(data))
+    } catch {
+      socket.close(1011, "message handler failed")
     }
-    adapted.onmessage?.(String(data))
   })
   socket.on("close", (code) => adapted.onclose?.(code))
   socket.on("error", () => undefined) // close fires afterwards and drives reconnect

@@ -231,7 +231,15 @@ export const attachTerminalSocket = async (
       sendError(webSocket, cause)
       return
     }
-    if ((message as { type?: unknown }).type === "ping") {
+    // Valid JSON need not be an object ("null", "3"): reading a field off it
+    // would throw inside ws's listener and exit the server. Non-objects fall
+    // through to the frame decoder, which reports them like any bad frame.
+    if (
+      typeof message === "object" &&
+      message !== null &&
+      "type" in message &&
+      message.type === "ping"
+    ) {
       try {
         const ping = decode(TerminalPingFrame)(message)
         if (ping.srtt !== undefined) sender.setRoundTrip(ping.srtt)

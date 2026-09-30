@@ -168,7 +168,7 @@ export const makeBrowserSetupBroker = (
         case "Back":
           return "back"
         case "Open Extensions":
-          provider.openDevelopmentExtensionPage()
+          await provider.openDevelopmentExtensionPage()
           installerOpened = true
           break
         default:

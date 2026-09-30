@@ -246,7 +246,15 @@ export const wsChannelHandler =
       return
     }
     const flowControlled = channel.flowControlRequested
-    const socket = new WebSocket(localBaseUrl.replace(/^http/, "ws") + params.path)
+    let socket: WebSocket
+    try {
+      socket = new WebSocket(localBaseUrl.replace(/^http/, "ws") + params.path)
+    } catch {
+      // The constructor throws synchronously for a URL it will not dial (a
+      // path carrying a `#` fragment): refuse the channel, as for bad params.
+      channel.close("rejected")
+      return
+    }
     let opened = false
     const queued: { data: string | Uint8Array; sealedBytes: number }[] = []
     const deliver = (data: string | Uint8Array, sealedBytes: number): void => {

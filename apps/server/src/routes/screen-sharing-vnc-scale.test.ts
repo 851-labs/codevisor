@@ -48,10 +48,9 @@ const fakeSession = (
       }
       return ""
     },
-    spawnDetached: (command, args, env) =>
-      log.push(
-        `spawn ${command} ${args.join(" ")}[${env.DISPLAY} ${env.DBUS_SESSION_BUS_ADDRESS}]`
-      ),
+    spawnDetached: async (command, args, env) => {
+      log.push(`spawn ${command} ${args.join(" ")}[${env.DISPLAY} ${env.DBUS_SESSION_BUS_ADDRESS}]`)
+    },
     environ: (pid) =>
       pid === (options.panel ?? "4242")
         ? `HOME=/root\0DBUS_SESSION_BUS_ADDRESS=${options.bus ?? "unix:path=/tmp/dbus-session"}\0`
@@ -110,7 +109,7 @@ describe("Xfce desktop scale (851-2339)", () => {
       // for writing, so the read completes exactly when the child has run.
       const fifo = join(directory, "out")
       execFileSync("mkfifo", [fifo])
-      systemScalerCommands.spawnDetached(
+      await systemScalerCommands.spawnDetached(
         "sh",
         ["-c", 'printf "%s" "$CODEVISOR_SCALE_TEST" > "$1"', "sh", fifo],
         { CODEVISOR_SCALE_TEST: "detached" }
@@ -119,6 +118,14 @@ describe("Xfce desktop scale (851-2339)", () => {
     } finally {
       rmSync(directory, { force: true, recursive: true })
     }
+  })
+
+  it("reports a detached command that can't start instead of crashing the server", async () => {
+    // The failed spawn used to be an unheard 'error' event: an uncaught
+    // exception that exits the server and every agent running in it.
+    await expect(
+      systemScalerCommands.spawnDetached("/nonexistent/codevisor-xfdesktop", [], {})
+    ).rejects.toThrow(expect.objectContaining({ code: "ENOENT" }))
   })
 
   it("reads a session's environment from /proc/<pid>/environ", () => {

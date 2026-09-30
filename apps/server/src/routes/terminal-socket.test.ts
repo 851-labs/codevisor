@@ -246,10 +246,12 @@ describe("terminal socket", () => {
     handle.output("live")
     await received(4)
     client.send("{")
+    // Valid JSON that is not an object has no fields to read.
+    client.send("null")
     client.send(JSON.stringify({ type: "ping" }))
     client.send(JSON.stringify({ type: "input" }))
     client.send(JSON.stringify({ type: "ping", t: 7 }))
-    await received(8)
+    await received(9)
     expect(messages.slice(0, 4)).toEqual([
       { type: "ready", seq: 0, protocol: 2 },
       { kind: BINARY_OUTPUT, seq: 1, data: "history" },
@@ -257,6 +259,7 @@ describe("terminal socket", () => {
       { kind: BINARY_OUTPUT, seq: 2, data: "live" }
     ])
     expect(messages.slice(4).map((message) => (message as { type: string }).type)).toEqual([
+      "error",
       "error",
       "error",
       "error",

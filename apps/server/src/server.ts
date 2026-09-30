@@ -395,6 +395,11 @@ export const startCodevisorServer = (
           })
           const onListening = async (): Promise<void> => {
             server.off("error", reject)
+            // Once listening, a failed accept (EMFILE) still arrives as
+            // 'error'; unheard, it would exit the process and every agent.
+            server.on("error", (error) => {
+              console.error(`Server socket error: ${error.message}`)
+            })
             const address = server.address()
             /* v8 ignore next -- TCP listen always returns AddressInfo here. */
             const port = isAddressInfo(address) ? address.port : config.port
@@ -433,11 +438,18 @@ export const startCodevisorServer = (
               close: closeServer(server, app)
             })
           }
+          // A throw while wiring the app fails the start, not the process.
+          const listening = (): void => {
+            onListening().catch((cause: unknown) => {
+              server.close()
+              reject(cause)
+            })
+          }
           server.once("error", reject)
           if (bootListener === undefined) {
-            server.listen(config.port, config.host, () => void onListening())
+            server.listen(config.port, config.host, listening)
           } else {
-            void onListening()
+            listening()
           }
         }),
       /* v8 ignore next -- startup errors are surfaced by Node before a server is returned. */

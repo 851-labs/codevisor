@@ -297,20 +297,27 @@ export const prepareBrowserExtension = (
 interface DevelopmentInstallerOptions {
   readonly platform?: NodeJS.Platform
   readonly chromePath?: string
-  readonly launch?: (command: string, args: ReadonlyArray<string>) => void
+  readonly launch?: (command: string, args: ReadonlyArray<string>) => Promise<void>
 }
 
-const launchDetached = (command: string, args: ReadonlyArray<string>): void => {
-  const child = spawn(command, [...args], { stdio: "ignore", detached: true })
-  child.unref()
-}
+/// Resolves once the opener is running; rejects when it could not start (no
+/// `xdg-open` on a headless Linux server). A spawn failure arrives as an
+/// 'error' event, and with no listener it would be an uncaught exception
+/// that exits the whole server, so the caller gets it as a rejection instead.
+const launchDetached = (command: string, args: ReadonlyArray<string>): Promise<void> =>
+  new Promise((resolve, reject) => {
+    const child = spawn(command, [...args], { stdio: "ignore", detached: true })
+    child.unref()
+    child.on("error", (cause) => reject(new Error(`Could not open ${command}: ${cause.message}`)))
+    child.once("spawn", () => resolve())
+  })
 
-export const openBrowserExtensionDevelopmentInstaller = (
+export const openBrowserExtensionDevelopmentInstaller = async (
   extension: string,
   options: DevelopmentInstallerOptions = {}
-): void => {
-  openBrowserExtensionDevelopmentPage(extension, options)
-  openBrowserExtensionDevelopmentFolder(extension, options)
+): Promise<void> => {
+  await openBrowserExtensionDevelopmentPage(extension, options)
+  await openBrowserExtensionDevelopmentFolder(extension, options)
 }
 
 const requireBrowserExtension = (extension: string): void => {
@@ -319,28 +326,28 @@ const requireBrowserExtension = (extension: string): void => {
   }
 }
 
-export const openBrowserExtensionDevelopmentFolder = (
+export const openBrowserExtensionDevelopmentFolder = async (
   extension: string,
   options: DevelopmentInstallerOptions = {}
-): void => {
+): Promise<void> => {
   requireBrowserExtension(extension)
   const platform = options.platform ?? process.platform
   const launch = options.launch ?? launchDetached
   if (platform === "darwin") {
-    launch("open", ["-a", "Finder", extension])
+    await launch("open", ["-a", "Finder", extension])
     return
   }
   if (platform === "linux") {
-    launch("xdg-open", [extension])
+    await launch("xdg-open", [extension])
     return
   }
   throw new Error(`Development extension setup is unavailable on ${platform}`)
 }
 
-export const openBrowserExtensionDevelopmentPage = (
+export const openBrowserExtensionDevelopmentPage = async (
   extension: string,
   options: DevelopmentInstallerOptions = {}
-): void => {
+): Promise<void> => {
   requireBrowserExtension(extension)
   const platform = options.platform ?? process.platform
   const launch = options.launch ?? launchDetached
@@ -351,20 +358,22 @@ export const openBrowserExtensionDevelopmentPage = (
         ? "/Applications/Google Chrome.app"
         : join(homedir(), "Applications", "Google Chrome.app"))
     if (!existsSync(chrome)) throw new Error("Google Chrome is not installed")
-    launch("open", ["-b", "com.google.Chrome", "chrome://extensions/"])
+    await launch("open", ["-b", "com.google.Chrome", "chrome://extensions/"])
     return
   }
   if (platform === "linux") {
     const browser = ["google-chrome-stable", "google-chrome", "chromium-browser", "chromium"].find(
       (name) => spawnSync("which", [name], { stdio: "ignore" }).status === 0
     )
-    launch(browser ?? "xdg-open", ["chrome://extensions/"])
+    await launch(browser ?? "xdg-open", ["chrome://extensions/"])
     return
   }
   throw new Error(`Development extension setup is unavailable on ${platform}`)
 }
 
-export const openBrowserExtensionWebStore = (options: DevelopmentInstallerOptions = {}): void => {
+export const openBrowserExtensionWebStore = async (
+  options: DevelopmentInstallerOptions = {}
+): Promise<void> => {
   const platform = options.platform ?? process.platform
   const launch = options.launch ?? launchDetached
   if (platform === "darwin") {
@@ -374,14 +383,14 @@ export const openBrowserExtensionWebStore = (options: DevelopmentInstallerOption
         ? "/Applications/Google Chrome.app"
         : join(homedir(), "Applications", "Google Chrome.app"))
     if (!existsSync(chrome)) throw new Error("Google Chrome is not installed")
-    launch("open", ["-b", "com.google.Chrome", CODEVISOR_BROWSER_EXTENSION_WEB_STORE_URL])
+    await launch("open", ["-b", "com.google.Chrome", CODEVISOR_BROWSER_EXTENSION_WEB_STORE_URL])
     return
   }
   if (platform === "linux") {
     const browser = ["google-chrome-stable", "google-chrome", "chromium-browser", "chromium"].find(
       (name) => spawnSync("which", [name], { stdio: "ignore" }).status === 0
     )
-    launch(browser ?? "xdg-open", [CODEVISOR_BROWSER_EXTENSION_WEB_STORE_URL])
+    await launch(browser ?? "xdg-open", [CODEVISOR_BROWSER_EXTENSION_WEB_STORE_URL])
     return
   }
   throw new Error(`Chrome Web Store setup is unavailable on ${platform}`)

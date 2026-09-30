@@ -230,4 +230,21 @@ describe("adaptDirectSocket", () => {
     adapted.terminate?.()
     expect(sent).toEqual(["out", { close: 1000, reason: "bye" }, "terminated"])
   })
+
+  it("ends the connection, not the server, when a message handler throws", () => {
+    const emitter = new EventEmitter()
+    const closes: unknown[] = []
+    const socket = Object.assign(emitter, {
+      close: (code?: number, reason?: string) => closes.push({ code, reason })
+    }) as unknown as WebSocket
+    const adapted = adaptDirectSocket(socket)
+    // oxlint-disable-next-line unicorn/prefer-add-event-listener -- the adapted socket only exposes handler properties
+    adapted.onmessage = () => {
+      throw new Error("handler bug")
+    }
+
+    emitter.emit("message", Buffer.from("hello"), false)
+
+    expect(closes).toEqual([{ code: 1011, reason: "message handler failed" }])
+  })
 })

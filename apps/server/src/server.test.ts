@@ -180,6 +180,60 @@ describe("@codevisor/server", () => {
     })
   })
 
+  it("logs a failed accept on the taken-over socket instead of exiting", async () => {
+    const { services } = await makeServices("server-a")
+    const listener = await startBootListener({
+      host: "127.0.0.1",
+      port: 0,
+      version: "0.1.0",
+      bootId: "boot-a",
+      processId: process.pid,
+      appOwned: false,
+      serviceManaged: false,
+      log: () => undefined
+    })
+    const port = (listener!.server.address() as AddressInfo).port
+    const server = await run(
+      startCodevisorServer(
+        services,
+        defaultServerConfig({ id: "server-a", port, bootId: "boot-a" }),
+        listener
+      )
+    )
+    runningServers.push(server)
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    try {
+      // Node reports a failed accept (descriptors exhausted) as 'error' on
+      // the listening server.
+      listener!.server.emit("error", Object.assign(new Error("accept EMFILE"), { code: "EMFILE" }))
+      expect(logged).toHaveBeenCalledExactlyOnceWith("Server socket error: accept EMFILE")
+    } finally {
+      logged.mockRestore()
+    }
+    expect((await fetch(`${server.url}/v1/health`)).status).toBe(200)
+  })
+
+  it("fails startup cleanly when wiring the app throws", async () => {
+    const { services } = await makeServices("server-a")
+    const failingServices = {
+      ...services,
+      mcp: {
+        setBaseUrl: () => {
+          throw new Error("MCP base URL rejected")
+        }
+      }
+    } as unknown as CodevisorServerServices
+
+    await expect(
+      run(
+        startCodevisorServer(
+          failingServices,
+          defaultServerConfig({ bootId: "test-boot", id: "server-a", port: 0 })
+        )
+      )
+    ).rejects.toMatchObject({ operation: "start", message: "MCP base URL rejected" })
+  })
+
   it("fails startup cleanly when orphan reconciliation cannot read sessions", async () => {
     const { services } = await makeServices("server-a")
     const failingServices: CodevisorServerServices = {

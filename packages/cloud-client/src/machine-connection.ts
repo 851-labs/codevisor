@@ -1,6 +1,5 @@
 import {
   CLOUD_PROTOCOL_VERSION,
-  decodeHubToMachine,
   decodeRelayEnvelopes,
   encodeCloudFrame,
   MACHINE_PEERS_FEATURE,
@@ -17,6 +16,7 @@ import { ChannelReceiver } from "./channel-receiver.js"
 import { releaseChannelField, type MachineConnectionOptions } from "./machine-connection-options.js"
 import { MachinePeers } from "./machine-peers.js"
 import {
+  decodeHubFrame,
   RelayOutbox,
   reconnectDelayMs,
   REVOKED_RECHECK_MS,
@@ -245,7 +245,8 @@ export class CloudMachineConnection {
       }
       return
     }
-    const frame = decodeHubToMachine(data)
+    const frame = decodeHubFrame(data)
+    if (frame === undefined) return
     switch (frame.t) {
       case "welcome": {
         this.#attempt = 0

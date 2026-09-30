@@ -11,7 +11,11 @@ import {
 } from "@codevisor/cloud-client"
 import { afterEach, describe, expect, it } from "vitest"
 
-import { httpChannelHandler, streamedRequestBody } from "./cloud-proxy-handlers.js"
+import {
+  httpChannelHandler,
+  streamedRequestBody,
+  wsChannelHandler
+} from "./cloud-proxy-handlers.js"
 
 class FakeChannel implements IncomingChannel {
   channelId = "channel-1"
@@ -198,5 +202,14 @@ describe("httpChannelHandler", () => {
     httpChannelHandler(await digestingServer(), () => undefined)(oversized)
     oversized.chunk(new Uint8Array(MAX_REQUEST_BODY_BYTES + 1))
     expect(await oversized.closed).toBe("rejected")
+  })
+})
+
+describe("wsChannelHandler", () => {
+  it("refuses a path the local websocket cannot dial", async () => {
+    // A `#` fragment makes the ws constructor throw; nothing is dialed.
+    const channel = new FakeChannel("/v1/events/socket#fragment", false)
+    wsChannelHandler("http://127.0.0.1:1")(channel)
+    expect(await channel.closed).toBe("rejected")
   })
 })

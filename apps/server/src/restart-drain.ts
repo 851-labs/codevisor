@@ -230,8 +230,21 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
       idle = await waitUntilIdle(Date.now() + INTERRUPT_SETTLE_MS, myGeneration)
       if (generation !== myGeneration) return state()
     }
-    await finalize()
+    let finalized = true
+    try {
+      await finalize()
+    } catch (cause) {
+      log(`Restart drain could not finish: ${failureMessage(cause)}`)
+      finalized = false
+    }
     if (generation !== myGeneration) return state()
+    if (!finalized) {
+      // Nothing is safe to restart onto (the resume list could not be read
+      // or the snapshot written, e.g. a full disk). Abandon the drain so held
+      // prompts dispatch again instead of waiting on a restart that never
+      // comes; the caller sees "idle", not "drained", and does not apply.
+      return coordinator.cancel()
+    }
     phase = "drained"
     deadlineAt = undefined
     graceTimer = setTimeout(() => {
@@ -278,7 +291,13 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
         clearTimeout(graceTimer)
         graceTimer = undefined
       }
-      snapshot.clear()
+      try {
+        snapshot.clear()
+      } catch (cause) {
+        // A stale snapshot only makes the next boot resume a few extra idle
+        // sessions; failing here would leave the gate half reopened.
+        log(`Restart drain could not clear its snapshot: ${failureMessage(cause)}`)
+      }
       const held = [...turns.restartHeldSessions]
       turns.restartHeldSessions.clear()
       for (const sessionId of held) {

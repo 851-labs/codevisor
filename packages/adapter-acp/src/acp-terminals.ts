@@ -324,6 +324,17 @@ export const nodeChildProcessSpawner: AcpTerminalSpawner = (command, args, optio
     env: options.env,
     stdio: ["pipe", "pipe", "pipe"]
   })
+  // Terminal input reaches stdin from the user's keystrokes, so a command
+  // that exited or closed its stdin gets EPIPE here. With no listener that
+  // 'error' is uncaught and exits the server; the exit event already reports
+  // the command's end, so the pipe errors carry nothing to act on.
+  child.stdin.on("error", () => undefined)
+  child.stdout.on("error", () => undefined)
+  child.stderr.on("error", () => undefined)
+  let exited = false
+  child.once("exit", () => {
+    exited = true
+  })
   const tree = trackProcessTree(child.pid!, { detached: true })
   tree.catch(() => undefined)
   const stop = async (): Promise<void> => {
@@ -342,6 +353,9 @@ export const nodeChildProcessSpawner: AcpTerminalSpawner = (command, args, optio
       child.once("error", () => callback(undefined, undefined))
     },
     write: (data) => {
+      // A promoted tab stays attachable for scrollback after its command
+      // exits; typing there has nowhere to go.
+      if (exited || !child.stdin.writable) return
       child.stdin.write(data)
     },
     kill: () => {

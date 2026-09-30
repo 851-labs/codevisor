@@ -168,6 +168,14 @@ describe("skills sync", () => {
     expect(await verifySkillArchive(hash, Buffer.from("not a tarball"))).toBe(false)
   })
 
+  it("rejects a large upload tar stops reading without crashing the server", async () => {
+    // Valid gzip (stored, so it stays 4MB on the wire) around bytes that are
+    // not a tar. tar gives up after the first block and the rest of the
+    // write hits a closed pipe; that EPIPE used to be uncaught.
+    const junk = gzipSync(Buffer.alloc(4 * 1024 * 1024, "A"), { level: 0 })
+    expect(await verifySkillArchive("a".repeat(64), junk)).toBe(false)
+  })
+
   it("rejects and repacks archives carrying macOS metadata junk", async () => {
     // A synthetic tar with an AppleDouble companion — the shape macOS bsdtar
     // used to produce and then HIDE from its own listings, while Linux

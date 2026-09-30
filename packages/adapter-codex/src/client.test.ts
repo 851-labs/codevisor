@@ -3,7 +3,7 @@ import { PassThrough } from "node:stream"
 
 import { makeNdjsonTransport } from "@codevisor/agent-runtime"
 import type { StdioEndpoint } from "@codevisor/agent-runtime"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import { wireCodexClient } from "./client.js"
 
@@ -90,6 +90,40 @@ describe("codex client over the ndjson transport", () => {
     child.stdout.write(frame.slice(0, 10))
     child.stdout.write(frame.slice(10))
     expect(seen).toEqual([{ method: "item/started", params: { itemId: "i1" } }])
+  })
+
+  it("skips a notification whose handler throws and keeps dispatching", ({ onTestFinished }) => {
+    // Notifications are handled inside the transport's stdout listener; a
+    // throw there used to be an uncaught exception that exited the server.
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    onTestFinished(() => logged.mockRestore())
+    const child = makeFakeChild()
+    const client = makeClient(child)
+    const seen: Array<string> = []
+    client.onNotification((method) => {
+      if (method === "item/bad") throw new TypeError("mapping bug")
+      seen.push(method)
+    })
+    child.stdout.write(
+      `${JSON.stringify({ method: "item/bad" })}\n${JSON.stringify({ method: "item/good" })}\n`
+    )
+    expect(seen).toEqual(["item/good"])
+    expect(logged).toHaveBeenCalledWith(
+      "Error handling codex notification item/bad",
+      new TypeError("mapping bug")
+    )
+  })
+
+  it("fails only the request whose handler throws synchronously", async () => {
+    const child = makeFakeChild()
+    const client = makeClient(child)
+    client.onRequest(() => {
+      throw new TypeError("mapping bug")
+    })
+    const response = once(child.stdin, "data")
+    child.stdout.write(`${JSON.stringify({ id: 4, method: "item/tool/requestUserInput" })}\n`)
+    await response
+    expect(child.frames()).toEqual([{ error: { code: -32000, message: "mapping bug" }, id: 4 }])
   })
 
   it("answers a server→client request through the handler", async () => {

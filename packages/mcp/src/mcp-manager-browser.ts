@@ -54,19 +54,19 @@ export const makeMcpBrowserOperations = (core: McpManagerCore): McpBrowserOperat
       return browserConfiguration()
     },
     openBrowserExtensionInstaller: async () => {
-      browserProvider.openDevelopmentExtensionInstaller()
+      await browserProvider.openDevelopmentExtensionInstaller()
       return browserConfiguration()
     },
     openBrowserExtensionFolder: async () => {
-      browserProvider.openDevelopmentExtensionFolder()
+      await browserProvider.openDevelopmentExtensionFolder()
       return browserConfiguration()
     },
     openBrowserExtensionsPage: async () => {
-      browserProvider.openDevelopmentExtensionPage()
+      await browserProvider.openDevelopmentExtensionPage()
       return browserConfiguration()
     },
     openBrowserExtensionWebStore: async () => {
-      browserProvider.openExtensionWebStore()
+      await browserProvider.openExtensionWebStore()
       return browserConfiguration()
     },
     browserExtensionArchive: () => browserProvider.extensionArchivePath(),

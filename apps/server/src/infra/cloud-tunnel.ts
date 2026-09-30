@@ -186,7 +186,11 @@ export const prepareMachineTunnel = async (
     },
     bridgeMedia: (request, answer) => media.bridge(request, answer),
     stop: () => {
-      void tunnel.stop()
+      // Fire-and-forget, so a failing native close must be caught here: an
+      // unhandled rejection would exit the server.
+      void tunnel
+        .stop()
+        .catch((cause: unknown) => options.log(`Tunnel: failed to stop: ${String(cause)}`))
     }
   }
 }

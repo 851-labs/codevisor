@@ -1,5 +1,6 @@
 import { CLOUD_PROTOCOL_VERSION, MACHINE_PEERS_FEATURE } from "@codevisor/api"
 import type { MachineToHub } from "@codevisor/api"
+import { sealJson } from "@codevisor/cloud-crypto"
 import { describe, expect, it, vi } from "vitest"
 
 import { CloudMachineConnection, reconnectDelayMs, REVOKED_RECHECK_MS } from "./index.js"
@@ -99,6 +100,65 @@ describe("connection lifecycle", () => {
     expect(h.reconnects).toHaveLength(0)
     activeTimeout(h, 30_000).run()
     expect(socket.sent.filter((frame) => frame.t === "ping")).toHaveLength(2)
+  })
+
+  it("ignores hub frames it cannot decode and keeps serving", () => {
+    const h = harness()
+    const socket = connect(h)
+    activeTimeout(h, 30_000).run()
+    const deadline = activeTimeout(h, 10_000)
+    // A newer hub: a frame kind this build does not know, a known kind with
+    // a value it does not know, and a garbled frame.
+    socket.onmessage?.(JSON.stringify({ t: "future-frame" }))
+    socket.onmessage?.(JSON.stringify({ t: "error", code: "future-code", message: "?" }))
+    socket.onmessage?.("{")
+
+    expect(h.connection.state).toBe("connected")
+    expect(socket.terminated).toBe(false)
+    expect(h.disconnects).toEqual([])
+    // Frames it understands still land.
+    socket.receive({ t: "pong" })
+    expect(deadline.cancelled).toBe(true)
+  })
+
+  it("closes only the channel whose handler throws, not the connection", () => {
+    const h = harness({
+      handlers: {
+        echo: (channel) => {
+          const { fail } = channel.params as { fail?: string }
+          if (fail === "after-close") channel.close("unsupported")
+          if (fail !== undefined) throw new Error("bad params")
+          h.channels.push(channel)
+        }
+      }
+    })
+    const socket = connect(h)
+    // A handler that throws while accepting refuses that channel.
+    openEcho(socket, "peer-1", "ch-bad", { fail: "open" })
+    expect(socket.lastClose()).toMatchObject({ channelId: "ch-bad", seq: 0, reason: "rejected" })
+    // One that closed its channel before throwing is not closed twice.
+    openEcho(socket, "peer-1", "ch-closed", { fail: "after-close" })
+    expect(socket.closeFrames().filter((frame) => frame.channelId === "ch-closed")).toEqual([
+      expect.objectContaining({ reason: "unsupported" })
+    ])
+
+    // One that throws on a frame ends its channel; its sibling keeps working.
+    const { opened } = openEcho(socket, "peer-1", "ch-1")
+    openEcho(socket, "peer-1", "ch-2")
+    const closes: string[] = []
+    h.channels[0]!.onClosed = (reason) => closes.push(reason)
+    h.channels[0]!.onData = () => {
+      throw new Error("handler bug")
+    }
+    socket.receiveRelay(
+      { peerId: "peer-1", frame: { t: "data", channelId: "ch-1", seq: 1 } },
+      sealJson(opened.cipher, "ch-1", "opener-to-responder", 1, { input: "x" })
+    )
+    expect(closes).toEqual(["rejected"])
+    expect(socket.lastClose()).toMatchObject({ channelId: "ch-1", reason: "rejected" })
+    expect(h.connection.state).toBe("connected")
+    h.channels[1]!.send({ still: "alive" })
+    expect(socket.relayFrames().at(-1)).toMatchObject({ t: "data", channelId: "ch-2" })
   })
 
   it("reconnects when a socket never completes the welcome handshake", () => {

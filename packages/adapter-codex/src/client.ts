@@ -187,7 +187,16 @@ export const wireCodexClient = (transport: NdjsonTransport): CodexClient => {
         inbound.delete(id)
         transport.send(payload)
       }
-      handler(method, message.params, controller.signal)
+      // A handler that throws before returning its promise fails this one
+      // request, like a rejection; it must not escape into the transport's
+      // stream listener, where it would exit the whole server.
+      let reply: Promise<unknown>
+      try {
+        reply = handler(method, message.params, controller.signal)
+      } catch (error) {
+        reply = Promise.reject(error)
+      }
+      reply
         .then((result) => respond({ id, result }))
         .catch((error: unknown) =>
           respond({
@@ -200,7 +209,15 @@ export const wireCodexClient = (transport: NdjsonTransport): CodexClient => {
         )
       return
     }
-    notificationHandler?.(method, message.params)
+    // Notifications run synchronously inside the transport's stream
+    // listener, so a mapping bug here would be an uncaught exception that
+    // exits the server and every other session. One bad notification is
+    // logged and skipped, as the ACP SDK does for its notification handlers.
+    try {
+      notificationHandler?.(method, message.params)
+    } catch (error) {
+      console.error(`Error handling codex notification ${method}`, error)
+    }
   }
   if (transport.onMessage !== undefined) transport.onMessage(handleMessage)
   else

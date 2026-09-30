@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
   makeAcpTerminalHost,
+  nodeChildProcessSpawner,
   type AcpTerminalChild,
   type AcpTerminalSpawner
 } from "./acp-terminals.js"
@@ -326,5 +327,30 @@ describe("makeAcpTerminalHost", () => {
     expect(() => host.output({ sessionId: "s", terminalId: promotedTerminal.terminalId })).toThrow(
       /Unknown terminal/
     )
+  })
+})
+
+describe("nodeChildProcessSpawner", () => {
+  // Real processes: EPIPE is the OS refusing a write to a pipe whose reader
+  // is gone. Unhandled, that stdin 'error' exited the whole server whenever
+  // someone typed into the tab of a command that ignores (or outlived) its
+  // input.
+  it("drops terminal input once the command stopped reading or exited", async () => {
+    const ready = Promise.withResolvers<void>()
+    const exited = Promise.withResolvers<string | undefined>()
+    const child = nodeChildProcessSpawner(
+      "/bin/sh",
+      ["-c", "exec 0<&-; echo ready; exec sleep 30"],
+      { env: { PATH: "/bin:/usr/bin" } }
+    )
+    child.onOutput((data) => {
+      if (data.includes("ready")) ready.resolve()
+    })
+    child.onExit((_code, signal) => exited.resolve(signal))
+    await ready.promise
+    child.write("typed into a closed stdin\n")
+    child.kill()
+    expect(await exited.promise).toBe("SIGTERM")
+    child.write("typed after the command exited\n")
   })
 })

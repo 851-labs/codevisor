@@ -104,9 +104,9 @@ describe("browser extension development installer", () => {
     await mkdir(extension)
     await mkdir(chrome)
     await writeFile(join(extension, "manifest.json"), "{}")
-    const launch = vi.fn()
+    const launch = vi.fn(async () => undefined)
 
-    openBrowserExtensionDevelopmentInstaller(extension, {
+    await openBrowserExtensionDevelopmentInstaller(extension, {
       platform: "darwin",
       chromePath: chrome,
       launch
@@ -126,14 +126,14 @@ describe("browser extension development installer", () => {
     await mkdir(extension)
     await mkdir(chrome)
     await writeFile(join(extension, "manifest.json"), "{}")
-    const launch = vi.fn()
+    const launch = vi.fn(async () => undefined)
     const options = { platform: "darwin" as const, chromePath: chrome, launch }
 
-    openBrowserExtensionDevelopmentFolder(extension, options)
+    await openBrowserExtensionDevelopmentFolder(extension, options)
     expect(launch.mock.calls).toEqual([["open", ["-a", "Finder", extension]]])
 
     launch.mockClear()
-    openBrowserExtensionDevelopmentPage(extension, options)
+    await openBrowserExtensionDevelopmentPage(extension, options)
     expect(launch.mock.calls).toEqual([
       ["open", ["-b", "com.google.Chrome", "chrome://extensions/"]]
     ])
@@ -144,12 +144,29 @@ describe("browser extension development installer", () => {
     temporaryDirectories.push(root)
     const chrome = join(root, "Google Chrome.app")
     await mkdir(chrome)
-    const launch = vi.fn()
+    const launch = vi.fn(async () => undefined)
 
-    openBrowserExtensionWebStore({ platform: "darwin", chromePath: chrome, launch })
+    await openBrowserExtensionWebStore({ platform: "darwin", chromePath: chrome, launch })
 
     expect(launch.mock.calls).toEqual([
       ["open", ["-b", "com.google.Chrome", CODEVISOR_BROWSER_EXTENSION_WEB_STORE_URL]]
     ])
+  })
+
+  it("reports a missing opener to the caller instead of crashing the server", async () => {
+    // A headless Linux server has no browser and no xdg-open. The failed
+    // spawn used to surface as an unhandled 'error' event, which exits the
+    // server process and every agent running in it. An empty PATH makes the
+    // opener missing on every machine.
+    const emptyPath = await mkdtemp(join(tmpdir(), "codevisor-no-openers-"))
+    temporaryDirectories.push(emptyPath)
+    vi.stubEnv("PATH", emptyPath)
+    try {
+      await expect(openBrowserExtensionWebStore({ platform: "linux" })).rejects.toThrow(
+        /Could not open xdg-open: .*ENOENT/
+      )
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 })
