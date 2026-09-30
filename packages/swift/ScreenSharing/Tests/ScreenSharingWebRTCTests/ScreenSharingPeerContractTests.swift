@@ -210,6 +210,7 @@ struct ScreenSharingPeerContractTests {
 
     renderer.renderFrame(try frame(identity: 30, rotation: ._0, timeStampNs: 30))
     renderer.stop()
+    renderer.stop()
     #expect(!mailbox.isHolding)
     // A stopped renderer releases its surface and never takes another frame.
     renderer.renderFrame(try frame(identity: 40, rotation: ._0, timeStampNs: 40))

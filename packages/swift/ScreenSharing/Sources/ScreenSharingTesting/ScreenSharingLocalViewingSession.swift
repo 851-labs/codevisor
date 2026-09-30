@@ -1,3 +1,4 @@
+import CoreVideo
 import Foundation
 import ScreenSharing
 
@@ -138,7 +139,12 @@ public final class ScreenSharingLocalViewingHost {
   public func deliver(_ frame: ScreenSharingVideoFrame) { session?.deliver(frame) }
 
   /// One decoded frame identified by `identity`, for a test that only compares identities.
-  public func deliverFrame(identity: Int64) { deliver(ScreenSharingFrameSinkContract.frame(identity)) }
+  public func deliverFrame(identity: Int64) {
+    var pixel: CVPixelBuffer?
+    CVPixelBufferCreate(nil, 2, 2, kCVPixelFormatType_32BGRA, nil, &pixel)
+    guard let pixel else { preconditionFailure("A 2x2 BGRA buffer must be allocatable.") }
+    deliver(ScreenSharingVideoFrame(pixelBuffer: pixel, timestampNs: identity, sourceTimestampNs: identity))
+  }
 
   public func report(connection state: String) { session?.report(connection: state) }
 

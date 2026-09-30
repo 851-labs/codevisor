@@ -48,7 +48,7 @@ export interface BrowserCursorRegistry {
 
 export const BROWSER_CURSOR_PALETTE_COUNT = 8
 
-export const fnv1a = (text: string): number => {
+const fnv1a = (text: string): number => {
   let hash = 0x811c9dc5
   for (const character of text) {
     hash ^= character.codePointAt(0)!

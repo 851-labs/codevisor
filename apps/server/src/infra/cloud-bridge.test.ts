@@ -3,7 +3,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import type { FetchLike } from "@codevisor/cloud-client"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import {
   makeCloudServerControl,
@@ -94,17 +94,17 @@ describe("cloud disconnect", () => {
 
 describe("cloud connect", () => {
   it("keeps an existing registration instead of provisioning another", async () => {
-    const { calls } = storedControl(async () => new Response(null, { status: 500 }))
+    const fetchImpl = vi.fn(async () => new Response(null, { status: 500 }))
     const existing = { deviceId: "device-1", stop: () => undefined } as unknown as CloudBridge
     const dir = mkdtempSync(join(tmpdir(), "cloud-bridge-"))
     dirs.push(dir)
     const control = makeCloudServerControl(
-      { credentialsPath: join(dir, "cloud.json") } as unknown as CloudBridgeOptions,
+      { credentialsPath: join(dir, "cloud.json"), fetchImpl } as unknown as CloudBridgeOptions,
       existing
     )
 
     await expect(control.connect("https://cloud.example", "session")).resolves.toBe("device-1")
-    expect(calls).toEqual([])
+    expect(fetchImpl).not.toHaveBeenCalled()
   })
 
   it("shares one registration between concurrent callers", async () => {

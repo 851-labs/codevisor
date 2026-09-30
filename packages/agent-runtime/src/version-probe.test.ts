@@ -56,14 +56,19 @@ describe("makeVersionProber", () => {
     expect(reads).toBe(1)
     expect(prober.get("/bin/tool")).toBe("3.1.4")
 
+    let failedReads = 0
     const failing = makeVersionProber({
-      readVersionOutput: () => Promise.reject(new Error("no --version flag")),
+      readVersionOutput: () => {
+        failedReads += 1
+        return Promise.reject(new Error("no --version flag"))
+      },
       modifiedTime: () => 1
     })
     await expect(failing.probe(["/bin/broken"])).resolves.toBeUndefined()
     expect(failing.get("/bin/broken")).toBeUndefined()
     // The failure is cached too — no retry storm for the same mtime.
     await failing.probe(["/bin/broken"])
+    expect(failedReads).toBe(1)
   })
 
   it("probes a real binary with the default runner and stat", async () => {

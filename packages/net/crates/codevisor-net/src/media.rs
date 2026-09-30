@@ -189,10 +189,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn datagram_framing_round_trips() {
-        let datagram = join_datagram(0xDEAD_BEEF, b"rtp");
-        assert_eq!(datagram.len(), FLOW_HEADER_BYTES + 3);
-        let (flow, payload) = split_datagram(datagram).unwrap();
+    fn datagrams_use_a_big_endian_flow_id_before_the_payload() {
+        assert_eq!(
+            &join_datagram(0xDEAD_BEEF, b"rtp")[..],
+            b"\xDE\xAD\xBE\xEFrtp"
+        );
+        let (flow, payload) = split_datagram(Bytes::from_static(b"\xDE\xAD\xBE\xEFrtp")).unwrap();
         assert_eq!(flow, 0xDEAD_BEEF);
         assert_eq!(&payload[..], b"rtp");
     }

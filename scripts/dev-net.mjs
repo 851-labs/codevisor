@@ -9,7 +9,7 @@
 import { spawn } from "node:child_process"
 import { createHash } from "node:crypto"
 import { access, copyFile, mkdir, readFile, writeFile } from "node:fs/promises"
-import { request } from "node:https"
+import https from "node:https"
 import { networkInterfaces } from "node:os"
 import { dirname, join, relative } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -250,7 +250,7 @@ export const relayHealthy = (url, ca, timeoutMs = 1000) =>
     }
     deadline = setTimeout(() => settle(false), timeoutMs)
     try {
-      req = request(`${url}/healthz`, { ca, timeout: timeoutMs }, (response) => {
+      req = https.request(`${url}/healthz`, { ca, timeout: timeoutMs }, (response) => {
         response.resume()
         settle(response.statusCode === 200)
       })

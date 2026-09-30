@@ -37,18 +37,6 @@ extension PaneGroupStateTests {
     #expect(decoded.panes.first { $0.id == pane.id }?.ownerChatSessionId == owner)
   }
 
-  @Test("Codable round-trip preserves panes and selection")
-  func codableRoundTrip() throws {
-    var state = PaneGroupState()
-    state.addTerminalPane(sessionId: sessionId)
-    state.addTerminalPane(sessionId: sessionId)
-    let decoded = try JSONDecoder().decode(
-      PaneGroupState.self,
-      from: JSONEncoder().encode(state)
-    )
-    #expect(decoded == state)
-  }
-
   @Test("Decoding drops a selection that no longer matches a pane")
   func decodeRepairsSelection() throws {
     var state = PaneGroupState()
@@ -63,7 +51,8 @@ extension PaneGroupStateTests {
 
   @Test("Repository round-trips state per session")
   func repository() {
-    let repo = DefaultPaneGroupRepository(store: InMemoryStore())
+    let store = InMemoryStore()
+    let repo = DefaultPaneGroupRepository(store: store)
     let otherSession = UUID()
     #expect(repo.load(sessionId: sessionId) == nil)
     var state = PaneGroupState()
@@ -73,7 +62,8 @@ extension PaneGroupStateTests {
     var other = PaneGroupState()
     other.addTerminalPane(sessionId: otherSession)
     repo.save(other, sessionId: otherSession)
-    #expect(repo.load(sessionId: sessionId) == state)
-    #expect(repo.load(sessionId: otherSession)?.panes.count == 1)
+    let restored = DefaultPaneGroupRepository(store: store)
+    #expect(restored.load(sessionId: sessionId) == state)
+    #expect(restored.load(sessionId: otherSession) == other)
   }
 }

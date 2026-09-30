@@ -5,6 +5,8 @@ import { join } from "node:path"
 import { makeDatabase } from "@codevisor/db"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
+import type { McpManagerCore } from "./mcp-manager-core.js"
+import { makeMcpReplicationOperations } from "./mcp-manager-replication.js"
 import {
   cleanupMcpManagerTests,
   connectionStateSettles,
@@ -219,11 +221,20 @@ describe("MCP manager secrets and replication", () => {
     await manager.importOAuthMaterial(server.id, { owner: "other-machine", material: "not json" })
     await manager.importOAuthMaterial(server.id, { owner: "other-machine", material: "null" })
     expect((await manager.oauthSyncState(server.id))?.owner).toBe("other-machine")
+  })
 
-    // Rotation listeners register and unregister cleanly.
-    const seen: Array<string> = []
-    const unsubscribe = manager.subscribeCredentialsRotated((id) => seen.push(id))
+  it("subscribes to the rotation source until unsubscribed", () => {
+    const rotationListeners = new Set<(id: string) => void>()
+    const { subscribeCredentialsRotated } = makeMcpReplicationOperations(
+      { rotationListeners } as McpManagerCore,
+      { scheduleRefresh: vi.fn(), connect: vi.fn(async () => undefined) }
+    )
+    const listener = vi.fn()
+    const unsubscribe = subscribeCredentialsRotated(listener)
+    for (const notify of rotationListeners) notify("oauth-server")
+    expect(listener).toHaveBeenCalledExactlyOnceWith("oauth-server")
     unsubscribe()
-    expect(seen).toEqual([])
+    for (const notify of rotationListeners) notify("oauth-server")
+    expect(listener).toHaveBeenCalledOnce()
   })
 })

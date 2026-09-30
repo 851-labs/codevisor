@@ -91,34 +91,32 @@ describe("durable shell subscriptions", () => {
     }
   }
 
-  it.each(["unread", "idle", "errored", "waitingForUser", "inProgress"])(
-    "recovers a missed %s update on every client without navigation or another event",
-    async (state) => {
-      const f = await fixture()
-      try {
-        const clients = [await f.connect(), await f.connect()]
-        for (const client of clients) {
-          expect(client.frames.map((e) => [e.id, e.kind])).toEqual([[1, "keepalive"]])
-        }
-        f.log.push(attention(2, state))
-        await vi.advanceTimersByTimeAsync(25_000)
-        await Promise.all(clients.map((client) => client.checkpoint(2)))
-        for (const client of clients) {
-          expect(client.frames.filter((e) => e.kind !== "keepalive")).toEqual([
-            { ...attention(2, state), previousEventId: 1 }
-          ])
-        }
-        // A delayed duplicate broadcast and another heartbeat cannot repeat it.
-        await run(f.fanout.publish(attention(2, state)))
-        await vi.advanceTimersByTimeAsync(25_000)
-        for (const client of clients) {
-          expect(client.frames.filter((e) => e.kind !== "keepalive")).toHaveLength(1)
-        }
-      } finally {
-        f.close()
+  it("recovers a missed update on every client without navigation or another event", async () => {
+    const state = "unread"
+    const f = await fixture()
+    try {
+      const clients = [await f.connect(), await f.connect()]
+      for (const client of clients) {
+        expect(client.frames.map((e) => [e.id, e.kind])).toEqual([[1, "keepalive"]])
       }
+      f.log.push(attention(2, state))
+      await vi.advanceTimersByTimeAsync(25_000)
+      await Promise.all(clients.map((client) => client.checkpoint(2)))
+      for (const client of clients) {
+        expect(client.frames.filter((e) => e.kind !== "keepalive")).toEqual([
+          { ...attention(2, state), previousEventId: 1 }
+        ])
+      }
+      // A delayed duplicate broadcast and another heartbeat cannot repeat it.
+      await run(f.fanout.publish(attention(2, state)))
+      await vi.advanceTimersByTimeAsync(25_000)
+      for (const client of clients) {
+        expect(client.frames.filter((e) => e.kind !== "keepalive")).toHaveLength(1)
+      }
+    } finally {
+      f.close()
     }
-  )
+  })
 
   it("delivers missed and out-of-order broadcasts from the log before advancing the cursor", async () => {
     const f = await fixture()

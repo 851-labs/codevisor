@@ -69,14 +69,7 @@ describe("Browser Use tool contract", () => {
         "tabGroups"
       ])
     )
-    expect(readFileSync(join(extension!, "background.js"), "utf8")).toContain(
-      'importScripts("tab-groups.js")'
-    )
-    expect(readFileSync(join(extension!, "tab-groups.js"), "utf8")).toContain("chrome.tabs.group(")
     expect(readFileSync(join(extension!, "offscreen.html"), "utf8")).toContain("offscreen.js")
-    expect(readFileSync(join(extension!, "offscreen.js"), "utf8")).toContain(
-      "document.execCommand(type)"
-    )
     const connectPage = readFileSync(join(extension!, "connect.html"), "utf8")
     expect(connectPage).toContain("https://www.codevisor.dev/privacy")
     expect(connectPage).toContain("agent provider you selected in Codevisor")

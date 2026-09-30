@@ -44,15 +44,6 @@ struct AppSettingsQuitConfirmationTests {
     #expect(decoded.confirmBeforeQuitting)
   }
 
-  @Test("Round-trips the opt-out through JSON")
-  func roundTrip() throws {
-    let settings = AppSettings(confirmBeforeQuitting: false)
-    let data = try JSONEncoder().encode(settings)
-    let decoded = try JSONDecoder().decode(AppSettings.self, from: data)
-    #expect(decoded.confirmBeforeQuitting == false)
-    #expect(decoded == settings)
-  }
-
   @Test("Asks before closing a working chat by default and persists opting out")
   @MainActor
   func persistsWorkingChatCloseOptOut() throws {

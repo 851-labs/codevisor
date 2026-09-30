@@ -3,6 +3,7 @@
 
 import assert from "node:assert/strict"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import https from "node:https"
 import { createServer } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -76,9 +77,23 @@ test("waiting on relays that never answer gives up after its attempts", async ()
   }
 })
 
-test("a relay probe with an unusable CA reports unhealthy instead of throwing", async () => {
-  const healthy = await relayHealthy("https://127.0.0.1:1", Buffer.from("not a certificate"), 200)
-  assert.equal(healthy, false)
+test("a relay probe passes its CA and handles a request constructor that throws", async () => {
+  const ca = Buffer.from("not a certificate")
+  const originalRequest = https.request
+  const calls = []
+  https.request = (...args) => {
+    calls.push(args)
+    throw new Error("invalid TLS options")
+  }
+  try {
+    const healthy = await relayHealthy("https://relay.example", ca, 200)
+    assert.equal(healthy, false)
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0][0], "https://relay.example/healthz")
+    assert.equal(calls[0][1].ca, ca)
+  } finally {
+    https.request = originalRequest
+  }
 })
 
 test("the host checks relays over loopback, not the container-facing address", () => {

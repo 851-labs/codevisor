@@ -417,7 +417,7 @@ describe("makePluginSupervisor", () => {
     }
   })
 
-  it("kills real process groups on stop", async () => {
+  it("stops the running plugin process", async () => {
     const exited = Promise.withResolvers<void>()
     const supervisor = makePluginSupervisor({
       dataDir: makeDataDir(),

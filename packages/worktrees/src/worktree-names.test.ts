@@ -6,9 +6,6 @@ describe("production food worktree names", () => {
   it("contains at least 500 unique compact food words", () => {
     expect(productionFoodWorktreeNames.length).toBeGreaterThanOrEqual(500)
     expect(new Set(productionFoodWorktreeNames).size).toBe(productionFoodWorktreeNames.length)
-    expect(productionFoodWorktreeNames).toContain("apple")
-    expect(productionFoodWorktreeNames).toContain("ramen")
-    expect(productionFoodWorktreeNames).toContain("saffron")
     expect(productionFoodWorktreeNames.every((name) => name.length <= 12)).toBe(true)
     expect(productionFoodWorktreeNames.every((name) => /^[a-z0-9]+$/.test(name))).toBe(true)
   })

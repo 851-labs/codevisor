@@ -6,6 +6,11 @@ import { requestsMacOSBuildReuse, verifyReusableMacOSApp } from "./dev-macos-reu
 
 function fixture(overrides = {}) {
   const calls = []
+  const capture =
+    overrides.capture ??
+    (async () =>
+      JSON.stringify({ CFBundleIdentifier: "dev.example", CFBundleExecutable: "Example" }))
+  const run = overrides.run ?? (async () => undefined)
   return {
     calls,
     options: {
@@ -14,10 +19,12 @@ function fixture(overrides = {}) {
       executableName: "Example",
       capture: async (command, args) => {
         calls.push([command, ...args])
-        return JSON.stringify({ CFBundleIdentifier: "dev.example", CFBundleExecutable: "Example" })
+        return capture(command, args)
       },
-      run: async (command, args) => calls.push([command, ...args]),
-      ...overrides
+      run: async (command, args) => {
+        calls.push([command, ...args])
+        return run(command, args)
+      }
     }
   }
 }
@@ -74,7 +81,19 @@ for (const [name, overrides, message] of [
   test(`${name} artifact rejects reuse without a rebuild or signing command`, async () => {
     const { options, calls } = fixture(overrides)
     await assert.rejects(verifyReusableMacOSApp(options), message)
-    assert.ok(calls.every(([command]) => command === "/usr/bin/plutil"))
+    assert.deepEqual(calls, [
+      [
+        "/usr/bin/plutil",
+        "-convert",
+        "json",
+        "-o",
+        "-",
+        "/owned/Debug/Example.app/Contents/Info.plist"
+      ],
+      ...(name === "invalid signature"
+        ? [["/usr/bin/codesign", "--verify", "--deep", "--strict", "/owned/Debug/Example.app"]]
+        : [])
+    ])
   })
 }
 

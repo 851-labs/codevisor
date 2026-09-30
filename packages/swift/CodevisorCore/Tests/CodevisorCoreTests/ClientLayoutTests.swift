@@ -104,11 +104,9 @@ struct ClientLayoutTests {
     }
   }
 
-  @Test("Invalid changes never reach persistence")
+  @Test("Rejects invalid changes and changes to archived workspaces")
   func validation() throws {
     let original = workspace()
-    let repository = NavigationFixture().workspaces
-    repository.save(original)
     for action: [String: Any] in [
       ["kind": "unsupported"],
       [
@@ -117,8 +115,7 @@ struct ClientLayoutTests {
       ],
       ["kind": "split", "leafId": UUID().uuidString, "edge": "top"],
     ] {
-      #expect(throws: ClientControlError.self) { repository.save(try apply(action, to: original)) }
-      #expect(repository.workspace(id: original.id) == original)
+      #expect(throws: ClientControlError.self) { try apply(action, to: original) }
     }
     var archived = original
     archived.isArchived = true

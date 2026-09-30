@@ -107,11 +107,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn header_round_trips_kind_and_length() {
-        let header = encode_header(MessageKind::Binary, 70_000).unwrap();
-        assert_eq!(decode_header(header).unwrap(), (MessageKind::Binary, 70_000));
-        let header = encode_header(MessageKind::Text, 0).unwrap();
-        assert_eq!(decode_header(header).unwrap(), (MessageKind::Text, 0));
+    fn headers_use_the_protocol_kind_and_big_endian_length() {
+        assert_eq!(
+            encode_header(MessageKind::Binary, 70_000).unwrap(),
+            [1, 0, 1, 0x11, 0x70]
+        );
+        assert_eq!(
+            decode_header([1, 0, 1, 0x11, 0x70]).unwrap(),
+            (MessageKind::Binary, 70_000)
+        );
+        assert_eq!(
+            encode_header(MessageKind::Text, 0).unwrap(),
+            [0, 0, 0, 0, 0]
+        );
+        assert_eq!(
+            decode_header([0, 0, 0, 0, 0]).unwrap(),
+            (MessageKind::Text, 0)
+        );
     }
 
     #[test]

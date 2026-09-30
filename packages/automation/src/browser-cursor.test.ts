@@ -1,3 +1,5 @@
+import { runInNewContext } from "node:vm"
+
 import { parseExpression } from "@babel/parser"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
@@ -6,7 +8,6 @@ import { pointerOverlayExpression, pointerOverlaySource } from "./browser-cursor
 import {
   BROWSER_CURSOR_PALETTE_COUNT,
   cursorColorIndex,
-  fnv1a,
   makeBrowserCursor,
   makeBrowserCursorRegistry
 } from "./browser-cursor.js"
@@ -48,22 +49,34 @@ describe("browser cursor presentation", () => {
     })
   })
 
-  it("serializes commands into the evaluated expression", () => {
-    const expression = pointerOverlayExpression({ kind: "pulse", session: "abc", x: 10, y: 20 })
-    expect(expression.startsWith(`(${pointerOverlaySource})(`)).toBe(true)
-    expect(expression.endsWith(`)({"kind":"pulse","session":"abc","x":10,"y":20})`)).toBe(true)
+  it("evaluates a serialized command for the specified session, including escaped text", () => {
+    const session = 'agent"\\\n日本語'
+    const cursor = { session, element: { style: { setProperty: vi.fn() } } }
+    const cursors = new Map([
+      [session, cursor],
+      ["other", { ...cursor, session: "other" }]
+    ])
+    const host = { __codevisorPointer: { version: 1, cursors } }
+    runInNewContext(pointerOverlayExpression({ kind: "hide", session }), {
+      document: { documentElement: {}, getElementById: () => host },
+      setTimeout: vi.fn()
+    })
+    expect([...cursors.keys()]).toEqual(["other"])
   })
 
   it("assigns stable palette slots that avoid concurrently active colors", () => {
-    const hash = fnv1a("extension:session-a")
     const first = cursorColorIndex("extension:session-a", new Set())
-    expect(first).toBe(hash % BROWSER_CURSOR_PALETTE_COUNT)
-    expect(cursorColorIndex("extension:session-a", new Set([first]))).toBe(
-      (first + 1) % BROWSER_CURSOR_PALETTE_COUNT
-    )
+    expect(first).toBeGreaterThanOrEqual(0)
+    expect(first).toBeLessThan(BROWSER_CURSOR_PALETTE_COUNT)
+    expect(cursorColorIndex("extension:session-a", new Set())).toBe(first)
     const everyColor = new Set(
       Array.from({ length: BROWSER_CURSOR_PALETTE_COUNT }, (_, index) => index)
     )
+    for (const free of everyColor) {
+      const taken = new Set(everyColor)
+      taken.delete(free)
+      expect(cursorColorIndex("extension:session-a", taken)).toBe(free)
+    }
     expect(cursorColorIndex("extension:session-a", everyColor)).toBe(first)
   })
 

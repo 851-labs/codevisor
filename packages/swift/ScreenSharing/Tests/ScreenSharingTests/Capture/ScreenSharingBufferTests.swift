@@ -1,4 +1,5 @@
 import CoreVideo
+import Dispatch
 import Foundation
 import Testing
 @testable import ScreenSharing
@@ -36,6 +37,23 @@ struct ScreenSharingBufferTests {
     mailbox.clear()
     #expect(mailbox.take() == nil)
     #expect(mailbox.droppedFrames == 99)
+  }
+
+  @Test func concurrentMailboxProducersAccountForEveryFrame() throws {
+    var pixel: CVPixelBuffer?
+    #expect(CVPixelBufferCreate(nil, 2, 2, kCVPixelFormatType_32BGRA, nil, &pixel) == kCVReturnSuccess)
+    let buffer = try #require(pixel)
+    let mailbox = ScreenSharingFrameMailbox()
+    let frames = (0..<512).map { ScreenSharingVideoFrame(pixelBuffer: buffer, timestampNs: Int64($0)) }
+    DispatchQueue.concurrentPerform(iterations: 8) { producer in
+      for index in 0..<64 {
+        mailbox.put(frames[producer * 64 + index])
+      }
+    }
+    let held = try #require(mailbox.take())
+    #expect((0..<512).contains(held.timestampNs))
+    #expect(mailbox.droppedFrames == 511)
+    #expect(mailbox.take() == nil)
   }
 
   @Test func metricsBoundHistoryAndRejectInvalidDurations() throws {

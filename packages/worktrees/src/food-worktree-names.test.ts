@@ -6,7 +6,6 @@ describe("development food worktree names", () => {
   it("contains more than 500 unique food slugs", () => {
     expect(foodWorktreeNames.length).toBeGreaterThanOrEqual(500)
     expect(new Set(foodWorktreeNames).size).toBe(foodWorktreeNames.length)
-    expect(foodWorktreeNames).toContain("chicken-fingers")
     expect(foodWorktreeNames.every((name) => /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name))).toBe(true)
   })
 

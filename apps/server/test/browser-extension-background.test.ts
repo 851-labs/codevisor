@@ -86,6 +86,7 @@ describe("browser extension background connection", () => {
       onAlarm: alarm
     }
     const scheduledTimers = new Map<number, Listener>()
+    const importScripts = vi.fn()
     let nextTimer = 1
     const source = await readFile(
       join(
@@ -137,7 +138,7 @@ describe("browser extension background connection", () => {
       clearInterval: vi.fn(),
       clearTimeout: (timer: number) => scheduledTimers.delete(timer),
       console,
-      importScripts: vi.fn(),
+      importScripts,
       setInterval: vi.fn(() => 1),
       setTimeout: (listener: Listener) => {
         const timer = nextTimer++
@@ -147,6 +148,7 @@ describe("browser extension background connection", () => {
       self: { addEventListener: vi.fn() }
     })
 
+    expect(importScripts).toHaveBeenCalledWith("tab-groups.js")
     expect(FakeWebSocket.instances).toHaveLength(1)
     const first = FakeWebSocket.instances[0]!
     first.error()

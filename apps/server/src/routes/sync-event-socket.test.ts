@@ -61,7 +61,24 @@ it("resnapshots expired cursors and slow consumers before buffering more journal
   }
 })
 
-it("ignores unrelated or duplicate notifications and does not send after closing during a read", async () => {
+it("reads only for a newer notification belonging to the subscribed subject", async () => {
+  const fanout = await run(makeEventFanout)
+  const socket = sink()
+  const readSyncBatch = vi.fn((since: number) =>
+    Effect.succeed({ events: [], cursor: since, requiresSnapshot: false })
+  )
+  await attachSyncEventSocket({ readSyncBatch } as never, fanout, 1, socket, "local", "chat")
+  await run(fanout.publish({ ...event(2), subjectRevision: undefined }))
+  await run(fanout.publish(event(1)))
+  await run(fanout.publish({ ...event(2), subjectId: "other" }))
+  expect(readSyncBatch).toHaveBeenCalledTimes(1)
+
+  await run(fanout.publish(event(2)))
+  expect(readSyncBatch).toHaveBeenCalledTimes(2)
+  expect(readSyncBatch).toHaveBeenLastCalledWith(1, "chat")
+})
+
+it("does not send after closing during a read", async () => {
   const fanout = await run(makeEventFanout)
   const socket = sink()
   const started = Promise.withResolvers<void>()
@@ -85,9 +102,6 @@ it("ignores unrelated or duplicate notifications and does not send after closing
     "chat"
   )
   await started.promise
-  await run(fanout.publish({ ...event(2), subjectRevision: undefined }))
-  await run(fanout.publish(event(1)))
-  await run(fanout.publish({ ...event(2), subjectId: "other" }))
   socket.close()
   released.resolve({ events: [event(2)], cursor: 2, requiresSnapshot: false })
   await attached
