@@ -121,6 +121,8 @@ extension ScreenSharingHostService {
       session.metrics.label(
         "displaySize",
         points.map { "virtual \($0.width)×\($0.height) pt" } ?? "physical, scaled to \(session.configuration.width) px")
+      // A new mode or mirror may have reset the physical display's gamma (851-2382).
+      Self.curtain.displaysChanged()
       channel.send(.resized(width: points?.width ?? 0, height: points?.height ?? 0))
     } catch is CancellationError {
       return
@@ -132,11 +134,15 @@ extension ScreenSharingHostService {
 }
 
 extension ScreenSharingHostService {
+  /// Darkens the host's screens while it's being controlled (851-2382). One host session at a time.
+  static let curtain = ScreenSharingHostCurtain()
+
   /// A display change ends the session only when it took away what the session shows (851-2376).
   /// Any change used to end it once 5 s had passed since the host's own: on tuftlord a late
   /// notification from the host's own virtual display arrived just after, and a session ended
   /// 3 s after connecting with "Screen sharing was stopped on the host Mac" (alpha 1118).
   func screenParametersChanged() {
+    Self.curtain.displaysChanged()
     guard let current else { return }
     if ProcessInfo.processInfo.systemUptime < current.ownDisplayChangeUntil { return }
     let online = ScreenSharingDisplayIdentity.online()
