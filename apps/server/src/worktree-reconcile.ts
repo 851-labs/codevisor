@@ -89,8 +89,7 @@ const finishPendingArchives = async (
         const trashed = await removeArchivedWorktreeFiles(repoDir, worktree.path, archived.branch, {
           trashRoot: worktreeTrashRoot(),
           worktreeId: archived.id,
-          env: environment,
-          xcode: services.xcodeArtifacts
+          env: environment
         })
         archiveJobs(services).track(trashed.purged)
       }
@@ -204,12 +203,7 @@ export const discardProjectWorktrees = async (
         location.folderPath,
         worktree.path,
         worktree.branch,
-        {
-          trashRoot: worktreeTrashRoot(),
-          worktreeId: worktree.id,
-          env: environment,
-          xcode: services.xcodeArtifacts
-        }
+        { trashRoot: worktreeTrashRoot(), worktreeId: worktree.id, env: environment }
       )
       archiveJobs(services).track(trashed.purged)
     } catch {
