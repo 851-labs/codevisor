@@ -236,6 +236,9 @@ export interface ClaudeSession {
   /// parent tool_use id — keeps subagent text spans stable across replay
   /// without touching the main agent's `currentMessageId`.
   readonly subagentMessageIds: Map<string, string>
+  /// The prose of each subagent's latest message that had any, keyed by its
+  /// parent tool_use id: its hand-back is shown only when it isn't this.
+  readonly subagentLastTexts: Map<string, string>
   /// Cross-turn: background tasks legitimately outlive the turn that spawned
   /// them, so this is never cleared at turn end.
   readonly backgroundTasks: Map<string, BackgroundTaskEntry>

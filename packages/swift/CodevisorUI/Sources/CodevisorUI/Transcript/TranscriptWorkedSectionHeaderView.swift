@@ -33,7 +33,7 @@ public final class TranscriptWorkedRowsVisibilityCache {
     let sourceVersion: UInt64
     let disclosureIdentity: ObjectIdentifier
     let disclosureRevision: UInt64
-    let runningSubagentToolCallIDs: Set<String>
+    let runningSubagentRunToolCallIDs: Set<String>
   }
 
   private var key: Key?
@@ -45,20 +45,20 @@ public final class TranscriptWorkedRowsVisibilityCache {
     _ rows: [TranscriptPresentationRow],
     sourceVersion: UInt64,
     disclosure: TranscriptDisclosureStore,
-    runningSubagentToolCallIDs: Set<String>
+    runningSubagentRunToolCallIDs: Set<String>
   ) -> TranscriptWorkedRowsPresentation {
     let currentKey = Key(
       sourceVersion: sourceVersion,
       disclosureIdentity: ObjectIdentifier(disclosure),
       disclosureRevision: disclosure.workedSectionRevision,
-      runningSubagentToolCallIDs: runningSubagentToolCallIDs
+      runningSubagentRunToolCallIDs: runningSubagentRunToolCallIDs
     )
     if key == currentKey, let presentation { return presentation }
     let presentation = TranscriptWorkedRowsVisibility.present(
       rows,
       disclosure: disclosure,
       activeItem: nil,
-      runningSubagentToolCallIDs: runningSubagentToolCallIDs
+      runningSubagentRunToolCallIDs: runningSubagentRunToolCallIDs
     )
     key = currentKey
     self.presentation = presentation
@@ -75,7 +75,7 @@ public enum TranscriptWorkedRowsVisibility {
     _ rows: [TranscriptPresentationRow],
     disclosure: TranscriptDisclosureStore,
     activeItem: ConversationItem?,
-    runningSubagentToolCallIDs: Set<String>
+    runningSubagentRunToolCallIDs: Set<String>
   ) -> TranscriptWorkedRowsPresentation {
     var result: [TranscriptPresentationRow] = []
     result.reserveCapacity(rows.count)
@@ -91,7 +91,7 @@ public enum TranscriptWorkedRowsVisibility {
         let currentTurn = turn(for: row, activeItem: activeItem)
         let keepsRunningSubagentVisible =
           currentTurn.map { turn in
-            !runningSubagentToolCallIDs.isDisjoint(with: turn.subagents.keys)
+            turn.startedRunningSubagent(runningSubagentRunToolCallIDs)
           } ?? false
         let liveIsFixedExpanded =
           currentTurn.map {
@@ -155,7 +155,7 @@ public struct TranscriptWorkedSectionHeaderView: View {
   public let kind: TranscriptWorkedSectionKind
 
   @Environment(\.transcriptDisclosure) private var disclosureStore
-  @Environment(\.runningSubagentToolCallIds) private var runningSubagentToolCallIDs
+  @Environment(\.runningSubagentRunToolCallIds) private var runningSubagentRunToolCallIDs
   @Environment(\.transcriptPerformAnchoredDisclosureChange)
   private var performAnchoredDisclosureChange
   @Environment(\.transcriptInvalidateRowMeasurement) private var invalidateRowMeasurement
@@ -192,7 +192,7 @@ public struct TranscriptWorkedSectionHeaderView: View {
   }
 
   private var hasRunningSubagent: Bool {
-    !runningSubagentToolCallIDs.isDisjoint(with: turn.subagents.keys)
+    turn.startedRunningSubagent(runningSubagentRunToolCallIDs)
   }
 
   private var defaultExpanded: Bool {

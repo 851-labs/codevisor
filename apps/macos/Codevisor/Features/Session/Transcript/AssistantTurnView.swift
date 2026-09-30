@@ -21,7 +21,7 @@ struct AssistantTurnView: View {
   let presentation: AssistantTurnPresentation
   private let initiallyExpanded: Bool?
   @Environment(\.transcriptDisclosure) private var disclosureStore
-  @Environment(\.runningSubagentToolCallIds) private var runningSubagentToolCallIds
+  @Environment(\.runningSubagentRunToolCallIds) private var runningSubagentRunToolCallIds
   @Environment(\.transcriptController) private var transcriptController
   @Environment(\.transcriptPerformAnchoredDisclosureChange) private var performAnchoredDisclosureChange
   @Environment(\.transcriptInvalidateRowMeasurement) private var invalidateRowMeasurement
@@ -85,11 +85,10 @@ struct AssistantTurnView: View {
     return store.isExpanded(key, default: initiallyExpanded ?? !settled)
   }
 
-  /// True while any subagent spawned by this turn is still running in the
-  /// background — the turn can end before its subagents finish.
+  /// True while a subagent this turn started (or messaged) is still running
+  /// in the background — the turn can end before its subagents finish.
   private var turnHasRunningSubagent: Bool {
-    !runningSubagentToolCallIds.isEmpty
-      && turn.subagents.keys.contains { runningSubagentToolCallIds.contains($0) }
+    turn.startedRunningSubagent(runningSubagentRunToolCallIds)
   }
 
   /// Match the actual collapsible content: streaming by itself is represented

@@ -348,10 +348,14 @@ extension SessionController {
     } ?? "background task"
   }
 
-  /// Tool-call ids of subagents still running in the background (see
-  /// SessionModel). Injected into the transcript so settled turns keep their
-  /// subagent sections open and shimmering until the work finishes.
+  /// Spawning calls of subagents still running in the background (see
+  /// SessionModel). Injected into the transcript so their rows keep
+  /// shimmering until the work finishes.
   public var runningSubagentToolCallIds: Set<String> { model?.runningSubagentToolCallIds ?? [] }
+
+  /// The calls that started those subagents' current runs. Injected so only
+  /// the turn holding one keeps its worked section open.
+  public var runningSubagentRunToolCallIds: Set<String> { model?.runningSubagentRunToolCallIds ?? [] }
 
   public var canSend: Bool {
     (!composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

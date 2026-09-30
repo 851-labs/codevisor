@@ -28,13 +28,13 @@ extension ChatScreen {
             projectedRows,
             sourceVersion: projectedRowsVersion,
             disclosure: controller.disclosure,
-            runningSubagentToolCallIDs: controller.runningSubagentToolCallIds
+            runningSubagentRunToolCallIDs: controller.runningSubagentRunToolCallIds
           )
           let visibleActiveRows = TranscriptWorkedRowsVisibility.present(
             activeRows,
             disclosure: controller.disclosure,
             activeItem: controller.activeItem,
-            runningSubagentToolCallIDs: controller.runningSubagentToolCallIds
+            runningSubagentRunToolCallIDs: controller.runningSubagentRunToolCallIds
           )
           NativeTranscriptView(
             presentationSurface: presentationSurface,
@@ -99,6 +99,10 @@ extension ChatScreen {
                     .environment(
                       \.runningSubagentToolCallIds,
                       controller.runningSubagentToolCallIds
+                    )
+                    .environment(
+                      \.runningSubagentRunToolCallIds,
+                      controller.runningSubagentRunToolCallIds
                     )
                 )
               },

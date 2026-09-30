@@ -5,8 +5,8 @@ import StreamMarkdown
 import SwiftUI
 
 /// Renders a list of worked items — reasoning text, tool groups, and subagent
-/// rows. A subagent's own thread is not nested here: its row opens the thread
-/// as a read-only chat pane.
+/// chips. A subagent's own thread is not nested here: its chip opens the
+/// thread as a read-only chat pane.
 struct TranscriptItemsView: View {
   let items: [WorkedItem]
   @Environment(\.theme) private var theme
@@ -35,9 +35,9 @@ struct TranscriptItemsView: View {
           group: group,
           isTurnActive: isTurnActive
         )
-      case let .subagent(_, call):
-        // One row; the thread opens as a read-only pane beside the chat.
-        SubagentRow(call: call, isTurnActive: isTurnActive)
+      case let .subagents(_, calls):
+        // Chips side by side, wrapping; each opens its agent's thread.
+        SubagentChips(calls: calls, isTurnActive: isTurnActive)
       }
     }
   }

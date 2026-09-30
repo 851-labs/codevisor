@@ -275,6 +275,22 @@ extension AssistantTurn {
       }
   }
 
+  /// Whether this turn started the current run of a running subagent: it
+  /// holds the call named in `runToolCallIds` — the spawn for a first run, the
+  /// message sent to the agent for a later one. Only that turn keeps its
+  /// worked section open; the turn that first spawned an agent doesn't
+  /// reopen each time the agent is messaged again.
+  public func startedRunningSubagent(_ runToolCallIds: Set<String>) -> Bool {
+    guard !runToolCallIds.isEmpty else { return false }
+    func holds(_ entries: [TranscriptEntry]) -> Bool {
+      entries.contains { entry in
+        if case let .tool(call) = entry { return runToolCallIds.contains(call.toolCallId) }
+        return false
+      }
+    }
+    return holds(entries) || subagents.values.contains { holds($0.entries) }
+  }
+
   /// Cheap change signal for streaming subagent activity, folded into the
   /// scroll-follow fingerprint so nested output keeps the view pinned.
   public var subagentActivityFingerprint: Int {

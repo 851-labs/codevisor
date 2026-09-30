@@ -53,13 +53,13 @@ extension SessionTranscriptView {
         projectedRows,
         sourceVersion: projectedRowsVersion,
         disclosure: disclosure,
-        runningSubagentToolCallIDs: controller.runningSubagentToolCallIds
+        runningSubagentRunToolCallIDs: controller.runningSubagentRunToolCallIds
       )
       let visibleActiveRows = TranscriptWorkedRowsVisibility.present(
         activeRows,
         disclosure: disclosure,
         activeItem: controller.activeItem,
-        runningSubagentToolCallIDs: controller.runningSubagentToolCallIds
+        runningSubagentRunToolCallIDs: controller.runningSubagentRunToolCallIds
       )
       NativeTranscriptView(
         presentationSurface: presentationSurface,
@@ -125,6 +125,10 @@ extension SessionTranscriptView {
               .environment(
                 \.runningSubagentToolCallIds,
                 controller.runningSubagentToolCallIds
+              )
+              .environment(
+                \.runningSubagentRunToolCallIds,
+                controller.runningSubagentRunToolCallIds
               )
               .environment(\.markdownTableBleed, 16)
             )

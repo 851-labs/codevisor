@@ -1,3 +1,4 @@
+import ACPKit
 import CodevisorCore
 import Foundation
 import Testing
@@ -26,7 +27,7 @@ struct TranscriptWorkedRowsVisibilityTests {
       rows,
       disclosure: store,
       activeItem: .assistant(message),
-      runningSubagentToolCallIDs: []
+      runningSubagentRunToolCallIDs: []
     )
     #expect(initiallyExpanded.rows.contains(where: isWorkedContent))
 
@@ -35,12 +36,43 @@ struct TranscriptWorkedRowsVisibilityTests {
       rows,
       disclosure: store,
       activeItem: .assistant(message),
-      runningSubagentToolCallIDs: []
+      runningSubagentRunToolCallIDs: []
     )
 
     #expect(collapsed.rows.contains { $0.id == .assistantWorkedHeader(messageID, .planning) })
     #expect(!collapsed.rows.contains(where: isWorkedContent))
     #expect(collapsed.visibilityRevision != initiallyExpanded.visibilityRevision)
+  }
+
+  @Test("Messaging a running agent keeps open only the turn that messaged it, not the one that spawned it")
+  func runningSubagentOpensOnlyItsCurrentRun() {
+    let spawn = ToolCall(toolCallId: "toolu_agent", title: "Agent: Slow haiku", kind: .agent, status: .completed)
+    let followUp = ToolCall(
+      toolCallId: "toolu_follow_up", title: "Messaged agent: Slow haiku", kind: .other, status: .completed)
+    func finishedTurn(_ call: ToolCall, subagents: [String: SubagentTranscript] = [:]) -> AssistantMessage {
+      AssistantMessage(
+        turn: AssistantTurn(
+          entries: [.tool(call), .text(id: "answer", markdown: "Done.")],
+          stopReason: .endTurn,
+          subagents: subagents,
+          textPhases: ["answer": .final]))
+    }
+    let spawning = finishedTurn(
+      spawn, subagents: ["toolu_agent": SubagentTranscript(entries: [.text(id: "t0", markdown: "A haiku.")])])
+    let messaging = finishedTurn(followUp)
+    func showsWork(_ message: AssistantMessage, whileRunning runIds: Set<String>) -> Bool {
+      TranscriptWorkedRowsVisibility.present(
+        TranscriptActiveRowProjection.rows(for: .assistant(message)),
+        disclosure: TranscriptDisclosureStore(),
+        activeItem: .assistant(message),
+        runningSubagentRunToolCallIDs: runIds
+      ).rows.contains(where: isWorkedContent)
+    }
+
+    #expect(showsWork(spawning, whileRunning: ["toolu_agent"]))
+    #expect(!showsWork(spawning, whileRunning: ["toolu_follow_up"]))
+    #expect(showsWork(messaging, whileRunning: ["toolu_follow_up"]))
+    #expect(!showsWork(messaging, whileRunning: []))
   }
 
   private func isWorkedContent(_ row: TranscriptPresentationRow) -> Bool {

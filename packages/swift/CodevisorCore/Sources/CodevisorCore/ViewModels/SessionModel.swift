@@ -156,6 +156,10 @@ public final class SessionModel {
       if ids != runningSubagentToolCallIds {
         runningSubagentToolCallIds = ids
       }
+      let runIds = Set(waitingBackgroundTasks.compactMap(\.toolUseId))
+      if runIds != runningSubagentRunToolCallIds {
+        runningSubagentRunToolCallIds = runIds
+      }
     }
   }
   /// Whether any snapshot has arrived yet. Terminal-tab pruning waits for
@@ -210,6 +214,10 @@ public final class SessionModel {
   /// read, and only real membership changes should invalidate observers.
   /// The spawning tool calls of subagents still running in the background.
   public private(set) var runningSubagentToolCallIds: Set<String> = []
+  /// The calls that started running subagents' current runs: the spawn for a
+  /// first run, the message sent to the agent for a later one. The turn
+  /// holding one keeps its worked section open.
+  public private(set) var runningSubagentRunToolCallIds: Set<String> = []
 
   /// The session's persistent goal, when the harness supports goal mode.
   /// Snapshots are idempotent full state — each update replaces the last.

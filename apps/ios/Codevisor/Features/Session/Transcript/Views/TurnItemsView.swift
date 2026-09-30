@@ -6,7 +6,7 @@ import SwiftUI
 import TranscriptKit
 
 /// Worked items in stream order: reasoning text, tool groups, and subagent
-/// rows (a subagent's thread opens as its own read-only screen).
+/// chips (a subagent's thread opens as its own read-only screen).
 struct TurnItemsView: View {
   @Environment(\.theme) private var theme
   let items: [WorkedItem]
@@ -32,9 +32,9 @@ struct TurnItemsView: View {
           group: group,
           isTurnActive: isTurnActive
         )
-      case let .subagent(_, call):
-        // One row; the thread pushes as a read-only chat.
-        SubagentRow(call: call, isTurnActive: isTurnActive)
+      case let .subagents(_, calls):
+        // Chips side by side, wrapping; each opens its agent's thread.
+        SubagentChips(calls: calls, isTurnActive: isTurnActive)
       }
     }
     .font(.callout)

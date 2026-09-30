@@ -55,6 +55,7 @@ public final class SubagentMirror {
   /// they change (not on every token the active item streams).
   @ObservationIgnored private var settledThread: (model: ObjectIdentifier, revision: UInt64, thread: Thread)?
   @ObservationIgnored private var requestedDetailItemIds: Set<String> = []
+  @ObservationIgnored private weak var searchedParentModel: SessionModel?
   @ObservationIgnored private var isSearching = false
   @ObservationIgnored private var olderHistoryPagesLoaded = 0
   @ObservationIgnored private var visibleViews = 0
@@ -147,6 +148,12 @@ public final class SubagentMirror {
     guard let parentModel = parent.model, !parent.isLoadingInitialHistory else {
       if availability != .available { setAvailability(.loading) }
       return
+    }
+    // A reconnected parent reloads summarized turns: the search starts over.
+    if searchedParentModel !== parentModel {
+      searchedParentModel = parentModel
+      requestedDetailItemIds.removeAll()
+      olderHistoryPagesLoaded = 0
     }
     var thread = settledThread(of: parentModel)
     if case let .assistant(message)? = parent.activeItem {
@@ -411,10 +418,8 @@ public final class SubagentMirror {
         // already in flight elsewhere finishes and re-runs this observer.
         if await parent.loadOlderHistory() > 0 { self?.olderHistoryPagesLoaded += 1 }
       }
-    } else if parent.isLoadingOlderHistory {
-      if availability != .available { setAvailability(.loading) }
-    } else {
-      setAvailability(.unavailable)
+    } else if availability != .available {
+      setAvailability(parent.isLoadingOlderHistory ? .loading : .unavailable)
     }
   }
 
@@ -444,7 +449,10 @@ public final class SubagentMirror {
 
   private func nextSummarizedTurnToHydrate() -> String? {
     guard requestedDetailItemIds.count < Self.maximumDetailHydrations else { return nil }
-    let newestFirst = parent.settledConversation.reversed()
+    // A history load keeps the trailing turn active, so a turn that finished
+    // and came back summarized lives there, not in the settled items.
+    let active = parent.activeItem.map { [$0] } ?? []
+    let newestFirst = active + parent.settledConversation.reversed()
     let lastSeen = newestFirst.filter { $0.id == spawningMessageId }
     for item in lastSeen + newestFirst.filter({ $0.id != spawningMessageId }) {
       guard case let .assistant(message) = item, message.turn.hasDeferredWorkedDetails,

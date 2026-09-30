@@ -135,6 +135,48 @@ struct SubagentMirrorTests {
     #expect(try mirroredTurn(mirror).entries == thread)
   }
 
+  @Test("An agent whose finished turn reloads as the chat's latest summary is found again")
+  func findsAgentInReloadedLatestTurn() async throws {
+    let sessionId = UUID()
+    let assistantId = UUID()
+    let client = FakeSessionServerClient(sessionId: sessionId)
+    // A reload keeps the trailing finished turn active, summarized with its
+    // tool calls deferred.
+    client.initialTranscriptPage = ServerTranscriptPage(
+      items: [
+        ServerTranscriptItem(
+          id: assistantId.uuidString, sessionId: sessionId.uuidString, sequence: 0, role: .assistant,
+          text: "The agent's haiku.", createdAt: "2026-08-31T00:00:00.000Z", updatedAt: "2026-08-31T00:00:02.000Z",
+          isGenerating: false, hasDetails: true, turnId: "turn", startedAt: "2026-08-31T00:00:00.000Z",
+          endedAt: "2026-08-31T00:00:02.000Z", stopReason: "end_turn", stopDetail: nil, planDocument: nil,
+          attachments: nil, revision: 2)
+      ],
+      hasMore: false, eventCursor: 2)
+    client.transcriptDetailsByItem[assistantId.uuidString] = ServerTranscriptItemDetails(
+      itemId: assistantId.uuidString, revision: 2, eventCursor: 2,
+      entries: [
+        ServerTranscriptEntry(
+          key: "tool:toolu_agent", position: 1, revision: 2,
+          payload: .object([
+            "sessionUpdate": .string("tool_call"), "toolCallId": .string("toolu_agent"),
+            "title": .string("Agent: Map the chat UI"), "kind": .string("other"), "status": .string("completed"),
+            "rawInput": .object(["description": .string("Map the chat UI"), "prompt": .string("Map it.")]),
+            "isSnapshot": .bool(true), "stateRevision": .number(2),
+          ]))
+      ])
+    let model = SessionModel(
+      serverTransport: ServerSessionTransport(client: client, sessionId: sessionId), sessionId: sessionId.uuidString)
+    defer { model.shutdown() }
+    await model.loadHistoryForInitialDisplay()
+    let mirror = SubagentMirror(parent: SessionController.preview(model: model), toolCallId: "toolu_agent")
+
+    mirror.start()
+    await awaitObserved { mirror.availability != .loading }
+
+    #expect(mirror.availability == .available)
+    #expect(mirror.summary?.title == "Map the chat UI")
+  }
+
   @Test("A message sent to the agent later continues its conversation, answered live in a later item")
   func followUpContinuesTheConversation() throws {
     let followUp = ToolCall(

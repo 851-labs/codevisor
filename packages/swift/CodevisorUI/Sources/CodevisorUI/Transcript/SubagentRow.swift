@@ -2,10 +2,31 @@ import ACPKit
 import CodevisorCore
 import SwiftUI
 
-/// A subagent in the transcript: one row, laid out like the tool rows around
-/// it — the harness's icon and the agent's name, shimmering while it works. Its
-/// thread opens separately through `openSubagent` (a pane beside the chat on
-/// macOS, a pushed screen on iOS) instead of nesting inline.
+/// Subagents spawned together, side by side and wrapping onto new lines when
+/// they don't fit — one chip each.
+public struct SubagentChips: View {
+  let calls: [ToolCall]
+  let isTurnActive: Bool
+
+  public init(calls: [ToolCall], isTurnActive: Bool) {
+    self.calls = calls
+    self.isTurnActive = isTurnActive
+  }
+
+  public var body: some View {
+    WrappingHStack(spacing: 6, lineSpacing: 6) {
+      ForEach(calls, id: \.toolCallId) { call in
+        SubagentRow(call: call, isTurnActive: isTurnActive)
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+}
+
+/// A subagent in the transcript: a chip with the harness's icon and the
+/// agent's name, shimmering while it works. Its thread opens separately
+/// through `openSubagent` (a pane beside the chat on macOS, a pushed screen on
+/// iOS) instead of nesting inline.
 public struct SubagentRow: View {
   let call: ToolCall
   let isTurnActive: Bool
@@ -20,7 +41,6 @@ public struct SubagentRow: View {
   @Environment(\.runningSubagentToolCallIds) private var runningSubagentToolCallIds
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @Environment(\.theme) private var theme
-  @State private var isHovered = false
 
   // ToolGroupView's metrics, so the rows share one icon column.
   private static var iconSize: CGFloat {
@@ -76,13 +96,14 @@ public struct SubagentRow: View {
 
   public var body: some View {
     if canOpen {
+      // A chip, not a disclosure: the agent opens as its own conversation
+      // beside the chat rather than expanding in place.
       Button {
         open(.automatic)
       } label: {
-        label
+        chipLabel
       }
-      .buttonStyle(.plain)
-      .onHover { isHovered = $0 }
+      .buttonStyle(SubagentChipButtonStyle())
       #if os(macOS)
         .contextMenu {
           Button("Open in Split View", systemImage: "rectangle.righthalf.inset.filled") { open(.split) }
@@ -98,28 +119,46 @@ public struct SubagentRow: View {
     }
   }
 
+  /// A nested agent inside a subagent's own view can't be opened, so it reads
+  /// as a plain label in the tool rows' icon column.
   private var label: some View {
     HStack(spacing: Self.spacing) {
-      HarnessGlyph(harnessId: harnessId, fallbackSymbolName: "wand.and.sparkles", size: Self.iconSize)
-        .foregroundStyle(.secondary)
+      glyph
         .frame(width: Self.iconColumnWidth)
-        .accessibilityHidden(true)
-      Text(title)
-        .foregroundStyle(.secondary)
-        .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
-        .truncationMode(.tail)
-        .shimmering(isRunning)
+      titleText
       statusGlyph
-      if canOpen {
-        Image(systemName: "chevron.right")
-          .font(.caption2.weight(.semibold))
-          .foregroundStyle(isHovered ? .secondary : .tertiary)
-          .frame(width: 10, height: 10)
-          .accessibilityHidden(true)
-      }
-      Spacer(minLength: 0)
     }
     .contentShape(Rectangle())
+  }
+
+  private var chipLabel: some View {
+    HStack(spacing: Self.chipSpacing) {
+      glyph
+      titleText
+      statusGlyph
+    }
+  }
+
+  private var glyph: some View {
+    HarnessGlyph(harnessId: harnessId, fallbackSymbolName: "wand.and.sparkles", size: Self.iconSize)
+      .foregroundStyle(.secondary)
+      .accessibilityHidden(true)
+  }
+
+  private var titleText: some View {
+    Text(title)
+      .foregroundStyle(.secondary)
+      .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
+      .truncationMode(.tail)
+      .shimmering(isRunning)
+  }
+
+  private static var chipSpacing: CGFloat {
+    #if os(iOS)
+      5
+    #else
+      6
+    #endif
   }
 
   @ViewBuilder
@@ -152,5 +191,46 @@ public struct SubagentRow: View {
   private func open(_ placement: OpenSubagentAction.Placement) {
     guard let openSubagent, let parentSessionId else { return }
     openSubagent(parentSessionId: parentSessionId, toolCallId: call.toolCallId, title: title, placement: placement)
+  }
+}
+
+/// A quiet capsule with a hairline edge at rest, so the agent reads as
+/// something to open; a firmer fill on hover and a dim while pressed.
+private struct SubagentChipButtonStyle: ButtonStyle {
+  func makeBody(configuration: Configuration) -> some View {
+    SubagentChipBody(configuration: configuration)
+  }
+}
+
+private struct SubagentChipBody: View {
+  let configuration: ButtonStyleConfiguration
+  @State private var isHovered = false
+
+  private static var horizontalPadding: CGFloat {
+    #if os(iOS)
+      10
+    #else
+      8
+    #endif
+  }
+
+  private static var verticalPadding: CGFloat {
+    #if os(iOS)
+      5
+    #else
+      3
+    #endif
+  }
+
+  var body: some View {
+    configuration.label
+      .padding(.horizontal, Self.horizontalPadding)
+      .padding(.vertical, Self.verticalPadding)
+      .background(Capsule().fill(Color.primary.opacity(isHovered || configuration.isPressed ? 0.09 : 0.045)))
+      .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
+      .contentShape(Capsule())
+      .onHover { isHovered = $0 }
+      .opacity(configuration.isPressed ? 0.8 : 1)
+      .animation(.easeOut(duration: 0.12), value: isHovered)
   }
 }

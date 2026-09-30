@@ -301,6 +301,7 @@ export const makeStartSession = (deps: StartSessionDeps) => {
       streamEnded: false,
       sdkSessionId: sessionKey,
       subagentMessageIds: new Map(),
+      subagentLastTexts: new Map(),
       turnActive: false,
       turnId: randomUUID()
     }

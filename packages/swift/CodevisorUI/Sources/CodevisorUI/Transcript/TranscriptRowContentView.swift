@@ -205,6 +205,7 @@ public struct TranscriptActiveItemRow: View {
     // and inject subagent activity here so a newly active child starts
     // shimmering while its parent is still generating.
     .environment(\.runningSubagentToolCallIds, controller.runningSubagentToolCallIds)
+    .environment(\.runningSubagentRunToolCallIds, controller.runningSubagentRunToolCallIds)
     .id(item.id)
     .onChange(of: revision, initial: true) { _, _ in
       invalidateRowMeasurement?()

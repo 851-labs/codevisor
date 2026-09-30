@@ -25,15 +25,16 @@ public struct ToolCallGroup: Identifiable, Sendable, Equatable {
 public enum WorkedItem: Identifiable, Sendable, Equatable {
   case text(id: String, markdown: String)
   case toolGroup(ToolCallGroup)
-  /// A subagent spawn: its own row (the thread opens separately), never
-  /// folded into a tool-group summary.
-  case subagent(id: String, call: ToolCall)
+  /// Consecutive subagent spawns, shown together as chips that wrap (each
+  /// thread opens separately), never folded into a tool-group summary. The id
+  /// is the first spawn's, so the item keeps its identity as more join it.
+  case subagents(id: String, calls: [ToolCall])
 
   public var id: String {
     switch self {
     case let .text(id, _): return "wtext:\(id)"
     case let .toolGroup(group): return "wgroup:\(group.id)"
-    case let .subagent(id, _): return "wagent:\(id)"
+    case let .subagents(id, _): return "wagent:\(id)"
     }
   }
 }
@@ -83,8 +84,15 @@ extension AssistantTurn {
     var items: [WorkedItem] = []
     var group: [ToolCall] = []
     var groupHasUnsettledCall = false
+    var agents: [ToolCall] = []
 
-    func flush() {
+    func flushAgents() {
+      guard let first = agents.first else { return }
+      items.append(.subagents(id: first.toolCallId, calls: agents))
+      agents = []
+    }
+
+    func flushGroup() {
       guard !group.isEmpty else { return }
       items.append(
         .toolGroup(
@@ -96,6 +104,11 @@ extension AssistantTurn {
       groupHasUnsettledCall = false
     }
 
+    func flush() {
+      flushAgents()
+      flushGroup()
+    }
+
     for entry in source {
       switch entry {
       case let .text(id, markdown):
@@ -105,9 +118,10 @@ extension AssistantTurn {
         flush()
         items.append(.text(id: id, markdown: markdown))
       case let .tool(call) where call.kind == .agent || subagents[call.toolCallId] != nil:
-        flush()
-        items.append(.subagent(id: call.toolCallId, call: call))
+        flushGroup()
+        agents.append(call)
       case let .tool(call):
+        flushAgents()
         group.append(call)
         groupHasUnsettledCall = groupHasUnsettledCall || !call.isSettled
       case .contextCompaction:

@@ -63,6 +63,7 @@ export const finishActiveTurn = (
   session.accumulators.clear()
   session.taskToolUses.clear()
   session.subagentMessageIds.clear()
+  session.subagentLastTexts.clear()
 
   const ended: RuntimeEvent = {
     kind: "session.updated",

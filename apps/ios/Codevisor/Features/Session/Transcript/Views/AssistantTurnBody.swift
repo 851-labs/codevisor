@@ -11,7 +11,7 @@ struct AssistantTurnBody: View {
   @Environment(\.openFileDocument) private var openFileDocument
   @Environment(\.transcriptDisclosure) private var disclosureStore
   @Environment(\.transcriptController) private var transcriptController
-  @Environment(\.runningSubagentToolCallIds) private var runningSubagents
+  @Environment(\.runningSubagentRunToolCallIds) private var runningSubagentRuns
   @Environment(\.transcriptPerformAnchoredDisclosureChange)
   private var performAnchoredDisclosureChange
   @Environment(\.transcriptInvalidateRowMeasurement)
@@ -67,7 +67,7 @@ struct AssistantTurnBody: View {
   /// A subagent that outlives its turn keeps the worked section open and
   /// its shimmer running, exactly like macOS.
   private var hasRunningSubagent: Bool {
-    !runningSubagents.isDisjoint(with: turn.subagents.keys)
+    turn.startedRunningSubagent(runningSubagentRuns)
   }
 
   private var settled: Bool {

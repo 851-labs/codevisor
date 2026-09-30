@@ -132,9 +132,9 @@ struct WorkedItemsTests {
     } else {
       Issue.record("expected group")
     }
-    if case let .subagent(id, call) = result[1] {
+    if case let .subagents(id, calls) = result[1] {
       #expect(id == "task-1")
-      #expect(call.kind == .agent)
+      #expect(calls.map(\.kind) == [.agent])
     } else {
       Issue.record("expected subagent item")
     }
@@ -146,11 +146,31 @@ struct WorkedItemsTests {
     #expect(Set(result.map(\.id)).count == result.count)
   }
 
+  @Test("Agents spawned back to back share one item, which keeps the first spawn's identity")
+  func consecutiveSubagentsShareAnItem() {
+    let result = turn([
+      tool("task-1", .agent),
+      tool("task-2", .agent),
+      tool("a", .read),
+      tool("task-3", .agent),
+    ]).workedItems
+
+    #expect(result.count == 3)
+    guard case let .subagents(id, calls) = result[0], case let .subagents(_, later) = result[2] else {
+      Issue.record("expected subagent items around the tool group")
+      return
+    }
+    #expect(id == "task-1")
+    #expect(result[0].id == "wagent:task-1")
+    #expect(calls.map(\.toolCallId) == ["task-1", "task-2"])
+    #expect(later.map(\.toolCallId) == ["task-3"])
+  }
+
   @Test("A call with a bucket becomes a subagent item even without the agent kind")
   func bucketImpliesSubagent() {
     var withBucket = turn([tool("task-x", .other)])
     withBucket.subagents["task-x"] = SubagentTranscript(entries: [.text(id: "t0", markdown: "hi")])
-    guard case .subagent = withBucket.workedItems.first else {
+    guard case .subagents = withBucket.workedItems.first else {
       Issue.record("expected subagent item")
       return
     }

@@ -101,6 +101,10 @@ export const handleMessage = (
         parentId !== undefined &&
         messageId !== undefined &&
         session.subagentMessageIds.get(parentId) === messageId
+      if (parentId !== undefined) {
+        const prose = messageProse(content)
+        if (prose !== undefined) session.subagentLastTexts.set(parentId, prose)
+      }
       for (const block of content) {
         if (!isRecord(block)) continue
         if (block.type === "text" && parentId !== undefined && !alreadyStreamed) {
@@ -180,6 +184,7 @@ export const handleMessage = (
           // Plan tools have no tool-call lifecycle on the wire — their result
           // is the plan/plan_document update already emitted.
           if (accumulator !== undefined && HIDDEN_TOOLS.has(accumulator.toolName)) continue
+          emitSubagentReport(session, toolUseId, message.tool_use_result)
           const doneTitle =
             accumulator !== undefined && accumulator.titledPath !== undefined
               ? finishedToolTitle(accumulator.toolName, accumulator.titledPath)
@@ -379,6 +384,47 @@ const handleStreamEvent = (
     default:
       break
   }
+}
+
+/// A message's text blocks joined, or undefined when it has none.
+const messageProse = (content: ReadonlyArray<unknown>): string | undefined => {
+  const texts = content.flatMap((block) =>
+    isRecord(block) && block.type === "text" && typeof block.text === "string" && block.text !== ""
+      ? [block.text]
+      : []
+  )
+  return texts.length === 0 ? undefined : texts.join("\n\n")
+}
+
+/// The CLI never forwards a subagent's final message: it reaches the parent
+/// only as the Agent call's result. Emit that report as the subagent's closing
+/// prose so its thread ends with its answer — unless the thread already does
+/// (a CLI that forwards the message).
+const emitSubagentReport = (session: ClaudeSession, toolUseId: string, result: unknown): void => {
+  const lastText = session.subagentLastTexts.get(toolUseId)
+  session.subagentLastTexts.delete(toolUseId)
+  const report = completedAgentReport(result)
+  if (report === undefined || report.trim() === lastText?.trim()) return
+  void session.emit({
+    kind: "session.output",
+    payload: {
+      content: { text: report, type: "text" },
+      messageId: `agent-report:${toolUseId}`,
+      parentToolCallId: toolUseId,
+      sessionUpdate: "agent_message_chunk"
+    },
+    subjectId: session.key
+  })
+}
+
+/// The final text of a finished foreground agent (the SDK's `AgentOutput`
+/// with status "completed"). Background launches report later, elsewhere.
+const completedAgentReport = (result: unknown): string | undefined => {
+  if (!isRecord(result) || result.status !== "completed" || typeof result.agentId !== "string") {
+    return undefined
+  }
+  if (!Array.isArray(result.content)) return undefined
+  return messageProse(result.content)
 }
 
 /// The Anthropic stream identifies blocks by index, not id. Content blocks

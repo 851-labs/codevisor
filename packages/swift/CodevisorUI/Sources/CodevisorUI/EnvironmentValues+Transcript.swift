@@ -10,6 +10,11 @@ extension EnvironmentValues {
   /// turn ended.
   @Entry public var runningSubagentToolCallIds: Set<String> = []
 
+  /// The calls that started running subagents' current runs (a spawn, or a
+  /// message to an existing agent). Only a turn holding one keeps its worked
+  /// section open.
+  @Entry public var runningSubagentRunToolCallIds: Set<String> = []
+
   /// Opens a subagent's thread as a read-only pane beside its parent chat.
   /// Must be re-injected per transcript row (rows live in cached hosts).
   @Entry public var openSubagent: OpenSubagentAction?
