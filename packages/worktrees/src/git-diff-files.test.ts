@@ -35,6 +35,13 @@ describe("gitBytes", () => {
     ).rejects.toMatchObject({ operation: "missing", message: expect.stringContaining("ENOENT") })
   })
 
+  it("never fails a git that ignores stdin when there is nothing to send", async () => {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const output = await gitBytes("version", ["--version"], process.cwd(), undefined)
+      expect(output.toString("utf8")).toMatch(/^git version /)
+    }
+  })
+
   it("returns git's output when it reads all of its input", async () => {
     const output = await gitBytes(
       "hash",

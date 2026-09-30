@@ -27,12 +27,15 @@ const utf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true })
 /// Git's own failure wins, since it says why; a git that exited cleanly
 /// without reading every request (its stdin broke) produced partial output,
 /// which is a failure too.
+///
+/// Without `input`, stdin is closed without a write: git may never read it,
+/// and even ending an empty write on a pipe git already closed breaks it.
 export const gitBytes = async (
   operation: string,
   args: ReadonlyArray<string>,
   cwd: string,
   env: NodeJS.ProcessEnv | undefined,
-  input = ""
+  input?: string
 ): Promise<Buffer> => {
   const command = withPriority("git", args, heavyGit.priority)
   let child!: ChildProcess
@@ -49,10 +52,14 @@ export const gitBytes = async (
     )
   })
   const stdin = child.stdin!
-  const fed = new Promise<Error | undefined>((resolve) => {
-    finished(stdin, (error) => resolve(error ?? undefined))
-  })
-  stdin.end(input)
+  const fed =
+    input === undefined
+      ? Promise.resolve(undefined)
+      : new Promise<Error | undefined>((resolve) => {
+          finished(stdin, (error) => resolve(error ?? undefined))
+        })
+  if (input === undefined) stdin.destroy()
+  else stdin.end(input)
   const [run, stdinError] = await Promise.all([exited, fed])
   if (run.error !== null) {
     throw new GitError(operation, run.stderr.toString("utf8").trim() || run.error.message)
