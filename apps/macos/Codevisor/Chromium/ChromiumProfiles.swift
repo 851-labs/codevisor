@@ -33,26 +33,22 @@ final class ChromiumProfiles {
   private class WeakView { weak var view: CVChromiumView?; init(_ view: CVChromiumView) { self.view = view } }
   private var views: [String: [WeakView]] = [:]
   private var syncs: [String: BrowserCookieSync] = [:]
+  private var cookieReplies: [String: BrowserProtocolCookies] = [:]
+  private var visiblePanes: [String: Set<UUID>] = [:]
+
   func attach(_ view: CVChromiumView, machineId: String, client: any CodevisorServerClienting) -> BrowserCookieSync {
     views[machineId, default: []].append(WeakView(view))
     if let sync = syncs[machineId] { sync.start(); return sync }
     let sync = BrowserCookieSync(
       client: client,
       read: { [weak self] in
-        guard let view = self?.view(machineId) else { throw ChromiumProtocolError("Browser profile is closed") }
-        let result = try await view.cdp("Network.getAllCookies")
-        return (result["cookies"] as? [[String: Any]] ?? []).compactMap { raw in
-          guard raw["partitionKey"] == nil, raw["partitionKeyOpaque"] as? Bool != true,
-            let name = raw["name"] as? String, let value = raw["value"] as? String,
-            let domain = raw["domain"] as? String, let path = raw["path"] as? String
-          else { return nil }
-          let expiry = raw["expires"] as? Double
-          return BrowserCookie(
-            name: name, value: value, domain: domain, path: path,
-            secure: raw["secure"] as? Bool ?? false, httpOnly: raw["httpOnly"] as? Bool ?? false,
-            sameSite: (raw["sameSite"] as? String)?.lowercased() ?? "unspecified",
-            expires: expiry.flatMap { $0 > 0 ? $0 : nil })
+        guard let self, let view = self.view(machineId) else {
+          throw ChromiumProtocolError("Browser profile is closed")
         }
+        let reply = await view.protocolReply("Network.getAllCookies")
+        let (cookies, cache) = try await Self.decodeCookies(reply, cache: cookieReplies[machineId] ?? .init())
+        cookieReplies[machineId] = cache
+        return cookies
       },
       apply: { [weak self] cookie, previous in
         guard let view = self?.view(machineId) else { throw ChromiumProtocolError("Browser profile is closed") }
@@ -78,6 +74,7 @@ final class ChromiumProfiles {
         }
       })
     syncs[machineId] = sync
+    sync.setVisible(visiblePanes[machineId]?.isEmpty == false)
     sync.start()
     return sync
   }
@@ -85,8 +82,22 @@ final class ChromiumProfiles {
     views[machineId] = views[machineId]?.filter { $0.view != nil && $0.view !== view }
     if views[machineId]?.isEmpty != false { syncs[machineId]?.stop() }
   }
+  /// A profile with no page on screen polls cookies rarely.
+  func setVisible(_ visible: Bool, paneId: UUID, machineId: String) {
+    if visible { visiblePanes[machineId, default: []].insert(paneId) } else { visiblePanes[machineId]?.remove(paneId) }
+    syncs[machineId]?.setVisible(visiblePanes[machineId]?.isEmpty == false)
+  }
   private func view(_ id: String) -> CVChromiumView? {
     views[id] = views[id]?.filter { $0.view?.browserIsReady == true }
     return views[id]?.first?.view
+  }
+  @concurrent
+  private nonisolated static func decodeCookies(
+    _ reply: Data, cache: BrowserProtocolCookies
+  ) async throws
+    -> ([BrowserCookie], BrowserProtocolCookies)
+  {
+    var cache = cache
+    return (try cache.cookies(fromReply: reply), cache)
   }
 }

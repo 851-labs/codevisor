@@ -67,4 +67,28 @@ struct BrowserProtocolMessageTests {
     #expect(buffer.append(Data(":2}\n{\"id\":3}\n{".utf8)) == [Data(#"{"id":2}"#.utf8), Data(#"{"id":3}"#.utf8)])
     #expect(buffer.pendingCount == 1)
   }
+
+  @Test func chromiumCookiesKeepOnlyShareableCookies() throws {
+    var cookies = BrowserProtocolCookies()
+    let reply = Data(
+      #"""
+      {"id":9,"result":{"cookies":[
+        {"name":"sid","value":"1","domain":".example.test","path":"/","expires":-1,"secure":true,"httpOnly":true,"sameSite":"Lax"},
+        {"name":"pref","value":"2","domain":"example.test","path":"/a","expires":1900000000.5,"secure":false,"httpOnly":false},
+        {"name":"chip","value":"3","domain":"example.test","path":"/","partitionKey":{"topLevelSite":"https://a.test"}},
+        {"name":"opaque","value":"4","domain":"example.test","path":"/","partitionKeyOpaque":true}
+      ]}}
+      """#.utf8)
+    #expect(
+      try cookies.cookies(fromReply: reply) == [
+        BrowserCookie(
+          name: "sid", value: "1", domain: ".example.test", path: "/", secure: true, httpOnly: true, sameSite: "lax"),
+        BrowserCookie(
+          name: "pref", value: "2", domain: "example.test", path: "/a", secure: false, httpOnly: false,
+          sameSite: "unspecified", expires: 1_900_000_000.5),
+      ])
+    #expect(throws: BrowserProtocolError("Browser closed")) {
+      try cookies.cookies(fromReply: Data(#"{"error":{"message":"Browser closed"}}"#.utf8))
+    }
+  }
 }

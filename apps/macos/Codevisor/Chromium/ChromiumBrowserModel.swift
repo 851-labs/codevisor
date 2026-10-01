@@ -313,6 +313,7 @@ final class ChromiumBrowserModel {
   func setVisible(_ visible: Bool) {
     if isVisible != visible { retentionRevision += 1; BrowserPageRetention.shared.touch(self) }
     isVisible = visible
+    ChromiumProfiles.shared.setVisible(visible, paneId: paneId, machineId: machineId)
     guard paneSync.setVisible(visible) else { return }
     if webView == nil { start(); return }
     guard synchronized, !isLoading else { return }
@@ -329,6 +330,7 @@ final class ChromiumBrowserModel {
   func teardown() {
     returnToWorkspace()
     isVisible = false
+    ChromiumProfiles.shared.setVisible(false, paneId: paneId, machineId: machineId)
     _ = paneSync.setVisible(false)
     BrowserPageRetention.shared.remove(self)
     suggestions.dismiss()

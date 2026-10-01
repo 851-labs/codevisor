@@ -68,6 +68,32 @@ struct BrowserStateSyncTests {
     #expect(server.sentChanges == 1)
   }
 
+  @Test func aSteadyStatePollReadsTheEngineOnce() async throws {
+    let server = BrowserStateFixture()
+    var local = [cookie.key: cookie]
+    var reads = 0
+    let sync = BrowserCookieSync(
+      client: server,
+      read: {
+        reads += 1; return Array(local.values)
+      },
+      apply: { next, previous in
+        if let previous { local[previous.key] = nil }; if let next { local[next.key] = next }
+      })
+    try await sync.synchronize()
+    reads = 0
+    try await sync.synchronize()
+    #expect(reads == 1)
+    // A remote change still rereads to guard concurrent page writes and to
+    // record the engine's normalized form of the imported cookie.
+    var rotated = cookie; rotated.value = "remote"
+    server.change(rotated, key: cookie.key)
+    reads = 0
+    #expect(try await sync.synchronize())
+    #expect(local[cookie.key] == rotated)
+    #expect(reads == 3)
+  }
+
   @Test func aPageCookieChangedDuringAnExchangeIsPublishedNextTime() async throws {
     let server = BrowserStateFixture()
     var local = [cookie.key: cookie]
