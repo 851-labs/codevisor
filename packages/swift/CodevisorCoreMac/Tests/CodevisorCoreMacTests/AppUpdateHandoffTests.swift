@@ -108,4 +108,50 @@ extension AppUpdateHandoffTests {
     let restart = try JSONDecoder().decode(ServerUpdateApplyState.self, from: Data(contentsOf: url))
     #expect(restart.progress == nil)
   }
+
+  @Test("Queued reports leave the newest state on disk after a burst of progress")
+  func queuedReportsKeepTheTerminalState() async throws {
+    let url = temporaryURL("queued.json")
+    defer { try? FileManager.default.removeItem(at: url) }
+    for step in 0..<200 {
+      AppUpdateHandoff.enqueueStatus(
+        state: "installing", message: "Downloading…", progress: Double(step) / 200, to: url)
+    }
+    AppUpdateHandoff.enqueueStatus(state: "failed", message: "Sparkle: no signature", to: url)
+    await AppUpdateHandoff.flushWrites()
+
+    let report = try JSONDecoder().decode(ServerUpdateApplyState.self, from: Data(contentsOf: url))
+    #expect(report.state == "failed")
+    #expect(report.message == "Sparkle: no signature")
+    #expect(report.progress == nil)
+  }
+}
+
+@Suite("AppUpdateProgressThrottle")
+struct AppUpdateProgressThrottleTests {
+  @Test("Per-chunk progress publishes on a new percent, a new message, or after the interval")
+  func publishesOnlyVisibleChanges() {
+    var throttle = AppUpdateProgressThrottle()
+    let start = ContinuousClock.now
+    func report(_ message: String, _ fraction: Double, at milliseconds: Int) -> Bool {
+      throttle.shouldReport(message: message, fraction: fraction, at: start.advanced(by: .milliseconds(milliseconds)))
+    }
+
+    #expect(report("Downloading…", 0.001, at: 0))
+    // Sub-percent chunks inside the interval are dropped…
+    #expect(!report("Downloading…", 0.002, at: 10))
+    #expect(!report("Downloading…", 0.009, at: 249))
+    // …until the interval has passed since the last published report.
+    #expect(report("Downloading…", 0.0095, at: 250))
+    #expect(!report("Downloading…", 0.0095, at: 900))
+    // A new whole percent publishes at once.
+    #expect(report("Downloading…", 0.01, at: 901))
+    #expect(!report("Downloading…", 0.011, at: 902))
+    // So does the next phase, even at the same fraction.
+    #expect(report("Preparing…", 0.011, at: 903))
+    #expect(!report("Preparing…", 0.012, at: 904))
+    // A lifecycle report resets it: the next progress always publishes.
+    throttle.reset()
+    #expect(report("Preparing…", 0.012, at: 905))
+  }
 }

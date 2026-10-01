@@ -34,6 +34,9 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
   /// earlier rather than the feed's newest item, so a remote client
   /// converges on this build, not on the one it asked for.
   private var installTargetBuild: Int?
+  /// Sparkle reports every downloaded chunk; only visible progress changes
+  /// reach the model and the handoff file.
+  private var progressThrottle = AppUpdateProgressThrottle()
 
   init(
     model: AppUpdateModel,
@@ -73,12 +76,13 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
     // IS the update): drop any stale handoff report, and re-assert this
     // machine's release channel for the bundled server — it answers
     // /v1/update from this preference, never a client's.
-    AppUpdateHandoff.clearStatus()
-    AppUpdateHandoff.writeChannel(allowsAlpha: model.allowsAlphaUpdates)
+    // Handoff files are written on their own queue, never the main thread.
+    AppUpdateHandoff.enqueueClearStatus()
+    AppUpdateHandoff.enqueueChannel(allowsAlpha: model.allowsAlphaUpdates)
     // The server's update check reads the feed Sparkle will install from:
     // one document decides what "latest" means on this machine.
     if let feedURL = feedURLString(for: updater) {
-      AppUpdateHandoff.writeFeedURL(feedURL)
+      AppUpdateHandoff.enqueueFeedURL(feedURL)
     }
     model.checkHandler = { [weak self] in
       guard let self, !self.updater.sessionInProgress else { return }
@@ -93,7 +97,7 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
     model.channelChangeHandler = { [weak self] allowsAlpha in
       // The bundled server answers /v1/update from this machine's own
       // channel; keep its copy of the preference current.
-      AppUpdateHandoff.writeChannel(allowsAlpha: allowsAlpha)
+      AppUpdateHandoff.enqueueChannel(allowsAlpha: allowsAlpha)
       self?.updater.resetUpdateCycle()
     }
   }
@@ -125,10 +129,23 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
     }
   }
 
+  /// Publishes a lifecycle step ("Checking…", "Restarting…") unthrottled.
   private func reportProgress(_ message: String?, fraction: Double? = nil) {
+    progressThrottle.reset()
+    publishProgress(message, fraction: fraction)
+  }
+
+  /// Download and extraction progress, reported per chunk by Sparkle on the
+  /// main thread: published only when the throttle sees a visible change.
+  private func reportThrottledProgress(_ message: String, fraction: Double?) {
+    guard progressThrottle.shouldReport(message: message, fraction: fraction, at: .now) else { return }
+    publishProgress(message, fraction: fraction)
+  }
+
+  private func publishProgress(_ message: String?, fraction: Double?) {
     model.reportProgress(message, fraction: fraction)
     guard installSessionActive else { return }
-    AppUpdateHandoff.writeStatus(
+    AppUpdateHandoff.enqueueStatus(
       state: "installing",
       message: message,
       targetVersion: model.availableRelease?.version,
@@ -140,9 +157,9 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
   private func report(_ progress: HeadlessUserDriver.Progress) {
     switch progress {
     case let .downloading(fraction):
-      reportProgress("Downloading…", fraction: fraction)
+      reportThrottledProgress("Downloading…", fraction: fraction)
     case let .extracting(fraction):
-      reportProgress("Preparing…", fraction: fraction)
+      reportThrottledProgress("Preparing…", fraction: fraction)
     case .installing:
       reportProgress("Installing…")
     }
@@ -156,7 +173,8 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
     installTargetBuild = nil
     updateLeaseHandoff?.cancel()
     updateLeaseHandoff = nil
-    AppUpdateHandoff.writeStatus(state: "failed", message: message)
+    progressThrottle.reset()
+    AppUpdateHandoff.enqueueStatus(state: "failed", message: message)
     model.reportFailure(message)
     // The server may be holding prompts behind its restart drain (a remote
     // client's request drained it before handing off) or already be
@@ -237,7 +255,7 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
       // A resumed download skips the "found" callback; this one always
       // fires, so the build Sparkle is really installing is known here.
       installTargetBuild = Int(item.versionString)
-      AppUpdateHandoff.writeStatus(
+      AppUpdateHandoff.enqueueStatus(
         state: "installing",
         targetVersion: version,
         targetBuildNumber: installTargetBuild
@@ -316,6 +334,9 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
         return
       }
       self.reportProgress("Restarting…")
+      // The handoff file is written off the main thread; land the final
+      // state before Sparkle terminates this process.
+      await AppUpdateHandoff.flushWrites()
       Log.updates.log("install: server prepared; handing over to Sparkle for the relaunch")
       ServerLifecycleLog.default.note("update: server prepared, Sparkle relaunching the app")
       installHandler()
