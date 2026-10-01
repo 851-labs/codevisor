@@ -195,24 +195,37 @@ public final class AppSettingsModel {
   private let store: any PersistenceStore
   private let key = "settings"
 
-  public init(store: any PersistenceStore) {
+  public convenience init(store: any PersistenceStore) {
+    self.init(store: store, settings: Self.loadSettings(from: store))
+  }
+
+  /// Opens the settings launch already decoded off the main actor; without
+  /// a snapshot it reads `store` synchronously.
+  public convenience init(store: any PersistenceStore, launchSnapshot: ClientLaunchSnapshot?) {
+    self.init(store: store, settings: launchSnapshot?.settings ?? Self.loadSettings(from: store))
+  }
+
+  private init(store: any PersistenceStore, settings: AppSettings) {
     self.store = store
-    if let data = store.loadData(forKey: "settings") {
-      do {
-        settings = try JSONDecoder().decode(AppSettings.self, from: data)
-      } catch {
-        settings = AppSettings()
-        handleCorruptPayload(
-          store: store,
-          key: "settings",
-          data: data,
-          error: error,
-          reportTitle: "Couldn't Read Your Settings",
-          reportMessage: "Codevisor is starting with default settings. A backup of the old file was kept."
-        )
-      }
-    } else {
-      settings = AppSettings()
+    self.settings = settings
+  }
+
+  /// Reads and decodes the persisted settings, falling back to defaults (and
+  /// keeping a backup) when they are unreadable.
+  nonisolated static func loadSettings(from store: any PersistenceStore) -> AppSettings {
+    guard let data = store.loadData(forKey: "settings") else { return AppSettings() }
+    do {
+      return try JSONDecoder().decode(AppSettings.self, from: data)
+    } catch {
+      handleCorruptPayload(
+        store: store,
+        key: "settings",
+        data: data,
+        error: error,
+        reportTitle: "Couldn't Read Your Settings",
+        reportMessage: "Codevisor is starting with default settings. A backup of the old file was kept."
+      )
+      return AppSettings()
     }
   }
 

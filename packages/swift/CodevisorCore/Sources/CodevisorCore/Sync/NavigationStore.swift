@@ -35,12 +35,16 @@ public final class NavigationStore {
   @ObservationIgnored private weak var repository: ProjectedWorkspaceRepository?
   @ObservationIgnored private var cacheGenerations: [String: UInt64] = [:]
 
+  /// `launchSnapshot`, when given, must have been read from `store`: its
+  /// machine caches were decoded off the main actor, so opening the store
+  /// does not decode every machine's session list here.
   public init(
     store: any PersistenceStore,
+    launchSnapshot: ClientLaunchSnapshot? = nil,
     clock: any Clock<Duration> = ContinuousClock(),
     now: @escaping () -> Date = Date.init
   ) {
-    caches = NavigationCacheStore(store: store)
+    caches = NavigationCacheStore(store: store, preloaded: launchSnapshot?.navigationCaches)
     outbox = NavigationOutbox(store: store)
     layouts = DeviceLayoutStore(store: store)
     executor = NavigationOutboxExecutor(outbox: outbox, clock: clock, now: now)

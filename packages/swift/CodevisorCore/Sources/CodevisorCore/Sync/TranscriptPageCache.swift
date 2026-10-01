@@ -6,13 +6,18 @@ import Foundation
 ///
 /// It stores the open response's bytes as the server sent them. It lives in
 /// Caches: the system may clear it, and nothing is lost if it does.
+///
+/// Every file operation runs on one serial utility queue. Saving and removing
+/// return at once (opening a chat saves its page on the main actor); a read
+/// waits for every operation queued before it, so it always sees the latest
+/// save.
 public final class TranscriptPageCache: @unchecked Sendable {
   public static let defaultLimit = 30
 
   private let directory: URL
   private let limit: Int
   private let fileManager = FileManager.default
-  private let lock = NSLock()
+  private let queue = DispatchQueue(label: "com.codevisor.transcript-page-cache", qos: .utility)
 
   public init(directory: URL, limit: Int = TranscriptPageCache.defaultLimit) {
     self.directory = directory
@@ -24,19 +29,26 @@ public final class TranscriptPageCache: @unchecked Sendable {
     directory: FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
       .appendingPathComponent("transcripts", isDirectory: true))
 
-  public func load(machineId: String, sessionId: UUID) -> Data? {
+  /// Reads once earlier saves and removals have landed. Suspends rather than
+  /// blocking: a `queue.sync` here would park a Swift concurrency thread (a
+  /// small, fixed pool) for the whole wait and the disk read.
+  public func load(machineId: String, sessionId: UUID) async -> Data? {
     let url = fileURL(machineId: machineId, sessionId: sessionId)
-    return lock.withLock {
-      guard let data = try? Data(contentsOf: url) else { return nil }
-      // Reading counts as use, so the chats opened most recently stay.
-      try? fileManager.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path)
-      return data
+    return await withCheckedContinuation { continuation in
+      // `.enforceQoS` lifts queued utility work ahead of it to the reader's priority.
+      queue.async(qos: .userInitiated, flags: .enforceQoS) { [self] in
+        guard let data = try? Data(contentsOf: url) else { return continuation.resume(returning: nil) }
+        // Reading counts as use, so the chats opened most recently stay.
+        try? fileManager.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path)
+        continuation.resume(returning: data)
+      }
     }
   }
 
+  /// Queues the write and the trim that follows it.
   public func store(_ data: Data, machineId: String, sessionId: UUID) {
     let url = fileURL(machineId: machineId, sessionId: sessionId)
-    lock.withLock {
+    queue.async { [self] in
       do {
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         try data.write(to: url, options: .atomic)
@@ -50,11 +62,11 @@ public final class TranscriptPageCache: @unchecked Sendable {
 
   public func remove(machineId: String, sessionId: UUID) {
     let url = fileURL(machineId: machineId, sessionId: sessionId)
-    lock.withLock { try? fileManager.removeItem(at: url) }
+    queue.async { [self] in try? fileManager.removeItem(at: url) }
   }
 
   public func removeAll() {
-    lock.withLock { try? fileManager.removeItem(at: directory) }
+    queue.async { [self] in try? fileManager.removeItem(at: directory) }
   }
 
   private func fileURL(machineId: String, sessionId: UUID) -> URL {

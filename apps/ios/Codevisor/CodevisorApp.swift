@@ -96,23 +96,27 @@ struct CodevisorApp: App {
   /// server (iOS is a pure client — `localServer` stays nil).
   private static func makeEnvironment(storage: ClientStorage) -> AppEnvironment {
     let store = storage.store
+    // Decoded off the main actor by `openAsync`.
+    let launchSnapshot = storage.launchSnapshot
     let composerDrafts = ComposerDraftStore(
       store: store,
       attachmentFiles: ComposerAttachmentFileStore(
         root: URL.applicationSupportDirectory
           .appendingPathComponent("Codevisor", isDirectory: true)
           .appendingPathComponent("ComposerAttachments", isDirectory: true)
-      )
+      ),
+      launchSnapshot: launchSnapshot
     )
     // No composer exists yet: anything staged but undrafted is a leftover.
     composerDrafts.removeUnreferencedAttachmentFiles()
     return AppEnvironment(
       navigationPersistence: store,
+      launchSnapshot: launchSnapshot,
       transcriptCache: .shared,
-      configCache: ConfigOptionCache(store: store),
+      configCache: ConfigOptionCache(store: store, launchSnapshot: launchSnapshot),
       composerDefaults: ComposerDefaultsStore(store: store),
       composerDrafts: composerDrafts,
-      settings: AppSettingsModel(store: store),
+      settings: AppSettingsModel(store: store, launchSnapshot: launchSnapshot),
       machineStore: store,
       cloudCredentialStore: KeychainCloudCredentialStore.shared,
       paneGroups: DefaultPaneGroupRepository(store: store)

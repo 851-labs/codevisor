@@ -336,37 +336,54 @@ extension SessionController {
     let workspaceId = hostWorkspaceId
     let transport: ServerSessionTransport
     let model: SessionModel
-    let showsCachedHistory: Bool
+    let reusesCachedDisplay: Bool
+    var cachedTranscriptLoad: Task<Void, Never>?
     if let cached = cachedTranscriptModel, cached === self.model {
       // An earlier attempt already shows this chat's cached page; keep it.
       transport = cached.transport
       model = cached
-      showsCachedHistory = true
+      reusesCachedDisplay = true
+      if loadsExistingHistory {
+        finishInitialHistoryLoading(sessionId: session.id, outcome: "cached")
+      }
     } else {
       transport = ServerSessionTransport(client: serverClient, sessionId: session.id)
       model = makeServerSessionModel(transport: transport, harnessId: harnessId, sessionId: session.id)
-      // A chat opened before shows its last page from this device at once
-      // -- offline too -- and updates in place when the server's arrives.
-      showsCachedHistory = showCachedTranscript(
-        in: model, transport: transport, sessionId: session.id, serverId: scopedServerId)
+      reusesCachedDisplay = false
+      // A chat opened before shows its last page from this device as soon
+      // as it is read -- offline too -- and updates in place when the
+      // server's arrives. The read runs off the main actor, alongside the
+      // open request.
+      cachedTranscriptLoad = startCachedTranscriptLoad(
+        in: model, transport: transport, sessionId: session.id, serverId: scopedServerId,
+        loadsExistingHistory: loadsExistingHistory)
     }
-    if showsCachedHistory, loadsExistingHistory {
-      finishInitialHistoryLoading(sessionId: session.id, outcome: "cached")
+    let opened: ServerSessionOpenResult
+    do {
+      guard
+        let response = try await serverClient.openSessionReturningData(
+          session,
+          project: project,
+          workspaceId: workspaceId,
+          transcriptLimit: SessionModel.initialTranscriptPageSize
+        )
+      else { throw CodevisorServerClientError.invalidResponse }
+      opened = response
+    } catch {
+      // Without the server's page the saved one is all there is: let a read
+      // in flight show it before the failure is handled.
+      await cachedTranscriptLoad?.value
+      throw error
     }
-    if let opened = try await serverClient.openSessionReturningData(
-      session,
-      project: project,
-      workspaceId: workspaceId,
-      transcriptLimit: SessionModel.initialTranscriptPageSize
-    ) {
-      session = try opened.response.session.chatSession(serverId: scopedServerId)
-      preloadedTranscript = opened.response.transcript
-      persistedRuntime = opened.response.runtime
-      if let data = opened.data {
-        transcriptCache?.store(data, machineId: scopedServerId, sessionId: session.id)
-      }
-    } else {
-      throw CodevisorServerClientError.invalidResponse
+    // The server's page is in hand; a saved page not yet shown never will be.
+    supersedeCachedTranscriptLoad()
+    let showsCachedHistory = reusesCachedDisplay || cachedTranscriptModel === model
+    session = try opened.response.session.chatSession(serverId: scopedServerId)
+    preloadedTranscript = opened.response.transcript
+    persistedRuntime = opened.response.runtime
+    if let data = opened.data {
+      // Queued: the write and its trim run on the cache's own queue.
+      transcriptCache?.store(data, machineId: scopedServerId, sessionId: session.id)
     }
     self.serverSession = session
 

@@ -76,7 +76,17 @@ public final class ComposerDraftStore {
     }
   }
 
-  private struct PersistedAttachment: Codable, Sendable {
+  /// Both persisted draft payloads, decoded. Built off the main actor at
+  /// launch (see `ClientLaunchSnapshot`).
+  struct Persisted: Sendable {
+    fileprivate var machines: PersistedDrafts?
+    fileprivate var panes: PersistedPaneDrafts?
+  }
+
+  public nonisolated static let defaultKey = "composer-drafts"
+  public nonisolated static let defaultPaneKey = "composer-pane-drafts"
+
+  fileprivate struct PersistedAttachment: Codable, Sendable {
     var id: UUID
     var name: String
     var mimeType: String
@@ -86,7 +96,7 @@ public final class ComposerDraftStore {
     var stagedPath: String?
   }
 
-  private struct PersistedDraft: Codable, Sendable {
+  fileprivate struct PersistedDraft: Codable, Sendable {
     var projectId: UUID
     var projectServerId: String?
     var composerText: String
@@ -101,11 +111,11 @@ public final class ComposerDraftStore {
     var selectionWasAutomaticallyCarried: Bool?
   }
 
-  private struct PersistedDrafts: Codable, Sendable {
+  fileprivate struct PersistedDrafts: Codable, Sendable {
     var machines: [String: PersistedDraft]
   }
 
-  private struct PersistedPaneDrafts: Codable, Sendable {
+  fileprivate struct PersistedPaneDrafts: Codable, Sendable {
     var panes: [String: PersistedDraft]
   }
 
@@ -121,45 +131,88 @@ public final class ComposerDraftStore {
   /// relaunches and app updates just like the page draft does.
   private var paneDrafts: [UUID: Draft] = [:]
 
-  public init(
+  public convenience init(
     store: any PersistenceStore,
     attachmentFiles: ComposerAttachmentFileStore = .temporary(),
-    key: String = "composer-drafts",
-    paneKey: String = "composer-pane-drafts"
+    key: String = ComposerDraftStore.defaultKey,
+    paneKey: String = ComposerDraftStore.defaultPaneKey
   ) {
     // Flush a previous instance's coalesced snapshot before replacing an
     // environment or reopening the store in tests.
     PersistenceEncoding.drain()
+    self.init(
+      store: store, attachmentFiles: attachmentFiles, key: key, paneKey: paneKey,
+      persisted: Self.loadPersisted(from: store, key: key, paneKey: paneKey))
+  }
+
+  /// Opens the default-keyed drafts from what launch already decoded off the
+  /// main actor; without a snapshot it reads `store` synchronously.
+  public convenience init(
+    store: any PersistenceStore,
+    attachmentFiles: ComposerAttachmentFileStore,
+    launchSnapshot: ClientLaunchSnapshot?
+  ) {
+    guard let launchSnapshot else {
+      self.init(store: store, attachmentFiles: attachmentFiles)
+      return
+    }
+    self.init(
+      store: store, attachmentFiles: attachmentFiles, key: Self.defaultKey, paneKey: Self.defaultPaneKey,
+      persisted: launchSnapshot.composerDrafts)
+  }
+
+  private init(
+    store: any PersistenceStore,
+    attachmentFiles: ComposerAttachmentFileStore,
+    key: String,
+    paneKey: String,
+    persisted: Persisted
+  ) {
     self.store = store
     self.attachmentFiles = attachmentFiles
     self.key = key
     self.paneKey = paneKey
     var migratedBlobKeys: [String] = []
+    if let machines = persisted.machines {
+      drafts = machines.machines.mapValues {
+        Self.draft(from: $0, store: store, files: attachmentFiles, migratedBlobKeys: &migratedBlobKeys)
+      }
+    }
+    if let panes = persisted.panes {
+      for (paneId, draft) in panes.panes {
+        guard let id = UUID(uuidString: paneId) else { continue }
+        paneDrafts[id] = Self.draft(
+          from: draft, store: store, files: attachmentFiles, migratedBlobKeys: &migratedBlobKeys)
+      }
+    }
+    if !migratedBlobKeys.isEmpty {
+      finishLegacyAttachmentMigration(removing: migratedBlobKeys)
+    }
+  }
+
+  /// Reads and decodes both draft payloads, quarantining an unreadable one.
+  nonisolated static func loadPersisted(
+    from store: any PersistenceStore,
+    key: String = defaultKey,
+    paneKey: String = defaultPaneKey
+  ) -> Persisted {
+    let decoder = JSONDecoder()
+    var persisted = Persisted()
     if let data = store.loadData(forKey: key) {
       do {
-        let persisted = try JSONDecoder().decode(PersistedDrafts.self, from: data)
-        drafts = persisted.machines.mapValues {
-          Self.draft(from: $0, store: store, files: attachmentFiles, migratedBlobKeys: &migratedBlobKeys)
-        }
+        persisted.machines = try decoder.decode(PersistedDrafts.self, from: data)
       } catch {
         handleCorruptPayload(store: store, key: key, data: data, error: error)
       }
     }
     if let data = store.loadData(forKey: paneKey) {
       do {
-        let persisted = try JSONDecoder().decode(PersistedPaneDrafts.self, from: data)
-        for (paneId, draft) in persisted.panes {
-          guard let id = UUID(uuidString: paneId) else { continue }
-          paneDrafts[id] = Self.draft(
-            from: draft, store: store, files: attachmentFiles, migratedBlobKeys: &migratedBlobKeys)
-        }
+        persisted.panes = try decoder.decode(PersistedPaneDrafts.self, from: data)
       } catch {
         handleCorruptPayload(store: store, key: paneKey, data: data, error: error)
       }
     }
-    if !migratedBlobKeys.isEmpty {
-      finishLegacyAttachmentMigration(removing: migratedBlobKeys)
-    }
+    return persisted
   }
 
   private static func draft(

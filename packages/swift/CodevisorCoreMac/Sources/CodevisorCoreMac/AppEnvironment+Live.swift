@@ -15,7 +15,10 @@ extension AppEnvironment {
   /// opened and migrated by the app's asynchronous bootstrap surface.
   public static func live(storage: ClientStorage) -> AppEnvironment {
     let store = storage.store
-    let settings = AppSettingsModel(store: store)
+    // Decoded off the main actor by `openAsync` (nil from the synchronous
+    // `open`, whose stores read the store themselves).
+    let launchSnapshot = storage.launchSnapshot
+    let settings = AppSettingsModel(store: store, launchSnapshot: launchSnapshot)
     let serverClient = CodevisorServerClient(config: .localDefault)
     let localServer = LocalCodevisorServer(
       client: serverClient,
@@ -29,14 +32,16 @@ extension AppEnvironment {
       attachmentFiles: ComposerAttachmentFileStore(
         root: CodevisorAppVariant.applicationSupportURL()
           .appendingPathComponent("ComposerAttachments", isDirectory: true)
-      )
+      ),
+      launchSnapshot: launchSnapshot
     )
     // No composer exists yet: anything staged but undrafted is a leftover.
     composerDrafts.removeUnreferencedAttachmentFiles()
     return AppEnvironment(
       navigationPersistence: store,
+      launchSnapshot: launchSnapshot,
       transcriptCache: .shared,
-      configCache: ConfigOptionCache(store: store),
+      configCache: ConfigOptionCache(store: store, launchSnapshot: launchSnapshot),
       composerDefaults: ComposerDefaultsStore(store: store),
       composerDrafts: composerDrafts,
       settings: settings,

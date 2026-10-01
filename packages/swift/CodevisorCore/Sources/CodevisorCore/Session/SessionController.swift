@@ -387,6 +387,11 @@ final public class SessionController {
   /// hasn't opened on the server yet, so connecting must still happen, and
   /// it reuses this model so the transcript updates in place.
   var cachedTranscriptModel: SessionModel?
+  /// Identifies the newest cached-page read. The read runs off the main
+  /// actor alongside the open request; a result that comes back after its
+  /// connect has moved on (the server's page arrived, or a newer connect
+  /// started) is dropped instead of displayed.
+  var transcriptCacheLoadGeneration: UInt64 = 0
 
   public init(
     project: Project,

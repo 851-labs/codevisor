@@ -4,10 +4,15 @@ import Foundation
 public struct ClientStorage: Sendable {
   public let database: ClientDatabase
   public let store: ClientPersistenceStore
+  /// What the launch environment's stores need from `store`, decoded off
+  /// the main actor by `ClientStorageBootstrap.openAsync`. Nil from the
+  /// synchronous `open`, whose stores then read `store` themselves.
+  public let launchSnapshot: ClientLaunchSnapshot?
 
-  public init(database: ClientDatabase, store: ClientPersistenceStore) {
+  public init(database: ClientDatabase, store: ClientPersistenceStore, launchSnapshot: ClientLaunchSnapshot? = nil) {
     self.database = database
     self.store = store
+    self.launchSnapshot = launchSnapshot
   }
 }
 
@@ -49,15 +54,22 @@ public enum ClientStorageBootstrap {
   /// the native apps can render an explicit whole-window bootstrap state.
   /// Repositories are constructed only after this returns and preferences
   /// are attached back on the main actor, preserving the same no-races
-  /// ordering as synchronous `open`.
+  /// ordering as synchronous `open`. The same background work reads and
+  /// decodes the launch environment's persisted state (`launchSnapshot`),
+  /// after every migration has written it.
   public static func openAsync(directory: URL) async throws -> ClientStorage {
     let storage = try await Task.detached(priority: .userInitiated) {
-      try openUnconfigured(
+      let opened = try openUnconfigured(
         directory: directory,
         legacyDefaults: .standard,
         fileManager: .default,
         migrateRenamedApplicationSupport: true,
         renamedLegacyDirectory: nil
+      )
+      return ClientStorage(
+        database: opened.database,
+        store: opened.store,
+        launchSnapshot: ClientLaunchSnapshot.read(from: opened.store)
       )
     }.value
     await MainActor.run {

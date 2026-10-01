@@ -26,13 +26,14 @@ struct ConfigOptionCacheTests {
   func persists() {
     let store = InMemoryStore()
     ConfigOptionCache(store: store).store([option("gpt-5.5")], forHarness: "codex", onServer: "local")
+    PersistenceEncoding.drain()
     let reopened = ConfigOptionCache(store: store)
     #expect(reopened.options(forHarness: "codex", onServer: "local").first?.currentValue == "gpt-5.5")
   }
 
-  @Test("Persists full server capabilities per machine")
+  @Test("Persists full server capabilities per machine, off the caller's thread")
   func serverCapabilitiesPersist() {
-    let store = InMemoryStore()
+    let store = MainThreadSaveRecordingStore()
     let capability = ServerHarnessCapability(
       harness: ServerHarness(
         id: "codex",
@@ -49,8 +50,14 @@ struct ConfigOptionCacheTests {
       ),
       configOptions: [option("gpt-5.6")]
     )
-    ConfigOptionCache(store: store).store([capability], forServer: "local")
+    let cache = ConfigOptionCache(store: store)
+    // Opening a chat stores its harness catalog on the main actor: readers
+    // see it at once, while encoding and writing it wait for the queue.
+    store.recordingMainThreadSaves { cache.store([capability], forServer: "local") }
+    #expect(store.keysSavedOnMainThread == [])
+    #expect(cache.capabilities(forServer: "local") == [capability])
 
+    PersistenceEncoding.drain()
     let reopened = ConfigOptionCache(store: store)
     #expect(reopened.capabilities(forServer: "local").first?.harness.id == "codex")
     #expect(reopened.options(forHarness: "codex", onServer: "local").first?.currentValue == "gpt-5.6")
@@ -75,6 +82,7 @@ struct ConfigOptionCacheTests {
     #expect(cache.options(forHarness: "codex", onServer: "remote-a").first?.currentValue == "remote-model")
     #expect(cache.options(forHarness: "codex", onServer: "remote-b").isEmpty)
 
+    PersistenceEncoding.drain()
     let reopened = ConfigOptionCache(store: store)
     #expect(reopened.options(forHarness: "codex", onServer: "remote-a").first?.currentValue == "remote-model")
     #expect(reopened.options(forHarness: "codex", onServer: "remote-b").isEmpty)
@@ -150,6 +158,7 @@ struct ConfigOptionCacheTests {
     #expect(cache.capabilities(forServer: "remote").first?.configOptions.first?.currentValue == "remote")
     #expect(cache.options(forHarness: "codex", onServer: "remote").first?.currentValue == "remote")
 
+    PersistenceEncoding.drain()
     let reopened = ConfigOptionCache(store: store)
     #expect(reopened.capabilities(forServer: "local").first?.configOptions.first?.currentValue == "local")
     #expect(reopened.options(forHarness: "codex", onServer: "local").first?.currentValue == "local")
@@ -285,6 +294,7 @@ struct ConfigOptionCacheTests {
     #expect(cache.signInRequired(forServer: "remote-a").map(\.id) == ["claude-code"])
     // Machine-scoped and persisted, like everything else here.
     #expect(cache.signInRequired(forServer: "remote-b").isEmpty)
+    PersistenceEncoding.drain()
     let reopened = ConfigOptionCache(store: store)
     #expect(reopened.signInRequired(forServer: "remote-a").map(\.id) == ["claude-code"])
 
@@ -304,4 +314,33 @@ private actor CapabilityRefreshCounter {
   func increment() {
     value += 1
   }
+}
+
+/// Records keys saved on the main thread while a call is being recorded.
+private final class MainThreadSaveRecordingStore: PersistenceStore, @unchecked Sendable {
+  private let base = InMemoryStore()
+  private let lock = NSLock()
+  private var isRecording = false
+  private var mainThreadSaves: [String] = []
+
+  var keysSavedOnMainThread: [String] { lock.withLock { mainThreadSaves } }
+
+  /// The call runs on the main thread, so a save recorded on the main thread
+  /// while it runs was made synchronously by the call itself.
+  func recordingMainThreadSaves(_ body: () -> Void) {
+    lock.withLock { isRecording = true }
+    defer { lock.withLock { isRecording = false } }
+    body()
+  }
+
+  func loadData(forKey key: String) -> Data? { base.loadData(forKey: key) }
+
+  func saveData(_ data: Data, forKey key: String) throws {
+    if Thread.isMainThread {
+      lock.withLock { if isRecording { mainThreadSaves.append(key) } }
+    }
+    try base.saveData(data, forKey: key)
+  }
+
+  func removeData(forKey key: String) throws { try base.removeData(forKey: key) }
 }

@@ -48,29 +48,68 @@ public final class ConfigOptionCache {
   /// by the speculative onboarding warm.
   @ObservationIgnored private var provisionalCapabilityServers: Set<String> = []
 
-  public init(store: any PersistenceStore, key: String = "harness-config") {
+  /// The persisted catalogs, decoded. Built off the main actor at launch
+  /// (see `ClientLaunchSnapshot`).
+  struct Persisted: Sendable {
+    var options: [String: [String: [SessionConfigOption]]] = [:]
+    var capabilities: [String: [ServerHarnessCapability]] = [:]
+    var signInRequired: [String: [ServerHarness]] = [:]
+  }
+
+  @ObservationIgnored private let persistenceOwner = UUID()
+
+  public nonisolated static let defaultKey = "harness-config"
+
+  /// Reads `store` synchronously. Saves are queued (see `persist()`), so a
+  /// store reopened in the same process sees them only after
+  /// `PersistenceEncoding.drain()`.
+  public convenience init(store: any PersistenceStore, key: String = ConfigOptionCache.defaultKey) {
+    self.init(store: store, key: key, persisted: Self.loadPersisted(from: store, key: key))
+  }
+
+  /// Opens the default-keyed cache from what launch already decoded off the
+  /// main actor; without a snapshot it reads `store` synchronously.
+  public convenience init(store: any PersistenceStore, launchSnapshot: ClientLaunchSnapshot?) {
+    guard let launchSnapshot else {
+      self.init(store: store)
+      return
+    }
+    self.init(store: store, key: Self.defaultKey, persisted: launchSnapshot.configOptions)
+  }
+
+  private init(store: any PersistenceStore, key: String, persisted: Persisted) {
     self.store = store
     self.key = key
-    capabilitiesKey = "\(key)-server-capabilities"
+    capabilitiesKey = Self.capabilitiesKey(for: key)
+    cache = persisted.options
+    capabilitiesCache = persisted.capabilities
+    signInRequiredCache = persisted.signInRequired
+  }
+
+  private nonisolated static func capabilitiesKey(for key: String) -> String { "\(key)-server-capabilities" }
+  private nonisolated static func signInRequiredKey(for key: String) -> String { "\(key)-sign-in-required" }
+
+  /// Reads and decodes the whole persisted catalog. Unreadable parts decode
+  /// as empty: the cache only seeds pickers until the next live inspection.
+  nonisolated static func loadPersisted(from store: any PersistenceStore, key: String = defaultKey) -> Persisted {
+    let decoder = JSONDecoder()
+    var persisted = Persisted()
     if let data = store.loadData(forKey: key),
-      let decoded = try? JSONDecoder().decode([String: [String: [SessionConfigOption]]].self, from: data)
+      let decoded = try? decoder.decode([String: [String: [SessionConfigOption]]].self, from: data)
     {
-      cache = decoded
-    } else {
-      cache = [:]
+      persisted.options = decoded
     }
-    if let data = store.loadData(forKey: capabilitiesKey),
-      let decoded = try? JSONDecoder().decode([String: [ServerHarnessCapability]].self, from: data)
+    if let data = store.loadData(forKey: capabilitiesKey(for: key)),
+      let decoded = try? decoder.decode([String: [ServerHarnessCapability]].self, from: data)
     {
-      capabilitiesCache = decoded
-    } else {
-      capabilitiesCache = [:]
+      persisted.capabilities = decoded
     }
-    if let data = store.loadData(forKey: "\(key)-sign-in-required"),
-      let decoded = try? JSONDecoder().decode([String: [ServerHarness]].self, from: data)
+    if let data = store.loadData(forKey: signInRequiredKey(for: key)),
+      let decoded = try? decoder.decode([String: [ServerHarness]].self, from: data)
     {
-      signInRequiredCache = decoded
+      persisted.signInRequired = decoded
     }
+    return persisted
   }
 
   /// The cached options for a harness, or an empty list if none are cached.
@@ -305,21 +344,34 @@ public final class ConfigOptionCache {
     }
   }
 
+  /// Updates in memory are already visible; only the encode and the SQLite
+  /// writes run later, coalesced on the shared persistence queue, so opening
+  /// a chat never encodes every server's catalog or waits on the database
+  /// lock the background navigation saves also take.
   private func persist() {
-    do {
-      try store.saveData(JSONEncoder().encode(cache), forKey: key)
-    } catch {
-      Log.persistence.error(
-        "Failed to save \(self.key, privacy: .public): \(String(describing: error), privacy: .public)")
-    }
-    try? store.saveData(
-      JSONEncoder().encode(signInRequiredCache), forKey: "\(key)-sign-in-required")
-    do {
-      try store.saveData(JSONEncoder().encode(capabilitiesCache), forKey: capabilitiesKey)
-    } catch {
-      Log.persistence.error(
-        "Failed to save \(self.capabilitiesKey, privacy: .public): \(String(describing: error), privacy: .public)"
-      )
+    let store = store
+    let key = key
+    let capabilitiesKey = capabilitiesKey
+    let signInRequiredKey = Self.signInRequiredKey(for: key)
+    let options = cache
+    let capabilities = capabilitiesCache
+    let signInRequired = signInRequiredCache
+    PersistenceEncoding.enqueueLatest(owner: persistenceOwner, key: key) {
+      let encoder = PersistenceEncoding.encoder
+      do {
+        try store.saveData(encoder.encode(options), forKey: key)
+      } catch {
+        Log.persistence.error(
+          "Failed to save \(key, privacy: .public): \(String(describing: error), privacy: .public)")
+      }
+      try? store.saveData(encoder.encode(signInRequired), forKey: signInRequiredKey)
+      do {
+        try store.saveData(encoder.encode(capabilities), forKey: capabilitiesKey)
+      } catch {
+        Log.persistence.error(
+          "Failed to save \(capabilitiesKey, privacy: .public): \(String(describing: error), privacy: .public)"
+        )
+      }
     }
   }
 }

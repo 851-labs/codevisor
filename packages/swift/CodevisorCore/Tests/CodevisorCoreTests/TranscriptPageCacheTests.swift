@@ -10,24 +10,26 @@ struct TranscriptPageCacheTests {
   }
 
   @Test("A chat's page is kept per machine and read back as stored")
-  func roundTrip() {
+  func roundTrip() async {
     let (cache, directory) = makeCache()
     defer { try? FileManager.default.removeItem(at: directory) }
     let chat = UUID()
     cache.store(Data("page".utf8), machineId: "cloud:abc", sessionId: chat)
-    #expect(cache.load(machineId: "cloud:abc", sessionId: chat) == Data("page".utf8))
-    #expect(cache.load(machineId: "local", sessionId: chat) == nil)
+    #expect(await cache.load(machineId: "cloud:abc", sessionId: chat) == Data("page".utf8))
+    #expect(await cache.load(machineId: "local", sessionId: chat) == nil)
     cache.remove(machineId: "cloud:abc", sessionId: chat)
-    #expect(cache.load(machineId: "cloud:abc", sessionId: chat) == nil)
+    #expect(await cache.load(machineId: "cloud:abc", sessionId: chat) == nil)
   }
 
   @Test("Only the most recently used chats are kept")
-  func keepsRecent() throws {
+  func keepsRecent() async throws {
     let (cache, directory) = makeCache(limit: 2)
     defer { try? FileManager.default.removeItem(at: directory) }
     let chats = [UUID(), UUID(), UUID()]
     for (offset, chat) in chats.enumerated() {
       cache.store(Data("\(offset)".utf8), machineId: "m", sessionId: chat)
+      // Saves are queued; a read waits for them, so the file exists after it.
+      #expect(await cache.load(machineId: "m", sessionId: chat) == Data("\(offset)".utf8))
       // Distinct modification times keep the order deterministic.
       let url = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
         .first { $0.lastPathComponent.contains(chat.uuidString.lowercased()) }
@@ -37,7 +39,7 @@ struct TranscriptPageCacheTests {
       }
     }
     cache.store(Data("again".utf8), machineId: "m", sessionId: chats[2])
-    #expect(cache.load(machineId: "m", sessionId: chats[0]) == nil)
-    #expect(cache.load(machineId: "m", sessionId: chats[2]) == Data("again".utf8))
+    #expect(await cache.load(machineId: "m", sessionId: chats[0]) == nil)
+    #expect(await cache.load(machineId: "m", sessionId: chats[2]) == Data("again".utf8))
   }
 }

@@ -76,8 +76,11 @@ public final class AppEnvironment {
   var pluginUpdateRevisions: [String: UInt64] = [:]
   private let clientDataResetter: (any ClientDataResetting)?
 
+  /// `launchSnapshot` carries `navigationPersistence`'s machine caches,
+  /// already decoded off the main actor by `ClientStorageBootstrap.openAsync`.
   public init(
     navigationPersistence: any PersistenceStore = InMemoryStore(),
+    launchSnapshot: ClientLaunchSnapshot? = nil,
     transcriptCache: TranscriptPageCache? = nil,
     configCache: ConfigOptionCache,
     composerDefaults: ComposerDefaultsStore? = nil,
@@ -99,7 +102,7 @@ public final class AppEnvironment {
     // tab arrangements before the store opens (see NavigationStoreMigration).
     NavigationStoreMigration.runIfNeeded(
       store: navigationPersistence, machineIds: [CodevisorMachine.local.id])
-    let navigationStore = NavigationStore(store: navigationPersistence)
+    let navigationStore = NavigationStore(store: navigationPersistence, launchSnapshot: launchSnapshot)
     self.navigationStore = navigationStore
     let workspaces = ProjectedWorkspaceRepository(store: navigationStore)
     self.workspaces = workspaces

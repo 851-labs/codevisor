@@ -17,13 +17,23 @@ final class NavigationCacheStore {
   private let store: any PersistenceStore
   private let persistenceOwner = UUID()
 
-  init(store: any PersistenceStore) {
+  /// `preloaded` is what `loadCaches(from:)` read from the same store off
+  /// the main actor (see `ClientLaunchSnapshot`); without it the caches are
+  /// read here, synchronously.
+  init(store: any PersistenceStore, preloaded: [String: MachineNavigationCache]? = nil) {
     self.store = store
+    caches = preloaded ?? Self.loadCaches(from: store)
+  }
+
+  /// Reads, decodes, and maps every machine's cached snapshot. A large
+  /// session list makes this expensive, so launch runs it off the main actor.
+  nonisolated static func loadCaches(from store: any PersistenceStore) -> [String: MachineNavigationCache] {
     let decoder = JSONDecoder()
     let machineIds =
-      store.loadData(forKey: Self.indexKey).flatMap { try? decoder.decode([String].self, from: $0) } ?? []
+      store.loadData(forKey: indexKey).flatMap { try? decoder.decode([String].self, from: $0) } ?? []
+    var caches: [String: MachineNavigationCache] = [:]
     for machineId in machineIds {
-      let key = Self.keyPrefix + machineId
+      let key = keyPrefix + machineId
       guard let data = store.loadData(forKey: key) else { continue }
       do {
         let snapshot = try decoder.decode(ServerNavigationSnapshot.self, from: data)
@@ -34,6 +44,7 @@ final class NavigationCacheStore {
         handleCorruptPayload(store: store, key: key, data: data, error: error)
       }
     }
+    return caches
   }
 
   func set(_ cache: MachineNavigationCache) {
