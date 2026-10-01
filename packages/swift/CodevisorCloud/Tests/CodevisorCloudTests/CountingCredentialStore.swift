@@ -40,6 +40,8 @@ final class CountingCredentialStore: CloudCredentialStore, @unchecked Sendable {
   private let base: InMemoryCloudCredentialStore
   private let lock = NSLock()
   private var tokenReadCount = 0
+  private var serverURLReadCount = 0
+  private var mainThreadCredentialReadCount = 0
   private var deviceIdReadCount = 0
   private var secretKeyReadCount = 0
   private var pinReadCount = 0
@@ -70,14 +72,29 @@ final class CountingCredentialStore: CloudCredentialStore, @unchecked Sendable {
     lock.withLock { (tokenReadCount, deviceIdReadCount, secretKeyReadCount) }
   }
 
+  /// Session token and custom server reads, and how many of them ran on
+  /// the main thread.
+  var credentialReadCounts: (token: Int, serverURL: Int, onMainThread: Int) {
+    lock.withLock { (tokenReadCount, serverURLReadCount, mainThreadCredentialReadCount) }
+  }
+
   func token() throws -> String? {
-    lock.withLock { tokenReadCount += 1 }
+    lock.withLock {
+      tokenReadCount += 1
+      if Thread.isMainThread { mainThreadCredentialReadCount += 1 }
+    }
     return try base.token()
   }
 
   func saveToken(_ token: String) throws { try base.saveToken(token) }
   func removeToken() throws { try base.removeToken() }
-  func serverURL() throws -> URL? { try base.serverURL() }
+  func serverURL() throws -> URL? {
+    lock.withLock {
+      serverURLReadCount += 1
+      if Thread.isMainThread { mainThreadCredentialReadCount += 1 }
+    }
+    return try base.serverURL()
+  }
   func saveServerURL(_ url: URL?) throws { try base.saveServerURL(url) }
 
   func appDeviceId() throws -> String? {

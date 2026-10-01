@@ -129,6 +129,12 @@ public final class CloudAccountController {
   @ObservationIgnored var validationRetryTask: Task<Void, Never>?
   @ObservationIgnored var validationGeneration: UInt64 = 0
   @ObservationIgnored var validationFailures = 0
+  /// The stored session token and custom server, cached (see
+  /// CloudAccountController+Credentials).
+  @ObservationIgnored var cachedCredentials: StoredCredentials?
+  @ObservationIgnored var credentialWriteGeneration: UInt64 = 0
+  /// Observed: views that show the server or account re-render on change.
+  var credentialRevision: UInt64 = 0
 
   public init(
     clientFactory: @escaping ClientFactory = { CloudAccountClient(baseURL: $0) },
@@ -155,14 +161,6 @@ public final class CloudAccountController {
   /// dev`, then the hosted default instance.
   public var serverURL: URL {
     customServerURL ?? environmentCloud?.url ?? Self.defaultServerURL
-  }
-
-  public var customServerURL: URL? {
-    (try? credentialStore.serverURL()) ?? nil
-  }
-
-  var storedToken: String? {
-    (try? credentialStore.token()) ?? nil
   }
 
   var client: any CloudAccountClienting {
@@ -218,7 +216,7 @@ public final class CloudAccountController {
       guard authenticationRevision == revision, serverURL == server else { return }
       await discardHubForCredentialChange()
       guard authenticationRevision == revision, serverURL == server else { return }
-      try credentialStore.saveToken(token)
+      try saveStoredToken(token)
       let user = (try? await client.session(token: token)) ?? nil
       guard authenticationRevision == revision, serverURL == server, storedToken == token else { return }
       state = .signedIn(userEmail: user?.email)
@@ -262,7 +260,7 @@ public final class CloudAccountController {
     localRegistrationTask?.cancel()
     localRegistrationTask = nil
     do {
-      try credentialStore.removeToken()
+      try removeStoredToken()
     } catch {
       Log.cloud.error("Failed to clear cloud token: \(String(describing: error), privacy: .public)")
     }
@@ -463,7 +461,7 @@ public final class CloudAccountController {
   public func setCustomServer(_ url: URL?) async throws {
     guard let url else {
       signOut()
-      try credentialStore.saveServerURL(nil)
+      try saveCustomServerURL(nil)
       try clearMachineKeyPins()
       return
     }
@@ -472,7 +470,7 @@ public final class CloudAccountController {
       throw CloudAccountClientError.notACloudInstance
     }
     signOut()
-    try credentialStore.saveServerURL(url)
+    try saveCustomServerURL(url)
     authProviders = info.authProviders
     // A different instance has a different device-id namespace.
     try clearMachineKeyPins()

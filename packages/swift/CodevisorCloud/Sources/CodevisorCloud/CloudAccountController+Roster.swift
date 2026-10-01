@@ -27,6 +27,7 @@ extension CloudAccountController {
   /// exactly as production signs into the hosted one.
   public func bootstrap() async {
     guard !hasCompletedBootstrap else { return }
+    await loadCredentials()
     guard storedToken != nil else {
       // A roster without a session is a leftover from a sign-out that
       // could not clear it; it must never resurface on the next sign-in.
