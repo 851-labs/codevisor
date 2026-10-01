@@ -79,7 +79,7 @@ public struct ScreenSharingCaptureStallRecovery {
   ) -> Self {
     let uptime = { ProcessInfo.processInfo.systemUptime }
     return Self(
-      callbacks: callbacks ?? { activity(metrics.snapshot().counters) }, restartCapture: restartCapture,
+      callbacks: callbacks ?? { activity(metrics.counters()) }, restartCapture: restartCapture,
       restartDaemon: {
         let daemons = ScreenSharingCaptureDaemon.processes()
         let descriptors = daemons.map { ScreenSharingCaptureDaemon.descriptorCount($0).map(String.init) ?? "?" }

@@ -63,7 +63,7 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
   public var frames: ScreenSharingFrameMailbox { mailbox }
   public var control: (any ScreenSharingMessageChannel<ScreenSharingControlMessage>)? { controlChannel }
   public var clipboard: (any ScreenSharingMessageChannel<ScreenSharingClipboardMessage>)? { clipboardChannel }
-  public var failure: String? { metrics.snapshot().labels["decoderError"] }
+  public var failure: String? { metrics.label("decoderError") }
 
   /// The host's pointer arrives on its own channel once the host answered `subscribe`
   /// (851-2377); from then on the video no longer shows it.

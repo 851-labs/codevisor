@@ -311,11 +311,11 @@
       channel.onMessage = { [weak self, weak session, weak channel] message in
         guard case .subscribe = message, let self, let session, let channel, !session.closed, session.cursor == nil
         else { return }
+        let display = session.cursorDisplayID
         let publisher = ScreenSharingCursorPublisher(
-          bounds: { [weak session] in session?.controlDisplayID.map(CGDisplayBounds) ?? .zero },
-          scale: { [weak session] in
-            session?.controlDisplayID.map(ScreenSharingCursorPublisher.displayScale) ?? 2
-          },
+          bounds: { display.withLock { $0 }.map(CGDisplayBounds) ?? .zero },
+          scale: { display.withLock { $0 }.map(ScreenSharingCursorPublisher.displayScale) ?? 2 },
+          metrics: session.metrics,
           send: { [weak channel] in channel?.send($0) ?? false })
         session.cursor = publisher
         publisher.start()

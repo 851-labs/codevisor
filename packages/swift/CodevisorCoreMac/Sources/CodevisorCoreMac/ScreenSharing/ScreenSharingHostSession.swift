@@ -89,7 +89,7 @@ final class ScreenSharingHostSession {
   }
 
   /// Whether the capture has handed frames to the sender: the viewer has live video to control.
-  var hasSentVideo: Bool { metrics.snapshot().counters["capturedFrames", default: 0] > 0 }
+  var hasSentVideo: Bool { metrics.counter("capturedFrames") > 0 }
 
   func configureMediaSubscriptions() {
     self.cursorStream = ScreenSharingHostCursorStream(

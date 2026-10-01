@@ -6,6 +6,7 @@
   import ScreenSharingDiagnostics
   import Foundation
   import ScreenSharingRigKit
+  import os
 
   /// One media session of the rig: a peer, its metrics, and whatever source or
   /// surface it owns. Closed exactly once.
@@ -23,7 +24,11 @@
     var virtualDisplay: RigVirtualDisplay?
     var displaySleepAssertion: ScreenSharingDisplaySleepAssertion?
     /// Host: the display injected input maps to; nil for sources that are not a whole display.
-    var controlDisplayID: CGDirectDisplayID?
+    var controlDisplayID: CGDirectDisplayID? {
+      didSet { cursorDisplayID.withLock { [controlDisplayID] in $0 = controlDisplayID } }
+    }
+    /// `controlDisplayID` for the cursor publisher, which reads it off the main actor.
+    let cursorDisplayID = OSAllocatedUnfairLock<CGDirectDisplayID?>(initialState: nil)
     var hostControl: ScreenSharingHostControl?
     var controlDeadlineTask: Task<Void, Never>?
     /// Uptime of the last automatic source restart after a capture error; bounds the retry rate.

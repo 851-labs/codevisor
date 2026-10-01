@@ -90,9 +90,8 @@ final class ScreenSharingHostService {
         if let lastEnd, lastEnd.owner == .init(request) { return .init(status: "failed", message: lastEnd.reason) }
         return .init(status: "stopped", message: "Screen sharing ended on the host Mac.")
       }
-      let labels = current.metrics.snapshot().labels
       // A capture being restarted clears its error to "" (851-2375).
-      if let error = [labels["captureError"], labels["encoderError"]].compactMap({ $0 }).first(where: { !$0.isEmpty }) {
+      if let error = ["captureError", "encoderError"].compactMap(current.metrics.label).first(where: { !$0.isEmpty }) {
         await end(current)
         return .init(status: "failed", message: error)
       }
@@ -281,7 +280,7 @@ final class ScreenSharingHostService {
         session.captureTask = Task { [weak self, weak session] in
           guard let self, let session else { return }
           do {
-            let baseline = ScreenSharingCaptureStallRecovery.activity(session.metrics.snapshot().counters)
+            let baseline = ScreenSharingCaptureStallRecovery.activity(session.metrics.counters())
             try await self.startWatchedCapture(session, reason: "viewer connected")
             guard self.current === session, !session.stopping else { try? await session.capture.stop(); return }
             try await self.reconcileCapture(session)
@@ -417,7 +416,7 @@ extension ScreenSharingHostService {
       await pending?.value
       try? await Task.sleep(for: ScreenSharingCaptureRestartPolicy.delay)
       guard let self, let session, self.current === session, !session.stopping, !Task.isCancelled else { return }
-      let baseline = ScreenSharingCaptureStallRecovery.activity(session.metrics.snapshot().counters)
+      let baseline = ScreenSharingCaptureStallRecovery.activity(session.metrics.counters())
       do {
         try? await session.capture.stop()
         try await self.restartOnSettledDisplay(session)

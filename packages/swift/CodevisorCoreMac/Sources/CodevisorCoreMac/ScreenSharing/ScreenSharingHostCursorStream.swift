@@ -22,7 +22,7 @@ final class ScreenSharingHostCursorStream {
       }
       let publisher = ScreenSharingCursorPublisher(
         bounds: { ScreenSharingCursorPublisher.displayArea(displayID) },
-        scale: { ScreenSharingCursorPublisher.displayScale(displayID) },
+        scale: { ScreenSharingCursorPublisher.displayScale(displayID) }, metrics: metrics,
         send: { [weak channel] in channel?.send($0) ?? false })
       self.publisher = publisher
       metrics.label("cursorStream", "on")

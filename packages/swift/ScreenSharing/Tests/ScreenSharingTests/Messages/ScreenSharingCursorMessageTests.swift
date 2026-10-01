@@ -1,4 +1,5 @@
 import AppKit
+import CodevisorTestSupport
 import Foundation
 import Testing
 @testable import ScreenSharing
@@ -56,23 +57,68 @@ struct ScreenSharingCursorMessageTests {
 
   // MARK: Publisher
 
+  /// What the scripted system reports. The publisher reads it on its own queue.
+  final class System: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _pointer = ScreenSharingCursorPublisher.Pointer(
+      location: CGPoint(x: 150, y: 125), image: Host.cursor(width: 10, height: 16), hotSpot: CGPoint(x: 2, y: 3))
+    private var _scale: CGFloat = 2
+    private var _scaleReads = 0
+
+    var pointer: ScreenSharingCursorPublisher.Pointer {
+      get { lock.withLock { _pointer } }
+      set { lock.withLock { _pointer = newValue } }
+    }
+    var scale: CGFloat {
+      get { lock.withLock { _scale } }
+      set { lock.withLock { _scale = newValue } }
+    }
+    var scaleReads: Int { lock.withLock { _scaleReads } }
+    func readScale() -> CGFloat {
+      lock.withLock {
+        _scaleReads += 1
+        return _scale
+      }
+    }
+  }
+
   @MainActor final class Host {
-    var location = CGPoint(x: 150, y: 125)
-    var image = Host.cursor(width: 10, height: 16)
-    var hotSpot = CGPoint(x: 2, y: 3)
+    let system = System()
+    let metrics = ScreenSharingMetrics()
+    let clock = TestClock()
     var sent: [ScreenSharingCursorMessage] = []
     var refuse = false
     /// A 1000 × 500-point display at (100, 100), 2×.
     lazy var publisher = ScreenSharingCursorPublisher(
-      bounds: { CGRect(x: 100, y: 100, width: 1000, height: 500) }, scale: { 2 },
-      pointer: { [unowned self] in .init(location: location, image: image, hotSpot: hotSpot) },
+      bounds: { CGRect(x: 100, y: 100, width: 1000, height: 500) }, scale: { [system] in system.readScale() },
+      pointer: { [system] in system.pointer }, metrics: metrics, clock: clock,
       send: { [unowned self] message in
         guard !refuse else { return false }
         sent.append(message)
         return true
       })
 
-    static func cursor(width: CGFloat, height: CGFloat, color: NSColor = .black) -> NSImage {
+    var location: CGPoint {
+      get { system.pointer.location }
+      set { system.pointer.location = newValue }
+    }
+    var image: NSImage {
+      get { system.pointer.image }
+      set { system.pointer.image = newValue }
+    }
+    var hotSpot: CGPoint {
+      get { system.pointer.hotSpot }
+      set { system.pointer.hotSpot = newValue }
+    }
+    /// Shapes drawn and PNG-encoded, as the host's diagnostics count them.
+    var drawn: Int { metrics.counter("cursorShapesDrawn") }
+
+    func tick(_ count: Int = 1) async {
+      for _ in 0..<count { await publisher.tick() }
+    }
+
+    /// Drawn on whatever thread asks for it: the publisher draws on its own queue.
+    nonisolated static func cursor(width: CGFloat, height: CGFloat, color: NSColor = .black) -> NSImage {
       NSImage(size: NSSize(width: width, height: height), flipped: false) { rect in
         color.setFill()
         rect.fill()
@@ -88,9 +134,9 @@ struct ScreenSharingCursorMessageTests {
     }
   }
 
-  @Test func theFirstTickSendsTheShapeThenThePosition() throws {
+  @Test func theFirstTickSendsTheShapeThenThePosition() async throws {
     let host = Host()
-    host.publisher.tick()
+    await host.tick()
     let shape = try #require(host.shapes.first)
     #expect(host.sent.count == 2)
     #expect(host.positions == [ScreenSharingPointer(x: 0.05, y: 0.05)])
@@ -101,26 +147,32 @@ struct ScreenSharingCursorMessageTests {
     #expect(shape.width == 0.01 && shape.height == 0.032)
   }
 
-  @Test func onlyChangesAreSent() {
+  @Test func onlyChangesAreSentAndOnlyANewLookIsDrawn() async {
     let host = Host()
-    host.publisher.tick()
-    for _ in 0..<5 { host.publisher.tick() }
+    await host.tick()
+    // The system hands out a new image every poll: one that looks the same is not drawn again.
+    host.image = Host.cursor(width: 10, height: 16)
+    await host.tick(2 * ScreenSharingCursorPublisher.shapeEvery)
     #expect(host.sent.count == 2, "nothing moved, nothing changed")
+    #expect(host.drawn == 1)
     host.location = CGPoint(x: 600, y: 350)
-    host.publisher.tick()
+    await host.tick()
     #expect(host.positions.last == ScreenSharingPointer(x: 0.5, y: 0.5))
     // Shapes are looked at every third tick: a change shows up within three.
     host.image = Host.cursor(width: 10, height: 16, color: .white)
-    for _ in 0..<ScreenSharingCursorPublisher.shapeEvery { host.publisher.tick() }
+    await host.tick(ScreenSharingCursorPublisher.shapeEvery)
     #expect(host.shapes.count == 2)
+    host.hotSpot = CGPoint(x: 5, y: 5)
+    await host.tick(ScreenSharingCursorPublisher.shapeEvery)
+    #expect(host.shapes.last.map { [$0.hotspotX, $0.hotspotY] } == [10, 10])
+    #expect(host.drawn == 3)
   }
 
-  @Test func aPointerOnAnotherDisplayIsSentAsAbsentOnce() {
+  @Test func aPointerOnAnotherDisplayIsSentAsAbsentOnce() async {
     let host = Host()
-    host.publisher.tick()
+    await host.tick()
     host.location = CGPoint(x: 50, y: 50)
-    host.publisher.tick()
-    host.publisher.tick()
+    await host.tick(2)
     #expect(host.positions == [ScreenSharingPointer(x: 0.05, y: 0.05), nil])
     #expect(
       ScreenSharingCursorPublisher.position(
@@ -128,23 +180,61 @@ struct ScreenSharingCursorMessageTests {
         == ScreenSharingPointer(x: 1, y: 1))
   }
 
-  @Test func whatTheChannelRefusedIsSentAgain() {
+  @Test func whatTheChannelRefusedIsSentAgain() async {
     let host = Host()
     host.refuse = true
-    host.publisher.tick()
+    await host.tick()
     #expect(host.sent.isEmpty)
     host.refuse = false
-    host.publisher.tick()
+    await host.tick()
     #expect(host.positions.count == 1, "the position goes on the next tick")
-    for _ in 0..<2 { host.publisher.tick() }
+    await host.tick(2)
     #expect(host.shapes.count == 1, "the shape on the next shape tick")
+    #expect(host.drawn == 1, "without drawing it again")
   }
 
-  @Test func anImageTooBigForTwiceTheScaleIsSentAtOnce() throws {
+  @Test func anImageTooBigForTwiceTheScaleIsSentAtOnce() async throws {
     let host = Host()
     host.image = Host.cursor(width: 200, height: 200)
-    host.publisher.tick()
+    await host.tick()
     let drawn = try #require(host.shapes.first?.shape())
     #expect(drawn.width == 200, "400 px at 2× is past the 256-px limit")
+  }
+
+  @Test func theDisplayScaleIsReadOnceASecondAndANewOneRedrawsTheShape() async throws {
+    let host = Host()
+    await host.tick()
+    host.system.scale = 1
+    await host.tick(ScreenSharingCursorPublisher.scaleEvery - 1)
+    #expect(host.system.scaleReads == 1)
+    #expect(host.shapes.count == 1)
+    await host.tick(ScreenSharingCursorPublisher.shapeEvery)
+    #expect(host.system.scaleReads == 2)
+    let redrawn = try #require(host.shapes.dropFirst().first?.shape())
+    #expect(redrawn.width == 10 && redrawn.height == 16, "1×")
+  }
+
+  @Test func startedItPollsOnTheClockUntilStopped() async {
+    let host = Host()
+    let interval = ScreenSharingCursorPublisher.positionInterval
+    host.publisher.start()
+    await host.clock.waitForSleep(interval)
+    #expect(host.shapes.count == 1 && host.positions == [ScreenSharingPointer(x: 0.05, y: 0.05)])
+    host.location = CGPoint(x: 600, y: 350)
+    host.clock.advance(by: interval)
+    await host.clock.waitForSleep(interval, count: 2)
+    #expect(host.positions.last == ScreenSharingPointer(x: 0.5, y: 0.5))
+
+    host.publisher.stop()
+    // The poll's sleep is cancelled, so nothing is left to wake it.
+    while true {
+      let revision = host.clock.changed.value
+      if host.clock.pendingCount == 0 { break }
+      await host.clock.changed.wait(for: revision + 1)
+    }
+    host.location = CGPoint(x: 1100, y: 600)
+    host.clock.advance(by: interval)
+    #expect(host.clock.requestCount(interval) == 2)
+    #expect(host.positions.count == 2)
   }
 }

@@ -75,6 +75,27 @@ struct ScreenSharingMetricsConcurrencyTests {
     #expect(metrics.snapshot().counters["starts"] == recorders)
   }
 
+  /// A once-a-second check reads one counter or label without a snapshot; percentiles are taken over
+  /// the newest samples once the ring is full, whatever order it wrapped them in.
+  @Test func singleValuesAndPercentilesReadTheSameRecords() throws {
+    let metrics = ScreenSharingMetrics()
+    #expect(metrics.counter("capturedFrames") == 0)
+    #expect(metrics.label("decoderError") == nil)
+    metrics.increment("capturedFrames", by: 2)
+    metrics.label("decoderError", "bad slice")
+    #expect(metrics.counter("capturedFrames") == 2)
+    #expect(metrics.label("decoderError") == "bad slice")
+    #expect(metrics.counters() == ["capturedFrames": 2])
+
+    // 2000 samples into an 1800-sample ring: the oldest 200 (0 ms) are overwritten by 1800...1999.
+    for index in 0..<2000 { metrics.observe("decodeMs", milliseconds: index < 200 ? 0 : Double(index)) }
+    let snapshot = metrics.snapshot()
+    let timing = try #require(snapshot.timings["decodeMs"])
+    #expect(timing.count == 1800)
+    #expect(timing.p50Ms == 1100 && timing.p95Ms == 1910 && timing.maximumMs == 1999)
+    #expect(snapshot.counters == metrics.counters() && snapshot.labels == ["decoderError": "bad slice"])
+  }
+
   /// Cadence is measured between events of one stage on one clock. A repeated timestamp is a real
   /// zero interval; a clock that jumps backwards must rebase instead of recording the jump.
   @Test func cadenceSamplesOnlyForwardIntervalsAndNeverSpikesOnAClockThatWentBackwards() throws {

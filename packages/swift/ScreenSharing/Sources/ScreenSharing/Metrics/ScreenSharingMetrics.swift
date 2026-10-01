@@ -4,8 +4,8 @@ import Foundation
 /// clock subtraction: network and input-to-photon measurements are separate.
 public final class ScreenSharingMetrics: @unchecked Sendable {
   private let lock = NSLock()
-  private var counters: [String: Int] = [:]
-  private var labels: [String: String] = [:]
+  private var counterValues: [String: Int] = [:]
+  private var labelValues: [String: String] = [:]
   private var samples: [String: [Double]] = [:]
   private var indices: [String: Int] = [:]
   private var previousEvents: [String: Int64] = [:]
@@ -21,14 +21,20 @@ public final class ScreenSharingMetrics: @unchecked Sendable {
   @discardableResult
   public func increment(_ name: String, by count: Int = 1) -> Int {
     lock.withLock {
-      counters[name, default: 0] += count
-      return counters[name, default: 0]
+      counterValues[name, default: 0] += count
+      return counterValues[name, default: 0]
     }
   }
 
   public func label(_ name: String, _ value: String) {
-    lock.withLock { labels[name] = value }
+    lock.withLock { labelValues[name] = value }
   }
+
+  /// One counter (0 before its first increment), one label, or every counter: what a
+  /// once-a-second check reads without building a whole `snapshot()`.
+  public func counter(_ name: String) -> Int { lock.withLock { counterValues[name, default: 0] } }
+  public func label(_ name: String) -> String? { lock.withLock { labelValues[name] } }
+  public func counters() -> [String: Int] { lock.withLock { counterValues } }
 
   /// Probe-only boundary tracing. Disabled by default: the entry autoclosure
   /// is never evaluated, so no string is built on media paths in the app.
@@ -85,16 +91,22 @@ public final class ScreenSharingMetrics: @unchecked Sendable {
     public let maximumMs: Double
   }
 
+  /// Copies the samples under the lock and sorts them outside it: capture, encode, decode and render
+  /// threads take the same lock for every frame.
   public func snapshot() -> Snapshot {
-    lock.withLock {
-      Snapshot(
-        counters: counters, labels: labels,
-        timings: samples.mapValues { values in
-          let sorted = values.sorted()
-          return Timing(
-            count: sorted.count, p50Ms: sorted[min(sorted.count - 1, Int(Double(sorted.count) * 0.5))],
-            p95Ms: sorted[min(sorted.count - 1, Int(Double(sorted.count) * 0.95))], maximumMs: sorted.last ?? 0)
-        }, traces: traces.isEmpty ? nil : traces)
+    let (counters, labels, samples, traces) = lock.withLock {
+      // A copy of its own, so the next sample written isn't the one that pays to copy the series.
+      (counterValues, labelValues, samples.mapValues { $0.withUnsafeBufferPointer(Array.init) }, traces)
     }
+    return Snapshot(
+      counters: counters, labels: labels, timings: samples.mapValues(Self.timing),
+      traces: traces.isEmpty ? nil : traces)
+  }
+
+  private static func timing(_ values: [Double]) -> Timing {
+    let sorted = values.sorted()
+    return Timing(
+      count: sorted.count, p50Ms: sorted[min(sorted.count - 1, Int(Double(sorted.count) * 0.5))],
+      p95Ms: sorted[min(sorted.count - 1, Int(Double(sorted.count) * 0.95))], maximumMs: sorted.last ?? 0)
   }
 }
