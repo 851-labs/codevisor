@@ -1,10 +1,10 @@
 import { execFile } from "node:child_process"
 import { randomUUID } from "node:crypto"
-import { lstat, mkdir, readdir, rename, writeFile } from "node:fs/promises"
+import { lstat, mkdir, readdir, rename, statfs, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 
 import { removeWorktree } from "./git.js"
-import { withPriority } from "./low-priority.js"
+import { type CommandPriority, withPriority } from "./low-priority.js"
 
 /// Removing a worktree used to mean `git worktree remove --force`, which
 /// unlinks every file (often a six-figure `node_modules`) before returning.
@@ -39,13 +39,45 @@ const prepareTrashRoot = async (trashRoot: string): Promise<void> => {
   await writeFile(join(trashRoot, neverIndexMarker), "", { flag: "a" })
 }
 
-/// Deletes a trashed directory at background priority.
-const purge = (path: string): Promise<void> =>
-  new Promise((resolve) => {
-    const command = withPriority("/bin/rm", ["-rf", "--", path], "background")
+/// Free space below which deleting trashed files stops waiting its turn.
+export const LOW_DISK_FREE_BYTES = 20 * 1024 ** 3
+export const LOW_DISK_FREE_RATIO = 0.1
+
+/// Background priority is right while the disk has room: nobody waits on the
+/// delete. But macOS defers background I/O so heavily that one archived
+/// development worktree (tens of GB of build output) can take half an hour to
+/// go, and archiving or creating a few in a row then fills the disk before the
+/// space comes back. When free space runs low the delete is the thing the
+/// machine is waiting on, so it runs at utility priority instead.
+export const purgePriority = (
+  space: { readonly free: number; readonly total: number } | undefined
+): CommandPriority =>
+  space !== undefined &&
+  (space.free < LOW_DISK_FREE_BYTES || space.free < space.total * LOW_DISK_FREE_RATIO)
+    ? "utility"
+    : "background"
+
+/// Free and total bytes on the volume holding `path`; undefined if unreadable.
+export const diskSpace = async (
+  path: string
+): Promise<{ readonly free: number; readonly total: number } | undefined> => {
+  try {
+    const stats = await statfs(path)
+    return { free: stats.bavail * stats.bsize, total: stats.blocks * stats.bsize }
+  } catch {
+    return undefined
+  }
+}
+
+/// Deletes a trashed directory, at background priority unless the disk is low.
+const purge = async (path: string): Promise<void> => {
+  const priority = purgePriority(await diskSpace(path))
+  return new Promise((resolve) => {
+    const command = withPriority("/bin/rm", ["-rf", "--", path], priority)
     // A failure leaves the directory for the next boot's sweep.
     execFile(command.command, [...command.args], () => resolve())
   })
+}
 
 /// Moves a worktree's files out of the way so its path, and the git branch
 /// checked out there, can be released immediately. The caller still owns

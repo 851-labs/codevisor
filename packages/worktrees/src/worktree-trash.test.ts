@@ -6,7 +6,14 @@ import { describe, expect, it } from "vitest"
 import { makeGitRepo } from "./git-test-support.js"
 import { addWorktree, listCodevisorWorktreeBranchNames, runGit } from "./git.js"
 import { removeArchivedWorktreeFiles } from "./worktree-archive.js"
-import { sweepWorktreeTrash, trashDirectory, trashWorktree } from "./worktree-trash.js"
+import {
+  diskSpace,
+  LOW_DISK_FREE_BYTES,
+  purgePriority,
+  sweepWorktreeTrash,
+  trashDirectory,
+  trashWorktree
+} from "./worktree-trash.js"
 
 const registered = async (repo: string, path: string): Promise<boolean> =>
   (await runGit("worktree-list", ["worktree", "list", "--porcelain"], repo)).includes(path)
@@ -121,5 +128,24 @@ describe("worktree trash", () => {
     await sweepWorktreeTrash(trashRoot)
 
     expect(readdirSync(trashRoot)).toEqual([".metadata_never_index"])
+  })
+
+  it("deletes at background priority unless the disk is running low", () => {
+    const gib = 1024 ** 3
+    // Plenty of room: nobody is waiting on the delete.
+    expect(purgePriority({ free: 200 * gib, total: 500 * gib })).toBe("background")
+    // Low in absolute terms, or as a share of a large disk: the space is needed now.
+    expect(purgePriority({ free: LOW_DISK_FREE_BYTES - 1, total: 100 * gib })).toBe("utility")
+    expect(purgePriority({ free: 40 * gib, total: 500 * gib })).toBe("utility")
+    // Unknown free space keeps the polite default.
+    expect(purgePriority(undefined)).toBe("background")
+  })
+
+  it("reads the volume's free space, or nothing for a path that is gone", async () => {
+    const { repo } = makeGitRepo()
+    const space = await diskSpace(repo)
+    expect(space?.total).toBeGreaterThan(0)
+    expect(space?.free).toBeLessThanOrEqual(space?.total ?? 0)
+    expect(await diskSpace(join(repo, "missing"))).toBeUndefined()
   })
 })
