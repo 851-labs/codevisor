@@ -1,14 +1,12 @@
 #import "ChromiumBridge.h"
 #import "ChromiumFavicon.h"
-#include "include/cef_app.h"
-#include "include/cef_application_mac.h"
+#import "ChromiumRuntime.h"
 #include "include/cef_client.h"
 #include "include/cef_devtools_message_observer.h"
 #include "include/cef_parser.h"
 #include "include/cef_resource_bundle.h"
 #include "include/cef_request_context_handler.h"
 #include "include/cef_task.h"
-#include "include/wrapper/cef_library_loader.h"
 #include "include/wrapper/cef_helpers.h"
 #include <map>
 #include <functional>
@@ -17,122 +15,9 @@
 #include <optional>
 #include <cmath>
 
-@interface CVChromiumApplication : NSApplication <CefAppProtocol>
-@property(nonatomic) BOOL handlingSendEvent;
-@end
-@implementation CVChromiumApplication
-- (BOOL)isHandlingSendEvent { return _handlingSendEvent; }
-- (void)sendEvent:(NSEvent *)event {
-  CefScopedSendingEvent sendingEvent;
-  [super sendEvent:event];
-}
-@end
-
-void CVPrepareChromiumApplication(void) {
-  [CVChromiumApplication sharedApplication];
-  NSCAssert([NSApp isKindOfClass:CVChromiumApplication.class], @"CEF requires its NSApplication event adapter");
-}
-
 namespace {
-bool initialized = false;
-bool shuttingDown = false;
-bool pumping = false;
-NSTimer *pumpTimer;
-void (^shutdownCompletion)(void);
-std::map<int, CefRefPtr<CefBrowser>> browsers;
-NSHashTable<CVChromiumView *> *zoomViews;
-std::unique_ptr<CefScopedLibraryLoader> library;
-
-void SchedulePump(int64_t delay);
-void Pump() {
-  if (!initialized || shuttingDown || pumping) return;
-  pumping = true;
-  CefDoMessageLoopWork();
-  pumping = false;
-  // CEF's external-pump example uses this bounded fallback for delayed work.
-  if (!pumpTimer) SchedulePump(33);
-}
-void SchedulePump(int64_t delay) {
-  [pumpTimer invalidate];
-  pumpTimer = nil;
-  if (!initialized || shuttingDown) return;
-  pumpTimer = [NSTimer timerWithTimeInterval:MAX(0, MIN(delay, 33)) / 1000.0
-                                   repeats:NO block:^(NSTimer *timer) {
-    pumpTimer = nil;
-    Pump();
-  }];
-  [NSRunLoop.mainRunLoop addTimer:pumpTimer forMode:NSRunLoopCommonModes];
-}
-class Application final : public CefApp, public CefBrowserProcessHandler {
- public:
-  CefRefPtr<CefBrowserProcessHandler> GetBrowserProcessHandler() override { return this; }
-  void OnBeforeCommandLineProcessing(const CefString&, CefRefPtr<CefCommandLine> command) override {
-    // CEF otherwise shows Chrome's login dialog instead of invoking its public
-    // GetAuthCredentials callback, including for the workspace proxy capability.
-    command->AppendSwitch("disable-chrome-login-prompt");
-    command->AppendSwitch("disable-quic");
-  }
-  void OnScheduleMessagePumpWork(int64_t delay) override {
-    dispatch_async(dispatch_get_main_queue(), ^{ SchedulePump(delay); });
-  }
- private:
-  IMPLEMENT_REFCOUNTING(Application);
-};
 NSString *String(const CefString& value) { return [NSString stringWithUTF8String:value.ToString().c_str()] ?: @""; }
 CefString String(NSString *value) { return CefString(value.UTF8String ?: ""); }
-
-bool Initialize() {
-  if (initialized) return !shuttingDown;
-  if (shuttingDown) return false;
-  library = std::make_unique<CefScopedLibraryLoader>();
-  if (!library->LoadInMain()) return false;
-  CefSettings settings;
-  settings.external_message_pump = true;
-  settings.log_severity = LOGSEVERITY_WARNING;
-  NSString *support = [NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES) firstObject];
-  // Fresh profiles accompany the app-owned Keychain item. Do not try to
-  // decrypt old profiles with the new key or request Chromium's shared key.
-  NSString *root = [[support stringByAppendingPathComponent:NSBundle.mainBundle.bundleIdentifier] stringByAppendingPathComponent:@"Chromium-v2"];
-  CefString(&settings.root_cache_path) = String(root);
-  CefString(&settings.log_file) = String([root stringByAppendingPathComponent:@"chromium.log"]);
-  NSString *appName = NSBundle.mainBundle.executablePath.lastPathComponent;
-  NSString *helperName = [appName stringByReplacingOccurrencesOfString:@"Codevisor" withString:@"Codevisor Browser Helper"
-                                                              options:NSAnchoredSearch range:NSMakeRange(0, appName.length)];
-  NSString *helperBundle = [NSBundle.mainBundle.privateFrameworksPath stringByAppendingPathComponent:[helperName stringByAppendingString:@".app"]];
-  NSString *helper = [NSBundle bundleWithPath:helperBundle].executablePath;
-  if (!helper) return false;
-  CefString(&settings.browser_subprocess_path) = String(helper);
-  std::vector<std::string> arguments;
-  for (NSString *argument in NSProcessInfo.processInfo.arguments) arguments.emplace_back(argument.UTF8String);
-  std::vector<char *> argv;
-  for (auto& argument : arguments) argv.push_back(argument.data());
-  CefMainArgs args((int)argv.size(), argv.data());
-  initialized = CefInitialize(args, settings, new Application(), nullptr);
-  if (initialized) SchedulePump(0);
-  return initialized;
-}
-void FinishShutdownIfReady() {
-  if (!shutdownCompletion || !browsers.empty()) return;
-  dispatch_async(dispatch_get_main_queue(), ^{
-    if (!shutdownCompletion || !browsers.empty()) return;
-    shuttingDown = true;
-    [pumpTimer invalidate]; pumpTimer = nil;
-    if (initialized) CefShutdown();
-    initialized = false;
-    // Keep the framework loaded until process exit; AppKit may still unwind CEF frames.
-    auto completion = shutdownCompletion;
-    shutdownCompletion = nil;
-    completion();
-  });
-}
-}
-
-void CVShutdownChromium(void (^completion)(void)) {
-  if (!initialized) { completion(); return; }
-  shutdownCompletion = [completion copy];
-  auto open = browsers;
-  for (const auto& entry : open) entry.second->GetHost()->CloseBrowser(true);
-  FinishShutdownIfReady();
 }
 
 class ProtocolObserver;
@@ -261,10 +146,10 @@ class DevToolsClient final : public CefClient, public CefLifeSpanHandler, public
   CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
   CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
   void OnAfterCreated(CefRefPtr<CefBrowser> browser) override {
-    browsers[browser->GetIdentifier()] = browser;
+    ChromiumRuntime::Shared().BrowserDidOpen(browser);
     CVChromiumView *view = view_;
     if (view) view->_toolsCreating = NO;
-    if (!view || view->_closed || view->_toolsCloseRequested || !view->_toolsContainer || shutdownCompletion) { browser->GetHost()->CloseBrowser(true); return; }
+    if (!view || view->_closed || view->_toolsCloseRequested || !view->_toolsContainer || ChromiumRuntime::Shared().HasRequestedShutdown()) { browser->GetHost()->CloseBrowser(true); return; }
     view->_toolsBrowser = browser;
     registration_ = view->_browser->GetHost()->AddDevToolsMessageObserver(this);
     // Own a CDP session so closing this frontend detaches debugger/emulation
@@ -295,8 +180,7 @@ class DevToolsClient final : public CefClient, public CefLifeSpanHandler, public
       view->_toolsClient = nullptr;
       [view removeDevTools];
     }
-    browsers.erase(browser->GetIdentifier());
-    FinishShutdownIfReady();
+    ChromiumRuntime::Shared().BrowserDidClose(browser);
   }
   CefRefPtr<CefResourceRequestHandler> GetResourceRequestHandler(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame>,
       CefRefPtr<CefRequest> request, bool, bool, const CefString&, bool& disableDefault) override {
@@ -615,11 +499,11 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
     return destination && view.openLink && IsWebLink(String(url)) && view.openLink(String(url), *destination);
   }
   void OnAfterCreated(CefRefPtr<CefBrowser> browser) override {
-    browsers[browser->GetIdentifier()] = browser;
+    ChromiumRuntime::Shared().BrowserDidOpen(browser);
     CVChromiumView *view = view_;
     if (view) view->_creating = NO;
     if (created_) { auto callback = std::move(created_); callback(); }
-    if (!view || view->_closed || shutdownCompletion) { browser->GetHost()->CloseBrowser(true); return; }
+    if (!view || view->_closed || ChromiumRuntime::Shared().HasRequestedShutdown()) { browser->GetHost()->CloseBrowser(true); return; }
     view->_browser = browser;
     browser->GetHost()->SetAccessibilityState(STATE_ENABLED);
     NSView *child = (__bridge NSView *)browser->GetHost()->GetWindowHandle();
@@ -652,8 +536,7 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
       [view->_popupWindow close];
       view->_popupWindow = nil;
     }
-    browsers.erase(browser->GetIdentifier());
-    FinishShutdownIfReady();
+    ChromiumRuntime::Shared().BrowserDidClose(browser);
   }
   void OnAddressChange(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, const CefString&) override {
     if (frame->IsMain()) [view_ publish];
@@ -740,7 +623,7 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
                      const CefPopupFeatures&, CefWindowInfo& info, CefRefPtr<CefClient>& client,
                      CefBrowserSettings&, CefRefPtr<CefDictionaryValue>&, bool*) override {
     CVChromiumView *parent = view_;
-    if (!parent || parent->_closed || shutdownCompletion) return true;
+    if (!parent || parent->_closed || ChromiumRuntime::Shared().HasRequestedShutdown()) return true;
     CVChromiumView *popup = [[CVChromiumView alloc] initWithProfile:parent->_profile proxyHost:parent->_proxyHost
         proxyPort:parent->_proxyPort proxyTLS:parent->_proxyTLS username:parent->_username password:parent->_password address:@"about:blank"];
     popup->_started = YES;
@@ -844,8 +727,7 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
 - (instancetype)initWithProfile:(NSString *)profile proxyHost:(NSString *)host proxyPort:(NSInteger)port
                       proxyTLS:(BOOL)tls username:(NSString *)username password:(NSString *)password address:(NSString *)address {
   if ((self = [super initWithFrame:NSMakeRect(0, 0, 800, 600)])) {
-    if (!zoomViews) zoomViews = [NSHashTable weakObjectsHashTable];
-    [zoomViews addObject:self];
+    ChromiumRuntime::Shared().ObserveZoom(self);
     _profile = [profile copy]; _proxyHost = [host stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"[]"]]; _proxyPort = port; _proxyTLS = tls;
     _username = [username copy]; _password = [password copy]; _address = [address copy];
     self.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
@@ -875,7 +757,7 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
     return;
   }
   _started = YES;
-  if (!Initialize()) { if (self.loadFailed) self.loadFailed(@"Couldn’t start Chromium."); return; }
+  if (!ChromiumRuntime::Shared().Initialize()) { if (self.loadFailed) self.loadFailed(@"Couldn’t start Chromium."); return; }
   CefRequestContextSettings settings;
   settings.persist_session_cookies = true;
   NSString *support = [NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES) firstObject];
@@ -889,7 +771,7 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
   return [responder isKindOfClass:NSView.class] && [(NSView *)responder isDescendantOf:_pageContainer];
 }
 - (void)createBrowser {
-  if (_closed || _browser || _creating || !self.window || shutdownCompletion) return;
+  if (_closed || _browser || _creating || !self.window || ChromiumRuntime::Shared().HasRequestedShutdown()) return;
   _creating = YES;
   CefWindowInfo info;
   info.SetAsChild((__bridge CefWindowHandle)_viewportHost, CefRect(0, 0, _viewportHost.bounds.size.width, _viewportHost.bounds.size.height));
@@ -920,7 +802,7 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
   _browser->GetHost()->Zoom(command);
   // Per-site zoom is shared by pages in the same Chromium profile. Refresh
   // their controls too, including other visible splits and detached windows.
-  for (CVChromiumView *view in zoomViews) [view publishZoom];
+  ChromiumRuntime::Shared().PublishZoom();
 }
 - (void)zoomIn { [self zoom:CEF_ZOOM_COMMAND_IN]; }
 - (void)zoomOut { [self zoom:CEF_ZOOM_COMMAND_OUT]; }
