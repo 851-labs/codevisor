@@ -58,7 +58,7 @@ public enum ClientStorageBootstrap {
   /// decodes the launch environment's persisted state (`launchSnapshot`),
   /// after every migration has written it.
   public static func openAsync(directory: URL) async throws -> ClientStorage {
-    let storage = try await Task.detached(priority: .userInitiated) {
+    let (storage, preferences) = try await Task.detached(priority: .userInitiated) {
       let opened = try openUnconfigured(
         directory: directory,
         legacyDefaults: .standard,
@@ -66,14 +66,17 @@ public enum ClientStorageBootstrap {
         migrateRenamedApplicationSupport: true,
         renamedLegacyDirectory: nil
       )
-      return ClientStorage(
+      let storage = ClientStorage(
         database: opened.database,
         store: opened.store,
         launchSnapshot: ClientLaunchSnapshot.read(from: opened.store)
       )
+      // Preloaded here so no preference read queries SQLite on main. A
+      // failed read just leaves the cache to fill lazily, as before.
+      return (storage, try? opened.database.allPreferences())
     }.value
     await MainActor.run {
-      ClientPreferences.shared.configure(database: storage.database)
+      ClientPreferences.shared.configure(database: storage.database, preferences: preferences)
     }
     return storage
   }

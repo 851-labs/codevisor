@@ -123,26 +123,39 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
     // Drain queued writes before the process exits so a state change
     // made just before quitting isn't lost. Name-based so this Foundation
     // package needs no AppKit/UIKit import; the store lives for the app's
-    // lifetime, so the retained closures are fine. iOS additionally
-    // flushes on backgrounding — iOS apps are usually jetsammed from the
-    // background without ever seeing a terminate notification.
+    // lifetime, so the retained closures are fine.
+    //
+    // Termination is the one flush that blocks the main thread: the
+    // process exits as soon as the notification's handlers return, so the
+    // writes must land first.
     #if os(macOS)
-      let flushNotificationNames = ["NSApplicationWillTerminateNotification"]
+      let terminationNotificationName = "NSApplicationWillTerminateNotification"
     #else
-      let flushNotificationNames = [
-        "UIApplicationWillTerminateNotification",
-        "UIApplicationDidEnterBackgroundNotification",
-      ]
+      let terminationNotificationName = "UIApplicationWillTerminateNotification"
     #endif
-    terminationObservers = flushNotificationNames.map { name in
+    terminationObservers.append(
       NotificationCenter.default.addObserver(
-        forName: Notification.Name(name),
+        forName: Notification.Name(terminationNotificationName),
         object: nil,
         queue: nil
       ) { [weak self] _ in
         self?.flushPendingWrites()
-      }
-    }
+      })
+    #if !os(macOS)
+      // iOS apps are usually jetsammed from the background without ever
+      // seeing a terminate notification, so pending writes also land on
+      // backgrounding — but off the main thread, which must keep animating
+      // the transition: inside an expiring-activity assertion that keeps
+      // the process running until the flush finishes.
+      terminationObservers.append(
+        NotificationCenter.default.addObserver(
+          forName: Notification.Name("UIApplicationDidEnterBackgroundNotification"),
+          object: nil,
+          queue: nil
+        ) { [weak self] _ in
+          self?.flushPendingWritesInBackground()
+        })
+    #endif
   }
 
   deinit {
@@ -269,6 +282,20 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
     PersistenceEncoding.drain()
     writeQueue.sync {}
   }
+
+  #if !os(macOS)
+    /// `flushPendingWrites` without involving the calling thread: the drain
+    /// runs on a background thread while ProcessInfo holds an
+    /// expiring-activity assertion, so a backgrounding app is not suspended
+    /// mid-flush. If the system expires the assertion first, the writes
+    /// stay queued and land once the app runs again (or at termination).
+    public func flushPendingWritesInBackground() {
+      ProcessInfo.processInfo.performExpiringActivity(withReason: "Saving Codevisor data") { [weak self] expired in
+        guard !expired else { return }
+        self?.flushPendingWrites()
+      }
+    }
+  #endif
 }
 
 /// An in-memory `PersistenceStore` for tests and previews.

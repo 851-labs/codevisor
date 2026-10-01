@@ -303,6 +303,28 @@ public final class ClientDatabase: @unchecked Sendable {
     return result
   }
 
+  /// Every stored preference, read once at launch off the main thread so
+  /// `ClientPreferences` never has to query SQLite from a view.
+  public func allPreferences() throws -> [String: Data] {
+    try lock.withLock {
+      let statement = try prepare("SELECT key, value FROM client_preferences")
+      defer { sqlite3_finalize(statement) }
+      var result: [String: Data] = [:]
+      while true {
+        let step = sqlite3_step(statement)
+        if step == SQLITE_DONE { return result }
+        guard step == SQLITE_ROW else { throw makeError(operation: "read") }
+        guard let key = sqlite3_column_text(statement, 0) else { continue }
+        let count = Int(sqlite3_column_bytes(statement, 1))
+        if count > 0, let bytes = sqlite3_column_blob(statement, 1) {
+          result[String(cString: key)] = Data(bytes: bytes, count: count)
+        } else {
+          result[String(cString: key)] = Data()
+        }
+      }
+    }
+  }
+
   private func prepare(_ sql: String) throws -> OpaquePointer {
     guard let handle else {
       throw ClientDatabaseError(operation: "prepare", detail: "Database is closed")
