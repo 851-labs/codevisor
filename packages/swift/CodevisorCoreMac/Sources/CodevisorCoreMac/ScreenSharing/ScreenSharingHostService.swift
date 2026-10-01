@@ -275,10 +275,7 @@ final class ScreenSharingHostService {
     session.peer.controlChannel.onAvailabilityChanged = { [weak control] available in
       if !available { control?.revoke("The control channel closed.") }
     }
-    control.onChanged = { [weak self] active in
-      self?.indicator.setControlling(active)
-      if active { Self.curtain.draw() } else { Self.curtain.open() }
-    }
+    control.onChanged = { [weak self] active in self?.indicator.setControlling(active) }
     session.configureMediaSubscriptions()
     configureDisplay(session)
     configureVideoFormat(session)
