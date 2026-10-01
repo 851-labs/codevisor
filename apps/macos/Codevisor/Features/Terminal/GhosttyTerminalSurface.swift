@@ -287,14 +287,21 @@ final class GhosttyTerminalSurface: TerminalSurface {
     // The server's shell keeps running (reattached next time); closing it
     // for good is the pane's explicit delete.
     controller.detach()
-    renderer?.invalidate()
-    guard let view = surfaceView else { return }
-    CodevisorGhosttyApp.shared.unregister(view)
-    view.removeFromSuperview()
+    let view = surfaceView
+    if let view {
+      CodevisorGhosttyApp.shared.unregister(view)
+      view.removeFromSuperview()
+    }
     cancellables.removeAll()
-    // Dropping the last reference releases Ghostty.Surface, whose deinit
-    // frees the C surface on the main actor.
     surfaceView = nil
+    // Releasing the view releases Ghostty.Surface, whose deinit frees the C
+    // surface on the main actor -- which must not happen while a write runs
+    // on the renderer's queue. Rather than make the main thread wait for
+    // that write, stop further writes now and keep the view alive until the
+    // queue has finished the one in flight.
+    renderer?.retire {
+      withExtendedLifetime(view) {}
+    }
   }
 }
 

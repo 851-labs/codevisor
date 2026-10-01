@@ -78,20 +78,14 @@ final class GhosttySurfaceRenderer: TerminalRenderer {
   }
 
   func writeLive(_ bytes: [UInt8]) {
-    target.enqueue { surface in
-      bytes.withUnsafeBufferPointer { buffer in
-        guard let base = buffer.baseAddress else { return }
-        ghostty_surface_write_buffer(surface, base, UInt(buffer.count))
-      }
+    target.enqueue(bytes) { surface, chunk in
+      ghostty_surface_write_buffer(surface, chunk.baseAddress, UInt(chunk.count))
     }
   }
 
   func writeReplay(_ bytes: [UInt8]) {
-    target.enqueue { surface in
-      bytes.withUnsafeBufferPointer { buffer in
-        guard let base = buffer.baseAddress else { return }
-        ghostty_surface_write_buffer_replay(surface, base, UInt(buffer.count))
-      }
+    target.enqueue(bytes) { surface, chunk in
+      ghostty_surface_write_buffer_replay(surface, chunk.baseAddress, UInt(chunk.count))
     }
   }
 
@@ -152,16 +146,24 @@ final class GhosttySurfaceRenderer: TerminalRenderer {
     return label
   }
 
-  /// Stops all writes before the surface is freed. Waits for one in
-  /// flight, ticking the app meanwhile so a write waiting on the main
-  /// thread can finish.
-  func invalidate() {
-    target.invalidate()
+  /// Stops all writes before the surface is freed, without the main thread
+  /// waiting for one in flight: writes still queued are skipped from now
+  /// on, and `released` runs on the main actor once the write queue has
+  /// finished the one it may be running (at most one chunk). The caller
+  /// keeps the surface alive until then.
+  func retire(then released: @escaping @MainActor @Sendable () -> Void) {
+    target.retire(then: released)
   }
 }
 
-/// The C surface, guarded so no write can run once it is invalidated.
+/// The C surface, guarded so no write starts once it is retired.
 private final class SurfaceTarget: @unchecked Sendable {
+  /// Large writes (a reattach's whole scrollback) are split so a write in
+  /// flight is short: retiring waits for at most one chunk, and output that
+  /// arrives meanwhile is not stuck behind a multi-megabyte parse. Ghostty
+  /// parses a stream, so a chunk may end anywhere, as a PTY read can.
+  static let chunkSize = 64 * 1024
+
   private let lock = NSLock()
   private var surface: ghostty_surface_t?
   private let queue = DispatchQueue(label: "dev.codevisor.terminal.surface-output", qos: .userInteractive)
@@ -170,21 +172,35 @@ private final class SurfaceTarget: @unchecked Sendable {
     self.surface = surface
   }
 
+  /// Queues `bytes` in chunks; each chunk is skipped once retired.
+  func enqueue(
+    _ bytes: [UInt8],
+    write: @escaping @Sendable (ghostty_surface_t, UnsafeBufferPointer<UInt8>) -> Void
+  ) {
+    var start = bytes.startIndex
+    while start < bytes.endIndex {
+      let range = start..<min(bytes.endIndex, start + Self.chunkSize)
+      enqueue { surface in
+        bytes.withUnsafeBufferPointer { buffer in write(surface, UnsafeBufferPointer(rebasing: buffer[range])) }
+      }
+      start = range.upperBound
+    }
+  }
+
   func enqueue(_ write: @escaping @Sendable (ghostty_surface_t) -> Void) {
     queue.async { [self] in
-      lock.lock()
-      defer { lock.unlock() }
-      guard let surface else { return }
+      // Read under the lock, written without it: retiring never frees the
+      // surface itself, it only stops later writes from starting.
+      guard let surface = lock.withLock({ surface }) else { return }
       write(surface)
     }
   }
 
-  func invalidate() {
-    while !lock.try() {
-      if let surface { ghostty_app_tick(ghostty_surface_app(surface)) }
-      usleep(1000)
+  func retire(then released: @escaping @MainActor @Sendable () -> Void) {
+    lock.withLock { surface = nil }
+    // Runs after the write in flight, if any: the queue is serial.
+    queue.async {
+      Task { @MainActor in released() }
     }
-    surface = nil
-    lock.unlock()
   }
 }
