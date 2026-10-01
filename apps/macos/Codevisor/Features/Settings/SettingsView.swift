@@ -291,7 +291,6 @@ struct SettingsView: View {
       .scrollBounceBehavior(.basedOnSize)
       .themedSurface(.sidebar)
       .navigationSplitViewColumnWidth(min: 185, ideal: 205, max: 240)
-      .themedToolbarBackground(theme, role: .sidebar)
       // System Settings keeps its sidebar fixed; a collapse control
       // would just leave an empty content window here.
       .toolbar(removing: .sidebarToggle)
@@ -308,7 +307,7 @@ struct SettingsView: View {
             }
           }
       }
-      .themedToolbarBackground(theme, role: .content)
+      .themedToolbarBackground(theme)
     }
     // Every navigation (sidebar selection, push, pop, deep link) files
     // the previous page into the history. While back/forward applies a

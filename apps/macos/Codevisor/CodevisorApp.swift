@@ -294,7 +294,6 @@ struct RootView: View {
       // chat you open (or send), and machines are managed in Settings.
       SidebarView(selection: $selection, store: store)
         .navigationSplitViewColumnWidth(min: 230, ideal: 270, max: 360)
-        .themedToolbarBackground(theme, role: .sidebar)
     } detail: {
       Group {
         if let store {
@@ -303,10 +302,7 @@ struct RootView: View {
           ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         }
       }
-      .themedToolbarBackground(theme, role: .content)
-      // The pane tab bar draws its own bottom divider; a system hairline
-      // above it would box the tab strip in between two rules.
-      .hidesTitlebarSeparator()
+      .themedToolbarBackground(theme)
     }
     .overlay {
       AdaptiveDrawerLayer(
