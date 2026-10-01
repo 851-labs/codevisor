@@ -20,6 +20,38 @@ extension ComputerUseLivePreview {
     connection.start(viewer: viewer)
     return viewer
   }
+
+  /// Whether the agent of a chat on another Mac is controlling an app right
+  /// now, asked without streaming it: nil when the host can't say (offline,
+  /// no permission, an error). An idle agent counts as not controlling.
+  public func remoteActivityIsActive(
+    chatSession id: UUID,
+    client: any CodevisorServerClienting,
+    workspaceId: UUID,
+    paneId: UUID
+  ) async -> Bool? {
+    let target = ComputerUseStreamTarget.displayId(sessionID: id.uuidString)
+    let request = ServerScreenSharingRequest(
+      operation: .capabilities, workspaceId: workspaceId, paneId: paneId, viewerId: UUID(), displayId: target)
+    guard let reply = try? await client.screenSharing(request) else { return nil }
+    return Self.remoteActivityIsActive(reply: reply, target: target)
+  }
+
+  /// How often to ask a host about its agent: often while the chat's turn runs.
+  public static func remotePollInterval(prefersFastPolling: Bool) -> Duration {
+    ComputerUseRemotePreviewTiming.pollInterval(prefersFastPolling: prefersFastPolling)
+  }
+
+  /// Reads a capabilities reply: the host answers "unavailable" when the
+  /// agent isn't controlling an app. Other refusals say nothing about it.
+  static func remoteActivityIsActive(reply: ServerScreenSharingReply, target: String) -> Bool? {
+    guard reply.version == 1 else { return nil }
+    switch reply.status {
+    case "available", "busy": return reply.displays.contains { $0.id == target }
+    case "unavailable": return false
+    default: return nil
+    }
+  }
 }
 
 /// Timing of the remote viewer's search for an active agent.

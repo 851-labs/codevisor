@@ -27,21 +27,34 @@ struct ComputerUseLivePreviewHostTests {
   func capabilities() async {
     let world = World()
     let host = world.host()
-    #expect(await host.handle(world.request(.capabilities)).status == "unavailable")
+    let notControlling = await host.handle(world.request(.capabilities))
+    #expect(notControlling.status == "unavailable")
+    #expect(Self.viewerSeesActivity(notControlling) == false)
 
     world.activityState = .active
     let reply = await host.handle(world.request(.capabilities))
     #expect(reply.status == "available")
+    #expect(Self.viewerSeesActivity(reply) == true)
     #expect(reply.displays.map(\.id) == [Self.target])
     #expect(reply.displays.first?.name == "TextEdit")
     #expect(reply.displays.first?.width == 960)
     #expect(reply.connectivity != nil)
 
     world.activityState = .idle
-    #expect(await host.handle(world.request(.capabilities)).status == "unavailable")
+    let idle = await host.handle(world.request(.capabilities))
+    #expect(idle.status == "unavailable")
+    #expect(Self.viewerSeesActivity(idle) == false)
     world.activityState = .active
     world.access = false
-    #expect(await host.handle(world.request(.capabilities)).status == "permission-required")
+    let denied = await host.handle(world.request(.capabilities))
+    #expect(denied.status == "permission-required")
+    // No permission says nothing about whether the agent is controlling an app.
+    #expect(Self.viewerSeesActivity(denied) == nil)
+  }
+
+  /// How a closed remote preview's watcher reads the reply.
+  private static func viewerSeesActivity(_ reply: ServerScreenSharingReply) -> Bool? {
+    ComputerUseLivePreview.remoteActivityIsActive(reply: reply, target: target)
   }
 
   @Test("Answers, feeds frames, reports connection state, and releases on stop")
