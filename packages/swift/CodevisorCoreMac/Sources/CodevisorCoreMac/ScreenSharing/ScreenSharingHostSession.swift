@@ -100,7 +100,9 @@ final class ScreenSharingHostSession {
         Task { try? await self.capture.setShowsCursor(showsCursor) }
       })
     self.audioStream = ScreenSharingHostAudioStream(
-      channel: self.peer.audioChannel, tap: self.capture.audio, metrics: self.metrics,
+      channel: self.peer.audioChannel,
+      sendPacket: { [weak audioChannel = self.peer.audioChannel] in audioChannel?.send($0) ?? false },
+      tap: self.capture.audio, metrics: self.metrics,
       isStopping: { [weak self] in self?.stopping ?? true },
       setCapturesAudio: { [weak self] capturesAudio in
         guard let self else { return }

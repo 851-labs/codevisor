@@ -10,24 +10,25 @@ final class ScreenSharingHostAudioStream {
   private let isStopping: () -> Bool
   private let setCapturesAudio: (Bool) -> Void
 
+  /// `sendPacket` is called on the capture's audio queue for every 20 ms packet: the native
+  /// channel's send is thread-safe and never waits for WebRTC, so packets don't hop through main.
   init(
     channel: any ScreenSharingMessageChannel<ScreenSharingAudioMessage>,
+    sendPacket: @escaping @Sendable (ScreenSharingAudioMessage) -> Bool,
     tap: ScreenSharingCaptureAudioTap, metrics: ScreenSharingMetrics,
     isStopping: @escaping () -> Bool, setCapturesAudio: @escaping (Bool) -> Void
   ) {
     self.tap = tap; self.metrics = metrics
     self.isStopping = isStopping; self.setCapturesAudio = setCapturesAudio
-    channel.onMessage = { [weak self, weak channel] message in
-      guard let self, let channel, !isStopping() else { return }
+    channel.onMessage = { [weak self] message in
+      guard let self, !isStopping() else { return }
       switch message {
       case .subscribe:
         guard encoder == nil else { return }
         do {
-          let encoder = try ScreenSharingAudioEncoder { [weak channel, metrics] packet in
+          let encoder = try ScreenSharingAudioEncoder { [metrics] packet in
             metrics.increment("audioPacketsEncoded")
-            DispatchQueue.main.async {
-              MainActor.assumeIsolated { _ = channel?.send(.packet(packet)) }
-            }
+            _ = sendPacket(.packet(packet))
           }
           self.encoder = encoder
           tap.set { encoder.append(sampleBuffer: $0) }

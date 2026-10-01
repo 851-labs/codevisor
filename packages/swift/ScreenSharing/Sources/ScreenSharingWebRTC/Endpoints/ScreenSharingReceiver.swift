@@ -1,4 +1,5 @@
 import Foundation
+import os
 @preconcurrency import WebRTC
 import ScreenSharing
 
@@ -47,10 +48,11 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
       guard available, let self, let viewerHighDynamicRange = self.viewerHighDynamicRange else { return }
       self.videoFormatChannel.send(.viewer(highDynamicRange: viewerHighDynamicRange))
     }
-    audioChannel.onMessage = { [weak self] message in
-      guard case .packet(let packet) = message else { return }
-      self?.audioPacketsReceived += 1
-      self?.audioPlayer?.receive(packet)
+    // 50 packets a second go from the channel's queue to the player's decoder, never through main.
+    audioChannel.deliverOffMain { [audioSink] message in
+      guard case .packet(let packet) = message else { return false }
+      audioSink.receive(packet)
+      return true
     }
     audioChannel.onAvailabilityChanged = { [weak self] available in
       if available { self?.subscribeToAudio() } else { self?.audioSubscribed = false }
@@ -139,11 +141,13 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
   // MARK: Audio (851-2379)
 
   public var supportsAudio: Bool { true }
-  private var audioPlayer: ScreenSharingAudioPlayer?
+  private var audioPlayer: ScreenSharingAudioPlayer? {
+    didSet { audioSink.player = audioPlayer }
+  }
+  private let audioSink = ScreenSharingAudioSink()
   private var audioWanted = false
   private var audioSubscribed = false
   private var audioSync: Task<Void, Never>?
-  private var audioPacketsReceived = 0
 
   /// Plays the host's sound: subscribes once the channel is open and keeps the sound as late as
   /// the picture (the video's jitter-buffer delay, measured every second). Disabling unsubscribes,
@@ -231,7 +235,7 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
         let target = Self.audioTarget(videoDelay: videoDelay, margin: margin)
         player.setTargetDelay(target)
         // Only once the host sends sound: an older host never does.
-        if audioPacketsReceived > 0 { metrics.label("audioTargetDelayMs", String(Int(target * 1000))) }
+        if audioSink.packetsReceived > 0 { metrics.label("audioTargetDelayMs", String(Int(target * 1000))) }
       }
       previous = (delay, emitted)
       let buffer = player.statistics
@@ -324,5 +328,27 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
   override func didClose() {
     mailbox.clear()
     frameDeliveryAudit?.close()  // later decoder/VT/RTC/GPU/presented callbacks are counted as late, never recorded
+  }
+}
+
+/// Where the audio channel's queue hands the host's packets: the player playing right now (if
+/// any), and how many packets arrived. Shared between that queue and the main actor.
+final class ScreenSharingAudioSink: Sendable {
+  private let state = OSAllocatedUnfairLock<(player: ScreenSharingAudioPlayer?, packets: Int)>(
+    initialState: (nil, 0))
+
+  var player: ScreenSharingAudioPlayer? {
+    get { state.withLock { $0.player } }
+    set { state.withLock { $0.player = newValue } }
+  }
+
+  var packetsReceived: Int { state.withLock { $0.packets } }
+
+  func receive(_ packet: ScreenSharingAudioPacket) {
+    let player = state.withLock { state in
+      state.packets += 1
+      return state.player
+    }
+    player?.receive(packet)
   }
 }

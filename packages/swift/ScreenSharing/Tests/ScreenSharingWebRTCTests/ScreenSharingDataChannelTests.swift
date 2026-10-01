@@ -89,6 +89,45 @@ struct ScreenSharingDataChannelTests {
     #expect(!pair.viewer.send(Data([9])) && !pair.host.send(Data([9])))
   }
 
+  /// The host's audio sends from the capture's queue: `send` is safe from any thread, and the
+  /// channel's queue keeps the order sends were made in.
+  @Test func sendsFromAnotherThreadArriveInTheOrderTheyWereMade() async throws {
+    let pair = try Pair()
+    defer { pair.close() }
+    try await pair.open()
+    let host = pair.host
+    let payloads = (0..<20).map { Data([UInt8($0)]) }
+    let accepted = await withCheckedContinuation { continuation in
+      DispatchQueue.global(qos: .userInitiated).async {
+        continuation.resume(returning: payloads.map { host.send($0) })
+      }
+    }
+    #expect(accepted == Array(repeating: true, count: payloads.count))
+    await pair.delivered.wait(for: payloads.count)
+    #expect(pair.received == payloads)
+  }
+
+  /// The viewer's audio is taken on the channel's queue and never waits for the main actor;
+  /// everything else on the channel still reaches `onMessage` on main, in order.
+  @Test func aConsumerTakesItsMessagesOffMainAndTheRestReachMainInOrder() async throws {
+    let pair = try Pair()
+    defer { pair.close() }
+    let taken = OffMainLog()
+    pair.viewer.deliverOffMain { data in
+      guard data.first == 0xA0 else { return false }
+      taken.record(data)
+      return true
+    }
+    try await pair.open()
+    let payloads = [Data([1]), Data([0xA0, 1]), Data([2]), Data([0xA0, 2]), Data([3])]
+    for payload in payloads { #expect(pair.host.send(payload)) }
+    await taken.recorded.wait(for: 2)
+    await pair.delivered.wait(for: 3)
+    #expect(taken.messages == [Data([0xA0, 1]), Data([0xA0, 2])])
+    #expect(!taken.sawMainThread)
+    #expect(pair.received == [Data([1]), Data([2]), Data([3])])
+  }
+
   @Test func aPacketThatCannotBeDecodedClosesTheReceivingChannelAndDropsTheRest() async throws {
     let pair = try Pair()
     defer { pair.close() }
@@ -133,4 +172,23 @@ struct ScreenSharingDataChannelTests {
     #expect(pair.received.isEmpty)
     #expect(!pair.host.send(Data([1])))
   }
+}
+
+/// What a consumer took on the channel's queue, and whether any of it ran on the main thread.
+private final class OffMainLog: @unchecked Sendable {
+  private let lock = NSLock()
+  private var taken: [Data] = []
+  private var onMain = false
+  let recorded = TestSignal()
+
+  func record(_ data: Data) {
+    lock.withLock {
+      taken.append(data)
+      onMain = onMain || Thread.isMainThread
+    }
+    recorded.signal()
+  }
+
+  var messages: [Data] { lock.withLock { taken } }
+  var sawMainThread: Bool { lock.withLock { onMain } }
 }

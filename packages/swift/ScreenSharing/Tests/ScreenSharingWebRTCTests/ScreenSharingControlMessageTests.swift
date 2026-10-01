@@ -67,6 +67,8 @@ struct ScreenSharingControlMessageTests {
     let batch = bytes.drain()
     #expect(!batch.1)
     #expect(batch.0.map { $0.first! } == Array(UInt8(0)..<16))
+    let released = bytes.finish()
+    #expect(!released)
     #expect(bytes.enqueue(Data(repeating: 1, count: 4097)) == true)
     #expect(bytes.drain().1)
   }
@@ -96,10 +98,33 @@ struct ScreenSharingControlMessageTests {
     let batch = inbox.drain()
     #expect(batch.0 == [Data([1]), Data([2]), Data([3])] && !batch.1)
     #expect(inbox.drain().0.isEmpty)
-    // The drain released the schedule, so the next arrival asks for a new one
-    // rather than waiting for a drain that will never come.
+    // Finishing a drain with nothing new releases the schedule, so the next
+    // arrival asks for a new one rather than waiting for a drain that will never come.
+    let released = inbox.finish()
+    #expect(!released)
     #expect(inbox.enqueue(Data([4])) == true)
     #expect(inbox.drain().0 == [Data([4])])
+  }
+
+  /// A drain stays outstanding until its batch was delivered (on the main actor, for most
+  /// channels): what arrives meanwhile waits within the limits instead of scheduling a second
+  /// delivery, and finishing reports it so the same drain takes it next.
+  @Test func arrivalsWhileABatchIsBeingDeliveredWaitForTheSameDrain() {
+    var inbox = ScreenSharingControlInbox()
+    #expect(inbox.enqueue(Data([1])) == true)
+    #expect(inbox.drain().0 == [Data([1])])
+    #expect(inbox.enqueue(Data([2])) == false, "the first batch is still being delivered")
+    #expect(inbox.enqueue(Data([3])) == false)
+    let pending = inbox.finish()
+    #expect(pending, "more arrived: drain again")
+    #expect(inbox.drain().0 == [Data([2]), Data([3])])
+    let released = inbox.finish()
+    #expect(!released)
+    #expect(inbox.enqueue(Data([4])) == true)
+    // A stalled delivery bounds the backlog exactly as before: 256 messages, then failure.
+    for _ in 0..<256 { _ = inbox.enqueue(Data()) }
+    let overflow = inbox.drain()
+    #expect(overflow.1 && overflow.0.count == 256)
   }
 
   @Test func aDrainRestoresTheByteBudgetButNeverClearsAFailure() {
@@ -113,13 +138,18 @@ struct ScreenSharingControlMessageTests {
     for _ in 0..<16 { _ = inbox.enqueue(full) }
     let second = inbox.drain()
     #expect(second.0.count == 16 && !second.1)
+    let released = inbox.finish()
+    #expect(!released)
 
     #expect(inbox.enqueue(Data(repeating: 9, count: ScreenSharingControlMessage.maximumBytes + 1)) == true)
     let failure = inbox.drain()
     #expect(failure.0.isEmpty && failure.1)
     // The failure latches, because the channel is torn down on it: nothing
-    // after it is admitted and every later drain keeps reporting it.
-    #expect(inbox.enqueue(Data([1])) == true)
+    // after it is admitted, finishing never releases the drain, and every
+    // later drain keeps reporting it.
+    let pending = inbox.finish()
+    #expect(pending)
+    #expect(inbox.enqueue(Data([1])) == false)
     let after = inbox.drain()
     #expect(after.0.isEmpty && after.1)
   }

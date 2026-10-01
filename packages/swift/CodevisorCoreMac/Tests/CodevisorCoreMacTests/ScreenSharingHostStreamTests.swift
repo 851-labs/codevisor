@@ -9,7 +9,7 @@ struct ScreenSharingHostStreamTests {
     let metrics = ScreenSharingMetrics()
     var captureChanges: [Bool] = []
     let stream = ScreenSharingHostAudioStream(
-      channel: channel, tap: ScreenSharingCaptureAudioTap(), metrics: metrics,
+      channel: channel, sendPacket: { _ in true }, tap: ScreenSharingCaptureAudioTap(), metrics: metrics,
       isStopping: { false }, setCapturesAudio: { captureChanges.append($0) })
     channel.onMessage?(.subscribe)
     channel.onMessage?(.subscribe)
@@ -31,7 +31,7 @@ struct ScreenSharingHostStreamTests {
     var stopping = false
     var captureChanges: [Bool] = []
     let stream = ScreenSharingHostAudioStream(
-      channel: channel, tap: ScreenSharingCaptureAudioTap(), metrics: metrics,
+      channel: channel, sendPacket: { _ in true }, tap: ScreenSharingCaptureAudioTap(), metrics: metrics,
       isStopping: { stopping }, setCapturesAudio: { captureChanges.append($0) })
     channel.onMessage?(.subscribe)
     stopping = true
