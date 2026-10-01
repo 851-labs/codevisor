@@ -19,89 +19,7 @@ final class ScreenSharingHostService {
   static let estimateWarmUp: TimeInterval = 5
   typealias Display = (id: UInt32, description: ServerScreenSharingDisplay)
   static let logger = Logger(subsystem: "com.851labs.Codevisor", category: "ScreenSharing")
-  @MainActor final class Session {
-    let owner: ScreenSharingHostLease.Owner
-    let peer: ScreenSharingSender
-    let capture: ScreenSharingCapture
-    /// The explicit experimental profile in force for this process, or nil when it is OFF (the default).
-    let profile: ScreenSharingDiagnosticProfile?
-    let metrics: ScreenSharingMetrics
-    let display: ServerScreenSharingDisplay
-    /// The shared physical display. macOS can renumber it when the display set changes, so it's
-    /// followed by `displayIdentity` (see `followDisplay`).
-    var displayID: UInt32
-    let displayIdentity: ScreenSharingDisplayIdentity
-    /// The physical display scaled to ≤1080p; a virtual display sized to the viewer replaces it
-    /// while Dynamic Resolution is on (851-2376).
-    var configuration: ScreenSharingVideoConfiguration
-    let physicalConfiguration: ScreenSharingVideoConfiguration
-    var virtualDisplay: ScreenSharingHostVirtualDisplay?
-    var captureDisplayID: UInt32 { virtualDisplay?.displayID ?? displayID }
-    /// Posts input within the shared display's current bounds (they change while mirrored).
-    var injector: ScreenSharingInputInjector?
-    var pendingResize: Task<Void, Never>?
-    /// What the capture is running with: the display and configuration it last started or updated to.
-    var capturing: (display: CGDirectDisplayID, configuration: ScreenSharingVideoConfiguration)?
-    /// The resize being applied; a newer size waits for it rather than cancelling it.
-    var resizing: Task<Void, Never>?
-    /// Until this uptime, display changes are the host's own (a virtual display appearing,
-    /// mirroring, resizing) and don't end the session.
-    var ownDisplayChangeUntil: TimeInterval = 0
-    var state = "connecting"
-    /// What the viewer should show while there's no video, sent with the heartbeat's status
-    /// (older viewers ignore it): a stalled capture being recovered (851-2385).
-    var notice: String?
-    /// Held from the first captured frame's session start until the session ends (851-2375).
-    var displaySleepAssertion: ScreenSharingDisplaySleepAssertion?
-    var captureRestarts = ScreenSharingCaptureRestartPolicy()
-    /// The pointer as its own stream, once the viewer subscribed (851-2377).
-    var cursor: ScreenSharingCursorPublisher?
-    /// The host's sound, once the viewer subscribed (851-2379).
-    var audioEncoder: ScreenSharingAudioEncoder?
-    var control: ScreenSharingHostControl?
-    /// The codec the answer settled on; its capture format decides whether HDR is possible (851-2380).
-    var codec: ScreenSharingVideoCodec?
-    /// HDR: what the viewer's screen can show, the switch in progress, what the viewer was told.
-    var hdr = ScreenSharingHostService.DynamicRangeState()
-    var clipboard: ScreenSharingClipboardTransfer?
-    var stopping = false
-    var watchdog: Task<Void, Never>?
-    var captureTask: Task<Void, Never>?
-    var qualityTask: Task<Void, Never>?
-
-    init(
-      request: ServerScreenSharingRequest, display: ServerScreenSharingDisplay, displayID: UInt32,
-      connectivity: ServerScreenSharingConnectivity, profile: ScreenSharingDiagnosticProfile?
-    ) throws {
-      owner = .init(request)
-      self.profile = profile
-      self.display = display; self.displayID = displayID
-      displayIdentity = ScreenSharingDisplayIdentity(display: displayID)
-      // Level 0 is where a session starts; lower levels request the video rate through the same validated path.
-      capture = ScreenSharingCapture(captureIntervalFPS: profile?.captureIntervalFPS(adaptiveLevel: 0))
-      let scale = min(1, min(1920.0 / Double(display.width), 1080.0 / Double(display.height)))
-      configuration = try ScreenSharingVideoConfiguration(
-        width: max(64, Int(Double(display.width) * scale) / 2 * 2),
-        height: max(64, Int(Double(display.height) * scale) / 2 * 2),
-        bitrate: ScreenSharingHostService.bitrateCeiling)
-      physicalConfiguration = configuration
-      metrics = ScreenSharingMetrics()
-      // install(profile:) throws unless the process trial map equals what this profile requires, so reaching the next
-      // line means the profile's settings below are the ones actually wired. "Active" therefore names THIS validated
-      // profile; the first installer's provenance is a separate fact published by the peer as fieldTrialProvenance.
-      try ScreenSharingFieldTrials.process.install(profile: profile)
-      metrics.label("diagnosticProfileRequested", profile?.name ?? "none")
-      metrics.label("diagnosticProfileActive", profile?.name ?? "none")
-      if let profile {
-        metrics.label(
-          "diagnosticProfileCaptureRequest",
-          "\(profile.captureIntervalFPSAtLevel0) fps at adaptive level 0, video rate below")
-      }
-      peer = try ScreenSharingSender(
-        configuration: configuration, metrics: metrics, connectivity: connectivity.native())
-    }
-  }
-  private(set) var current: Session?
+  private(set) var current: ScreenSharingHostSession?
   /// Why the host itself last ended a viewer's session, told to that viewer's next heartbeat: its
   /// connection just drops, and "the connection ended" blamed the network (851-2397).
   private var lastEnd: (owner: ScreenSharingHostLease.Owner, reason: String)?
@@ -231,7 +149,7 @@ final class ScreenSharingHostService {
         // Parsed once per process (failures cached too); an unknown value fails the request rather than selecting
         // the candidate, and both roles in this app process read the same answer.
         let profile = try ScreenSharingDiagnosticProfile.process()
-        let session = try Session(
+        let session = try ScreenSharingHostSession(
           request: request, display: display.description, displayID: display.id,
           connectivity: connectivity.make(viewerId: request.viewerId), profile: profile)
         guard lease.reserve(session.owner, now: ProcessInfo.processInfo.systemUptime) else {
@@ -270,7 +188,7 @@ final class ScreenSharingHostService {
     observers = []
   }
 
-  private func configure(_ session: Session) {
+  private func configure(_ session: ScreenSharingHostSession) {
     session.qualityTask = Task { [weak self, weak session] in
       guard let initial = session?.configuration else { return }
       var base = initial
@@ -349,8 +267,7 @@ final class ScreenSharingHostService {
       self?.indicator.setControlling(active)
       if active { Self.curtain.draw() } else { Self.curtain.open() }
     }
-    configureCursor(session)
-    configureAudio(session)
+    session.configureMediaSubscriptions()
     configureDisplay(session)
     configureVideoFormat(session)
 
@@ -403,7 +320,7 @@ final class ScreenSharingHostService {
     }
   }
 
-  private func scheduleEnd(_ session: Session) {
+  private func scheduleEnd(_ session: ScreenSharingHostSession) {
     guard current === session else { return }
     stopGeneration += 1
     session.state = "stopping"
@@ -414,7 +331,7 @@ final class ScreenSharingHostService {
 
   static let captureFailed = "The host Mac couldn't start capturing its screen. Try again."
 
-  private func end(_ session: Session, reason: String? = nil) async {
+  private func end(_ session: ScreenSharingHostSession, reason: String? = nil) async {
     guard current === session, !session.stopping else { return }
     if let reason { lastEnd = (session.owner, reason) }
     session.stopping = true
@@ -426,8 +343,7 @@ final class ScreenSharingHostService {
     )
     session.watchdog?.cancel()
     session.qualityTask?.cancel()
-    session.cursor?.stop()
-    session.capture.audio.set(nil)
+    session.stopMediaPublishing()
     session.pendingResize?.cancel()
     session.resizing?.cancel()
     session.peer.close()
@@ -482,7 +398,7 @@ extension ScreenSharingHostService {
 
   /// ScreenCaptureKit stopped the stream with an error (851-2375): restart it on the same
   /// session, a bounded number of times, with the viewer told why the picture paused.
-  private func captureStopped(_ session: Session, message: String) {
+  private func captureStopped(_ session: ScreenSharingHostSession, message: String) {
     guard current === session, !session.stopping else { return }
     guard session.captureRestarts.allowsRestart(now: ProcessInfo.processInfo.systemUptime) else {
       Self.logger.error("Capture stopped again (\(message, privacy: .public)); ending the session")
@@ -518,7 +434,7 @@ extension ScreenSharingHostService {
     }
   }
 
-  func captureRecovery(_ session: Session) -> ScreenSharingCaptureStallRecovery {
+  func captureRecovery(_ session: ScreenSharingHostSession) -> ScreenSharingCaptureStallRecovery {
     ScreenSharingCaptureStallRecovery.live(
       metrics: session.metrics,
       restartCapture: { [weak self, weak session] in
@@ -537,7 +453,7 @@ extension ScreenSharingHostService {
       })
   }
 
-  private func recoverStalledCapture(_ session: Session, baseline: Int) async {
+  private func recoverStalledCapture(_ session: ScreenSharingHostSession, baseline: Int) async {
     let recovery = captureRecovery(session)
     guard let outcome = try? await recovery.run(baseline: baseline), current === session, !session.stopping else {
       return

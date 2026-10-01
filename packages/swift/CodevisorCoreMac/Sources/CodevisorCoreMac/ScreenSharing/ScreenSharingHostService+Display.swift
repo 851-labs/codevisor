@@ -6,7 +6,7 @@ extension ScreenSharingHostService {
   /// Dynamic Resolution for a native viewer (851-2376): once the display channel opens the host
   /// says whether it can size a virtual display; the viewer's pane size then arrives as `resize`
   /// (in points) and `restore` puts the physical display back.
-  func configureDisplay(_ session: Session) {
+  func configureDisplay(_ session: ScreenSharingHostSession) {
     let channel = session.peer.displayChannel
     channel.onAvailabilityChanged = { [weak channel] available in
       guard available, let channel else { return }
@@ -45,7 +45,7 @@ extension ScreenSharingHostService {
   /// A resize already being applied is never cancelled: cancelling it mid-way cancelled its
   /// capture start and left the capture stopped, so the video froze (tuftlord, 2026-09-25: two
   /// sizes ~1 s apart as a viewer connected). A newer size waits for it, then applies.
-  private func scheduleResize(_ session: Session, to size: (width: Int, height: Int)?) {
+  private func scheduleResize(_ session: ScreenSharingHostSession, to size: (width: Int, height: Int)?) {
     session.pendingResize?.cancel()
     session.pendingResize = Task { [weak self, weak session] in
       do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
@@ -59,7 +59,7 @@ extension ScreenSharingHostService {
     }
   }
 
-  private func resize(_ session: Session, to size: (width: Int, height: Int)?) async {
+  private func resize(_ session: ScreenSharingHostSession, to size: (width: Int, height: Int)?) async {
     let channel = session.peer.displayChannel
     // The virtual display appearing, the mirror and the new mode each post a screen change.
     session.ownDisplayChangeUntil = ProcessInfo.processInfo.systemUptime + 5

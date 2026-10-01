@@ -15,7 +15,7 @@ extension ScreenSharingHostService {
   /// screen can show HDR; the host captures and encodes 10-bit Display P3 PQ while that holds and
   /// the display it captures has headroom, and says what it sends. An older viewer never opens
   /// the channel, and the session stays SDR.
-  func configureVideoFormat(_ session: Session) {
+  func configureVideoFormat(_ session: ScreenSharingHostSession) {
     session.peer.videoFormatChannel.onMessage = { [weak self, weak session] message in
       guard let self, let session, !session.stopping, case .viewer(let supported) = message else { return }
       session.hdr.viewerSupports = supported
@@ -27,7 +27,7 @@ extension ScreenSharingHostService {
   /// viewer reports its screen and before each capture start (the display may have changed).
   /// Switches run one at a time, in order; the task finishes once this one has.
   @discardableResult
-  func applyDynamicRange(_ session: Session) -> Task<Void, Never> {
+  func applyDynamicRange(_ session: ScreenSharingHostSession) -> Task<Void, Never> {
     let decision = ScreenSharingDynamicRangePolicy.decide(
       viewerSupports: session.hdr.viewerSupports, codec: session.codec,
       displayHeadroom: ScreenSharingDynamicRangePolicy.headroom(of: session.captureDisplayID))

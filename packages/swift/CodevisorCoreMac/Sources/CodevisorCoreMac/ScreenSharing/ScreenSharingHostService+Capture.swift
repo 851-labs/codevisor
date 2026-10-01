@@ -9,7 +9,7 @@ extension ScreenSharingHostService {
   /// Starts the capture, restarting a wedged `replayd` if the start doesn't return (851-2385).
   /// Every start is logged with `reason`, what it captures and how long it took, so a start that
   /// hangs can be traced to what asked for it (851-2393).
-  func startWatchedCapture(_ session: Session, reason: String) async throws {
+  func startWatchedCapture(_ session: ScreenSharingHostSession, reason: String) async throws {
     let recovery = captureRecovery(session)
     let began = ContinuousClock.now
     let what = "display \(session.captureDisplayID), \(session.configuration.width)×\(session.configuration.height)"
@@ -38,7 +38,7 @@ extension ScreenSharingHostService {
     return Int(elapsed.components.seconds * 1000 + elapsed.components.attoseconds / 1_000_000_000_000_000)
   }
 
-  func startCapture(_ session: Session) async throws {
+  func startCapture(_ session: ScreenSharingHostSession) async throws {
     session.capturing = (session.captureDisplayID, session.configuration)
     // The display may have changed (a virtual display has no HDR headroom): the range follows it
     // before the stream starts, so its first frames are already in the right format.
@@ -55,7 +55,7 @@ extension ScreenSharingHostService {
   /// 1920×1416 while the sender expected 1920×1356 and dropped all 40,864 frames, a frozen picture
   /// with no error. This loops until nothing differs; the caller marks the session viewing with no
   /// suspension in between, so a later resize sees it viewing and applies itself.
-  func reconcileCapture(_ session: Session) async throws {
+  func reconcileCapture(_ session: ScreenSharingHostSession) async throws {
     while true {
       // The audio subscription may be restarting the stream right now (it waited for the same start).
       await session.capture.settled()
@@ -83,7 +83,7 @@ extension ScreenSharingHostService {
   /// Points the session at its display's current ID when macOS renumbered it. Returns false when
   /// there is no display to follow yet (the display set is mid-change).
   @discardableResult
-  func followDisplay(_ session: Session) -> Bool {
+  func followDisplay(_ session: ScreenSharingHostSession) -> Bool {
     guard
       let current = ScreenSharingDisplayIdentity.follow(
         session.displayID, identity: session.displayIdentity, online: ScreenSharingDisplayIdentity.online())
@@ -98,7 +98,7 @@ extension ScreenSharingHostService {
   /// A capture restart after the display set changed (a virtual display appearing or going, a
   /// mirror ending): macOS may briefly list no display, or renumber the shared one. Follow it and
   /// retry for a few seconds before giving up.
-  func restartOnSettledDisplay(_ session: Session) async throws {
+  func restartOnSettledDisplay(_ session: ScreenSharingHostSession) async throws {
     var lastError: (any Error)?
     for attempt in 0..<Self.displaySettleAttempts {
       if attempt > 0 { try await Task.sleep(for: Self.displaySettleInterval) }
@@ -116,9 +116,4 @@ extension ScreenSharingHostService {
     }
     throw lastError ?? ScreenSharingError.unavailable("The shared display didn't come back.")
   }
-}
-
-extension ScreenSharingHostService.Session {
-  /// Whether the capture has handed frames to the sender: the viewer has live video to control.
-  var hasSentVideo: Bool { metrics.snapshot().counters["capturedFrames", default: 0] > 0 }
 }
