@@ -29,23 +29,24 @@ export const beginPromptTurn = async (
   sessionId: string
 ): Promise<PromptTurn> => {
   routeState.activePromptSessions.add(sessionId)
-  const harnessId = await run(services.db.getSessionSummary(sessionId))
-    .then((session) => session.harnessId)
-    .catch(swallowError)
-  /* v8 ignore next -- defensive: unknown sessions simply skip turn accounting. */
-  if (harnessId !== undefined) services.lifecycle?.notifyTurnStarted(harnessId)
+  let harnessId: string | undefined
   let released = false
   const release = (): void => {
     if (released) return
     released = true
-    // Unconditional: no newer drain can have registered for this session
-    // while this claim held it in `activePromptSessions`.
+    // A replacement starts only after retirement has invoked this release.
+    // The idempotence guard above keeps a retired drain from releasing it.
     routeState.promptTurnReleases.delete(sessionId)
     routeState.activePromptSessions.delete(sessionId)
     /* v8 ignore next -- defensive: unknown sessions simply skip turn accounting. */
     if (harnessId !== undefined) services.lifecycle?.notifyTurnEnded(harnessId)
   }
   routeState.promptTurnReleases.set(sessionId, release)
+  const summary = await run(services.db.getSessionSummary(sessionId)).catch(swallowError)
+  if (!released && summary !== undefined) {
+    harnessId = summary.harnessId
+    services.lifecycle?.notifyTurnStarted(harnessId)
+  }
   return { harnessId, isReleased: () => released, release }
 }
 

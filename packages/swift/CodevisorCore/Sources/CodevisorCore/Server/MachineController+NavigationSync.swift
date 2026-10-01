@@ -290,7 +290,9 @@ extension MachineController {
       return
     }
     guard !Task.isCancelled else { return }
-    await navigationStore?.replace(snapshot, machineId: serverId, requestedAt: requestedAt)
+    if let navigationStore {
+      guard await navigationStore.replace(snapshot, machineId: serverId, requestedAt: requestedAt) else { return }
+    }
     guard !Task.isCancelled else { return }
     startEventSync(serverId: serverId, client: client, since: snapshot.eventCursor)
     for session in projectList.sessions where session.serverId == serverId {

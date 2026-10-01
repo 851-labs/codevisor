@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto"
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
+import { readFileSync, renameSync } from "node:fs"
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 
 import * as jsonc from "jsonc-parser"
 import { parse as parseToml } from "smol-toml"
 import { parse as parseYaml } from "yaml"
+
+import { NativeMcpError } from "./native-mcp-types.js"
 
 /// Filesystem seam for reading (and, for writable formats, surgically
 /// editing) harness-owned config files. Mirrors the AgentSessionFileSystem
@@ -16,7 +19,11 @@ export interface NativeConfigFileSystem {
   readonly readFile: (path: string) => Promise<string | undefined>
   /// Write via temp-file-plus-rename in the same directory, creating parent
   /// directories as needed — a crash mid-write never truncates the original.
-  readonly writeFileAtomic: (path: string, content: string) => Promise<void>
+  readonly writeFileAtomic: (
+    path: string,
+    content: string,
+    expected?: { readonly content: string | undefined }
+  ) => Promise<void>
 }
 
 export const defaultNativeConfigFileSystem: NativeConfigFileSystem = {
@@ -28,11 +35,27 @@ export const defaultNativeConfigFileSystem: NativeConfigFileSystem = {
       throw cause
     }
   },
-  writeFileAtomic: async (path, content) => {
+  writeFileAtomic: async (path, content, expected) => {
     await mkdir(dirname(path), { recursive: true })
     const temp = join(dirname(path), `.${randomUUID()}.tmp`)
-    await writeFile(temp, content, "utf8")
-    await rename(temp, path)
+    try {
+      await writeFile(temp, content, "utf8")
+      if (expected !== undefined) {
+        let current: string | undefined
+        try {
+          current = readFileSync(path, "utf8")
+        } catch (cause) {
+          if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause
+        }
+        if (current !== expected.content)
+          throw new NativeMcpError(`${path} changed during the edit — try again`, "conflict")
+      }
+      // No application suspension between validation and publication. Other
+      // processes do not participate in our lock; detected edits are refused.
+      renameSync(temp, path)
+    } finally {
+      await rm(temp, { force: true })
+    }
   }
 }
 

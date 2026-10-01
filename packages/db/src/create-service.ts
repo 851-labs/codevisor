@@ -18,6 +18,7 @@ import { makePromptQueueService } from "./prompt-queue-service.js"
 import { createServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseConfig, CodevisorDatabaseService } from "./service.js"
 import { makeSessionsService } from "./sessions-service.js"
+import { makeStreamingReconciliationService } from "./streaming-reconciliation-service.js"
 import { makeSyncService } from "./sync-service.js"
 import { makeTerminalPaneTitlesService } from "./terminal-pane-titles.js"
 import { makeTranscriptService } from "./transcript-service.js"
@@ -100,6 +101,7 @@ export const createService = (
     ...makeWorkspaceCreationService(context),
     ...makeSessionsService(context),
     ...makeTranscriptService(context),
+    ...makeStreamingReconciliationService(context),
     ...makeEventsService(context),
     ...makePromptQueueService(context),
     ...makeFilesService(context),

@@ -46,6 +46,7 @@ public final class RemoteDirectoryBrowserModel {
   private let machineName: String
   private var cache: [String: ServerFsListing] = [:]
   private var generation = 0
+  private var cacheGeneration = 0
 
   public init(machineName: String, list: @escaping Lister) {
     self.machineName = machineName
@@ -155,6 +156,8 @@ public final class RemoteDirectoryBrowserModel {
   /// a typo is always recoverable. Returns true when navigation happened.
   @discardableResult
   public func goToPath(_ raw: String) async -> Bool {
+    generation += 1
+    let requestGeneration = generation
     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else {
       goToError = Self.guidance(code: "invalid_path", fallback: "", machineName: machineName)
@@ -162,11 +165,12 @@ public final class RemoteDirectoryBrowserModel {
     }
     do {
       let listing = try await fetch(path: trimmed, showHidden: showHidden)
-      generation += 1
+      guard generation == requestGeneration else { return false }
       columns = [resolvedColumn(for: listing)]
       goToError = nil
       return true
     } catch {
+      guard generation == requestGeneration else { return false }
       goToError = Self.guidance(
         code: serverErrorCode(error),
         fallback: serverErrorMessage(error),
@@ -272,7 +276,10 @@ public final class RemoteDirectoryBrowserModel {
   private func fetch(path: String, showHidden: Bool) async throws -> ServerFsListing {
     let key = "\(showHidden ? "h" : "v"):\(path)"
     if let cached = cache[key] { return cached }
+    let requestGeneration = generation
+    let requestCacheGeneration = cacheGeneration
     let listing = try await list(path, showHidden)
+    guard generation == requestGeneration, cacheGeneration == requestCacheGeneration else { return listing }
     cache[key] = listing
     // Also key by the resolved path so an unnormalized request and its
     // resolved path share an entry.
@@ -281,6 +288,7 @@ public final class RemoteDirectoryBrowserModel {
   }
 
   private func invalidateCachedListing(for path: String) {
+    cacheGeneration += 1
     cache.removeValue(forKey: "v:\(path)")
     cache.removeValue(forKey: "h:\(path)")
   }

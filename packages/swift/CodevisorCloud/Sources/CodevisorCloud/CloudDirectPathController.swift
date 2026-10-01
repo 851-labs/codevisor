@@ -50,6 +50,7 @@ public final class CloudDirectPathController {
   static let pathRefreshInterval: Duration = .seconds(5)
 
   @ObservationIgnored private var connections: [String: (connection: CloudDirectConnection, publicKey: String)] = [:]
+  @ObservationIgnored private var connectionGenerations: [String: UUID] = [:]
   @ObservationIgnored var probeTasks: [String: Task<Void, Never>] = [:]
   /// Pending retries after failed dials, and each machine's failure streak
   /// (the retry backs off from `reprobeInterval` up to 10 minutes).
@@ -138,13 +139,15 @@ public final class CloudDirectPathController {
     retryTasks.removeValue(forKey: deviceId)?.cancel()
     lastAttempt[deviceId] = .now
     dialing.insert(deviceId)
+    let generation = UUID()
+    connectionGenerations[deviceId] = generation
     let onDown: @Sendable () -> Void = { [weak self] in
       guard let self else { return }
-      Task { @MainActor in self.handleDown(deviceId: deviceId) }
+      Task { @MainActor in self.handleDown(deviceId: deviceId, generation: generation) }
     }
     probeTasks[deviceId] = Task { [weak self, prober] in
       let pipe = await prober(machine, onDown)
-      guard let self, !Task.isCancelled else {
+      guard let self, !Task.isCancelled, self.connectionGenerations[deviceId] == generation else {
         await pipe?.connection.shutdown()
         return
       }
@@ -185,8 +188,12 @@ public final class CloudDirectPathController {
     }
   }
 
-  private func handleDown(deviceId: String) {
-    guard connections.removeValue(forKey: deviceId) != nil else { return }
+  private func handleDown(deviceId: String, generation: UUID) {
+    guard connectionGenerations[deviceId] == generation,
+      let entry = connections.removeValue(forKey: deviceId)
+    else { return }
+    connectionGenerations[deviceId] = nil
+    Task { await entry.connection.shutdown() }
     machineIds.remove(deviceId)
     forgetPath(deviceId)
     lastReachable[deviceId] = Date()
@@ -245,6 +252,7 @@ public final class CloudDirectPathController {
 
   /// Silently tears down one machine's pipe (removal, key change).
   public func drop(deviceId: String) {
+    connectionGenerations[deviceId] = nil
     probeTasks.removeValue(forKey: deviceId)?.cancel()
     retryTasks.removeValue(forKey: deviceId)?.cancel()
     known[deviceId] = nil

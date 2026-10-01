@@ -166,8 +166,11 @@ export class MachineTunnel {
     }
     const key = relayKey(config.relays)
     if (this.#endpoint !== undefined && this.#relays === key) return
-    await this.stop()
+    // stop claims ownership synchronously; capture it before awaiting teardown.
+    const stopping = this.stop()
     const generation = this.#generation
+    await stopping
+    if (generation !== this.#generation) return
     const endpoint = await this.options.bind({
       secretKeyHex: this.options.secretKeyHex,
       relays: config.relays.map((relay) => ({

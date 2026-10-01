@@ -68,8 +68,10 @@ public actor CloudTunnelEndpoint {
 
   private let credentialStore: any CloudCredentialStore
   private let trustAnchorsPem: [String]
+  private let bindEndpoint: @Sendable (NetEndpointConfig) async throws -> NetEndpointHandle
   private var config: CloudTunnelConfig?
   private var binding: Task<NetEndpointHandle?, Never>?
+  private var generation: UInt64 = 0
   /// Callers that asked for the endpoint before the first hub welcome
   /// configured it; resumed by `configure` or their bounded wait.
   private var configWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
@@ -78,9 +80,13 @@ public actor CloudTunnelEndpoint {
   public init(
     credentialStore: any CloudCredentialStore,
     trustAnchorsPem: [String] = CloudTunnelEndpoint.environmentTrustAnchors(),
+    bindEndpoint: @escaping @Sendable (NetEndpointConfig) async throws -> NetEndpointHandle = {
+      try await netBindEndpoint(config: $0)
+    },
     firstConfigWait: Duration = .seconds(5)
   ) {
     self.credentialStore = credentialStore
+    self.bindEndpoint = bindEndpoint
     self.trustAnchorsPem = trustAnchorsPem
     self.firstConfigWait = firstConfigWait
   }
@@ -102,6 +108,8 @@ public actor CloudTunnelEndpoint {
   /// Applies a welcome's tunnel config. Idempotent for an unchanged config.
   public func configure(_ newConfig: CloudTunnelConfig) async {
     guard newConfig != config else { return }
+    generation &+= 1
+    let requestGeneration = generation
     config = newConfig
     defer {
       let waiters = configWaiters.values
@@ -109,6 +117,7 @@ public actor CloudTunnelEndpoint {
       for waiter in waiters { waiter.resume() }
     }
     await closeEndpoint()
+    guard generation == requestGeneration else { return }
     guard newConfig.enabled else { return }
     let secretKeyHex: String
     do {
@@ -124,9 +133,10 @@ public actor CloudTunnelEndpoint {
       pathPolicy: "auto",
       alpns: [Self.channelsALPN]
     )
+    let bindEndpoint = bindEndpoint
     binding = Task {
       do {
-        let handle = try await netBindEndpoint(config: endpointConfig)
+        let handle = try await bindEndpoint(endpointConfig)
         Log.cloud.notice("Tunnel endpoint up as \(handle.endpointId(), privacy: .public)")
         return handle
       } catch {
@@ -163,6 +173,7 @@ public actor CloudTunnelEndpoint {
   }
 
   public func shutdown() async {
+    generation &+= 1
     config = nil
     await closeEndpoint()
   }

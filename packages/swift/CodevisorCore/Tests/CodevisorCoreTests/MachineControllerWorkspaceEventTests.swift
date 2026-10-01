@@ -69,7 +69,7 @@ struct MachineControllerWorkspaceEventTests {
     record.isArchived = isArchived
     #expect(await fixture.store.apply(.fixture(cursor: 1, workspaces: [record]), machineId: fixture.serverId))
     release.signal()
-    #expect(await refresh.value == .committed)
+    #expect(await refresh.value == .superseded)
 
     let updated = try #require(fixture.repository.workspace(id: fixture.workspace.id))
     #expect(updated.isArchived == isArchived)

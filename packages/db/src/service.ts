@@ -2,9 +2,7 @@ import type {
   NavigationSnapshot,
   BrowserCookieMutation,
   BrowserCookieSnapshot,
-  BrowserNavigation
-} from "@codevisor/api"
-import type {
+  BrowserNavigation,
   ArchivedWorktree,
   AttachmentKind,
   AttachmentRef,
@@ -57,6 +55,7 @@ import type {
   SaveNativeMcpRemovalRequest,
   UpdateHarnessAccountAuthRequest
 } from "./rows.js"
+import type { ReconcileQuietStreamingSession } from "./streaming-reconciliation-service.js"
 import type { SyncBatch } from "./sync-journal.js"
 import type { CreateWorkspaceWithSession, DeleteWorkspacePane } from "./workspace-service-types.js"
 
@@ -341,6 +340,9 @@ export interface CodevisorDatabaseService {
   readonly listQuietStreamingSessions: (
     quietSinceIso: string
   ) => Effect.Effect<ReadonlyArray<string>, DatabaseError>
+  /// Atomically revalidates a quiet candidate and heals its orphaned rows.
+  /// The caller must exclude live turns. Returned events are already durable.
+  readonly reconcileQuietStreamingSession: ReconcileQuietStreamingSession
   readonly getSessionActionResult: (
     sessionId: string,
     clientActionId: string

@@ -41,16 +41,23 @@ export const makeConnectUpstream = (core: McpManagerCore): ConnectUpstream => {
     if (pending !== undefined) return pending
 
     const connecting = (async () => {
+      let abandoned = false
+      const owns = (): boolean => connectionLocks.get(id) === connecting
+      const checkOwner = (): void => {
+        if (!owns()) {
+          abandoned = true
+          throw new Error(`MCP connection ${id} was superseded`)
+        }
+      }
       const server = await record(id)
+      checkOwner()
       if (server.kind !== "managed") throw new Error(`${server.name} is an internal provider`)
       // Refusals before the try/finally below must release the lock too, or
       // every later caller would be handed this rejected promise.
       if (!server.enabled && options.allowDisabled !== true) {
-        connectionLocks.delete(id)
         throw new Error(`${server.name} is disabled`)
       }
       if (state.locallySuppressed.has(server.name)) {
-        connectionLocks.delete(id)
         throw new Error(`${server.name} is disabled on this machine`)
       }
       const stored = secrets(server)
@@ -72,13 +79,13 @@ export const makeConnectUpstream = (core: McpManagerCore): ConnectUpstream => {
             detail: undefined
           })
         }
-        connectionLocks.delete(id)
         throw new Error(`${server.name} needs authorization`)
       }
       /* v8 ignore next -- preserveState is reserved for the live OAuth validation path. */
       if (options.preserveState !== true) {
         await saveRecord(server, { connectionState: "connecting", detail: undefined })
       }
+      checkOwner()
       const client = new Client({ name: "Codevisor", version: "0.1.0" }, { capabilities: {} })
       const transport =
         server.transport === "stdio"
@@ -95,7 +102,6 @@ export const makeConnectUpstream = (core: McpManagerCore): ConnectUpstream => {
               stored.headers
             )
       let phase = "initialize"
-      let abandoned = false
       try {
         await client.connect(transport as unknown as Transport)
         phase = "tools/list"
@@ -104,12 +110,31 @@ export const makeConnectUpstream = (core: McpManagerCore): ConnectUpstream => {
         // been switched off mid-handshake: never cache (or report) a
         // connection the record no longer wants.
         const latest = await record(id)
+        checkOwner()
         if (
           (!latest.enabled && options.allowDisabled !== true) ||
-          state.locallySuppressed.has(latest.name)
+          state.locallySuppressed.has(latest.name) ||
+          [
+            latest.transport,
+            latest.url,
+            latest.command,
+            latest.authType,
+            latest.secretCipher,
+            latest.oauthScope,
+            JSON.stringify(latest.args)
+          ].join("\0") !==
+            [
+              server.transport,
+              server.url,
+              server.command,
+              server.authType,
+              server.secretCipher,
+              server.oauthScope,
+              JSON.stringify(server.args)
+            ].join("\0")
         ) {
           abandoned = true
-          throw new Error(`${latest.name} was disabled while connecting`)
+          throw new Error(`${latest.name} changed while connecting`)
         }
         const connection: UpstreamConnection = {
           client,
@@ -118,6 +143,7 @@ export const makeConnectUpstream = (core: McpManagerCore): ConnectUpstream => {
         }
         connections.set(id, connection)
         const updated = await record(id)
+        checkOwner()
         await saveRecord(updated, {
           connectionState: "connected",
           toolCount: tools.length,
@@ -128,11 +154,12 @@ export const makeConnectUpstream = (core: McpManagerCore): ConnectUpstream => {
         /* v8 ignore next -- best-effort cleanup after the original connection failure. */
         await client.close().catch(() => undefined)
         // The disable already recorded its own state; leave it be.
-        if (abandoned) throw cause
+        if (abandoned || !owns()) throw cause
         console.error(
           `MCP connection failed for ${server.name} during ${phase}: ${errorMessage(cause)}`
         )
         const updated = await record(id)
+        checkOwner()
         /* v8 ignore next -- OAuth connection failures are handled by live completion validation. */
         const needsAuthorization = server.authType === "oauth" && accessToken === undefined
         await saveRecord(updated, {
@@ -141,11 +168,11 @@ export const makeConnectUpstream = (core: McpManagerCore): ConnectUpstream => {
           detail: errorMessage(cause)
         })
         throw cause
-      } finally {
-        connectionLocks.delete(id)
       }
     })()
     connectionLocks.set(id, connecting)
-    return connecting
+    return connecting.finally(() => {
+      if (connectionLocks.get(id) === connecting) connectionLocks.delete(id)
+    })
   }
 }

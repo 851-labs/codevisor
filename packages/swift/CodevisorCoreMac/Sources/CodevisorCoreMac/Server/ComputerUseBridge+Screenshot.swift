@@ -49,7 +49,7 @@ extension ComputerUseBridge {
     // timeout and looked like "macOS cannot capture this window".
     let semaphore = DispatchSemaphore(value: 0)
     let box = ScreenshotBox()
-    Task {
+    let captureTask = Task {
       defer { semaphore.signal() }
       do {
         let content = try await SCShareableContent.excludingDesktopWindows(
@@ -57,7 +57,7 @@ extension ComputerUseBridge {
           onScreenWindowsOnly: false
         )
         guard let window = content.windows.first(where: { $0.windowID == windowID }) else {
-          box.failure = "The window is no longer shareable."
+          box.fail("The window is no longer shareable.")
           return
         }
         let filter = SCContentFilter(desktopIndependentWindow: window)
@@ -80,33 +80,35 @@ extension ComputerUseBridge {
             properties: [:]
           )
         else {
-          box.failure = "The captured image could not be encoded."
+          box.fail("The captured image could not be encoded.")
           return
         }
-        box.capture = ScreenshotCapture(
-          data: data,
-          pixelSize: CGSize(width: image.width, height: image.height),
-          windowFrame: capturedWindowFrame
-        )
+        box.succeed(
+          ScreenshotCapture(
+            data: data,
+            pixelSize: CGSize(width: image.width, height: image.height),
+            windowFrame: capturedWindowFrame
+          ))
       } catch {
-        box.failure = error.localizedDescription
+        box.fail(error.localizedDescription)
       }
     }
-    _ = semaphore.wait(timeout: .now() + 10)
-    if let capture = box.capture { return .captured(capture) }
+    if semaphore.wait(timeout: .now() + 10) == .timedOut { captureTask.cancel() }
+    let result = box.finish()
+    if let capture = result.capture { return .captured(capture) }
     // A region fallback is valid only when the target is on the current
     // Space. Otherwise it would return pixels belonging to whichever
     // unrelated window happens to occupy the same coordinates.
     guard windowIsOnVisibleSpace(windowID) else {
       return .unavailable(
-        "The window could not be captured: \(box.failure ?? "the capture timed out")."
+        "The window could not be captured: \(result.failure ?? "the capture timed out")."
       )
     }
     if let capture = fallbackFrame.flatMap({ screenshotRegion(frame: $0) }) {
       return .captured(capture)
     }
     return .unavailable(
-      "Screen capture failed for the target window: \(box.failure ?? "the capture timed out")."
+      "Screen capture failed for the target window: \(result.failure ?? "the capture timed out")."
     )
   }
 
@@ -117,22 +119,40 @@ extension ComputerUseBridge {
       if let image,
         let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
       {
-        box.capture = ScreenshotCapture(
-          data: data,
-          pixelSize: CGSize(width: image.width, height: image.height),
-          windowFrame: frame
-        )
+        box.succeed(
+          ScreenshotCapture(
+            data: data,
+            pixelSize: CGSize(width: image.width, height: image.height),
+            windowFrame: frame
+          ))
       }
       semaphore.signal()
     }
     _ = semaphore.wait(timeout: .now() + 10)
-    return box.capture
+    return box.finish().capture
   }
 }
 
 private final class ScreenshotBox: @unchecked Sendable {
-  var capture: ComputerUseBridge.ScreenshotCapture?
-  /// Why the capture produced nothing, so the caller can say so instead of
-  /// reporting a bare absence.
-  var failure: String?
+  private let lock = NSLock()
+  private var capture: ComputerUseBridge.ScreenshotCapture?
+  private var failure: String?
+  private var finished = false
+
+  func succeed(_ value: ComputerUseBridge.ScreenshotCapture) {
+    lock.withLock { if !finished { capture = value } }
+  }
+
+  func fail(_ reason: String) {
+    lock.withLock { if !finished { failure = reason } }
+  }
+
+  /// Timeout and successful completion both freeze one synchronized outcome.
+  /// CaptureKit can still complete after cancellation; late writes are ignored.
+  func finish() -> (capture: ComputerUseBridge.ScreenshotCapture?, failure: String?) {
+    lock.withLock {
+      finished = true
+      return (capture, failure)
+    }
+  }
 }

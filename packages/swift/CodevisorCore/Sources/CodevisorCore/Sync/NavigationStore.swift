@@ -33,6 +33,7 @@ public final class NavigationStore {
   @ObservationIgnored private let outbox: NavigationOutbox
   @ObservationIgnored private weak var projectList: ProjectListModel?
   @ObservationIgnored private weak var repository: ProjectedWorkspaceRepository?
+  @ObservationIgnored private var cacheGenerations: [String: UInt64] = [:]
 
   public init(
     store: any PersistenceStore,
@@ -84,15 +85,25 @@ public final class NavigationStore {
   /// send them again. The machine's own connect sets it, because it restarts
   /// the event stream from the snapshot's cursor (which also recovers from a
   /// server whose event log was reset).
+  @discardableResult
   public func replace(
     _ snapshot: ServerNavigationSnapshot, machineId: String, requestedAt: Date, resetsStream: Bool = true
-  ) async {
+  ) async -> Bool {
+    guard !Task.isCancelled else { return false }
+    if resetsStream {
+      cacheGenerations[machineId, default: 0] &+= 1
+    }
+    let generation = cacheGenerations[machineId, default: 0]
     let cache = await MachineNavigationCache.build(machineId: machineId, snapshot: snapshot)
-    if !resetsStream, let current = caches.caches[machineId], snapshot.eventCursor < current.eventCursor { return }
+    guard !Task.isCancelled, cacheGenerations[machineId, default: 0] == generation else { return false }
+    if !resetsStream, let current = caches.caches[machineId], snapshot.eventCursor < current.eventCursor {
+      return false
+    }
     caches.set(cache)
     layouts.prune(serverId: machineId, keeping: Set(snapshot.workspaces.compactMap { UUID(uuidString: $0.id) }))
     retire(machineId: machineId, snapshotRequestedAt: requestedAt)
     rebuild(origin: .snapshot)
+    return true
   }
 
   /// Fetches a machine's current state now and installs it. Used where a
@@ -100,10 +111,12 @@ public final class NavigationStore {
   @discardableResult
   public func refresh(machineId: String, client: any CodevisorServerClienting) async -> ServerNavigationRefreshResult {
     let requestedAt = Date()
+    let generation = cacheGenerations[machineId, default: 0]
     do {
       let snapshot = try await client.navigationSnapshot()
-      await replace(snapshot, machineId: machineId, requestedAt: requestedAt, resetsStream: false)
-      return .committed
+      guard !Task.isCancelled, cacheGenerations[machineId, default: 0] == generation else { return .superseded }
+      return await replace(snapshot, machineId: machineId, requestedAt: requestedAt, resetsStream: false)
+        ? .committed : .superseded
     } catch {
       return .failed(String(describing: error))
     }
@@ -112,19 +125,25 @@ public final class NavigationStore {
   /// Moves a machine's cache forward by one of its events. Returns false when
   /// there is no cache to move forward, meaning the caller needs a snapshot.
   public func apply(_ delta: ServerNavigationDelta, machineId: String) async -> Bool {
-    guard let current = caches.caches[machineId] else { return false }
-    guard let next = await current.applying(delta) else { return true }
-    // Another event or snapshot landed while this one was being mapped; it
-    // already carries at least this change, or will be followed by it.
-    guard caches.caches[machineId]?.eventCursor == current.eventCursor else { return true }
-    caches.set(next)
-    retire(machineId: machineId, snapshotRequestedAt: nil)
-    rebuild(origin: .liveEvent)
-    return true
+    let generation = cacheGenerations[machineId, default: 0]
+    while !Task.isCancelled, cacheGenerations[machineId, default: 0] == generation {
+      guard let current = caches.caches[machineId] else { return false }
+      guard let next = await current.applying(delta) else { return true }
+      guard !Task.isCancelled, cacheGenerations[machineId, default: 0] == generation else { return false }
+      // A refresh may be newer than the base but older than this delta.
+      // Rebase on it instead of acknowledging an event we never applied.
+      guard caches.caches[machineId]?.eventCursor == current.eventCursor else { continue }
+      caches.set(next)
+      retire(machineId: machineId, snapshotRequestedAt: nil)
+      rebuild(origin: .liveEvent)
+      return true
+    }
+    return false
   }
 
   /// Forgets a machine that is no longer part of this account.
   public func forget(machineId: String) {
+    cacheGenerations[machineId, default: 0] &+= 1
     caches.remove(machineId: machineId)
     outbox.removeAll(machineId: machineId)
     layouts.prune(serverId: machineId, keeping: [])

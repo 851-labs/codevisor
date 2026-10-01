@@ -92,6 +92,116 @@ const diskFull = (): never => {
 describe("restart coordinator", () => {
   beforeEach(() => vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] }))
   afterEach(() => vi.useRealTimers())
+  it.each(["lookup", "issued cancel"])(
+    "cancellation during %s never interrupts a later turn",
+    async (stage) => {
+      const harness = await makeHarness()
+      const entered = Promise.withResolvers<void>()
+      const release = Promise.withResolvers<void>()
+      const { turns, services, sessions, agents } = harness
+      turns.activeTurnSessions.add(sessions.live.id)
+      turns.activeTurnSessions.add(sessions.fresh.id)
+      const summary = services.db.getSessionSummary
+      if (stage === "lookup")
+        vi.spyOn(services.db, "getSessionSummary").mockImplementation((id) =>
+          Effect.andThen(
+            Effect.promise(async () => {
+              entered.resolve()
+              await release.promise
+            }),
+            summary(id)
+          )
+        )
+      const interrupted: string[] = []
+      const coordinator = harness.make({
+        cancel: (id) =>
+          Effect.promise(async () => {
+            interrupted.push(id)
+            entered.resolve()
+            await release.promise
+            return { runtimeState: "reusable" as const }
+          })
+      })
+      const old = coordinator.begin({ interrupt: true })
+      await vi.advanceTimersByTimeAsync(250)
+      let next: Promise<unknown> | undefined
+      try {
+        await entered.promise
+        const cancelling = coordinator.cancel()
+        turns.activeTurnSessions.clear()
+        if (stage === "issued cancel") {
+          expect(coordinator.isGated()).toBe(true)
+          expect(coordinator.cancel()).toBe(cancelling)
+          next = coordinator.begin()
+        } else {
+          await cancelling
+          expect(coordinator.isGated()).toBe(false)
+        }
+        release.resolve()
+        await Promise.all([old, cancelling, next])
+        expect(interrupted).toEqual(stage === "lookup" ? [] : ["agent-live"])
+        expect(agents.closes).toEqual([])
+      } finally {
+        release.resolve()
+        await Promise.all([old, next])
+        coordinator.close()
+      }
+    }
+  )
+  it.each(["completion", "failure"] as const)(
+    "a cancelled snapshot lookup's late %s cannot abandon its replacement drain",
+    async (outcome) => {
+      const harness = await makeHarness()
+      const entered = Promise.withResolvers<void>()
+      const release = Promise.withResolvers<void>()
+      let reads = 0
+      const coordinator = makeRestartCoordinator({
+        services: {
+          ...harness.services,
+          db: {
+            ...harness.services.db,
+            listSessionsRequiringResume: Effect.andThen(
+              Effect.promise(async () => {
+                if (++reads === 1) {
+                  entered.resolve()
+                  await release.promise
+                  if (outcome === "failure") throw new Error("resume lookup failed")
+                }
+              }),
+              harness.services.db.listSessionsRequiringResume
+            )
+          }
+        },
+        fanout: harness.fanout,
+        turns: harness.turns,
+        snapshot: harness.snapshot,
+        redrain: async () => undefined,
+        log: () => undefined
+      })
+      const old = coordinator.begin()
+      try {
+        await entered.promise
+        await coordinator.cancel()
+        expect(harness.snapshot.read()).toBeUndefined()
+        harness.turns.restartHeldSessions.add(harness.sessions.fresh.id)
+        vi.spyOn(harness.services.agents, "loadedAgentSessionIds").mockReturnValue([
+          "new-live-agent"
+        ])
+        expect((await coordinator.begin()).state).toBe("drained")
+        expect(harness.agents.closes).toEqual(["new-live-agent"])
+        release.resolve()
+        await old
+        expect(coordinator.state().state).toBe("drained")
+        expect(coordinator.isGated()).toBe(true)
+        expect(harness.snapshot.read()).toEqual([harness.sessions.fresh.id])
+        expect(harness.agents.closes).toEqual(["new-live-agent"])
+      } finally {
+        release.resolve()
+        await old.catch(() => undefined)
+        coordinator.close()
+      }
+    }
+  )
   it("snapshots held work without reloading idle or archived sessions", async () => {
     const harness = await makeHarness()
     const { sessions, turns } = harness
@@ -206,7 +316,7 @@ describe("restart coordinator", () => {
     const closing = Promise.withResolvers<void>()
     const releaseClose = Promise.withResolvers<void>()
     const coordinator = harness.make({
-      loadedAgentSessionIds: () => ["agent-live"],
+      loadedAgentSessionIds: () => ["agent-live", "agent-next"],
       closeAgentSession: () =>
         Effect.promise(() => {
           closing.resolve()
@@ -215,9 +325,12 @@ describe("restart coordinator", () => {
     })
     const started = coordinator.begin()
     await closing.promise
-    await coordinator.cancel()
+    const cancelled = coordinator.cancel()
+    expect(coordinator.cancel()).toBe(cancelled)
+    expect(coordinator.isGated()).toBe(true)
     releaseClose.resolve()
-    expect((await started).state).toBe("idle")
+    await cancelled
+    expect((await started).state).not.toBe("drained")
     expect(coordinator.isGated()).toBe(false)
     coordinator.close()
   })

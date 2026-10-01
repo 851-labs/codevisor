@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, readdir, rm, rmdir, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
@@ -25,7 +25,8 @@ test("runs the action holding the lock and releases it afterwards", async (t) =>
   const result = await withArtifactLock(
     lockPath,
     async () => {
-      assert.equal(await readFile(lockPath, "utf8"), String(process.pid))
+      const [owner] = await readdir(lockPath)
+      assert.equal(await readFile(join(lockPath, owner), "utf8"), String(process.pid))
       return "done"
     },
     { retryDelay: () => assert.fail("no contention expected") }
@@ -122,4 +123,77 @@ test("a lock held by a live process is respected", async (t) => {
     }
   })
   assert.equal(retries, 1)
+})
+
+test("stale cleanup cannot remove a replacement owner", async (t) => {
+  const lockPath = await lockFixture(t)
+  await mkdir(lockPath, { recursive: true })
+  await writeFile(join(lockPath, "owner-100-stale"), "100")
+  const checked = deferred()
+  const finishCheck = deferred()
+  const retry = deferred()
+  const canRetry = deferred()
+  let waiterEntered = false
+  const waiter = withArtifactLock(
+    lockPath,
+    () => {
+      waiterEntered = true
+    },
+    {
+      pid: 300,
+      isProcessAlive: async () => {
+        checked.resolve()
+        await finishCheck.promise
+        return false
+      },
+      retryDelay: () => {
+        retry.resolve()
+        return canRetry.promise
+      }
+    }
+  )
+  await checked.promise
+  await rm(join(lockPath, "owner-100-stale"))
+  await rmdir(lockPath)
+  const holderEntered = deferred()
+  const releaseHolder = deferred()
+  const holder = withArtifactLock(
+    lockPath,
+    () => {
+      holderEntered.resolve()
+      return releaseHolder.promise
+    },
+    { pid: 200 }
+  )
+  try {
+    await holderEntered.promise
+    finishCheck.resolve()
+    await retry.promise
+    assert.equal(waiterEntered, false)
+    assert.equal((await readdir(lockPath)).length, 1)
+    releaseHolder.resolve()
+    await holder
+    canRetry.resolve()
+    await waiter
+    assert.equal(waiterEntered, true)
+  } finally {
+    finishCheck.resolve()
+    releaseHolder.resolve()
+    canRetry.resolve()
+    await Promise.all([holder, waiter])
+  }
+})
+
+test("an empty abandoned directory does not block acquisition", async (t) => {
+  const path = await lockFixture(t)
+  await mkdir(path, { recursive: true })
+  let entered = false
+  await withArtifactLock(
+    path,
+    () => {
+      entered = true
+    },
+    { retryDelay: () => assert.fail("empty lock must recover") }
+  )
+  assert.equal(entered, true)
 })

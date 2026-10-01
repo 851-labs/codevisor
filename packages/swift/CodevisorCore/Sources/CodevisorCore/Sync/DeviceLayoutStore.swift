@@ -182,13 +182,17 @@ public final class DeviceLayoutStore: @unchecked Sendable {
   }
 
   private func persist() {
-    let snapshot = lock.withLock { payload }
-    let store = store
-    PersistenceEncoding.enqueueLatest(owner: persistenceOwner, key: Self.storageKey) {
-      do {
-        try store.saveData(PersistenceEncoding.encoder.encode(snapshot), forKey: Self.storageKey)
-      } catch {
-        Log.persistence.error("Failed to save device layouts: \(String(describing: error), privacy: .public)")
+    // Capture and enqueue under the same lock. An older capture can never
+    // arrive at the coalescing queue after a newer one.
+    lock.withLock {
+      let snapshot = payload
+      let store = store
+      PersistenceEncoding.enqueueLatest(owner: persistenceOwner, key: Self.storageKey) {
+        do {
+          try store.saveData(PersistenceEncoding.encoder.encode(snapshot), forKey: Self.storageKey)
+        } catch {
+          Log.persistence.error("Failed to save device layouts: \(String(describing: error), privacy: .public)")
+        }
       }
     }
   }

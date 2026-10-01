@@ -16,6 +16,7 @@ import {
   type PaneTokenScope
 } from "./plugin-pane-auth.js"
 import { forwardHttp, spliceUpgrade } from "./plugin-proxy.js"
+import { makePluginRequestLease } from "./plugin-request-lease.js"
 import {
   defaultPluginsRoot,
   findPluginOrFail,
@@ -244,9 +245,7 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
       const plugin = findPluginOrFail(scan(), pluginId)
       assertEnabled(pluginId)
       return fetchPluginIcon({
-        ensureRunning: () => supervisor.ensureRunning(plugin),
-        markUnreachable: () => supervisor.markUnreachable(plugin.id),
-        noteSuccess: () => supervisor.noteSuccess(plugin.id),
+        ...makePluginRequestLease(supervisor, plugin),
         paneType,
         plugin,
         signedContextHeaders: signedContextHeaders(plugin.id),
@@ -311,7 +310,8 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
       if (authenticated === undefined) {
         throw new PluginsError("notFound", "Pane session is missing or expired")
       }
-      const port = await supervisor.ensureRunning(plugin)
+      const lease = await supervisor.acquire(plugin)
+      const port = lease.port
       const forwardedQuery = new URLSearchParams(url.searchParams)
       forwardedQuery.delete(PANE_TOKEN_QUERY_PARAM)
       const query = forwardedQuery.toString()
@@ -334,11 +334,11 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
           : {})
       })
       if (outcome === "ok") {
-        supervisor.noteSuccess(plugin.id)
+        supervisor.noteSuccess(plugin.id, lease)
       } else if (outcome === "unreachable") {
         // The port is dead even though the runtime looked alive: kick the
         // supervisor so automatic maintenance relaunches it.
-        supervisor.markUnreachable(plugin.id)
+        supervisor.markUnreachable(plugin.id, lease)
       }
       return true
     },
@@ -418,9 +418,7 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
       return invokePluginTool({
         args,
         context,
-        ensureRunning: () => supervisor.ensureRunning(plugin),
-        markUnreachable: () => supervisor.markUnreachable(plugin.id),
-        noteSuccess: () => supervisor.noteSuccess(plugin.id),
+        ...makePluginRequestLease(supervisor, plugin),
         plugin,
         signedContextHeaders: signedContextHeaders(plugin.id),
         timeoutMs: TOOL_TIMEOUT_MS,

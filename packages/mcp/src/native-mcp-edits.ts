@@ -26,6 +26,20 @@ import {
   type NativeMcpManagerConfig
 } from "./native-mcp-types.js"
 
+// Shared by editor instances: two harness aliases can target the same file.
+const fileEdits = new Map<string, Promise<void>>()
+const withNativeEdit = <T>(path: string, edit: () => Promise<T>): Promise<T> => {
+  const result = (fileEdits.get(path) ?? Promise.resolve()).then(edit)
+  const tail = result.then(
+    () => undefined,
+    () => undefined
+  )
+  fileEdits.set(path, tail)
+  return result.finally(() => {
+    if (fileEdits.get(path) === tail) fileEdits.delete(path)
+  })
+}
+
 type NativeMcpSpec = NonNullable<HarnessDefinition["nativeMcp"]>
 
 export type NativeMcpEditor = Pick<
@@ -111,6 +125,16 @@ export const makeNativeMcpEditor = (
     return { configPath, content }
   }
 
+  const writeEdit = async (
+    path: string,
+    before: string | undefined,
+    after: string
+  ): Promise<void> => {
+    if ((await fs.readFile(path)) !== before)
+      throw new NativeMcpError(`${path} changed during the edit — try again`, "conflict")
+    await fs.writeFileAtomic(path, after, { content: before })
+  }
+
   /// One-time pre-mutation snapshot: taken from the exact content about to
   /// be edited, recorded first-write-wins, never overwritten afterwards.
   const ensureBackup = async (configPath: string, content: string): Promise<void> => {
@@ -148,7 +172,7 @@ export const makeNativeMcpEditor = (
         : removeTomlTable(content, spec.key, serverName)
     )
     await ensureBackup(configPath, content)
-    await fs.writeFileAtomic(configPath, edited)
+    await writeEdit(configPath, content, edited)
     const removal = await run(
       config.db.saveNativeMcpRemoval({
         configPath,
@@ -172,7 +196,8 @@ export const makeNativeMcpEditor = (
     }
     const { spec } = writableDefinition(record.harnessId)
     const configPath = resolveNativeConfigPath(spec.path, { env, home })
-    const content = (await fs.readFile(configPath)) ?? ""
+    const original = await fs.readFile(configPath)
+    const content = original ?? ""
     if (entryFor(spec, content, record.serverName) !== undefined) {
       throw new NativeMcpError(
         `${record.serverName} already exists in ${configPath} — remove it first`,
@@ -186,7 +211,7 @@ export const makeNativeMcpEditor = (
         : appendTomlTable(content, spec.key, record.serverName, fragment)
     )
     await ensureBackup(configPath, content)
-    await fs.writeFileAtomic(configPath, restored)
+    await writeEdit(configPath, original, restored)
     await run(config.db.markNativeMcpRemovalRestored(id))
     return scan()
   }
@@ -224,9 +249,25 @@ export const makeNativeMcpEditor = (
       flagValue
     )
     await ensureBackup(configPath, content)
-    await fs.writeFileAtomic(configPath, edited)
+    await writeEdit(configPath, content, edited)
     return scan()
   }
 
-  return { listRemovals, removeServer, restoreRemoval, setNativeEnabled }
+  const pathFor = (harnessId: string): string =>
+    resolveNativeConfigPath(writableDefinition(harnessId).spec.path, { env, home })
+  return {
+    listRemovals,
+    removeServer: async (harnessId, name) =>
+      withNativeEdit(pathFor(harnessId), () => removeServer(harnessId, name)),
+    setNativeEnabled: async (harnessId, name, enabled) =>
+      withNativeEdit(pathFor(harnessId), () => setNativeEnabled(harnessId, name, enabled)),
+    restoreRemoval: async (id) => {
+      const record = (await run(config.db.listNativeMcpRemovals())).find(
+        (candidate) => candidate.id === id
+      )
+      if (record === undefined)
+        throw new NativeMcpError("Removal not found or already restored", "notFound")
+      return withNativeEdit(pathFor(record.harnessId), () => restoreRemoval(id))
+    }
+  }
 }

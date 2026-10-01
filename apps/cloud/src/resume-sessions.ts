@@ -90,13 +90,27 @@ export class ResumeSessions {
     if (resumeToken !== undefined) {
       const session = await this.tryResume(kind, resumeToken, Date.now())
       if (session !== undefined && session.device_id === device.deviceId) {
-        const token = await this.register(
-          session.connection_id,
-          kind,
-          device.deviceId,
-          device.publicKey
-        )
-        return { connectionId: session.connection_id, token, resumed: true }
+        const token = encodeToken(crypto.getRandomValues(new Uint8Array(32)))
+        const hash = await sha256Hex(token)
+        // Consume the observed token and publish its successor in the same
+        // conditional write. Another hello may have rotated it while hashing.
+        const claimed = this.sql
+          .exec<ResumeSessionRow>(
+            `UPDATE sessions SET resume_token_hash = ?, public_key = ?, expires_at = NULL
+           WHERE connection_id = ? AND resume_token_hash = ? AND kind = ? AND device_id = ?
+             AND (expires_at IS NULL OR expires_at > ?)
+           RETURNING *`,
+            hash,
+            device.publicKey,
+            session.connection_id,
+            session.resume_token_hash,
+            kind,
+            device.deviceId,
+            Date.now()
+          )
+          .toArray()[0]
+        if (claimed !== undefined)
+          return { connectionId: session.connection_id, token, resumed: true }
       }
     }
     const token = await this.register(connectionId, kind, device.deviceId, device.publicKey)

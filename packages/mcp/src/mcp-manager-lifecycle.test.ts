@@ -17,6 +17,48 @@ const initializeCount = (requests: ReadonlyArray<{ method: string }>): number =>
   requests.filter((request) => request.method === "initialize").length
 
 describe("MCP manager lifecycle", () => {
+  it("an old tools handshake cannot replace a newly configured upstream", async () => {
+    const oldServer = await workingUpstream()
+    const newServer = await workingUpstream()
+    const { manager, db } = await testManager()
+    const entered = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<void>()
+    const list = Client.prototype.listTools
+    let first = true
+    vi.spyOn(Client.prototype, "listTools").mockImplementation(async function (
+      this: Client,
+      ...args
+    ) {
+      if (first) {
+        first = false
+        entered.resolve()
+        await release.promise
+        return { tools: [{ name: "obsolete", inputSchema: { type: "object" as const } }] }
+      }
+      return list.apply(this, args)
+    })
+    const old = manager.create({
+      authType: "none",
+      name: "Replace",
+      transport: "http",
+      url: oldServer.url
+    })
+    await entered.promise
+    const created = (await run(db.listMcpServers)).find((server) => server.name === "Replace")!
+    try {
+      await manager.update(created.id, { url: newServer.url })
+      await connectionStateSettles(manager, created.id, "connected")
+      release.resolve()
+      await old
+      expect((await manager.tools(created.id)).map((tool) => tool.name)).not.toContain("obsolete")
+      expect((await manager.list()).find((server) => server.id === created.id)?.url).toBe(
+        newServer.url
+      )
+    } finally {
+      release.resolve()
+      await old.catch(() => undefined)
+    }
+  })
   it("keeps a live connection across changes the transport does not depend on", async () => {
     const upstream = await workingUpstream()
     const { manager } = await testManager()

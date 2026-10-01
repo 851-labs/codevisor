@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import CodevisorTestSupport
 
 @testable import CodevisorCore
 
@@ -89,6 +90,47 @@ private func listing(_ path: String, children: [String], gitRepos: Set<String> =
 @MainActor
 @Suite("RemoteDirectoryBrowserModel")
 struct RemoteDirectoryBrowserModelTests {
+  @Test("An older Go to Folder success or failure cannot replace newer navigation", arguments: [false, true])
+  func overlappingGoTo(fails: Bool) async {
+    let entered = TestSignal()
+    let release = TestSignal()
+    let model = RemoteDirectoryBrowserModel(machineName: "Remote") { path, _ in
+      if path == "/older" {
+        entered.signal()
+        await release.wait()
+        if fails { throw URLError(.cannotFindHost) }
+      }
+      return listing(path, children: [])
+    }
+    let old = Task { await model.goToPath("/older") }
+    await entered.wait()
+    #expect(await model.goToPath("/newer"))
+    release.signal()
+    #expect(await old.value == false)
+    #expect(model.chosenPath == "/newer")
+    #expect(model.goToError == nil)
+  }
+
+  @Test("A listing invalidated by folder creation cannot repopulate the cache late")
+  func invalidationDuringFetch() async {
+    let reads = TestSignal()
+    let release = TestSignal()
+    let model = RemoteDirectoryBrowserModel(machineName: "Remote") { path, _ in
+      if path == "/home" {
+        reads.signal()
+        if reads.value == 1 { await release.wait(); return listing(path, children: []) }
+        return listing(path, children: ["new"])
+      }
+      return listing(path, children: [])
+    }
+    let old = Task { await model.open("/home") }
+    await reads.wait()
+    await model.revealCreatedFolder("/home/new", parentPath: "/home")
+    release.signal()
+    await old.value
+    await model.open("/home")
+    #expect(model.columns[0].listing?.entries.map(\.name) == ["new"])
+  }
   /// A small tree: /home/user{src{alpha,beta},docs}, plus a hidden variant.
   private func makeFs() -> FakeRemoteFs {
     FakeRemoteFs(

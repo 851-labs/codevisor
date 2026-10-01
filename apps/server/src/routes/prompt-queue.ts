@@ -1,5 +1,6 @@
 import type { AttachmentRef, EventEnvelope, PromptQueueItem } from "@codevisor/api"
 import type { CodevisorDatabaseService } from "@codevisor/db"
+import { Effect } from "effect"
 
 import { RESTART_GATE_HARNESS_ID, RESTART_GATE_HARNESS_NAME } from "../restart-drain.js"
 import {
@@ -164,7 +165,7 @@ export const reconcileStaleStreamingTurns = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
   routeState: RouteState,
-  serverId: string
+  _serverId: string
 ): Promise<number> => {
   const cutoff = new Date(Date.now() - staleStreamingTurnQuietMs).toISOString()
   const staleSessions = await run(services.db.listQuietStreamingSessions(cutoff))
@@ -173,40 +174,19 @@ export const reconcileStaleStreamingTurns = async (
     // A live turn is never touched, however quiet: long silent tool runs and
     // subagent waits are normal, and the turn's own terminal event (or the
     // adapter's stream-death handling) will close it.
-    if (hasLiveTurn(routeState, sessionId)) continue
-    const page = await run(services.db.getTranscriptPage(sessionId, undefined, 1))
-    const active = page.items.at(-1)
-    const hasOrphanedTurn = active?.role === "assistant" && active.isGenerating
-
-    // Pair a persisted question before ending the turn so event replay never
-    // leaves an apparently answerable request behind (mirrors startup
-    // reconciliation — the resolver died with the turn).
-    if (hasOrphanedTurn && page.pendingQuestion !== undefined) {
-      await appendAndPublish(services.db, fanout, "session.output", sessionId, {
-        outcome: "cancelled",
-        questionId: page.pendingQuestion.questionId,
-        questions: page.pendingQuestion.questions,
-        sessionUpdate: "question_resolved",
-        serverId
-      })
-    }
-
     repaired += await run(
-      services.db.closeStaleAssistantChatItems(sessionId, hasOrphanedTurn ? active.id : undefined)
+      Effect.suspend(() => {
+        if (hasLiveTurn(routeState, sessionId)) return Effect.succeed(0)
+        return Effect.flatMap(
+          services.db.reconcileQuietStreamingSession(sessionId, cutoff),
+          (result) =>
+            Effect.as(
+              Effect.forEach(result.events, (event) => fanout.publish(event)),
+              result.repaired
+            )
+        )
+      })
     )
-    if (!hasOrphanedTurn) continue
-
-    // End the newest turn through the normal event pipeline so connected
-    // clients receive the terminal event live instead of discovering the
-    // repaired row on their next full reload.
-    await appendAndPublish(services.db, fanout, "session.updated", sessionId, {
-      ...(active.turnId === undefined
-        ? {}
-        : { initiatedBy: "user", turnId: active.turnId, turnState: "ended" }),
-      serverId,
-      stopReason: "end_turn"
-    })
-    repaired += 1
   }
   return repaired
 }
@@ -335,25 +315,26 @@ export const drainPromptQueue = async (
     await publishPromptQueue(services.db, fanout, sessionId)
     return
   }
-  // Harness-update gate: the prompt is already durable in prompt_queue_items
-  // and the client has its 202 — holding is simply not claiming. The gate
-  // release listener re-drains every held session.
-  const gate = await sessionUpdateGate(services, sessionId)
-  if (gate !== undefined) {
-    const firstHold = !routeState.gatedSessions.has(sessionId)
-    routeState.gatedSessions.set(sessionId, gate.harnessId)
-    await publishPromptQueue(services.db, fanout, sessionId)
-    if (firstHold) {
-      await appendAndPublish(services.db, fanout, "session.updateGate.updated", sessionId, {
-        harnessId: gate.harnessId,
-        harnessName: gate.harnessName,
-        state: "waiting"
-      }).catch(swallowError)
-    }
-    return
-  }
+  // Own the drain before a gate or summary lookup can yield.
   const turn = await beginPromptTurn(services, routeState, sessionId)
   try {
+    // Harness-update gate: the prompt is already durable in prompt_queue_items
+    // and the client has its 202 — holding is simply not claiming. The gate
+    // release listener re-drains every held session.
+    const gate = await sessionUpdateGate(services, sessionId)
+    if (gate !== undefined) {
+      const firstHold = !routeState.gatedSessions.has(sessionId)
+      routeState.gatedSessions.set(sessionId, gate.harnessId)
+      await publishPromptQueue(services.db, fanout, sessionId)
+      if (firstHold) {
+        await appendAndPublish(services.db, fanout, "session.updateGate.updated", sessionId, {
+          harnessId: gate.harnessId,
+          harnessName: gate.harnessName,
+          state: "waiting"
+        }).catch(swallowError)
+      }
+      return
+    }
     while (true) {
       // Released by a retire: a newer drain may already own this session
       // (the chat was unarchived and prompted again), so this one stops.

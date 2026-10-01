@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from "vitest"
+import { Effect } from "effect"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import {
   cleanupNativeMcpTests,
@@ -11,6 +12,47 @@ import {
 afterEach(cleanupNativeMcpTests)
 
 describe("destructive native operations", () => {
+  it("concurrent removals preserve both edits and the first backup", async () => {
+    const path = `${HOME}/.claude.json`
+    const original = JSON.stringify({ mcpServers: { a: { command: "a" }, b: { command: "b" } } })
+    const files: Record<string, string | Error> = { [path]: original }
+    const { manager, db } = await testManager(files)
+    await Promise.all([
+      manager.removeServer("claude-code", "a"),
+      manager.removeServer("claude-code", "b")
+    ])
+    expect(JSON.parse(files[path] as string).mcpServers).toEqual({})
+    const backup = await run(db.getNativeConfigBackup(path))
+    expect(files[backup!.backupPath]).toBe(original)
+    expect(await manager.listRemovals()).toHaveLength(2)
+  })
+
+  it("refuses an edit when the harness changed the file during backup", async () => {
+    const path = `${HOME}/.claude.json`
+    const external = JSON.stringify({ mcpServers: { a: { command: "a" } }, harnessSetting: "new" })
+    const files: Record<string, string | Error> = {
+      [path]: JSON.stringify({ mcpServers: { a: { command: "a" } } })
+    }
+    const { manager, db } = await testManager(files)
+    const backup = db.saveNativeConfigBackup
+    vi.spyOn(db, "saveNativeConfigBackup").mockImplementation((record) =>
+      Effect.andThen(
+        Effect.sync(() => {
+          files[path] = external
+        }),
+        backup(record)
+      )
+    )
+    try {
+      await expect(manager.removeServer("claude-code", "a")).rejects.toMatchObject({
+        code: "conflict"
+      })
+      expect(files[path]).toBe(external)
+      expect(await manager.listRemovals()).toEqual([])
+    } finally {
+      vi.restoreAllMocks()
+    }
+  })
   // A ~/.claude.json fixture with unrelated state, comments, and 4-space
   // indentation — removal must leave everything but the one entry untouched.
   const CLAUDE_FIXTURE = `{
@@ -138,7 +180,12 @@ docs = { command = "docs-mcp" }
     const { removal } = await manager.removeServer("claude-code", "docs")
     expect(await manager.listRemovals()).toHaveLength(1)
 
-    const scan = await manager.restoreRemoval(removal.id)
+    const restoring = manager.restoreRemoval(removal.id)
+    const duplicate = expect(manager.restoreRemoval(removal.id)).rejects.toMatchObject({
+      code: "notFound"
+    })
+    const scan = await restoring
+    await duplicate
     const after = files[`${HOME}/.claude.json`] as string
     expect(after).toContain("docs-mcp")
     expect(after).toContain('"TOKEN": "secret"')

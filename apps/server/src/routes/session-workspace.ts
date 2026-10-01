@@ -30,6 +30,7 @@ import {
 } from "../server-context.js"
 import { resolveSessionAccount, startSessionAgent } from "./session-creation.js"
 import { sessionEventSink } from "./session-events.js"
+import { withSessionMutation } from "./session-operations.js"
 
 const createServerSession = async (
   services: CodevisorServerServices,
@@ -114,29 +115,36 @@ export const createSessionIfMissing = async (
   const payload: CreateSessionRequest =
     rawPayload.id === undefined ? rawPayload : { ...rawPayload, id: rawPayload.id.toLowerCase() }
   if (payload.id !== undefined) {
-    const existing = await findSession(services.db, payload.id)
-    if (existing !== undefined) {
-      return { session: existing, created: false }
-    }
     const pending = routeState.pendingSessionCreates.get(payload.id)
     if (pending !== undefined) {
       return { session: await pending, created: false }
     }
   }
-  const project = await getProjectOrFail(services.db, payload.projectId)
-  const create = createServerSession(services, fanout, config.id, payload, project)
+  let created = false
+  // Register before even the existence lookup yields: a caller must not keep
+  // using a stale missing-row result after another creation has completed.
+  const create = (async () => {
+    if (payload.id !== undefined) {
+      const existing = await findSession(services.db, payload.id)
+      if (existing !== undefined) return existing
+    }
+    const project = await getProjectOrFail(services.db, payload.projectId)
+    const session = await createServerSession(services, fanout, config.id, payload, project)
+    created = true
+    if (publishCreated) {
+      await appendAndPublish(services.db, fanout, "session.created", session.id, session)
+    }
+    return session
+  })()
   if (payload.id !== undefined) {
     routeState.pendingSessionCreates.set(payload.id, create)
   }
   const session = await create.finally(() => {
-    if (payload.id !== undefined) {
+    if (payload.id !== undefined && routeState.pendingSessionCreates.get(payload.id) === create) {
       routeState.pendingSessionCreates.delete(payload.id)
     }
   })
-  if (publishCreated) {
-    await appendAndPublish(services.db, fanout, "session.created", session.id, session)
-  }
-  return { session, created: true }
+  return { session, created }
 }
 
 /// The full PATCH side-effect set, shared by PATCH /v1/sessions/:id and the
@@ -265,6 +273,18 @@ export const findSession = async (
 }
 
 export const ensureAgentSessionFor = async (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  serverId: string,
+  sessionId: string
+): Promise<AgentSessionMetadata> =>
+  withSessionMutation(services, sessionId, () =>
+    loadAgentSessionFor(services, fanout, serverId, sessionId)
+  )
+
+// Caller owns withSessionMutation, including the restoration below. Picker
+// changes use this entry point while holding the same session ownership.
+export const loadAgentSessionFor = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
   serverId: string,

@@ -3,7 +3,8 @@ import type { SessionConfigOption, SetConfigRequest } from "@codevisor/api"
 
 import type { CodevisorServerServices, EventFanout } from "../server-context.js"
 import { run } from "../server-context.js"
-import { configRestorePriority, ensureAgentSessionFor } from "./session-workspace.js"
+import { withSessionMutation } from "./session-operations.js"
+import { configRestorePriority, loadAgentSessionFor } from "./session-workspace.js"
 
 export interface SessionConfigPickResult {
   readonly configId: string
@@ -24,6 +25,17 @@ export interface SessionConfigPickResult {
 /// restores saved selections against the live list anyway — which is also
 /// where an unavailable value gets reported.
 export const applySessionConfigPick = async (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  serverId: string,
+  sessionId: string,
+  payload: SetConfigRequest
+): Promise<SessionConfigPickResult> =>
+  withSessionMutation(services, sessionId, () =>
+    applySessionConfigPickOwned(services, fanout, serverId, sessionId, payload)
+  )
+
+const applySessionConfigPickOwned = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
   serverId: string,
@@ -54,7 +66,7 @@ export const applySessionConfigPick = async (
     )
     return { configId: payload.configId, configOptions }
   }
-  const agentSession = await ensureAgentSessionFor(services, fanout, serverId, sessionId)
+  const agentSession = await loadAgentSessionFor(services, fanout, serverId, sessionId)
   const configOptions = await run(
     services.agents.setConfigOption(agentSession.sessionId, payload.configId, payload.value)
   )

@@ -139,6 +139,10 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
   let deadlineAt: number | undefined
   let interruptRequested = false
   let inFlight: Promise<RestartDrainState> | undefined
+  let cancelling: Promise<RestartDrainState> | undefined
+  // An already-issued close/cancel cannot be retracted. Keep dispatch gated
+  // until it settles; validation reads need not delay cancellation.
+  let destructiveWork: Promise<unknown> | undefined
   let graceTimer: NodeJS.Timeout | undefined
   /// Bumped by `cancel` so a drain that was abandoned mid-wait never
   /// finalizes on top of the reopened gate.
@@ -154,15 +158,26 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
     ...(deadlineAt === undefined ? {} : { deadlineAt: new Date(deadlineAt).toISOString() })
   })
 
-  const cancelLiveTurns = async (): Promise<void> => {
+  const destructive = async (work: Promise<unknown>): Promise<void> => {
+    destructiveWork = work
+    try {
+      await work
+    } finally {
+      destructiveWork = undefined
+    }
+  }
+
+  const cancelLiveTurns = async (myGeneration: number): Promise<void> => {
     for (const sessionId of liveSessions()) {
+      if (generation !== myGeneration) return
       try {
         const session = await run(services.db.getSessionSummary(sessionId))
+        if (generation !== myGeneration) return
         const agentSessionId =
           session.agentSessionId === undefined || session.agentSessionId === ""
             ? sessionId
             : session.agentSessionId
-        await run(services.agents.cancel(agentSessionId))
+        await destructive(run(services.agents.cancel(agentSessionId)))
       } catch (cause) {
         // A session whose process is already gone has nothing to cancel;
         // reconciliation closes its rows on the next boot.
@@ -204,13 +219,17 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
     return [...ids].toSorted()
   }
 
-  const finalize = async (): Promise<void> => {
+  const finalize = async (myGeneration: number): Promise<void> => {
     const resume = await sessionsToResume()
+    if (generation !== myGeneration) return
     snapshot.write(resume)
     for (const agentSessionId of services.agents.loadedAgentSessionIds()) {
-      await run(services.agents.closeAgentSession(agentSessionId)).catch((cause: unknown) => {
-        log(`Restart drain could not close ${agentSessionId}: ${failureMessage(cause)}`)
-      })
+      if (generation !== myGeneration) return
+      await destructive(run(services.agents.closeAgentSession(agentSessionId))).catch(
+        (cause: unknown) => {
+          log(`Restart drain could not close ${agentSessionId}: ${failureMessage(cause)}`)
+        }
+      )
     }
     log(
       `Restart drain complete: ${resume.length} session${resume.length === 1 ? "" : "s"} will resume after the restart`
@@ -225,14 +244,15 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
       // the way a client's Stop would, then give their terminal events a
       // moment to land so the transcript closes cleanly.
       log(`Restart drain interrupting ${liveSessions().size} live turn(s)`)
-      await cancelLiveTurns()
+      await cancelLiveTurns(myGeneration)
+      if (generation !== myGeneration) return state()
       interruptRequested = false
       idle = await waitUntilIdle(Date.now() + INTERRUPT_SETTLE_MS, myGeneration)
       if (generation !== myGeneration) return state()
     }
     let finalized = true
     try {
-      await finalize()
+      await finalize(myGeneration)
     } catch (cause) {
       log(`Restart drain could not finish: ${failureMessage(cause)}`)
       finalized = false
@@ -259,6 +279,7 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
     state,
     isGated: () => phase !== "idle",
     begin: (options) => {
+      if (cancelling !== undefined) return cancelling.then(() => coordinator.begin(options))
       if (options?.interrupt === true) interruptRequested = true
       if (inFlight !== undefined) return inFlight
       if (phase === "drained") return Promise.resolve(state())
@@ -270,46 +291,54 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
       log(
         `Restart drain started: waiting for ${liveSessions().size} live turn(s) before restarting`
       )
-      inFlight = drain(deadline, myGeneration).finally(() => {
-        inFlight = undefined
+      const work = drain(deadline, myGeneration).finally(() => {
+        if (inFlight === work) inFlight = undefined
       })
+      inFlight = work
       return inFlight
     },
-    cancel: async () => {
-      if (phase === "idle") return state()
+    cancel: () => {
+      if (cancelling !== undefined) return cancelling
+      if (phase === "idle") return Promise.resolve(state())
       generation += 1
       // A drain waiting between polls stops now, not a poll later, so its
       // caller learns the update is off before the cancel is acknowledged.
-      // (One blocked in finalization is not awaited: a stuck close must not
-      // hold the gate shut.)
       wakeDrain?.()
-      phase = "idle"
-      startedAt = new Date().toISOString()
-      deadlineAt = undefined
-      interruptRequested = false
-      if (graceTimer !== undefined) {
-        clearTimeout(graceTimer)
-        graceTimer = undefined
-      }
-      try {
-        snapshot.clear()
-      } catch (cause) {
-        // A stale snapshot only makes the next boot resume a few extra idle
-        // sessions; failing here would leave the gate half reopened.
-        log(`Restart drain could not clear its snapshot: ${failureMessage(cause)}`)
-      }
-      const held = [...turns.restartHeldSessions]
-      turns.restartHeldSessions.clear()
-      for (const sessionId of held) {
-        await appendAndPublish(services.db, fanout, "session.updateGate.updated", sessionId, {
-          harnessId: RESTART_GATE_HARNESS_ID,
-          harnessName: RESTART_GATE_HARNESS_NAME,
-          state: "released"
-        }).catch(swallowError)
-        void redrain(sessionId).catch(swallowError)
-      }
-      log("Restart drain cancelled: prompts dispatch again")
-      return state()
+      inFlight = undefined
+      const cancel = (async () => {
+        if (destructiveWork !== undefined) await destructiveWork.catch(swallowError)
+        phase = "idle"
+        startedAt = new Date().toISOString()
+        deadlineAt = undefined
+        interruptRequested = false
+        if (graceTimer !== undefined) {
+          clearTimeout(graceTimer)
+          graceTimer = undefined
+        }
+        try {
+          snapshot.clear()
+        } catch (cause) {
+          // A stale snapshot only makes the next boot resume a few extra idle
+          // sessions; failing here would leave the gate half reopened.
+          log(`Restart drain could not clear its snapshot: ${failureMessage(cause)}`)
+        }
+        const held = [...turns.restartHeldSessions]
+        turns.restartHeldSessions.clear()
+        for (const sessionId of held) {
+          await appendAndPublish(services.db, fanout, "session.updateGate.updated", sessionId, {
+            harnessId: RESTART_GATE_HARNESS_ID,
+            harnessName: RESTART_GATE_HARNESS_NAME,
+            state: "released"
+          }).catch(swallowError)
+          void redrain(sessionId).catch(swallowError)
+        }
+        log("Restart drain cancelled: prompts dispatch again")
+        return state()
+      })().finally(() => {
+        cancelling = undefined
+      })
+      cancelling = cancel
+      return cancel
     },
     close: () => {
       generation += 1

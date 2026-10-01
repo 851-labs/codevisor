@@ -67,6 +67,22 @@ describe("defaultNativeConfigFileSystem", () => {
     const { readdir } = await import("node:fs/promises")
     expect((await readdir(join(dir, "nested/deep"))).filter((f) => f.endsWith(".tmp"))).toEqual([])
   })
+
+  it("publishes only against the expected file contents and cleans up rejected writes", async () => {
+    const dir = await makeTempDir()
+    const path = join(dir, "config.json")
+    await defaultNativeConfigFileSystem.writeFileAtomic(path, "initial", { content: undefined })
+    await defaultNativeConfigFileSystem.writeFileAtomic(path, "external", { content: "initial" })
+    await expect(
+      defaultNativeConfigFileSystem.writeFileAtomic(path, "stale", { content: "initial" })
+    ).rejects.toThrow("changed during the edit")
+    expect(await defaultNativeConfigFileSystem.readFile(path)).toBe("external")
+    await expect(
+      defaultNativeConfigFileSystem.writeFileAtomic(dir, "invalid", { content: undefined })
+    ).rejects.toThrow()
+    const { readdir } = await import("node:fs/promises")
+    expect(await readdir(dir)).toEqual(["config.json"])
+  })
 })
 
 describe("resolveNativeConfigPath", () => {

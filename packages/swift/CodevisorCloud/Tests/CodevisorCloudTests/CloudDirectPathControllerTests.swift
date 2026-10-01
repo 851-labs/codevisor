@@ -9,11 +9,11 @@ import CodevisorClient
 /// Every dial the controller made, observable so tests can wait on it.
 @MainActor
 @Observable
-private final class ProbeLog {
+final class ProbeLog {
   var probes: [String] = []
 }
 
-private final class ProbeScript: @unchecked Sendable {
+final class ProbeScript: @unchecked Sendable {
   private let lock = NSLock()
   private var results: [String: ScriptedDirectMachine] = [:]
   private var downCallbacks: [String: @Sendable () -> Void] = [:]
@@ -38,6 +38,9 @@ private final class ProbeScript: @unchecked Sendable {
   func takeDown(_ deviceId: String) {
     lock.withLock { downCallbacks[deviceId] }?()
   }
+  func downCallback(_ deviceId: String) -> (@Sendable () -> Void)? {
+    lock.withLock { downCallbacks[deviceId] }
+  }
 
   var prober: CloudDirectPathController.Prober {
     { [self] machine, onDown in
@@ -51,7 +54,7 @@ private final class ProbeScript: @unchecked Sendable {
   }
 }
 
-private func testMachine(
+func testMachine(
   _ deviceId: String,
   publicKey: String,
   online: Bool = true,
@@ -69,7 +72,7 @@ private func testMachine(
 }
 
 @MainActor
-private func makePathController(
+func makePathController(
   script: ProbeScript,
   clock: TestClock = TestClock()
 ) -> CloudDirectPathController {
@@ -82,7 +85,7 @@ private func makePathController(
 }
 
 @MainActor
-private func settle(_ controller: CloudDirectPathController) async {
+func settle(_ controller: CloudDirectPathController) async {
   for task in controller.probeTasks.values { await task.value }
 }
 

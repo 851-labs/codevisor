@@ -366,4 +366,28 @@ describe("MachineTunnel", () => {
     expect(endpoint.closed).toBe(true)
     expect(tunnel.endpoint).toBeUndefined()
   })
+
+  it("the latest same-tick configuration owns the only bound endpoint", async () => {
+    const { tunnel, endpoints, bindOptions } = setup()
+    try {
+      await Promise.all([
+        tunnel.configure({ relays, enabled: true }),
+        tunnel.configure({ relays: [{ url: "https://new.test" }], enabled: true })
+      ])
+      expect(endpoints).toHaveLength(1)
+      expect(bindOptions[0]?.relays).toEqual([{ url: "https://new.test" }])
+      expect(tunnel.endpoint).toBe(endpoints[0])
+    } finally {
+      await tunnel.stop()
+    }
+  })
+
+  it("stop invalidates a configuration before teardown resumes", async () => {
+    const { tunnel, endpoints } = setup()
+    const configured = tunnel.configure({ relays, enabled: true })
+    await tunnel.stop()
+    await configured
+    expect(tunnel.endpoint).toBeUndefined()
+    expect(endpoints).toHaveLength(0)
+  })
 })

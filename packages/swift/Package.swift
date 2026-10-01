@@ -48,6 +48,7 @@ let package = Package(
     .package(url: "https://github.com/PostHog/posthog-ios.git", exact: "3.59.3"),
     .package(url: "https://github.com/851-labs/webrtc.git", exact: "152.0.0-codevisor.1"),
     .package(url: "https://github.com/pointfreeco/swift-composable-architecture.git", exact: "1.26.2"),
+    .package(url: "https://github.com/pointfreeco/swift-concurrency-extras.git", exact: "1.4.1"),
   ],
   targets: [
     // MARK: ScreenSharing (the engine, WebRTC-free: session and message contracts, frames and the
@@ -334,6 +335,7 @@ let package = Package(
     .testTarget(
       name: "CodevisorCloudTests",
       dependencies: [
+        .product(name: "ConcurrencyExtras", package: "swift-concurrency-extras"),
         "CodevisorTestSupport",
         "CodevisorCloud",
         "CodevisorClient",
@@ -368,6 +370,7 @@ let package = Package(
     .testTarget(
       name: "CodevisorCoreTests",
       dependencies: [
+        .product(name: "ConcurrencyExtras", package: "swift-concurrency-extras"),
         "CodevisorTestSupport",
         "CodevisorCore",
         "ACPKit",

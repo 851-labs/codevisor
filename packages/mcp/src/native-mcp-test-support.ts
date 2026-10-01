@@ -10,7 +10,11 @@ import { Effect } from "effect"
 
 import type { NativeConfigFileSystem } from "./native-config-files.js"
 import { makeNativeMcpManager } from "./native-mcp-manager.js"
-import type { ImportTargetMcpManager, NativeMcpManager } from "./native-mcp-types.js"
+import {
+  NativeMcpError,
+  type ImportTargetMcpManager,
+  type NativeMcpManager
+} from "./native-mcp-types.js"
 
 export const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 
@@ -34,7 +38,9 @@ export const fakeFs = (files: Record<string, string | Error>): NativeConfigFileS
     if (value instanceof Error) throw value
     return value
   },
-  writeFileAtomic: async (path, content) => {
+  writeFileAtomic: async (path, content, expected) => {
+    if (expected !== undefined && files[path] !== expected.content)
+      throw new NativeMcpError("Concurrent file edit", "conflict")
     files[path] = content
   }
 })

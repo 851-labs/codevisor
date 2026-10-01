@@ -69,7 +69,7 @@ describe("crash backoff and circuit breaker", () => {
     spawn.simulateExit("exited with code 1")
     now += 500
     await supervisor.ensureRunning(target)
-    supervisor.noteSuccess("owner.example")
+    supervisor.noteSuccess("owner.example", await supervisor.acquire(target))
     spawn.simulateExit("exited with code 1")
     // Without the reset this second crash would have tripped the breaker.
     expect(supervisor.state("owner.example")).toBe("stopped")
@@ -113,22 +113,22 @@ describe("crash backoff and circuit breaker", () => {
       spawnShell: spawn.spawnShell
     })
     const target = plugin()
-    await supervisor.ensureRunning(target)
-    supervisor.markUnreachable("owner.example")
+    const lease = await supervisor.acquire(target)
+    supervisor.markUnreachable("owner.example", lease)
     expect(supervisor.state("owner.example")).toBe("stopped")
     now += 500
     await supervisor.ensureRunning(target)
     expect(spawn.spawnCount()).toBe(2)
     supervisor.stop("owner.example")
     // Not running (and unknown) plugins are no-ops.
-    supervisor.markUnreachable("owner.example")
-    supervisor.markUnreachable("owner.unknown")
+    supervisor.markUnreachable("owner.example", lease)
+    supervisor.markUnreachable("owner.unknown", lease)
     expect(supervisor.state("owner.example")).toBe("stopped")
   })
 
   it("noteSuccess ignores plugins that never ran", () => {
     const supervisor = makePluginSupervisor({ dataDir: makeDataDir() })
-    supervisor.noteSuccess("owner.unknown")
+    supervisor.noteSuccess("owner.unknown", { port: 0 })
     expect(supervisor.state("owner.unknown")).toBe("stopped")
   })
 })

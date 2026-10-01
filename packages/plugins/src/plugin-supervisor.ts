@@ -1,12 +1,11 @@
 import { spawn } from "node:child_process"
 import { mkdirSync } from "node:fs"
-import { request as httpRequest } from "node:http"
-import { connect, createServer } from "node:net"
 import { join } from "node:path"
 
 import type { PluginRuntimeState } from "@codevisor/api"
 
 import { displayPluginCommand, pluginRunCommand } from "./plugin-command.js"
+import { allocatePort, tcpProbe, httpProbe } from "./plugin-readiness.js"
 import type { InstalledPlugin } from "./plugin-store.js"
 import { PluginsError } from "./plugins-error.js"
 
@@ -94,10 +93,12 @@ export interface PluginSupervisorConfig {
 }
 
 interface RunningPlugin {
+  generation: number
   state: PluginRuntimeState
   port?: number
   process?: PluginProcessHandle
-  startPromise?: Promise<number>
+  startPromise?: Promise<PluginLease>
+  lease?: PluginLease
   /// Consecutive failed starts/crashes since the last successful request or
   /// stable runtime.
   failures: number
@@ -109,6 +110,7 @@ interface RunningPlugin {
 }
 
 export interface PluginSupervisor {
+  readonly acquire: (plugin: InstalledPlugin) => Promise<PluginLease>
   /// Starts the plugin's server if needed and resolves its loopback port.
   /// Concurrent callers share one start attempt. Refuses while the
   /// crash circuit breaker is tripped or inside a restart-backoff window.
@@ -116,15 +118,21 @@ export interface PluginSupervisor {
   readonly state: (pluginId: string) => PluginRuntimeState
   /// A proxied request completed successfully: resets the crash circuit
   /// breaker.
-  readonly noteSuccess: (pluginId: string) => void
+  readonly noteSuccess: (pluginId: string, lease: PluginLease) => void
   /// The proxy found the plugin's port dead while the supervisor thought it
   /// was running: treat it as a crash so the manager relaunches it instead of
   /// forwarding into a dead port forever.
-  readonly markUnreachable: (pluginId: string) => void
+  readonly markUnreachable: (pluginId: string, lease: PluginLease) => void
   /// Stop + clear failure state; the next request starts fresh.
   readonly restart: (pluginId: string) => void
   readonly stop: (pluginId: string) => void
   readonly closeAll: () => void
+}
+
+// Object identity binds completion callbacks to exactly one process, even
+// when the kernel later reuses the same port.
+export interface PluginLease {
+  readonly port: number
 }
 
 /// A crashed or killed plugin must never take the server with it: every
@@ -220,63 +228,6 @@ const spawnPluginProcess = (
   }
 }
 
-/// Asks the kernel for a free loopback port. A race against another process
-/// binding it before the plugin does is possible but harmless: startup fails
-/// readiness and surfaces as a plugin error, never a hijack (the plugin binds
-/// loopback).
-const allocatePort = (): Promise<number> =>
-  new Promise((resolve, reject) => {
-    const probe = createServer()
-    /* v8 ignore next -- loopback ephemeral binds only fail under fd exhaustion. */
-    probe.once("error", reject)
-    probe.listen(0, "127.0.0.1", () => {
-      const address = probe.address()
-      /* v8 ignore next -- TCP listen always returns AddressInfo here. */
-      const port = typeof address === "object" && address !== null ? address.port : 0
-      probe.close(() => resolve(port))
-    })
-  })
-
-const tcpProbe = (port: number): Promise<boolean> =>
-  new Promise((resolve) => {
-    const socket = connect({ host: "127.0.0.1", port })
-    const done = (up: boolean): void => {
-      socket.destroy()
-      resolve(up)
-    }
-    socket.once("connect", () => done(true))
-    socket.once("error", () => done(false))
-    /* v8 ignore next -- loopback connects resolve or error immediately. */
-    socket.setTimeout(1_000, () => done(false))
-  })
-
-const httpProbe = (port: number, path: string): Promise<boolean> =>
-  new Promise((resolve) => {
-    let settled = false
-    const done = (ready: boolean): void => {
-      if (settled) return
-      settled = true
-      resolve(ready)
-    }
-    const probe = httpRequest(
-      { host: "127.0.0.1", method: "GET", path, port, timeout: 1_000 },
-      (response) => {
-        response.resume()
-        done(
-          response.statusCode !== undefined &&
-            response.statusCode >= 200 &&
-            response.statusCode < 300
-        )
-      }
-    )
-    probe.once("error", () => done(false))
-    probe.once("timeout", () => {
-      probe.destroy()
-      done(false)
-    })
-    probe.end()
-  })
-
 /// How long a plugin gets from spawn to accepting connections.
 const READY_TIMEOUT_MS = 15_000
 /// First restart-backoff window after a crash; doubles per consecutive
@@ -290,6 +241,7 @@ const STABLE_RUNTIME_MS = 30_000
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
 const clearProcess = (current: RunningPlugin): void => {
+  delete current.lease
   delete current.port
   delete current.process
   delete current.runningSince
@@ -310,6 +262,7 @@ export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupe
       return existing
     }
     const created: RunningPlugin = {
+      generation: 0,
       failures: 0,
       notBefore: 0,
       state: "stopped"
@@ -319,9 +272,6 @@ export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupe
   }
 
   const setState = (pluginId: string, current: RunningPlugin, state: PluginRuntimeState): void => {
-    if (current.state === state) {
-      return
-    }
     current.state = state
     config.onStateChange?.(pluginId, state)
   }
@@ -340,8 +290,17 @@ export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupe
     return current.failures >= maxConsecutiveFailures ? "failed" : "stopped"
   }
 
-  const start = async (plugin: InstalledPlugin, current: RunningPlugin): Promise<number> => {
+  const start = async (
+    plugin: InstalledPlugin,
+    current: RunningPlugin,
+    generation: number
+  ): Promise<PluginLease> => {
+    const checkOwner = (): void => {
+      if (current.generation !== generation)
+        throw new PluginsError("unavailable", `Plugin ${plugin.id} startup was stopped`)
+    }
     const port = await allocatePort()
+    checkOwner()
     const dataDir = join(config.dataDir, plugin.id)
     mkdirSync(dataDir, { recursive: true })
     const env: NodeJS.ProcessEnv = {
@@ -353,6 +312,7 @@ export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupe
       CODEVISOR_PLUGIN_ID: plugin.id,
       PORT: String(port)
     }
+    checkOwner()
     let exitMessage: string | undefined
     const runCommand = pluginRunCommand(plugin.manifest)
     const child =
@@ -392,15 +352,19 @@ export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupe
         plugin.manifest.healthPath === undefined
           ? await tcpProbe(port)
           : await httpProbe(port, plugin.manifest.healthPath)
+      checkOwner()
       /* v8 ignore next -- success, retry, timeout, and connection-error outcomes are covered explicitly. */
       if (ready) {
         current.port = port
+        const lease = { port }
+        current.lease = lease
         current.runningSince = now()
         setState(plugin.id, current, "running")
         log(`Plugin ${plugin.id} listening on 127.0.0.1:${port}`)
-        return port
+        return lease
       }
       await sleep(150)
+      checkOwner()
     }
     child.kill()
     throw new PluginsError(
@@ -418,6 +382,8 @@ export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupe
     // relaunch fresh with no backoff and an open circuit breaker.
     current.failures = 0
     current.notBefore = 0
+    current.generation += 1
+    delete current.startPromise
     if (current.state === "stopped") {
       return
     }
@@ -427,63 +393,67 @@ export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupe
     setState(pluginId, current, "stopped")
   }
 
-  return {
-    closeAll: () => {
-      for (const [pluginId, current] of runtimes) {
+  const acquire = async (plugin: InstalledPlugin): Promise<PluginLease> => {
+    const current = runtime(plugin.id)
+    if (current.state === "running" && current.lease !== undefined) {
+      return current.lease
+    }
+    if (current.startPromise !== undefined) {
+      return current.startPromise
+    }
+    if (current.failures >= maxConsecutiveFailures) {
+      throw new PluginsError(
+        "unavailable",
+        `Plugin ${plugin.id} failed ${current.failures} times in a row; restart it to try again`
+      )
+    }
+    const backoffRemainingMs = current.notBefore - now()
+    if (backoffRemainingMs > 0) {
+      throw new PluginsError(
+        "unavailable",
+        `Plugin ${plugin.id} recently crashed; retry in ${backoffRemainingMs}ms`
+      )
+    }
+    setState(plugin.id, current, "starting")
+    const generation = ++current.generation
+    const startPromise = start(plugin, current, generation).catch((cause: unknown) => {
+      if (current.generation === generation) {
         current.process?.kill()
-        clearProcess(current)
-        current.failures = 0
-        current.notBefore = 0
-        setState(pluginId, current, "stopped")
-      }
-    },
-    ensureRunning: async (plugin) => {
-      const current = runtime(plugin.id)
-      if (current.state === "running" && current.port !== undefined) {
-        return current.port
-      }
-      if (current.startPromise !== undefined) {
-        return current.startPromise
-      }
-      if (current.failures >= maxConsecutiveFailures) {
-        throw new PluginsError(
-          "unavailable",
-          `Plugin ${plugin.id} failed ${current.failures} times in a row; restart it to try again`
-        )
-      }
-      const backoffRemainingMs = current.notBefore - now()
-      if (backoffRemainingMs > 0) {
-        throw new PluginsError(
-          "unavailable",
-          `Plugin ${plugin.id} recently crashed; retry in ${backoffRemainingMs}ms`
-        )
-      }
-      setState(plugin.id, current, "starting")
-      const startPromise = start(plugin, current).catch((cause: unknown) => {
         setState(plugin.id, current, registerFailure(current))
-        throw cause
-      })
-      current.startPromise = startPromise
-      try {
-        return await startPromise
-      } finally {
-        delete current.startPromise
       }
+      throw cause
+    })
+    current.startPromise = startPromise
+    try {
+      return await startPromise
+    } finally {
+      if (current.startPromise === startPromise) delete current.startPromise
+    }
+  }
+
+  return {
+    acquire,
+    ensureRunning: async (plugin) => (await acquire(plugin)).port,
+    closeAll: () => {
+      for (const pluginId of runtimes.keys()) stop(pluginId)
     },
-    markUnreachable: (pluginId) => {
+    markUnreachable: (pluginId, lease) => {
       const current = runtimes.get(pluginId)
-      if (current === undefined || current.state !== "running") {
+      if (current === undefined || current.state !== "running" || current.lease !== lease) {
         return
       }
       log(`Plugin ${pluginId} stopped answering on 127.0.0.1:${current.port}; treating as crashed`)
+      const child = current.process
+      // Retire ownership before kill: an exit callback can arrive immediately.
+      const nextState = registerFailure(current)
       /* v8 ignore next -- a running runtime always tracks its process. */
-      current.process?.kill()
-      setState(pluginId, current, registerFailure(current))
+      child?.kill()
+      setState(pluginId, current, nextState)
       config.onUnexpectedExit?.(pluginId)
     },
-    noteSuccess: (pluginId) => {
+    noteSuccess: (pluginId, lease) => {
       const current = runtimes.get(pluginId)
-      if (current === undefined) {
+      if (current === undefined || current.lease !== lease) {
         return
       }
       current.failures = 0

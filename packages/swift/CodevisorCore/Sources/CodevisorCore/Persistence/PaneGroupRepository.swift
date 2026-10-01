@@ -35,37 +35,42 @@ public final class DefaultPaneGroupRepository: PaneGroupRepository, @unchecked S
     // No session key, no legacy entry: this store only ever held per-session
     // states, and inventing a key here would collide with a real session's.
     guard let sessionId else { return nil }
-    return loadAll()["\(sessionId.uuidString):center"]
+    return lock.withLock { loadAll()["\(sessionId.uuidString):center"] }
   }
 
   public func save(_ state: PaneGroupState, sessionId: UUID?) {
     // Same reason as `load`: without a session key there is no entry this
     // store owns, and a substitute key would masquerade as a session.
     guard let sessionId else { return }
-    var all = loadAll()
-    all["\(sessionId.uuidString):center"] = state
-    lock.withLock { cache = all }
-    do {
-      try store.saveData(JSONEncoder().encode(all), forKey: key)
-    } catch {
-      Log.persistence.error(
-        "Failed to save \(self.key, privacy: .public): \(String(describing: error), privacy: .public)")
+    lock.withLock {
+      var all = loadAll()
+      all["\(sessionId.uuidString):center"] = state
+      cache = all
+      do {
+        try store.saveData(JSONEncoder().encode(all), forKey: key)
+      } catch {
+        Log.persistence.error(
+          "Failed to save \(self.key, privacy: .public): \(String(describing: error), privacy: .public)")
+      }
     }
   }
 
   public func removeAll() {
-    lock.withLock { cache = [:] }
-    do {
-      try store.removeData(forKey: key)
-    } catch {
-      Log.persistence.error(
-        "Failed to clear \(self.key, privacy: .public): \(String(describing: error), privacy: .public)"
-      )
+    lock.withLock {
+      cache = [:]
+      do {
+        try store.removeData(forKey: key)
+      } catch {
+        Log.persistence.error(
+          "Failed to clear \(self.key, privacy: .public): \(String(describing: error), privacy: .public)"
+        )
+      }
     }
   }
 
   private func loadAll() -> [String: PaneGroupState] {
-    if let cached = lock.withLock({ cache }) { return cached }
+    // Caller owns the entire load/mutate/write transaction.
+    if let cache { return cache }
     let loaded: [String: PaneGroupState]
     if let data = store.loadData(forKey: key) {
       do {
@@ -79,7 +84,7 @@ public final class DefaultPaneGroupRepository: PaneGroupRepository, @unchecked S
     } else {
       loaded = [:]
     }
-    lock.withLock { if cache == nil { cache = loaded } }
+    cache = loaded
     return loaded
   }
 }
