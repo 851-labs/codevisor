@@ -46,7 +46,6 @@ let package = Package(
   ],
   dependencies: [
     .package(url: "https://github.com/PostHog/posthog-ios.git", exact: "3.59.3"),
-    .package(url: "https://github.com/getsentry/sentry-cocoa.git", exact: "9.23.0"),
     .package(url: "https://github.com/851-labs/webrtc.git", exact: "152.0.0-codevisor.1"),
     .package(url: "https://github.com/pointfreeco/swift-composable-architecture.git", exact: "1.26.2"),
   ],
@@ -122,6 +121,19 @@ let package = Package(
     // bindings are generated code (refreshed by the same command, committed so CI detects drift), so
     // this one target keeps the Swift 5 language mode the generator targets instead of the strict set.
     .binaryTarget(name: "CodevisorNetFFI", path: "Frameworks/CodevisorNetFFI.xcframework"),
+    // Sentry's static SDK, straight from its release rather than through the sentry-cocoa
+    // package: SwiftPM downloads and unpacks EVERY binary target a dependency declares, and
+    // sentry-cocoa declares seven variants (~2.9 GB unpacked) of which we link one (~0.3 GB).
+    // That unpacked copy lands in every build folder of every worktree (SwiftPM, the macOS
+    // and iOS apps), so the unused six cost ~12 GB per worktree. This is exactly what
+    // sentry-cocoa's own `Sentry` product resolves to (its SentryCppHelper target only links
+    // libc++, which CodevisorCore does below). To upgrade, take the URL and checksum of
+    // `Sentry.xcframework.zip` from the new release's Package.swift.
+    .binaryTarget(
+      name: "Sentry",
+      url: "https://github.com/getsentry/sentry-cocoa/releases/download/9.23.0/Sentry.xcframework.zip",
+      checksum: "e16f1fb6333f572e980be28d2a9e1ea20a08c2c91b7901d612ff6cee2af697cf"
+    ),
     .target(
       name: "CodevisorNet",
       dependencies: ["CodevisorNetFFI"],
@@ -342,12 +354,14 @@ let package = Package(
         "CodevisorCloud",
         "CodevisorTheming",
         .product(name: "PostHog", package: "posthog-ios"),
-        .product(name: "Sentry", package: "sentry-cocoa"),
+        "Sentry",
       ],
       path: "CodevisorCore/Sources/CodevisorCore",
       swiftSettings: strictSwiftSettings,
       linkerSettings: [
         .linkedLibrary("sqlite3"),
+        // Sentry's static SDK is part C++.
+        .linkedLibrary("c++"),
         .linkedFramework("Security"),
       ]
     ),
@@ -357,7 +371,7 @@ let package = Package(
         "CodevisorTestSupport",
         "CodevisorCore",
         "ACPKit",
-        .product(name: "Sentry", package: "sentry-cocoa"),
+        "Sentry",
       ],
       path: "CodevisorCore/Tests/CodevisorCoreTests",
       swiftSettings: strictSwiftSettings
