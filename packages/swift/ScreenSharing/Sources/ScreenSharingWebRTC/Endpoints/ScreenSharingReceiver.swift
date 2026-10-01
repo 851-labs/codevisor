@@ -154,8 +154,12 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
       if audioPlayer == nil {
         do {
           let player = try ScreenSharingAudioPlayer()
-          try player.start()
-          player.volume = audioVolume
+          player.setVolume(audioVolume)
+          // The device starts on the player's own queue; one that can't start ends playback as before.
+          player.start { [weak self, metrics] error in
+            metrics.label("audioError", error.localizedDescription)
+            Task { @MainActor in self?.audioOutputFailed(player) }
+          }
           audioPlayer = player
         } catch {
           metrics.label("audioError", error.localizedDescription)
@@ -165,18 +169,28 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
       subscribeToAudio()
       audioSync = audioSync ?? Task { [weak self] in await self?.followVideoDelay() }
     } else {
-      if audioSubscribed { audioChannel.send(.unsubscribe) }
-      audioSubscribed = false
-      audioSync?.cancel()
-      audioSync = nil
-      audioPlayer?.stop()
-      audioPlayer = nil
+      stopAudio()
     }
+  }
+
+  private func stopAudio() {
+    if audioSubscribed { audioChannel.send(.unsubscribe) }
+    audioSubscribed = false
+    audioSync?.cancel()
+    audioSync = nil
+    audioPlayer?.stop()
+    audioPlayer = nil
+  }
+
+  private func audioOutputFailed(_ player: ScreenSharingAudioPlayer) {
+    guard audioPlayer === player else { return }
+    audioWanted = false
+    stopAudio()
   }
 
   /// Output level for the host's sound, 0…1; kept across mute and unmute.
   public var audioVolume: Float = 1 {
-    didSet { audioPlayer?.volume = audioVolume }
+    didSet { audioPlayer?.setVolume(audioVolume) }
   }
 
   public func setAudioVolume(_ volume: Float) { audioVolume = min(1, max(0, volume)) }
