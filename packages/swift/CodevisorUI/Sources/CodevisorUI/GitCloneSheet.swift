@@ -194,23 +194,28 @@ public struct GitCloneSheet: View {
       // The machine finishes a clone even if this request is cut off, so
       // the event stream also carries the final outcome for that case.
       let (outcomes, outcomeSink) = AsyncStream.makeStream(of: ProjectCloneOutcome.self)
+      // Only this clone's setup events are decoded and delivered here, not
+      // every session's streamed output.
+      let tail = ServerSetupEventTail.follow(
+        client, kinds: ["project.setup", "project.created"], subjectId: projectId.uuidString)
       let follow = Task {
-        do {
-          for try await envelope in client.eventStream(
-            since: ServerSessionTransport.liveOnlyEventCursor
-          ) {
-            if case let .log(_, line) = ProjectSetupEvent.from(
-              envelope,
-              projectId: projectId.uuidString
-            ) {
-              logLines.append(line)
-            }
-            if let outcome = ProjectCloneOutcome.from(envelope, projectId: projectId.uuidString) {
-              outcomeSink.yield(outcome)
-            }
+        for await item in tail {
+          guard case let .event(envelope) = item else {
+            // Events were missed: the outcome may be among them, so stop
+            // waiting for one (a lost request then fails as before).
+            logLines.append(ServerSetupEventTail.skippedOutputLine)
+            outcomeSink.finish()
+            continue
           }
-        } catch {
-          // Progress is cosmetic while the HTTP request is alive.
+          if case let .log(_, line) = ProjectSetupEvent.from(
+            envelope,
+            projectId: projectId.uuidString
+          ) {
+            logLines.append(line)
+          }
+          if let outcome = ProjectCloneOutcome.from(envelope, projectId: projectId.uuidString) {
+            outcomeSink.yield(outcome)
+          }
         }
         outcomeSink.finish()
       }

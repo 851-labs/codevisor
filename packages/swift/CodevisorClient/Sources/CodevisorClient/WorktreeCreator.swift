@@ -68,22 +68,12 @@ public final class WorktreeCreator {
     phase = .worktree()
     // Best-effort live tail: the WebSocket usually opens well before git
     // (and any long checkout hooks) produce output. Terminal state comes
-    // from the HTTP response, not from these events.
+    // from the HTTP response, not from these events. Only this worktree's
+    // log lines reach the main actor.
+    let log = WorktreeSetupEvent.liveLog(client, worktreeId: worktreeId)
     let follow = Task { [weak self] in
-      do {
-        for try await envelope in client.eventStream(
-          since: ServerSessionTransport.liveOnlyEventCursor
-        ) {
-          guard
-            case let .log(stream, line) = WorktreeSetupEvent.from(
-              envelope, worktreeId: worktreeId
-            )
-          else { continue }
-          self?.phase?.appendLog(stream: stream, line: line)
-        }
-      } catch {
-        // The stream is cosmetic; a drop just stops the live tail.
-        Log.session.debug("worktree setup log tail dropped: \(String(describing: error), privacy: .public)")
+      for await entry in log {
+        self?.phase?.appendLog(stream: entry.stream, line: entry.line)
       }
     }
     defer { follow.cancel() }

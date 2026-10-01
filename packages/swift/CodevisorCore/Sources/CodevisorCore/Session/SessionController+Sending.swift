@@ -224,24 +224,14 @@ extension SessionController {
     status = .connecting("Setting up worktree…")
     // Best-effort live tail: the WebSocket usually opens well before git
     // (and any long checkout hooks) produce output. Terminal state comes
-    // from the HTTP response, not from these events.
+    // from the HTTP response, not from these events. Only this worktree's
+    // log lines reach the main actor.
+    let log = WorktreeSetupEvent.liveLog(serverClient, worktreeId: worktreeId)
     let follow = Task { [weak self] in
-      do {
-        for try await envelope in serverClient.eventStream(
-          since: ServerSessionTransport.liveOnlyEventCursor
-        ) {
-          guard
-            case let .log(stream, line) = WorktreeSetupEvent.from(
-              envelope, worktreeId: worktreeId
-            )
-          else { continue }
-          self?.mutateSetupPhase(id: SessionSetupPhase.worktreePhaseId) {
-            $0.appendLog(stream: stream, line: line)
-          }
+      for await entry in log {
+        self?.mutateSetupPhase(id: SessionSetupPhase.worktreePhaseId) {
+          $0.appendLog(stream: entry.stream, line: entry.line)
         }
-      } catch {
-        // The stream is cosmetic; a drop just stops the live tail.
-        Log.session.debug("worktree setup log tail dropped: \(String(describing: error), privacy: .public)")
       }
     }
     defer { follow.cancel() }

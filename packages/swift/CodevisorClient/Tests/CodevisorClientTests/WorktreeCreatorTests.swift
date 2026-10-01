@@ -1,3 +1,5 @@
+import ACPKit
+import CodevisorTestSupport
 import Foundation
 import Testing
 import CodevisorProtocol
@@ -66,6 +68,44 @@ struct WorktreeCreatorTests {
     #expect(creator.phase == nil)
   }
 
+  @Test("The live log carries only its worktree's lines and marks where a restarted stream skipped some")
+  func liveLogIsFilteredAndSurfacesRestarts() async throws {
+    let client = WorktreeStubClient(result: .success(Self.worktree(name: "kiwi")), scriptsEventStreams: true)
+    var received: [WorktreeSetupEvent.LogLine] = []
+    let log = WorktreeSetupEvent.liveLog(client, worktreeId: "wt-1")
+
+    let first = await client.subscription(1)
+    for index in 0..<300 {
+      // More streamed output than the stream buffers: it must not reach
+      // the consumer, nor overflow the tail.
+      first.yield(Self.event(kind: "session.output", subject: "session", payload: ["text": .string("token \(index)")]))
+    }
+    first.yield(Self.setupLog("wt-2", "another worktree"))
+    first.yield(Self.setupLog("WT-1", "Preparing worktree"))
+    // The server asked for a snapshot: the stream restarts.
+    first.finish(throwing: URLError(.networkConnectionLost))
+    let second = await client.subscription(2)
+    second.yield(Self.setupLog("wt-1", "HEAD is now at abc123"))
+    second.finish()
+
+    for await line in log { received.append(line) }
+    #expect(
+      received.map(\.line) == [
+        "Preparing worktree", ServerSetupEventTail.skippedOutputLine, "HEAD is now at abc123",
+      ])
+  }
+
+  private static func event(kind: String, subject: String, payload: [String: JSONValue]) -> ServerEventEnvelope {
+    ServerEventEnvelope(
+      id: 1, serverId: "local", kind: kind, subjectId: subject, createdAt: "", payload: .object(payload))
+  }
+
+  private static func setupLog(_ worktreeId: String, _ line: String) -> ServerEventEnvelope {
+    event(
+      kind: "worktree.setup", subject: worktreeId,
+      payload: ["state": .string("log"), "stream": .string("stdout"), "line": .string(line)])
+  }
+
   @Test("Failure messages parse the server's error body")
   func failureMessages() {
     #expect(WorktreeCreator.failureMessage(from: #"{"error":"Nope"}"#) == "Nope")
@@ -91,9 +131,15 @@ private final class WorktreeStubClient: CodevisorServerClienting, @unchecked Sen
   private let result: Result<ServerWorktree, any Error>
   private let lock = NSLock()
   private var _receivedId: String?
+  private var subscriptions: [AsyncThrowingStream<ServerEventEnvelope, any Error>.Continuation] = []
+  private let subscribed = TestSignal()
+  /// Off: every event stream ends at once. On: each subscription stays open
+  /// for the test to feed through `subscription(_:)`.
+  private let scriptsEventStreams: Bool
 
-  init(result: Result<ServerWorktree, any Error>) {
+  init(result: Result<ServerWorktree, any Error>, scriptsEventStreams: Bool = false) {
     self.result = result
+    self.scriptsEventStreams = scriptsEventStreams
   }
 
   var receivedId: String? { lock.withLock { _receivedId } }
@@ -138,6 +184,20 @@ private final class WorktreeStubClient: CodevisorServerClienting, @unchecked Sen
   func setSessionConfig(id: UUID, configId: String, value: String) async throws {}
   func requestShutdown() async throws {}
   func eventStream(since: Int) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
-    AsyncThrowingStream { continuation in continuation.finish() }
+    let (stream, continuation) = AsyncThrowingStream.makeStream(
+      of: ServerEventEnvelope.self, throwing: (any Error).self)
+    if scriptsEventStreams {
+      lock.withLock { subscriptions.append(continuation) }
+      subscribed.signal()
+    } else {
+      continuation.finish()
+    }
+    return stream
+  }
+
+  /// The `number`th event stream subscribed (1-based), once it exists.
+  func subscription(_ number: Int) async -> AsyncThrowingStream<ServerEventEnvelope, any Error>.Continuation {
+    await subscribed.wait(for: number)
+    return lock.withLock { subscriptions[number - 1] }
   }
 }
