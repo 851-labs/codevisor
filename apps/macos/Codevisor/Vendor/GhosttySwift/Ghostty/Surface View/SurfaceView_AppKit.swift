@@ -39,8 +39,12 @@ extension Ghostty {
                 // If we have a new progress report, start a timer to remove it after 15 seconds
                 if progressReport != nil {
                     progressReportTimer = Timer.scheduledTimer(withTimeInterval: 15.0, repeats: false) { [weak self] _ in
-                        self?.progressReport = nil
-                        self?.progressReportTimer = nil
+                        // CODEVISOR-PATCH-BEGIN: scheduled on the main run loop, so it fires on main
+                        MainActor.assumeIsolated {
+                            self?.progressReport = nil
+                            self?.progressReportTimer = nil
+                        }
+                        // CODEVISOR-PATCH-END
                     }
                 }
             }
@@ -293,9 +297,13 @@ extension Ghostty {
 
             // Set a timer to show the ghost emoji after 500ms if no title is set
             titleFallbackTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
-                if let self = self, self.title.isEmpty {
-                    self.title = "👻"
+                // CODEVISOR-PATCH-BEGIN: scheduled on the main run loop, so it fires on main
+                MainActor.assumeIsolated {
+                    if let self = self, self.title.isEmpty {
+                        self.title = "👻"
+                    }
                 }
+                // CODEVISOR-PATCH-END
             }
 
             // A drag can emit multiple selection changes. Debounce so screen
@@ -396,7 +404,9 @@ extension Ghostty {
             fatalError("init(coder:) is not supported for this view")
         }
 
-        deinit {
+        // CODEVISOR-PATCH: isolated — the teardown below touches main-actor AppKit and
+        // surface state (Codevisor builds with SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor).
+        isolated deinit {
             // Remove all of our notificationcenter subscriptions
             let center = NotificationCenter.default
             center.removeObserver(self)
@@ -617,12 +627,16 @@ extension Ghostty {
                 withTimeInterval: 0.075,
                 repeats: false
             ) { [weak self] _ in
-                // Set the title if it wasn't manually set.
-                guard self?.titleFromTerminal == nil else {
-                    self?.titleFromTerminal = title
-                    return
+                // CODEVISOR-PATCH-BEGIN: scheduled on the main run loop, so it fires on main
+                MainActor.assumeIsolated {
+                    // Set the title if it wasn't manually set.
+                    guard self?.titleFromTerminal == nil else {
+                        self?.titleFromTerminal = title
+                        return
+                    }
+                    self?.title = title
                 }
-                self?.title = title
+                // CODEVISOR-PATCH-END
             }
         }
 

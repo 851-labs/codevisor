@@ -54,7 +54,9 @@ extension Ghostty {
             self.config = config
         }
 
-        deinit {
+        // CODEVISOR-PATCH: isolated — `config` is main-actor state; freeing it through its
+        // didSet must not race a main-actor reader if the last release happens off main.
+        isolated deinit {
             self.config = nil
         }
 

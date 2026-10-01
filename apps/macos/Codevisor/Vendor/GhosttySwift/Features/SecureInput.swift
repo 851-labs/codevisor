@@ -61,7 +61,9 @@ class SecureInput: ObservableObject {
             object: nil)
     }
 
-    deinit {
+    // CODEVISOR-PATCH: isolated — the reset below touches main-actor state (Codevisor builds
+    // with SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor and complete concurrency checking).
+    isolated deinit {
         NotificationCenter.default.removeObserver(self)
 
         // Reset our state so that we can ensure we set the proper secure input

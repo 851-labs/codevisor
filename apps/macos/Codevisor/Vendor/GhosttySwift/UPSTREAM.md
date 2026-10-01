@@ -61,6 +61,12 @@ Patch classes (12 files):
    (Ghostty.Action, GhosttyPackage, GhosttyPackageMeta), the off-main surface
    free in Ghostty.Surface's deinit, and `bindingFlags` tested for presence
    after the removed menu attempt.
+5. **Complete concurrency checking** — the app target builds with
+   `SWIFT_STRICT_CONCURRENCY = complete`. Codevisor-only: `isolated deinit`
+   where teardown touches main-actor state (SurfaceView_AppKit, SecureInput,
+   Ghostty.Config), `MainActor.assumeIsolated` inside the main-run-loop
+   `Timer` callbacks (SurfaceView_AppKit), and a `nonisolated`
+   `AllocatedString` (GhosttyPackage).
 
 ## Re-syncing to a new upstream commit
 

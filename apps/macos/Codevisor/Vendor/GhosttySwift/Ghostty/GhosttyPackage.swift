@@ -63,7 +63,9 @@ extension Ghostty {
 // MARK: Swift Types for C Types
 
 extension Ghostty {
-    class AllocatedString {
+    // CODEVISOR-PATCH: nonisolated — a plain owner of a libghostty string, freed wherever its
+    // last reference drops; Codevisor builds with SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor.
+    nonisolated class AllocatedString {
         private let cString: ghostty_string_s
 
         init(_ c: ghostty_string_s) {
