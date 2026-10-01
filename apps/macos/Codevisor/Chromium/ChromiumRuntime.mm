@@ -3,8 +3,9 @@
 #include "include/cef_application_mac.h"
 #include <vector>
 
-@interface CVChromiumView (RuntimeZoom)
+@interface CVChromiumView (Runtime)
 - (void)publishZoom;
+@property(nonatomic, readonly) BOOL keepsRuntimeAwake;
 @end
 
 @interface CVChromiumApplication : NSApplication <CefAppProtocol>
@@ -52,14 +53,26 @@ void ChromiumRuntime::Pump() {
   pumping_ = true;
   CefDoMessageLoopWork();
   pumping_ = false;
-  // CEF's external-pump example uses this bounded fallback for delayed work.
-  if (!pumpTimer_) SchedulePump(33);
+  // A fallback pump is required, as in CEF's external-pump example: CEF's
+  // pump returns after a 10 ms slice without rescheduling leftover work, and
+  // never re-announces delayed work it reported from DoWork. Pages need it at
+  // frame rate. Without any page, only CEF's own housekeeping remains, so the
+  // main thread wakes once a second instead of 30 times.
+  if (!pumpTimer_) StartPumpTimer(HasBrowserWork() ? 33 : 1000);
 }
-void ChromiumRuntime::SchedulePump(int64_t delay) {
+bool ChromiumRuntime::HasBrowserWork() const {
+  if (!browsers_.empty()) return true;
+  for (CVChromiumView *view in zoomViews_) {
+    if (view.keepsRuntimeAwake) return true;
+  }
+  return false;
+}
+void ChromiumRuntime::SchedulePump(int64_t delay) { StartPumpTimer(MAX(0, MIN(delay, 33))); }
+void ChromiumRuntime::StartPumpTimer(int64_t delay) {
   [pumpTimer_ invalidate];
   pumpTimer_ = nil;
   if (!initialized_ || shuttingDown_) return;
-  pumpTimer_ = [NSTimer timerWithTimeInterval:MAX(0, MIN(delay, 33)) / 1000.0
+  pumpTimer_ = [NSTimer timerWithTimeInterval:delay / 1000.0
                                    repeats:NO block:^(NSTimer *timer) {
     pumpTimer_ = nil;
     Pump();
@@ -67,7 +80,11 @@ void ChromiumRuntime::SchedulePump(int64_t delay) {
   [NSRunLoop.mainRunLoop addTimer:pumpTimer_ forMode:NSRunLoopCommonModes];
 }
 bool ChromiumRuntime::Initialize() {
-  if (initialized_) return !shuttingDown_;
+  if (initialized_) {
+    // A new page may follow an idle period; resume frame-rate pumping now.
+    if (!shuttingDown_) SchedulePump(0);
+    return !shuttingDown_;
+  }
   if (shuttingDown_) return false;
   library_ = std::make_unique<CefScopedLibraryLoader>();
   if (!library_->LoadInMain()) return false;

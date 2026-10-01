@@ -25,6 +25,8 @@ class ChromiumRuntime final {
   ChromiumRuntime(const ChromiumRuntime&) = delete;
   ChromiumRuntime& operator=(const ChromiumRuntime&) = delete;
   void Pump();
+  void StartPumpTimer(int64_t delay);
+  bool HasBrowserWork() const;
   void FinishShutdownIfReady();
 
   bool initialized_ = false;

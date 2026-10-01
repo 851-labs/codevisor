@@ -774,6 +774,7 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
   _browser->GetHost()->NotifyMoveOrResizeStarted();
 }
 - (BOOL)browserIsReady { return _browser && !_closed; }
+- (BOOL)keepsRuntimeAwake { return !_closed; }
 - (void)sendProtocolMethod:(NSString *)method params:(NSData *)params sessionId:(NSString *)sessionId
                 completion:(void (^)(NSData *))completion {
   if (!_browser || _closed) { completion(ProtocolError(@"Browser is not ready")); return; }
