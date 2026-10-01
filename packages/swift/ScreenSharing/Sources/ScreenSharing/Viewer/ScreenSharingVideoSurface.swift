@@ -65,16 +65,17 @@
     /// passes its own surface color when a theme palette is active.
     public var letterboxColor: NSColor = .windowBackgroundColor { didSet { applyLetterboxColor() } }
 
-    /// `profile` nil (the default) keeps the product renderer exactly as it was: display-link drive, three drawables,
-    /// main-actor preparation. The explicit profile forwards to the EXISTING worker/arrival2 initializer; no pacing,
-    /// render-queue rewrite or auditing feature is added here.
+    /// `profile` nil (the default) is the product renderer: frame-arrival drive, three drawables, and drawable
+    /// acquisition and encoding on the render worker, so a frame costs the main actor only its selection and commit
+    /// (the display-link drive ran the whole draw, and `currentDrawable`'s up-to-1 s wait, on main at up to 120 Hz).
+    /// The explicit profile forwards its own renderer options (two drawables).
     public init(
       mailbox: ScreenSharingFrameMailbox, metrics: ScreenSharingMetrics, profile: ScreenSharingDiagnosticProfile? = nil
     ) throws {
       metal = try ScreenSharingMetalView(
-        mailbox: mailbox, metrics: metrics, renderOnArrival: profile?.renderOnArrival ?? false,
+        mailbox: mailbox, metrics: metrics, renderOnArrival: profile?.renderOnArrival ?? true,
         maximumDrawableCount: profile?.maximumDrawableCount ?? 3,
-        offMainPreparation: profile?.offMainPreparation ?? false)
+        offMainPreparation: profile?.offMainPreparation ?? true)
       super.init(frame: .zero)
       addSubview(metal)
       cursorOverlay.isHidden = true

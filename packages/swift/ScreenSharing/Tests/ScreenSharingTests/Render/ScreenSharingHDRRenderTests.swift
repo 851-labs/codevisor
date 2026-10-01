@@ -78,6 +78,40 @@ struct ScreenSharingHDRRenderTests {
       #expect(abs(channel - 1) < 1.5 / 255)
     }
   }
+
+  #if os(macOS)
+    /// The product renderer acquires and encodes on its worker: an HDR frame switches the layer to
+    /// half-float extended-linear Display P3 on the worker before its drawable is acquired, and an
+    /// SDR frame switches it back, as the main-actor path does.
+    @Test func theRenderWorkerSwitchesTheLayerToHighDynamicRangeAndBack() async throws {
+      let gpu = try HDRFixture()
+      let layer = CAMetalLayer()
+      layer.device = gpu.device
+      layer.pixelFormat = .bgra8Unorm
+      let metrics = ScreenSharingMetrics()
+      let worker = ScreenSharingMetalPreparer(
+        layer: layer,
+        encoder: try ScreenSharingMetalEncoder(
+          device: gpu.device, commandQueue: gpu.queue,
+          pipelines: .init(device: gpu.device, shader: ScreenSharingMetalView.shader)),
+        metrics: metrics)
+      func prepare(_ buffer: CVPixelBuffer) async {
+        let request = ScreenSharingPreparationRequest(
+          frame: ScreenSharingVideoFrame(pixelBuffer: buffer, timestampNs: 1), isNewFrame: true,
+          geometry: .init(clearColor: SIMD4(1, 1, 1, 1), drawableSize: CGSize(width: 8, height: 8)), queuedAtNs: 0,
+          auditIdentity: nil)
+        // The result (a drawable that is never presented) is dropped.
+        await withCheckedContinuation { continuation in worker.prepare(request) { _ in continuation.resume() } }
+      }
+      await prepare(try HDRFixture.flat(format: ScreenSharingDynamicRange.highCapturePixelFormat, luma: 0.5))
+      #expect(layer.pixelFormat == ScreenSharingMetalEncoder.highDynamicRangePixelFormat)
+      #expect(layer.colorspace?.name == CGColorSpace.extendedLinearDisplayP3)
+      #expect(metrics.label("renderDynamicRange") == ScreenSharingDynamicRange.high.rawValue)
+      await prepare(try HDRFixture.bgra(128))
+      #expect(layer.pixelFormat == .bgra8Unorm && layer.colorspace == nil)
+      #expect(metrics.label("renderDynamicRange") == ScreenSharingDynamicRange.standard.rawValue)
+    }
+  #endif
 }
 
 /// One device and encoder; renders an 8 × 8 flat frame into an 8 × 8 texture and returns the

@@ -5,7 +5,7 @@ import MetalKit
 /// (the decoder's output) and packed BGRA (a framebuffer backend's output) are
 /// bound directly from the CVPixelBuffer through the texture cache.
 /// Scheduling, caching and the stop boundary live in the coordinator; this
-/// class encodes and submits (or, in the off-main diagnostic, hands the
+/// class encodes and submits (or, on the off-main path the product panes use, hands the
 /// selected frame to a worker and commits its result).
 @MainActor
 public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
@@ -28,7 +28,7 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
   public var isStopped: Bool { coordinator.stopped }
   package let coordinator: ScreenSharingRenderCoordinator
   private let encoder: ScreenSharingMetalEncoder
-  /// Diagnostic off-main preparation worker (nil = the ordinary MTKView path);
+  /// Off-main preparation worker (nil = the main-actor MTKView path);
   /// assigned once after `super.init` because it needs the view's layer.
   private var preparer: (any ScreenSharingRenderPreparer)?
   #if os(macOS)
@@ -36,7 +36,7 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
   #endif
   private let renderOnArrival: Bool
 
-  /// `offMainPreparation` (diagnostic, macOS, requires `renderOnArrival`):
+  /// `offMainPreparation` (the product panes' path, macOS, requires `renderOnArrival`):
   /// drawable acquisition (`CAMetalLayer.nextDrawable`, default 1 s timeout
   /// kept) and command encoding run on a dedicated serial worker; selection,
   /// the single slot, commit and every product callback stay on the main actor.
@@ -108,7 +108,7 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
     metrics.label("maximumDrawableCount", String(maximumDrawableCount))
     metrics.label("displaySync", unsyncedPresentation ? "disabled experiment" : "enabled")
     metrics.label("frameSelection", "before drawable acquisition")
-    metrics.label("renderPreparation", preparer == nil ? "main actor (MTKView)" : "off-main serial worker (diagnostic)")
+    metrics.label("renderPreparation", preparer == nil ? "main actor (MTKView)" : "off-main serial worker")
     metrics.label(
       "drawableAcquisitionPath",
       preparer == nil
@@ -352,21 +352,27 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
     layerDynamicRange = range
     colorPixelFormat = range == .high ? ScreenSharingMetalEncoder.highDynamicRangePixelFormat : .bgra8Unorm
     #if os(macOS)
-      if let metalLayer = layer as? CAMetalLayer {
-        // Extended range without tone mapping: automatic tone mapping squeezed each whole frame into
-        // the display's current headroom whenever it held a highlight, and took SDR white down with it
-        // (to ~58% at night brightness, tuftlord → M4 Max, 2026-09-30). Unmapped, 1.0 stays this Mac's
-        // white and only highlights past the headroom clip.
-        metalLayer.preferredDynamicRange = range == .high ? .high : .standard
-        metalLayer.toneMapMode = range == .high ? .never : .automatic
-        // Not a PQ layer with HDR10 metadata: macOS tone-maps that whole curve into the display's
-        // current headroom, which pulled SDR white down to 40% on a MacBook Pro at night (tuftlord →
-        // M4 Max, 2026-09-30). The shader places the host's SDR white at 1.0 itself.
-        metalLayer.colorspace = range == .high ? CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3) : nil
-      }
+      if let metalLayer = layer as? CAMetalLayer { Self.present(range, on: metalLayer) }
     #endif
     metrics.label("renderDynamicRange", range.rawValue)
   }
+
+  #if os(macOS)
+    /// The layer's presentation of a dynamic range, besides its pixel format. Shared by the main
+    /// path and the render worker, which applies it on its own queue before acquiring.
+    nonisolated static func present(_ range: ScreenSharingDynamicRange, on metalLayer: CAMetalLayer) {
+      // Extended range without tone mapping: automatic tone mapping squeezed each whole frame into
+      // the display's current headroom whenever it held a highlight, and took SDR white down with it
+      // (to ~58% at night brightness, tuftlord → M4 Max, 2026-09-30). Unmapped, 1.0 stays this Mac's
+      // white and only highlights past the headroom clip.
+      metalLayer.preferredDynamicRange = range == .high ? .high : .standard
+      metalLayer.toneMapMode = range == .high ? .never : .automatic
+      // Not a PQ layer with HDR10 metadata: macOS tone-maps that whole curve into the display's
+      // current headroom, which pulled SDR white down to 40% on a MacBook Pro at night (tuftlord →
+      // M4 Max, 2026-09-30). The shader places the host's SDR white at 1.0 itself.
+      metalLayer.colorspace = range == .high ? CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3) : nil
+    }
+  #endif
 
   private func acquireSurface() -> Surface? {
     let started = ScreenSharingMetrics.nowNs
@@ -394,7 +400,7 @@ final class TextureFrame: @unchecked Sendable {
 }
 
 #if os(macOS)
-  /// Diagnostic off-main preparation. A dedicated serial worker acquires from
+  /// Off-main preparation (the product panes' renderer). A dedicated serial worker acquires from
   /// `CAMetalLayer.nextDrawable` (the layer's default 1 s timeout is kept —
   /// `allowsNextDrawableTimeout` is never disabled), builds the render pass
   /// and encodes; the result goes back to the coordinator, which alone commits.
@@ -407,6 +413,8 @@ final class TextureFrame: @unchecked Sendable {
     private let encoder: ScreenSharingMetalEncoder
     private let metrics: ScreenSharingMetrics
     private let audit: ScreenSharingFrameDeliveryAudit?
+    /// What the layer is set up to show; read and written only on `queue`.
+    private var layerDynamicRange = ScreenSharingDynamicRange.standard
 
     init(
       layer: CAMetalLayer, encoder: ScreenSharingMetalEncoder, metrics: ScreenSharingMetrics,
@@ -441,6 +449,15 @@ final class TextureFrame: @unchecked Sendable {
           // request's snapshot — the only layer mutation, on this queue — then the
           // acquisition, as late as possible.
           guard let textures = encoder.textures(for: request.frame) else { return nil }
+          // HDR frames (851-2380) switch the layer to half-float extended-linear Display P3, SDR
+          // frames back; before the drawable of the new range is acquired, as on the main path.
+          let range = textures.dynamicRange
+          if range != self.layerDynamicRange {
+            self.layerDynamicRange = range
+            layer.pixelFormat = range == .high ? ScreenSharingMetalEncoder.highDynamicRangePixelFormat : .bgra8Unorm
+            ScreenSharingMetalView.present(range, on: layer)
+            metrics.label("renderDynamicRange", range.rawValue)
+          }
           if layer.drawableSize != request.geometry.drawableSize {
             layer.drawableSize = request.geometry.drawableSize
             metrics.increment("drawableSizeUpdatesOnWorker")
@@ -465,8 +482,11 @@ final class TextureFrame: @unchecked Sendable {
           pass.colorAttachments[0].loadAction = .clear
           pass.colorAttachments[0].storeAction = .store
           let clear = request.geometry.clearColor
-          pass.colorAttachments[0].clearColor = MTLClearColor(
-            red: clear.x, green: clear.y, blue: clear.z, alpha: clear.w)
+          let sRGB = MTLClearColor(red: clear.x, green: clear.y, blue: clear.z, alpha: clear.w)
+          // The letterbox colour is sRGB; a linear HDR drawable needs it linear, or the bars turn grey.
+          pass.colorAttachments[0].clearColor =
+            drawable.texture.pixelFormat == ScreenSharingMetalEncoder.highDynamicRangePixelFormat
+            ? ScreenSharingMetalView.linear(sRGB) : sRGB
           guard
             let encoded = encoder.encode(textures, into: Surface(drawable: drawable, pass: pass))
           else { return nil }  // the drawable is released with this pool, never presented

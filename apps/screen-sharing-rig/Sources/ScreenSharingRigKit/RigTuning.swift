@@ -10,11 +10,11 @@ public struct RigTuning: Equatable, Sendable {
   public let playoutDelayMs: (min: Int, max: Int)?
   /// `WebRTC-JitterEstimatorConfig` frame-size window.
   public let jitterWindowFrames: Int?
-  /// Viewer renderer: draw on frame arrival instead of the display link.
+  /// Viewer renderer: draw on frame arrival (the product) instead of the display link.
   public let renderOnArrival: Bool
   /// Viewer renderer: 2 or 3 drawables.
   public let maximumDrawableCount: Int
-  /// Viewer renderer: acquire and encode off the main actor (needs `renderOnArrival`).
+  /// Viewer renderer: acquire and encode off the main actor (the product; needs `renderOnArrival`).
   public let offMainPreparation: Bool
   /// Host: ScreenCaptureKit minimum-frame-interval request, independent of the video rate.
   public let captureIntervalFPS: Int?
@@ -33,8 +33,8 @@ public struct RigTuning: Equatable, Sendable {
   public let pacingFactor: Double?
 
   public static let `default` = RigTuning(
-    playoutDelayMs: nil, jitterWindowFrames: nil, renderOnArrival: false, maximumDrawableCount: 3,
-    offMainPreparation: false, captureIntervalFPS: nil)
+    playoutDelayMs: nil, jitterWindowFrames: nil, renderOnArrival: true, maximumDrawableCount: 3,
+    offMainPreparation: true, captureIntervalFPS: nil)
 
   /// The product's one diagnostic profile, expressed as rig tuning.
   public static let paced15Worker = RigTuning(
@@ -122,7 +122,7 @@ public struct RigTuning: Equatable, Sendable {
       throw ScreenSharingError.invalid("tuning.captureIntervalFPS must be 1...240")
     }
     let renderOnArrival = try flag("renderOnArrival") ?? base.renderOnArrival
-    let offMain = try flag("offMainPreparation") ?? base.offMainPreparation
+    let offMain = try flag("offMainPreparation") ?? (renderOnArrival && base.offMainPreparation)
     guard !offMain || renderOnArrival else {
       throw ScreenSharingError.invalid("tuning.offMainPreparation requires renderOnArrival")
     }
@@ -172,7 +172,12 @@ public struct RigTuning: Equatable, Sendable {
     var parts: [String] = []
     if let playoutDelayMs { parts.append("playout \(playoutDelayMs.min)/\(playoutDelayMs.max)") }
     if let jitterWindowFrames { parts.append("jitter window \(jitterWindowFrames)") }
-    if renderOnArrival { parts.append(offMainPreparation ? "arrival+worker" : "arrival") }
+    // The product renders on arrival with the worker; only a departure from it is named.
+    if !renderOnArrival {
+      parts.append("display link")
+    } else if !offMainPreparation {
+      parts.append("arrival on main")
+    }
     if maximumDrawableCount != 3 { parts.append("\(maximumDrawableCount) drawables") }
     if let captureIntervalFPS { parts.append("capture \(captureIntervalFPS)") }
     if let keyframeIntervalSeconds { parts.append("keyframe \(keyframeIntervalSeconds)s") }

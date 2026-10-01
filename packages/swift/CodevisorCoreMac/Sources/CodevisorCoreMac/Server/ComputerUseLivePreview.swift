@@ -374,7 +374,9 @@ final class ComputerUseLivePreviewSurface: NSView, ScreenSharingViewerSurface {
   var view: NSView { self }
 
   init(mailbox: ScreenSharingFrameMailbox, metrics: ScreenSharingMetrics) throws {
-    metal = try ScreenSharingMetalView(mailbox: mailbox, metrics: metrics, renderOnArrival: true)
+    // Acquisition and encoding on the render worker, as in the screen-sharing pane.
+    metal = try ScreenSharingMetalView(
+      mailbox: mailbox, metrics: metrics, renderOnArrival: true, offMainPreparation: true)
     super.init(frame: .zero)
     wantsLayer = true
     metal.frame = bounds

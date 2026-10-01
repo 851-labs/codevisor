@@ -389,7 +389,7 @@ private final class EventLog: @unchecked Sendable {
       mailbox: ScreenSharingFrameMailbox(), metrics: profiled, renderOnArrival: profile.renderOnArrival,
       maximumDrawableCount: profile.maximumDrawableCount, offMainPreparation: profile.offMainPreparation)
     var labels = profiled.snapshot().labels
-    #expect(labels["renderPreparation"] == "off-main serial worker (diagnostic)")
+    #expect(labels["renderPreparation"] == "off-main serial worker")
     #expect(labels["drawableAcquisitionPath"] == "CAMetalLayer.nextDrawable on render worker, default timeout")
     #expect(labels["maximumDrawableCount"] == "2")
     #expect(labels["displaySync"] == "enabled")  // no unsynced option belongs to this profile
@@ -398,7 +398,16 @@ private final class EventLog: @unchecked Sendable {
     #expect(profiled.snapshot().labels["rendererStopped"] == "true")  // terminal stop preserved
     worker.stop()  // idempotent
 
-    // Default (profile OFF): the product renderer is untouched — display-link drive, three drawables, main actor.
+    // Default (profile OFF): the product pane renders on the worker too, with three drawables.
+    let product = ScreenSharingMetrics()
+    let pane = try ScreenSharingVideoSurface(mailbox: ScreenSharingFrameMailbox(), metrics: product, profile: nil)
+    labels = product.snapshot().labels
+    #expect(labels["renderPreparation"] == "off-main serial worker")
+    #expect(labels["drawableAcquisitionPath"] == "CAMetalLayer.nextDrawable on render worker, default timeout")
+    #expect(labels["maximumDrawableCount"] == "3")
+    pane.stop()
+
+    // The view's own default is still the main-actor display-link path the rig and probe can select.
     let plain = ScreenSharingMetrics()
     let standard = try ScreenSharingMetalView(mailbox: ScreenSharingFrameMailbox(), metrics: plain)
     labels = plain.snapshot().labels

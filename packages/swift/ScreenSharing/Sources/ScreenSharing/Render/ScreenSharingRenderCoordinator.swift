@@ -52,7 +52,7 @@ package struct ScreenSharingPreparedSubmission: Sendable {
   }
 }
 
-/// Diagnostic off-main preparation: acquires a drawable and encodes on its own
+/// Off-main preparation: acquires a drawable and encodes on its own
 /// serial worker, then hands the result back exactly once. The real preparer
 /// uses `CAMetalLayer.nextDrawable`; tests supply a controlled one.
 package protocol ScreenSharingRenderPreparer: Sendable {
@@ -237,7 +237,7 @@ package final class ScreenSharingRenderCoordinator {
     return true
   }
 
-  /// Off-main diagnostic path: selects with the unchanged ordering, reserves
+  /// Off-main path: selects with the unchanged ordering, reserves
   /// the single slot, snapshots the geometry and hands the frame to the
   /// preparer. Exactly one preparation or submission is outstanding; a frame
   /// arriving meanwhile only replaces the mailbox's newest frame. Returns

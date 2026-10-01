@@ -22,7 +22,7 @@ struct RigTuningTests {
     #expect(tuning.maximumDrawableCount == 3)
     #expect(tuning.captureIntervalFPS == 90)
     #expect(tuning.fieldTrialSelection.trials == ["WebRTC-ForcePlayoutDelay": "min_ms:1,max_ms:15"])
-    #expect(tuning.label == "playout 1/15 · arrival+worker · capture 90")
+    #expect(tuning.label == "playout 1/15 · capture 90", "arrival with the worker is the product renderer")
     #expect(
       tuning.fieldTrialSelection.trials["WebRTC-ForcePlayoutDelay"]
         == ScreenSharingDiagnosticProfile.paced15Worker.fieldTrials["WebRTC-ForcePlayoutDelay"],
@@ -30,13 +30,25 @@ struct RigTuningTests {
   }
 
   @Test func explicitKnobsMapToTrials() throws {
-    let tuning = try RigTuning.parse(["playoutDelayMs": [0, 35], "jitterWindowFrames": 30, "renderOnArrival": true])
+    let tuning = try RigTuning.parse([
+      "playoutDelayMs": [0, 35], "jitterWindowFrames": 30, "offMainPreparation": false,
+    ])
     #expect(
       tuning.fieldTrialSelection.trials == [
         "WebRTC-ForcePlayoutDelay": "min_ms:0,max_ms:35",
         "WebRTC-JitterEstimatorConfig": "max_frame_size_percentile:0.95,frame_size_window:30",
       ])
-    #expect(tuning.label == "playout 0/35 · jitter window 30 · arrival")
+    #expect(tuning.label == "playout 0/35 · jitter window 30 · arrival on main")
+  }
+
+  /// The product renders on frame arrival with acquisition and encoding on the render worker; the
+  /// display-link (main-actor) renderer stays one key away, and needs no second key to undo the worker.
+  @Test func theRendererDefaultsToTheProductsWorkerAndTheDisplayLinkStaysSelectable() throws {
+    #expect(RigTuning.default.renderOnArrival && RigTuning.default.offMainPreparation)
+    #expect(RigTuning.default.maximumDrawableCount == 3)
+    let displayLink = try RigTuning.parse(["renderOnArrival": false])
+    #expect(!displayLink.renderOnArrival && !displayLink.offMainPreparation)
+    #expect(displayLink.label == "display link")
   }
 
   @Test func encoderAndTransportKnobsParseAndLabel() throws {
@@ -63,7 +75,8 @@ struct RigTuningTests {
 
   @Test(arguments: [
     #"{"profile":"fast"}"#, #"{"playoutDelayMs":[15,1]}"#, #"{"playoutDelayMs":[1]}"#, #"{"drawables":4}"#,
-    #"{"offMainPreparation":true}"#, #"{"captureIntervalFPS":0}"#, #"{"jitterWindowFrames":1}"#, #"{"pacer":true}"#,
+    #"{"renderOnArrival":false,"offMainPreparation":true}"#, #"{"captureIntervalFPS":0}"#, #"{"jitterWindowFrames":1}"#,
+    #"{"pacer":true}"#,
     #"{"renderOnArrival":"yes"}"#, #"{"keyframeIntervalSeconds":0}"#, #"{"keyframeIntervalSeconds":61}"#,
     #"{"rateControl":"cbr"}"#, #"{"pendingFrames":9}"#, #"{"transportCeiling":1000}"#,
     #"{"transportCeiling":"75M"}"#, #"{"staticCodecRate":"yes"}"#, #"{"renderOnArrival":1}"#, #"{"pacingFactor":0.5}"#,
