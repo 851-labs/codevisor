@@ -37,8 +37,8 @@
     private let layout: VNCKeyTranslator.Layout
     private var scroll = ScreenSharingScrollAccumulator()
     private var lastPointer: ScreenSharingPointer?
-    private var inputFocused = false
-    private(set) var active = false
+    private var inputFocused = false { didSet { updateKeyClaim() } }
+    private(set) var active = false { didSet { updateKeyClaim() } }
     /// Input is actually going to the host: the lease is active and the video
     /// has focus. While suspended (another app, a menu, a local control) the
     /// pointer must look and behave as in View mode, not as the host's cursor.
@@ -194,6 +194,20 @@
       guard view.window?.isKeyWindow == true, event.window === view.window else { suspend(); return event }
       return routeFocusedKey(event) ? nil : event
     }
+
+    /// Whether the focused video owns the keyboard right now: the same relationship
+    /// `routeFocusedKey` requires, as a snapshot the system tap reads on its own thread. Every
+    /// focus transition the surface sees (begin, end, suspend, resume) refreshes it; a claimed key
+    /// is still checked against the live state when it reaches `routeSystemKey`.
+    private var ownsKeyboard: Bool {
+      guard active, inputFocused, applicationIsActive(), let view, let window = view.window, window.isKeyWindow,
+        window.firstResponder === view, !view.isHiddenOrHasHiddenAncestor, window.attachedSheet == nil,
+        NSApp.modalWindow == nil
+      else { return false }
+      return true
+    }
+
+    private func updateKeyClaim() { keyboardCapture.setClaimsKeys(ownsKeyboard) }
 
     /// Quartz events have no AppKit window association. Never infer ownership
     /// from event.window; require the live app/window/responder relationship.

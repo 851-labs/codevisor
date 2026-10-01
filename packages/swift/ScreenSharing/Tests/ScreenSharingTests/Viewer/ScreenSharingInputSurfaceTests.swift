@@ -117,6 +117,34 @@ struct ScreenSharingInputSurfaceTests {
     #expect(fixture.keyboard.stops == 1)
   }
 
+  /// The system tap decides on its own thread from this claim, so it must follow every focus
+  /// change the surface sees: otherwise keys would be swallowed from other apps, or leak locally.
+  @Test func theTapClaimsKeysOnlyWhileTheFocusedVideoOwnsTheKeyboard() throws {
+    let fixture = try InputSurfaceFixture()
+    defer { fixture.close() }
+    #expect(fixture.keyboard.claims)
+    fixture.window.key = false
+    fixture.notifications.post(name: NSWindow.didResignKeyNotification, object: fixture.window)
+    #expect(!fixture.keyboard.claims)
+    fixture.window.key = true
+    fixture.notifications.post(name: NSWindow.didBecomeKeyNotification, object: fixture.window)
+    #expect(fixture.keyboard.claims)
+    fixture.notifications.post(name: NSMenu.didBeginTrackingNotification, object: NSMenu())
+    #expect(!fixture.keyboard.claims)
+    fixture.notifications.post(name: NSMenu.didEndTrackingNotification, object: NSMenu())
+    #expect(fixture.keyboard.claims)
+    // A change no notification announces is caught by the next key the tap claimed.
+    fixture.view.isHidden = true
+    #expect(!fixture.keyboard.send(.keyDown, try fixture.systemKey(code: 12, flags: .maskCommand)))
+    #expect(!fixture.keyboard.claims)
+    fixture.view.isHidden = false
+    #expect(fixture.window.makeFirstResponder(fixture.view))
+    fixture.input.resume()
+    #expect(fixture.keyboard.claims)
+    fixture.input.end()
+    #expect(!fixture.keyboard.claims)
+  }
+
   @Test func unavailableKeyboardCaptureReleasesTheGrantWithAnActionableMessage() throws {
     let fixture = try InputSurfaceFixture(keyboardStarts: false)
     defer { fixture.close() }
@@ -371,7 +399,10 @@ private final class InputTestApplication {
 private final class InputTestKeyboardCapture: ScreenSharingKeyboardCapture {
   var starts = true
   var stops = 0
+  /// What the surface last told the tap about owning the keyboard.
+  private(set) var claims = false
   var handle: ((CGEventType, CGEvent) -> Bool)?
+  func setClaimsKeys(_ claims: Bool) { self.claims = claims }
   var interrupted: (() -> Void)?
   func start(handle: @escaping (CGEventType, CGEvent) -> Bool, interrupted: @escaping () -> Void) -> Bool {
     guard starts else { return false }

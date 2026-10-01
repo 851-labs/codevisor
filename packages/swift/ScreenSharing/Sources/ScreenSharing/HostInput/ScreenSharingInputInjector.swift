@@ -5,7 +5,7 @@
   /// Display bounds are Quartz global points, including negative display origins.
   @MainActor
   public final class ScreenSharingInputInjector {
-    public static let eventTag: Int64 = 0x435653435245454E
+    public nonisolated static let eventTag: Int64 = 0x435653435245454E
     private let source = CGEventSource(stateID: .privateState)
     /// System keys (Apps, Mission Control, Show Desktop) are posted exactly as a keyboard's: from the
     /// HID system state, with the flags and user data the source gives them. From the private state
