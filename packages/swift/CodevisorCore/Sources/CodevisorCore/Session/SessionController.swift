@@ -296,7 +296,7 @@ final public class SessionController {
   /// Callers of `connectIfNeeded()` join this attempt instead of racing the
   /// `.connecting` status guard. Cancelled only by an explicit supersede
   /// (`reconnect()`).
-  @ObservationIgnored var connectAttempt: Task<Void, Never>?
+  @ObservationIgnored let connectionAttempt = SessionConnectionAttempt()
   /// True while `send()` is connecting for a first send. View-driven
   /// `connectIfNeeded()` calls (the destination route mounting under the
   /// New Chat sheet) must not start a second connection: the loser would

@@ -33,11 +33,6 @@ extension SessionController {
     }
   }
 
-  /// How long an unreachable server gets before the wait is treated as a
-  /// real failure (error banner with the Restart remedy).
-  private static let serverWaitFailureThreshold: Duration = .seconds(10)
-  private static let serverWaitRetryInterval: Duration = .milliseconds(500)
-
   /// Connects or resumes the selected harness after a chat has started. New
   /// chat pickers come from capability inspection; a deferred durable record
   /// must not create its real agent until the first send is accepted. Safe to
@@ -62,8 +57,8 @@ extension SessionController {
     // catch — while the remounted view's retry bounced off the stale
     // `.connecting` status below, leaving the chat permanently empty.
     // Joining the surviving attempt fixes both halves of that race.
-    if let attempt = connectAttempt {
-      await attempt.value
+    if connectionAttempt.isRunning {
+      await connectionAttempt.waitForCompletion()
       return
     }
     // A first send is connecting on its own path; it publishes the model.
@@ -84,9 +79,11 @@ extension SessionController {
     let harnessId = persistedHarnessId.isEmpty ? selectedHarness?.id : persistedHarnessId
     guard let harnessId, !harnessId.isEmpty else { return }
     let harnessName = selectedHarness?.name ?? harnessId
-    let attempt = Task { await self.runConnectAttempt(harnessId: harnessId, harnessName: harnessName) }
-    connectAttempt = attempt
-    await attempt.value
+    connectionAttempt.start(
+      harnessName: harnessName,
+      connect: { self.model = try await self.connect(harnessId: harnessId) },
+      onEvent: { self.handleConnectionEvent($0) })
+    await connectionAttempt.waitForCompletion()
   }
 
   /// Foreground/network-recovery hook: re-verifies this chat's in-flight
@@ -110,56 +107,29 @@ extension SessionController {
     await model.reconcileFromServer()
   }
 
-  private func runConnectAttempt(harnessId: String, harnessName: String) async {
-    defer { connectAttempt = nil }
-    status = .connecting("Starting \(harnessName)…")
-    defer { serverWaitMessage = nil }
-    let clock = ContinuousClock()
-    let start = clock.now
-    while true {
-      do {
-        model = try await connect(harnessId: harnessId)
-        status = .idle
-        return
-      } catch {
-        // View remounts no longer cancel this controller-owned
-        // attempt; cancellation now means an explicit supersede
-        // (`reconnect()` tearing down a stale attempt) and is
-        // lifecycle noise, not a failure. Reset to `.idle` so the
-        // successor passes the `!isConnecting` guard — leaving
-        // `.connecting` would wedge the controller forever (and
-        // `SessionStore` would never evict it, since `.connecting`
-        // counts as running).
-        guard !isTaskCancellation(error) else {
-          if case .connecting = status { status = .idle }
-          return
-        }
-        let message = serverErrorMessage(error)
-        let elapsed = clock.now - start
-        guard message == serverUnreachableErrorMessage,
-          elapsed < Self.serverWaitFailureThreshold
-        else {
-          if hasExistingAgentSession {
-            didFinishExistingRuntimeConfiguration = true
-            existingConfigurationError = message
-            updateConfigurationValidationState()
-            if let sessionId = serverSession?.id {
-              finishInitialHistoryLoading(
-                sessionId: sessionId,
-                outcome: "failed"
-              )
-            }
-          }
-          status = .failed(message)
-          return
-        }
-        serverWaitMessage = "Waiting for the server..."
-        try? await Task.sleep(for: Self.serverWaitRetryInterval)
-        guard !Task.isCancelled else {
-          if case .connecting = status { status = .idle }
-          return
+  private func handleConnectionEvent(_ event: SessionConnectionAttempt.Event) {
+    switch event {
+    case .starting(let harnessName):
+      status = .connecting("Starting \(harnessName)…")
+    case .waitingForServer:
+      serverWaitMessage = "Waiting for the server..."
+    case .connected:
+      status = .idle
+    case .cancelled:
+      // Supersession must clear connecting before its successor checks admission.
+      if case .connecting = status { status = .idle }
+    case .failed(let message):
+      if hasExistingAgentSession {
+        didFinishExistingRuntimeConfiguration = true
+        existingConfigurationError = message
+        updateConfigurationValidationState()
+        if let sessionId = serverSession?.id {
+          finishInitialHistoryLoading(sessionId: sessionId, outcome: "failed")
         }
       }
+      status = .failed(message)
+    case .settled:
+      serverWaitMessage = nil
     }
   }
 
@@ -292,10 +262,7 @@ extension SessionController {
     // Supersede a controller-owned eager connect explicitly: cancel it and
     // wait for it to settle so its failure handling cannot clobber the
     // fresh attempt's status/model below.
-    if let attempt = connectAttempt {
-      attempt.cancel()
-      await attempt.value
-    }
+    await connectionAttempt.cancelAndWait()
     model = nil
     status = .idle
     await connectIfNeeded()
