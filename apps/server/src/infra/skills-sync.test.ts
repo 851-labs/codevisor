@@ -5,7 +5,7 @@ import { gzipSync } from "node:zlib"
 
 import { makeSkillsManager } from "@codevisor/skills"
 import { makeBlobStore } from "@codevisor/sync"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import { makeAgents, makeServices, run, tempDirs } from "../test-support.js"
 import {
@@ -169,11 +169,21 @@ describe("skills sync", () => {
   })
 
   it("rejects a large upload tar stops reading without crashing the server", async () => {
-    // Valid gzip (stored, so it stays 4MB on the wire) around bytes that are
-    // not a tar. tar gives up after the first block and the rest of the
-    // write hits a closed pipe; that EPIPE used to be uncaught.
-    const junk = gzipSync(Buffer.alloc(4 * 1024 * 1024, "A"), { level: 0 })
-    expect(await verifySkillArchive("a".repeat(64), junk)).toBe(false)
+    // Whether a real tar stops reading early is implementation-specific
+    // (macOS bsdtar gives up on the first bad block; GNU tar skips through
+    // to the end looking for a header), so stand in a tar that exits without
+    // reading anything. The rest of the 4MB write then always meets a
+    // closed pipe; that EPIPE used to be uncaught and exit the server.
+    const bin = mkdtempSync(join(tmpdir(), "codevisor-fake-tar-"))
+    tempDirs.push(bin)
+    writeFileSync(join(bin, "tar"), "#!/bin/sh\nexit 2\n", { mode: 0o755 })
+    vi.stubEnv("PATH", `${bin}:${process.env.PATH ?? ""}`)
+    try {
+      const archive = gzipSync(Buffer.alloc(4 * 1024 * 1024, "A"), { level: 0 })
+      expect(await verifySkillArchive("a".repeat(64), archive)).toBe(false)
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 
   it("rejects and repacks archives carrying macOS metadata junk", async () => {

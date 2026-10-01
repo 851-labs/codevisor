@@ -77,9 +77,10 @@ const tarExec = (args: ReadonlyArray<string>, input?: Buffer): Promise<Buffer> =
     child.once("close", (code) =>
       code === 0 ? resolve(Buffer.concat(chunks)) : reject(new Error(`tar exited with ${code}`))
     )
-    // tar stops reading as soon as the bytes stop parsing, so the rest of a
-    // corrupt archive meets a closed pipe (EPIPE). Unhandled, that 'error'
-    // exits the server; tar's non-zero exit already rejects above.
+    // tar may exit before reading all of a corrupt archive (bsdtar stops at
+    // the first bad block), and the rest of the write meets a closed pipe
+    // (EPIPE). Unhandled, that 'error' exits the server; tar's non-zero exit
+    // already rejects above.
     child.stdin.on("error", () => undefined)
     if (input !== undefined) child.stdin.write(input)
     child.stdin.end()
