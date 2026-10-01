@@ -76,7 +76,7 @@ extension ScreenSharingViewerBackend {
     native(
       client: client, workspaceId: workspaceId, paneId: paneId, tunnelMedia: tunnelMedia,
       sleep: { try await Task.sleep(for: $0) },
-      makeSession: { try ScreenSharingReceiver.process(connectivity: $0) },
+      makeSession: { try await ScreenSharingReceiver.process(connectivity: $0) },
       makeSurface: { session in
         try ScreenSharingVideoSurface(
           mailbox: session.frames, metrics: session.metrics, profile: ScreenSharingDiagnosticProfile.process())
@@ -94,7 +94,8 @@ extension ScreenSharingViewerBackend {
   static func native(
     client: any CodevisorServerClienting, workspaceId: UUID, paneId: UUID, tunnelMedia: TunnelMediaProvider? = nil,
     sleep: @escaping @Sendable (Duration) async throws -> Void,
-    makeSession: @escaping @MainActor (ServerScreenSharingConnectivity?) throws -> any NativeScreenSharingMediaSession,
+    makeSession:
+      @escaping @MainActor (ServerScreenSharingConnectivity?) async throws -> any NativeScreenSharingMediaSession,
     makeSurface: @escaping @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface,
     vncOpen: @escaping NativeVNCOpen = { _ in throw RFBError.transport("This machine has no VNC display.") },
     target: String? = nil
@@ -115,7 +116,8 @@ private final class NativeScreenSharingViewerRunner {
   private let workspaceId: UUID
   private let paneId: UUID
   private let sleep: @Sendable (Duration) async throws -> Void
-  private let makeSession: @MainActor (ServerScreenSharingConnectivity?) throws -> any NativeScreenSharingMediaSession
+  private let makeSession:
+    @MainActor (ServerScreenSharingConnectivity?) async throws -> any NativeScreenSharingMediaSession
   private let makeSurface: @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface
   private let vncOpen: ScreenSharingViewerBackend.NativeVNCOpen
   private var previous: Task<Void, Never>?
@@ -133,7 +135,8 @@ private final class NativeScreenSharingViewerRunner {
   init(
     client: any CodevisorServerClienting, workspaceId: UUID, paneId: UUID,
     sleep: @escaping @Sendable (Duration) async throws -> Void,
-    makeSession: @escaping @MainActor (ServerScreenSharingConnectivity?) throws -> any NativeScreenSharingMediaSession,
+    makeSession:
+      @escaping @MainActor (ServerScreenSharingConnectivity?) async throws -> any NativeScreenSharingMediaSession,
     makeSurface: @escaping @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface,
     vncOpen: @escaping ScreenSharingViewerBackend.NativeVNCOpen,
     target: String? = nil,
@@ -262,7 +265,12 @@ private final class NativeScreenSharingViewerRunner {
         guard capabilities.version == 1, ["available", "busy"].contains(capabilities.status) else {
           return .ended(capabilities.message ?? "Screen Sharing is unavailable on this Mac.")
         }
-        let session = try makeSession(capabilities.connectivity)
+        // Built off the main thread; a stop meanwhile closes it before anything is wired to it.
+        let session = try await makeSession(capabilities.connectivity)
+        if Task.isCancelled {
+          session.close()
+          throw CancellationError()
+        }
         let endpoint = ScreenSharingViewerEndpoint(session: session, surface: try makeSurface(session))
         attempt.endpoint = endpoint
         endpoint.onReady = {

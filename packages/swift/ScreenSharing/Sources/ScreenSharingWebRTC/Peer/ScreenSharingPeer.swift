@@ -10,16 +10,29 @@ public struct ScreenSharingDescription: Codable, Sendable {
   public init(version: Int = 1, kind: String, sdp: String) {
     self.version = version; self.kind = kind; self.sdp = sdp
   }
+
+  init(native: RTCSessionDescription) {
+    self.init(kind: native.type == .offer ? "offer" : "answer", sdp: native.sdp)
+  }
+
+  var native: RTCSessionDescription { RTCSessionDescription(type: kind == "offer" ? .offer : .answer, sdp: sdp) }
 }
 
 /// What a sender and a receiver share: one `RTCPeerConnection` with the codec
-/// factory installed, the three negotiated data channels, one-shot SDP
+/// factory installed, the negotiated data channels, one-shot SDP
 /// negotiation with complete ICE gathering, statistics, the RTC event log and
 /// the close/await-closed boundary. Signaling is deliberately injected: the
 /// probe can exchange files, the app uses authenticated machine channels.
 ///
 /// `ScreenSharingSender` adds the video track and the host-side recovery;
 /// `ScreenSharingReceiver` adds the renderer and the viewer-side recovery.
+///
+/// Threading: the peer's state, its role logic and every callback it makes live on the main
+/// actor, but none of its WebRTC calls do. The connection, its factory and its media objects
+/// belong to `transport`, confined to the transport's queue: construction (`init` is async),
+/// negotiation, statistics, sender reconfiguration and teardown all run there, and each data
+/// channel runs on its own queue. `close()` returns at once: the peer stops calling back
+/// immediately, and the transport closes and releases the WebRTC objects in order behind it.
 @MainActor
 public class ScreenSharingPeer {
   public let metrics: ScreenSharingMetrics
@@ -34,13 +47,12 @@ public class ScreenSharingPeer {
   /// HDR negotiation (851-2380).
   public let videoFormatChannel: ScreenSharingVideoFormatChannel
   public var onConnectionChanged: ((String) -> Void)?
-  let factory: RTCPeerConnectionFactory
   let codecFactory: ScreenSharingCodecFactory
-  let connection: RTCPeerConnection
+  let transport: ScreenSharingPeerTransport
   let videoRefresh: ScreenSharingDataChannel<ScreenSharingVideoRefreshMessage>
   let ownedWork = ScreenSharingOwnedWork()
+  let delegate: ScreenSharingPeerDelegate
   private(set) var closed = false
-  private let delegate: ScreenSharingPeerDelegate
   private var gathering: CheckedContinuation<ScreenSharingDescription, any Error>?
   private var gatheringTimeout: Task<Void, Never>?
   private var negotiating = false
@@ -48,9 +60,8 @@ public class ScreenSharingPeer {
   init(staged: ScreenSharingPeerStaging) {
     metrics = staged.metrics
     codecFactory = staged.codecFactory
-    factory = staged.factory
+    transport = staged.transport
     delegate = staged.delegate
-    connection = staged.connection
     controlChannel = staged.controlChannel
     clipboardChannel = staged.clipboardChannel
     cursorChannel = staged.cursorChannel
@@ -66,18 +77,12 @@ public class ScreenSharingPeer {
       guard available, let self else { return }
       self.refreshChannelBecameAvailable()
     }
-    delegate.onGathered = { [weak self] in Task { @MainActor in self?.finishGathering() } }
+    delegate.onGathered = { [weak self] in Task { @MainActor in self?.checkGathering() } }
     delegate.onConnection = { [weak self] state in
       Task { @MainActor in
         guard let self, !self.closed else { return }
         self.metrics.label("connection", state)
         self.onConnectionChanged?(state)
-      }
-    }
-    delegate.onVideoTrack = { [weak self] track in
-      Task { @MainActor in
-        guard let self, !self.closed else { return }
-        self.remoteTrackArrived(track)
       }
     }
   }
@@ -88,8 +93,6 @@ public class ScreenSharingPeer {
   func handleRefresh(_ message: ScreenSharingVideoRefreshMessage) {}
   /// The refresh channel opened: deferred requests and notices can go out now.
   func refreshChannelBecameAvailable() {}
-  /// The remote video track was added (receiver only).
-  func remoteTrackArrived(_ track: RTCVideoTrack) {}
   /// Role teardown, run before the shared teardown; `closed` is already true.
   func willClose() {}
   /// Role teardown after the connection closed.
@@ -103,15 +106,15 @@ public class ScreenSharingPeer {
     guard !closed, !negotiating else { throw ScreenSharingError.invalid("Peer is closed or already negotiating.") }
     negotiating = true
     defer { negotiating = false }
-    let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
-    let rtc: RTCSessionDescription = try await withCheckedThrowingContinuation { continuation in
+    let local: ScreenSharingDescription = try await transport.call { connection, done in
+      let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
       let complete: @Sendable (RTCSessionDescription?, (any Error)?) -> Void = { description, error in
         if let error {
-          continuation.resume(throwing: error)
+          done(.failure(error))
         } else if let description {
-          continuation.resume(returning: description)
+          done(.success(ScreenSharingDescription(native: description)))
         } else {
-          continuation.resume(throwing: ScreenSharingError.unavailable("No session description."))
+          done(.failure(ScreenSharingError.unavailable("No session description.")))
         }
       }
       if offer {
@@ -122,21 +125,20 @@ public class ScreenSharingPeer {
     }
     try Task.checkCancellation()
     guard !closed else { throw CancellationError() }
-    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
-      connection.setLocalDescription(rtc) { error in
-        if let error { continuation.resume(throwing: error) } else { continuation.resume() }
-      }
+    try await transport.call { connection, done in
+      connection.setLocalDescription(local.native) { error in done(error.map { .failure($0) } ?? .success(())) }
     }
     return try await withTaskCancellationHandler {
       try Task.checkCancellation()
       return try await withCheckedThrowingContinuation { continuation in
         gathering = continuation
         if closed { cancelGathering(CancellationError()); return }
-        if connection.iceGatheringState == .complete { finishGathering(); return }
         gatheringTimeout = Task { [weak self] in
           do { try await Task.sleep(for: .seconds(15)) } catch { return }
           self?.cancelGathering(ScreenSharingError.unavailable("ICE gathering timed out."))
         }
+        // Gathering may already be complete (a re-answer); otherwise the delegate's completion checks again.
+        checkGathering()
       }
     } onCancel: { [weak self] in
       Task { @MainActor in self?.cancelGathering(CancellationError()) }
@@ -147,31 +149,33 @@ public class ScreenSharingPeer {
     guard !closed, description.version == 1, ["offer", "answer"].contains(description.kind),
       description.sdp.utf8.count <= 256 * 1024, description.sdp.contains("a=fingerprint:sha-256 ")
     else { throw ScreenSharingError.invalid("Unsupported or invalid screen-sharing description.") }
-    let rtc = RTCSessionDescription(type: description.kind == "offer" ? .offer : .answer, sdp: description.sdp)
-    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
-      connection.setRemoteDescription(rtc) { error in
-        if let error { continuation.resume(throwing: error) } else { continuation.resume() }
+    try await transport.call { connection, done in
+      connection.setRemoteDescription(description.native) { error in
+        done(error.map { .failure($0) } ?? .success(()))
       }
     }
   }
 
+  /// The selected statistics; empty once the peer is closed.
   public func statistics() async -> [String: String] {
-    await withCheckedContinuation { continuation in
-      connection.statistics { report in
-        continuation.resume(returning: ScreenSharingPeerStatistics.values(report))
-      }
+    guard !closed else { return [:] }
+    let values: [String: String]? = try? await transport.call { connection, done in
+      connection.statistics { report in done(.success(ScreenSharingPeerStatistics.values(report))) }
     }
+    return values ?? [:]
   }
 
   // MARK: Diagnostics
 
   /// Diagnostic boundary for the receiver RTC event-log diagnostic: the shipped
-  /// ObjC API, called synchronously by the caller; the peer schedules nothing.
-  /// Returns the API's Bool (an accepted output, not a complete file); a closed
-  /// peer never starts a log.
+  /// ObjC API, called synchronously by the caller (the rig times the call itself);
+  /// the peer schedules nothing. Returns the API's Bool (an accepted output, not a
+  /// complete file); a closed peer never starts a log. Product code never calls it.
   public func startRtcEventLog(path: String, maxSizeBytes: Int64) -> Bool {
     guard !closed else { return false }
-    return connection.startRtcEventLog(withFilePath: path, maxSizeInBytes: maxSizeBytes)
+    return transport.withDiagnosticConnection {
+      $0.startRtcEventLog(withFilePath: path, maxSizeInBytes: maxSizeBytes)
+    } ?? false
   }
 
   /// Stops a log started through `startRtcEventLog`; the caller stops exactly
@@ -180,12 +184,14 @@ public class ScreenSharingPeer {
   @discardableResult
   public func stopRtcEventLog() -> Bool {
     guard !closed else { return false }
-    connection.stopRtcEventLog()
-    return true
+    return transport.withDiagnosticConnection { $0.stopRtcEventLog() } != nil
   }
 
   // MARK: Teardown
 
+  /// Terminal and idempotent, and returns without waiting for WebRTC: no callback reaches the
+  /// peer's owner afterwards, the channels publish their closing now, and the transport closes
+  /// the connection once the channels' queues are done, then releases the factory, off main.
   public func close() {
     guard !closed else { return }
     closed = true
@@ -198,28 +204,47 @@ public class ScreenSharingPeer {
     videoFormatChannel.close()
     controlChannel.close()
     cancelGathering(CancellationError())
-    connection.close()
+    transport.close(after: [
+      videoRefresh, clipboardChannel, cursorChannel, audioChannel, displayChannel, videoFormatChannel, controlChannel,
+    ])
     didClose()
   }
 
   /// Completion boundary for the peer's own cancelled tasks (requester, idle
-  /// notifier, delivery verifier). The handles stay shared, so concurrent and
-  /// repeated callers all wait for the same completions. Returns the number of
-  /// owned tasks awaited, or nil when the peer has not been closed (the call
-  /// then returns immediately and establishes nothing). WebRTC and
-  /// VideoToolbox threads are not covered; their late callbacks are ignored by
-  /// the closed signal, sender and renderer.
+  /// notifier, delivery verifier) and its WebRTC teardown: once it returns, the
+  /// connection is closed and every WebRTC object the peer owned is released.
+  /// The handles stay shared, so concurrent and repeated callers all wait for
+  /// the same completions. Returns the number of owned tasks awaited, or nil when
+  /// the peer has not been closed (the call then returns immediately and
+  /// establishes nothing). VideoToolbox threads are not covered; their late
+  /// callbacks are ignored by the closed signal, sender and renderer.
   @discardableResult
-  public func awaitClosed() async -> Int? { await ownedWork.join() }
+  public func awaitClosed() async -> Int? {
+    guard let count = await ownedWork.join() else { return nil }
+    await transport.awaitTeardown()
+    return count
+  }
 
-  private func finishGathering() {
-    guard let description = connection.localDescription, let continuation = gathering else { return }
+  /// Resolves the description wait once gathering is complete; asks the transport, off main.
+  private func checkGathering() {
+    guard gathering != nil else { return }
+    Task { [weak self, transport] in
+      let gathered = await transport.inspect { connection -> ScreenSharingDescription? in
+        guard let connection, connection.iceGatheringState == .complete, let local = connection.localDescription
+        else { return nil }
+        return ScreenSharingDescription(native: local)
+      }
+      guard let gathered else { return }
+      self?.finishGathering(gathered)
+    }
+  }
+
+  private func finishGathering(_ description: ScreenSharingDescription) {
+    guard let continuation = gathering else { return }
     gathering = nil
     gatheringTimeout?.cancel()
     gatheringTimeout = nil
-    continuation.resume(
-      returning: ScreenSharingDescription(
-        version: 1, kind: description.type == .offer ? "offer" : "answer", sdp: description.sdp))
+    continuation.resume(returning: description)
   }
 
   private func cancelGathering(_ error: any Error) {
@@ -232,16 +257,15 @@ public class ScreenSharingPeer {
 }
 
 /// Everything a peer needs before its role-specific members exist: the trials
-/// pinned, the codec factory, the connection with its delegate, and the three
-/// negotiated channels. A subclass builds this first (its own members may need
-/// the factory), then hands it to `ScreenSharingPeer.init(staged:)`.
-@MainActor
-struct ScreenSharingPeerStaging {
+/// pinned, the codec factory, the connection with its delegate inside the
+/// transport, and the negotiated channels. Built on the transport's queue by
+/// `make`, then handed to the main actor once; after that its WebRTC objects are
+/// only touched on their own queues.
+struct ScreenSharingPeerStaging: @unchecked Sendable {
   let metrics: ScreenSharingMetrics
   let codecFactory: ScreenSharingCodecFactory
-  let factory: RTCPeerConnectionFactory
+  let transport: ScreenSharingPeerTransport
   let delegate: ScreenSharingPeerDelegate
-  let connection: RTCPeerConnection
   let controlChannel: ScreenSharingControlChannel
   let clipboardChannel: ScreenSharingClipboardChannel
   let cursorChannel: ScreenSharingCursorChannel
@@ -250,12 +274,38 @@ struct ScreenSharingPeerStaging {
   let videoFormatChannel: ScreenSharingVideoFormatChannel
   let videoRefresh: ScreenSharingDataChannel<ScreenSharingVideoRefreshMessage>
 
-  init(
+  /// What the role adds on the transport's queue, with the factory, the connection, the codec
+  /// factory and the transport (to retain what the connection needs kept alive).
+  typealias Role<Result> =
+    @Sendable (RTCPeerConnectionFactory, RTCPeerConnection, ScreenSharingCodecFactory, ScreenSharingPeerTransport)
+    throws -> Result
+
+  /// Builds the staging and runs `role`, all on a new transport's queue: nothing here waits for a
+  /// WebRTC thread on the caller's.
+  static func make<Result: Sendable>(
     configuration: ScreenSharingVideoConfiguration, metrics: ScreenSharingMetrics,
     options: ScreenSharingPeerOptions, connectivity: ScreenSharingICEConfiguration?,
-    frameDeliveryAudit: ScreenSharingFrameDeliveryAudit? = nil
+    frameDeliveryAudit: ScreenSharingFrameDeliveryAudit? = nil, role: @escaping Role<Result>
+  ) async throws -> (ScreenSharingPeerStaging, Result) {
+    try await ScreenSharingPeerTransport.build { transport in
+      let staged = try ScreenSharingPeerStaging(
+        configuration: configuration, metrics: metrics, options: options, connectivity: connectivity,
+        frameDeliveryAudit: frameDeliveryAudit, transport: transport)
+      return (staged, try role(staged.factory, staged.connection, staged.codecFactory, transport))
+    }
+  }
+
+  // Only for `make`'s role step; the transport owns both afterwards.
+  private let factory: RTCPeerConnectionFactory
+  private let connection: RTCPeerConnection
+
+  private init(
+    configuration: ScreenSharingVideoConfiguration, metrics: ScreenSharingMetrics,
+    options: ScreenSharingPeerOptions, connectivity: ScreenSharingICEConfiguration?,
+    frameDeliveryAudit: ScreenSharingFrameDeliveryAudit?, transport: ScreenSharingPeerTransport
   ) throws {
     self.metrics = metrics
+    self.transport = transport
     // Process-wide WebRTC trials must exist before ANY RTC object. Real peers always bootstrap through the REAL
     // process boundary — there is deliberately no injection point here, because a fake initializer must never be able
     // to authorize a real RTC factory or publish a playout label that nothing installed.
@@ -269,6 +319,7 @@ struct ScreenSharingPeerStaging {
       prioritizeSpeed: options.prioritizeSpeed, keyframeIntervalSeconds: options.keyframeIntervalSeconds,
       sourceIdleThresholdNs: options.sourceIdleThresholdNs ?? ScreenSharingSourceIdleMonitor.defaultThresholdNs,
       frameDeliveryAudit: frameDeliveryAudit)
+    // One factory per peer: see `ScreenSharingPeerTransport` for why it can't be shared.
     factory = RTCPeerConnectionFactory(encoderFactory: codecFactory, decoderFactory: codecFactory)
     delegate = ScreenSharingPeerDelegate()
     let rtcConfiguration = RTCConfiguration()
@@ -285,6 +336,8 @@ struct ScreenSharingPeerStaging {
       throw ScreenSharingError.unavailable("Cannot create native WebRTC peer.")
     }
     self.connection = connection
+    // From here a failure closes and releases the connection on this queue.
+    transport.adopt(factory: factory, connection: connection)
     controlChannel = try ScreenSharingControlChannel(
       connection: connection, id: 0, label: "codevisor.control.v1",
       encode: { try $0.encoded() }, decode: ScreenSharingControlMessage.decode)

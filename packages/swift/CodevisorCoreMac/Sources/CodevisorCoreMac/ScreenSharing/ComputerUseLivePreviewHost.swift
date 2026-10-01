@@ -40,7 +40,7 @@ final class ComputerUseSenderPeer: ComputerUseStreamPeer {
   private let control: ScreenSharingHostControl
   let sink: any ComputerUseFrameSink
 
-  init(size: CGSize, connectivity: ServerScreenSharingConnectivity) throws {
+  init(size: CGSize, connectivity: ServerScreenSharingConnectivity) async throws {
     try ScreenSharingFieldTrials.process.install(profile: ScreenSharingDiagnosticProfile.process())
     let metrics = ScreenSharingMetrics()
     let configuration = try computerUseStreamVideoConfiguration(size: size)
@@ -48,7 +48,7 @@ final class ComputerUseSenderPeer: ComputerUseStreamPeer {
     var options = ScreenSharingPeerOptions()
     options.codec = .hevc
     options.fallbackCodecs = [.h264]
-    let sender = try ScreenSharingSender(
+    let sender = try await ScreenSharingSender(
       configuration: configuration, metrics: metrics, options: options, connectivity: connectivity.native())
     self.sender = sender
     sink = ComputerUseSenderSink(sender: sender)
@@ -124,7 +124,7 @@ final class ComputerUseLivePreviewHost {
     var attach: @MainActor (_ bridgeSessionID: String, _ sink: any ComputerUseFrameSink) -> UUID
     var detach: @MainActor (_ bridgeSessionID: String, _ token: UUID) -> Void
     var makePeer:
-      @MainActor (_ size: CGSize, _ connectivity: ServerScreenSharingConnectivity) throws
+      @MainActor (_ size: CGSize, _ connectivity: ServerScreenSharingConnectivity) async throws
         -> any ComputerUseStreamPeer
     var makeConnectivity: @MainActor (_ viewerId: UUID) throws -> ServerScreenSharingConnectivity
     var now: @MainActor () -> TimeInterval
@@ -137,7 +137,7 @@ final class ComputerUseLivePreviewHost {
         streamSize: { ComputerUseNativeSharing.shared.previewSize(sessionID: $0) },
         attach: { ComputerUseLivePreview.shared.attachSink(sessionID: $0, sink: $1) },
         detach: { ComputerUseLivePreview.shared.detachSink(sessionID: $0, token: $1) },
-        makePeer: { try ComputerUseSenderPeer(size: $0, connectivity: $1) },
+        makePeer: { try await ComputerUseSenderPeer(size: $0, connectivity: $1) },
         makeConnectivity: { try connectivity.make(viewerId: $0) },
         now: { ProcessInfo.processInfo.systemUptime }
       )
@@ -229,7 +229,18 @@ final class ComputerUseLivePreviewHost {
       guard let activity = liveActivity(sessionID) else { return Self.notControlling }
       let size = dependencies.streamSize(activity.bridgeSessionID) ?? activity.windowFrame.size
       do {
-        let peer = try dependencies.makePeer(size, try dependencies.makeConnectivity(request.viewerId))
+        // The peer is built off the main thread; shutdown or another request for this viewer may
+        // have happened meanwhile.
+        let peer = try await dependencies.makePeer(size, try dependencies.makeConnectivity(request.viewerId))
+        guard !isShutdown else {
+          peer.close()
+          return .init(status: "stopped")
+        }
+        if let raced = sessions[owner] { end(owner: owner, session: raced) }
+        guard sessions.count < Self.maximumSessions else {
+          peer.close()
+          return .init(status: "busy", message: "Too many viewers are watching this agent.")
+        }
         let session = Session(
           sessionID: sessionID, bridgeSessionID: activity.bridgeSessionID, peer: peer,
           expiresAt: dependencies.now() + Self.lifetime)

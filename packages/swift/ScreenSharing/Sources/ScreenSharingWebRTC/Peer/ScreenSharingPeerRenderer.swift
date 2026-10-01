@@ -44,4 +44,4 @@ final class ScreenSharingPeerRenderer: NSObject, RTCVideoRenderer, @unchecked Se
 }
 
 /// Delegate callbacks originate on WebRTC threads. Hooks are installed before
-/// negotiation and only hop to the main actor; their storage is then immutable.
+/// negotiation and only hop to the main actor or the transport's queue; their storage is then immutable.

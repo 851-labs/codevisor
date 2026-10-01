@@ -14,29 +14,36 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
   public let frameDeliveryAudit: ScreenSharingFrameDeliveryAudit?
   private let renderer: ScreenSharingPeerRenderer
   private let recovery: ScreenSharingReceiverRecovery
-  private var remoteTrack: RTCVideoTrack?
 
+  /// Builds the connection, its channels and the video receiver on the transport's queue; the
+  /// caller's actor only waits.
   public init(
     configuration: ScreenSharingVideoConfiguration, metrics: ScreenSharingMetrics,
     options: ScreenSharingPeerOptions = .init(), connectivity: ScreenSharingICEConfiguration? = nil,
     frameDeliveryAudit: ScreenSharingFrameDeliveryAudit? = nil
-  ) throws {
+  ) async throws {
     self.frameDeliveryAudit = frameDeliveryAudit
-    let staged = try ScreenSharingPeerStaging(
+    let (staged, _) = try await ScreenSharingPeerStaging.make(
       configuration: configuration, metrics: metrics, options: options, connectivity: connectivity,
-      frameDeliveryAudit: frameDeliveryAudit)
+      frameDeliveryAudit: frameDeliveryAudit
+    ) { _, connection, _, _ in
+      let transceiver = RTCRtpTransceiverInit()
+      transceiver.direction = .recvOnly
+      guard connection.addTransceiver(of: .video, init: transceiver) != nil else {
+        throw ScreenSharingError.unavailable("Cannot create screen video receiver.")
+      }
+    }
     let mailbox = ScreenSharingFrameMailbox()
     self.mailbox = mailbox
-    renderer = ScreenSharingPeerRenderer(mailbox: mailbox, metrics: metrics, audit: frameDeliveryAudit)
+    let renderer = ScreenSharingPeerRenderer(mailbox: mailbox, metrics: metrics, audit: frameDeliveryAudit)
+    self.renderer = renderer
     recovery = ScreenSharingReceiverRecovery(
       metrics: metrics, codecFactory: staged.codecFactory, videoRefresh: staged.videoRefresh,
       grace: options.deliveryGrace, graceExtensions: options.deliveryGraceExtensions)
     super.init(staged: staged)
-    let transceiver = RTCRtpTransceiverInit()
-    transceiver.direction = .recvOnly
-    guard connection.addTransceiver(of: .video, init: transceiver) != nil else {
-      throw ScreenSharingError.unavailable("Cannot create screen video receiver.")
-    }
+    // The remote track arrives on WebRTC's signaling thread; the transport attaches the renderer
+    // on its queue (and detaches it at teardown), never on main.
+    delegate.onVideoTrack = { [transport] track in transport.attach(track, renderer: renderer) }
     codecFactory.refreshSignal.request()
     cursorChannel.onMessage = { [weak self] in self?.receiveCursor($0) }
     cursorChannel.onAvailabilityChanged = { [weak self] available in
@@ -307,12 +314,6 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
     recovery.wake()
   }
 
-  override func remoteTrackArrived(_ track: RTCVideoTrack) {
-    remoteTrack?.remove(renderer)
-    remoteTrack = track
-    track.add(renderer)
-  }
-
   override func willClose() {
     audioSync?.cancel()
     audioPlayer?.stop()
@@ -320,9 +321,8 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
     codecFactory.refreshSignal.close()
     ownedWork.close(with: recovery.close())
     codecFactory.sourceIdleMonitor.stop()
-    remoteTrack?.remove(renderer)
+    // Frames still in flight are dropped from here; the transport detaches the renderer.
     renderer.stop()
-    remoteTrack = nil
   }
 
   override func didClose() {

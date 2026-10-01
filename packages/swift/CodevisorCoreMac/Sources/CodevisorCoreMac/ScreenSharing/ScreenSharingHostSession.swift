@@ -59,7 +59,7 @@ final class ScreenSharingHostSession {
   init(
     request: ServerScreenSharingRequest, display: ServerScreenSharingDisplay, displayID: UInt32,
     connectivity: ServerScreenSharingConnectivity, profile: ScreenSharingDiagnosticProfile?
-  ) throws {
+  ) async throws {
     owner = .init(request)
     self.profile = profile
     self.display = display; self.displayID = displayID
@@ -84,7 +84,7 @@ final class ScreenSharingHostSession {
         "diagnosticProfileCaptureRequest",
         "\(profile.captureIntervalFPSAtLevel0) fps at adaptive level 0, video rate below")
     }
-    peer = try ScreenSharingSender(
+    peer = try await ScreenSharingSender(
       configuration: configuration, metrics: metrics, connectivity: connectivity.native())
   }
 

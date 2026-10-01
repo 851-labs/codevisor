@@ -34,10 +34,10 @@ struct ScreenSharingPeerLoopbackTests {
     private(set) var viewerReceived: [ScreenSharingControlMessage] = []
     private(set) var hostReceived: [ScreenSharingControlMessage] = []
 
-    init(width: Int = 128, height: Int = 64) throws {
+    init(width: Int = 128, height: Int = 64) async throws {
       let configuration = try ScreenSharingVideoConfiguration(width: width, height: height)
-      sender = try ScreenSharingSender(configuration: configuration, metrics: hostMetrics)
-      receiver = try ScreenSharingReceiver(configuration: configuration, metrics: viewerMetrics)
+      sender = try await ScreenSharingSender(configuration: configuration, metrics: hostMetrics)
+      receiver = try await ScreenSharingReceiver(configuration: configuration, metrics: viewerMetrics)
       sender.onConnectionChanged = { [self] state in
         hostConnectionStates.append(state)
         if state == "connected" { hostConnected.signal() }
@@ -85,14 +85,14 @@ struct ScreenSharingPeerLoopbackTests {
   }
 
   @Test func negotiationConnectsBothEndsAndHandsTheRemoteVideoTrackToTheViewer() async throws {
-    let harness = try Harness()
+    let harness = try await Harness()
     defer { harness.close() }
     try await harness.negotiate()
     // The viewer's receiver and its video track exist as soon as the answer has
     // been applied: libwebrtc creates them while setting the remote description.
-    let tracks = harness.receiver.connection.receivers.compactMap { $0.track }
-    #expect(tracks.count == 1 && tracks[0].kind == "video")
-    #expect(harness.sender.connection.transceivers.contains { $0.direction == .sendOnly })
+    let tracks = await harness.receiver.transport.inspect { $0?.receivers.compactMap { $0.track?.kind } ?? [] }
+    #expect(tracks == ["video"])
+    #expect(await harness.sender.transport.inspect { $0?.transceivers.contains { $0.direction == .sendOnly } == true })
     await harness.hostConnected.wait()
     await harness.viewerConnected.wait()
     #expect(harness.hostMetrics.snapshot().labels["connection"] == "connected")
@@ -105,15 +105,15 @@ struct ScreenSharingPeerLoopbackTests {
     await harness.awaitClosed()
     #expect(harness.receiver.closed && harness.sender.closed)
     // Teardown released both ends: the channels refuse traffic and the native
-    // connections report closed rather than lingering in connected.
+    // connections were closed and let go rather than lingering in connected.
     #expect(!harness.sender.controlChannel.isAvailable && !harness.receiver.controlChannel.isAvailable)
-    #expect(harness.sender.connection.connectionState == .closed)
-    #expect(harness.receiver.connection.connectionState == .closed)
+    #expect(await harness.sender.transport.inspect { $0 == nil })
+    #expect(await harness.receiver.transport.inspect { $0 == nil })
     #expect(!harness.sender.stopRtcEventLog() && !harness.receiver.stopRtcEventLog())
   }
 
   @Test func theNegotiatedControlChannelCarriesMessagesInOrderInBothDirections() async throws {
-    let harness = try Harness()
+    let harness = try await Harness()
     defer { harness.close() }
     try await harness.negotiate()
     await harness.hostControlOpened.wait()
@@ -145,7 +145,7 @@ struct ScreenSharingPeerLoopbackTests {
   /// The pointer as its own stream (851-2377): a viewer that draws it subscribes once the
   /// channel opens, and the host's shape and position arrive as sized, normalized updates.
   @Test func aViewerThatDrawsThePointerSubscribesAndReceivesIt() async throws {
-    let harness = try Harness()
+    let harness = try await Harness()
     defer { harness.close() }
     let subscribed = TestSignal()
     let updated = TestSignal()
@@ -182,7 +182,7 @@ struct ScreenSharingPeerLoopbackTests {
   /// The host's sound (851-2379): enabling audio subscribes once the unordered channel opens,
   /// the host's packets reach the viewer, and muting unsubscribes.
   @Test func aViewerPlayingSoundSubscribesReceivesPacketsAndUnsubscribesOnMute() async throws {
-    let harness = try Harness()
+    let harness = try await Harness()
     defer { harness.close() }
     let hostHeard = TestSignal()
     var hostReceived: [ScreenSharingAudioMessage] = []
@@ -205,7 +205,7 @@ struct ScreenSharingPeerLoopbackTests {
   /// Dynamic Resolution on a virtual display (851-2376): the viewer holds its pane size until the
   /// host says it's ready, then sends only the latest; the host's refusal marks it unsupported.
   @Test func theViewerSendsItsPaneSizeOnceTheHostIsReady() async throws {
-    let harness = try Harness()
+    let harness = try await Harness()
     defer { harness.close() }
     let opened = TestSignal()
     let hostHeard = TestSignal()
@@ -233,11 +233,11 @@ struct ScreenSharingPeerLoopbackTests {
   }
 
   @Test func negotiationRefusesUnsupportedDescriptionsAndAnythingAfterClose() async throws {
-    let source = try Harness()
+    let source = try await Harness()
     defer { source.close() }
     let offer = try await source.receiver.makeDescription(offer: true)
     #expect(offer.sdp.contains("a=fingerprint:sha-256 "))
-    let peer = try ScreenSharingSender(
+    let peer = try await ScreenSharingSender(
       configuration: try ScreenSharingVideoConfiguration(width: 64, height: 64), metrics: ScreenSharingMetrics())
     defer { peer.close() }
     for rejected in [
@@ -255,7 +255,7 @@ struct ScreenSharingPeerLoopbackTests {
     // offer works — and this time gathering is already complete, which resolves
     // the wait immediately instead of through the delegate's completion event.
     try await peer.accept(offer)
-    #expect(peer.connection.iceGatheringState == .complete)
+    #expect(await peer.transport.inspect { $0?.iceGatheringState == .complete })
     #expect(try await peer.makeDescription(offer: false).kind == "answer")
 
     peer.close()
@@ -268,7 +268,7 @@ struct ScreenSharingPeerLoopbackTests {
     let directory = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
-    let peer = try ScreenSharingReceiver(
+    let peer = try await ScreenSharingReceiver(
       configuration: try ScreenSharingVideoConfiguration(width: 64, height: 64), metrics: ScreenSharingMetrics())
     defer { peer.close() }
     #expect(peer.startRtcEventLog(path: directory.appendingPathComponent("rtc.log").path, maxSizeBytes: 1 << 20))
@@ -280,31 +280,89 @@ struct ScreenSharingPeerLoopbackTests {
     #expect(!FileManager.default.fileExists(atPath: directory.appendingPathComponent("late.log").path))
   }
 
-  @Test func stagingBuildsAUnifiedPlanConnectionWithTheThreeNegotiatedChannels() throws {
-    let metrics = ScreenSharingMetrics()
-    let staged = try ScreenSharingPeerStaging(
+  /// What the staged connection was configured with, read on the transport's queue.
+  struct ConnectionShape: Sendable, Equatable {
+    var unifiedPlan: Bool
+    var maxBundle: Bool
+    var rtcpMuxRequired: Bool
+    var relayOnly: Bool
+    var iceServerURLs: [[String]]
+    /// Whether the build ran on the main thread (it must not).
+    var builtOnMain: Bool
+  }
+
+  private func stage(
+    connectivity: ScreenSharingICEConfiguration?, metrics: ScreenSharingMetrics = .init()
+  )
+    async throws -> (ScreenSharingPeerStaging, ConnectionShape)
+  {
+    try await ScreenSharingPeerStaging.make(
       configuration: try ScreenSharingVideoConfiguration(width: 64, height: 64), metrics: metrics,
-      options: ScreenSharingPeerOptions(), connectivity: nil)
-    defer { staged.connection.close() }
-    let configuration = staged.connection.configuration
-    #expect(configuration.sdpSemantics == .unifiedPlan)
-    #expect(configuration.bundlePolicy == .maxBundle && configuration.rtcpMuxPolicy == .require)
+      options: ScreenSharingPeerOptions(), connectivity: connectivity
+    ) { _, connection, _, _ in
+      let configuration = connection.configuration
+      return ConnectionShape(
+        unifiedPlan: configuration.sdpSemantics == .unifiedPlan, maxBundle: configuration.bundlePolicy == .maxBundle,
+        rtcpMuxRequired: configuration.rtcpMuxPolicy == .require,
+        relayOnly: configuration.iceTransportPolicy == .relay,
+        iceServerURLs: configuration.iceServers.map(\.urlStrings), builtOnMain: Thread.isMainThread)
+    }
+  }
+
+  private func release(_ staged: ScreenSharingPeerStaging) async {
+    let channels =
+      [
+        staged.controlChannel, staged.clipboardChannel, staged.cursorChannel, staged.audioChannel,
+        staged.displayChannel, staged.videoFormatChannel, staged.videoRefresh,
+      ] as [any ScreenSharingQueuedChannel]
+    staged.controlChannel.close(); staged.clipboardChannel.close(); staged.cursorChannel.close()
+    staged.audioChannel.close(); staged.displayChannel.close(); staged.videoFormatChannel.close()
+    staged.videoRefresh.close()
+    staged.transport.close(after: channels)
+    await staged.transport.awaitTeardown()
+  }
+
+  @Test func stagingBuildsAUnifiedPlanConnectionWithTheNegotiatedChannelsOffTheMainThread() async throws {
+    let metrics = ScreenSharingMetrics()
+    let (staged, shape) = try await stage(connectivity: nil, metrics: metrics)
+    #expect(!shape.builtOnMain, "the factory, connection and channels are built on the transport's queue")
+    #expect(shape.unifiedPlan && shape.maxBundle && shape.rtcpMuxRequired)
     // Direct LAN is the default: no relay credentials are embedded anywhere.
-    #expect(configuration.iceServers.isEmpty && configuration.iceTransportPolicy == .all)
+    #expect(shape.iceServerURLs.isEmpty && !shape.relayOnly)
     #expect(!staged.controlChannel.isAvailable && !staged.clipboardChannel.isAvailable)
     #expect(!staged.cursorChannel.isAvailable && !staged.audioChannel.isAvailable)
     #expect(!staged.videoRefresh.isAvailable)
     // Trials are pinned before any RTC object exists, and the pin is published.
     #expect(metrics.snapshot().labels["fieldTrialProvenance"] != nil)
+    await release(staged)
 
-    let relayed = try ScreenSharingPeerStaging(
-      configuration: try ScreenSharingVideoConfiguration(width: 64, height: 64), metrics: ScreenSharingMetrics(),
-      options: ScreenSharingPeerOptions(),
+    let (relayed, relayedShape) = try await stage(
       connectivity: try ScreenSharingICEConfiguration(
         servers: [try ScreenSharingICEServer(urls: ["turn:example.test"], username: "user", credential: "secret")],
         relayOnly: true))
-    defer { relayed.connection.close() }
-    #expect(relayed.connection.configuration.iceTransportPolicy == .relay)
-    #expect(relayed.connection.configuration.iceServers.map(\.urlStrings) == [["turn:example.test"]])
+    #expect(relayedShape.relayOnly)
+    #expect(relayedShape.iceServerURLs == [["turn:example.test"]])
+    await release(relayed)
+  }
+
+  /// Teardown is ordered behind whatever WebRTC work is in flight, but the caller never waits for
+  /// it: `close()` returns with the transport's queue held, the peer is already closed to its
+  /// owner, and only `awaitClosed()` waits for the connection to be closed and released.
+  @Test func closeReturnsWhileWebRTCIsBusyAndTheTeardownFollowsInOrder() async throws {
+    let peer = try await ScreenSharingSender(
+      configuration: try ScreenSharingVideoConfiguration(width: 64, height: 64), metrics: ScreenSharingMetrics())
+    let held = TestSignal()
+    let hold = DispatchSemaphore(value: 0)
+    peer.transport.queue.async {
+      held.signal()
+      hold.wait()
+    }
+    await held.wait()
+    peer.close()
+    #expect(peer.closed && !peer.controlChannel.isAvailable)
+    #expect(await peer.statistics().isEmpty, "a closed peer asks WebRTC for nothing")
+    hold.signal()
+    #expect(await peer.awaitClosed() != nil)
+    #expect(await peer.transport.inspect { $0 == nil }, "the connection was closed and released on its queue")
   }
 }

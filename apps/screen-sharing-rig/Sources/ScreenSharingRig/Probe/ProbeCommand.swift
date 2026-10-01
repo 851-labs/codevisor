@@ -209,7 +209,7 @@ import ScreenSharingDiagnostics
         senderOptions.prioritizeSpeed = options.prioritizeSpeed
         senderOptions.keyframeIntervalSeconds = options.keyframeIntervalSeconds
         senderOptions.sourceIdleThresholdNs = options.idleThresholdMs.map { Int64($0) * 1_000_000 }
-        sender = try ScreenSharingSender(
+        sender = try await ScreenSharingSender(
           configuration: options.configuration, metrics: senderMetrics, options: senderOptions)
         if let threshold = options.idleThresholdMs {
           senderMetrics.label("sourceIdleThresholdExperiment", "\(threshold) ms idle threshold")
@@ -248,7 +248,7 @@ import ScreenSharingDiagnostics
         receiverOptions.codec = options.videoCodec
         receiverOptions.deliveryGrace = options.idleGraceMs.map { .milliseconds($0) }
         receiverOptions.deliveryGraceExtensions = options.idleGraceExtensions
-        let receiver = try ScreenSharingReceiver(
+        let receiver = try await ScreenSharingReceiver(
           configuration: options.configuration, metrics: receiverMetrics, options: receiverOptions,
           frameDeliveryAudit: deliveryAudit)
         if let grace = options.idleGraceMs {

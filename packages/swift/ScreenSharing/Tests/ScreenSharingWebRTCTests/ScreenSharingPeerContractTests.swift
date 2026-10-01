@@ -29,10 +29,26 @@ struct ScreenSharingPeerContractTests {
     }
   }
 
-  private func stagedConnection() throws -> ScreenSharingPeerStaging {
-    try ScreenSharingPeerStaging(
-      configuration: try ScreenSharingVideoConfiguration(width: 64, height: 64), metrics: ScreenSharingMetrics(),
-      options: ScreenSharingPeerOptions(), connectivity: nil)
+  /// The peer's delegate on a bare connection: the dispatch under test never depends on which
+  /// connection calls it, so no transport is involved.
+  struct DelegateFixture {
+    let factory: RTCPeerConnectionFactory
+    let connection: RTCPeerConnection
+    let delegate: ScreenSharingPeerDelegate
+  }
+
+  private func stagedConnection() throws -> DelegateFixture {
+    // The same boundary as production: trials are pinned before any RTC object exists.
+    _ = ScreenSharingFieldTrials.process.ensureInstalled()
+    let factory = RTCPeerConnectionFactory()
+    let delegate = ScreenSharingPeerDelegate()
+    let configuration = RTCConfiguration()
+    configuration.sdpSemantics = .unifiedPlan
+    let connection = try #require(
+      factory.peerConnection(
+        with: configuration, constraints: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil),
+        delegate: delegate))
+    return DelegateFixture(factory: factory, connection: connection, delegate: delegate)
   }
 
   @Test func theDelegateNamesEveryConnectionStateAndReportsGatheringOnlyWhenComplete() throws {

@@ -54,7 +54,7 @@ final class ComputerUseRemotePreviewConnection {
     backend = .native(
       client: client, workspaceId: workspaceId, paneId: paneId,
       sleep: { try await Task.sleep(for: $0) },
-      makeSession: { try ScreenSharingReceiver.process(connectivity: $0) },
+      makeSession: { try await ScreenSharingReceiver.process(connectivity: $0) },
       makeSurface: { [weak self] session in
         let surface = try ComputerUseLivePreviewSurface(mailbox: session.frames, metrics: session.metrics)
         self?.latestSurface = surface

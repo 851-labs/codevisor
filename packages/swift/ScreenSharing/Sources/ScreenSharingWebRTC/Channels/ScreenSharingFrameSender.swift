@@ -6,8 +6,10 @@ import ScreenSharing
 /// Capture feeds WebRTC directly on its capture queue. The lock serializes
 /// admission with shutdown; no per-frame tasks accumulate on the main actor.
 public final class ScreenSharingFrameSender: ScreenSharingFrameSink, @unchecked Sendable {
-  private let source: RTCVideoSource
-  private let capturer: RTCVideoCapturer
+  /// The WebRTC source and its capturer, until `stop()` hands them to `releaseQueue`: they
+  /// retain the peer's factory, whose release must never fall to the main thread.
+  private var media: (source: RTCVideoSource, capturer: RTCVideoCapturer)?
+  private let releaseQueue: DispatchQueue?
   private let metrics: ScreenSharingMetrics
   private let idleMonitor: ScreenSharingSourceIdleMonitor
   private let lock = NSLock()
@@ -17,11 +19,16 @@ public final class ScreenSharingFrameSender: ScreenSharingFrameSink, @unchecked 
   private var expectedSize: (width: Int, height: Int)?
   private var onActivity: (@Sendable () -> Void)?
 
-  init(source: RTCVideoSource, metrics: ScreenSharingMetrics, idleMonitor: ScreenSharingSourceIdleMonitor) {
-    self.source = source
+  /// `releaseQueue` (the peer's transport queue) is where `stop()` releases the source; nil
+  /// releases it in place.
+  init(
+    source: RTCVideoSource, metrics: ScreenSharingMetrics, idleMonitor: ScreenSharingSourceIdleMonitor,
+    releaseQueue: DispatchQueue? = nil
+  ) {
+    media = (source, RTCVideoCapturer(delegate: source))
     self.metrics = metrics
     self.idleMonitor = idleMonitor
-    capturer = RTCVideoCapturer(delegate: source)
+    self.releaseQueue = releaseQueue
   }
 
   /// Invoked once per idle-to-active transition, outside the sender's lock.
@@ -65,7 +72,8 @@ public final class ScreenSharingFrameSender: ScreenSharingFrameSink, @unchecked 
       if refreshFrames.isHolding { metrics.increment("refreshCacheReleases") }
       refreshFrames.clear()
       expectedSize = (configuration.width, configuration.height)
-      source.adaptOutputFormat(
+      // Not a proxied call: the adapter is updated in place, under its own lock.
+      media?.source.adaptOutputFormat(
         toWidth: Int32(configuration.width), height: Int32(configuration.height),
         fps: Int32(configuration.framesPerSecond))
     }
@@ -89,18 +97,27 @@ public final class ScreenSharingFrameSender: ScreenSharingFrameSink, @unchecked 
   public func suspendCaptureDelivery() { lock.withLock { captureSuspended = true } }
 
   func stop() {
-    lock.withLock {
+    let released = lock.withLock {
       active = false
       if refreshFrames.isHolding { metrics.increment("refreshCacheReleases") }
       refreshFrames.clear()
       onActivity = nil
+      defer { media = nil }
+      return media.map { ReleasedMedia(source: $0.source, capturer: $0.capturer) }
     }
+    if let released, let releaseQueue { releaseQueue.async { withExtendedLifetime(released) {} } }
+  }
+
+  private struct ReleasedMedia: @unchecked Sendable {
+    let source: RTCVideoSource
+    let capturer: RTCVideoCapturer
   }
 
   /// Whether the one-frame cache currently owns a buffer (diagnostic).
   public var isHoldingCachedFrame: Bool { lock.withLock { refreshFrames.isHolding } }
 
   private func submit(_ frame: ScreenSharingVideoFrame) {
+    guard let (source, capturer) = media else { return }
     source.capturer(
       capturer,
       didCapture: RTCVideoFrame(

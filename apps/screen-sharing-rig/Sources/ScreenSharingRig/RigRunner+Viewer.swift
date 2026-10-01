@@ -57,7 +57,7 @@
       var options = ScreenSharingPeerOptions()
       options.useLowLatencyRateControl = useLowLatencyRateControl
       options.codec = configuration.codec
-      let peer = try ScreenSharingReceiver(configuration: configuration.video, metrics: metrics, options: options)
+      let peer = try await ScreenSharingReceiver(configuration: configuration.video, metrics: metrics, options: options)
       let session = RigSession(id: UUID().uuidString.lowercased(), peer: peer, metrics: metrics)
       self.session = session
       // The host's sound (851-2379), silent here: the rig measures it, it doesn't play it.

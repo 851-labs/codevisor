@@ -4,7 +4,7 @@ extension ScreenSharingPeer {
   /// ordering contract (trials pinned strictly before any RTC object exists) can be exercised over a controlled
   /// factory boundary in tests without a fake initializer ever reaching a real factory.
   @discardableResult
-  static func bootstrapTrials(
+  nonisolated static func bootstrapTrials(
     _ trials: ScreenSharingFieldTrials = .process, publishingInto metrics: ScreenSharingMetrics
   ) -> ScreenSharingFieldTrials.Selection {
     let installed = trials.ensureInstalled()

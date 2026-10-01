@@ -20,7 +20,7 @@ extension ScreenSharingReceiver: NativeScreenSharingMediaSession {
   /// once per process and its field trials are installed (or proven installed)
   /// BEFORE the peer exists, so both roles in one app process agree. A conflict
   /// with a selection already installed by the host role throws here.
-  static func process(connectivity: ServerScreenSharingConnectivity?) throws -> ScreenSharingReceiver {
+  static func process(connectivity: ServerScreenSharingConnectivity?) async throws -> ScreenSharingReceiver {
     let profile = try ScreenSharingDiagnosticProfile.process()
     try ScreenSharingFieldTrials.process.install(profile: profile)
     let metrics = ScreenSharingMetrics()
@@ -31,6 +31,7 @@ extension ScreenSharingReceiver: NativeScreenSharingMediaSession {
         "diagnosticProfileRenderer",
         "arrival rendering, \(profile.maximumDrawableCount) drawables, off-main preparation")
     }
-    return try ScreenSharingReceiver(configuration: .init(), metrics: metrics, connectivity: connectivity?.native())
+    return try await ScreenSharingReceiver(
+      configuration: .init(), metrics: metrics, connectivity: connectivity?.native())
   }
 }

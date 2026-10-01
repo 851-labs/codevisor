@@ -29,18 +29,23 @@ struct ScreenSharingDataChannelTests {
     private(set) var viewerAvailability: [Bool] = []
     private(set) var hostAvailability: [Bool] = []
 
-    init() throws {
-      harness = try ScreenSharingPeerLoopbackTests.Harness()
+    init() async throws {
+      harness = try await ScreenSharingPeerLoopbackTests.Harness()
       let decode: @Sendable (Data) throws -> Data = { data in
         guard data.first != poisonByte else {
           throw ScreenSharingError.invalid("Undecodable packet.")
         }
         return data
       }
-      host = try ScreenSharingDataChannel<Data>(
-        connection: harness.sender.connection, id: 14, label: "codevisor.test.v1", encode: { $0 }, decode: decode)
-      viewer = try ScreenSharingDataChannel<Data>(
-        connection: harness.receiver.connection, id: 14, label: "codevisor.test.v1", encode: { $0 }, decode: decode)
+      // Created on each peer's transport queue, as the peer creates its own channels.
+      host = try await harness.sender.transport.perform { connection in
+        try ScreenSharingDataChannel<Data>(
+          connection: connection, id: 14, label: "codevisor.test.v1", encode: { $0 }, decode: decode)
+      }
+      viewer = try await harness.receiver.transport.perform { connection in
+        try ScreenSharingDataChannel<Data>(
+          connection: connection, id: 14, label: "codevisor.test.v1", encode: { $0 }, decode: decode)
+      }
       viewer.onMessage = { [self] data in
         received.append(data)
         delivered.signal()
@@ -72,7 +77,7 @@ struct ScreenSharingDataChannelTests {
   }
 
   @Test func everySendArrivesAsOneWholeMessageInTheOrderItWasWritten() async throws {
-    let pair = try Pair()
+    let pair = try await Pair()
     defer { pair.close() }
     try await pair.open()
     // Distinct lengths, including one that spans more than a single SCTP chunk:
@@ -92,7 +97,7 @@ struct ScreenSharingDataChannelTests {
   /// The host's audio sends from the capture's queue: `send` is safe from any thread, and the
   /// channel's queue keeps the order sends were made in.
   @Test func sendsFromAnotherThreadArriveInTheOrderTheyWereMade() async throws {
-    let pair = try Pair()
+    let pair = try await Pair()
     defer { pair.close() }
     try await pair.open()
     let host = pair.host
@@ -110,7 +115,7 @@ struct ScreenSharingDataChannelTests {
   /// The viewer's audio is taken on the channel's queue and never waits for the main actor;
   /// everything else on the channel still reaches `onMessage` on main, in order.
   @Test func aConsumerTakesItsMessagesOffMainAndTheRestReachMainInOrder() async throws {
-    let pair = try Pair()
+    let pair = try await Pair()
     defer { pair.close() }
     let taken = OffMainLog()
     pair.viewer.deliverOffMain { data in
@@ -129,7 +134,7 @@ struct ScreenSharingDataChannelTests {
   }
 
   @Test func aPacketThatCannotBeDecodedClosesTheReceivingChannelAndDropsTheRest() async throws {
-    let pair = try Pair()
+    let pair = try await Pair()
     defer { pair.close() }
     try await pair.open()
     #expect(pair.host.send(Data([1])))
@@ -146,7 +151,7 @@ struct ScreenSharingDataChannelTests {
   }
 
   @Test func aPacketOverThePerPacketAdmissionLimitClosesTheReceivingChannel() async throws {
-    let pair = try Pair()
+    let pair = try await Pair()
     defer { pair.close() }
     try await pair.open()
     let admissible = Data(repeating: 1, count: ScreenSharingControlMessage.maximumBytes)
@@ -161,7 +166,7 @@ struct ScreenSharingDataChannelTests {
   }
 
   @Test func aMessageLargerThanTheSendBudgetIsRefusedAndClosesTheSendingChannel() async throws {
-    let pair = try Pair()
+    let pair = try await Pair()
     defer { pair.close() }
     try await pair.open()
     #expect(!pair.host.send(Data(repeating: 1, count: 16 * 1_024 + 1)))

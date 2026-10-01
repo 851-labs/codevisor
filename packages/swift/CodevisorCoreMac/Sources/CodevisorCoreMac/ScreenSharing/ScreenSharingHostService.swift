@@ -148,10 +148,23 @@ final class ScreenSharingHostService {
         // Parsed once per process (failures cached too); an unknown value fails the request rather than selecting
         // the candidate, and both roles in this app process read the same answer.
         let profile = try ScreenSharingDiagnosticProfile.process()
-        let session = try ScreenSharingHostSession(
+        // The peer is built off the main thread; the request may be stopped or overtaken meanwhile.
+        let session = try await ScreenSharingHostSession(
           request: request, display: display.description, displayID: display.id,
           connectivity: connectivity.make(viewerId: request.viewerId), profile: profile)
-        guard lease.reserve(session.owner, now: ProcessInfo.processInfo.systemUptime) else {
+        if Task.isCancelled {
+          session.peer.close()
+          throw CancellationError()
+        }
+        guard !isShutdown, pendingStarts[attempt] != nil else {
+          session.peer.close()
+          return .init(status: "stopped")
+        }
+        if let replacement, !replacement.isValid(revision: stopGeneration, now: ProcessInfo.processInfo.systemUptime) {
+          session.peer.close()
+          return .init(status: "stopped", message: "Screen sharing ended on the host Mac.")
+        }
+        guard current == nil, lease.reserve(session.owner, now: ProcessInfo.processInfo.systemUptime) else {
           session.peer.close()
           return .init(status: "busy", message: "This Mac is already sharing with another viewer.")
         }

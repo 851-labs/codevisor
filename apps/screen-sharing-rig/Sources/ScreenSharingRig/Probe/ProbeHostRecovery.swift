@@ -66,7 +66,8 @@
         servers: reply.connectivity?.servers.map {
           try ScreenSharingICEServer(urls: $0.urls, username: $0.username, credential: $0.credential)
         } ?? [], relayOnly: reply.connectivity?.relayOnly ?? false)
-      let receiver = try ScreenSharingReceiver(configuration: .init(), metrics: metrics, connectivity: connectivity)
+      let receiver = try await ScreenSharingReceiver(
+        configuration: .init(), metrics: metrics, connectivity: connectivity)
       peer = receiver
       let view = try ScreenSharingMetalView(mailbox: receiver.mailbox, metrics: metrics)
       self.view = view

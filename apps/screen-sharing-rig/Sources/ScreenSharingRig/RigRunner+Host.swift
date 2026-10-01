@@ -90,7 +90,7 @@
       options.staticCodecRate = configuration.tuning.staticCodecRate
       options.keyframeIntervalSeconds = configuration.tuning.keyframeIntervalSeconds ?? 2
       options.transportCeilingBps = configuration.tuning.transportCeilingBps
-      let peer = try ScreenSharingSender(configuration: configuration.video, metrics: metrics, options: options)
+      let peer = try await ScreenSharingSender(configuration: configuration.video, metrics: metrics, options: options)
       let session = RigSession(id: offer.sessionID, peer: peer, metrics: metrics)
       self.session = session
       peerName = offer.name

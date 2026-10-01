@@ -27,8 +27,8 @@ struct ScreenSharingHDRLoopbackTests {
   func aTenBitCaptureReachesTheViewerAsTenBitAfterTheViewerAskedForHDR() async throws {
     let configuration = try ScreenSharingVideoConfiguration(width: 320, height: 192)
     let hostMetrics = ScreenSharingMetrics()
-    let sender = try ScreenSharingSender(configuration: configuration, metrics: hostMetrics)
-    let receiver = try ScreenSharingReceiver(configuration: configuration, metrics: ScreenSharingMetrics())
+    let sender = try await ScreenSharingSender(configuration: configuration, metrics: hostMetrics)
+    let receiver = try await ScreenSharingReceiver(configuration: configuration, metrics: ScreenSharingMetrics())
     defer {
       sender.close()
       receiver.close()

@@ -1,4 +1,5 @@
 import CoreGraphics
+import CodevisorTestSupport
 import Foundation
 import ScreenSharing
 import Testing
@@ -134,6 +135,23 @@ struct ComputerUseLivePreviewHostTests {
     #expect(await host.handle(wrong).status == "failed")
     #expect(world.peers.isEmpty)
   }
+
+  /// A peer is built off the main thread, so the host can shut down while one is being built:
+  /// the late peer is closed and never answers or receives frames.
+  @Test("Closes a peer that finishes building after shutdown")
+  func shutdownWhileBuilding() async {
+    let world = World()
+    world.activityState = .active
+    world.peerGate = TestSignal()
+    let host = world.host()
+    let start = Task { await host.handle(world.request(.start, offer: Self.offer)) }
+    await world.peerRequested.wait()
+    host.shutdown()
+    world.peerGate?.signal()
+    #expect(await start.value.status == "stopped")
+    #expect(world.peers.count == 1 && world.peers.allSatisfy(\.closed))
+    #expect(world.attached.isEmpty && host.sessionCount == 0)
+  }
 }
 
 @MainActor
@@ -141,6 +159,9 @@ private final class World {
   var access = true
   var activityState: ComputerUseLivePreview.State?
   var clock: TimeInterval = 100
+  /// When set, building a peer waits for it (after signalling `peerRequested`).
+  var peerGate: TestSignal?
+  let peerRequested = TestSignal()
   var peers: [FakePeer] = []
   var attached: [(sessionID: String, sink: any ComputerUseFrameSink, token: UUID)] = []
   var detached: [UUID] = []
@@ -177,6 +198,8 @@ private final class World {
         },
         detach: { [unowned self] _, token in detached.append(token) },
         makePeer: { [unowned self] _, _ in
+          peerRequested.signal()
+          if let peerGate { await peerGate.wait() }
           let peer = FakePeer()
           peers.append(peer)
           return peer
