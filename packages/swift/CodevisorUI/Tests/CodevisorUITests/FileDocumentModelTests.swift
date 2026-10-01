@@ -210,13 +210,60 @@ struct FileDocumentModelTests {
       path: "/project/file.md", draftURL: url, sleep: { try await clock.sleep(for: $0) },
       read: { await fixture.read() },
       write: { try await fixture.write($0, version: $1) })
-    #expect(recovered.text == "recovered edits")
+    // The backup loads off the main thread; refreshing right away must
+    // still compare the machine's copy against it, not replace it.
     await recovered.refresh()
     #expect(recovered.text == "recovered edits")
     #expect(recovered.conflict?.content == "external edits")
     recovered.keepEdits()
     await recovered.save()
+    await FileDocumentModel.drafts.flush()
     #expect(!FileManager.default.fileExists(atPath: url.path))
+  }
+
+  @Test func undoingBackToTheSavedTextLeavesTheDocumentClean() async {
+    let clock = TestClock()
+    let fixture = DocumentFixture()
+    let document = FileDocumentModel(
+      path: "/project/file.md", sleep: { try await clock.sleep(for: $0) },
+      read: { await fixture.read() }, write: { try await fixture.write($0, version: $1) })
+    await document.refresh()
+    document.edit("originaX")
+    #expect(document.isDirty)
+    document.edit("original")
+    #expect(!document.isDirty)
+    document.edit("original plus more")
+    #expect(document.isDirty)
+    document.edit("original")
+    #expect(!document.isDirty)
+    #expect(clock.pendingCount == 0)
+  }
+
+  @Test func backupsWrittenOffTheMainThreadReachTheNextDocument() async throws {
+    let clock = TestClock()
+    let fixture = DocumentFixture()
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let url = directory.appendingPathComponent("draft.json")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let document = FileDocumentModel(
+      path: "/project/file.md", draftURL: url, sleep: { try await clock.sleep(for: $0) },
+      read: { await fixture.read() }, write: { try await fixture.write($0, version: $1) })
+    await document.refresh()
+    // A typing burst: every backup is requested; the queue keeps the last.
+    for length in 1...20 {
+      document.edit(String(repeating: "x", count: length))
+      document.persistDraft()
+    }
+    // Opening the file again (an evicted cache entry, a new window) loads
+    // after the pending writes, so it sees the newest backup.
+    let reopened = FileDocumentModel(
+      path: "/project/file.md", draftURL: url, sleep: { try await clock.sleep(for: $0) },
+      read: { await fixture.read() }, write: { try await fixture.write($0, version: $1) })
+    await awaitObserved { reopened.isDirty }
+    #expect(reopened.text == String(repeating: "x", count: 20))
+    #expect(document.draftError == nil)
+    clock.advance(by: .milliseconds(500))
+    await awaitObserved { !document.isDirty && !document.isSaving }
   }
 
   @Test func autosaveWaitsForAPauseInTyping() async {
@@ -271,6 +318,7 @@ struct FileDocumentModelTests {
     await awaitObserved { document.error != nil && !document.isSaving }
     #expect(document.isDirty)
     #expect(await fixture.read().content == "original")
+    await FileDocumentModel.drafts.flush()
     let draft = try JSONDecoder().decode(FileDocumentModel.Draft.self, from: Data(contentsOf: url))
     #expect(draft.text == "offline edits")
     await document.refresh()
@@ -279,6 +327,7 @@ struct FileDocumentModelTests {
     #expect(await fixture.read().content == "offline edits")
     #expect(document.error == nil)
     #expect(!document.isDirty)
+    await FileDocumentModel.drafts.flush()
     #expect(!FileManager.default.fileExists(atPath: url.path))
   }
 
@@ -299,13 +348,14 @@ struct FileDocumentModelTests {
     let recovered = FileDocumentModel(
       path: "/project/file.md", draftURL: url, sleep: { try await clock.sleep(for: $0) },
       read: { await fixture.read() }, write: { try await fixture.write($0, version: $1) })
-    #expect(recovered.isDirty)
+    await awaitObserved { recovered.isDirty }
     #expect(await fixture.writes.isEmpty)
     await recovered.refresh()
     await clock.waitForSleep(.milliseconds(500))
     clock.advance(by: .milliseconds(500))
     await awaitObserved { !recovered.isDirty && !recovered.isSaving }
     #expect(await fixture.read().content == "recovered edits")
+    await FileDocumentModel.drafts.flush()
     #expect(!FileManager.default.fileExists(atPath: url.path))
   }
 
