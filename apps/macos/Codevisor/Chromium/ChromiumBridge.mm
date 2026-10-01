@@ -14,10 +14,37 @@
 #include <set>
 #include <optional>
 #include <cmath>
+#include <climits>
+#include <string_view>
 
 namespace {
 NSString *String(const CefString& value) { return [NSString stringWithUTF8String:value.ToString().c_str()] ?: @""; }
 CefString String(NSString *value) { return CefString(value.UTF8String ?: ""); }
+
+// DevTools messages arrive on the CEF UI thread, which is the main thread here,
+// and can be many megabytes (screenshots). Route them without parsing: Chromium
+// serializes a reply's "id" first (crdtp's Response/ProtocolError). CEF's own
+// ProtocolParser relies on the same layout.
+std::string_view Message(const void *bytes, size_t length) { return {static_cast<const char *>(bytes), length}; }
+std::optional<int> LeadingMessageId(std::string_view message) {
+  constexpr std::string_view prefix = "{\"id\":";
+  if (!message.starts_with(prefix)) return std::nullopt;
+  size_t index = prefix.size();
+  bool negative = index < message.size() && message[index] == '-';
+  if (negative) ++index;
+  size_t digits = index;
+  long long value = 0;
+  while (index < message.size() && index - digits < 10 && message[index] >= '0' && message[index] <= '9') {
+    value = value * 10 + (message[index++] - '0');
+  }
+  if (index == digits || index >= message.size() || (message[index] != ',' && message[index] != '}')) return std::nullopt;
+  value = negative ? -value : value;
+  if (value < INT_MIN || value > INT_MAX) return std::nullopt;
+  return static_cast<int>(value);
+}
+NSData *ProtocolError(NSString *message) {
+  return [NSJSONSerialization dataWithJSONObject:@{@"error": @{@"message": message}} options:0 error:nil];
+}
 }
 
 class ProtocolObserver;
@@ -365,28 +392,24 @@ class ContextInspection final : public CefDevToolsMessageObserver {
 class ProtocolObserver final : public CefDevToolsMessageObserver {
  public:
   explicit ProtocolObserver(CVChromiumView *view) : view_(view) {}
-  std::map<int, void (^)(NSString *)> pending;
+  std::map<int, void (^)(NSData *)> pending;
   bool OnDevToolsMessage(CefRefPtr<CefBrowser>, const void *bytes, size_t length) override {
-    NSData *data = [NSData dataWithBytes:bytes length:length];
-    NSDictionary *message = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
-    NSNumber *number = message[@"id"];
-    if (number) {
-      auto found = pending.find(number.intValue);
-      if (found != pending.end()) {
-        auto callback = found->second;
-        pending.erase(found);
-        NSString *reply = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-        dispatch_async(dispatch_get_main_queue(), ^{ callback(reply); });
-      }
-    } else if (view_.protocolEvent) {
-      NSString *event = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-      view_.protocolEvent(event);
+    auto message = Message(bytes, length);
+    if (auto replyId = LeadingMessageId(message)) {
+      // Replies to DevTools and context-menu requests belong to their observers.
+      auto found = pending.find(*replyId);
+      if (found == pending.end()) return true;
+      auto callback = found->second;
+      pending.erase(found);
+      callback([NSData dataWithBytes:bytes length:length]);
+    } else if (auto handler = view_.protocolEvent) {
+      handler([NSData dataWithBytes:bytes length:length]);
     }
     return true;
   }
   void Close() {
     auto callbacks = std::move(pending);
-    for (auto& entry : callbacks) entry.second(@"{\"error\":{\"message\":\"Browser closed\"}}");
+    for (auto& entry : callbacks) entry.second(ProtocolError(@"Browser closed"));
   }
  private:
   __weak CVChromiumView *view_;
@@ -705,22 +728,33 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
   _browser->GetHost()->NotifyMoveOrResizeStarted();
 }
 - (BOOL)browserIsReady { return _browser && !_closed; }
-- (void)sendProtocol:(NSString *)json completion:(void (^)(NSString *))completion {
-  if (!_browser || _closed) { completion(@"{\"error\":{\"message\":\"Browser is not ready\"}}"); return; }
+- (void)sendProtocolMethod:(NSString *)method params:(NSData *)params sessionId:(NSString *)sessionId
+                completion:(void (^)(NSData *))completion {
+  if (!_browser || _closed) { completion(ProtocolError(@"Browser is not ready")); return; }
   if (!_protocolObserver) {
     _protocolObserver = new ProtocolObserver(self);
     _protocolRegistration = _browser->GetHost()->AddDevToolsMessageObserver(_protocolObserver);
   }
-  NSMutableDictionary *message = [[NSJSONSerialization JSONObjectWithData:[json dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil] mutableCopy];
-  if (![message[@"method"] isKindOfClass:NSString.class]) { completion(@"{\"error\":{\"message\":\"Invalid browser command\"}}"); return; }
   static int nextRequest = 1000000000;
   int request = ++nextRequest;
-  message[@"id"] = @(request);
+  // Wrap the caller's params in the envelope instead of parsing them.
+  NSData *name = [NSJSONSerialization dataWithJSONObject:method options:NSJSONWritingFragmentsAllowed error:nil];
+  NSData *session = sessionId ? [NSJSONSerialization dataWithJSONObject:sessionId options:NSJSONWritingFragmentsAllowed error:nil] : nil;
+  NSMutableData *message = [NSMutableData dataWithCapacity:params.length + name.length + session.length + 64];
+  [message appendData:[[NSString stringWithFormat:@"{\"id\":%d,\"method\":", request] dataUsingEncoding:NSUTF8StringEncoding]];
+  [message appendData:name];
+  [message appendBytes:",\"params\":" length:10];
+  if (params.length) [message appendData:params];
+  else [message appendBytes:"{}" length:2];
+  if (session) {
+    [message appendBytes:",\"sessionId\":" length:13];
+    [message appendData:session];
+  }
+  [message appendBytes:"}" length:1];
   _protocolObserver->pending[request] = [completion copy];
-  NSData *data = [NSJSONSerialization dataWithJSONObject:message options:0 error:nil];
-  if (!_browser->GetHost()->SendDevToolsMessage(data.bytes, data.length)) {
+  if (!_browser->GetHost()->SendDevToolsMessage(message.bytes, message.length)) {
     _protocolObserver->pending.erase(request);
-    completion(@"{\"error\":{\"message\":\"Browser rejected command\"}}");
+    completion(ProtocolError(@"Browser rejected command"));
   }
 }
 

@@ -27,8 +27,17 @@ typedef NS_ENUM(NSInteger, CVBrowserLinkDestination) {
 @property(nonatomic, copy, nullable) void (^browserReady)(void);
 @property(nonatomic, copy, nullable) void (^faviconChanged)(NSData * _Nullable image);
 @property(nonatomic, copy, nullable) void (^viewportScaleChanged)(CGFloat scale);
-@property(nonatomic, copy, nullable) void (^protocolEvent)(NSString *json);
-- (void)sendProtocol:(NSString *)json completion:(void (^)(NSString *reply))completion;
+/// Receives every DevTools protocol event of this page as raw JSON bytes, in
+/// arrival order, on the CEF UI (main) thread. Hand the bytes off; parse elsewhere.
+@property(nonatomic, copy, nullable) void (^protocolEvent)(NSData *message);
+/// Sends one protocol command without parsing it. `params` must be the JSON
+/// bytes of an object. `completion` receives the raw reply exactly once on the
+/// CEF UI (main) thread, in order with `protocolEvent`, possibly before this
+/// method returns; it must only hand the bytes off.
+- (void)sendProtocolMethod:(NSString *)method
+                    params:(nullable NSData *)params
+                 sessionId:(nullable NSString *)sessionId
+                completion:(void (^)(NSData *reply))completion NS_SWIFT_DISABLE_ASYNC;
 @property(nonatomic, readonly) BOOL browserIsReady;
 @property(nonatomic, readonly) BOOL hasOpenDevTools;
 @property(nonatomic, readonly) BOOL hasPageFocus;

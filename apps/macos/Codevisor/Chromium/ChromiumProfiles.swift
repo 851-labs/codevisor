@@ -2,26 +2,29 @@ import AppKit
 import CodevisorClient
 import CodevisorUI
 
-@MainActor
+typealias ChromiumProtocolError = BrowserProtocolError
+
 extension CVChromiumView {
-  func cdp(_ method: String, _ params: [String: Any] = [:], sessionId: String? = nil) async throws -> [String: Any] {
-    var message: [String: Any] = ["method": method, "params": params]
-    if let sessionId { message["sessionId"] = sessionId }
-    let json = String(decoding: try JSONSerialization.data(withJSONObject: message), as: UTF8.self)
-    let reply: String = await withCheckedContinuation { continuation in
-      sendProtocol(json) { continuation.resume(returning: $0) }
+  /// Hands one pre-encoded command to CEF, which accepts it only on its UI
+  /// (main) thread, and returns the raw reply. Nothing is parsed here.
+  func protocolReply(_ method: String, params: Data? = nil, sessionId: String? = nil) async -> Data {
+    await withCheckedContinuation { continuation in
+      sendProtocolMethod(method, params: params, sessionId: sessionId) { continuation.resume(returning: $0) }
     }
-    let object = try JSONSerialization.jsonObject(with: Data(reply.utf8)) as? [String: Any] ?? [:]
-    if let error = object["error"] as? [String: Any] {
-      throw ChromiumProtocolError(error["message"] as? String ?? "Browser command failed")
-    }
-    return object["result"] as? [String: Any] ?? [:]
   }
-}
-struct ChromiumProtocolError: LocalizedError {
-  var message: String
-  init(_ message: String) { self.message = message }
-  var errorDescription: String? { message }
+
+  /// Encodes and decodes on the caller's executor; only the hand-off to CEF
+  /// runs on the main actor. Use `protocolReply` for large results.
+  nonisolated func cdp(
+    _ method: String, _ params: [String: Any] = [:], sessionId: String? = nil
+  ) async throws
+    -> [String: Any]
+  {
+    let body = try JSONSerialization.data(withJSONObject: params)
+    let reply = await protocolReply(method, params: body, sessionId: sessionId)
+    let result = try BrowserProtocolMessage.result(ofReply: reply)
+    return try JSONSerialization.jsonObject(with: result) as? [String: Any] ?? [:]
+  }
 }
 
 @MainActor

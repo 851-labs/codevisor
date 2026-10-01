@@ -1,14 +1,25 @@
 import AppKit
 import CodevisorClient
+import CodevisorUI
 import Foundation
 import Network
 import OSLog
+import Synchronization
 
 /// A 0600 Unix socket in this installation's data namespace. It is never exposed
 /// through the HTTP server, cloud relay, or a client on a different machine.
+///
+/// Threading: socket I/O, line framing, JSON, and per-session routing for every
+/// client run on `queue`. The main actor owns the pane registry and is used only
+/// where AppKit or CEF require it: CEF accepts commands only on its UI thread
+/// (the main thread here) and delivers replies and events there, which are
+/// copied and handed to `queue` in arrival order without being parsed. Page
+/// commands and their (possibly multi-megabyte) results are forwarded as bytes,
+/// with only the request `id` and `sessionId` rewritten.
 @MainActor
 final class ChromiumAutomationBridge {
   static let shared = ChromiumAutomationBridge()
+  nonisolated static let queue = DispatchSerialQueue(label: "com.codevisor.browser-automation", qos: .userInitiated)
   private final class WeakModel {
     weak var value: ChromiumBrowserModel?; init(_ value: ChromiumBrowserModel) { self.value = value }
   }
@@ -19,11 +30,14 @@ final class ChromiumAutomationBridge {
   private var groups: [WeakGroup] = []
   private let log = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Codevisor", category: "BrowserAutomation")
   private var listener: NWListener?
-  private var connections: [UUID: ChromiumAutomationConnection] = [:]
   private var token = ""
+  private nonisolated let hub = ChromiumAutomationHub()
+  /// Models each connection controls, readable synchronously by page retention.
+  nonisolated let controlled = Mutex<[UUID: Set<ObjectIdentifier>]>([:])
 
   func isControlling(_ model: ChromiumBrowserModel) -> Bool {
-    connections.values.contains { $0.controls(model) }
+    let identifier = ObjectIdentifier(model)
+    return controlled.withLock { $0.values.contains { $0.contains(identifier) } }
   }
 
   func addGroup(_ group: PaneGroupModel) {
@@ -36,35 +50,49 @@ final class ChromiumAutomationBridge {
     let id = model.paneId.uuidString.lowercased()
     let created = models[id]?.value == nil
     models[id] = WeakModel(model)
-    model.webView?.protocolEvent = { [weak self, weak model] json in
-      guard let self, let model else { return }
-      for connection in self.connections.values { connection.event(json, model: model) }
+    let hub = hub
+    model.webView?.protocolEvent = { [weak model] message in
+      guard let model else { return }
+      Self.queue.async { hub.assumeIsolated { $0.event(message, model: model) } }
     }
-    if created { broadcast("Target.targetCreated", ["targetInfo": info(model)]) }
+    if created { broadcast(.targetCreated(info(model))) }
   }
   func unregister(_ id: UUID) {
     if models.removeValue(forKey: id.uuidString.lowercased()) != nil {
-      broadcast("Target.targetDestroyed", ["targetId": id.uuidString.lowercased()])
+      broadcast(.targetDestroyed(id.uuidString.lowercased()))
     }
   }
-  private func broadcast(_ method: String, _ params: [String: Any]) {
-    for connection in connections.values where connection.authenticated {
-      connection.send(["method": method, "params": params])
-    }
+  private func broadcast(_ event: ChromiumAutomationHub.TargetEvent) {
+    let hub = hub
+    Self.queue.async { hub.assumeIsolated { $0.broadcast(event) } }
   }
-  fileprivate func info(_ model: ChromiumBrowserModel) -> [String: Any] {
-    [
-      "targetId": model.paneId.uuidString.lowercased(), "type": "page", "title": model.title,
-      "url": model.url?.absoluteString ?? "about:blank", "attached": false,
-    ]
+  fileprivate func info(_ model: ChromiumBrowserModel) -> ChromiumTargetInfo {
+    ChromiumTargetInfo(
+      targetId: model.paneId.uuidString.lowercased(), title: model.title,
+      url: model.url?.absoluteString ?? "about:blank")
   }
   fileprivate func model(_ id: String) -> ChromiumBrowserModel? { models[id.lowercased()]?.value }
   fileprivate var liveModels: [ChromiumBrowserModel] { models.values.compactMap { $0.value } }
-  fileprivate var targets: [[String: Any]] { liveModels.map(info) }
-  fileprivate func group(_ session: String) -> PaneGroupModel? {
+  fileprivate var targets: [ChromiumTargetInfo] { liveModels.map(info) }
+  private func group(_ session: String) -> PaneGroupModel? {
     groups.compactMap { $0.value }.first { $0.canHostBrowserAutomation(sessionId: session) }
   }
-  fileprivate func remove(_ id: UUID) { connections[id] = nil }
+  fileprivate func isAvailable(_ session: String) -> Bool { group(session) != nil }
+  fileprivate func createTarget(session: String, url: String) -> ChromiumBrowserModel? {
+    guard let model = group(session)?.createBrowserTab?(url) else { return nil }
+    register(model)
+    return model
+  }
+  fileprivate func activate(_ targetId: String) -> Bool {
+    guard let model = model(targetId) else { return false }
+    model.onSelect?()
+    return true
+  }
+  fileprivate func close(_ targetId: String) -> Bool {
+    guard let model = model(targetId) else { return false }
+    model.onClose?()
+    return true
+  }
 
   private func start() {
     guard listener == nil else { return }
@@ -86,13 +114,12 @@ final class ChromiumAutomationBridge {
       parameters.requiredLocalEndpoint = .unix(path: path)
       let server = try NWListener(using: parameters)
       let secret = token
+      let hub = hub
       server.newConnectionHandler = { [weak self] connection in
-        Task { @MainActor [weak self] in
-          guard let self else { connection.cancel(); return }
-          let client = ChromiumAutomationConnection(connection: connection, bridge: self, token: secret)
-          self.connections[client.id] = client
-          client.start()
-        }
+        guard let self else { connection.cancel(); return }
+        let client = ChromiumAutomationConnection(connection: connection, bridge: self, hub: hub, token: secret)
+        hub.assumeIsolated { $0.add(client) }
+        client.assumeIsolated { $0.start() }
       }
       server.stateUpdateHandler = { [weak self, weak server] state in
         Task { @MainActor [weak self, weak server] in
@@ -106,157 +133,289 @@ final class ChromiumAutomationBridge {
         }
       }
       listener = server
-      server.start(queue: .main)
+      server.start(queue: Self.queue)
     } catch {
       log.error("Couldn’t start local browser automation: \(error.localizedDescription, privacy: .public)")
     }
   }
 }
 
-@MainActor
-private final class ChromiumAutomationConnection {
-  let id = UUID()
+nonisolated struct ChromiumTargetInfo: Sendable {
+  var targetId: String
+  var title: String
+  var url: String
+  var json: [String: Any] { ["targetId": targetId, "type": "page", "title": title, "url": url, "attached": false] }
+}
+
+extension ChromiumBrowserModel {
+  /// Viewport emulation goes through the pane so its scaled host view follows
+  /// the page. These commands are small; their params are decoded here.
+  fileprivate func automationViewport(_ method: String, params: Data?) async throws -> Data {
+    let params = params.flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] } ?? [:]
+    switch method {
+    case "Emulation.setDeviceMetricsOverride":
+      try await setViewport(params)
+      return Data("{}".utf8)
+    case "Emulation.clearDeviceMetricsOverride":
+      try await resetViewport()
+      return Data("{}".utf8)
+    default:
+      let result = try await readyView().cdp(method, params)
+      viewport?.touch = params["enabled"] as? Bool ?? false
+      return try JSONSerialization.data(withJSONObject: result)
+    }
+  }
+}
+
+/// Every connection, confined to the automation queue. Each browser event is
+/// scanned once here, then routed by each connection.
+private actor ChromiumAutomationHub {
+  nonisolated enum TargetEvent: Sendable {
+    case targetCreated(ChromiumTargetInfo)
+    case targetDestroyed(String)
+  }
+  nonisolated var unownedExecutor: UnownedSerialExecutor { ChromiumAutomationBridge.queue.asUnownedSerialExecutor() }
+  private var connections: [UUID: ChromiumAutomationConnection] = [:]
+
+  func add(_ connection: ChromiumAutomationConnection) { connections[connection.id] = connection }
+  func remove(_ id: UUID) { connections[id] = nil }
+
+  func event(_ data: Data, model: ChromiumBrowserModel) {
+    guard !connections.isEmpty, let message = BrowserProtocolMessage(data), let method = message.string("method")
+    else { return }
+    for connection in connections.values {
+      connection.assumeIsolated { $0.event(message, method: method, model: model) }
+    }
+  }
+
+  func broadcast(_ event: TargetEvent) {
+    let message: [String: Any] =
+      switch event {
+      case .targetCreated(let info): ["method": "Target.targetCreated", "params": ["targetInfo": info.json]]
+      case .targetDestroyed(let id): ["method": "Target.targetDestroyed", "params": ["targetId": id]]
+      }
+    guard let data = try? JSONSerialization.data(withJSONObject: message) else { return }
+    for connection in connections.values {
+      connection.assumeIsolated { if $0.authenticated { $0.send(data) } }
+    }
+  }
+}
+
+/// One validated request line. Only the routing members are decoded; page
+/// commands forward `params` as the client's bytes.
+private nonisolated struct ChromiumAutomationRequest {
+  var id: Data
+  var method: String?
+  var sessionId: String?
+  var params: [String: Any]
+  var rawParams: Data?
+
+  init?(_ line: Data) {
+    // A full parse rejects malformed requests, as CEF would drop them silently.
+    guard let object = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any],
+      let message = BrowserProtocolMessage(line)
+    else { return nil }
+    id = message.raw("id") ?? Data("0".utf8)
+    method = object["method"] as? String
+    sessionId = object["sessionId"] as? String
+    params = object["params"] as? [String: Any] ?? [:]
+    rawParams = object["params"] is [String: Any] ? message.raw("params") : nil
+  }
+}
+
+private actor ChromiumAutomationConnection {
+  private nonisolated struct Attachment {
+    var model: ChromiumBrowserModel
+    var native: String
+    var popup: Bool
+  }
+  private static let browserMethods: Set<String> = [
+    "Target.getTargets", "Target.createTarget", "Target.activateTarget", "Target.closeTarget",
+    "Target.attachToTarget", "Target.detachFromTarget", "Browser.close",
+  ]
+  private static let viewportMethods: Set<String> = [
+    "Emulation.setDeviceMetricsOverride", "Emulation.clearDeviceMetricsOverride", "Emulation.setTouchEmulationEnabled",
+  ]
+  private static let lineLimit = 64 * 1024 * 1024
+
+  nonisolated let id = UUID()
+  nonisolated var unownedExecutor: UnownedSerialExecutor { ChromiumAutomationBridge.queue.asUnownedSerialExecutor() }
   private let connection: NWConnection
-  private unowned let bridge: ChromiumAutomationBridge
+  private let bridge: ChromiumAutomationBridge
+  private let hub: ChromiumAutomationHub
   private let token: String
-  private var buffer = Data()
-  fileprivate var authenticated = false
+  private var lines = BrowserProtocolLineBuffer()
+  private(set) var authenticated = false
   private var session = ""
-  private var sessions: [String: (model: ChromiumBrowserModel, native: String, popup: Bool)] = [:]
+  private var sessions: [String: Attachment] = [:] {
+    didSet { publishControl() }
+  }
   private var nativeOwners: [String: ChromiumBrowserModel] = [:]
-  private var popupOwners: [String: ChromiumBrowserModel] = [:]
+  private var popupOwners: [String: ChromiumBrowserModel] = [:] {
+    didSet { publishControl() }
+  }
   private var childSessions: [String: ChromiumBrowserModel] = [:]
   private var closed = false
 
-  func controls(_ model: ChromiumBrowserModel) -> Bool {
-    !closed
-      && (sessions.values.contains { $0.model === model }
-        || popupOwners.values.contains { $0 === model })
+  init(connection: NWConnection, bridge: ChromiumAutomationBridge, hub: ChromiumAutomationHub, token: String) {
+    self.connection = connection; self.bridge = bridge; self.hub = hub; self.token = token
   }
 
-  init(connection: NWConnection, bridge: ChromiumAutomationBridge, token: String) {
-    self.connection = connection; self.bridge = bridge; self.token = token
+  private func publishControl() {
+    let id = id
+    let models =
+      closed
+      ? nil : Set(sessions.values.map { ObjectIdentifier($0.model) } + popupOwners.values.map(ObjectIdentifier.init))
+    bridge.controlled.withLock { $0[id] = models }
   }
+
   func start() {
     connection.stateUpdateHandler = { [weak self] state in
-      if case .failed = state { Task { @MainActor [weak self] in self?.close() } }
-      if case .cancelled = state { Task { @MainActor [weak self] in self?.close() } }
+      switch state {
+      case .failed, .cancelled: self?.assumeIsolated { $0.close() }
+      default: break
+      }
     }
-    connection.start(queue: .main)
+    connection.start(queue: ChromiumAutomationBridge.queue)
     receive()
   }
   private func close() {
     guard !closed else { return }
     closed = true
     connection.cancel()
-    for (_, attached) in sessions {
-      Task { _ = try? await attached.model.webView?.cdp("Target.detachFromTarget", ["sessionId": attached.native]) }
+    for attached in sessions.values {
+      let model = attached.model, native = attached.native
+      Task { @MainActor in _ = try? await model.webView?.cdp("Target.detachFromTarget", ["sessionId": native]) }
     }
     sessions.removeAll(); childSessions.removeAll()
-    bridge.remove(id)
+    hub.assumeIsolated { $0.remove(id) }
   }
   private func receive() {
     connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, ended, error in
-      Task { @MainActor [weak self] in
-        guard let self, !self.closed else { return }
-        if let data { self.buffer.append(data) }
-        if self.buffer.count > 64 * 1024 * 1024 { self.close(); return }
-        while let newline = self.buffer.firstIndex(of: 10) {
-          let line = self.buffer.prefix(upTo: newline)
-          self.buffer.removeSubrange(...newline)
-          guard let message = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any] else {
-            self.close(); return
-          }
-          Task { await self.handle(message) }
-        }
-        if ended || error != nil { self.close() } else { self.receive() }
-      }
+      self?.assumeIsolated { $0.didReceive(data, ended: ended || error != nil) }
     }
   }
-  func send(_ message: [String: Any]) {
-    guard !closed, let data = try? JSONSerialization.data(withJSONObject: message) else { return }
-    connection.send(content: data + Data([10]), completion: .contentProcessed { _ in })
-  }
-  private func handle(_ message: [String: Any]) async {
-    let requestId = message["id"] ?? 0
-    do {
-      guard let method = message["method"] as? String else { throw ChromiumProtocolError("Missing browser method") }
-      let params = message["params"] as? [String: Any] ?? [:]
-      if !authenticated {
-        guard method == "Codevisor.connect", params["token"] as? String == token,
-          let session = params["sessionId"] as? String
-        else { throw ChromiumProtocolError("Authentication failed") }
-        self.session = session; authenticated = true
-        send(["id": requestId, "result": ["available": bridge.group(session) != nil]])
-        return
-      }
-      let result = try await dispatch(method, params, message["sessionId"] as? String)
-      send(["id": requestId, "result": result])
-    } catch { send(["id": requestId, "error": ["message": error.localizedDescription]]) }
-  }
-  private func dispatch(_ method: String, _ params: [String: Any], _ sessionId: String?) async throws -> [String: Any] {
-    if sessionId != nil,
-      [
-        "Target.getTargets", "Target.createTarget", "Target.activateTarget", "Target.closeTarget",
-        "Target.attachToTarget", "Target.detachFromTarget", "Browser.close",
-      ].contains(method)
-    {
-      return try await dispatch(method, params, nil)
+  private func didReceive(_ data: Data?, ended: Bool) {
+    guard !closed else { return }
+    for line in lines.append(data ?? Data()) {
+      guard let request = ChromiumAutomationRequest(line) else { close(); return }
+      handle(request)
     }
-    if let sessionId {
+    if lines.pendingCount > Self.lineLimit || ended { close() } else { receive() }
+  }
+
+  func send(_ data: Data) {
+    guard !closed else { return }
+    var line = data
+    line.append(0x0A)
+    connection.send(content: line, completion: .contentProcessed { _ in })
+  }
+  private func send(_ message: [String: Any]) {
+    guard let data = try? JSONSerialization.data(withJSONObject: message) else { return }
+    send(data)
+  }
+  private func reply(_ id: Data, error message: String) {
+    let error = (try? JSONSerialization.data(withJSONObject: ["message": message])) ?? Data("{}".utf8)
+    send(BrowserProtocolMessage.response(id: id, error: error))
+  }
+  private func reply(_ id: Data, result: [String: Any]) {
+    send(BrowserProtocolMessage.response(id: id, result: try? JSONSerialization.data(withJSONObject: result)))
+  }
+
+  private func handle(_ request: ChromiumAutomationRequest) {
+    guard let method = request.method else { return reply(request.id, error: "Missing browser method") }
+    let params = request.params
+    if !authenticated {
+      guard method == "Codevisor.connect", params["token"] as? String == token,
+        let session = params["sessionId"] as? String
+      else { return reply(request.id, error: "Authentication failed") }
+      self.session = session; authenticated = true
+      let bridge = bridge, id = request.id
+      Task { reply(id, result: ["available": await bridge.isAvailable(session)]) }
+      return
+    }
+    if let sessionId = request.sessionId, !Self.browserMethods.contains(method) {
       guard let model = sessions[sessionId]?.model ?? childSessions[sessionId] else {
-        throw ChromiumProtocolError("Unknown browser session")
+        return reply(request.id, error: "Unknown browser session")
       }
       if method.hasPrefix("Target."), !["Target.setAutoAttach", "Target.getTargetInfo"].contains(method) {
-        throw ChromiumProtocolError("This target operation is unavailable in the built-in browser")
+        return reply(request.id, error: "This target operation is unavailable in the built-in browser")
       }
       if method == "Target.getTargetInfo", params["targetId"] != nil {
-        throw ChromiumProtocolError("Only this browser session's target is available")
+        return reply(request.id, error: "Only this browser session's target is available")
       }
-      let native = sessions[sessionId]?.native ?? sessionId
-      let view = try await model.readyView()
-      if method == "Emulation.setDeviceMetricsOverride", sessions[sessionId]?.popup == false {
-        try await model.setViewport(params); return [:]
+      if sessions[sessionId]?.popup == false, Self.viewportMethods.contains(method) {
+        let id = request.id, raw = request.rawParams
+        Task {
+          do {
+            let result = try await model.automationViewport(method, params: raw)
+            send(BrowserProtocolMessage.response(id: id, result: result))
+          } catch { reply(id, error: error.localizedDescription) }
+        }
+        return
       }
-      if method == "Emulation.clearDeviceMetricsOverride", sessions[sessionId]?.popup == false {
-        try await model.resetViewport(); return [:]
-      }
-      if method == "Emulation.setTouchEmulationEnabled", sessions[sessionId]?.popup == false {
-        let result = try await view.cdp(method, params)
-        model.viewport?.touch = params["enabled"] as? Bool ?? false
-        return result
-      }
-      return try await view.cdp(method, params, sessionId: native)
+      return forward(
+        request.id, method, request.rawParams, to: model, session: sessions[sessionId]?.native ?? sessionId)
     }
+    let id = request.id
+    Task {
+      do { reply(id, result: try await dispatch(method, params)) } catch {
+        reply(id, error: error.localizedDescription)
+      }
+    }
+  }
+
+  /// Requests reach CEF in arrival order: each hop is FIFO (this queue, then
+  /// the main actor), and replies return through `queue` in CEF's order.
+  private func forward(_ id: Data, _ method: String, _ params: Data?, to model: ChromiumBrowserModel, session: String) {
+    let connection = self
+    Task { @MainActor in
+      do {
+        try await model.readyView().sendProtocolMethod(method, params: params, sessionId: session) { reply in
+          ChromiumAutomationBridge.queue.async { connection.assumeIsolated { $0.forwardReply(id, reply) } }
+        }
+      } catch {
+        let message = error.localizedDescription
+        ChromiumAutomationBridge.queue.async { connection.assumeIsolated { $0.reply(id, error: message) } }
+      }
+    }
+  }
+  private func forwardReply(_ id: Data, _ reply: Data) {
+    guard let message = BrowserProtocolMessage(reply) else { return self.reply(id, error: "Invalid browser reply") }
+    if let error = message.raw("error") {
+      send(BrowserProtocolMessage.response(id: id, error: error))
+    } else {
+      send(BrowserProtocolMessage.response(id: id, result: message.raw("result")))
+    }
+  }
+
+  private func dispatch(_ method: String, _ params: [String: Any]) async throws -> [String: Any] {
     switch method {
     case "Codevisor.synchronizeCookies":
-      for model in bridge.liveModels { try await model.synchronizeCookies() }
+      for model in await bridge.liveModels { try await model.synchronizeCookies() }
       return [:]
     case "Target.setDiscoverTargets":
       if params["discover"] as? Bool == true { _ = try await targets() }
       return [:]
     case "Target.getTargets": return ["targetInfos": try await targets()]
     case "Target.createTarget":
-      guard let group = bridge.group(session),
-        let model = group.createBrowserTab?(params["url"] as? String ?? "about:blank")
+      guard let model = await bridge.createTarget(session: session, url: params["url"] as? String ?? "about:blank")
       else { throw ChromiumProtocolError("This workspace is no longer open in Codevisor") }
-      bridge.register(model)
       _ = try await model.readyView()
       return ["targetId": model.paneId.uuidString.lowercased()]
     case "Target.activateTarget":
       let targetId = params["targetId"] as? String ?? ""
       if let owner = popupOwners[targetId] { return try await owner.readyView().cdp(method, params) }
-      guard let model = bridge.model(targetId) else { throw ChromiumProtocolError("Browser tab closed") }
-      model.onSelect?(); return [:]
+      guard await bridge.activate(targetId) else { throw ChromiumProtocolError("Browser tab closed") }
+      return [:]
     case "Target.closeTarget":
       let targetId = params["targetId"] as? String ?? ""
       if let owner = popupOwners[targetId] { return try await owner.readyView().cdp(method, params) }
-      guard let model = bridge.model(targetId) else { return ["success": false] }
-      model.onClose?(); return ["success": true]
+      return ["success": await bridge.close(targetId)]
     case "Target.attachToTarget":
       let targetId = params["targetId"] as? String ?? ""
       let popup = popupOwners[targetId] != nil
-      guard let model = bridge.model(targetId) ?? popupOwners[targetId] else {
+      guard let model = await bridge.model(targetId) ?? popupOwners[targetId] else {
         throw ChromiumProtocolError("Browser tab closed")
       }
       let view = try await model.readyView()
@@ -268,7 +427,7 @@ private final class ChromiumAutomationConnection {
         "Target.attachToTarget", ["targetId": popup ? targetId : nativeTarget, "flatten": true])
       guard let native = result["sessionId"] as? String else { throw ChromiumProtocolError("Couldn’t attach browser") }
       let sessionId = UUID().uuidString
-      sessions[sessionId] = (model, native, popup)
+      sessions[sessionId] = Attachment(model: model, native: native, popup: popup)
       return ["sessionId": sessionId]
     case "Target.detachFromTarget":
       if let key = params["sessionId"] as? String, let attached = sessions.removeValue(forKey: key) {
@@ -286,7 +445,7 @@ private final class ChromiumAutomationConnection {
     }
   }
   private func targets() async throws -> [[String: Any]] {
-    let models = bridge.liveModels
+    let models = await bridge.liveModels
     for model in models {
       let view = try await model.readyView()
       let response = try await view.cdp("Target.getTargetInfo")
@@ -312,7 +471,7 @@ private final class ChromiumAutomationConnection {
     }
     let live = Set(infos.compactMap { $0["targetId"] as? String })
     popupOwners = popupOwners.filter { live.contains($0.key) }
-    return bridge.targets
+    return (await bridge.targets).map(\.json)
       + infos.filter { ($0["targetId"] as? String).flatMap { popupOwners[$0] } != nil }.map(popupInfo)
   }
   private func popupInfo(_ info: [String: Any]) -> [String: Any] {
@@ -322,13 +481,13 @@ private final class ChromiumAutomationConnection {
     }
     return result
   }
-  func event(_ json: String, model: ChromiumBrowserModel) {
-    guard authenticated, var message = (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any],
-      message["method"] is String
-    else { return }
-    guard let native = message["sessionId"] as? String else {
-      let method = message["method"] as? String ?? ""
-      let params = message["params"] as? [String: Any] ?? [:]
+
+  /// Routes one browser event. Session events are forwarded as their bytes with
+  /// only `sessionId` rewritten; only small Target events are decoded.
+  func event(_ message: BrowserProtocolMessage, method: String, model: ChromiumBrowserModel) {
+    guard authenticated else { return }
+    guard let native = message.string("sessionId") else {
+      let params = message.object("params") ?? [:]
       if ["Target.targetCreated", "Target.targetInfoChanged"].contains(method),
         let info = params["targetInfo"] as? [String: Any],
         info["type"] as? String == "page", let target = info["targetId"] as? String,
@@ -340,25 +499,21 @@ private final class ChromiumAutomationConnection {
       } else if method == "Target.targetDestroyed", let target = params["targetId"] as? String,
         popupOwners.removeValue(forKey: target) != nil
       {
-        nativeOwners[target] = nil; send(message)
+        nativeOwners[target] = nil; send(message.data)
       }
       return
     }
+    var forwarded = message.data
     if let attached = sessions.first(where: { $0.value.model === model && $0.value.native == native }) {
-      message["sessionId"] = attached.key
+      forwarded = message.setting("sessionId", to: BrowserProtocolMessage.encode(attached.key))
     } else if childSessions[native] !== model {
       return
     }
-    if message["method"] as? String == "Target.attachedToTarget", let params = message["params"] as? [String: Any],
-      let child = params["sessionId"] as? String
+    if method == "Target.attachedToTarget" || method == "Target.detachedFromTarget",
+      let child = message.object("params")?["sessionId"] as? String
     {
-      childSessions[child] = model
+      childSessions[child] = method == "Target.attachedToTarget" ? model : nil
     }
-    if message["method"] as? String == "Target.detachedFromTarget", let params = message["params"] as? [String: Any],
-      let child = params["sessionId"] as? String
-    {
-      childSessions[child] = nil
-    }
-    send(message)
+    send(forwarded)
   }
 }
