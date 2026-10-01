@@ -124,7 +124,7 @@ struct TerminalTransportReplayTests {
 
     var received: [(String, Bool)] = []
     for await event in events {
-      if case let .output(data, replayed) = event { received.append((data, replayed)) }
+      if case let .output(output, replayed) = event { received.append((output.text, replayed)) }
       if received.count == 2 { break }
     }
     transport.detach()
@@ -156,7 +156,7 @@ struct TerminalTransportReplayTests {
 
     var received: [(String, Bool)] = []
     for await event in events {
-      if case let .output(data, replayed) = event { received.append((data, replayed)) }
+      if case let .output(output, replayed) = event { received.append((output.text, replayed)) }
       if received.count == 2 { break }
     }
     transport.detach()
@@ -192,7 +192,7 @@ struct TerminalTransportReplayTests {
       Issue.record("expected output")
       return
     }
-    #expect(data == "prompt $ ")
+    #expect(data.text == "prompt $ ")
     #expect(replayed)
   }
 
@@ -224,7 +224,7 @@ struct TerminalTransportReplayTests {
 
     var received: [(String, Bool)] = []
     for await event in events {
-      if case let .output(data, replayed) = event { received.append((data, replayed)) }
+      if case let .output(output, replayed) = event { received.append((output.text, replayed)) }
       if received.count == 3 { break }
     }
     transport.detach()

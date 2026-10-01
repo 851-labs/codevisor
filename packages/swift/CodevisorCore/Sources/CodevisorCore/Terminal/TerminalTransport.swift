@@ -15,8 +15,9 @@ public enum TerminalEvent: Sendable {
   /// ever ran. It also holds the queries apps sent back then (colors,
   /// modes, device attributes), which a renderer must not answer again: the
   /// replies would land as input in whatever runs now, typically the
-  /// shell's prompt.
-  case output(String, replayed: Bool)
+  /// shell's prompt. Consecutive frames handled in one main-actor hop
+  /// arrive as one event.
+  case output(TerminalOutput, replayed: Bool)
   case exit(code: Int?)
   case error(String)
   /// The PTY's size: set by the client being typed on. A client showing a
@@ -56,9 +57,12 @@ public final class TerminalTransport {
   private var liveOutputSeq = 0
   private var attachment: (sessionId: String, cwd: String, attachOnly: Bool)?
   /// Replayed output received so far, held until the history is complete.
-  private var replayedOutput = ""
+  private var replayedOutput: TerminalOutput?
   private var websocketPath: String?
   private var socket: (any ServerWebSocketConnecting)?
+  /// Frames the current socket's receive loop decoded, waiting for this
+  /// actor.
+  private var inbound: TerminalInboundFrames?
   private var receiveTask: Task<Void, Never>?
   private var reconnectTask: Task<Void, Never>?
   /// Serializes outbound frames: WebSocket sends through the seam are async,
@@ -371,49 +375,34 @@ public final class TerminalTransport {
     pendingInputBytes = 0
     for input in queued { sendFrame(type: "input", data: input.data, clientSeq: input.clientSeq) }
     if let size, !isHidden { sendFrame(type: "resize", cols: size.cols, rows: size.rows) }
+    let inbound = TerminalInboundFrames(liveBoundary: liveOutputSeq)
+    self.inbound = inbound
     receiveTask = Task { [weak self] in
-      await self?.receiveLoop(socket)
+      await self?.receiveLoop(socket, into: inbound)
     }
   }
 
-  /// Receives and JSON-decodes frames off the main actor (frames arrive at
-  /// very high frequency during builds and can be up to 8MB), then hands
-  /// each decoded frame to the main actor in receive order — decode of the
-  /// next frame only starts after the previous one was handled.
-  nonisolated private func receiveLoop(_ socket: any ServerWebSocketConnecting) async {
-    let decoder = JSONDecoder()
-    while !Task.isCancelled {
-      do {
-        let message = try await socket.receive()
-        let frame: ServerFrame? =
-          switch message {
-          case .string(let text): try? decoder.decode(ServerFrame.self, from: Data(text.utf8))
-          case .data(let data): Self.decodeBinaryOutput(data)
-          }
-        if await handleReceived(frame) { return }
-      } catch {
-        await handleReceiveFailure(on: socket)
+  /// Handles everything the receive loop queued, in order. A torn-down
+  /// socket's frames are dropped: `lastOutputSeq` only counts handled
+  /// frames, so the reconnect replays them.
+  func drainInbound(_ inbound: TerminalInboundFrames, from socket: any ServerWebSocketConnecting) {
+    guard self.inbound === inbound else { return }
+    for item in inbound.take() {
+      switch item {
+      case let .frame(frame):
+        if handleReceived(frame) { return }
+      case .failed:
+        handleReceiveFailure(on: socket)
         return
       }
     }
   }
 
-  /// Protocol 2 output: kind byte (1 output, 2 reset), sequence number as a
-  /// big-endian u64, then UTF-8 output.
-  nonisolated private static func decodeBinaryOutput(_ data: Data) -> ServerFrame? {
-    let bytes = [UInt8](data)
-    guard bytes.count >= 9, bytes[0] == 1 || bytes[0] == 2 else { return nil }
-    let seq = bytes[1..<9].reduce(UInt64(0)) { $0 << 8 | UInt64($1) }
-    return ServerFrame(
-      type: "output", seq: Int(seq), data: String(decoding: bytes[9...], as: UTF8.self),
-      reset: bytes[0] == 2 ? true : nil)
-  }
-
-  /// Main-actor half of the receive loop. Returns true when the loop should
-  /// stop (terminal exited).
-  private func handleReceived(_ frame: ServerFrame?) -> Bool {
+  /// Main-actor half of the receive loop. Returns true when the terminal
+  /// exited (nothing after it is handled).
+  private func handleReceived(_ inbound: InboundTerminalFrame) -> Bool {
     failures = 0
-    guard let frame else { return false }
+    let frame = inbound.frame
     switch frame.type {
     case "ready":
       serverSpeaksProtocol2 = true
@@ -450,7 +439,7 @@ public final class TerminalTransport {
     // A reconstruction replaces everything before it and, like history,
     // holds queries that were already answered.
     let isReset = frame.reset == true
-    if isReset { replayedOutput = "" }
+    if isReset { replayedOutput = nil }
     let replayed = frame.seq < liveOutputSeq || isReset
     if !replayed { flushReplayedOutput() }
     defer {
@@ -459,11 +448,15 @@ public final class TerminalTransport {
     }
     switch frame.type {
     case "output":
-      if let data = frame.data {
+      if let output = inbound.output {
         if replayed {
-          replayedOutput += data
+          if replayedOutput == nil {
+            replayedOutput = output
+          } else {
+            replayedOutput?.append(output)
+          }
         } else {
-          onEvent(.output(data, replayed: false))
+          onEvent(.output(output, replayed: false))
         }
       }
     case "exit":
@@ -482,9 +475,9 @@ public final class TerminalTransport {
   }
 
   private func flushReplayedOutput() {
-    guard !replayedOutput.isEmpty else { return }
-    let output = replayedOutput
-    replayedOutput = ""
+    guard let output = replayedOutput else { return }
+    replayedOutput = nil
+    guard !output.bytes.isEmpty else { return }
     onEvent(.output(output, replayed: true))
   }
 
@@ -546,6 +539,8 @@ public final class TerminalTransport {
     pingTask = nil
     receiveTask?.cancel()
     receiveTask = nil
+    inbound?.close()
+    inbound = nil
     socket?.cancel(with: .goingAway, reason: nil)
     socket = nil
   }
@@ -570,20 +565,27 @@ fileprivate struct ClientFrame: Encodable {
   var claim: Bool?
 }
 
-fileprivate struct ServerFrame: Decodable, Sendable {
+struct TerminalServerFrame: Decodable, Sendable {
   var type: String
   var seq: Int
   var data: String?
-  var exitCode: Int?
-  var message: String?
+  var exitCode: Int? = nil
+  var message: String? = nil
   /// The server's reconstruction of the screen, sent when this client's
   /// cursor is older than the output it still retains.
   var reset: Bool?
   /// `pong`: the ping's timestamp, echoed.
-  var t: Double?
+  var t: Double? = nil
   /// `ack`: the client frame handled.
-  var clientSeq: Int?
+  var clientSeq: Int? = nil
   /// `size`: the PTY's size.
-  var cols: Int?
-  var rows: Int?
+  var cols: Int? = nil
+  var rows: Int? = nil
+
+  init(type: String, seq: Int, data: String? = nil, reset: Bool? = nil) {
+    self.type = type
+    self.seq = seq
+    self.data = data
+    self.reset = reset
+  }
 }

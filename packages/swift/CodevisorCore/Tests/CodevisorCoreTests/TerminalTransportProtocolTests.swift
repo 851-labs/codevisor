@@ -112,7 +112,7 @@ struct TerminalTransportProtocolTests {
 
     var received: [(String, Bool)] = []
     for await event in events {
-      if case let .output(data, replayed) = event { received.append((data, replayed)) }
+      if case let .output(output, replayed) = event { received.append((output.text, replayed)) }
       if received.count == 2 { break }
     }
     await socket.didSend.wait(for: 1)

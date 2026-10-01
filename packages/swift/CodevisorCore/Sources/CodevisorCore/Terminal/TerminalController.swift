@@ -46,7 +46,7 @@ public final class TerminalController {
   private let transport: TerminalTransport
   private weak var renderer: (any TerminalRenderer)?
   /// Output that arrived before a renderer attached, in order.
-  private var pending: [(bytes: [UInt8], replayed: Bool)] = []
+  private var pending: [(output: TerminalOutput, replayed: Bool)] = []
   private var opened = false
   /// The size this client last asked the PTY to be.
   private var ownSize: (cols: Int, rows: Int)?
@@ -107,7 +107,7 @@ public final class TerminalController {
     self.renderer = renderer
     let held = pending
     pending = []
-    for chunk in held { deliver(chunk.bytes, replayed: chunk.replayed) }
+    for chunk in held { deliver(chunk.output, replayed: chunk.replayed) }
     if hasExited { renderer.processExited(code: exitCode) }
   }
 
@@ -208,8 +208,8 @@ public final class TerminalController {
 
   private func handle(_ event: TerminalEvent) {
     switch event {
-    case let .output(text, replayed):
-      deliver(Array(text.utf8), replayed: replayed)
+    case let .output(output, replayed):
+      deliver(output, replayed: replayed)
     case let .exit(code):
       hasExited = true
       predictionTicker?.cancel()
@@ -229,16 +229,18 @@ public final class TerminalController {
     }
   }
 
-  private func deliver(_ bytes: [UInt8], replayed: Bool) {
+  /// The transport built both forms off the main actor: no conversion or
+  /// copy of the output happens here.
+  private func deliver(_ output: TerminalOutput, replayed: Bool) {
     if !replayed {
-      predictor.received(String(decoding: bytes, as: UTF8.self))
+      predictor.received(output.text)
       publishPrediction()
     }
     guard let renderer else {
-      pending.append((bytes, replayed))
+      pending.append((output, replayed))
       return
     }
-    if replayed { renderer.writeReplay(bytes) } else { renderer.writeLive(bytes) }
+    if replayed { renderer.writeReplay(output.bytes) } else { renderer.writeLive(output.bytes) }
   }
 
   private func publishPrediction() {
