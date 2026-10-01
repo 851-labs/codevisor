@@ -429,6 +429,15 @@ public final class AppEnvironment {
     return environment
   }
 
+  /// Marks machines' navigation as synced, as if each had just answered.
+  /// For fixtures (App Store screenshots) that show seeded records as settled
+  /// content rather than a cache still catching up.
+  public func markNavigationCurrentForPreview(machineIds: [String]) {
+    for machineId in machineIds {
+      machines.connection(for: machineId).navigationSyncState = .current
+    }
+  }
+
   public static let sampleProjects: [Project] = [
     Project.fromFolder(
       URL(fileURLWithPath: "/Users/me/src/Codevisor"), createdAt: Date(timeIntervalSince1970: 2_000)),

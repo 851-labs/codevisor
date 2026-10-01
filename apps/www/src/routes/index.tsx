@@ -15,22 +15,42 @@ function Home() {
       <SiteNav />
       <main>
         <Hero />
-        <Screenshot
-          src="/screenshots/chat.png"
-          alt="Codevisor running a Claude Code chat that fixes flaky webhook retries, with the conversation and code changes side by side"
+        <DevicePair
+          mac={{
+            src: "/screenshots/mac-conversation.webp",
+            alt: "Codevisor on Mac with a Claude Code chat that built a focus timer, and chats from projects on Studio Mac and Linux Server in the sidebar"
+          }}
+          iphone={{
+            src: "/screenshots/iphone-conversation.webp",
+            alt: "The same focus timer chat open in Codevisor on iPhone"
+          }}
+          eager
         />
         <Feature
-          title="A real terminal. Built in."
-          body="Watch your agents work, or take the wheel yourself. Every chat has a terminal underneath it, right where the work happens."
-          src="/screenshots/terminal.png"
-          alt="Codevisor with the built-in terminal open under an agent chat"
+          title="Start anywhere."
+          body="Pick a machine, a project, and a model, then say what to build. Your Mac, a Mac mini in the closet, or a Linux box in the cloud — every machine on your account is one tap away."
+          mac={{
+            src: "/screenshots/mac-new-chat.webp",
+            alt: "Codevisor's new chat page on Mac, targeting the daylight project on Studio Mac with Sonnet 4.6"
+          }}
+          iphone={{
+            src: "/screenshots/iphone-new-chat.webp",
+            alt: "Starting a new chat on iPhone, targeting the daylight project on Studio Mac"
+          }}
         />
         <Feature
-          title="Projects keep the thread."
-          body="Point Codevisor at a folder and every conversation about that code lives together — including the agent chats you already had."
-          src="/screenshots/new-chat.png"
-          alt="Codevisor project view listing chats for the api-gateway project"
+          title="See what your agent built."
+          body="Open the dev server your agent just started in a built-in browser — even when it's running on another machine. No port forwarding, no tunnels to set up."
+          mac={{
+            src: "/screenshots/mac-browser.webp",
+            alt: "The Daylight focus timer app running at localhost:3000 in Codevisor's built-in browser on Mac"
+          }}
+          iphone={{
+            src: "/screenshots/iphone-browser.webp",
+            alt: "The same localhost:3000 preview open in Codevisor on iPhone"
+          }}
         />
+        <Pocket />
         <TextFeatures />
         <Install />
       </main>
@@ -46,8 +66,8 @@ function Hero() {
         Every coding agent. One app.
       </h1>
       <p className="mx-auto mt-6 max-w-xl text-lg text-muted">
-        Codevisor runs Claude Code, Codex, and any ACP agent on your machines — in one native macOS
-        app.
+        Run Claude Code, Codex, Pi, and any ACP agent on your Macs and Linux servers — from native
+        apps for Mac and iPhone.
       </p>
       <InstallCta placement="hero" />
     </section>
@@ -62,10 +82,45 @@ function InstallCta({ placement }: { placement: "hero" | "footer" }) {
   )
 }
 
-function Screenshot({ src, alt }: { src: string; alt: string }) {
+type Shot = { src: string; alt: string }
+
+/// A raw iPhone screen capture (1284 × 2778) inside a thin black bezel. The
+/// elliptical radii keep the display's corner curve at any rendered width.
+function IPhone({ src, alt, eager }: Shot & { eager?: boolean }) {
+  return (
+    <div className="rounded-[15%/7%] bg-black p-[3%] shadow-2xl ring-1 ring-white/15">
+      <img
+        src={src}
+        alt={alt}
+        width={1284}
+        height={2778}
+        className="h-auto w-full rounded-[12.4%/5.73%]"
+        loading={eager ? "eager" : "lazy"}
+      />
+    </div>
+  )
+}
+
+/// A Mac window capture with its iPhone counterpart overlapping the bottom
+/// right corner, so every scene shows both apps. Phone-sized screens show only
+/// the iPhone capture at a readable size; a shrunken Mac window would be
+/// illegible there. Hidden lazy images are never fetched.
+function DevicePair({ mac, iphone, eager }: { mac: Shot; iphone: Shot; eager?: boolean }) {
   return (
     <div className="mx-auto max-w-5xl px-6">
-      <img src={src} alt={alt} className="h-auto w-full" loading="lazy" />
+      <div className="relative md:pr-[9%] md:pb-[7%]">
+        <img
+          src={mac.src}
+          alt={mac.alt}
+          width={2560}
+          height={1640}
+          className="hidden h-auto w-full md:block"
+          loading="lazy"
+        />
+        <div className="mx-auto w-64 md:absolute md:right-0 md:bottom-0 md:w-[23%]">
+          <IPhone {...iphone} eager={eager} />
+        </div>
+      </div>
     </div>
   )
 }
@@ -73,13 +128,13 @@ function Screenshot({ src, alt }: { src: string; alt: string }) {
 function Feature({
   title,
   body,
-  src,
-  alt
+  mac,
+  iphone
 }: {
   title: string
   body: string
-  src: string
-  alt: string
+  mac: Shot
+  iphone: Shot
 }) {
   return (
     <section className="pt-28 text-center sm:pt-36">
@@ -88,7 +143,30 @@ function Feature({
         <p className="mt-4 text-lg text-muted">{body}</p>
       </div>
       <div className="mt-10">
-        <Screenshot src={src} alt={alt} />
+        <DevicePair mac={mac} iphone={iphone} />
+      </div>
+    </section>
+  )
+}
+
+function Pocket() {
+  return (
+    <section className="mx-auto grid max-w-5xl items-center gap-12 px-6 pt-28 sm:pt-36 md:grid-cols-[1fr_auto]">
+      <div className="text-center md:text-left">
+        <h2 className="text-3xl font-semibold tracking-tight sm:text-5xl">
+          Your agents, in your pocket.
+        </h2>
+        <p className="mt-4 max-w-md text-lg text-muted max-md:mx-auto">
+          The iPhone app shows every project on every machine, so you can check on a long run,
+          answer an agent's question, or kick off the next task from anywhere. Adding a new machine
+          is as easy as scanning its QR code.
+        </p>
+      </div>
+      <div className="mx-auto w-64">
+        <IPhone
+          src="/screenshots/iphone-projects.webp"
+          alt="Codevisor on iPhone listing chats, browser previews, and terminals across projects on Studio Mac and Linux Server"
+        />
       </div>
     </section>
   )
@@ -97,20 +175,20 @@ function Feature({
 function TextFeatures() {
   const items = [
     {
-      title: "Local-first",
-      body: "Your chats live in a database on your machine. No cloud in the middle."
+      title: "Your machines, your data",
+      body: "Agents run on your hardware, and chats are stored on the machine that ran them. Nothing is stuck in someone else's cloud."
     },
     {
-      title: "Remote machines",
-      body: "Run the server on a Linux box and sign it in. It shows up in all your apps."
+      title: "A real terminal",
+      body: "Every project gets an embedded Ghostty terminal, right next to the agents working in it."
     },
     {
-      title: "Native",
-      body: "A native app built for Apple silicon, with a lean download and no fat binaries."
+      title: "Native, not Electron",
+      body: "Pure Swift apps built for Apple silicon and iPhone. Fast to launch, light on memory."
     },
     {
-      title: "Self-updating",
-      body: "The app and your remote servers keep themselves on the latest release."
+      title: "Always up to date",
+      body: "The Mac app and your remote servers keep themselves on the latest release."
     }
   ]
   return (
