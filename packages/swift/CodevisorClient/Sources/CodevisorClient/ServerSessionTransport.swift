@@ -79,7 +79,21 @@ extension ServerSessionTransport {
       id: sessionId, itemId: resource.itemId, key: resource.entryKey, field: field, position: position)
   }
 
-  public func detailEvents(from details: ServerTranscriptItemDetails) -> [ServerSessionStreamEvent] {
+  /// A turn's stored details with their entries already converted to
+  /// stream events. Each entry's payload is re-encoded and decoded through
+  /// the session-update bridge, which for a tool-heavy turn is real work:
+  /// the fetch and the conversion both run off the caller's actor, so
+  /// expanding a turn never decodes on the main thread.
+  @concurrent
+  public func transcriptDetailEvents(
+    itemId: String
+  ) async throws -> (details: ServerTranscriptItemDetails, events: [ServerSessionStreamEvent]) {
+    let details = try await transcriptDetails(itemId: itemId)
+    try Task.checkCancellation()
+    return (details, detailEvents(from: details))
+  }
+
+  private func detailEvents(from details: ServerTranscriptItemDetails) -> [ServerSessionStreamEvent] {
     details.entries.flatMap { entry in
       Self.sessionStreamEvents(
         from: ServerEventEnvelope(

@@ -22,10 +22,10 @@ public struct ToolCallRow: View {
   @Environment(\.theme) private var theme
   @Environment(\.transcriptDisclosure) private var disclosureStore
   @Environment(\.transcriptPerformAnchoredDisclosureChange) private var performAnchoredDisclosureChange
-  /// Memoizes the content-diff fallback of `diffTotals` (a full Myers diff
-  /// of the edited file): rows re-render on every stream flush while their
-  /// turn is active, and diffing entire file contents in `body` was a
-  /// per-render main-thread cost.
+  /// The content-diff fallback of `diffTotals` (a full Myers diff of the
+  /// edited file), computed off the main thread: rows re-render on every
+  /// stream flush while their turn is active, and diffing entire file
+  /// contents in `body` was a per-render main-thread cost.
   @State private var totalsCache = DiffTotalsCache()
 
   private var hasDetails: Bool { call.hasPresentableDetails }
@@ -127,133 +127,6 @@ public struct ToolCallRow: View {
         DiffStructureCache.Key(oldText: oldText, newText: newText)
       )
       guard !Task.isCancelled else { return }
-    }
-  }
-}
-
-/// Process-level memo for the content-diff fallback of `diffTotals`, holding
-/// SETTLED results only.
-///
-/// The per-row `DiffTotalsCache` below lives in `@State`, so it dies whenever
-/// its row unmounts — a `LazyVStack` scroll past the viewport buffer, or a tab
-/// switch, which rebuilds the whole chat screen. Revisiting an expanded edit
-/// therefore re-ran a full Myers diff of the file's entire old and new text on
-/// the main thread. Same rationale (and cap) as `DiffRenderCache`.
-///
-/// Keyed by full content, never by hash alone: a collision would render the
-/// wrong +N/−N. In-progress calls are deliberately NOT stored — streaming
-/// rewrites their text every flush, so admitting intermediates would evict the
-/// settled entries that revisits actually re-encounter (the lesson already
-/// recorded on `MarkdownSegmentCache` and `CodeHighlightResultCache`).
-@MainActor
-private final class SettledDiffTotalsCache {
-  struct Block: Hashable {
-    let oldText: String?
-    let newText: String
-  }
-
-  struct Key: Hashable {
-    let status: ToolCallStatus?
-    let blocks: [Block]
-  }
-
-  static let shared = SettledDiffTotalsCache()
-
-  private var entries: [Key: LineDiff.Totals] = [:]
-  private var order: [Key] = []
-  private let limit: Int
-
-  /// Keys hold the full old/new texts, so the cap stays small.
-  init(limit: Int = 24) {
-    self.limit = max(1, limit)
-  }
-
-  func totals(for key: Key) -> LineDiff.Totals? {
-    guard let value = entries[key] else { return nil }
-    if order.last != key, let index = order.firstIndex(of: key) {
-      order.remove(at: index)
-      order.append(key)
-    }
-    return value
-  }
-
-  func store(_ value: LineDiff.Totals, for key: Key) {
-    if entries[key] == nil {
-      order.append(key)
-      if order.count > limit {
-        entries.removeValue(forKey: order.removeFirst())
-      }
-    }
-    entries[key] = value
-  }
-
-  static func key(for call: ToolCall) -> Key {
-    Key(
-      status: call.status,
-      blocks: (call.content ?? []).compactMap { block in
-        if case let .diff(_, oldText, newText) = block {
-          // Strings are COW, so this retains rather than copies.
-          return Block(oldText: oldText, newText: newText)
-        }
-        return nil
-      }
-    )
-  }
-}
-
-/// Memoizes `ToolCall.diffTotals` for the last-seen content. Streamed
-/// `diffStats` are a cheap sum and pass straight through; the content-diff
-/// fallback (a Myers diff over the whole file's old/new text) recomputes
-/// only when the change key — call id, status, and each diff block's text lengths —
-/// moves, which tracks streamed edits (they grow the text) and settlement.
-///
-/// This cheap length-based key stays the first level: it costs no full-content
-/// hashing, so a streaming row that re-renders every flush without changing
-/// still short-circuits here. Only on a miss do we hash full content to consult
-/// the process-level cache, which is what survives unmount/remount.
-@MainActor
-final class DiffTotalsCache {
-  private var key: Int?
-  private var value: LineDiff.Totals?
-
-  func totals(for call: ToolCall) -> LineDiff.Totals? {
-    if let diffStats = call.diffStats, !diffStats.isEmpty {
-      return call.diffTotals
-    }
-    var hasher = Hasher()
-    hasher.combine(call.toolCallId)
-    hasher.combine(call.status)
-    for block in call.content ?? [] {
-      if case let .diff(_, oldText, newText) = block {
-        hasher.combine(oldText?.utf8.count ?? -1)
-        hasher.combine(newText.utf8.count)
-      }
-    }
-    let newKey = hasher.finalize()
-    if newKey == key { return value }
-
-    // A first level miss is either a real content change (streaming) or a
-    // freshly remounted row. Only the latter can hit the shared cache, and
-    // it is the case that used to re-diff whole files.
-    let sharedKey = SettledDiffTotalsCache.key(for: call)
-    let computed: LineDiff.Totals?
-    if let hit = SettledDiffTotalsCache.shared.totals(for: sharedKey) {
-      computed = hit
-    } else {
-      computed = call.diffTotals
-      if let computed, Self.isSettled(call.status) {
-        SettledDiffTotalsCache.shared.store(computed, for: sharedKey)
-      }
-    }
-    key = newKey
-    value = computed
-    return computed
-  }
-
-  private static func isSettled(_ status: ToolCallStatus?) -> Bool {
-    switch status {
-    case .completed, .failed, .cancelled: return true
-    case .pending, .inProgress, nil: return false
     }
   }
 }

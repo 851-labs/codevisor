@@ -27,14 +27,15 @@ extension SessionModel {
       guard let self else { return false }
       defer { self.transcriptDetailLoadTasks.removeValue(forKey: itemId) }
       do {
-        let details = try await self.transport.transcriptDetails(itemId: itemId)
+        // Fetched and converted to stream events off the main actor.
+        let (details, events) = try await self.transport.transcriptDetailEvents(itemId: itemId)
         try Task.checkCancellation()
         guard let location = self.transcriptItemLocation(itemId),
           case let .assistant(original) = location.item
         else { return false }
         // Streamed revisions may have advanced while storage was loading.
         // The reducer merges snapshots by stable identity and revision.
-        var turn = Self.hydratedTranscriptTurn(original, events: self.transport.detailEvents(from: details))
+        var turn = Self.hydratedTranscriptTurn(original, events: events)
         turn.detailRevision = max(turn.detailRevision, details.revision)
         let hydrated = ConversationItem.assistant(AssistantMessage(id: original.id, turn: turn))
         if !turn.isGenerating {

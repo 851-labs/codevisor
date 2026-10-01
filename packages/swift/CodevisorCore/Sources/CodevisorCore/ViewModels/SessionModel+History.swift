@@ -93,10 +93,9 @@ extension SessionModel {
             let itemID = message.turn.deferredDetailItemId,
             message.turn.isGenerating || hydratedIDs.contains(message.id)
           else { continue }
-          let details = try await transport.transcriptDetails(itemId: itemID)
+          let (_, events) = try await transport.transcriptDetailEvents(itemId: itemID)
           page.conversation[index] = .assistant(
-            AssistantMessage(
-              id: message.id, turn: Self.hydratedTranscriptTurn(message, events: transport.detailEvents(from: details)))
+            AssistantMessage(id: message.id, turn: Self.hydratedTranscriptTurn(message, events: events))
           )
         }
       }
