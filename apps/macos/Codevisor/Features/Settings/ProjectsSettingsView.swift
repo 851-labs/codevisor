@@ -78,11 +78,12 @@ struct ProjectsSettingsView: View {
       }
     }
     .task(id: readyMachineIds) {
+      let projectList = environment.projectList
       await withTaskGroup(of: Void.self) { tasks in
         for serverId in readyMachineIds {
           let client = environment.machines.client(for: serverId)
-          tasks.addTask { @MainActor in
-            await environment.projectList.refreshFromServer(serverId: serverId, client: client)
+          tasks.addTask {
+            await projectList.refreshFromServer(serverId: serverId, client: client)
           }
         }
       }

@@ -32,7 +32,8 @@ enum ComposerPasteProviderLoader {
     case failure(String)
   }
 
-  private static let log = Logger(
+  /// Nonisolated: item-provider completions log from their own queues.
+  private nonisolated static let log = Logger(
     subsystem: "com.851labs.codevisor",
     category: "composer-paste"
   )

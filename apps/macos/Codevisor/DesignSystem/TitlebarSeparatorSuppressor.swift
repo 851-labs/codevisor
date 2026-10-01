@@ -30,7 +30,7 @@ private struct TitlebarSeparatorSuppressor: NSViewRepresentable {
   private final class SuppressorView: NSView {
     private var observation: NSObjectProtocol?
 
-    deinit {
+    isolated deinit {
       if let observation {
         NotificationCenter.default.removeObserver(observation)
       }
@@ -54,7 +54,8 @@ private struct TitlebarSeparatorSuppressor: NSViewRepresentable {
           object: window,
           queue: .main
         ) { [weak self] _ in
-          self?.apply()
+          // Delivered on the main queue (`queue: .main`).
+          MainActor.assumeIsolated { self?.apply() }
         }
       }
       apply()

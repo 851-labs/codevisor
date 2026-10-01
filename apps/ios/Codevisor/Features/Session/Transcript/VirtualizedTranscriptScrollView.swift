@@ -208,7 +208,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     }
   }
 
-  deinit {
+  isolated deinit {
     presentationDisplayLink?.invalidate()
     measurementCommitTask?.cancel()
     disclosureAnchorReleaseTask?.cancel()

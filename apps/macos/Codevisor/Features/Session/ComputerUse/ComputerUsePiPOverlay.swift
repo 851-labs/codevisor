@@ -357,11 +357,11 @@ extension ComputerUseLivePreviewResizeHandle {
 /// changes.
 private struct ComputerUsePiPContextMenu: View, Equatable {
   struct Actions {
-    let activateTarget: () -> Void
-    let reload: () -> Void
-    let move: (ComputerUseLivePreviewCorner) -> Void
-    let resetSize: () -> Void
-    let close: () -> Void
+    let activateTarget: @MainActor () -> Void
+    let reload: @MainActor () -> Void
+    let move: @MainActor (ComputerUseLivePreviewCorner) -> Void
+    let resetSize: @MainActor () -> Void
+    let close: @MainActor () -> Void
   }
 
   let title: String

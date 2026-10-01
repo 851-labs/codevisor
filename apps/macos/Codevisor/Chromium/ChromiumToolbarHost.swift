@@ -53,5 +53,5 @@ final class ChromiumToolbarHost: NSHostingView<ChromiumBrowserToolbarContent> {
     let editor = window?.firstResponder as? NSTextView
     return (editor?.delegate as? NSView)?.isDescendant(of: self) == true
   }
-  deinit { if let keyMonitor { NSEvent.removeMonitor(keyMonitor) } }
+  isolated deinit { if let keyMonitor { NSEvent.removeMonitor(keyMonitor) } }
 }

@@ -153,7 +153,7 @@ struct ComposerBar: View {
   /// edge, and the text view insets its text by the same amount. Text sits
   /// where it always did, but a selection handle above the first line
   /// stays inside the text view, where UIKit can hit-test it.
-  static let editorTopBleed = ComposerCardStyle.contentPadding
+  nonisolated static let editorTopBleed = ComposerCardStyle.contentPadding
   private static let minEditorHeight: CGFloat = 30 + editorTopBleed
   private static let collapsedMaxEditorHeight: CGFloat = 148 + editorTopBleed
   private static let contentSpacing: CGFloat = 10

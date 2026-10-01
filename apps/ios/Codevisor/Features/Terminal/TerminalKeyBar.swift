@@ -36,21 +36,23 @@ final class TerminalKeyController: ObservableObject {
       center.addObserver(
         forName: UIResponder.keyboardWillChangeFrameNotification, object: nil, queue: .main
       ) { [weak self] note in
-        MainActor.assumeIsolated { self?.keyboardWillChangeFrame(note) }
+        let change = KeyboardChange(note)
+        MainActor.assumeIsolated { self?.keyboardWillChangeFrame(change) }
       })
     observers.append(
       center.addObserver(
         forName: UIResponder.keyboardWillHideNotification, object: nil, queue: .main
       ) { [weak self] note in
-        MainActor.assumeIsolated { self?.apply(top: nil, visible: false, note: note) }
+        let change = KeyboardChange(note)
+        MainActor.assumeIsolated { self?.apply(top: nil, visible: false, change: change) }
       })
   }
 
   // MARK: - Keyboard geometry
 
-  private func keyboardWillChangeFrame(_ note: Notification) {
+  private func keyboardWillChangeFrame(_ change: KeyboardChange) {
     guard
-      let end = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue,
+      let end = change.endFrame,
       let window = terminalView?.window
     else { return }
     // The notification carries screen coordinates. Converting through the
@@ -59,12 +61,12 @@ final class TerminalKeyController: ObservableObject {
     let frame = window.convert(end, from: window.screen.coordinateSpace)
     let bounds = window.bounds
     let isDocked = frame.maxY >= bounds.maxY - 1 && frame.width >= bounds.width - 1
-    apply(top: isDocked ? frame.minY : nil, visible: frame.minY < bounds.maxY, note: note)
+    apply(top: isDocked ? frame.minY : nil, visible: frame.minY < bounds.maxY, change: change)
   }
 
-  private func apply(top: CGFloat?, visible: Bool, note: Notification) {
+  private func apply(top: CGFloat?, visible: Bool, change: KeyboardChange) {
     guard top != keyboardTop || visible != keyboardVisible else { return }
-    withAnimation(Self.animation(for: note)) {
+    withAnimation(Self.animation(for: change)) {
       keyboardTop = top
       keyboardVisible = visible
     }
@@ -74,11 +76,10 @@ final class TerminalKeyController: ObservableObject {
   /// (raw value 7) for the keyboard itself, which has no SwiftUI equivalent;
   /// its control points are approximated here. Anything else is a curve
   /// SwiftUI names.
-  private static func animation(for note: Notification) -> Animation {
-    let info = note.userInfo
-    let duration = info?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? 0.25
+  private static func animation(for change: KeyboardChange) -> Animation {
+    let duration = change.duration
     guard duration > 0 else { return .linear(duration: 0) }
-    switch info?[UIResponder.keyboardAnimationCurveUserInfoKey] as? Int {
+    switch change.curve {
     case UIView.AnimationCurve.easeInOut.rawValue: return .easeInOut(duration: duration)
     case UIView.AnimationCurve.easeIn.rawValue: return .easeIn(duration: duration)
     case UIView.AnimationCurve.easeOut.rawValue: return .easeOut(duration: duration)
@@ -87,7 +88,7 @@ final class TerminalKeyController: ObservableObject {
     }
   }
 
-  deinit {
+  isolated deinit {
     for observer in observers {
       NotificationCenter.default.removeObserver(observer)
     }
@@ -146,6 +147,21 @@ final class TerminalKeyController: ObservableObject {
     UIDevice.current.playInputClick()
     terminalView?.noteUserInput()
     _ = terminalView?.sendKey(key)
+  }
+}
+
+/// What a keyboard notification carries, read where it is delivered:
+/// `Notification` is not Sendable, so only these values reach the main actor.
+nonisolated private struct KeyboardChange: Sendable {
+  let endFrame: CGRect?
+  let duration: Double
+  let curve: Int?
+
+  init(_ note: Notification) {
+    let info = note.userInfo
+    endFrame = (info?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue
+    duration = info?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? 0.25
+    curve = info?[UIResponder.keyboardAnimationCurveUserInfoKey] as? Int
   }
 }
 

@@ -58,7 +58,7 @@ struct SidebarDrag: Equatable {
 }
 
 extension SidebarView {
-  static let reorderSpace = "sidebar.reorder"
+  nonisolated static let reorderSpace = "sidebar.reorder"
 
   /// The workspace or tab being dragged; its row stays dimmed in place.
   var draggingID: UUID? { drag?.item.id }

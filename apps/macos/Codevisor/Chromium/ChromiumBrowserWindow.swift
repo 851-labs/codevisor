@@ -111,5 +111,5 @@ final class ChromiumBrowserWindow: NSWindowController, NSWindowDelegate, NSToolb
   private func removeMonitor() {
     if let keyMonitor { NSEvent.removeMonitor(keyMonitor); self.keyMonitor = nil }
   }
-  deinit { if let keyMonitor { NSEvent.removeMonitor(keyMonitor) } }
+  isolated deinit { if let keyMonitor { NSEvent.removeMonitor(keyMonitor) } }
 }

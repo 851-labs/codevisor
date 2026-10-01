@@ -133,7 +133,7 @@ struct ChromiumBrowserZoomPopover: NSViewRepresentable {
       hovering = false
     }
 
-    deinit {
+    isolated deinit {
       dismissal?.cancel()
       if let eventMonitor { NSEvent.removeMonitor(eventMonitor) }
       observers.forEach { NotificationCenter.default.removeObserver($0) }

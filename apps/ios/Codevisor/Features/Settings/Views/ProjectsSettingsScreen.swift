@@ -136,11 +136,12 @@ struct ProjectsSettingsScreen: View {
 
   private func refresh() async {
     let machines = readyMachines.map(\.id)
+    let projectList = environment.projectList
     await withTaskGroup(of: Void.self) { tasks in
       for serverId in machines {
         let client = environment.machines.client(for: serverId)
-        tasks.addTask { @MainActor in
-          await environment.projectList.refreshFromServer(serverId: serverId, client: client)
+        tasks.addTask {
+          await projectList.refreshFromServer(serverId: serverId, client: client)
         }
       }
     }

@@ -39,7 +39,7 @@ struct BrowserPaneActivationObserver: NSViewRepresentable {
       }
     }
 
-    deinit {
+    isolated deinit {
       if let monitor { NSEvent.removeMonitor(monitor) }
     }
   }

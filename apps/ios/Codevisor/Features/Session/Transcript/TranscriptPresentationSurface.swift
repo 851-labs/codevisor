@@ -96,7 +96,7 @@ final class TranscriptPresentationSurfaceCache {
     }
   }
 
-  deinit {
+  isolated deinit {
     trimTask?.cancel()
     if let memoryObserver { NotificationCenter.default.removeObserver(memoryObserver) }
   }

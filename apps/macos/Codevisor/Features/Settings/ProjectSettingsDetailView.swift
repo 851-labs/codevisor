@@ -163,7 +163,7 @@ private struct ProjectBaseBranchMenu: View {
   @Environment(AppEnvironment.self) private var environment
   let group: ProjectGroup
   let branches: ProjectBaseBranchModel
-  let reload: () -> Void
+  let reload: @MainActor () -> Void
 
   private struct Choice: Identifiable {
     let base: ProjectWorktreeBase

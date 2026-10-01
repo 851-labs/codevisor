@@ -13,7 +13,7 @@ struct ComposerRunTargetBar: View {
   let wantsNewWorktree: Bool
   let onMachine: (CodevisorMachine) -> Void
   let onProject: (Project) -> Void
-  let onLocation: (Bool) -> Void
+  let onLocation: @MainActor (Bool) -> Void
   let onManageMachines: () -> Void
   let onManageProject: () -> Void
   let onProjectDeleted: (ProjectGroup) -> Void

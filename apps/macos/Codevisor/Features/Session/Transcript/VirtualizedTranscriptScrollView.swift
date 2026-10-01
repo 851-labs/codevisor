@@ -310,7 +310,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     }
   }
 
-  deinit {
+  isolated deinit {
     presentationDisplayLink?.invalidate()
     measurementCommitTask?.cancel()
     disclosureAnchorReleaseTask?.cancel()

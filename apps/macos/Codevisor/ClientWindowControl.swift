@@ -79,15 +79,15 @@ func acknowledgeWindowChange(
   window: NSWindow?, notification: Notification.Name,
   matches: @escaping @MainActor (NSWindow) -> Bool = { _ in true }, action: () -> Void
 ) async throws {
-  let stream = AsyncStream<Void> { continuation in
-    let observer = NotificationCenter.default.addObserver(forName: notification, object: window, queue: .main) {
-      event in
-      guard let changed = event.object as? NSWindow, MainActor.assumeIsolated({ matches(changed) }) else { return }
-      continuation.yield(())
-      continuation.finish()
-    }
-    continuation.onTermination = { _ in NotificationCenter.default.removeObserver(observer) }
+  let (stream, continuation) = AsyncStream<Void>.makeStream()
+  let observer = NotificationCenter.default.addObserver(forName: notification, object: window, queue: .main) {
+    event in
+    guard let changed = event.object as? NSWindow, MainActor.assumeIsolated({ matches(changed) }) else { return }
+    continuation.yield(())
+    continuation.finish()
   }
+  // Removed on every exit — acknowledged, timed out or cancelled.
+  defer { NotificationCenter.default.removeObserver(observer) }
   action()
   try await withThrowingTaskGroup(of: Void.self) { group in
     group.addTask {

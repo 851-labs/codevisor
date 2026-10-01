@@ -34,7 +34,7 @@ private struct SettingsToolbarStyler: NSViewRepresentable {
 
     private var observation: NSObjectProtocol?
 
-    deinit {
+    isolated deinit {
       if let observation {
         NotificationCenter.default.removeObserver(observation)
       }
@@ -56,7 +56,8 @@ private struct SettingsToolbarStyler: NSViewRepresentable {
           object: window,
           queue: .main
         ) { [weak self] _ in
-          self?.apply()
+          // Delivered on the main queue (`queue: .main`).
+          MainActor.assumeIsolated { self?.apply() }
         }
       }
       apply()

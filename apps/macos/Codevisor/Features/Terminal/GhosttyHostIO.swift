@@ -157,7 +157,8 @@ final class GhosttySurfaceRenderer: TerminalRenderer {
 }
 
 /// The C surface, guarded so no write starts once it is retired.
-private final class SurfaceTarget: @unchecked Sendable {
+/// Nonisolated: the write queue reads it, and the lock guards `surface`.
+nonisolated private final class SurfaceTarget: @unchecked Sendable {
   /// Large writes (a reattach's whole scrollback) are split so a write in
   /// flight is short: retiring waits for at most one chunk, and output that
   /// arrives meanwhile is not stuck behind a multi-megabyte parse. Ghostty
