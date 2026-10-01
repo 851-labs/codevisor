@@ -5,6 +5,20 @@ import Testing
 @testable import CodevisorCoreMac
 
 extension ComputerUseBridgeTests {
+  @Test("Agent event sources isolate hardware state and keep physical input enabled")
+  func agentInputDoesNotSuppressTheHuman() throws {
+    let source = try computerUseEventSource()
+    #expect(source.sourceStateID != .hidSystemState)
+    #expect(source.sourceStateID != .combinedSessionState)
+    #expect(source.userData == ComputerUseForeground.eventTag)
+    #expect(source.localEventsSuppressionInterval == 0)
+    let permitted: CGEventFilterMask = [
+      .permitLocalMouseEvents, .permitLocalKeyboardEvents, .permitSystemDefinedEvents,
+    ]
+    #expect(source.getLocalEventsFilterDuringSuppressionState(.eventSuppressionStateSuppressionInterval) == permitted)
+    #expect(source.getLocalEventsFilterDuringSuppressionState(.eventSuppressionStateRemoteMouseDrag) == permitted)
+  }
+
   @Test("Keeps the cursor artwork pointed up-left with its hotspot at the tip")
   @MainActor
   func cursorArtworkAndHotspot() {

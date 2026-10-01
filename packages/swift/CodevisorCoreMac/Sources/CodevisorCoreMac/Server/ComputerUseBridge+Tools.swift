@@ -9,9 +9,13 @@ extension ComputerUseBridge {
     window: AXUIElement, windowID: CGWindowID?
   ) throws -> [String: Any] {
     let mode = try deliveryMode(arguments, windowID: windowID)
-    // Front before resolving any pointer coordinates, and retain that focus
-    // for the following menu/submenu action.
-    return try performWithDelivery(app: app, window: window, windowID: windowID, mode: mode) {
+    // Resolve pointer coordinates only after acquiring foreground ownership.
+    if tool == "paste_text", mode != "foreground" {
+      throw BridgeError(
+        "paste_text requires foreground delivery and foreground_reason. Prefer background type_text or set_value for plain text."
+      )
+    }
+    return try performWithDelivery(app: app, window: window, windowID: windowID, mode: mode, sessionID: sessionID) {
       try self.performWindowedTool(
         tool: tool, arguments: arguments, sessionID: sessionID,
         agentLabel: agentLabel, app: app, application: application, window: window, windowID: windowID, mode: mode)

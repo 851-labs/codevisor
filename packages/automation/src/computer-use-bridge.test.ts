@@ -69,6 +69,73 @@ describe("macOS Computer Use bridge discovery", () => {
   )
 })
 
+describe("Computer Use turn lifecycle", () => {
+  it.skipIf(process.platform !== "darwin")(
+    "finishes only the used session and preserves its bridge and REPL for the next turn",
+    async () => {
+      const dataDir = mkdtempSync(join(tmpdir(), "codevisor-turn-bridge-"))
+      const socketPath = macComputerUseSocketPath(dataDir)
+      const requests: Record<string, unknown>[] = []
+      const sockets = new Set<import("node:net").Socket>()
+      const server = createServer((socket) => {
+        sockets.add(socket)
+        socket.once("close", () => sockets.delete(socket))
+        let pending = ""
+        socket.on("data", (data) => {
+          pending += data.toString()
+          let newline: number
+          while ((newline = pending.indexOf("\n")) >= 0) {
+            const request = JSON.parse(pending.slice(0, newline)) as Record<string, unknown>
+            pending = pending.slice(newline + 1)
+            requests.push(request)
+            const result = {
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify({ snapshotId: "s", windowId: 1, text: "Editor" })
+                }
+              ]
+            }
+            socket.write(`${JSON.stringify({ id: request.id, result })}\n`)
+          }
+        })
+      })
+      const provider = makeComputerUseProvider(dataDir)
+      try {
+        vi.stubEnv("CODEVISOR_COMPUTER_USE_SOCKET", socketPath)
+        vi.stubEnv("CODEVISOR_COMPUTER_USE_TOKEN", "fixture-token")
+        await new Promise<void>((resolve, reject) => {
+          server.once("error", reject)
+          server.listen(socketPath, resolve)
+        })
+        await provider.finishTurn!("unused")
+        expect(requests).toEqual([])
+        await provider.invoke({ sessionId: "a" }, "js", {
+          code: 'let count=7; let app=await computer.getApp("Notes",{emit:false});'
+        })
+        await provider.invoke({ sessionId: "b" }, "get_app_state", { app: "Notes" })
+        await provider.finishTurn!("a")
+        expect(requests.filter((r) => r.type === "finishTurn")).toMatchObject([
+          { type: "finishTurn", sessionId: "a" }
+        ])
+        const next = await provider.invoke({ sessionId: "a" }, "js", {
+          code: "await app.getAXState(); ++count"
+        })
+        expect(next.content).toEqual([{ type: "text", text: "8" }])
+        expect(requests.filter((r) => r.type === "authenticate")).toHaveLength(2)
+        expect(sockets.size).toBe(2)
+        expect(requests.some((r) => r.type === "closeSession")).toBe(false)
+      } finally {
+        await provider.close()
+        for (const socket of sockets) socket.destroy()
+        await new Promise<void>((resolve) => server.close(() => resolve()))
+        vi.unstubAllEnvs()
+        rmSync(dataDir, { recursive: true, force: true })
+      }
+    }
+  )
+})
+
 describe("native Screen Sharing bridge", () => {
   it.each(["success", "request failure", "authentication failure"])(
     "authenticates and closes its one-shot socket on %s",

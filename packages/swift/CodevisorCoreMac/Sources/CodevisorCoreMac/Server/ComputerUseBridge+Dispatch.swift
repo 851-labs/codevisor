@@ -17,7 +17,13 @@ extension ComputerUseBridge {
     }
     let sessionID = message["sessionId"] as? String ?? ""
     let agentLabel = message["agentLabel"] as? String
+    if type == "finishTurn" {
+      ComputerUseForeground.shared.cancel(sessionID: sessionID)
+      ComputerUsePresentation.finishTurn(sessionID: sessionID)
+      return textResult("turn finished")
+    }
     if type == "closeSession" {
+      ComputerUseForeground.shared.cancel(sessionID: sessionID)
       _ = lock.withLock { snapshots.removeValue(forKey: sessionID) }
       lock.withLock {
         latestSnapshotIDs = latestSnapshotIDs.filter { !$0.key.hasPrefix(sessionID + ":app:") }
@@ -59,6 +65,8 @@ extension ComputerUseBridge {
         options: arguments
       )
     }
+    // Validate foreground intent before permissions, app lookup or activation.
+    _ = try deliveryMode(arguments, windowID: nil)
     try requireAccessibility(prompt: true)
     let app = try resolveApp(appName, launchIfNeeded: false)
     try ComputerUsePresentation.requireControlAllowed(
@@ -120,33 +128,37 @@ extension ComputerUseBridge {
     app: NSRunningApplication
   ) throws -> [String: Any] {
     let mode = try deliveryMode(arguments, windowID: nil)
-    if mode == "foreground" {
-      _ = app.activate(options: [.activateAllWindows])
-      for _ in 0..<10 where NSWorkspace.shared.frontmostApplication?.processIdentifier != app.processIdentifier {
-        Thread.sleep(forTimeInterval: 0.05)
+    return try performWithDelivery(app: app, window: nil, windowID: nil, mode: mode, sessionID: sessionID) {
+      if mode == "foreground" {
+        try ComputerUseForeground.shared.check(pid: app.processIdentifier, requireFocus: false)
+        _ = app.activate(options: [.activateAllWindows])
+        for _ in 0..<10 where NSWorkspace.shared.frontmostApplication?.processIdentifier != app.processIdentifier {
+          try ComputerUseForeground.shared.check(pid: app.processIdentifier, requireFocus: false)
+          Thread.sleep(forTimeInterval: 0.05)
+        }
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier else {
+          throw BridgeError("Unable to bring the app forward for keyboard input")
+        }
       }
-      guard NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier else {
-        throw BridgeError("Unable to bring the app forward for keyboard input")
+      switch tool {
+      case "press_key":
+        let keys = (arguments["keys"] as? [String]) ?? (arguments["key"] as? String).map { [$0] } ?? []
+        guard !keys.isEmpty, keys.count <= 32, arguments["keys"] == nil || arguments["key"] == nil else {
+          throw BridgeError("Supply key or a sequence of 1–32 keys.")
+        }
+        for key in keys { try validateKey(key) }
+        for key in keys { try keyPress(key, pid: app.processIdentifier, global: mode == "foreground") }
+      case "type_text":
+        guard let text = arguments["text"] as? String else { throw BridgeError("text is required") }
+        try typeText(text, pid: app.processIdentifier, global: mode == "foreground")
+      default:
+        throw BridgeError("The app has no accessible window")
       }
+      return textResult(
+        try json(
+          actionResultMetadata(
+            kind: tool, path: mode == "foreground" ? "cgevent_global" : "cgevent_pid", deliveryMode: mode
+          )))
     }
-    switch tool {
-    case "press_key":
-      let keys = (arguments["keys"] as? [String]) ?? (arguments["key"] as? String).map { [$0] } ?? []
-      guard !keys.isEmpty, keys.count <= 32, arguments["keys"] == nil || arguments["key"] == nil else {
-        throw BridgeError("Supply key or a sequence of 1–32 keys.")
-      }
-      for key in keys { try validateKey(key) }
-      for key in keys { try keyPress(key, pid: app.processIdentifier, global: mode == "foreground") }
-    case "type_text":
-      guard let text = arguments["text"] as? String else { throw BridgeError("text is required") }
-      try typeText(text, pid: app.processIdentifier, global: mode == "foreground")
-    default:
-      throw BridgeError("The app has no accessible window")
-    }
-    return textResult(
-      try json(
-        actionResultMetadata(
-          kind: tool, path: mode == "foreground" ? "cgevent_global" : "cgevent_pid", deliveryMode: mode
-        )))
   }
 }

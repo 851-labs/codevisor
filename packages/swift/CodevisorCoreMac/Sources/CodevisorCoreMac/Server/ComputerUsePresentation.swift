@@ -70,6 +70,12 @@ enum ComputerUsePresentation {
     }
   }
 
+  static func finishTurn(sessionID: String) {
+    performOnMain {
+      ComputerUsePresentationState.shared.hideCursor(sessionID: sessionID)
+    }
+  }
+
   static func endAll() {
     performOnMain {
       ComputerUsePresentationState.shared.endAll()

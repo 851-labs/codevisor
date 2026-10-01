@@ -196,9 +196,7 @@ extension ComputerUseBridge {
         button == "right" ? .rightMouseDown : button == "middle" ? .otherMouseDown : .leftMouseDown
       let up: CGEventType = button == "right" ? .rightMouseUp : button == "middle" ? .otherMouseUp : .leftMouseUp
       let mouseButton: CGMouseButton = button == "right" ? .right : button == "middle" ? .center : .left
-      guard let source = CGEventSource(stateID: .hidSystemState) else {
-        throw BridgeError("Unable to create mouse event source")
-      }
+      let source = try computerUseEventSource()
       for index in 1...count {
         try postMouseEvent(
           type: .mouseMoved, source: source, point: point, button: mouseButton, pid: pid, global: true, clickState: 0)
@@ -229,9 +227,7 @@ extension ComputerUseBridge {
     case "middle": eventTypes = (.otherMouseDown, .otherMouseUp, .center)
     default: eventTypes = (.leftMouseDown, .leftMouseUp, .left)
     }
-    guard let source = CGEventSource(stateID: .hidSystemState) else {
-      throw BridgeError("Unable to create targeted mouse event source")
-    }
+    let source = try computerUseEventSource()
     let groupID = Int64(DispatchTime.now().uptimeNanoseconds & UInt64(Int64.max))
     for clickIndex in 1...max(1, count) {
       guard
@@ -283,6 +279,7 @@ extension ComputerUseBridge {
     windowPoint: CGPoint? = nil
   ) {
     let skyLight = SkyLightEventBridge.shared
+    event.setIntegerValueField(.eventSourceUserData, value: ComputerUseForeground.eventTag)
     event.location = point
     event.setIntegerValueField(.mouseEventClickState, value: Int64(clickState))
     event.setIntegerValueField(.mouseEventButtonNumber, value: Int64(button.rawValue))
@@ -317,9 +314,7 @@ extension ComputerUseBridge {
     windowID: CGWindowID,
     windowFrame: CGRect
   ) throws -> String {
-    guard let source = CGEventSource(stateID: .hidSystemState) else {
-      throw BridgeError("Unable to create Chromium mouse event source")
-    }
+    let source = try computerUseEventSource()
     let windowPoint = CGPoint(
       x: point.x - windowFrame.minX,
       y: point.y - windowFrame.minY
@@ -381,24 +376,24 @@ extension ComputerUseBridge {
         return try operation()
       }
     }
-    // Foreground is a persistent focus choice. Restoring another app here
-    // closes tracking menus between their opening and selection actions.
+    // Foreground ownership belongs to this action only and expires even if
+    // an app stops responding. Every subsequent mutation checks that owner.
+    try ComputerUseForeground.shared.check(pid: app.processIdentifier, requireFocus: false)
     _ = app.activate(options: [.activateAllWindows])
     _ = axPerformAction(window, kAXRaiseAction as CFString, pid: app.processIdentifier)
     for _ in 0..<8 where NSWorkspace.shared.frontmostApplication?.processIdentifier != app.processIdentifier {
+      try ComputerUseForeground.shared.check(pid: app.processIdentifier, requireFocus: false)
       Thread.sleep(forTimeInterval: 0.05)
     }
-    if NSWorkspace.shared.frontmostApplication?.processIdentifier != app.processIdentifier,
-      let url = app.bundleURL
-    {
-      let configuration = NSWorkspace.OpenConfiguration()
-      configuration.activates = true
-      let opened = DispatchSemaphore(value: 0)
-      NSWorkspace.shared.openApplication(at: url, configuration: configuration) { _, _ in
-        opened.signal()
-      }
-      _ = opened.wait(timeout: .now() + 2)
+    if NSWorkspace.shared.frontmostApplication?.processIdentifier != app.processIdentifier {
+      try ComputerUseForeground.shared.check(pid: app.processIdentifier, requireFocus: false)
+      // Avoid an asynchronous reopen/activation request that could execute
+      // after foreground ownership expires. This AX mutation is bounded.
+      _ = axSetAttribute(
+        AXUIElementCreateApplication(app.processIdentifier), kAXFrontmostAttribute as CFString,
+        kCFBooleanTrue, pid: app.processIdentifier)
       for _ in 0..<8 where NSWorkspace.shared.frontmostApplication?.processIdentifier != app.processIdentifier {
+        try ComputerUseForeground.shared.check(pid: app.processIdentifier, requireFocus: false)
         Thread.sleep(forTimeInterval: 0.05)
       }
     }
@@ -407,6 +402,7 @@ extension ComputerUseBridge {
     }
     if let windowID {
       for _ in 0..<12 where !windowIsOnVisibleSpace(windowID) {
+        try ComputerUseForeground.shared.check(pid: app.processIdentifier)
         _ = axPerformAction(window, kAXRaiseAction as CFString, pid: app.processIdentifier)
         Thread.sleep(forTimeInterval: 0.05)
       }
@@ -416,6 +412,7 @@ extension ComputerUseBridge {
         )
       }
     }
+    try ComputerUseForeground.shared.check(pid: app.processIdentifier)
     return try operation()
   }
 
@@ -423,9 +420,7 @@ extension ComputerUseBridge {
     from: CGPoint, to: CGPoint, pid: pid_t, global: Bool = false, windowID: CGWindowID? = nil,
     windowFrame: CGRect? = nil
   ) throws {
-    guard let source = CGEventSource(stateID: .hidSystemState) else {
-      throw BridgeError("Unable to create drag event source")
-    }
+    let source = try computerUseEventSource()
     let groupID = Int64(DispatchTime.now().uptimeNanoseconds & UInt64(Int64.max))
     func send(_ type: CGEventType, _ point: CGPoint) throws {
       try postMouseEvent(
@@ -465,8 +460,10 @@ extension ComputerUseBridge {
     else { throw BridgeError("Unable to create mouse event") }
     event.setIntegerValueField(.mouseEventClickState, value: Int64(clickState))
     event.flags = []
+    event.setIntegerValueField(.eventSourceUserData, value: ComputerUseForeground.eventTag)
     if global {
-      event.post(tap: .cghidEventTap)
+      let release = [.leftMouseUp, .rightMouseUp, .otherMouseUp].contains(type)
+      try ComputerUseForeground.shared.post(event, pid: pid, releasingInput: release)
     } else {
       configureTargetedMouseEvent(
         event, point: point, button: button, clickState: clickState,
@@ -487,9 +484,10 @@ extension ComputerUseBridge {
     let magnitude = Int32(min(Double(Int32.max), max(1, (12 * pages).rounded())))
     let vertical: Int32 = direction == "up" ? magnitude : direction == "down" ? -magnitude : 0
     let horizontal: Int32 = direction == "left" ? magnitude : direction == "right" ? -magnitude : 0
+    let source = try computerUseEventSource()
     guard
       let event = CGEvent(
-        scrollWheelEvent2Source: nil,
+        scrollWheelEvent2Source: source,
         units: .line,
         wheelCount: 2,
         wheel1: vertical,
@@ -498,6 +496,11 @@ extension ComputerUseBridge {
       )
     else { throw BridgeError("Unable to create scroll event") }
     event.location = point
-    if global { event.post(tap: .cghidEventTap) } else { event.postToPid(pid) }
+    event.setIntegerValueField(.eventSourceUserData, value: ComputerUseForeground.eventTag)
+    if global {
+      try ComputerUseForeground.shared.post(event, pid: pid)
+    } else {
+      event.postToPid(pid)
+    }
   }
 }

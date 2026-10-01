@@ -1,7 +1,9 @@
 import CoreGraphics
+import CodevisorTestSupport
 import CoreMedia
 import CoreVideo
 import Foundation
+import Observation
 import ScreenCaptureKit
 import ScreenSharing
 import Testing
@@ -83,18 +85,19 @@ struct ComputerUseLivePreviewTests {
     #expect(ledger.activities["abc"]?.state == .active)
     #expect(ledger.activities["abc"]?.bridgeSessionID == "ABC")
 
-    ledger.apply(.cursorMoved(sessionID: "abc", point: CGPoint(x: 300, y: 150)))
+    ledger.apply(.cursorMoved(sessionID: "abc", point: CGPoint(x: 300, y: 150), at: 100))
     #expect(ledger.activities["abc"]?.cursor == CGPoint(x: 0.5, y: 0.25))
 
     ledger.apply(.idled(sessionID: "ABC"))
     #expect(ledger.activities["abc"]?.state == .idle)
+    #expect(ledger.activities["abc"]?.cursor == nil)
     // Idle sessions don't track the cursor.
-    ledger.apply(.cursorMoved(sessionID: "abc", point: CGPoint(x: 100, y: 100)))
-    #expect(ledger.activities["abc"]?.cursor == CGPoint(x: 0.5, y: 0.25))
+    ledger.apply(.cursorMoved(sessionID: "abc", point: CGPoint(x: 100, y: 100), at: 100))
+    #expect(ledger.activities["abc"]?.cursor == nil)
 
     ledger.apply(activated("ABC", window: 7, frame: frame))
     #expect(ledger.activities["abc"]?.state == .active)
-    #expect(ledger.activities["abc"]?.cursor == CGPoint(x: 0.5, y: 0.25))
+    #expect(ledger.activities["abc"]?.cursor == nil)
 
     // A new window drops a cursor position that belonged to the old one.
     ledger.apply(activated("ABC", window: 8, frame: frame))
@@ -116,7 +119,7 @@ struct ComputerUseLivePreviewTests {
     var ledger = ComputerUseLivePreviewLedger()
     let frame = CGRect(x: 100, y: 100, width: 400, height: 200)
     ledger.apply(activated("abc", window: 7, frame: frame))
-    ledger.apply(.cursorMoved(sessionID: "abc", point: CGPoint(x: 300, y: 150)))
+    ledger.apply(.cursorMoved(sessionID: "abc", point: CGPoint(x: 300, y: 150), at: 100))
 
     // Another window's bounds never apply.
     ledger.apply(.windowFrameChanged(sessionID: "abc", windowID: 8, frame: .zero))
@@ -174,6 +177,55 @@ struct ComputerUseLivePreviewTests {
   }
 
   // MARK: Idle release
+
+  @Test("Cursor inactivity and turn completion preserve the watched window and allow new input")
+  func cursorLifetimeIsIndependentOfSharing() {
+    var ledger = ComputerUseLivePreviewLedger()
+    let frame = CGRect(x: 100, y: 100, width: 400, height: 200)
+    ledger.apply(activated("ABC", window: 7, frame: frame))
+    ledger.apply(.cursorMoved(sessionID: "abc", point: CGPoint(x: 300, y: 150), at: 100))
+    ledger.apply(.expireCursors(now: 101.999))
+    #expect(ledger.activities["abc"]?.cursor != nil)
+
+    // New input extends the deadline; an old expiry cannot hide it.
+    ledger.apply(.cursorMoved(sessionID: "abc", point: CGPoint(x: 200, y: 150), at: 101))
+    ledger.apply(.expireCursors(now: 102))
+    #expect(ledger.activities["abc"]?.cursor == CGPoint(x: 0.25, y: 0.25))
+    ledger.apply(.expireCursors(now: 103))
+    #expect(ledger.activities["abc"]?.cursor == nil)
+    #expect(ledger.activities["abc"]?.state == .active)
+    #expect(ledger.activities["abc"]?.windowID == 7)
+    #expect(ledger.activities["abc"]?.windowFrame == frame)
+
+    // Observations/Space changes must not resurrect the old indicator.
+    ledger.apply(activated("ABC", window: 7, frame: frame))
+    #expect(ledger.activities["abc"]?.cursor == nil)
+    ledger.apply(.cursorMoved(sessionID: "abc", point: CGPoint(x: 300, y: 150), at: 104))
+    #expect(ledger.activities["abc"]?.cursor != nil)
+    ledger.apply(.cursorHidden(sessionID: "ABC"))
+    #expect(ledger.activities["abc"]?.cursor == nil)
+    #expect(ledger.activities["abc"]?.state == .active)
+    #expect(ledger.activities["abc"]?.windowID == 7)
+  }
+
+  @Test("Unchanged capture polls do not invalidate the SwiftUI preview")
+  @MainActor
+  func unchangedPollsDoNotPublish() {
+    let preview = ComputerUseLivePreview()
+    let frame = CGRect(x: 100, y: 100, width: 400, height: 200)
+    preview.apply(activated("abc", window: 7, frame: frame))
+    let changed = TestSignal()
+    withObservationTracking {
+      _ = preview.activities
+    } onChange: {
+      changed.signal()
+    }
+    preview.apply(.windowFrameChanged(sessionID: "abc", windowID: 7, frame: frame))
+    preview.apply(.expireCursors(now: 100))
+    #expect(changed.value == 0)
+    preview.apply(.cursorMoved(sessionID: "abc", point: CGPoint(x: 300, y: 150), at: 100))
+    #expect(changed.value == 1)
+  }
 
   @Test("A watched session is never released as idle")
   func pinnedSessionsStayAttached() {

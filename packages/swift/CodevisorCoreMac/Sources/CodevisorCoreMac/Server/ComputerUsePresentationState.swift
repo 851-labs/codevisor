@@ -15,8 +15,6 @@ final class ComputerUsePresentationState: NSObject {
     var cursorView: ComputerUseCursorView
     var colorIndex: Int
     var displayedTip: CGPoint?
-    var idleTimer: Timer?
-    var idlePhase: CGFloat
   }
 
   let cursorSize = ComputerUseCursorMetrics.windowSize
@@ -87,6 +85,7 @@ final class ComputerUsePresentationState: NSObject {
       )
       configureCursorPanel(panel)
       let view = ComputerUseCursorView(frame: CGRect(origin: .zero, size: cursorSize))
+      view.wantsLayer = true
       view.autoresizingMask = [.width, .height]
       view.tint = ComputerUseCursorPalette.color(at: colorIndex)
       panel.contentView = view
@@ -96,9 +95,7 @@ final class ComputerUsePresentationState: NSObject {
         cursorPanel: panel,
         cursorView: view,
         colorIndex: colorIndex,
-        displayedTip: nil,
-        idleTimer: nil,
-        idlePhase: 0
+        displayedTip: nil
       )
     }
 
@@ -132,39 +129,26 @@ final class ComputerUsePresentationState: NSObject {
   func moveCursor(sessionID: String, to screenStatePoint: CGPoint, pulse: Bool) {
     lastActivityBySession[sessionID] = Date()
     guard var presentation = sessions[sessionID] else { return }
-    ComputerUseLivePreview.shared.apply(.cursorMoved(sessionID: sessionID, point: screenStatePoint))
-    presentation.idleTimer?.invalidate()
-    presentation.idleTimer = nil
+    ComputerUseLivePreview.shared.apply(
+      .cursorMoved(sessionID: sessionID, point: screenStatePoint, at: ProcessInfo.processInfo.systemUptime))
     let target = appKitPoint(fromScreenStatePoint: screenStatePoint)
-    let targetIsVisible = cursorShouldBeVisible(presentation)
-
-    if targetIsVisible {
-      order(presentation.cursorPanel, relativeTo: presentation.targetWindowID)
-      if pulse {
-        if presentation.displayedTip != target {
-          animateMove(presentation: &presentation, sessionID: sessionID, to: target)
-        }
-        animateClick(presentation: presentation, at: target)
-      } else {
-        animateMove(presentation: &presentation, sessionID: sessionID, to: target)
-      }
-    } else {
-      presentation.cursorPanel.orderOut(nil)
-      presentation.cursorView.clickProgress = 0
-      place(presentation: presentation, tip: target, rotation: 0, bodyOffset: .zero)
-    }
-    // The animations above pump the run loop, so another session's work —
-    // or this session's own end/stop — may have run reentrantly. Writing
-    // the stale copy back would resurrect a removed session's cursor.
-    guard sessions[sessionID] != nil else {
-      presentation.idleTimer?.invalidate()
-      presentation.cursorPanel.orderOut(nil)
-      return
-    }
+    place(presentation: presentation, tip: target, rotation: 0, bodyOffset: .zero)
     presentation.displayedTip = target
     sessions[sessionID] = presentation
-    if targetIsVisible {
-      startIdleAnimation(sessionID: sessionID)
+    if cursorShouldBeVisible(presentation) {
+      order(presentation.cursorPanel, relativeTo: presentation.targetWindowID)
+      if pulse { animateClick(presentation: presentation, at: target) }
+    } else {
+      presentation.cursorPanel.orderOut(nil)
+    }
+  }
+
+  /// Turn completion hides only the input indicator; viewers keep their stream.
+  func hideCursor(sessionID: String) {
+    ComputerUseLivePreview.shared.apply(.cursorHidden(sessionID: sessionID))
+    if let presentation = sessions[sessionID] {
+      presentation.cursorView.layer?.removeAllAnimations()
+      presentation.cursorPanel.orderOut(nil)
     }
   }
 
@@ -172,7 +156,6 @@ final class ComputerUsePresentationState: NSObject {
     ComputerUseLivePreview.shared.apply(.stopped(sessionID: key.sessionID, pid: key.pid))
     ComputerUseControlStatusItem.shared.remove(key: key)
     if let presentation = sessions[key.sessionID], presentation.pid == key.pid {
-      presentation.idleTimer?.invalidate()
       presentation.cursorPanel.orderOut(nil)
       sessions.removeValue(forKey: key.sessionID)
       lastActivityBySession.removeValue(forKey: key.sessionID)
@@ -186,7 +169,6 @@ final class ComputerUsePresentationState: NSObject {
     ComputerUseLivePreview.shared.apply(.stopped(sessionID: key.sessionID, pid: key.pid))
     ComputerUseRevocations.shared.insert(key)
     if let presentation = sessions[key.sessionID], presentation.pid == key.pid {
-      presentation.idleTimer?.invalidate()
       presentation.cursorPanel.orderOut(nil)
       sessions.removeValue(forKey: key.sessionID)
       lastActivityBySession.removeValue(forKey: key.sessionID)
@@ -204,7 +186,6 @@ final class ComputerUsePresentationState: NSObject {
     let sessionIDs = sessions.filter { $0.value.pid == pid }.map(\.key)
     for sessionID in sessionIDs {
       if let presentation = sessions.removeValue(forKey: sessionID) {
-        presentation.idleTimer?.invalidate()
         presentation.cursorPanel.orderOut(nil)
       }
       lastActivityBySession.removeValue(forKey: sessionID)
@@ -220,7 +201,6 @@ final class ComputerUsePresentationState: NSObject {
   private func releaseIdle(sessionID: String) {
     ComputerUseLivePreview.shared.apply(.idled(sessionID: sessionID))
     if let presentation = sessions.removeValue(forKey: sessionID) {
-      presentation.idleTimer?.invalidate()
       presentation.cursorPanel.orderOut(nil)
     }
     lastActivityBySession.removeValue(forKey: sessionID)
@@ -254,7 +234,6 @@ final class ComputerUsePresentationState: NSObject {
   func end(sessionID: String) {
     ComputerUseLivePreview.shared.apply(.stopped(sessionID: sessionID, pid: nil))
     if let presentation = sessions.removeValue(forKey: sessionID) {
-      presentation.idleTimer?.invalidate()
       presentation.cursorPanel.orderOut(nil)
     }
     colorIndexBySession.removeValue(forKey: sessionID)
@@ -267,7 +246,6 @@ final class ComputerUsePresentationState: NSObject {
   func endAll() {
     ComputerUseLivePreview.shared.apply(.removeAll)
     for presentation in sessions.values {
-      presentation.idleTimer?.invalidate()
       presentation.cursorPanel.orderOut(nil)
     }
     sessions.removeAll()

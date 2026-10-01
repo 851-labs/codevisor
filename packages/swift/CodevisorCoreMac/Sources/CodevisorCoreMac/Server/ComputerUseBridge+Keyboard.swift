@@ -68,16 +68,18 @@ extension ComputerUseBridge {
   func keyPress(_ value: String, pid: pid_t, global: Bool = false) throws {
     let stroke = try keyStroke(value)
     guard let code = stroke.code else { return try typeText(stroke.text, pid: pid, global: global) }
-    guard let down = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: true),
-      let up = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: false)
+    let source = try computerUseEventSource()
+    guard let down = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: true),
+      let up = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: false)
     else { throw BridgeError("Unable to create keyboard event") }
     down.flags = stroke.flags
     up.flags = stroke.flags
-    postKeyboardEvent(down, pid: pid, global: global)
-    postKeyboardEvent(up, pid: pid, global: global)
+    try postKeyboardEvent(down, pid: pid, global: global)
+    try postKeyboardEvent(up, pid: pid, global: global)
   }
 
   func typeText(_ text: String, pid: pid_t, global: Bool = false) throws {
+    let source = try computerUseEventSource()
     for character in text {
       if character == "\n" || character == "\r" {
         try postKeyCode(36, pid: pid, global: global)
@@ -91,8 +93,8 @@ extension ComputerUseBridge {
         try postKeyCode(51, pid: pid, global: global)
         continue
       }
-      guard let down = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true),
-        let up = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false)
+      guard let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
+        let up = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false)
       else { throw BridgeError("Unable to create keyboard event") }
       down.flags = []
       up.flags = []
@@ -102,21 +104,27 @@ extension ComputerUseBridge {
         down.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: base)
         up.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: base)
       }
-      postKeyboardEvent(down, pid: pid, global: global)
-      postKeyboardEvent(up, pid: pid, global: global)
+      try postKeyboardEvent(down, pid: pid, global: global)
+      try postKeyboardEvent(up, pid: pid, global: global)
     }
   }
 
   private func postKeyCode(_ code: CGKeyCode, pid: pid_t, global: Bool) throws {
-    guard let down = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: true),
-      let up = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: false)
+    let source = try computerUseEventSource()
+    guard let down = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: true),
+      let up = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: false)
     else { throw BridgeError("Unable to create keyboard event") }
-    postKeyboardEvent(down, pid: pid, global: global)
-    postKeyboardEvent(up, pid: pid, global: global)
+    try postKeyboardEvent(down, pid: pid, global: global)
+    try postKeyboardEvent(up, pid: pid, global: global)
   }
 
-  private func postKeyboardEvent(_ event: CGEvent, pid: pid_t, global: Bool) {
-    if global { event.post(tap: .cghidEventTap) } else { event.postToPid(pid) }
+  private func postKeyboardEvent(_ event: CGEvent, pid: pid_t, global: Bool) throws {
+    event.setIntegerValueField(.eventSourceUserData, value: ComputerUseForeground.eventTag)
+    if global {
+      try ComputerUseForeground.shared.post(event, pid: pid, releasingInput: event.type == .keyUp)
+    } else {
+      event.postToPid(pid)
+    }
     // Give the target's event queue a chance to consume each transition.
     Thread.sleep(forTimeInterval: 0.01)
   }

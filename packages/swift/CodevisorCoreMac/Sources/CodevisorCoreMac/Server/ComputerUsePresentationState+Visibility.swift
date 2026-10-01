@@ -26,18 +26,19 @@ extension ComputerUsePresentationState {
 
   @objc private func visibilityTimerFired(_ timer: Timer) {
     releaseIdleSessions()
-    refreshCursorVisibility()
-    refreshWatchedWindowFrames()
+    ComputerUseLivePreview.shared.apply(.expireCursors(now: ProcessInfo.processInfo.systemUptime))
+    let windows = onScreenWindowInfo()
+    refreshCursorVisibility(windowInfo: windows)
+    refreshWatchedWindowFrames(windowInfo: windows)
   }
 
   /// Tool calls resize the stream to the window, but an app can move or
   /// resize its window between them — the agent's own action often does.
   /// While someone watches the live preview, follow the window here so the
   /// preview never shows a stale layout until the next tool call.
-  func refreshWatchedWindowFrames() {
+  func refreshWatchedWindowFrames(windowInfo: [[String: Any]]) {
     let watched = sessions.filter { ComputerUseNativeSharing.shared.hasSinks(sessionID: $0.key) }
     guard !watched.isEmpty else { return }
-    let windowInfo = onScreenWindowInfo()
     for (sessionID, presentation) in watched {
       guard let windowID = presentation.targetWindowID,
         let frame = computerUseWindowBounds(windowID: windowID, windowInfo: windowInfo)
@@ -49,11 +50,11 @@ extension ComputerUsePresentationState {
   }
 
   @objc func activeSpaceDidChange(_ notification: Notification) {
-    refreshCursorVisibility()
+    refreshCursorVisibility(reorder: true)
   }
 
   @objc func frontmostApplicationDidChange(_ notification: Notification) {
-    refreshCursorVisibility()
+    refreshCursorVisibility(reorder: true)
   }
 
   @objc func applicationDidTerminate(_ notification: Notification) {
@@ -64,7 +65,7 @@ extension ComputerUsePresentationState {
     targetTerminated(pid: app.processIdentifier)
   }
 
-  func refreshCursorVisibility() {
+  func refreshCursorVisibility(windowInfo: [[String: Any]]? = nil, reorder: Bool = false) {
     guard !sessions.isEmpty else { return }
     // Backstop for a termination that predates this observer or slipped
     // past the notification: a dead pid can never become visible again.
@@ -74,27 +75,22 @@ extension ComputerUsePresentationState {
     }
     for pid in deadPIDs { targetTerminated(pid: pid) }
     guard !sessions.isEmpty else { return }
-    let visibleWindows = onScreenWindowInfo()
-    var sessionsToRestart: [String] = []
+    let visibleWindows = windowInfo ?? onScreenWindowInfo()
 
     for sessionID in Array(sessions.keys) {
-      guard var presentation = sessions[sessionID] else { continue }
+      guard let presentation = sessions[sessionID] else { continue }
       let targetIsVisible = computerUseCursorShouldBeVisible(
         targetWindowID: presentation.targetWindowID,
         targetPID: presentation.pid,
         windowInfo: visibleWindows
       )
 
-      if !targetIsVisible {
-        presentation.idleTimer?.invalidate()
-        presentation.idleTimer = nil
-        presentation.cursorPanel.orderOut(nil)
-        sessions[sessionID] = presentation
+      if !targetIsVisible || ComputerUseLivePreview.shared.activity(forSessionID: sessionID)?.cursor == nil {
+        if presentation.cursorPanel.isVisible { presentation.cursorPanel.orderOut(nil) }
         continue
       }
 
       guard let tip = presentation.displayedTip else {
-        sessions[sessionID] = presentation
         continue
       }
 
@@ -102,20 +98,13 @@ extension ComputerUsePresentationState {
         // App activations can rewrite the normal-level WindowServer
         // stack. Re-pin defensively so the overlay stays adjacent to
         // its target rather than becoming globally topmost or buried.
-        order(presentation.cursorPanel, relativeTo: presentation.targetWindowID)
-        sessions[sessionID] = presentation
+        if reorder { order(presentation.cursorPanel, relativeTo: presentation.targetWindowID) }
         continue
       }
 
       presentation.cursorPanel.alphaValue = 1
       place(presentation: presentation, tip: tip, rotation: 0, bodyOffset: .zero)
       order(presentation.cursorPanel, relativeTo: presentation.targetWindowID)
-      sessions[sessionID] = presentation
-      sessionsToRestart.append(sessionID)
-    }
-
-    for sessionID in sessionsToRestart {
-      startIdleAnimation(sessionID: sessionID)
     }
   }
 

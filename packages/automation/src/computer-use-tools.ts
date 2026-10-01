@@ -32,14 +32,21 @@ const delivery = {
   type: "string",
   enum: ["background", "foreground"],
   description:
-    "background (default) uses targeted input. foreground activates the app and keeps it in front for subsequent actions."
+    "Use background (default). Foreground is a last resort for an observed background limitation; requires foreground_reason. Returns busy immediately if the human or another agent is using foreground access."
+}
+const foregroundReason = {
+  type: "string",
+  minLength: 1,
+  description:
+    "Required for foreground delivery: briefly explain the observed background limitation or foreground-only capability that requires taking focus."
 }
 const target = {
   app,
   window_id: window,
   snapshot_id: snapshot,
   element_index: element,
-  delivery_mode: delivery
+  delivery_mode: delivery,
+  foreground_reason: foregroundReason
 }
 const point = {
   type: "number",
@@ -170,6 +177,7 @@ export const computerUseTools: ReadonlyArray<Tool> = [
       window_id: window,
       snapshot_id: snapshot,
       delivery_mode: delivery,
+      foreground_reason: foregroundReason,
       from_element_index: element,
       to_element_index: element,
       from_x: point,
@@ -195,6 +203,7 @@ export const computerUseTools: ReadonlyArray<Tool> = [
       app,
       window_id: window,
       delivery_mode: delivery,
+      foreground_reason: foregroundReason,
       key: { type: "string" },
       keys: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 32 }
     },
@@ -242,7 +251,7 @@ export const computerUseTools: ReadonlyArray<Tool> = [
   ),
   tool(
     "paste_text",
-    "Paste plain text with optional HTML formatting on macOS. Requires foreground delivery; restores the clipboard unless another app changed it. Observe the pasted content to verify formatting.",
+    "Paste plain text with optional HTML formatting on macOS. Requires foreground delivery and foreground_reason; prefer background type_text or set_value for plain text. Restores the clipboard unless another app changed it.",
     {
       ...target,
       text: { type: "string" },

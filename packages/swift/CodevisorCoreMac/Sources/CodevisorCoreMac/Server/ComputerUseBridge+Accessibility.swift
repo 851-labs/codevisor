@@ -38,6 +38,8 @@ extension ComputerUseBridge {
     _ action: CFString,
     pid: pid_t
   ) -> AXError {
+    let authorized = ComputerUseForeground.shared.authorization(pid: pid)
+    guard authorized?() != false else { return .cannotComplete }
     guard pid == ProcessInfo.processInfo.processIdentifier, !Thread.isMainThread else {
       AXUIElementSetMessagingTimeout(element, 1)
       return AXUIElementPerformAction(element, action)
@@ -49,6 +51,7 @@ extension ComputerUseBridge {
     let applied = DispatchSemaphore(value: 0)
     let result = AXMutationResult()
     DispatchQueue.main.async {
+      guard authorized?() != false else { applied.signal(); return }
       result.store(AXUIElementPerformAction(payload.value.0, payload.value.1))
       applied.signal()
     }
@@ -61,6 +64,8 @@ extension ComputerUseBridge {
     _ value: CFTypeRef,
     pid: pid_t
   ) -> AXError {
+    let authorized = ComputerUseForeground.shared.authorization(pid: pid)
+    guard authorized?() != false else { return .cannotComplete }
     guard pid == ProcessInfo.processInfo.processIdentifier, !Thread.isMainThread else {
       AXUIElementSetMessagingTimeout(element, 1)
       return AXUIElementSetAttributeValue(element, attribute, value)
@@ -69,6 +74,7 @@ extension ComputerUseBridge {
     let applied = DispatchSemaphore(value: 0)
     let result = AXMutationResult()
     DispatchQueue.main.async {
+      guard authorized?() != false else { applied.signal(); return }
       result.store(AXUIElementSetAttributeValue(payload.value.0, payload.value.1, payload.value.2))
       applied.signal()
     }
@@ -157,6 +163,14 @@ extension ComputerUseBridge {
     else {
       throw BridgeError("deliveryMode must be background or foreground")
     }
+    if resolved == "foreground" {
+      guard let reason = arguments["foreground_reason"] as? String,
+        !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      else {
+        throw BridgeError(
+          "Foreground delivery requires foreground_reason explaining why background cannot complete this action.")
+      }
+    }
     // Background is an explicit focus choice, including on other Spaces.
     // Synthetic input validates visibility separately; AX actions need no activation.
     return resolved
@@ -164,18 +178,23 @@ extension ComputerUseBridge {
 
   func performWithDelivery<T>(
     app: NSRunningApplication,
-    window: AXUIElement,
+    window: AXUIElement?,
     windowID: CGWindowID?,
     mode: String,
+    sessionID: String,
     operation: () throws -> T
   ) throws -> T {
     if mode == "foreground" {
-      return try withAppFronted(
-        app: app,
-        window: window,
-        windowID: windowID,
-        operation: operation
-      )
+      return try ComputerUseForeground.shared.perform(
+        sessionID: sessionID, pid: app.processIdentifier,
+        hasOpenMenu: {
+          guard let window else { return false }
+          return self.openMenu(application: AXUIElementCreateApplication(app.processIdentifier), window: window) != nil
+        }
+      ) {
+        guard let window else { return try operation() }
+        return try withAppFronted(app: app, window: window, windowID: windowID, operation: operation)
+      }
     }
     return try operation()
   }
@@ -196,7 +215,8 @@ extension ComputerUseBridge {
       "effect": verified ? "confirmed" : "unverifiable",
       "next": verified
         ? "The requested state was confirmed in the target accessibility object."
-        : "Call get_app_state to verify the effect before choosing another element.",
+        : "Delivery is not completion. Observe the result; for an animation or turn change, use wait_for before the next dependent action. Do not repeat or switch to foreground solely because delivery is unverified."
+        ,
     ]
     if let deliveryMode { result["deliveryMode"] = deliveryMode }
     for (key, value) in detail { result[key] = value }

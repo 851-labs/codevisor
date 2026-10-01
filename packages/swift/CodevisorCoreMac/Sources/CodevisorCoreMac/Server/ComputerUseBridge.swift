@@ -107,6 +107,7 @@ public final class ComputerUseBridge: @unchecked Sendable {
     listener = descriptor
     let ready = Configuration(socketPath: socketPath, token: token)
     configuration = ready
+    ComputerUseForeground.shared.startMonitoring()
     screenSharing.start()
     listenerQueue.async { [weak self] in self?.acceptLoop(descriptor, token: token) }
     return ready
@@ -183,6 +184,7 @@ public final class ComputerUseBridge: @unchecked Sendable {
     var activeSessionIDs = Set<String>()
     defer {
       for sessionID in activeSessionIDs {
+        ComputerUseForeground.shared.cancel(sessionID: sessionID)
         ComputerUsePresentation.end(sessionID: sessionID)
         recordings.end(sessionID: sessionID)
       }

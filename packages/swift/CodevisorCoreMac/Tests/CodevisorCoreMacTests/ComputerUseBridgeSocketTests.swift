@@ -16,6 +16,23 @@ struct ComputerUseBridgeSocketTests {
       ComputerUseBridge.socketPath(supportDirectoryPath: path + "/other", userID: 501) != socketPath)
   }
 
+  @Test("Native requests cannot bypass the foreground explanation gate")
+  func foregroundIntent() {
+    let bridge = ComputerUseBridge()
+    for reason: String? in [nil, "   "] {
+      var arguments: [String: Any] = [
+        "app": "No app should be resolved", "delivery_mode": "foreground", "key": "Return",
+      ]
+      if let reason { arguments["foreground_reason"] = reason }
+      do {
+        _ = try bridge.handle(["type": "tool", "sessionId": "intent", "tool": "press_key", "arguments": arguments])
+        Issue.record("Foreground input must be rejected before app lookup or permission prompting")
+      } catch {
+        #expect(String(describing: error).contains("foreground_reason"))
+      }
+    }
+  }
+
   @Test("Starts a discoverable socket for deeply nested development data")
   func deepDevelopmentDirectory() throws {
     let root = FileManager.default.temporaryDirectory

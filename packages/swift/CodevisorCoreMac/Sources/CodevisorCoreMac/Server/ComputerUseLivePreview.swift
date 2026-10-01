@@ -38,7 +38,9 @@ struct ComputerUseLivePreviewLedger: Equatable {
       colorIndex: Int
     )
     /// `point` is in the same screen coordinates as `windowFrame`.
-    case cursorMoved(sessionID: String, point: CGPoint)
+    case cursorMoved(sessionID: String, point: CGPoint, at: TimeInterval)
+    case cursorHidden(sessionID: String)
+    case expireCursors(now: TimeInterval)
     /// The controlled window moved or resized between tool calls.
     case windowFrameChanged(sessionID: String, windowID: CGWindowID, frame: CGRect)
     case idled(sessionID: String)
@@ -67,13 +69,28 @@ struct ComputerUseLivePreviewLedger: Equatable {
         windowFrame: windowFrame,
         colorIndex: colorIndex,
         cursor: sameWindow ? previous?.cursor : nil,
+        cursorExpiresAt: sameWindow ? previous?.cursorExpiresAt : nil,
         state: .active
       )
-    case .cursorMoved(let sessionID, let point):
+    case .cursorMoved(let sessionID, let point, let now):
       let key = Self.key(sessionID)
       guard var activity = activities[key], activity.state == .active else { return }
       activity.cursor = computerUseNormalizedCursor(point: point, in: activity.windowFrame)
+      activity.cursorExpiresAt = activity.cursor == nil ? nil : now + 2
       activities[key] = activity
+    case .cursorHidden(let sessionID):
+      let key = Self.key(sessionID)
+      guard var activity = activities[key] else { return }
+      activity.cursor = nil
+      activity.cursorExpiresAt = nil
+      activities[key] = activity
+    case .expireCursors(let now):
+      for (key, var activity) in activities {
+        guard let deadline = activity.cursorExpiresAt, now >= deadline else { continue }
+        activity.cursor = nil
+        activity.cursorExpiresAt = nil
+        activities[key] = activity
+      }
     case .windowFrameChanged(let sessionID, let windowID, let frame):
       let key = Self.key(sessionID)
       guard var activity = activities[key], activity.windowID == windowID,
@@ -82,20 +99,27 @@ struct ComputerUseLivePreviewLedger: Equatable {
       activity.windowFrame = frame
       // A position normalized against the old frame no longer lines up.
       activity.cursor = nil
+      activity.cursorExpiresAt = nil
       activities[key] = activity
     case .idled(let sessionID):
       let key = Self.key(sessionID)
       guard var activity = activities[key], activity.state == .active else { return }
       activity.state = .idle
+      activity.cursor = nil
+      activity.cursorExpiresAt = nil
       activities[key] = activity
     case .stopped(let sessionID, let pid):
       let key = Self.key(sessionID)
       guard var activity = activities[key], pid == nil || activity.pid == pid else { return }
       activity.state = .stopped
+      activity.cursor = nil
+      activity.cursorExpiresAt = nil
       activities[key] = activity
     case .terminated(let pid):
       for (key, var activity) in activities where activity.pid == pid {
         activity.state = .stopped
+        activity.cursor = nil
+        activity.cursorExpiresAt = nil
         activities[key] = activity
       }
     case .removeAll:
@@ -139,6 +163,8 @@ public final class ComputerUseLivePreview {
     let colorIndex: Int
     /// The agent cursor as a 0…1 fraction of the window, when known.
     public internal(set) var cursor: CGPoint?
+    /// Monotonic deadline, independent of the retained capture/viewers.
+    var cursorExpiresAt: TimeInterval? = nil
     public internal(set) var state: State
 
     public var tint: NSColor { ComputerUseCursorPalette.color(at: colorIndex) }
@@ -157,9 +183,12 @@ public final class ComputerUseLivePreview {
   }
 
   func apply(_ event: ComputerUseLivePreviewLedger.Event) {
-    let before = ledger
-    ledger.apply(event)
-    guard ledger != before else { return }
+    // Mutating the @Observable property itself invalidates SwiftUI even when
+    // the value is unchanged. Polls must publish only actual state changes.
+    var next = ledger
+    next.apply(event)
+    guard next != ledger else { return }
+    ledger = next
     onChange.values.forEach { $0() }
   }
 

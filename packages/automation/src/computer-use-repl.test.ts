@@ -152,6 +152,7 @@ describe("Computer Use REPL", () => {
       expect(args.window_id).toBe(20)
       expect(args.element_index).toBe(10 + stage)
       expect(args.delivery_mode).toBe("foreground")
+      expect(args.foreground_reason).toBe("This menu ignores background input")
       stage++
       return reply({ status: "delivered", verified: false })
     }
@@ -159,7 +160,7 @@ describe("Computer Use REPL", () => {
       (
         await repl.execute(
           "a",
-          'const music = await computer.getApp("Music", { emit: false, delivery_mode: "foreground" });',
+          'const music = await computer.getApp("Music", { emit: false, delivery_mode: "foreground", foreground_reason: "This menu ignores background input" });',
           invoke
         )
       ).isError
@@ -182,6 +183,45 @@ describe("Computer Use REPL", () => {
       "get_app_state"
     ])
     expect(stage).toBe(3)
+  })
+
+  it("requires a reason before any foreground input, including implicit paste, and recovers in background", async () => {
+    const repl = pool()
+    const inputs: Record<string, unknown>[] = []
+    const invoke = async (method: string, args: Record<string, unknown>) => {
+      if (method === "get_app_state") return reply({ snapshotId: "s", windowId: 1, text: "Editor" })
+      inputs.push(args)
+      return reply({ status: "delivered" })
+    }
+    await repl.execute("a", 'let app = await computer.getApp("Notes", {emit:false});', invoke)
+    for (const action of [
+      'app.pressKey("Return", {delivery_mode:"foreground"})',
+      'app.typeText("Hello", {delivery_mode:"foreground", foreground_reason:"   "})',
+      'app.pasteText("Hello")'
+    ]) {
+      const result = await repl.execute("a", `await ${action}`, invoke)
+      expect(result.isError).toBe(true)
+      expect(text(result)).toContain("foreground_reason")
+    }
+    expect(inputs).toEqual([])
+    const recovered = await repl.execute("a", 'await app.typeText("Hello")', invoke)
+    expect(recovered.isError, text(recovered)).toBeUndefined()
+    expect(inputs).toEqual([
+      expect.objectContaining({ delivery_mode: "background", text: "Hello" })
+    ])
+    const foreground = await repl.execute(
+      "a",
+      `
+      let fg = await computer.getApp("Notes", {emit:false, delivery_mode:"foreground", foreground_reason:"Formatted text requires paste"});
+      let win = fg.getWindow(2); await win.getState(); await win.pasteText("Hello");
+    `,
+      invoke
+    )
+    expect(foreground.isError, text(foreground)).toBeUndefined()
+    expect(inputs[1]).toMatchObject({
+      delivery_mode: "foreground",
+      foreground_reason: "Formatted text requires paste"
+    })
   })
 
   it("isolates sessions, preserves helper functions and destructuring, and resets explicitly", async () => {
@@ -221,9 +261,18 @@ describe("Computer Use REPL", () => {
         ...(method === "wait_for" ? { matched: false } : {})
       })
     await repl.execute("a", 'let app=await computer.getApp("Music",{emit:false})', invoke)
-    expect(
-      (await repl.execute("a", 'await app.waitFor({text:"Missing",timeout_ms:0})', invoke)).isError
-    ).toBe(true)
+    const timedOut = await repl.execute(
+      "a",
+      'computer.write("Move attempted"); await app.waitFor({text:"Missing",timeout_ms:0})',
+      invoke
+    )
+    expect(timedOut.isError).toBe(true)
+    expect(timedOut.content[0]).toMatchObject({
+      type: "text",
+      text: expect.stringContaining("Timed out")
+    })
+    expect(text(timedOut)).toContain('"matched":false')
+    expect(text(timedOut)).toContain("Move attempted")
     expect(text(await repl.execute("a", "app.id", invoke))).toBe("Music")
   })
 
@@ -244,9 +293,9 @@ describe("Computer Use REPL", () => {
       const app = await computer.getApp("Notes", {emit:false});
       const win = app.getWindow(2);
       await win.getState();
-      await win.pressKey(["Down", "Right", "Return"], {delivery_mode:"foreground"});
+      await win.pressKey(["Down", "Right", "Return"], {delivery_mode:"foreground",foreground_reason:"The menu requires active keyboard input"});
       await win.drag(2, {x:80,y:90});
-      await win.pasteText("Hello", {html:"<b>Hello</b>"});
+      await win.pasteText("Hello", {html:"<b>Hello</b>",foreground_reason:"Formatted text requires clipboard paste"});
     `,
       invoke
     )

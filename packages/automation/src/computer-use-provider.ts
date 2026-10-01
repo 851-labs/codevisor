@@ -316,6 +316,15 @@ export const makeComputerUseProvider = (
           )
         }
         if (
+          (args.delivery_mode ?? args.deliveryMode) === "foreground" &&
+          (typeof args.foreground_reason !== "string" || !args.foreground_reason.trim())
+        ) {
+          return textToolResult(
+            "Foreground delivery requires foreground_reason explaining why background cannot complete this action.",
+            true
+          )
+        }
+        if (
           process.platform !== "darwin" &&
           [
             "list_recording_targets",
@@ -344,6 +353,13 @@ export const makeComputerUseProvider = (
       } catch (cause) {
         return textToolResult(cause instanceof Error ? cause.message : String(cause), true)
       }
+    },
+    finishTurn: async (sessionId) => {
+      if (!perSessionConnections) return
+      // Reuse an existing bridge only. Finishing a turn must not start a
+      // capture, reset REPL bindings, or detach a retained live preview.
+      const active = await helpers.get(helperKey(sessionId))?.catch(() => undefined)
+      await active?.request({ type: "finishTurn", sessionId }).catch(() => undefined)
     },
     closeSession: async (sessionId) => {
       await repls.reset(sessionId)

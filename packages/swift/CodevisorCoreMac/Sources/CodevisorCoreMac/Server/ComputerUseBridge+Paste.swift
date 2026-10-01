@@ -17,9 +17,12 @@ extension ComputerUseBridge {
       throw BridgeError("text is required as the plain-text fallback")
     }
     guard NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier else {
-      throw BridgeError("Pasting requires delivery_mode foreground. The app will retain focus.")
+      throw BridgeError("Pasting requires delivery_mode foreground and foreground_reason.")
     }
-    computerUsePasteLock.lock()
+    try ComputerUseForeground.shared.check(pid: app.processIdentifier)
+    guard computerUsePasteLock.try() else {
+      throw BridgeError("Another paste is still using the clipboard. No input was sent.")
+    }
     defer { computerUsePasteLock.unlock() }
     let pasteboard = NSPasteboard.general
     let saved = (pasteboard.pasteboardItems ?? []).map { item in
@@ -51,6 +54,7 @@ extension ComputerUseBridge {
     // A non-text target may not expose an acknowledgement; report uncertainty.
     var verified = false
     for _ in 0..<50 {
+      try ComputerUseForeground.shared.check(pid: app.processIdentifier)
       Thread.sleep(forTimeInterval: 0.02)
       if let focused, let after = stringAttribute(focused, kAXValueAttribute),
         after != before, after.contains(text)

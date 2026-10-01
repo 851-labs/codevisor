@@ -74,12 +74,14 @@ if (!globalThis.computer) {
     toJSON: () => started
   });
   const startRecording = async (options) => recordingHandle(await call('start_recording', options));
-  const makeApp = (name, windowId, deliveryMode = 'background') => {
+  const makeApp = (name, windowId, deliveryMode = 'background', foregroundReason) => {
     const info = { name, windowId, snapshotId: undefined };
     const target = (value) => typeof value === 'number' ? { element_index: value } : value && typeof value === 'object' ? value : {};
     const invoke = (method, args = {}, scoped = true) => {
       if (scoped && info.snapshotId === undefined && (args.element_index !== undefined || method === 'click' || method === 'drag')) throw new Error('Observe this window before using an element or screenshot');
-      return call(method, { app: info.name, ...(info.windowId === undefined ? {} : { window_id: info.windowId }), ...(scoped && info.snapshotId !== undefined ? { snapshot_id: info.snapshotId } : {}), delivery_mode: deliveryMode, ...args });
+      const input = { app: info.name, ...(info.windowId === undefined ? {} : { window_id: info.windowId }), ...(scoped && info.snapshotId !== undefined ? { snapshot_id: info.snapshotId } : {}), delivery_mode: deliveryMode, ...(foregroundReason === undefined ? {} : { foreground_reason: foregroundReason }), ...args };
+      if (input.delivery_mode === 'foreground' && (typeof input.foreground_reason !== 'string' || !input.foreground_reason.trim())) throw new Error('Foreground delivery requires foreground_reason explaining why background cannot complete this action.');
+      return call(method, input);
     };
     const observe = async (method, options = {}) => {
       const state = await call(method, { app: info.name, ...(windowId === undefined ? {} : { window_id: windowId }), ...options });
@@ -94,7 +96,7 @@ if (!globalThis.computer) {
       get id() { return info.name; }, get windowId() { return info.windowId; },
       getState: (options = {}) => observe('get_app_state', options),
       getAXState: (options = {}) => observe('get_app_state', { ...options, screenshot: false }),
-      getWindow: (id) => { if (!Number.isInteger(id)) throw new Error('Use a windowId from getState().windows'); return makeApp(info.name, id, deliveryMode); },
+      getWindow: (id) => { if (!Number.isInteger(id)) throw new Error('Use a windowId from getState().windows'); return makeApp(info.name, id, deliveryMode, foregroundReason); },
       waitFor: (options) => observe('wait_for', options),
       startRecording: (options = {}) => {
         if (!Number.isInteger(info.windowId)) throw new Error('This app has no observed windowId. Use computer.listRecordingTargets() to choose a capturable window.');
@@ -122,10 +124,10 @@ if (!globalThis.computer) {
     stopRecording: (id) => call('stop_recording', { recording_id: id }),
     getApp: async (name, options = {}) => {
       if (typeof name !== 'string' || !name.trim()) throw new Error('getApp requires an app name, path or bundle ID');
-      const key = JSON.stringify([name, options.window_id, options.delivery_mode]);
+      const key = JSON.stringify([name, options.window_id, options.delivery_mode, options.foreground_reason]);
       let app = handles.get(key);
-      if (!app) { app = makeApp(name, options.window_id, options.delivery_mode); handles.set(key, app); }
-      const { emit, delivery_mode, window_id, ...observation } = options;
+      if (!app) { app = makeApp(name, options.window_id, options.delivery_mode, options.foreground_reason); handles.set(key, app); }
+      const { emit, delivery_mode, foreground_reason, window_id, ...observation } = options;
       const state = await app.getState(observation);
       if (options.emit !== false) write(state);
       return app;
