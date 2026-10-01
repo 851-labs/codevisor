@@ -44,10 +44,18 @@ struct ComputerUsePiPOverlay: View {
           let origin = ComputerUseLivePreviewLayout.origin(
             corner: model.corner, cardSize: size, container: geometry.size, insets: insets)
           card(viewer: viewer, size: size, resizeHandles: resizeHandles(size: size, aspect: aspect, viewer: viewer))
+            .gesture(dragGesture(cardSize: size, origin: origin, container: geometry.size, insets: insets))
+            // Over the card but outside its drag and tap, so a click on the
+            // close button that wobbles a few points still closes it, and
+            // never falls through to showing the target app.
+            .overlay(alignment: .topLeading) { closeControl }
+            .onHover { isHovering = $0 }
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: isHovering)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Live view of \(model.title) controlled by the agent")
             // A refreshed viewer is a new surface: rebuild the card around it.
             .id(ObjectIdentifier(viewer))
             .offset(x: origin.x + dragOffset.width, y: origin.y + dragOffset.height)
-            .gesture(dragGesture(cardSize: size, origin: origin, container: geometry.size, insets: insets))
             .transition(.scale(scale: 0.92, anchor: model.corner.unitPoint).combined(with: .opacity))
         }
       }
@@ -55,10 +63,7 @@ struct ComputerUsePiPOverlay: View {
       .animation(reduceMotion ? nil : .spring(duration: 0.3), value: composerHeight)
     }
     .animation(reduceMotion ? nil : .spring(duration: 0.3), value: model.isVisible)
-    .onAppear {
-      model.turnActivityChanged(isRunning: isTurnRunning)
-      model.sync()
-    }
+    .onAppear { model.appeared(isTurnRunning: isTurnRunning) }
     .onChange(of: model.activity) { model.sync() }
     .onChange(of: isTurnRunning) { _, running in model.turnActivityChanged(isRunning: running) }
     .onDisappear { model.teardown() }
@@ -235,24 +240,20 @@ struct ComputerUsePiPOverlay: View {
     .contentShape(shape)
     // Outside the rounded content shape, so the corner handles reach the
     // card's square corners rather than stopping at the curve.
-    .overlay(alignment: .topLeading) {
-      ZStack(alignment: .topLeading) {
-        resizeHandles
-        // Native PiP's control: hidden until hover, then a glass close button.
-        closeButton
-          .padding(8)
-          .opacity(isHovering ? 1 : 0)
-          .scaleEffect(isHovering ? 1 : 0.9)
-          .allowsHitTesting(isHovering)
-      }
-    }
-    .onHover { isHovering = $0 }
+    .overlay(alignment: .topLeading) { resizeHandles }
     .onTapGesture { model.activateTarget() }
     .contextMenu { contextMenu }
-    .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: isHovering)
     .help(model.canActivateTarget ? "Show \(model.title)" : model.title)
-    .accessibilityElement(children: .contain)
-    .accessibilityLabel("Live view of \(model.title) controlled by the agent")
+  }
+
+  /// Native PiP's control: hidden until hover, then a glass close button.
+  /// It takes clicks even when hidden: a pointer resting on it while the
+  /// card moved or resized underneath can leave the hover state stale.
+  private var closeControl: some View {
+    closeButton
+      .padding(8)
+      .opacity(isHovering ? 1 : 0)
+      .scaleEffect(isHovering ? 1 : 0.9)
   }
 
   private var closeButton: some View {
