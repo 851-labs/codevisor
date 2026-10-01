@@ -4,10 +4,65 @@ import UIKit
 /// The primary app icon Xcode compiled for this bundle, rendered as regular
 /// SwiftUI content. Development builds automatically use their generated
 /// worktree icon; release builds use the production icon.
+///
+/// The icon files are found, read and decoded off the main thread the first
+/// time any instance appears (the launch splash), then shared.
 struct CodevisorAppIconView: View {
   let size: CGFloat
 
-  private static let appIcon: UIImage? = {
+  @State private var icon = AppIconImage.loaded
+
+  var body: some View {
+    Group {
+      switch icon {
+      case let .found(appIcon):
+        Image(uiImage: appIcon)
+          .resizable()
+          .interpolation(.high)
+      case .missing:
+        Image("hunk")
+          .resizable()
+          .foregroundStyle(.tint)
+      case nil:
+        Color.clear
+      }
+    }
+    .scaledToFit()
+    .frame(width: size, height: size)
+    // SpringBoard applies this continuous app-icon presentation mask; the
+    // compiled artwork loaded as a UIImage does not include the final mask.
+    .clipShape(
+      RoundedRectangle(
+        cornerRadius: size * 0.224,
+        style: .continuous
+      )
+    )
+    .accessibilityHidden(true)
+    .task {
+      guard icon == nil else { return }
+      let loaded = await AppIconImage.load()
+      withAnimation(.easeOut(duration: 0.15)) { icon = loaded }
+    }
+  }
+}
+
+private enum AppIconImage: Equatable {
+  case found(UIImage)
+  case missing
+
+  /// Set on the main actor once the first load finishes.
+  @MainActor static var loaded: AppIconImage?
+
+  static func load() async -> AppIconImage {
+    if let loaded { return loaded }
+    let image = await decodeLargestIcon()
+    let result: AppIconImage = image.map { .found($0) } ?? .missing
+    loaded = result
+    return result
+  }
+
+  @concurrent
+  nonisolated private static func decodeLargestIcon() async -> UIImage? {
     let bundle = Bundle.main
     let icons =
       bundle.object(forInfoDictionaryKey: "CFBundleIcons")
@@ -32,35 +87,12 @@ struct CodevisorAppIconView: View {
         }
       }
       .compactMap { UIImage(contentsOfFile: $0.path) }
-    return images.max { lhs, rhs in
+    let largest = images.max { lhs, rhs in
       let lhsWidth = lhs.cgImage?.width ?? 0
       let rhsWidth = rhs.cgImage?.width ?? 0
       return lhsWidth < rhsWidth
     }
-  }()
-
-  var body: some View {
-    Group {
-      if let appIcon = Self.appIcon {
-        Image(uiImage: appIcon)
-          .resizable()
-          .interpolation(.high)
-      } else {
-        Image("hunk")
-          .resizable()
-          .foregroundStyle(.tint)
-      }
-    }
-    .scaledToFit()
-    .frame(width: size, height: size)
-    // SpringBoard applies this continuous app-icon presentation mask; the
-    // compiled artwork loaded as a UIImage does not include the final mask.
-    .clipShape(
-      RoundedRectangle(
-        cornerRadius: size * 0.224,
-        style: .continuous
-      )
-    )
-    .accessibilityHidden(true)
+    // Decode now, here, rather than at first draw on the main thread.
+    return largest.map { $0.preparingForDisplay() ?? $0 }
   }
 }

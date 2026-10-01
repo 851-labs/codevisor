@@ -19,7 +19,9 @@ struct BrowserExtensionQuestionContent: View {
   let showDragStage: (Bool) -> Void
 
   @State private var archiveURL: URL?
-  @State private var iconURL: URL?
+  /// The file's icon, read once off the main thread: `body` re-runs on
+  /// every hover change and must not decode images or ask Launch Services.
+  @State private var fileIcon: NSImage?
   @State private var archiveError: String?
   @State private var isFileHovered = false
 
@@ -230,7 +232,7 @@ struct BrowserExtensionQuestionContent: View {
   private var extensionFile: some View {
     if let archiveURL {
       HStack(spacing: 8) {
-        extensionFileIcon(archiveURL)
+        extensionFileIcon
         VStack(alignment: .leading, spacing: 2) {
           Text("Codevisor for Chrome.zip")
             .font(.caption.weight(.medium))
@@ -285,15 +287,32 @@ struct BrowserExtensionQuestionContent: View {
     }
   }
 
-  private func extensionFileIcon(_ url: URL) -> some View {
-    let icon = iconURL.flatMap(NSImage.init(contentsOf:)) ?? NSWorkspace.shared.icon(forFile: url.path)
+  @ViewBuilder
+  private var extensionFileIcon: some View {
+    Group {
+      if let fileIcon {
+        Image(nsImage: fileIcon)
+          .resizable()
+          .interpolation(.high)
+          .scaledToFit()
+      } else {
+        Image(systemName: "doc.zipper")
+          .resizable()
+          .scaledToFit()
+          .foregroundStyle(.secondary)
+          .padding(4)
+      }
+    }
+    .frame(width: 36, height: 36)
+    .accessibilityHidden(true)
+  }
+
+  /// The extension's own icon, else the archive's Finder icon.
+  @concurrent
+  nonisolated private static func loadFileIcon(iconURL: URL?, archiveURL: URL) async -> NSImage {
+    let icon = iconURL.flatMap(NSImage.init(contentsOf:)) ?? NSWorkspace.shared.icon(forFile: archiveURL.path)
     icon.size = NSSize(width: 48, height: 48)
-    return Image(nsImage: icon)
-      .resizable()
-      .interpolation(.high)
-      .scaledToFit()
-      .frame(width: 36, height: 36)
-      .accessibilityHidden(true)
+    return icon
   }
 
   private var extensionFileBackground: some ShapeStyle {
@@ -338,11 +357,14 @@ struct BrowserExtensionQuestionContent: View {
     if !force, archiveURL != nil { return }
     archiveError = nil
     do {
-      archiveURL = try await controller.browserExtensionArchive()
-      iconURL = try? await controller.browserExtensionIcon()
+      let archive = try await controller.browserExtensionArchive()
+      let iconURL = try? await controller.browserExtensionIcon()
+      // Shown together, so the row never flashes a placeholder icon.
+      fileIcon = await Self.loadFileIcon(iconURL: iconURL, archiveURL: archive)
+      archiveURL = archive
     } catch {
       archiveURL = nil
-      iconURL = nil
+      fileIcon = nil
       archiveError = String(describing: error)
     }
   }

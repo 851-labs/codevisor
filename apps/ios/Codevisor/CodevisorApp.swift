@@ -256,39 +256,54 @@ private struct CodevisorStartupSplashView: View {
 /// Emits only after a real path transition (not the monitor's initial
 /// snapshot). A satisfied Wi-Fi/cellular handoff is enough reason to replace
 /// a WebSocket whose old TCP path can remain half-open indefinitely.
-private final class NetworkPathObserver: ObservableObject, @unchecked Sendable {
+///
+/// Main-actor state is only `recoveryToken`; the path comparison runs on the
+/// monitor's queue in `NetworkPathTransitions`, which that queue alone owns.
+private final class NetworkPathObserver: ObservableObject {
   @Published private(set) var recoveryToken = 0
 
   private let monitor = NWPathMonitor()
-  private let queue = DispatchQueue(label: "dev.codevisor.ios.network-path")
-  private var previousSignature: String?
 
   init() {
-    monitor.pathUpdateHandler = { [weak self] path in
-      guard let self else { return }
-      let signature = [
-        String(describing: path.status),
-        path.usesInterfaceType(.wifi) ? "wifi" : "",
-        path.usesInterfaceType(.cellular) ? "cellular" : "",
-        path.usesInterfaceType(.wiredEthernet) ? "ethernet" : "",
-        path.isExpensive ? "expensive" : "",
-        path.isConstrained ? "constrained" : "",
-      ].joined(separator: ":")
-      let shouldRecover =
-        self.previousSignature != nil
-        && self.previousSignature != signature
-        && path.status == .satisfied
-      self.previousSignature = signature
-      guard shouldRecover else { return }
-      DispatchQueue.main.async { [weak self] in
-        self?.recoveryToken &+= 1
-      }
+    monitor.pathUpdateHandler = Self.pathUpdateHandler(NetworkPathTransitions()) { [weak self] in
+      Task { @MainActor [weak self] in self?.recoveryToken &+= 1 }
     }
-    monitor.start(queue: queue)
+    monitor.start(queue: DispatchQueue(label: "dev.codevisor.ios.network-path"))
   }
 
   deinit {
     monitor.cancel()
+  }
+
+  /// Built outside the main actor so the handler is not main-actor
+  /// isolated: NWPathMonitor calls it on its own queue.
+  nonisolated private static func pathUpdateHandler(
+    _ transitions: NetworkPathTransitions,
+    onRecovery: @escaping @Sendable () -> Void
+  ) -> @Sendable (NWPath) -> Void {
+    { path in
+      if transitions.isRecovery(path) { onRecovery() }
+    }
+  }
+}
+
+/// The previous path, compared on the monitor's serial queue: it is only
+/// ever touched from that queue's handler calls, one at a time.
+nonisolated private final class NetworkPathTransitions: @unchecked Sendable {
+  private var previousSignature: String?
+
+  /// Whether `path` is a satisfied path that differs from the last one.
+  func isRecovery(_ path: NWPath) -> Bool {
+    let signature = [
+      String(describing: path.status),
+      path.usesInterfaceType(.wifi) ? "wifi" : "",
+      path.usesInterfaceType(.cellular) ? "cellular" : "",
+      path.usesInterfaceType(.wiredEthernet) ? "ethernet" : "",
+      path.isExpensive ? "expensive" : "",
+      path.isConstrained ? "constrained" : "",
+    ].joined(separator: ":")
+    defer { previousSignature = signature }
+    return previousSignature != nil && previousSignature != signature && path.status == .satisfied
   }
 }
 
