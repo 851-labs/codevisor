@@ -23,8 +23,9 @@ CefString String(NSString *value) { return CefString(value.UTF8String ?: ""); }
 
 // DevTools messages arrive on the CEF UI thread, which is the main thread here,
 // and can be many megabytes (screenshots). Route them without parsing: Chromium
-// serializes a reply's "id" first (crdtp's Response/ProtocolError). CEF's own
-// ProtocolParser relies on the same layout.
+// serializes a reply's "id" first and appends "sessionId" as the final member
+// of every session message (crdtp's Response/ProtocolError and content's and
+// Blink's DevToolsSession). CEF's own ProtocolParser relies on the same layout.
 std::string_view Message(const void *bytes, size_t length) { return {static_cast<const char *>(bytes), length}; }
 std::optional<int> LeadingMessageId(std::string_view message) {
   constexpr std::string_view prefix = "{\"id\":";
@@ -41,6 +42,22 @@ std::optional<int> LeadingMessageId(std::string_view message) {
   value = negative ? -value : value;
   if (value < INT_MIN || value > INT_MAX) return std::nullopt;
   return static_cast<int>(value);
+}
+constexpr std::string_view sessionMember = ",\"sessionId\":\"";
+std::string_view TrailingSessionId(std::string_view message) {
+  if (message.size() < sessionMember.size() + 3 || !message.ends_with("\"}")) return {};
+  size_t close = message.size() - 2;
+  size_t open = message.rfind('"', close - 1);
+  if (open == std::string_view::npos || open + 1 < sessionMember.size() ||
+      message.substr(open + 1 - sessionMember.size(), sessionMember.size()) != sessionMember) return {};
+  auto value = message.substr(open + 1, close - open - 1);
+  return value.find('\\') == std::string_view::npos ? value : std::string_view();
+}
+std::string_view LeadingMethod(std::string_view message) {
+  constexpr std::string_view prefix = "{\"method\":\"";
+  if (!message.starts_with(prefix)) return {};
+  size_t end = message.find('"', prefix.size());
+  return end == std::string_view::npos ? std::string_view() : message.substr(prefix.size(), end - prefix.size());
 }
 NSData *ProtocolError(NSString *message) {
   return [NSJSONSerialization dataWithJSONObject:@{@"error": @{@"message": message}} options:0 error:nil];
@@ -223,33 +240,53 @@ class DevToolsClient final : public CefClient, public CefLifeSpanHandler, public
     return !IsDevToolsResource(request->GetURL());
   }
   bool OnDevToolsMessage(CefRefPtr<CefBrowser> target, const void* bytes, size_t length) override {
-    auto value = CefParseJSON(bytes, length, JSON_PARSER_RFC);
-    if (!value || value->GetType() != VTYPE_DICTIONARY) return true;
-    auto data = value->GetDictionary();
-    if (!data->HasKey("sessionId")) {
-      // Browser-domain replies can arrive inside ExecuteDevToolsMethod. Defer
-      // handling until it returns the assigned request ID.
+    auto message = Message(bytes, length);
+    auto session = TrailingSessionId(message);
+    if (session.empty()) {
+      // Only this frontend's two setup replies matter on the root session. They
+      // can arrive inside ExecuteDevToolsMethod, before their request IDs are
+      // assigned, so defer them. Afterwards, root traffic (automation commands,
+      // cookie polls) is ignored without being copied or parsed.
+      if (!awaitingControlReply_ || !LeadingMessageId(message)) return true;
+      std::string reply(message);
       CefRefPtr<DevToolsClient> client = this;
-      dispatch_async(dispatch_get_main_queue(), ^{ client->HandleControlReply(target, value); });
+      dispatch_async(dispatch_get_main_queue(), ^{ client->HandleControlReply(target, reply); });
       return true;
     }
     CVChromiumView *view = view_;
     if (closed_ || !view || !view->_toolsBrowser || view->_closed) return true;
-    auto session = data->GetString("sessionId").ToString();
-    if (session != session_ && !childSessions_.contains(session)) return true;
-    auto method = data->GetString("method");
-    auto params = data->GetDictionary("params");
-    if (params && method == "Target.attachedToTarget") childSessions_.insert(params->GetString("sessionId").ToString());
-    if (params && method == "Target.detachedFromTarget") childSessions_.erase(params->GetString("sessionId").ToString());
-    if (session == session_) data->Remove("sessionId");
-    auto message = CefProcessMessage::Create("CodevisorDevTools.message");
-    message->GetArgumentList()->SetString(0, CefWriteJSON(value, JSON_WRITER_DEFAULT));
-    view->_toolsBrowser->GetMainFrame()->SendProcessMessage(PID_RENDERER, message);
+    std::string sessionId(session);
+    // Other sessions, such as automation screenshots, are not this frontend's.
+    if (sessionId != session_ && !childSessions_.contains(sessionId)) return true;
+    auto method = LeadingMethod(message);
+    if (method == "Target.attachedToTarget" || method == "Target.detachedFromTarget") {
+      auto value = CefParseJSON(bytes, length, JSON_PARSER_RFC);
+      auto params = value && value->GetType() == VTYPE_DICTIONARY ? value->GetDictionary()->GetDictionary("params") : nullptr;
+      if (params && method == "Target.attachedToTarget") childSessions_.insert(params->GetString("sessionId").ToString());
+      if (params && method == "Target.detachedFromTarget") childSessions_.erase(params->GetString("sessionId").ToString());
+    }
+    // The frontend addresses its own session implicitly. "sessionId" is the
+    // final member, so dropping it truncates instead of rewriting the message.
+    std::string forwarded;
+    if (sessionId == session_) {
+      forwarded.reserve(length);
+      forwarded.append(message.substr(0, length - sessionMember.size() - session.size() - 2));
+      forwarded.push_back('}');
+    } else {
+      forwarded.assign(message);
+    }
+    auto process = CefProcessMessage::Create("CodevisorDevTools.message");
+    process->GetArgumentList()->SetString(0, forwarded);
+    view->_toolsBrowser->GetMainFrame()->SendProcessMessage(PID_RENDERER, process);
     return true;
   }
-  void HandleControlReply(CefRefPtr<CefBrowser> target, CefRefPtr<CefValue> value) {
+  void HandleControlReply(CefRefPtr<CefBrowser> target, const std::string& message) {
+    auto replyId = LeadingMessageId(message);
+    if (!awaitingControlReply_ || !replyId || (*replyId != targetInfoRequest_ && *replyId != attachRequest_)) return;
+    auto value = CefParseJSON(message, JSON_PARSER_RFC);
+    if (!value || value->GetType() != VTYPE_DICTIONARY) return;
     auto data = value->GetDictionary();
-    int identifier = data->GetInt("id");
+    int identifier = *replyId;
     auto result = data->GetDictionary("result");
     if (identifier == targetInfoRequest_ && result) {
       if (closed_ || !target->IsValid()) { Detach(target); return; }
@@ -262,6 +299,7 @@ class DevToolsClient final : public CefClient, public CefLifeSpanHandler, public
       }
     } else if (identifier == attachRequest_ && result) {
       session_ = result->GetString("sessionId");
+      awaitingControlReply_ = false;
       if (closed_) { Detach(target); return; }
       for (const auto& pending : pending_) Send(pending);
       pending_.clear();
@@ -314,6 +352,7 @@ class DevToolsClient final : public CefClient, public CefLifeSpanHandler, public
  private:
   void Detach(CefRefPtr<CefBrowser> target) {
     registration_ = nullptr;
+    awaitingControlReply_ = false;
     if (target && target->IsValid() && !session_.empty()) {
       auto params = CefDictionaryValue::Create();
       params->SetString("sessionId", session_);
@@ -339,6 +378,7 @@ class DevToolsClient final : public CefClient, public CefLifeSpanHandler, public
   bool closed_ = false;
   int targetInfoRequest_ = 0;
   int attachRequest_ = 0;
+  bool awaitingControlReply_ = true;
   std::string session_;
   std::set<std::string> childSessions_;
   std::vector<std::string> pending_;
@@ -361,13 +401,19 @@ class ContextInspection final : public CefDevToolsMessageObserver {
     if (!request_) Complete(nullptr);
   }
   bool OnDevToolsMessage(CefRefPtr<CefBrowser>, const void *bytes, size_t length) override {
-    auto value = CefParseJSON(bytes, length, JSON_PARSER_RFC);
-    if (!value || value->GetType() != VTYPE_DICTIONARY) return true;
-    auto data = value->GetDictionary();
-    if (!data->HasKey("id") || data->HasKey("sessionId")) return true;
+    auto message = Message(bytes, length);
+    auto replyId = LeadingMessageId(message);
+    // The request ID is assigned once ExecuteDevToolsMethod returns. Until then,
+    // defer root replies and compare them on the main queue.
+    if (!replyId || !TrailingSessionId(message).empty() || (request_ && *replyId != request_)) return true;
+    std::string reply(message);
+    int identifier = *replyId;
     CefRefPtr<ContextInspection> inspection = this;
     dispatch_async(dispatch_get_main_queue(), ^{
-      if (data->GetInt("id") == inspection->request_) inspection->Complete(data->GetDictionary("result"));
+      if (identifier != inspection->request_) return;
+      auto value = CefParseJSON(reply, JSON_PARSER_RFC);
+      auto data = value && value->GetType() == VTYPE_DICTIONARY ? value->GetDictionary() : nullptr;
+      inspection->Complete(data ? data->GetDictionary("result") : nullptr);
     });
     return true;
   }
