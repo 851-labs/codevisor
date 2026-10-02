@@ -3,6 +3,9 @@ import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
+import { developmentLayout } from "./dev-layout.mjs"
+import { prepareSwiftPackage } from "./swift-artifacts.mjs"
+
 // TestStore installs a process-wide executor hook, even without an explicit
 // withMainSerialExecutor call. Keep these suites out of unrelated tests' process.
 // The two complementary selections run every test with normal parallelism.
@@ -41,10 +44,19 @@ export function runSwiftTests(args = [], run = spawnSync) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const repoRoot = fileURLToPath(new URL("..", import.meta.url))
   // CodevisorNet links the tunnel xcframework from the shared artifact cache.
   const net = spawnSync("node", ["scripts/net-artifact.mjs", "ensure-swift"], {
-    cwd: fileURLToPath(new URL("..", import.meta.url)),
+    cwd: repoRoot,
     stdio: "inherit"
   })
-  process.exitCode = net.status !== 0 ? (net.status ?? 1) : runSwiftTests(process.argv.slice(2))
+  if (net.status !== 0) process.exitCode = net.status ?? 1
+  else {
+    const store = developmentLayout(repoRoot).build.swiftArtifactStore
+    // The packages runSwiftTests builds, each into its own .build.
+    for (const packagePath of ["packages/swift", "apps/screen-sharing-rig"]) {
+      await prepareSwiftPackage({ repoRoot, packagePath, store })
+    }
+    process.exitCode = runSwiftTests(process.argv.slice(2))
+  }
 }

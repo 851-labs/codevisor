@@ -1,8 +1,15 @@
-import { cp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises"
+import { createHash } from "node:crypto"
+import { cp, mkdir, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
-import { chromiumHelperName, chromiumHelperSuffixes, run } from "./chromium-artifact.mjs"
+import { cloneTree, ensureStoreEntry, touchStoreEntry } from "./apfs-clone.mjs"
+import {
+  chromiumArtifactsRoot,
+  chromiumHelperName,
+  chromiumHelperSuffixes,
+  run
+} from "./chromium-artifact.mjs"
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)))
 const env = process.env
@@ -12,20 +19,7 @@ const source = join(root, "apps/macos/Frameworks/Chromium")
 const name = "Chromium Embedded Framework.framework"
 const framework = join(frameworks, name)
 await mkdir(frameworks, { recursive: true })
-// CEF ships a flat framework. Xcode requires the standard versioned macOS
-// framework layout (the same conversion used by CEF's COPY_MAC_FRAMEWORK).
-await rm(framework, { recursive: true, force: true })
-const versioned = join(framework, "Versions/A")
-await mkdir(versioned, { recursive: true })
-await run(
-  "rsync",
-  ["-a", join(source, architectures[0], "sdk/Release", name) + "/", versioned + "/"],
-  root
-)
-await symlink("A", join(framework, "Versions/Current"))
-for (const item of ["Chromium Embedded Framework", "Libraries", "Resources"]) {
-  await symlink(`Versions/Current/${item}`, join(framework, item))
-}
+const signing = env.EXPANDED_CODE_SIGN_IDENTITY || "-"
 
 async function* files(directory, relative = "") {
   for (const entry of await readdir(join(directory, relative), { withFileTypes: true })) {
@@ -34,34 +28,99 @@ async function* files(directory, relative = "") {
     else if (entry.isFile()) yield path
   }
 }
-const binaries = []
-for await (const path of files(framework)) {
-  // The framework layout is versioned; only visit actual files, never symlinks.
-  if (path.endsWith("Chromium Embedded Framework") || path.endsWith(".dylib")) binaries.push(path)
-}
-if (architectures.length > 1) {
-  for (const path of binaries) {
+
+/// Builds the signed, versioned framework at `framework`.
+async function assembleFramework(framework) {
+  // CEF ships a flat framework. Xcode requires the standard versioned macOS
+  // framework layout (the same conversion used by CEF's COPY_MAC_FRAMEWORK).
+  const versioned = join(framework, "Versions/A")
+  await mkdir(versioned, { recursive: true })
+  await run(
+    "rsync",
+    ["-a", join(source, architectures[0], "sdk/Release", name) + "/", versioned + "/"],
+    root
+  )
+  await symlink("A", join(framework, "Versions/Current"))
+  for (const item of ["Chromium Embedded Framework", "Libraries", "Resources"]) {
+    await symlink(`Versions/Current/${item}`, join(framework, item))
+  }
+  const binaries = []
+  for await (const path of files(framework)) {
+    // The framework layout is versioned; only visit actual files, never symlinks.
+    if (path.endsWith("Chromium Embedded Framework") || path.endsWith(".dylib")) binaries.push(path)
+  }
+  if (architectures.length > 1) {
+    for (const path of binaries) {
+      await run(
+        "lipo",
+        [
+          "-create",
+          ...architectures.map((arch) =>
+            join(source, arch, "sdk/Release", name, path.replace(/^Versions\/A\//, ""))
+          ),
+          "-output",
+          join(framework, path)
+        ],
+        root
+      )
+    }
+    for (const arch of architectures.slice(1)) {
+      await cp(
+        join(source, arch, "sdk/Release", name, `Resources/v8_context_snapshot.${arch}.bin`),
+        join(framework, `Resources/v8_context_snapshot.${arch}.bin`)
+      )
+    }
+  }
+  for (const path of binaries)
     await run(
-      "lipo",
+      "codesign",
       [
-        "-create",
-        ...architectures.map((arch) =>
-          join(source, arch, "sdk/Release", name, path.replace(/^Versions\/A\//, ""))
-        ),
-        "-output",
+        "--force",
+        "--sign",
+        signing,
+        "--options",
+        "runtime",
+        "--timestamp=none",
         join(framework, path)
       ],
       root
     )
-  }
-  for (const arch of architectures.slice(1)) {
-    await cp(
-      join(source, arch, "sdk/Release", name, `Resources/v8_context_snapshot.${arch}.bin`),
-      join(framework, `Resources/v8_context_snapshot.${arch}.bin`)
-    )
-  }
+  await run(
+    "codesign",
+    ["--force", "--sign", signing, "--options", "runtime", "--timestamp=none", framework],
+    root
+  )
 }
-const signing = env.EXPANDED_CODE_SIGN_IDENTITY || "-"
+
+/// Identifies one assembled framework: the CEF build each architecture
+/// comes from, the signing identity, and this script's own recipe.
+async function signedFrameworkKey() {
+  const hash = createHash("sha256")
+  for (const arch of architectures) {
+    hash.update(`${arch}\0${await realpath(join(source, arch, "sdk/Release", name))}\0`)
+  }
+  hash.update(`${signing}\0`)
+  hash.update(await readFile(fileURLToPath(import.meta.url)))
+  return hash.digest("hex").slice(0, 32)
+}
+
+await rm(framework, { recursive: true, force: true })
+if (env.CONFIGURATION === "Debug") {
+  // The signed framework is identical for every worktree, but signing
+  // rewrites each ~230 MB binary, so a per-build copy never shares blocks.
+  // Assemble it once per CEF build and identity, then clone it into the
+  // app: no per-worktree copy and no re-signing on every build.
+  const store = join(chromiumArtifactsRoot(env), "signed-frameworks")
+  const key = await signedFrameworkKey()
+  const entry = await ensureStoreEntry(store, key, (staging) =>
+    assembleFramework(join(staging, name))
+  )
+  await touchStoreEntry(store, key)
+  await cloneTree(join(entry, name), framework)
+} else {
+  await assembleFramework(framework)
+}
+
 // dyld discovers interposers only in libraries loaded at process startup.
 // Both the app and every helper link this signed, app-owned dependency.
 const storageName = "CodevisorBrowserStorage.dylib"
@@ -82,25 +141,6 @@ else
 await run(
   "codesign",
   ["--force", "--sign", signing, "--options", "runtime", "--timestamp=none", storageLibrary],
-  root
-)
-for (const path of binaries)
-  await run(
-    "codesign",
-    [
-      "--force",
-      "--sign",
-      signing,
-      "--options",
-      "runtime",
-      "--timestamp=none",
-      join(framework, path)
-    ],
-    root
-  )
-await run(
-  "codesign",
-  ["--force", "--sign", signing, "--options", "runtime", "--timestamp=none", framework],
   root
 )
 for (const suffix of chromiumHelperSuffixes) {

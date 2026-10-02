@@ -5,6 +5,9 @@ import { cp, mkdir, readdir, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 
+import { developmentLayout } from "./dev-layout.mjs"
+import { prepareSwiftPackage } from "./swift-artifacts.mjs"
+
 const root = fileURLToPath(new URL("..", import.meta.url))
 const harness = join(root, "tmp/macos-transcript-tests")
 const sources = join(harness, "Sources/TranscriptSurface")
@@ -59,6 +62,11 @@ let package = Package(
 )
 `
 )
+await prepareSwiftPackage({
+  repoRoot: root,
+  packagePath: "tmp/macos-transcript-tests",
+  store: developmentLayout(root).build.swiftArtifactStore
+})
 const result = spawnSync("swift", ["test", "--package-path", harness, ...process.argv.slice(2)], {
   stdio: "inherit"
 })

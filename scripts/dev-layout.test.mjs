@@ -1,11 +1,12 @@
 import assert from "node:assert/strict"
-import { access, mkdtemp, rm } from "node:fs/promises"
-import { tmpdir } from "node:os"
+import { access, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises"
+import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
 
 import {
   developmentLayout,
+  discardLegacyBunCache,
   ensureBuildDirectories,
   IOS_DEVELOPMENT_BUNDLE_IDENTIFIER,
   iosDevelopmentBundleIdentifier,
@@ -25,7 +26,8 @@ test("development layout mirrors production roots inside tmp", () => {
   assert.equal(layout.remoteCloud.data, join(root, "tmp/remote-cloud/.codevisor/data"))
   assert.equal(layout.build.macos.derivedData, join(root, "tmp/build/macos/DerivedData"))
   assert.equal(layout.build.ios.derivedData, join(root, "tmp/build/ios/DerivedData"))
-  assert.equal(layout.build.bunCache, join(root, "tmp/build/bun-cache"))
+  // Shared across worktrees: node_modules are APFS clones of the bun cache.
+  assert.equal(layout.build.bunCache, join(homedir(), ".codevisor-development/artifacts/bun-cache"))
   assert.equal(layout.build.nodeGyp, join(root, "tmp/build/node-gyp"))
   assert.equal(layout.wrangler, join(root, "tmp/.wrangler"))
   assert.equal(IOS_DEVELOPMENT_BUNDLE_IDENTIFIER, "com.851labs.Codevisor.Development.iOS")
@@ -42,7 +44,7 @@ test("iOS dev bundle identifiers are stable and isolated by worktree", () => {
 test("build-only setup does not create runtime state roots", async () => {
   const root = await mkdtemp(join(tmpdir(), "codevisor-layout-test-"))
   try {
-    const layout = developmentLayout(root, {})
+    const layout = developmentLayout(root, { CODEVISOR_BUN_CACHE: join(root, "bun-cache") })
     await ensureBuildDirectories(layout)
 
     await access(layout.build.bunCache)
@@ -69,4 +71,23 @@ test("development environments point services at their own production-shaped roo
   assert.equal(remote.CODEVISOR_DATA_DIR, layout.remoteCloud.data)
   assert.equal(remote.CODEVISOR_WORKTREES_ROOT, layout.remoteCloud.worktrees)
   assert.equal(remote.PATH, "/bin")
+})
+
+test("a worktree's pre-sharing bun cache is moved aside for background deletion", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codevisor-layout-test-"))
+  try {
+    const layout = developmentLayout(root, { CODEVISOR_BUN_CACHE: join(root, "shared-bun-cache") })
+    await mkdir(layout.build.legacyBunCache, { recursive: true })
+    await writeFile(join(layout.build.legacyBunCache, "package.tgz"), "")
+    const removed = []
+
+    assert.equal(await discardLegacyBunCache(layout, (path) => removed.push(path)), true)
+    assert.equal(await discardLegacyBunCache(layout, (path) => removed.push(path)), false)
+
+    await assert.rejects(access(layout.build.legacyBunCache), { code: "ENOENT" })
+    assert.equal(removed.length, 1)
+    assert.deepEqual(await readdir(removed[0]), ["package.tgz"])
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
 })
