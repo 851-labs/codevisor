@@ -111,12 +111,23 @@
 
   /// Per-machine rig settings, in the rig's defaults (the product keeps them per machine id too).
   enum RigMachineSettings {
-    /// Dynamic Resolution (851-2340): on unless turned off for this machine.
+    /// Dynamic Resolution (851-2340): off unless turned on for this machine (851-2481).
     static func dynamicResolution(_ id: String) -> Bool {
-      UserDefaults.standard.object(forKey: "dynamicResolution.\(id)") as? Bool ?? true
+      resetDynamicResolutionOnce()
+      return UserDefaults.standard.object(forKey: "dynamicResolution.\(id)") as? Bool ?? false
     }
     static func setDynamicResolution(_ enabled: Bool, for id: String) {
+      resetDynamicResolutionOnce()
       UserDefaults.standard.set(enabled, forKey: "dynamicResolution.\(id)")
+    }
+    /// 851-2481: every machine's choice cleared once for the new default, as in the app.
+    private static func resetDynamicResolutionOnce() {
+      let defaults = UserDefaults.standard
+      guard !defaults.bool(forKey: "dynamicResolutionResetToOff") else { return }
+      for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("dynamicResolution.") {
+        defaults.removeObject(forKey: key)
+      }
+      defaults.set(true, forKey: "dynamicResolutionResetToOff")
     }
     /// HDR (851-2480): off unless turned on for this machine.
     static func highDynamicRange(_ id: String) -> Bool {

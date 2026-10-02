@@ -2,19 +2,35 @@ import Foundation
 import Testing
 @testable import CodevisorCore
 
-/// 851-2340: Dynamic Resolution is per machine, on by default, and works for cloud machine ids too.
+/// 851-2340: Dynamic Resolution is per machine and works for cloud machine ids too; off by default (851-2481).
 struct ScreenSharingMachinePreferencesTests {
-  @Test func dynamicResolutionIsPerMachineAndOnByDefault() throws {
+  @Test func dynamicResolutionIsPerMachineAndOffByDefault() throws {
     let suite = "ScreenSharingMachinePreferencesTests.\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
     let preferences = ScreenSharingMachinePreferences(defaults: defaults)
-    #expect(preferences.dynamicResolution(machineId: "remote-vps"))
-    preferences.setDynamicResolution(false, machineId: "remote-vps")
     #expect(!preferences.dynamicResolution(machineId: "remote-vps"))
-    #expect(preferences.dynamicResolution(machineId: "cloud:device-1"))
-    preferences.setDynamicResolution(false, machineId: "cloud:device-1")
-    #expect(!ScreenSharingMachinePreferences(defaults: defaults).dynamicResolution(machineId: "cloud:device-1"))
+    preferences.setDynamicResolution(true, machineId: "remote-vps")
+    #expect(preferences.dynamicResolution(machineId: "remote-vps"))
+    #expect(!preferences.dynamicResolution(machineId: "cloud:device-1"))
+    preferences.setDynamicResolution(true, machineId: "cloud:device-1")
+    #expect(ScreenSharingMachinePreferences(defaults: defaults).dynamicResolution(machineId: "cloud:device-1"))
+  }
+
+  /// 851-2481: choices saved under the old default (on) are reset to off once; later ones are kept.
+  @Test func savedChoicesAreResetOnceForTheNewDefault() throws {
+    let suite = "ScreenSharingMachinePreferencesTests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    defaults.set(true, forKey: "screenSharing.dynamicResolution.remote-vps")
+    defaults.set(false, forKey: "screenSharing.dynamicResolution.local")
+    defaults.set(0.5, forKey: "screenSharing.soundVolume.remote-vps")
+    let preferences = ScreenSharingMachinePreferences(defaults: defaults)
+    #expect(!preferences.dynamicResolution(machineId: "remote-vps"))
+    #expect(!preferences.dynamicResolution(machineId: "local"))
+    #expect(preferences.sound(machineId: "remote-vps").volume == 0.5, "only Dynamic Resolution is reset")
+    preferences.setDynamicResolution(true, machineId: "remote-vps")
+    #expect(ScreenSharingMachinePreferences(defaults: defaults).dynamicResolution(machineId: "remote-vps"))
   }
 
   /// 851-2480: HDR is per machine and off until turned on.

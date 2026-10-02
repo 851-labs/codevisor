@@ -10,13 +10,28 @@ public struct ScreenSharingMachinePreferences {
 
   private static func key(_ machineId: String) -> String { "screenSharing.dynamicResolution.\(machineId)" }
 
-  /// Dynamic Resolution: on unless the user turned it off for this machine.
+  /// Dynamic Resolution: off unless the user turned it on for this machine (851-2481).
   public func dynamicResolution(machineId: String) -> Bool {
-    defaults.object(forKey: Self.key(machineId)) as? Bool ?? true
+    resetDynamicResolutionOnce()
+    return defaults.object(forKey: Self.key(machineId)) as? Bool ?? false
   }
 
   public func setDynamicResolution(_ enabled: Bool, machineId: String) {
+    resetDynamicResolutionOnce()
     defaults.set(enabled, forKey: Self.key(machineId))
+  }
+
+  /// Set once every machine's Dynamic Resolution choice has been cleared for the new default.
+  private static let dynamicResolutionResetKey = "screenSharing.dynamicResolutionResetToOff"
+
+  /// 851-2481: when Dynamic Resolution became off by default, every machine went back to off,
+  /// including those saved as on under the old default. Once; later choices are kept.
+  private func resetDynamicResolutionOnce() {
+    guard !defaults.bool(forKey: Self.dynamicResolutionResetKey) else { return }
+    for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("screenSharing.dynamicResolution.") {
+      defaults.removeObject(forKey: key)
+    }
+    defaults.set(true, forKey: Self.dynamicResolutionResetKey)
   }
 
   /// HDR (851-2480): off unless the user turned it on for this machine.

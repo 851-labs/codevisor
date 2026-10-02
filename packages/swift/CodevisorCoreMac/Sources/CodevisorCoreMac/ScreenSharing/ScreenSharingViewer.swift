@@ -46,7 +46,7 @@ public struct ScreenSharingViewer {
     public var dynamicResolutionRevision = 0
     var visible = false
 
-    public init(preferences: ScreenSharingPanePreferences = .init(), dynamicResolution: Bool = true) {
+    public init(preferences: ScreenSharingPanePreferences = .init(), dynamicResolution: Bool = false) {
       self.preferences = preferences
       self.dynamicResolution = dynamicResolution
     }
