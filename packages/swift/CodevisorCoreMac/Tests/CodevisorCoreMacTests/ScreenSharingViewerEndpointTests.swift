@@ -171,6 +171,30 @@ struct ScreenSharingViewerEndpointTests {
     endpoint.close()
   }
 
+  /// 851-2480: the host hears "this screen can show HDR" only while the machine's HDR setting is on
+  /// and the screen can; the sheet's note says why HDR isn't showing while it's on.
+  @Test func hdrIsReportedOnlyWhileTheSettingIsOnAndTheScreenCanShowIt() {
+    let fixture = EndpointFixture()
+    fixture.session.supportsHighDynamicRange = true
+    let endpoint = fixture.make()
+    #expect(!endpoint.highDynamicRange, "off until the pane applies the machine's setting")
+    fixture.surface.onScreenHighDynamicRangeChanged?(true)
+    #expect(fixture.session.highDynamicRangeReports == [false])
+    #expect(endpoint.highDynamicRangeNote == nil, "no note while HDR is off")
+    endpoint.highDynamicRange = true
+    #expect(fixture.session.highDynamicRangeReports == [false, true])
+    fixture.session.onVideoFormatChanged?(.standard, "The shared display can't show HDR.")
+    #expect(endpoint.highDynamicRangeNote == "The shared display can't show HDR.")
+    fixture.session.onVideoFormatChanged?(.high, nil)
+    #expect(endpoint.highDynamicRangeNote == nil)
+    fixture.surface.onScreenHighDynamicRangeChanged?(false)
+    #expect(fixture.session.highDynamicRangeReports == [false, true, false])
+    #expect(endpoint.highDynamicRangeNote == "This Mac's screen can't show HDR. Move the window to an HDR display.")
+    endpoint.highDynamicRange = false
+    #expect(fixture.session.highDynamicRangeReports == [false, true, false, false])
+    endpoint.close()
+  }
+
   @Test func refusedCaptureReportsTheSurfaceMessageAndCloseReleasesAHeldLease() async throws {
     let fixture = EndpointFixture()
     fixture.session.controlChannel.isAvailable = true

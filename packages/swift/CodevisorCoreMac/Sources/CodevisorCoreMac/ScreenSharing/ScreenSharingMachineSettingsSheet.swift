@@ -38,6 +38,10 @@ public struct ScreenSharingMachineSettings: Equatable, Sendable {
   public var dynamicResolution: Bool?
   /// Why Dynamic Resolution can't apply on the current connection; the toggle is then disabled.
   public var dynamicResolutionNote: String?
+  /// HDR (851-2480); nil when the connection can't carry it (VNC).
+  public var highDynamicRange: Bool?
+  /// Why HDR isn't showing while it's on, e.g. the host's display or this Mac's screen can't.
+  public var highDynamicRangeNote: String?
   public var displays: [Display]
   public var preferredDisplayId: String?
   public var lastConnected: Date?
@@ -63,16 +67,18 @@ public struct ScreenSharingMachineSettingsChanges: Equatable, Sendable {
   }
 
   public var dynamicResolution: Bool?
+  public var highDynamicRange: Bool?
   public var preferredDisplayId: String?
   public var userName: String?
   public var password: Password = .keep
   public var sound: ScreenSharingMachineSettings.Sound?
 
   public init(
-    dynamicResolution: Bool? = nil, preferredDisplayId: String? = nil, userName: String? = nil,
-    password: Password = .keep, sound: ScreenSharingMachineSettings.Sound? = nil
+    dynamicResolution: Bool? = nil, highDynamicRange: Bool? = nil, preferredDisplayId: String? = nil,
+    userName: String? = nil, password: Password = .keep, sound: ScreenSharingMachineSettings.Sound? = nil
   ) {
     self.sound = sound
+    self.highDynamicRange = highDynamicRange
     self.dynamicResolution = dynamicResolution; self.preferredDisplayId = preferredDisplayId
     self.userName = userName; self.password = password
   }
@@ -96,6 +102,9 @@ public struct ScreenSharingMachineSettingsDraft: Equatable, Sendable {
     var changes = ScreenSharingMachineSettingsChanges()
     if settings.dynamicResolution != original.dynamicResolution {
       changes.dynamicResolution = settings.dynamicResolution
+    }
+    if settings.highDynamicRange != original.highDynamicRange {
+      changes.highDynamicRange = settings.highDynamicRange
     }
     if settings.preferredDisplayId != original.preferredDisplayId, let display = settings.preferredDisplayId,
       settings.displays.contains(where: { $0.id == display })
@@ -212,7 +221,9 @@ public struct ScreenSharingMachineSettingsSheet: View {
   }
 
   @ViewBuilder private var display: some View {
-    if draft.settings.dynamicResolution != nil || draft.settings.displays.count > 1 {
+    if draft.settings.dynamicResolution != nil || draft.settings.highDynamicRange != nil
+      || draft.settings.displays.count > 1
+    {
       Section("Display") {
         if draft.settings.dynamicResolution != nil {
           Toggle(
@@ -222,6 +233,15 @@ public struct ScreenSharingMachineSettingsSheet: View {
           )
           .disabled(draft.settings.dynamicResolutionNote != nil)
           if let note = draft.settings.dynamicResolutionNote {
+            Text(note).font(.callout).foregroundStyle(.secondary)
+          }
+        }
+        if draft.settings.highDynamicRange != nil {
+          Toggle(
+            "High Dynamic Range (HDR)",
+            isOn: Binding(
+              get: { draft.settings.highDynamicRange ?? false }, set: { draft.settings.highDynamicRange = $0 }))
+          if draft.settings.highDynamicRange == true, let note = draft.settings.highDynamicRangeNote {
             Text(note).font(.callout).foregroundStyle(.secondary)
           }
         }

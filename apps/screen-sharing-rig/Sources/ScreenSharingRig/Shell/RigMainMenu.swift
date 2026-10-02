@@ -118,6 +118,13 @@
     static func setDynamicResolution(_ enabled: Bool, for id: String) {
       UserDefaults.standard.set(enabled, forKey: "dynamicResolution.\(id)")
     }
+    /// HDR (851-2480): off unless turned on for this machine.
+    static func highDynamicRange(_ id: String) -> Bool {
+      UserDefaults.standard.object(forKey: "highDynamicRange.\(id)") as? Bool ?? false
+    }
+    static func setHighDynamicRange(_ enabled: Bool, for id: String) {
+      UserDefaults.standard.set(enabled, forKey: "highDynamicRange.\(id)")
+    }
     /// The machine's sound (851-2379): on unless turned off, volume 0…1.
     static func sound(_ id: String) -> ScreenSharingMachineSettings.Sound {
       .init(

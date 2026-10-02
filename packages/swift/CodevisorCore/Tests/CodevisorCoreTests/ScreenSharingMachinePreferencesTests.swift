@@ -17,6 +17,18 @@ struct ScreenSharingMachinePreferencesTests {
     #expect(!ScreenSharingMachinePreferences(defaults: defaults).dynamicResolution(machineId: "cloud:device-1"))
   }
 
+  /// 851-2480: HDR is per machine and off until turned on.
+  @Test func hdrIsPerMachineAndOffByDefault() throws {
+    let suite = "ScreenSharingMachinePreferencesTests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let preferences = ScreenSharingMachinePreferences(defaults: defaults)
+    #expect(!preferences.highDynamicRange(machineId: "cloud:device-1"))
+    preferences.setHighDynamicRange(true, machineId: "cloud:device-1")
+    #expect(ScreenSharingMachinePreferences(defaults: defaults).highDynamicRange(machineId: "cloud:device-1"))
+    #expect(!preferences.highDynamicRange(machineId: "remote-vps"))
+  }
+
   @Test func lastConnectedIsPerMachineAndAbsentUntilSet() throws {
     let suite = "ScreenSharingMachinePreferencesTests.\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))

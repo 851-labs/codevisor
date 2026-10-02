@@ -32,6 +32,16 @@ struct ScreenSharingMachineSettingsTests {
     #expect(draft.changes(from: Self.original).isEmpty)
   }
 
+  /// HDR (851-2480) applies live and never reconnects.
+  @Test func hdrChangesApplyWithoutReconnecting() {
+    var withHDR = Self.original
+    withHDR.highDynamicRange = false
+    var draft = ScreenSharingMachineSettingsDraft(withHDR)
+    draft.settings.highDynamicRange = true
+    #expect(draft.changes(from: withHDR) == .init(highDynamicRange: true))
+    #expect(!draft.changes(from: withHDR).reconnects)
+  }
+
   /// Sound (851-2379) applies live, never reconnects, and only a connection with sound shows it.
   @Test func soundChangesApplyWithoutReconnecting() {
     var withSound = Self.original
