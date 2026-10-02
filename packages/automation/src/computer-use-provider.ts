@@ -124,6 +124,11 @@ const macBridgeConfiguration = (
   }
 }
 
+/// Whether the native Codevisor app is running here and listening for its
+/// helper requests (screen sharing, simulators, Computer Use).
+export const macNativeHostAvailable = (dataDir: string): boolean =>
+  macBridgeConfiguration(dataDir) !== undefined
+
 const connectMacHelper = async (dataDir: string): Promise<HelperClient> => {
   const configuration = macBridgeConfiguration(dataDir)
   if (configuration === undefined) {

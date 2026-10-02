@@ -9,7 +9,7 @@ public enum ScreenSharingVideoCodec: String, Sendable, CaseIterable {
   case hevc
   case hevc444
 
-  var mediaType: CMVideoCodecType { self == .h264 ? kCMVideoCodecType_H264 : kCMVideoCodecType_HEVC }
+  package var mediaType: CMVideoCodecType { self == .h264 ? kCMVideoCodecType_H264 : kCMVideoCodecType_HEVC }
   package var payloadName: String { self == .h264 ? "H264" : "H265" }
   var decodedPixelFormat: OSType { decodedPixelFormat(.standard) }
   /// What the decoder outputs for a stream in `range`: 10-bit planes for high dynamic range (851-2380).

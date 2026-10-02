@@ -12,6 +12,7 @@
 		FC8A03232FF3634D00689171 /* StreamMarkdown in Frameworks */ = {isa = PBXBuildFile; productRef = FC8A03222FF3634D00689171 /* StreamMarkdown */; };
 		FCE74E8D2FF368F000B42227 /* CodevisorCore in Frameworks */ = {isa = PBXBuildFile; productRef = FCE74E8C2FF368F000B42227 /* CodevisorCore */; };
 		FCE74E922FF368F000B42227 /* CodevisorCoreMac in Frameworks */ = {isa = PBXBuildFile; productRef = FCE74E932FF368F000B42227 /* CodevisorCoreMac */; };
+		C1A0000000000000000000A1 /* SimulatorPane in Frameworks */ = {isa = PBXBuildFile; productRef = C1A0000000000000000000A2 /* SimulatorPane */; };
 		FCE74E942FF368F000B42227 /* CodevisorUI in Frameworks */ = {isa = PBXBuildFile; productRef = FCE74E952FF368F000B42227 /* CodevisorUI */; };
 		FCE74E8E2FF368F000B42227 /* CodevisorTheming in Frameworks */ = {isa = PBXBuildFile; productRef = FCE74E8F2FF368F000B42227 /* CodevisorTheming */; };
 		FCE74E902FF368F000B42227 /* CodeHighlighter in Frameworks */ = {isa = PBXBuildFile; productRef = FCE74E912FF368F000B42227 /* CodeHighlighter */; };
@@ -69,6 +70,7 @@
 				FCE74E8D2FF368F000B42227 /* CodevisorCore in Frameworks */,
 				FCE74E922FF368F000B42227 /* CodevisorCoreMac in Frameworks */,
 				FCE74E942FF368F000B42227 /* CodevisorUI in Frameworks */,
+				C1A0000000000000000000A1 /* SimulatorPane in Frameworks */,
 				FCE74E8E2FF368F000B42227 /* CodevisorTheming in Frameworks */,
 				FCE74E902FF368F000B42227 /* CodeHighlighter in Frameworks */,
 				FCE74E962FF368F000B42227 /* Autocomplete in Frameworks */,
@@ -136,6 +138,7 @@
 				FCE74E8C2FF368F000B42227 /* CodevisorCore */,
 				FCE74E932FF368F000B42227 /* CodevisorCoreMac */,
 				FCE74E952FF368F000B42227 /* CodevisorUI */,
+				C1A0000000000000000000A2 /* SimulatorPane */,
 				FCE74E8F2FF368F000B42227 /* CodevisorTheming */,
 				FCE74E912FF368F000B42227 /* CodeHighlighter */,
 				FCE74E972FF368F000B42227 /* Autocomplete */,
@@ -706,6 +709,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = FC8A031D2FF3634D00689171 /* XCLocalSwiftPackageReference "../../packages/swift" */;
 			productName = CodevisorCoreMac;
+		};
+		C1A0000000000000000000A2 /* SimulatorPane */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FC8A031D2FF3634D00689171 /* XCLocalSwiftPackageReference "../../packages/swift" */;
+			productName = SimulatorPane;
 		};
 		FCE74E952FF368F000B42227 /* CodevisorUI */ = {
 			isa = XCSwiftPackageProductDependency;

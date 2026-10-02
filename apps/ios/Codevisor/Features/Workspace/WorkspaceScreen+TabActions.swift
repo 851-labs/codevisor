@@ -102,6 +102,7 @@ extension WorkspaceScreen {
     }
     if pane.kind == .document { FilePaneCache.shared.remove(paneId: pane.id) }
     if pane.kind == .review { ReviewPaneCache.shared.remove(paneId: pane.id) }
+    if pane.kind == .simulator { SimulatorPaneCache.shared.remove(paneId: pane.id) }
     if pane.kind == .terminal { TerminalSessionCache.shared.remove(terminalKey: pane.terminalKey) }
     if pane.kind == .chat {
       TranscriptPresentationSurfaceCache.shared.remove(paneID: pane.id)

@@ -13,7 +13,7 @@
     "is_component_build=false",
     "rtc_include_tests=false",
     "rtc_enable_objc_symbol_export=true",
-    "enable_stripping=true",
+    "enable_stripping=false",
     "enable_dsyms=true",
     "use_lld=true",
     "rtc_ios_use_opengl_rendering=true",

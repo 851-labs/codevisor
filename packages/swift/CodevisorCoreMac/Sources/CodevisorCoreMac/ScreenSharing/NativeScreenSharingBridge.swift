@@ -1,5 +1,6 @@
 import Foundation
 import CodevisorCore
+import ScreenSharing
 
 /// Adapts the existing authenticated Unix socket to the main-actor media host.
 /// The socket's client queue may wait; the app's main thread never blocks.
@@ -10,6 +11,8 @@ final class NativeScreenSharingBridge: @unchecked Sendable {
   /// from display sharing: view-only, several viewers, no exclusive lease.
   @MainActor private var computerUseHost: ComputerUseLivePreviewHost?
   @MainActor private var computerUseObservation: UUID?
+  /// Apple simulators (`simulator:` targets): several viewers per device, shared input.
+  @MainActor private var simulatorHost: SimulatorStreamHost?
   private let lock = NSLock()
   private var generation = 0
   private var enabled = false
@@ -37,6 +40,8 @@ final class NativeScreenSharingBridge: @unchecked Sendable {
           let previous = self.host
           self.host = nil
           self.shutdownComputerUseHost()
+          self.simulatorHost?.shutdown()
+          self.simulatorHost = nil
           await previous?.shutdown()
           guard self.lock.withLock({ self.enabled && self.generation == generation }) else {
             throw BridgeError("Screen Sharing host is stopped.")
@@ -48,6 +53,12 @@ final class NativeScreenSharingBridge: @unchecked Sendable {
           result.finish(.success(try JSONEncoder().encode(await host.handle(request))))
           return
         }
+        if request.displayId?.hasPrefix(SimulatorStreamTarget.prefix) == true {
+          let host = self.simulatorHost ?? SimulatorStreamHost()
+          self.simulatorHost = host
+          result.finish(.success(try JSONEncoder().encode(await host.handle(request))))
+          return
+        }
         let host = self.host ?? ScreenSharingHostService()
         self.host = host
         result.finish(.success(try JSONEncoder().encode(await host.handle(request))))
@@ -56,6 +67,8 @@ final class NativeScreenSharingBridge: @unchecked Sendable {
     do { return try result.wait() } catch { task.cancel(); throw error }
   }
 
+  /// Input for a simulator from a viewer without a stream: `{udid, message}` in, the device's
+  /// state out.
   func stop() {
     let generation = lock.withLock {
       enabled = false; return self.generation
@@ -65,6 +78,8 @@ final class NativeScreenSharingBridge: @unchecked Sendable {
       let host = self.host
       self.host = nil
       self.shutdownComputerUseHost()
+      self.simulatorHost?.shutdown()
+      self.simulatorHost = nil
       await host?.shutdown()
     }
   }

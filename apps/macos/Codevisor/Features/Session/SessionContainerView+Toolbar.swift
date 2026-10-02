@@ -2,6 +2,7 @@ import CodevisorCore
 import CodevisorCoreMac
 import CodevisorUI
 import ComposableArchitecture
+import SimulatorPane
 import SwiftUI
 
 extension SessionContainerView {
@@ -43,6 +44,11 @@ extension SessionContainerView {
     return (group.selectedPane as? ReviewPane)?.model
   }
 
+  var activeSimulatorModel: SimulatorPaneModel? {
+    guard let group = activeToolbarGroup, group.state.selectedPane?.kind == .simulator else { return nil }
+    return (group.selectedPane as? AppleSimulatorPane)?.model
+  }
+
   var activeScreenSharingPane: ScreenSharingPane? {
     guard let group = activeToolbarGroup, group.state.selectedPane?.kind == .screenSharing,
       let pane = group.selectedPane as? ScreenSharingPane, pane.store != nil
@@ -52,6 +58,8 @@ extension SessionContainerView {
 
   var paneControlsReplaceTitle: Bool {
     activePaneDescriptor?.kind == .browser || activeFileModel != nil || activeReviewModel != nil
+      // A chosen simulator's device picker takes the title's place.
+      || activeSimulatorModel?.device != nil
   }
 
   /// Chats retain the editable title and context previously used in Nous.
@@ -60,6 +68,7 @@ extension SessionContainerView {
     Binding(
       get: {
         if let pane = activeScreenSharingPane { return pane.connectionName }
+        if let device = activeSimulatorModel?.device { return device.name }
         guard let descriptor = activePaneDescriptor else { return "New Tab" }
         if descriptor.kind == .browser { return "" }
         let workspace = selectedWorkspace
@@ -67,7 +76,9 @@ extension SessionContainerView {
         return workspace.selectedCenterTab?.customTitle ?? paneTitle(descriptor)
       },
       set: { title in
-        guard !paneControlsReplaceTitle, activeScreenSharingPane == nil, activeFileModel == nil else { return }
+        guard !paneControlsReplaceTitle, activeScreenSharingPane == nil, activeFileModel == nil,
+          activeSimulatorModel?.device == nil
+        else { return }
         let workspace = selectedWorkspace
         renameCenterTab(workspace.selectedCenterTabId, to: title)
       }
@@ -81,6 +92,7 @@ extension SessionContainerView {
       }
       return "\(display.width) × \(display.height)"
     }
+    if activeSimulatorModel?.device != nil { return "" }
     guard activePaneDescriptor?.kind == .chat else { return "" }
     let workspace = selectedWorkspace
     let candidates: [String?] = [

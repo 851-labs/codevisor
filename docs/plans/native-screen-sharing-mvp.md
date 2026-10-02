@@ -14,7 +14,7 @@ The intended MVP is one Codevisor Mac viewing and controlling an existing displa
 - Chatless workspace navigation through the shared pane container, including conversion from New Tab and sidebar title updates.
 - Bounded media ownership, terminal renderer stop and owner-scoped cancellation of pending host starts.
 - A default-off `CODEVISOR_SCREEN_SHARING_DIAGNOSTIC_PROFILE=paced15-worker` profile: 120 fps capture request at adaptive level zero, 1–15 ms receiver playout bounds, synchronized arrival rendering with two drawables and off-main preparation. A capture request is not an achieved frame rate. Process-wide WebRTC configuration requires an app restart to change.
-- A standalone probe and a pinned WebRTC artifact-build recipe. The source build, generated-notice audit and isolated candidate tests pass with Xcode 27.0, and that build is the installed dependency (`851-labs/webrtc` `152.0.0-codevisor.1`) since September 15.
+- A standalone probe and a pinned WebRTC artifact-build recipe. The source build, generated-notice audit and isolated candidate tests pass with Xcode 27.0, and that build is the installed dependency (`851-labs/webrtc` `152.0.0-codevisor.1` from September 15, `152.0.0-codevisor.2` from October 2).
 
 ## Existing verification
 

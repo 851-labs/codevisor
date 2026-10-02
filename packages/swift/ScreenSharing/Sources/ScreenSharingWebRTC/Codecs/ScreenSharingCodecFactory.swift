@@ -1,4 +1,5 @@
 import Foundation
+import VideoToolbox
 @preconcurrency import WebRTC
 import ScreenSharing
 
@@ -37,7 +38,7 @@ final class ScreenSharingCodecFactory: NSObject, RTCVideoEncoderFactory, RTCVide
     frameDeliveryAudit: ScreenSharingFrameDeliveryAudit? = nil
   ) {
     self.metrics = metrics; self.useLowLatencyRateControl = useLowLatencyRateControl
-    codecs = Self.negotiable(primary: codec, fallbacks: fallbackCodecs)
+    codecs = Self.decodable(Self.negotiable(primary: codec, fallbacks: fallbackCodecs))
     sourceIdleMonitor = ScreenSharingSourceIdleMonitor(thresholdNs: sourceIdleThresholdNs)
     self.frameDeliveryAudit = frameDeliveryAudit
     self.disableLookAhead = disableLookAhead
@@ -57,6 +58,17 @@ final class ScreenSharingCodecFactory: NSObject, RTCVideoEncoderFactory, RTCVide
     var codecs = [primary]
     for fallback in fallbacks where !codecs.contains(fallback) { codecs.append(fallback) }
     return codecs
+  }
+
+  /// Only what this device can decode: HEVC needs VideoToolbox's hardware decoder (every iPhone
+  /// and Apple silicon Mac has one; the iOS Simulator doesn't, and would drop every frame), while
+  /// H.264 always decodes. WebRTC asks one list for both directions, so a sender offers the same.
+  static func decodable(
+    _ codecs: [ScreenSharingVideoCodec],
+    hardwareDecodes: (CMVideoCodecType) -> Bool = { VTIsHardwareDecodeSupported($0) }
+  ) -> [ScreenSharingVideoCodec] {
+    let usable = codecs.filter { $0 == .h264 || hardwareDecodes($0.mediaType) }
+    return usable.isEmpty ? [.h264] : usable
   }
 
   /// The low-latency encoder can't do 4:4:4 (it may reduce chroma). A peer that asked for low

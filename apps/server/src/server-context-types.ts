@@ -22,6 +22,7 @@ import type { BrowserProxy } from "./infra/browser-proxy.js"
 import type { ClientControlBroker } from "./infra/client-control.js"
 import type { SharedAccounts } from "./infra/shared-accounts.js"
 import type { RestartCoordinator } from "./restart-drain.js"
+import type { Simulators } from "./simulators.js"
 
 /// The server's service/config contracts, the Effect service tag, and the
 /// event fanout every route publishes through.
@@ -85,6 +86,8 @@ export interface CodevisorServerConfig {
   /// The loopback VNC server that stands in for a display on machines
   /// without the native helper; the socket route splices clients onto it.
   readonly screenSharingVNC?: ScreenSharingVNCConfig | undefined
+  /// Apple simulators (macOS with Xcode); absent elsewhere.
+  readonly simulators?: Simulators | undefined
   readonly sessionActivity?: SessionActivityController | undefined
   /// This machine's Codevisor Cloud device id (from `codevisor auth login`),
   /// advertised via /v1/info so clients can match this machine to its cloud

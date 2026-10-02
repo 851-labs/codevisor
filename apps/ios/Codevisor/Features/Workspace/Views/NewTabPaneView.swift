@@ -22,6 +22,9 @@ struct NewTabPaneView: View {
   var onNewBrowser: () -> Void = {}
   var onOpenFiles: () -> Void = {}
   var onReviewChanges: () -> Void = {}
+  var onNewSimulator: () -> Void = {}
+  /// The machine is a Mac with Xcode whose app streams its simulators.
+  var supportsSimulator = false
   /// The machine's API client, for the machine-scoped plugin pane rows.
   /// Nil (previews) shows no plugin rows.
   var client: (any CodevisorServerClienting)? = nil
@@ -56,6 +59,11 @@ struct NewTabPaneView: View {
           }
           newTabOption(title: "Review Changes", action: onReviewChanges) {
             Image(systemName: "plusminus")
+          }
+          if supportsSimulator {
+            newTabOption(title: "Simulator", action: onNewSimulator) {
+              Image(systemName: "iphone")
+            }
           }
           ForEach(pluginOptions) { option in
             newTabOption(

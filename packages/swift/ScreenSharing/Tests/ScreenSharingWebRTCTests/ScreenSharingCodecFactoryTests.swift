@@ -19,6 +19,14 @@ struct ScreenSharingCodecFactoryTests {
     #expect(info.parameters == codec.sdpParameters)
   }
 
+  @Test func aDeviceWithoutAnHEVCDecoderOffersOnlyH264() {
+    let all: [ScreenSharingVideoCodec] = [.hevc444, .hevc, .h264]
+    #expect(ScreenSharingCodecFactory.decodable(all) { _ in false } == [.h264])
+    #expect(ScreenSharingCodecFactory.decodable(all) { _ in true } == all)
+    // Nothing decodable still leaves H.264, which VideoToolbox always decodes.
+    #expect(ScreenSharingCodecFactory.decodable([.hevc]) { _ in false } == [.h264])
+  }
+
   @Test func theAdvertisedParametersPinTheProfileTierAndLevel() {
     // 42e034: constrained baseline at level 5.2, which covers the 4K60 ceiling,
     // with asymmetric levels allowed so a smaller viewer can answer lower.

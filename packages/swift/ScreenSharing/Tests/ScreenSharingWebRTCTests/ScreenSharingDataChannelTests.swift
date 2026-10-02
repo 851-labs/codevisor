@@ -9,9 +9,9 @@ import Testing
 /// malformed frame the remote could put on the wire.
 private let poisonByte: UInt8 = 0xFF
 
-/// The negotiated data channel over its real SCTP carrier. A fifth channel is
+/// The negotiated data channel over its real SCTP carrier. An extra channel is
 /// added to the loopback pair so the carrier's framing and its failure handling
-/// can be exercised with payloads the four protocol channels cannot express.
+/// can be exercised with payloads the protocol channels cannot express.
 @MainActor
 struct ScreenSharingDataChannelTests {
   /// Both ends of one extra negotiated channel, wired before negotiation and
@@ -40,11 +40,11 @@ struct ScreenSharingDataChannelTests {
       // Created on each peer's transport queue, as the peer creates its own channels.
       host = try await harness.sender.transport.perform { connection in
         try ScreenSharingDataChannel<Data>(
-          connection: connection, id: 14, label: "codevisor.test.v1", encode: { $0 }, decode: decode)
+          connection: connection, id: 16, label: "codevisor.test.v1", encode: { $0 }, decode: decode)
       }
       viewer = try await harness.receiver.transport.perform { connection in
         try ScreenSharingDataChannel<Data>(
-          connection: connection, id: 14, label: "codevisor.test.v1", encode: { $0 }, decode: decode)
+          connection: connection, id: 16, label: "codevisor.test.v1", encode: { $0 }, decode: decode)
       }
       viewer.onMessage = { [self] data in
         received.append(data)

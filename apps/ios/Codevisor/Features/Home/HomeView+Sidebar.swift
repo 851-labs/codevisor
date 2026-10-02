@@ -81,6 +81,7 @@ extension HomeView {
       if case .plugin = row.icon { PluginPaneCache.shared.remove(paneId: row.id) }
       if case .browser = row.icon { BrowserPaneCache.shared.remove(paneId: row.id) }
       if case .review = row.icon { ReviewPaneCache.shared.remove(paneId: row.id) }
+      if case .simulator = row.icon { SimulatorPaneCache.shared.remove(paneId: row.id) }
     }
   }
 

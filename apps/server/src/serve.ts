@@ -49,6 +49,7 @@ import { makeSharedAccounts, type SharedAccounts } from "./infra/shared-accounts
 import {
   restoreTerminalPersistence,
   screenSharingProvider,
+  simulatorsProvider,
   startMachineNetwork,
   systemNativeMcpManager
 } from "./serve-boot.js"
@@ -456,6 +457,7 @@ export const runServe = (
         },
         sessionActivity,
         ...screenSharingProvider(dirname(databasePath)),
+        simulators: simulatorsProvider(dirname(databasePath)),
         updater
       }),
       bootListener

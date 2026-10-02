@@ -1,5 +1,6 @@
 import CodevisorCore
 import CodevisorUI
+import SimulatorPane
 import SwiftUI
 
 /// One full-screen pane body: a chat transcript, the new-tab page, or a
@@ -41,6 +42,7 @@ struct WorkspacePaneContentView: View {
   let onConvertToTerminal: () -> Void
   let onConvertToBrowser: () -> Void
   let onConvertToReview: () -> Void
+  let onConvertToSimulator: () -> Void
   let onConvertToPlugin: (PluginNewTabOption) -> Void
   let serverConfig: CodevisorServerConfig?
   let workspaceCwd: String
@@ -51,6 +53,7 @@ struct WorkspacePaneContentView: View {
   /// WorkspaceScreen so the cache sees every visibility change.
   let browserPaneModel: (PaneDescriptorState) -> BrowserPaneModel
   let pluginPaneModel: (PaneDescriptorState) -> PluginPaneModel
+  let simulatorPaneModel: (PaneDescriptorState) -> SimulatorPaneModel?
   /// `codevisor.setTitle` from a plugin pane: rename that pane's tab.
   let onRenamePane: (PaneDescriptorState, String) -> Void
 
@@ -100,6 +103,8 @@ struct WorkspacePaneContentView: View {
         onNewBrowser: onConvertToBrowser,
         onOpenFiles: { onOpenFiles?() },
         onReviewChanges: onConvertToReview,
+        onNewSimulator: onConvertToSimulator,
+        supportsSimulator: environment.machines.statusByMachineId[machineId]?.supportsSimulator == true,
         client: machineClient,
         iconCacheNamespace: machineId,
         onOpenPlugin: onConvertToPlugin
@@ -109,6 +114,12 @@ struct WorkspacePaneContentView: View {
         .task(id: environment.machines.httpConnectionState(forMachineId: machineId)) {
           await browserPaneModel(pane).connectionDidChange()
         }
+    case .simulator:
+      if let model = simulatorPaneModel(pane) {
+        SimulatorPaneView(model: model)
+      } else {
+        ContentUnavailableView("Simulator unavailable", systemImage: "iphone")
+      }
     case .screenSharing:
       ContentUnavailableView(
         "Screen Sharing", systemImage: "display",

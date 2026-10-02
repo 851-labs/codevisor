@@ -60,6 +60,7 @@ extension WorkspaceScreen {
       onConvertToTerminal: { convertToTerminal(pane) },
       onConvertToBrowser: { convertToBrowser(pane) },
       onConvertToReview: { convertToReview(pane) },
+      onConvertToSimulator: { convertToSimulator(pane) },
       onConvertToPlugin: { convertToPlugin(pane, option: $0) },
       serverConfig: serverConfig,
       workspaceCwd: workspaceCwd,
@@ -67,6 +68,7 @@ extension WorkspaceScreen {
       machineId: resolvedServerId,
       browserPaneModel: { browserPaneModel(for: $0) },
       pluginPaneModel: { pluginPaneModel(for: $0) },
+      simulatorPaneModel: { simulatorPaneModel(for: $0) },
       onRenamePane: { renamePane($0, to: $1) }
     )
     .environment(\.openFileDocument, OpenFileDocumentAction { openFileDocument($0) })

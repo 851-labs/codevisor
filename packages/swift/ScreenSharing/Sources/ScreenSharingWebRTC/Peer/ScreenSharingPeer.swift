@@ -46,6 +46,8 @@ public class ScreenSharingPeer {
   public let displayChannel: ScreenSharingDisplayChannel
   /// HDR negotiation (851-2380).
   public let videoFormatChannel: ScreenSharingVideoFormatChannel
+  /// An Apple simulator's input and device state; only `simulator:` streams use it.
+  public let simulatorChannel: ScreenSharingSimulatorChannel
   public var onConnectionChanged: ((String) -> Void)?
   let codecFactory: ScreenSharingCodecFactory
   let transport: ScreenSharingPeerTransport
@@ -68,6 +70,7 @@ public class ScreenSharingPeer {
     audioChannel = staged.audioChannel
     displayChannel = staged.displayChannel
     videoFormatChannel = staged.videoFormatChannel
+    simulatorChannel = staged.simulatorChannel
     videoRefresh = staged.videoRefresh
     videoRefresh.onMessage = { [weak self] message in
       guard let self, !self.closed else { return }
@@ -202,10 +205,12 @@ public class ScreenSharingPeer {
     audioChannel.close()
     displayChannel.close()
     videoFormatChannel.close()
+    simulatorChannel.close()
     controlChannel.close()
     cancelGathering(CancellationError())
     transport.close(after: [
-      videoRefresh, clipboardChannel, cursorChannel, audioChannel, displayChannel, videoFormatChannel, controlChannel,
+      videoRefresh, clipboardChannel, cursorChannel, audioChannel, displayChannel, videoFormatChannel,
+      simulatorChannel, controlChannel,
     ])
     didClose()
   }
@@ -272,6 +277,7 @@ struct ScreenSharingPeerStaging: @unchecked Sendable {
   let audioChannel: ScreenSharingAudioChannel
   let displayChannel: ScreenSharingDisplayChannel
   let videoFormatChannel: ScreenSharingVideoFormatChannel
+  let simulatorChannel: ScreenSharingSimulatorChannel
   let videoRefresh: ScreenSharingDataChannel<ScreenSharingVideoRefreshMessage>
 
   /// What the role adds on the transport's queue, with the factory, the connection, the codec
@@ -361,5 +367,8 @@ struct ScreenSharingPeerStaging: @unchecked Sendable {
     videoFormatChannel = try ScreenSharingVideoFormatChannel(
       connection: connection, id: 12, label: "codevisor.video-format.v1",
       encode: { try $0.encoded() }, decode: ScreenSharingVideoFormatMessage.decode)
+    simulatorChannel = try ScreenSharingSimulatorChannel(
+      connection: connection, id: 14, label: "codevisor.simulator.v1",
+      encode: { try $0.encoded() }, decode: ScreenSharingSimulatorMessage.decode)
   }
 }

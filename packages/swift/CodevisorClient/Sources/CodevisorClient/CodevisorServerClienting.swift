@@ -2,7 +2,7 @@ import ACPKit
 import CodevisorProtocol
 import Foundation
 
-public protocol CodevisorServerClienting: BrowserStateClienting {
+public protocol CodevisorServerClienting: BrowserStateClienting, SimulatorClienting {
   func sharedHarnessAccount(
     harnessId: String, request: ServerSharedHarnessAccountRequest
   ) async throws -> ServerSharedHarnessAccountResponse

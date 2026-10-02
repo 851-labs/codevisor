@@ -228,7 +228,9 @@ public final class ScreenSharingDecoder: @unchecked Sendable {
           }
         }
       }, decompressionOutputRefCon: nil)
-    let specification = [kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder: true] as CFDictionary
+    let specification =
+      [kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder: Self.requiresHardware]
+      as CFDictionary
     let attributes: [CFString: Any] = [
       kCVPixelBufferPixelFormatTypeKey: codec.decodedPixelFormat(dynamicRange),
       kCVPixelBufferMetalCompatibilityKey: true,
@@ -251,7 +253,7 @@ public final class ScreenSharingDecoder: @unchecked Sendable {
         created, key: kVTDecompressionPropertyKey_UsingHardwareAcceleratedVideoDecoder,
         allocator: nil, valueOut: &hardware)
       let hardwareValue = hardware?.takeRetainedValue()
-      if hardwareStatus == noErr {
+      if hardwareStatus == noErr, Self.requiresHardware {
         guard hardwareValue as? Bool == true else {
           throw ScreenSharingError.unavailable("\(codec.payloadName) decoder is not hardware backed.")
         }
@@ -260,11 +262,24 @@ public final class ScreenSharingDecoder: @unchecked Sendable {
       }
       // Some low-latency VT implementations omit this diagnostic property.
       // RequireHardwareAcceleratedVideoDecoder still forbids software fallback.
-      metrics.label("decoderHardware", hardwareStatus == noErr ? "confirmed" : "required; query unsupported")
+      metrics.label(
+        "decoderHardware",
+        !Self.requiresHardware
+          ? "simulator (software)" : hardwareStatus == noErr ? "confirmed" : "required; query unsupported")
       format = description
       parameterSets = parameters
-      metrics.label("decoder", "VideoToolbox \(codec.rawValue) hardware")
+      metrics.label("decoder", "VideoToolbox \(codec.rawValue) \(Self.requiresHardware ? "hardware" : "software")")
     } catch { stop(); throw error }
+  }
+
+  /// Every Mac and iPhone decodes in hardware, and software decoding would add latency, so it's
+  /// required; the iOS Simulator has no hardware decoder at all and decodes in software.
+  private static var requiresHardware: Bool {
+    #if targetEnvironment(simulator)
+      false
+    #else
+      true
+    #endif
   }
 
   private func check(_ status: OSStatus, _ operation: String) throws {

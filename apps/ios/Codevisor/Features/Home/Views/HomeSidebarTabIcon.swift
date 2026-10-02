@@ -53,6 +53,8 @@ struct HomeSidebarTabIcon: View {
         }
       case .screenSharing:
         symbol("display")
+      case .simulator:
+        symbol("iphone")
       case .review:
         symbol("plusminus")
       case .document:

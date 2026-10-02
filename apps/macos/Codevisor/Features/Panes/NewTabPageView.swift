@@ -21,6 +21,7 @@ private struct NewTabOption: Identifiable, Equatable {
     case review
     case browser
     case screenSharing
+    case simulator
     case plugin(pluginId: String, paneType: String, iconPath: String?)
   }
 
@@ -64,6 +65,12 @@ struct NewTabPageView: View {
     return environment.machines.statusByMachineId[machineId]?.supportsScreenSharing == true
   }
 
+  /// A Mac with Xcode whose app streams its simulators.
+  private var supportsSimulator: Bool {
+    guard let machineId else { return false }
+    return environment.machines.statusByMachineId[machineId]?.supportsSimulator == true
+  }
+
   private var options: [NewTabOption] {
     [
       NewTabOption(id: "chat", title: "New Chat", kind: .chat),
@@ -73,7 +80,9 @@ struct NewTabPageView: View {
       NewTabOption(id: "review", title: "Review Changes", kind: .review),
     ]
       + (supportsScreenSharing
-        ? [NewTabOption(id: "screen-sharing", title: "Screen Sharing", kind: .screenSharing)] : []) + pluginOptions
+        ? [NewTabOption(id: "screen-sharing", title: "Screen Sharing", kind: .screenSharing)] : [])
+      + (supportsSimulator ? [NewTabOption(id: "simulator", title: "Simulator", kind: .simulator)] : [])
+      + pluginOptions
   }
 
   var body: some View {
@@ -125,6 +134,8 @@ struct NewTabPageView: View {
           Autocomplete.Action(option.title, id: option.id, systemImage: "globe") { open(option) }
         case .screenSharing:
           Autocomplete.Action(option.title, id: option.id, systemImage: "display") { open(option) }
+        case .simulator:
+          Autocomplete.Action(option.title, id: option.id, systemImage: "iphone") { open(option) }
         case .terminal:
           Autocomplete.Action(option.title, id: option.id, systemImage: "terminal") { open(option) }
         case .files:
@@ -165,6 +176,8 @@ struct NewTabPageView: View {
       }
     case .screenSharing:
       group?.convertNewTabPane(id: paneId, to: .screenSharing)
+    case .simulator:
+      group?.convertNewTabPane(id: paneId, to: .simulator)
     case .browser:
       group?.convertNewTabPane(id: paneId, to: .browser)
     case .review:

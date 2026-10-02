@@ -207,7 +207,7 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
     /// carries the new backing size, which the worker applies before acquiring.
     private func resizeDrawableOffMain() {
       guard offMainWorker != nil else { return }
-      let size = convertToBacking(bounds).size
+      let size = backingDrawableSize
       guard size.width >= 1, size.height >= 1 else { return }
       coordinator.setNeedsRedraw()
     }
@@ -231,11 +231,15 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
     }
   }
 
+  /// The view's own bounds in pixels. Not `convertToBacking(bounds)`: that maps through the
+  /// window, so a rotated view (a simulator held sideways) would get its turned bounding box and
+  /// draw the video squeezed into the swapped size.
   private var backingDrawableSize: CGSize {
     #if os(macOS)
-      convertToBacking(bounds).size
+      let scale = window?.backingScaleFactor ?? layer?.contentsScale ?? 1
+      return CGSize(width: bounds.width * scale, height: bounds.height * scale)
     #else
-      CGSize(width: bounds.width * contentScaleFactor, height: bounds.height * contentScaleFactor)
+      return CGSize(width: bounds.width * contentScaleFactor, height: bounds.height * contentScaleFactor)
     #endif
   }
 

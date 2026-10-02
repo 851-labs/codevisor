@@ -10,6 +10,7 @@ import Foundation
 import SwiftUI
 import CodevisorCore
 import CodevisorCoreMac
+import CodevisorCloud
 
 /// The data a pane is given to do its job. The terminal pane, for example,
 /// derives its working directory and server connection from here.
@@ -58,6 +59,8 @@ struct PaneContext {
   /// Opens a screen-sharing media route over the Codevisor tunnel to this
   /// machine (docs/plans/codevisor-tunnel.md); nil for direct machines.
   var openTunnelMedia: ScreenSharingViewerBackend.TunnelMediaProvider? = nil
+  /// The same tunnel route, raw, for panes that negotiate their own media (Simulator).
+  var openTunnelRoute: (@MainActor () async -> CloudTunnelMediaRoute?)? = nil
 }
 
 /// Workspace tab and split commands emitted by a focused pane.

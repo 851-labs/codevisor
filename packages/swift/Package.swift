@@ -36,6 +36,7 @@ let package = Package(
     .library(name: "CodevisorCore", targets: ["CodevisorCore"]),
     .library(name: "CodevisorCoreMac", targets: ["CodevisorCoreMac"]),
     .library(name: "CodevisorUI", targets: ["CodevisorUI"]),
+    .library(name: "SimulatorPane", targets: ["SimulatorPane"]),
     .library(name: "Autocomplete", targets: ["Autocomplete"]),
     // Screen sharing, in three targets: the WebRTC-free engine, the WebRTC peer, and test doubles.
     .library(name: "ScreenSharing", targets: ["ScreenSharing"]),
@@ -46,7 +47,7 @@ let package = Package(
   ],
   dependencies: [
     .package(url: "https://github.com/PostHog/posthog-ios.git", exact: "3.59.3"),
-    .package(url: "https://github.com/851-labs/webrtc.git", exact: "152.0.0-codevisor.1"),
+    .package(url: "https://github.com/851-labs/webrtc.git", exact: "152.0.0-codevisor.2"),
     .package(url: "https://github.com/pointfreeco/swift-composable-architecture.git", exact: "1.26.2"),
     .package(url: "https://github.com/pointfreeco/swift-concurrency-extras.git", exact: "1.4.1"),
   ],
@@ -391,6 +392,26 @@ let package = Package(
       ],
       path: "CodevisorCoreMac/Sources/CodevisorCoreMac",
       swiftSettings: strictSwiftSettings
+    ),
+    // MARK: SimulatorPane (an Apple simulator's screen, chrome and controls, shared by the macOS
+    // and iOS apps)
+    .target(
+      name: "SimulatorPane",
+      // The device's screen streams over WebRTC on both the Mac and iOS.
+      dependencies: [
+        "Autocomplete", "CodevisorCloud", "CodevisorCore", "CodevisorUI", "ScreenSharing", "ScreenSharingWebRTC",
+      ],
+      path: "SimulatorPane/Sources/SimulatorPane",
+      swiftSettings: strictSwiftSettings
+    ),
+    .testTarget(
+      name: "SimulatorPaneTests",
+      dependencies: ["SimulatorPane", "CodevisorTestSupport"],
+      path: "SimulatorPane/Tests/SimulatorPaneTests",
+      swiftSettings: strictSwiftSettings,
+      linkerSettings: [
+        .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@loader_path/../../.."], .when(platforms: [.macOS]))
+      ]
     ),
     // MARK: CodevisorUI (shared SwiftUI: theme tokens, motion, markdown/
     // highlight adapters, transcript environment plumbing — platform-

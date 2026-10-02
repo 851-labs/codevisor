@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url"
 
 import type { BackgroundTerminalIntegration } from "@codevisor/agent-runtime"
 import type { DataUpgradeProgress, ScreenSharingRequest } from "@codevisor/api"
-import { requestMacScreenSharing } from "@codevisor/automation"
+import { macNativeHostAvailable, requestMacScreenSharing } from "@codevisor/automation"
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import {
   defaultNativeConfigFileSystem,
@@ -29,6 +29,7 @@ import { makeTerminalPersistence } from "./infra/terminal-persistence.js"
 import { systemScalerCommands, xfceScaler } from "./routes/screen-sharing-vnc-scale.js"
 import { readScreenSharingVNC, vncScreenSharing } from "./routes/screen-sharing-vnc.js"
 import type { ScreenSharingVNCConfig } from "./server-context-types.js"
+import { makeSimulators, systemSimulatorEnvironment, type Simulators } from "./simulators.js"
 import type { StartupReporter } from "./startup-progress.js"
 
 /// Boot-time helpers for the `serve` entry point: argument parsing, bundle
@@ -57,6 +58,12 @@ export const screenSharingProvider = (
     vnc.desktop === "xfce" ? xfceScaler(vnc.port - 5900, systemScalerCommands) : undefined
   return { screenSharing: vncScreenSharing(vnc, scaler), screenSharingVNC: vnc }
 }
+/// Apple simulators, on a Mac whose native app streams them.
+export const simulatorsProvider = (dataDir: string): Simulators | undefined =>
+  process.platform === "darwin"
+    ? makeSimulators(systemSimulatorEnvironment, () => macNativeHostAvailable(dataDir))
+    : undefined
+
 /// Native MCP discovery over this machine's real harness configs.
 export const systemNativeMcpManager = (
   config: Omit<NativeMcpManagerConfig, "env" | "fs" | "homedir">

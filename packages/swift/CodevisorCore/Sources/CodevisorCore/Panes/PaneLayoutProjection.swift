@@ -107,7 +107,7 @@ public enum PaneLayoutProjection {
     case .subagent:
       return lhs.ownerChatSessionId == rhs.ownerChatSessionId
         && lhs.subagentToolCallId != nil && lhs.subagentToolCallId == rhs.subagentToolCallId
-    case .newTab, .plugin, .document, .browser, .screenSharing, .review:
+    case .newTab, .plugin, .document, .browser, .screenSharing, .review, .simulator:
       return false
     }
   }

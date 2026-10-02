@@ -61,6 +61,9 @@ public struct MachineStatus: Sendable, Equatable {
   /// The machine can stream the window a chat's agent controls through
   /// Computer Use to that chat's viewers.
   public var supportsComputerUseStreaming: Bool { features.contains("computer-use-stream-v1") }
+  /// The machine is a Mac with Xcode whose Codevisor app streams its Apple
+  /// simulators, so Simulator panes can be opened on it.
+  public var supportsSimulator: Bool { features.contains("simulator-v1") }
 }
 
 /// Whether `machineId` reaches this Mac's own server: the local entry, or a

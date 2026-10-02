@@ -30,6 +30,7 @@ export const defaultServerConfig = (
   sessionActivity: overrides.sessionActivity,
   screenSharing: overrides.screenSharing,
   screenSharingVNC: overrides.screenSharingVNC,
+  simulators: overrides.simulators,
   cloudDeviceId: overrides.cloudDeviceId,
   cloud: overrides.cloud
 })

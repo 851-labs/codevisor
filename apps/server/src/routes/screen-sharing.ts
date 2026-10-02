@@ -26,6 +26,16 @@ const computerUseSessionId = (displayId: string | undefined): string | undefined
     ? displayId.slice(computerUsePrefix.length).toLowerCase()
     : undefined
 
+/** An Apple simulator's screen, `simulator:<udid>`, viewed from a Simulator pane. */
+const simulatorTarget = /^simulator:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const isSimulatorTarget = (displayId: string | undefined): boolean =>
+  displayId !== undefined && simulatorTarget.test(displayId)
+
+const isKnownTarget = (displayId: string): boolean =>
+  uuid.test(displayId) ||
+  computerUseSessionId(displayId) !== undefined ||
+  isSimulatorTarget(displayId)
+
 export const routeScreenSharing = async (
   services: CodevisorServerServices,
   config: CodevisorServerConfig,
@@ -63,14 +73,10 @@ export const routeScreenSharing = async (
       Buffer.byteLength(payload.offer) > 256 * 1024 ||
       !payload.offer.includes("a=fingerprint:sha-256 ") ||
       payload.displayId === undefined ||
-      (!uuid.test(payload.displayId) && computerUseSessionId(payload.displayId) === undefined))
+      !isKnownTarget(payload.displayId))
   )
     throw new HttpFailure(400, "Invalid Screen Sharing offer or display")
-  if (
-    payload.displayId !== undefined &&
-    !uuid.test(payload.displayId) &&
-    computerUseSessionId(payload.displayId) === undefined
-  )
+  if (payload.displayId !== undefined && !isKnownTarget(payload.displayId))
     throw new HttpFailure(400, "Invalid Screen Sharing display")
   if (["start", "restart", "heartbeat"].includes(payload.operation)) {
     const sessionId = computerUseSessionId(payload.displayId)
@@ -86,11 +92,13 @@ export const routeScreenSharing = async (
       pane === undefined ||
       pane.workspaceId.toLowerCase() !== workspace.id.toLowerCase() ||
       pane.providerId !== "codevisor" ||
-      (sessionId === undefined
-        ? pane.paneType !== "screen-sharing"
-        : pane.paneType !== "chat" ||
-          pane.resourceKind !== "session" ||
-          String(pane.resourceId).toLowerCase() !== sessionId)
+      (isSimulatorTarget(payload.displayId)
+        ? pane.paneType !== "simulator"
+        : sessionId === undefined
+          ? pane.paneType !== "screen-sharing"
+          : pane.paneType !== "chat" ||
+            pane.resourceKind !== "session" ||
+            String(pane.resourceId).toLowerCase() !== sessionId)
     )
       throw new HttpFailure(404, "Screen Sharing pane is no longer available")
   }

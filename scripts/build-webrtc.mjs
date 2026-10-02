@@ -172,9 +172,24 @@ function stage(identifier, builds, licenseText) {
         cpSync(relocations, join(dsym, "Contents/Resources/Relocations"), { recursive: true })
     }
   }
+  strip(mac ? join(staged, "Versions/A/WebRTC") : join(staged, "WebRTC"))
   run("codesign", ["--force", "--sign", "-", staged])
   run("codesign", ["--verify", "--strict", staged])
   return ["-framework", staged, "-debug-symbols", dsym]
+}
+
+// Chromium's toolchain strips with llvm-strip, which leaves the string table 4-byte aligned
+// whenever the symbol count comes out odd; Xcode 27's linker refuses such a library
+// ("mis-aligned LINKEDIT string pool"). The builds stay unstripped (enable_stripping=false, after
+// dsymutil has run) and Apple's strip, with Chromium's arguments, does it here instead.
+function strip(binary) {
+  run("xcrun", ["strip", "-x", "-S", binary])
+  for (const arch of run("lipo", ["-archs", binary], workspace, true).split(/\s+/)) {
+    const commands = run("otool", ["-l", "-arch", arch, binary], workspace, true)
+    const offset = Number(/cmd LC_SYMTAB[\s\S]*?stroff (\d+)/.exec(commands)?.[1])
+    if (!Number.isInteger(offset) || offset % 8 !== 0)
+      throw new Error(`Misaligned string table in ${binary} (${arch}): ${offset}`)
+  }
 }
 
 function build() {

@@ -1,6 +1,7 @@
 import SwiftUI
 import CodevisorCore
 import CodevisorUI
+import SimulatorPane
 
 /// Hosts one workspace below the native toolbar (which follows the active
 /// pane): either a resolved chat session and its controller, or the workspace
@@ -123,6 +124,10 @@ struct SessionContainerView: View {
           FilePaneToolbar(model: model, onNewTab: addCenterTab)
         } else if let model = activeReviewModel {
           ReviewPaneToolbar(model: model, title: activePaneTitle.wrappedValue)
+        } else if let model = activeSimulatorModel {
+          SimulatorPaneToolbar(model: model) { data, name in
+            AppleSimulatorPane.saveScreenshot(data, deviceName: name)
+          }
         }
       }
       .focusedSceneValue(\.browserPage, activeBrowserModel)

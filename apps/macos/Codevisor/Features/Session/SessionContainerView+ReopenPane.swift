@@ -107,6 +107,10 @@ extension SessionContainerView {
       return PaneDescriptorState(
         id: paneId, kind: .review, name: closed.name,
         terminalKey: paneId.uuidString, review: closed.review)
+    case .simulator:
+      return PaneDescriptorState(
+        id: paneId, kind: .simulator, name: closed.name,
+        terminalKey: paneId.uuidString, simulator: closed.simulator)
     case .document:
       return PaneDescriptorState(
         id: paneId, kind: .document, name: closed.name,

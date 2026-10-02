@@ -152,6 +152,7 @@ struct SidebarWorkspaceTabRow: View {
     case .document: "text.document"
     case .browser: "globe"
     case .screenSharing: "display"
+    case .simulator: "iphone"
     case .subagent: "wand.and.sparkles"
     case .review: "plusminus"
     }

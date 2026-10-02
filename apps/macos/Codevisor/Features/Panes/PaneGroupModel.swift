@@ -199,6 +199,18 @@ final class PaneGroupModel: Identifiable {
         onPaneChanged?(state.panes[index])
       }
       pane = document
+    case .simulator:
+      let simulator = AppleSimulatorPane(context: makeContext(descriptor), descriptor: descriptor)
+      simulator.onPreferencesChanged = { [weak self, weak simulator] preferences in
+        guard let self, let simulator,
+          let index = self.state.panes.firstIndex(where: { $0.id == simulator.id }),
+          self.state.panes[index].simulator != preferences
+        else { return }
+        self.state.panes[index].simulator = preferences
+        self.persist()
+        self.onPaneChanged?(self.state.panes[index])
+      }
+      pane = simulator
     case .review:
       let review = ReviewPane(context: makeContext(descriptor), descriptor: descriptor)
       review.model.onPreferencesChange = { [weak self] preferences in
@@ -299,7 +311,7 @@ final class PaneGroupModel: Identifiable {
       case .subagent:
         // Read-only: nothing to type into.
         self.requestBackgroundFocus?()
-      case .terminal, .plugin, .document, .browser, .screenSharing, .review:
+      case .terminal, .plugin, .document, .browser, .screenSharing, .review, .simulator:
         break
       }
     }
@@ -388,6 +400,8 @@ final class PaneGroupModel: Identifiable {
         sharing.applyPreferences(next.screenSharing ?? .init())
       } else if let review = live[id] as? ReviewPane {
         review.model.apply(next.review ?? .init())
+      } else if let simulator = live[id] as? AppleSimulatorPane {
+        simulator.applyPreferences(next.simulator ?? .init())
       }
     }
 
@@ -479,7 +493,7 @@ final class PaneGroupModel: Identifiable {
         || previous.pluginPaneType != next.pluginPaneType
     case (.screenSharing, .screenSharing):
       return false
-    case (.browser, .browser), (.review, .review):
+    case (.browser, .browser), (.review, .review), (.simulator, .simulator):
       return false
     case (.document, .document):
       return previous.documentPath != next.documentPath

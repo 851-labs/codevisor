@@ -22,6 +22,7 @@ import { routePluginProxy, routePlugins } from "./routes/plugins.js"
 import { routeProjects } from "./routes/projects.js"
 import { routeScreenSharing } from "./routes/screen-sharing.js"
 import { routeSessions } from "./routes/sessions.js"
+import { routeSimulators, simulatorsAvailable } from "./routes/simulators.js"
 import { routeSkills } from "./routes/skills.js"
 import { configMutationNamespace, runBackgroundSyncReconcile } from "./routes/sync-reconcilers.js"
 import { routeSync } from "./routes/sync.js"
@@ -178,6 +179,7 @@ export const handleRequest = async (
     if (await routeTranscriptStress(services, fanout, routeState, request, response, url)) return
 
     if (await routeScreenSharing(services, config, request, response, url)) return
+    if (await routeSimulators(config, request, response, url)) return
 
     if (await routeBrowserState(services, request, response, url)) return
 
@@ -216,7 +218,8 @@ export const handleRequest = async (
           "canonical-chat-v1",
           "session-event-stream-v1",
           "transcript-pagination-v1",
-          ...(services.plugins === undefined ? [] : ["plugins-v1"])
+          ...(services.plugins === undefined ? [] : ["plugins-v1"]),
+          ...((await simulatorsAvailable(config)) ? ["simulator-v1"] : [])
         ],
         machineId: await run(services.db.getOrCreateInstanceId),
         arch: process.arch,
