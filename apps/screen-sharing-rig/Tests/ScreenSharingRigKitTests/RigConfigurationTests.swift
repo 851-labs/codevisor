@@ -100,6 +100,14 @@ struct RigConfigurationTests {
 }
 
 extension RigConfigurationTests {
+  /// 851-2480: the rig asks for HDR only when told to, as the app does by default.
+  @Test func hdrIsOffUnlessTurnedOn() throws {
+    let viewer = ["role": "viewer", "peer": "h", "token": Self.token] as [String: Any]
+    #expect(try RigConfiguration.parse(Self.json(viewer)).highDynamicRange == false)
+    #expect(try RigConfiguration.parse(Self.json(viewer.merging(["hdr": true]) { $1 })).highDynamicRange)
+    #expect(throws: (any Error).self) { try RigConfiguration.parse(Self.json(viewer.merging(["hdr": "yes"]) { $1 })) }
+  }
+
   @Test func virtualIsAHostSourceDistinctFromWorkload() throws {
     let virtual = try RigConfiguration.CaptureSource.parse("virtual:1920x1080@60")
     #expect(virtual == .virtual(width: 1920, height: 1080, framesPerSecond: 60))

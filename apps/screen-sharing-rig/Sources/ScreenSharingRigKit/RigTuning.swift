@@ -31,6 +31,9 @@ public struct RigTuning: Equatable, Sendable {
   public let staticCodecRate: Bool
   /// Host transport: `WebRTC-Video-Pacing factor` — the pacer's multiple of the target bitrate; nil keeps 2.5.
   public let pacingFactor: Double?
+  /// Process-wide WebRTC field trials on top of the knobs above (`"fieldTrials": {"WebRTC-…": "…"}`),
+  /// for experiments such as the frame dropper or the encoder bitrate adjuster (851-2482).
+  public let fieldTrials: [String: String]
 
   public static let `default` = RigTuning(
     playoutDelayMs: nil, jitterWindowFrames: nil, renderOnArrival: true, maximumDrawableCount: 3,
@@ -45,8 +48,10 @@ public struct RigTuning: Equatable, Sendable {
     playoutDelayMs: (min: Int, max: Int)?, jitterWindowFrames: Int?, renderOnArrival: Bool,
     maximumDrawableCount: Int, offMainPreparation: Bool, captureIntervalFPS: Int?,
     keyframeIntervalSeconds: Int? = nil, standardRateControl: Bool = false, pendingFrames: Int? = nil,
-    transportCeilingBps: Int? = nil, staticCodecRate: Bool = false, pacingFactor: Double? = nil
+    transportCeilingBps: Int? = nil, staticCodecRate: Bool = false, pacingFactor: Double? = nil,
+    fieldTrials: [String: String] = [:]
   ) {
+    self.fieldTrials = fieldTrials
     self.playoutDelayMs = playoutDelayMs
     self.jitterWindowFrames = jitterWindowFrames
     self.renderOnArrival = renderOnArrival
@@ -69,7 +74,7 @@ public struct RigTuning: Equatable, Sendable {
       && lhs.keyframeIntervalSeconds == rhs.keyframeIntervalSeconds
       && lhs.standardRateControl == rhs.standardRateControl && lhs.pendingFrames == rhs.pendingFrames
       && lhs.transportCeilingBps == rhs.transportCeilingBps && lhs.staticCodecRate == rhs.staticCodecRate
-      && lhs.pacingFactor == rhs.pacingFactor
+      && lhs.pacingFactor == rhs.pacingFactor && lhs.fieldTrials == rhs.fieldTrials
   }
 
   /// Parses the `tuning` object. `profile` sets a base the other keys override.
@@ -77,7 +82,7 @@ public struct RigTuning: Equatable, Sendable {
     let known: Set<String> = [
       "profile", "playoutDelayMs", "jitterWindowFrames", "renderOnArrival", "drawables", "offMainPreparation",
       "captureIntervalFPS", "keyframeIntervalSeconds", "rateControl", "pendingFrames", "transportCeiling",
-      "staticCodecRate", "pacingFactor",
+      "staticCodecRate", "pacingFactor", "fieldTrials",
     ]
     let unknown = Set(object.keys).subtracting(known).sorted()
     guard unknown.isEmpty else { throw ScreenSharingError.invalid("tuning has unknown keys: \(unknown)") }
@@ -153,18 +158,27 @@ public struct RigTuning: Equatable, Sendable {
       }
       pacing = number.doubleValue
     }
+    var fieldTrials = base.fieldTrials
+    if let value = object["fieldTrials"] {
+      guard let trials = value as? [String: String], trials.keys.allSatisfy({ $0.hasPrefix("WebRTC-") }) else {
+        throw ScreenSharingError.invalid("tuning.fieldTrials must map WebRTC-… names to strings")
+      }
+      fieldTrials = trials
+    }
     return RigTuning(
       playoutDelayMs: playout, jitterWindowFrames: jitter, renderOnArrival: renderOnArrival,
       maximumDrawableCount: drawables, offMainPreparation: offMain, captureIntervalFPS: capture,
       keyframeIntervalSeconds: keyframe, standardRateControl: standardRateControl, pendingFrames: pending,
-      transportCeilingBps: ceiling, staticCodecRate: staticRate, pacingFactor: pacing)
+      transportCeilingBps: ceiling, staticCodecRate: staticRate, pacingFactor: pacing, fieldTrials: fieldTrials)
   }
 
   /// The process-wide WebRTC trial selection these knobs require.
   public var fieldTrialSelection: ScreenSharingFieldTrials.Selection {
-    .probeOptions(
+    let knobs = ScreenSharingFieldTrials.Selection.probeOptions(
       jitterWindowFrames: jitterWindowFrames, lowLatencyPlayout: false, playoutDelayBoundsMs: playoutDelayMs,
       pacingFactor: pacingFactor)
+    guard !fieldTrials.isEmpty else { return knobs }
+    return .init(name: "rig tuning", trials: knobs.trials.merging(fieldTrials) { $1 })
   }
 
   /// Short human label for status and the HUD; nil for the defaults.

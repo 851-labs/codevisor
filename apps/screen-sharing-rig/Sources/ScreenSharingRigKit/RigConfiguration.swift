@@ -100,6 +100,8 @@ public struct RigConfiguration: Sendable {
   public let codec: ScreenSharingVideoCodec
   public let capture: CaptureSource
   public let hud: Bool
+  /// Viewer: whether to ask for HDR when its screen can show it (851-2480); off by default, as in the app.
+  public let highDynamicRange: Bool
   public let telemetryDirectory: String?
   public let tuning: RigTuning
 
@@ -107,8 +109,8 @@ public struct RigConfiguration: Sendable {
     role: Role, peer: String?, port: UInt16 = RigConfiguration.defaultPort,
     controlPort: UInt16 = RigConfiguration.defaultControlPort, token: String,
     video: ScreenSharingVideoConfiguration, codec: ScreenSharingVideoCodec = .h264,
-    capture: CaptureSource = .synthetic, hud: Bool = true, telemetryDirectory: String? = nil,
-    tuning: RigTuning = .default
+    capture: CaptureSource = .synthetic, hud: Bool = true, highDynamicRange: Bool = false,
+    telemetryDirectory: String? = nil, tuning: RigTuning = .default
   ) throws {
     guard token.count >= Self.minimumTokenLength, token.rangeOfCharacter(from: .whitespacesAndNewlines) == nil
     else {
@@ -129,6 +131,7 @@ public struct RigConfiguration: Sendable {
     self.codec = codec
     self.capture = capture
     self.hud = hud
+    self.highDynamicRange = highDynamicRange
     self.telemetryDirectory = telemetryDirectory
     self.tuning = tuning
   }
@@ -144,7 +147,8 @@ public struct RigConfiguration: Sendable {
       throw ScreenSharingError.invalid("rig.json must be a JSON object")
     }
     let known: Set<String> = [
-      "role", "peer", "port", "controlPort", "token", "width", "height", "fps", "bitrate", "codec", "capture", "hud",
+      "role", "peer", "port", "controlPort", "token", "width", "height", "fps", "bitrate", "codec", "capture", "hdr",
+      "hud",
       "telemetryDirectory", "tuning",
     ]
     let unknown = Set(dictionary.keys).subtracting(known).sorted()
@@ -189,6 +193,13 @@ public struct RigConfiguration: Sendable {
     } else {
       hud = true
     }
+    let highDynamicRange: Bool
+    if let value = dictionary["hdr"] {
+      guard let flag = value as? Bool else { throw ScreenSharingError.invalid("hdr must be true or false") }
+      highDynamicRange = flag
+    } else {
+      highDynamicRange = false
+    }
     var tuning = RigTuning.default
     if let value = dictionary["tuning"] {
       guard let object = value as? [String: Any] else { throw ScreenSharingError.invalid("tuning must be an object") }
@@ -197,7 +208,8 @@ public struct RigConfiguration: Sendable {
     return try RigConfiguration(
       role: role, peer: try string("peer"), port: try port("port", fallback: defaultPort),
       controlPort: try port("controlPort", fallback: defaultControlPort), token: token, video: video, codec: codec,
-      capture: capture, hud: hud, telemetryDirectory: try string("telemetryDirectory"), tuning: tuning)
+      capture: capture, hud: hud, highDynamicRange: highDynamicRange,
+      telemetryDirectory: try string("telemetryDirectory"), tuning: tuning)
   }
 
   /// `http://host:port` for the viewer's signaling requests.
