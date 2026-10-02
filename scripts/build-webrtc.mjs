@@ -80,7 +80,9 @@ function argumentsFor(variant) {
     ...(variant.os === "ios"
       ? [
           `target_environment="${variant.platform}"`,
-          'ios_deployment_target="12.0"',
+          // No ios_deployment_target: WebRTC's own (14.0 at M152, from its .gn). Built for iOS
+          // 12, the slices loaded Swift's libraries through @rpath, as for an OS without them,
+          // and an app without /usr/lib/swift in its run paths failed to launch on a device.
           "ios_enable_code_signing=false"
         ]
       : [])

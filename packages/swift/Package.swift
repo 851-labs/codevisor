@@ -47,7 +47,7 @@ let package = Package(
   ],
   dependencies: [
     .package(url: "https://github.com/PostHog/posthog-ios.git", exact: "3.59.3"),
-    .package(url: "https://github.com/851-labs/webrtc.git", exact: "152.0.0-codevisor.2"),
+    .package(url: "https://github.com/851-labs/webrtc.git", exact: "152.0.0-codevisor.3"),
     .package(url: "https://github.com/pointfreeco/swift-composable-architecture.git", exact: "1.26.2"),
     .package(url: "https://github.com/pointfreeco/swift-concurrency-extras.git", exact: "1.4.1"),
   ],

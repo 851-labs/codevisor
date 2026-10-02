@@ -73,13 +73,15 @@ toolchain strips with `llvm-strip`, which leaves the string table 4-byte aligned
 symbol count comes out odd, and Xcode 27's linker refuses that. `scripts/build-webrtc.mjs` now
 builds unstripped (`enable_stripping=false`, after dsymutil) and strips each slice with Apple's
 `strip -x -S`, then fails the build if any architecture's string table isn't 8-byte aligned.
-That build is published as `851-labs/webrtc` `152.0.0-codevisor.2` and pinned everywhere.
+That build was published as `851-labs/webrtc` `152.0.0-codevisor.2`.
 
-WebRTC's iOS slices are built for iOS 12, older than Swift in the OS, so they load
-`@rpath/libswiftCoreMedia.dylib`. The iOS app (which first linked WebRTC with this pane) lists
-`/usr/lib/swift` in its run paths so a device finds the system copy; the Simulator's dyld finds it
-without one, which is why only devices crashed at launch. Building WebRTC for the package's own
-minimum (iOS 17) would link the system path directly and make the run path unnecessary.
+The pane is also the first thing to put WebRTC in the iOS app, and build 2 crashed it at launch
+on a device ("Library not loaded: @rpath/libswiftCoreMedia.dylib"). The recipe built the iOS
+slices for iOS 12, older than Swift in the OS, so they loaded Swift's libraries through `@rpath`,
+which a device doesn't resolve to `/usr/lib/swift`; the Simulator's dyld finds them anyway. The
+recipe now leaves `ios_deployment_target` at WebRTC's own default (iOS 14 at M152), where the
+slices link the system CoreMedia directly. That is build 3, `152.0.0-codevisor.3`, pinned
+everywhere; its macOS slice is unchanged.
 
 The viewer offers only codecs it can decode: HEVC needs VideoToolbox's hardware decoder (every
 iPhone and Apple silicon Mac has one), so the iOS Simulator, which has none, negotiates H.264. The

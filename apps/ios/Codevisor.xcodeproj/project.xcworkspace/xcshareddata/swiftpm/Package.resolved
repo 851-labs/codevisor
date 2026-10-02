@@ -141,8 +141,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/851-labs/webrtc.git",
       "state" : {
-        "revision" : "a48fd0f9d40bc21b264cfc60c536319bf053c0b1",
-        "version" : "152.0.0-codevisor.2"
+        "revision" : "4819619037dc71da075706fc12731a764f1faec5",
+        "version" : "152.0.0-codevisor.3"
       }
     }
   ],
