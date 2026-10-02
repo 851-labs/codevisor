@@ -15,6 +15,8 @@ final class FakeEndpointClient {
   private(set) var dynamicResolutions:
     [(endpoint: ScreenSharingViewerEndpoint.ID, enabled: Bool, defaultSize: [Int]?)] =
       []
+  /// Apps, Mission Control and Desktop presses (851-2479).
+  private(set) var systemKeys: [(endpoint: ScreenSharingViewerEndpoint.ID, key: ScreenSharingSystemKey)] = []
   /// The failure `beginInput` reports; nil grants capture.
   var beginInputFailure: String?
   /// What `sendControl` answers.
@@ -48,6 +50,7 @@ final class FakeEndpointClient {
           return sendSucceeds
         }
       },
+      tapSystemKey: { [self] endpoint, key in await MainActor.run { systemKeys.append((endpoint, key)) } },
       setDynamicResolution: { [self] endpoint, enabled, defaultSize, _ in
         await MainActor.run { dynamicResolutions.append((endpoint, enabled, defaultSize)) }
       })

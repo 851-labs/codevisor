@@ -221,17 +221,34 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
   func beginInput(lease: UUID) -> String? {
     guard surface.beginInput() else { return surface.inputFailureMessage }
     forwarder.begin(lease: lease)
+    if let key = pendingSystemKey {
+      pendingSystemKey = nil
+      press(key)
+    }
     return nil
   }
 
   func endInput() {
+    pendingSystemKey = nil
     forwarder.end()
     surface.endInput()
   }
 
-  /// Presses and releases `key` on the host, under the control lease (851-2469). Does nothing
-  /// while not controlling: the forwarder only sends under a lease.
+  /// A key pressed before control was granted (851-2479): sent once input begins under the lease,
+  /// dropped if control ends or is refused first.
+  private var pendingSystemKey: ScreenSharingSystemKey?
+
+  /// Presses and releases `key` on the host under the control lease (851-2469). Before control is
+  /// granted it waits for the grant (851-2479); the viewer asks for control alongside.
   public func tap(_ key: ScreenSharingSystemKey) {
+    guard forwarder.isActive else {
+      pendingSystemKey = key
+      return
+    }
+    press(key)
+  }
+
+  private func press(_ key: ScreenSharingSystemKey) {
     for down in [true, false] {
       forwarder.forward(.key(code: key.rawValue, down: down, repeatKey: false, modifiers: 0))
     }

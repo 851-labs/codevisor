@@ -3,7 +3,8 @@ import ScreenSharing
 import SwiftUI
 
 /// Apps, Mission Control or Desktop on the host, like Apple Screen Sharing's toolbar (851-2469).
-/// They press the host's own keys, so they work only while controlling.
+/// They press the host's own keys: always shown enabled, and pressed while viewing they switch to
+/// Control and press the key once the host grants it (851-2479).
 ///
 /// One toolbar item per key: three buttons inside one item reached Accessibility all named after
 /// the first ("Apps"), and inside a ControlGroup as bare groups with no name or press action, so
@@ -18,10 +19,9 @@ public struct ScreenSharingSystemKeyButton: View {
   }
 
   public var body: some View {
-    Button(key.title, systemImage: key.systemImage) { store.endpoint?.tap(key) }
+    Button(key.title, systemImage: key.systemImage) { store.send(.systemKeyTapped(key)) }
       .labelStyle(.iconOnly)
       .help(key.title)
-      .disabled(store.lease?.phase != .controlling)
   }
 }
 

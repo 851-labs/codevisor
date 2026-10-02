@@ -146,6 +146,31 @@ struct ScreenSharingViewerEndpointTests {
     endpoint.close()
   }
 
+  /// 851-2479: a key pressed before control is granted is sent once input begins under the lease,
+  /// once; a key held when control ends instead is dropped, never sent under a later lease.
+  @Test func aSystemKeyPressedBeforeTheGrantIsSentWhenInputBeginsAndDroppedIfControlEnds() {
+    let fixture = EndpointFixture()
+    fixture.session.controlChannel.isAvailable = true
+    let endpoint = fixture.make()
+    endpoint.tap(.missionControl)
+    expectNoDifference(fixture.session.controlChannel.sent, [])
+    let lease = UUID()
+    #expect(endpoint.beginInput(lease: lease) == nil)
+    let code = ScreenSharingSystemKey.missionControl.rawValue
+    expectNoDifference(
+      fixture.session.controlChannel.sent,
+      [
+        .input(lease: lease, sequence: 1, event: .key(code: code, down: true, repeatKey: false, modifiers: 0)),
+        .input(lease: lease, sequence: 2, event: .key(code: code, down: false, repeatKey: false, modifiers: 0)),
+      ])
+    endpoint.endInput()
+    endpoint.tap(.apps)
+    endpoint.endInput()
+    #expect(endpoint.beginInput(lease: UUID()) == nil)
+    expectNoDifference(fixture.session.controlChannel.sent.count, 2, "the refused press is never sent")
+    endpoint.close()
+  }
+
   @Test func refusedCaptureReportsTheSurfaceMessageAndCloseReleasesAHeldLease() async throws {
     let fixture = EndpointFixture()
     fixture.session.controlChannel.isAvailable = true
