@@ -19,6 +19,15 @@ public struct ScreenSharingMachinePreferences {
     defaults.set(enabled, forKey: Self.key(machineId))
   }
 
+  /// HDR (851-2480): off unless the user turned it on for this machine.
+  public func highDynamicRange(machineId: String) -> Bool {
+    defaults.object(forKey: "screenSharing.highDynamicRange.\(machineId)") as? Bool ?? false
+  }
+
+  public func setHighDynamicRange(_ enabled: Bool, machineId: String) {
+    defaults.set(enabled, forKey: "screenSharing.highDynamicRange.\(machineId)")
+  }
+
   /// Whether the machine's sound plays (on unless turned off) and how loud, 0…1 (851-2379).
   public func sound(machineId: String) -> (enabled: Bool, volume: Double) {
     (

@@ -67,6 +67,33 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     didSet { updateResolutionAvailability() }
   }
   public private(set) var dynamicResolution = false
+
+  // MARK: HDR (851-2380, 851-2480)
+
+  /// The machine's HDR setting, off until the pane applies it. The host is told this Mac's screen
+  /// can show HDR only while it's on and the screen can; off keeps the stream 8-bit SDR.
+  public var highDynamicRange = false {
+    didSet { if highDynamicRange != oldValue { reportHighDynamicRange() } }
+  }
+  /// Whether the connection can carry HDR at all; the settings sheet offers the toggle only then.
+  public var supportsHighDynamicRange: Bool { session.supportsHighDynamicRange }
+  /// Whether the screen this pane is on can show HDR.
+  public private(set) var screenShowsHighDynamicRange = false
+  /// What the host last said it sends, and why not HDR when asked.
+  public private(set) var hostDynamicRange: (range: ScreenSharingDynamicRange, reason: String?)?
+
+  /// Why HDR isn't showing although it's on, for the settings sheet; nil when it is, or when off.
+  public var highDynamicRangeNote: String? {
+    guard highDynamicRange, supportsHighDynamicRange else { return nil }
+    if !screenShowsHighDynamicRange { return "This Mac's screen can't show HDR. Move the window to an HDR display." }
+    if dynamicResolution { return "HDR is off while Dynamic Resolution is on." }
+    guard let host = hostDynamicRange else { return nil }
+    return host.range == .high ? nil : host.reason
+  }
+
+  private func reportHighDynamicRange() {
+    session.setDisplayHighDynamicRange(highDynamicRange && screenShowsHighDynamicRange)
+  }
   /// Sets the desktop's UI scale on the server (`setScale`, 851-2339); nil when it can't.
   var setDesktopScale: (@MainActor (Int) async -> Void)?
   /// The size the desktop was provisioned at (the server's `defaultWidth/Height`).
@@ -158,8 +185,12 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
       self?.paneSize = (size, scale)
       self?.applyResolution()
     }
-    // A native host sends HDR while this Mac's screen can show it (851-2380).
-    surface.onScreenHighDynamicRangeChanged = { [weak session] in session?.setDisplayHighDynamicRange($0) }
+    // A native host sends HDR while this Mac's screen can show it and HDR is on (851-2380, 851-2480).
+    surface.onScreenHighDynamicRangeChanged = { [weak self] in
+      self?.screenShowsHighDynamicRange = $0
+      self?.reportHighDynamicRange()
+    }
+    session.onVideoFormatChanged = { [weak self] in self?.hostDynamicRange = ($0, $1) }
     surface.onPresented = { [weak self] in
       guard let self, !self.presented else { return }
       self.presented = true

@@ -23,6 +23,8 @@ final class ScreenSharingPane: Pane {
   private var recordedViewing = false
   /// The endpoint the machine's sound settings were last applied to.
   private var soundAppliedTo: ObjectIdentifier?
+  /// The endpoint the machine's HDR setting was last applied to.
+  private var hdrAppliedTo: ObjectIdentifier?
   private let machineId: String
   /// How the machine is reached and where, for the settings sheet (851-2367).
   private let connection: (kind: String, address: String?)
@@ -61,6 +63,11 @@ final class ScreenSharingPane: Pane {
         let saved = ScreenSharingMachinePreferences().sound(machineId: self.machineId)
         audio.apply(.init(enabled: saved.enabled, volume: saved.volume))
       }
+      // And HDR as the machine's setting says: off unless turned on (851-2480).
+      if let endpoint = store.endpoint, self.hdrAppliedTo != ObjectIdentifier(endpoint) {
+        self.hdrAppliedTo = ObjectIdentifier(endpoint)
+        endpoint.highDynamicRange = ScreenSharingMachinePreferences().highDynamicRange(machineId: self.machineId)
+      }
       // Video arriving is what "last connected" means in the settings sheet.
       let viewing = store.phase == .viewing
       if viewing, !self.recordedViewing {
@@ -93,6 +100,10 @@ final class ScreenSharingPane: Pane {
       lastConnected: ScreenSharingMachinePreferences().lastConnected(machineId: machineId),
       sound: store?.endpoint?.audio.map { .init(enabled: $0.enabled, volume: $0.volume) })
     settings.dynamicResolutionNote = Self.dynamicResolutionNote(store?.endpoint)
+    if store?.endpoint?.supportsHighDynamicRange != false {
+      settings.highDynamicRange = ScreenSharingMachinePreferences().highDynamicRange(machineId: machineId)
+      settings.highDynamicRangeNote = store?.endpoint?.highDynamicRangeNote
+    }
     return settings
   }
 
@@ -111,6 +122,10 @@ final class ScreenSharingPane: Pane {
     guard let store else { return }
     if let enabled = changes.dynamicResolution, enabled != store.dynamicResolution {
       store.send(.dynamicResolutionToggled)
+    }
+    if let enabled = changes.highDynamicRange {
+      ScreenSharingMachinePreferences().setHighDynamicRange(enabled, machineId: machineId)
+      store.endpoint?.highDynamicRange = enabled
     }
     if let sound = changes.sound {
       ScreenSharingMachinePreferences().setSound(enabled: sound.enabled, volume: sound.volume, machineId: machineId)

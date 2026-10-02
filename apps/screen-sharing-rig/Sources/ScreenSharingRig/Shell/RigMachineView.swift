@@ -69,6 +69,10 @@
       {
         settings.dynamicResolutionNote = "This machine can't change its resolution over this connection."
       }
+      if case .server = machine.connection, store?.endpoint?.supportsHighDynamicRange != false {
+        settings.highDynamicRange = RigMachineSettings.highDynamicRange(machine.id)
+        settings.highDynamicRangeNote = store?.endpoint?.highDynamicRangeNote
+      }
       switch machine.connection {
       case .server(let url, _):
         settings.connection = "Codevisor server"
@@ -90,6 +94,10 @@
       if let enabled = changes.dynamicResolution {
         RigMachineSettings.setDynamicResolution(enabled, for: machine.id)
         if let store, store.dynamicResolution != enabled { store.send(.dynamicResolutionToggled) }
+      }
+      if let enabled = changes.highDynamicRange {
+        RigMachineSettings.setHighDynamicRange(enabled, for: machine.id)
+        store?.endpoint?.highDynamicRange = enabled
       }
       if let sound = changes.sound {
         RigMachineSettings.setSound(sound, for: machine.id)
@@ -330,6 +338,7 @@
       // Each new connection plays the machine's sound as its settings say (851-2379).
       .onChange(of: model.store?.endpoint?.id) { _, _ in
         model.store?.endpoint?.audio?.apply(RigMachineSettings.sound(model.machine.id))
+        model.store?.endpoint?.highDynamicRange = RigMachineSettings.highDynamicRange(model.machine.id)
       }
       .onChange(of: model.store?.phase) { _, phase in
         if phase == .viewing { RigMachineSettings.setLastConnected(Date(), for: model.machine.id) }

@@ -130,6 +130,9 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
 
   // MARK: HDR (851-2380)
 
+  public var supportsHighDynamicRange: Bool { true }
+  public var onVideoFormatChanged: ((ScreenSharingDynamicRange, String?) -> Void)?
+
   /// What the viewer's display can show, as last reported; sent when the channel opens and on each change.
   private var viewerHighDynamicRange: Bool?
 
@@ -142,6 +145,7 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
 
   private func receiveVideoFormat(_ message: ScreenSharingVideoFormatMessage) {
     guard case .sending(let range, let reason) = message else { return }
+    onVideoFormatChanged?(range, reason)
     metrics.label("hostDynamicRange", reason.map { "\(range.rawValue): \($0)" } ?? range.rawValue)
   }
 

@@ -89,6 +89,10 @@ public protocol ScreenSharingViewingSession: AnyObject {
   /// Whether the display the viewer is on can show high dynamic range; a host that can sends HDR
   /// then (the native stream, 851-2380). The default ignores it.
   func setDisplayHighDynamicRange(_ supported: Bool)
+  /// Whether this session can carry HDR at all (the native stream), so the setting is offered (851-2480).
+  var supportsHighDynamicRange: Bool { get }
+  /// What the host says it sends, and why it isn't HDR when the viewer asked for it (851-2480).
+  var onVideoFormatChanged: ((ScreenSharingDynamicRange, String?) -> Void)? { get set }
 }
 
 extension ScreenSharingViewingSession {
@@ -102,6 +106,11 @@ extension ScreenSharingViewingSession {
   public func setAudioEnabled(_ enabled: Bool) {}
   public func setAudioVolume(_ volume: Float) {}
   public func setDisplayHighDynamicRange(_ supported: Bool) {}
+  public var supportsHighDynamicRange: Bool { false }
+  public var onVideoFormatChanged: ((ScreenSharingDynamicRange, String?) -> Void)? {
+    get { nil }
+    set {}
+  }
 
   public var onCursorChanged: ((ScreenSharingCursorUpdate) -> Void)? {
     get { nil }

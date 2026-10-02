@@ -60,6 +60,12 @@ final class FakeMediaSession: NativeScreenSharingMediaSession {
   var initialDesktopSize: (width: Int, height: Int)? = (1024, 768)
   var linkBitsPerSecond: Double?
   var deliversVideo = true
+  /// HDR (851-2480): whether the session can carry it, what the endpoint told the host, and the
+  /// host's answer, which a test sends through `onVideoFormatChanged`.
+  var supportsHighDynamicRange = false
+  private(set) var highDynamicRangeReports: [Bool] = []
+  func setDisplayHighDynamicRange(_ supported: Bool) { highDynamicRangeReports.append(supported) }
+  var onVideoFormatChanged: ((ScreenSharingDynamicRange, String?) -> Void)?
   weak var surface: FakeSurface?
   private(set) var offers = 0
   private(set) var answers: [String] = []
@@ -94,6 +100,7 @@ final class FakeSurface: ScreenSharingViewerSurface {
   var onInput: ((ScreenSharingInputEvent) -> Void)?
   var onInputReleased: (() -> Void)?
   var onSizeChanged: ((CGSize, CGFloat) -> Void)?
+  var onScreenHighDynamicRangeChanged: ((Bool) -> Void)?
   var inputFailureMessage: String?
   /// Whether `beginInput` succeeds; false models a refused focus or keyboard capture.
   var beginInputSucceeds = true
