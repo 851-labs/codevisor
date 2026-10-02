@@ -75,6 +75,12 @@ builds unstripped (`enable_stripping=false`, after dsymutil) and strips each sli
 `strip -x -S`, then fails the build if any architecture's string table isn't 8-byte aligned.
 That build is published as `851-labs/webrtc` `152.0.0-codevisor.2` and pinned everywhere.
 
+WebRTC's iOS slices are built for iOS 12, older than Swift in the OS, so they load
+`@rpath/libswiftCoreMedia.dylib`. The iOS app (which first linked WebRTC with this pane) lists
+`/usr/lib/swift` in its run paths so a device finds the system copy; the Simulator's dyld finds it
+without one, which is why only devices crashed at launch. Building WebRTC for the package's own
+minimum (iOS 17) would link the system path directly and make the run path unnecessary.
+
 The viewer offers only codecs it can decode: HEVC needs VideoToolbox's hardware decoder (every
 iPhone and Apple silicon Mac has one), so the iOS Simulator, which has none, negotiates H.264. The
 decoder requires hardware everywhere except the Simulator, where it decodes in software.
