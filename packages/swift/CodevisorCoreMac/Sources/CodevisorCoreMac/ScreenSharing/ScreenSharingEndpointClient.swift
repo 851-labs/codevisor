@@ -35,6 +35,9 @@ public struct ScreenSharingEndpointClient: Sendable {
     @Sendable (_ endpoint: ScreenSharingViewerEndpoint.ID, _ message: ScreenSharingControlMessage) async -> Bool = {
       _, _ in false
     }
+  /// Presses Apps, Mission Control or Desktop on the host; held until control is granted (851-2479).
+  public var tapSystemKey:
+    @Sendable (_ endpoint: ScreenSharingViewerEndpoint.ID, _ key: ScreenSharingSystemKey) async -> Void = { _, _ in }
   /// Dynamic Resolution on or off (851-2340); with the display's details when known: the size
   /// turning it off restores ([width, height]) and whether its desktop can draw at 2×.
   public var setDynamicResolution:
@@ -52,6 +55,7 @@ extension ScreenSharingEndpointClient: DependencyKey {
       sendControl: { id, message in
         await ScreenSharingEndpointRegistry.shared.endpoint(id)?.sendControl(message) ?? false
       },
+      tapSystemKey: { id, key in await ScreenSharingEndpointRegistry.shared.endpoint(id)?.tap(key) },
       setDynamicResolution: { id, enabled, defaultSize, canScale in
         guard let endpoint = await ScreenSharingEndpointRegistry.shared.endpoint(id) else { return }
         await MainActor.run {

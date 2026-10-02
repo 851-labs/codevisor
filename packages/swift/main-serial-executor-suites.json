@@ -1,1 +1,1 @@
-["ControlLeaseTests", "ScreenSharingViewerDiscoveryTests", "ScreenSharingViewerTests", "NavigationRaceTests", "CloudTunnelRaceTests", "CloudDirectPathRaceTests"]
+["ControlLeaseTests", "ScreenSharingViewerDiscoveryTests", "ScreenSharingViewerTests", "NavigationRaceTests", "CloudTunnelRaceTests", "CloudDirectPathRaceTests", "ScreenSharingViewerSystemKeyTests"]

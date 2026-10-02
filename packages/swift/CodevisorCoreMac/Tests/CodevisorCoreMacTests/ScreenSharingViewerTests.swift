@@ -13,7 +13,7 @@ import Testing
 /// they land on.
 @MainActor
 struct ScreenSharingViewerTests {
-  private let display = ScreenSharingViewerFixtures.display
+  let display = ScreenSharingViewerFixtures.display
   private let second = ScreenSharingViewerFixtures.second
 
   @Test func discoveryFailureShowsTheServerMessage() async {
@@ -373,7 +373,7 @@ struct ScreenSharingViewerTests {
     }
   }
 
-  private func makeStore(
+  func makeStore(
     _ backend: FakeBackend, _ client: FakeEndpointClient = FakeEndpointClient(),
     preferences: ScreenSharingPanePreferences = .init()
   ) -> TestStoreOf<ScreenSharingViewer> {
@@ -388,7 +388,7 @@ struct ScreenSharingViewerTests {
   }
 
   /// Visible and connecting to the first display, which discovery remembered.
-  private func makeConnectingStore(
+  func makeConnectingStore(
     _ backend: FakeBackend, _ client: FakeEndpointClient
   ) async -> TestStoreOf<ScreenSharingViewer> {
     let store = makeStore(backend, client)
@@ -408,7 +408,7 @@ struct ScreenSharingViewerTests {
 
   /// Connected and viewing the first display in `mode`; with an available
   /// channel, `.control` has a request (id 0) pending.
-  private func makeViewingStore(
+  func makeViewingStore(
     _ backend: FakeBackend, _ client: FakeEndpointClient,
     mode: ScreenSharingViewer.InteractionMode = .control, channelAvailable: Bool = true
   ) async -> TestStoreOf<ScreenSharingViewer> {

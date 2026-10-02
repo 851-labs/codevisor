@@ -65,6 +65,9 @@ public struct ScreenSharingViewer {
     /// A registry update from another client: applied to the live surface without echo.
     case preferencesSynced(ScreenSharingPanePreferences)
     case retryButtonTapped
+    /// Apps, Mission Control or Desktop (851-2469). While viewing it switches to Control and
+    /// presses the key once control is granted (851-2479).
+    case systemKeyTapped(ScreenSharingSystemKey)
   }
 
   enum CancelID { case connection, controlEvents }
@@ -152,6 +155,13 @@ public struct ScreenSharingViewer {
         state.interactionMode = mode
         guard state.phase == .viewing, state.lease != nil else { return .none }
         return .send(.lease(mode == .control ? .controlRequested : .controlReleased(reason: nil)))
+
+      case .systemKeyTapped(let key):
+        guard state.phase == .viewing, let id = state.endpoint?.id, let lease = state.lease else { return .none }
+        let tap = Effect<Action>.run { [endpointClient] _ in await endpointClient.tapSystemKey(id, key) }
+        guard lease.phase == .viewing else { return tap }
+        state.interactionMode = .control
+        return .merge(tap, .send(.lease(.controlRequested)))
 
       case .lease(.delegate(.released)):
         if state.phase == .viewing { state.interactionMode = .view }
