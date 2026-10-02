@@ -126,14 +126,15 @@ struct ScreenSharingViewerTests {
       let store = await makeViewingStore(backend, client, channelAvailable: false)
       let endpoint = backend.endpoints[0]
       await awaitObserved { client.dynamicResolutions.count == 1 }
-      #expect(client.dynamicResolutions.map(\.enabled) == [true])
+      // Off by default (851-2481).
+      #expect(client.dynamicResolutions.map(\.enabled) == [false])
       #expect(client.dynamicResolutions.first?.endpoint == endpoint.id)
       await store.send(.dynamicResolutionToggled) {
-        $0.dynamicResolution = false
+        $0.dynamicResolution = true
         $0.dynamicResolutionRevision = 1
       }
       await awaitObserved { client.dynamicResolutions.count == 2 }
-      #expect(client.dynamicResolutions.map(\.enabled) == [true, false])
+      #expect(client.dynamicResolutions.map(\.enabled) == [false, true])
       await store.send(.paneClosed) {
         $0.visible = false
         $0.endpoint = nil
