@@ -184,12 +184,14 @@ async function artifactsUnchanged(artifacts) {
 }
 
 /// SwiftPM unpacks into a fresh directory whenever it (re)extracts an
-/// artifact, so the directory's inode tells whether the files are still
+/// artifact, so the directory's identity tells whether the files are still
 /// the ones that were shared. Sharing swaps files, never the directory.
+/// The inode alone is not enough: Linux file systems reuse a freed inode
+/// number for the next directory created, so include its creation time.
 async function directoryIdentity(path) {
   try {
-    const info = await lstat(path)
-    return `${info.dev}:${info.ino}`
+    const info = await lstat(path, { bigint: true })
+    return `${info.dev}:${info.ino}:${info.birthtimeNs}`
   } catch {
     return undefined
   }
