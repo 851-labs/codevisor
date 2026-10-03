@@ -19,7 +19,7 @@ public final class ScreenSharingSender: ScreenSharingPeer {
   ) async throws {
     let transportCeilingBps = try configuration.validatingTransportCeiling(options.transportCeilingBps)
     if let ceiling = transportCeilingBps { metrics.label("transportCeiling", "\(ceiling) bps") }
-    metrics.label("sourceAdaptation", options.maintainSourceRate ? "fixed format experiment" : "maintain resolution")
+    metrics.label("sourceAdaptation", options.maintainSourceRate ? "never adapt" : "maintain resolution")
     let (staged, frameSender) = try await ScreenSharingPeerStaging.make(
       configuration: configuration, metrics: metrics, options: options, connectivity: connectivity
     ) { factory, connection, codecFactory, transport in

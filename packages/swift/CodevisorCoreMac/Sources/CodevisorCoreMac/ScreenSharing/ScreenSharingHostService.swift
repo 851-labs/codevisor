@@ -11,7 +11,17 @@ import OSLog
 final class ScreenSharingHostService {
   /// The sender's ceiling on LAN and Tailscale (the only networks native sharing targets,
   /// 851-2370): room for sharp text and motion; the encoder spends it only when content needs it.
-  static let bitrateCeiling = 30_000_000
+  /// 45 Mbit/s for up to 2560×1440 (851-2482); Apple's High Performance uses up to ~54 at 4K.
+  static let bitrateCeiling = 45_000_000
+  /// The physical display is captured scaled to fit this box (851-2482): 2216×1440 on a 3024×1964
+  /// MacBook Pro, which an M1 Pro encodes in time; native size waits on the bandwidth estimator.
+  nonisolated static let physicalCaptureBox = (width: 2560.0, height: 1440.0)
+
+  /// A physical display's capture size: scaled down as a whole to fit the box, even pixels.
+  nonisolated static func physicalCaptureSize(width: Int, height: Int) -> (width: Int, height: Int) {
+    let scale = min(1, physicalCaptureBox.width / Double(width), physicalCaptureBox.height / Double(height))
+    return (max(64, Int(Double(width) * scale) / 2 * 2), max(64, Int(Double(height) * scale) / 2 * 2))
+  }
   /// What 60 fps at the session's resolution needs; the adaptive policy measures shortage
   /// against this, not the ceiling (851-2372).
   static let fullQualityBitrate = 6_000_000
