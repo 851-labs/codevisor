@@ -40,9 +40,16 @@ public final class ScreenSharingFieldTrials: @unchecked Sendable {
     /// And the pacer at 10× the target bitrate instead of 2.5×, so a keyframe leaves in a burst
     /// rather than holding every frame behind it (rig study rows H → I: worst image age 419 → 182 ms,
     /// no freeze-seconds, same average bitrate).
+    /// And no frame dropper: VideoToolbox overshoots its target on large frames, and WebRTC dropped
+    /// frames before encoding to make up for it (2216×1440 on an M1 Pro: image age 185–194 → 189–190 ms
+    /// with this and `maintainSourceRate`, 851-2482). The ObjC bridge can't mark the encoder's rate
+    /// control as trusted, so the trial is the only switch.
     public static let product = Selection(
       name: "product",
-      trials: ["WebRTC-ForcePlayoutDelay": "min_ms:15,max_ms:80", "WebRTC-Video-Pacing": "factor:10"])
+      trials: [
+        "WebRTC-ForcePlayoutDelay": "min_ms:15,max_ms:80", "WebRTC-Video-Pacing": "factor:10",
+        "WebRTC-FrameDropper": "Disabled",
+      ])
     /// The exact native playout string, when this selection installs one.
     public var playoutExperimentLabel: String? {
       trials["WebRTC-ForcePlayoutDelay"].map { "WebRTC-ForcePlayoutDelay \($0)" }

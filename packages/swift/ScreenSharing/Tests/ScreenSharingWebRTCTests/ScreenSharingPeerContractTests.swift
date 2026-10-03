@@ -105,8 +105,9 @@ struct ScreenSharingPeerContractTests {
     // HEVC first, H.264 for older peers (851-2372).
     #expect(options.codec == .hevc444 && options.fallbackCodecs == [.hevc, .h264] && options.useLowLatencyRateControl)
     #expect(!options.disableLookAhead && !options.staticCodecRate && !options.completeEachFrame)
-    #expect(!options.prioritizeSpeed && !options.maintainSourceRate)
-    #expect(options.maximumPendingFrames == 2 && options.keyframeIntervalSeconds == 60)
+    // 851-2482: the sender never adapts, and three frames may be in the encoder at once.
+    #expect(!options.prioritizeSpeed && options.maintainSourceRate)
+    #expect(options.maximumPendingFrames == 3 && options.keyframeIntervalSeconds == 60)
     // Every experiment threshold is absent by default, which means "the product".
     #expect(options.transportCeilingBps == nil && options.sourceIdleThresholdNs == nil)
     #expect(options.deliveryGrace == nil && options.deliveryGraceExtensions == nil)

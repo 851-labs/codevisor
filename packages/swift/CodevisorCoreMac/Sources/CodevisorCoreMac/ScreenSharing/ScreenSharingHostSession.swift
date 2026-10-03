@@ -18,7 +18,7 @@ final class ScreenSharingHostSession {
   /// followed by `displayIdentity` (see `followDisplay`).
   var displayID: UInt32
   let displayIdentity: ScreenSharingDisplayIdentity
-  /// The physical display scaled to ≤1080p; a virtual display sized to the viewer replaces it
+  /// The physical display scaled to fit 2560×1440; a virtual display sized to the viewer replaces it
   /// while Dynamic Resolution is on (851-2376).
   var configuration: ScreenSharingVideoConfiguration
   let physicalConfiguration: ScreenSharingVideoConfiguration
@@ -66,11 +66,9 @@ final class ScreenSharingHostSession {
     displayIdentity = ScreenSharingDisplayIdentity(display: displayID)
     // Level 0 is where a session starts; lower levels request the video rate through the same validated path.
     capture = ScreenSharingCapture(captureIntervalFPS: profile?.captureIntervalFPS(adaptiveLevel: 0))
-    let scale = min(1, min(1920.0 / Double(display.width), 1080.0 / Double(display.height)))
+    let size = ScreenSharingHostService.physicalCaptureSize(width: display.width, height: display.height)
     configuration = try ScreenSharingVideoConfiguration(
-      width: max(64, Int(Double(display.width) * scale) / 2 * 2),
-      height: max(64, Int(Double(display.height) * scale) / 2 * 2),
-      bitrate: ScreenSharingHostService.bitrateCeiling)
+      width: size.width, height: size.height, bitrate: ScreenSharingHostService.bitrateCeiling)
     physicalConfiguration = configuration
     metrics = ScreenSharingMetrics()
     // install(profile:) throws unless the process trial map equals what this profile requires, so reaching the next

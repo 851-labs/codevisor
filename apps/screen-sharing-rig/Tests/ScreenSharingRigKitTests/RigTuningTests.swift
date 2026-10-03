@@ -52,6 +52,11 @@ struct RigTuningTests {
     #expect(throws: (any Error).self) { try RigTuning.parse(["fieldTrials": ["WebRTC-FrameDropper": 1]]) }
   }
 
+  @Test func maintainSourceRateKeepsTheProductDefaultUnlessSet() throws {
+    #expect(try RigTuning.parse([:]).maintainSourceRate == nil, "unset keeps the product's default")
+    #expect(try RigTuning.parse(["maintainSourceRate": false]).maintainSourceRate == false)
+  }
+
   /// The product renders on frame arrival with acquisition and encoding on the render worker; the
   /// display-link (main-actor) renderer stays one key away, and needs no second key to undo the worker.
   @Test func theRendererDefaultsToTheProductsWorkerAndTheDisplayLinkStaysSelectable() throws {

@@ -34,6 +34,8 @@ public struct RigTuning: Equatable, Sendable {
   /// Process-wide WebRTC field trials on top of the knobs above (`"fieldTrials": {"WebRTC-…": "…"}`),
   /// for experiments such as the frame dropper or the encoder bitrate adjuster (851-2482).
   public let fieldTrials: [String: String]
+  /// Host sender: whether to never adapt frame rate or resolution; nil keeps the product's (never, 851-2482).
+  public let maintainSourceRate: Bool?
 
   public static let `default` = RigTuning(
     playoutDelayMs: nil, jitterWindowFrames: nil, renderOnArrival: true, maximumDrawableCount: 3,
@@ -49,9 +51,10 @@ public struct RigTuning: Equatable, Sendable {
     maximumDrawableCount: Int, offMainPreparation: Bool, captureIntervalFPS: Int?,
     keyframeIntervalSeconds: Int? = nil, standardRateControl: Bool = false, pendingFrames: Int? = nil,
     transportCeilingBps: Int? = nil, staticCodecRate: Bool = false, pacingFactor: Double? = nil,
-    fieldTrials: [String: String] = [:]
+    fieldTrials: [String: String] = [:], maintainSourceRate: Bool? = nil
   ) {
     self.fieldTrials = fieldTrials
+    self.maintainSourceRate = maintainSourceRate
     self.playoutDelayMs = playoutDelayMs
     self.jitterWindowFrames = jitterWindowFrames
     self.renderOnArrival = renderOnArrival
@@ -75,6 +78,7 @@ public struct RigTuning: Equatable, Sendable {
       && lhs.standardRateControl == rhs.standardRateControl && lhs.pendingFrames == rhs.pendingFrames
       && lhs.transportCeilingBps == rhs.transportCeilingBps && lhs.staticCodecRate == rhs.staticCodecRate
       && lhs.pacingFactor == rhs.pacingFactor && lhs.fieldTrials == rhs.fieldTrials
+      && lhs.maintainSourceRate == rhs.maintainSourceRate
   }
 
   /// Parses the `tuning` object. `profile` sets a base the other keys override.
@@ -82,7 +86,7 @@ public struct RigTuning: Equatable, Sendable {
     let known: Set<String> = [
       "profile", "playoutDelayMs", "jitterWindowFrames", "renderOnArrival", "drawables", "offMainPreparation",
       "captureIntervalFPS", "keyframeIntervalSeconds", "rateControl", "pendingFrames", "transportCeiling",
-      "staticCodecRate", "pacingFactor", "fieldTrials",
+      "staticCodecRate", "pacingFactor", "fieldTrials", "maintainSourceRate",
     ]
     let unknown = Set(object.keys).subtracting(known).sorted()
     guard unknown.isEmpty else { throw ScreenSharingError.invalid("tuning has unknown keys: \(unknown)") }
@@ -169,7 +173,8 @@ public struct RigTuning: Equatable, Sendable {
       playoutDelayMs: playout, jitterWindowFrames: jitter, renderOnArrival: renderOnArrival,
       maximumDrawableCount: drawables, offMainPreparation: offMain, captureIntervalFPS: capture,
       keyframeIntervalSeconds: keyframe, standardRateControl: standardRateControl, pendingFrames: pending,
-      transportCeilingBps: ceiling, staticCodecRate: staticRate, pacingFactor: pacing, fieldTrials: fieldTrials)
+      transportCeilingBps: ceiling, staticCodecRate: staticRate, pacingFactor: pacing, fieldTrials: fieldTrials,
+      maintainSourceRate: try flag("maintainSourceRate") ?? base.maintainSourceRate)
   }
 
   /// The process-wide WebRTC trial selection these knobs require.
