@@ -37,6 +37,16 @@ struct SimulatorScreenView {
     if point.x >= size.width - edgeBand { return .right }
     return nil
   }
+
+  /// Changes the surface's own layers (mask, still image) at once. Core Animation animates a
+  /// standalone layer's changes by default, so a resized screen's mask would trail its new bounds
+  /// for a quarter second, cutting the video short and showing black where it hadn't caught up.
+  static func withoutAnimation(_ changes: () -> Void) {
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    changes()
+    CATransaction.commit()
+  }
 }
 
 #if os(macOS)
@@ -112,8 +122,10 @@ struct SimulatorScreenView {
     func setMask(_ image: CGImage?) {
       guard image !== maskImage else { return }
       maskImage = image
-      maskLayer.contents = image
-      layer?.mask = image == nil ? nil : maskLayer
+      SimulatorScreenView.withoutAnimation {
+        maskLayer.contents = image
+        layer?.mask = image == nil ? nil : maskLayer
+      }
       needsLayout = true
     }
 
@@ -124,8 +136,10 @@ struct SimulatorScreenView {
 
     override func layout() {
       super.layout()
-      maskLayer.frame = bounds
-      imageLayer.frame = bounds
+      SimulatorScreenView.withoutAnimation {
+        maskLayer.frame = bounds
+        imageLayer.frame = bounds
+      }
     }
 
     override var isFlipped: Bool { true }
@@ -294,8 +308,10 @@ struct SimulatorScreenView {
     func setMask(_ image: CGImage?) {
       guard image !== maskImage else { return }
       maskImage = image
-      maskLayer.contents = image
-      layer.mask = image == nil ? nil : maskLayer
+      SimulatorScreenView.withoutAnimation {
+        maskLayer.contents = image
+        layer.mask = image == nil ? nil : maskLayer
+      }
       setNeedsLayout()
     }
 
@@ -307,8 +323,10 @@ struct SimulatorScreenView {
 
     override func layoutSubviews() {
       super.layoutSubviews()
-      maskLayer.frame = bounds
-      imageLayer.frame = bounds
+      SimulatorScreenView.withoutAnimation {
+        maskLayer.frame = bounds
+        imageLayer.frame = bounds
+      }
     }
 
     override var canBecomeFirstResponder: Bool { true }
