@@ -118,6 +118,9 @@ struct ComposerBar: View {
   /// Tapping the compact preview focuses the editor through the same
   /// one-shot request as New Chat's initial focus.
   @State var previewFocusRequest: UUID?
+  /// Pairs the folded preview line with the editor's first line so the
+  /// text travels between them as the card folds and unfolds.
+  @Namespace var composerMorph
   /// A touch that began on the card is down (reported only inside a sheet).
   @State private var isTouchingCardInSheet = false
   /// Editing from the goal accessory requests focus through the same
@@ -517,13 +520,13 @@ extension ComposerBar {
         )
         // The compact preview keeps the one UIKit editor mounted —
         // its focus, selection, and promotion handoff depend on that
-        // identity — but folds it away behind the preview row.
+        // identity — but folds it away above the preview row. The
+        // fold rides the focus change's own animation in both
+        // directions; the text view clips its text to its shrinking
+        // bounds while the preview line travels to or from its first
+        // line (see `ComposerMorphID.firstLine`).
         .frame(height: isCompact ? 0 : editorHeight)
-        .opacity(isCompact ? 0 : 1)
-        // Only the incoming content fades: folding drops the editor at
-        // once (the preview fades in), so the two texts never crossfade
-        // at different positions while the glass resizes.
-        .animation(isCompact ? nil : compactMorphAnimation, value: isCompact)
+        .animation(editorFadeAnimation) { $0.opacity(isCompact ? 0 : 1) }
         .allowsHitTesting(!isCompact)
         .accessibilityHidden(isCompact)
         .onGeometryChange(for: CGRect.self) { proxy in
@@ -541,44 +544,61 @@ extension ComposerBar {
           onSendSourceFrameChange?(frame)
         }
 
-        if text.isEmpty, !isCompact {
+        if !isCompact {
+          // Also the landing spot for the folded preview line: with a
+          // draft it stays invisible and the editor's own first line
+          // fades in where the preview text arrives.
           Text("Do something")
             .foregroundStyle(.tertiary)
+            .lineLimit(1)
+            .opacity(text.isEmpty ? 1 : 0)
+            .matchedGeometryEffect(
+              id: ComposerMorphID.firstLine,
+              in: composerMorph,
+              properties: .position,
+              anchor: .leading
+            )
             .padding(.top, 4 + Self.editorTopBleed)
             .allowsHitTesting(false)
-            .transition(composerModeTransition)
+            .accessibilityHidden(!text.isEmpty)
+            .transition(
+              .asymmetric(
+                insertion: .opacity.animation(editorFadeAnimation),
+                removal: .opacity.animation(compactFade(duration: 0.08))
+              ))
         }
       }
       .padding(.top, isCompact ? 0 : -Self.editorTopBleed)
 
-      if isCompact {
-        compactPreviewRow
-          .font(.callout)
-          .transition(composerModeTransition)
-      } else {
-        composerToolbar
-          .font(.callout)
-          .onGeometryChange(for: CGFloat.self) {
-            $0.size.height
-          } action: { height in
-            toolbarHeight = height
-          }
-          .contentShape(Rectangle())
-          .animation(
-            Motion.quick(reduceMotion: reduceMotion),
-            value: controller.isGoalEditing
-          )
-          // The chrome half of grab-anywhere: this SwiftUI drag covers the
-          // toolbar row, and the editor's scroll pan covers the text area
-          // (see `HeightReportingTextView`). Simultaneous here only shares
-          // touches with the row's own buttons, and a tap never travels
-          // the 8pt minimum.
-          .simultaneousGesture(expansionDrag)
-          .transition(composerModeTransition)
-      }
+      composerToolbar
+        .font(.callout)
+        .onGeometryChange(for: CGFloat.self) {
+          $0.size.height
+        } action: { height in
+          // The folded row is the same row, but `cardChromeHeight`
+          // budgets the open card.
+          guard !isCompact else { return }
+          toolbarHeight = height
+        }
+        .contentShape(Rectangle())
+        .animation(
+          Motion.quick(reduceMotion: reduceMotion),
+          value: controller.isGoalEditing
+        )
+        // The chrome half of grab-anywhere: this SwiftUI drag covers the
+        // toolbar row, and the editor's scroll pan covers the text area
+        // (see `HeightReportingTextView`). Simultaneous here only shares
+        // touches with the row's own buttons, and a tap never travels
+        // the 8pt minimum. The folded card has nothing to drag open.
+        .simultaneousGesture(expansionDrag, including: isCompact ? .subviews : .all)
     }
   }
 
+  /// One bottom row serves both the folded and the open card. Attach and
+  /// stop/send keep their identity across the fold, so they ride the
+  /// card's resize; only the middle swaps — the preview line for the
+  /// model and mode chips.
+  ///
   /// Goal editing and ordinary composition occupy the same toolbar slot.
   /// Remove the outgoing chrome immediately so SwiftUI never crossfades two
   /// interactive rows on top of each other; only the replacement row fades
@@ -597,14 +617,26 @@ extension ComposerBar {
     } else {
       HStack(spacing: 10) {
         attachButton
-        ModelConfigChip(controller: controller)
-        if controller.hasPlanMode, controller.isPlanModeOn {
-          planModeChip
+        if isCompact {
+          compactPreviewLine
+            .transition(compactPreviewTransition)
+          if !controller.composerAttachments.isEmpty {
+            compactAttachmentCount
+              .transition(compactChipsTransition)
+          }
+        } else {
+          HStack(spacing: 10) {
+            ModelConfigChip(controller: controller)
+            if controller.hasPlanMode, controller.isPlanModeOn {
+              planModeChip
+            }
+            if controller.canEditGoal, controller.isGoalComposerArmed {
+              goalModeChip
+            }
+          }
+          .transition(compactChipsTransition)
+          Spacer(minLength: 0)
         }
-        if controller.canEditGoal, controller.isGoalComposerArmed {
-          goalModeChip
-        }
-        Spacer(minLength: 0)
         // Mirrors the macOS toolbar: while the agent runs, stop
         // takes the send slot; a draft brings send back beside it.
         HStack(spacing: 6) {
