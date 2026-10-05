@@ -9,12 +9,15 @@ import type {
 import { SimulatorRequestError } from "./simulator-errors.js"
 import type { SimulatorEnvironment } from "./simulators.js"
 
-/// The settings Device Hub applies through CoreDevice rather than `simctl`: Reduce Motion, Show
-/// Borders, Reduce Transparency, VoiceOver, and the device's volume and audio routes. `devicectl`
+/// The settings Device Hub applies through CoreDevice rather than `simctl`: Liquid Glass, Color
+/// Filter, Reduce Motion, Show Borders, Reduce Transparency, VoiceOver, and the device's volume and
+/// audio routes. `devicectl`
 /// carries them to helpers CoreSimulator runs inside every simulator; an Xcode without these
 /// commands leaves the settings out.
 export type SimulatorDeviceSettings = Pick<
   SimulatorSettings,
+  | "liquidGlass"
+  | "colorFilter"
   | "reduceMotion"
   | "showBorders"
   | "reduceTransparency"
@@ -41,6 +44,25 @@ const enabled = (value: unknown): boolean | undefined => {
   if (typeof value === "boolean") return value
   const flag = record(value)?.["enabled"]
   return typeof flag === "boolean" ? flag : undefined
+}
+
+/// CoreDevice's filter names, as `devicectl` reads them back (`{filterType: {name: "Protanopia"}}`).
+const colorFilters: Readonly<Record<string, ColorFilter>> = {
+  Protanopia: "protanopia",
+  Deuteranopia: "deuteranopia",
+  Tritanopia: "tritanopia",
+  Grayscale: "grayscale"
+}
+
+type ColorFilter = NonNullable<SimulatorSettings["colorFilter"]>
+
+/// `{enabled: false}` is no filter; an enabled one names its type.
+const parseColorFilter = (value: unknown): ColorFilter | undefined => {
+  const filter = record(value)
+  const on = filter?.["enabled"]
+  if (on === false) return "none"
+  const name = record(filter?.["filterType"])?.["name"]
+  return on === true && typeof name === "string" ? colorFilters[name] : undefined
 }
 
 /// `{systemDefault: {}}` or `{device: {_0: "<uid>"}}`.
@@ -71,6 +93,8 @@ export const parseDeviceSettings = (
   const look = record(appearance)
   const sound = record(audio)
   const hosts = record(devices)
+  const liquidGlass = look?.["liquidGlassOpacity"]
+  const colorFilter = parseColorFilter(look?.["colorFilter"])
   const reduceMotion = enabled(look?.["reduceMotion"])
   const showBorders = enabled(look?.["showBorders"])
   const reduceTransparency = enabled(look?.["reduceTransparency"])
@@ -79,6 +103,10 @@ export const parseDeviceSettings = (
   const audioOutput = parseAudioRoute(sound?.["audioOutputDevice"])
   const audioInput = parseAudioRoute(sound?.["audioInputDevice"])
   return {
+    ...(typeof liquidGlass === "number" && liquidGlass >= 0 && liquidGlass <= 1
+      ? { liquidGlass }
+      : {}),
+    ...(colorFilter === undefined ? {} : { colorFilter }),
     ...(reduceMotion === undefined ? {} : { reduceMotion }),
     ...(showBorders === undefined ? {} : { showBorders }),
     ...(reduceTransparency === undefined ? {} : { reduceTransparency }),
@@ -151,6 +179,14 @@ export const makeSimulatorDeviceSettings = (environment: SimulatorEnvironment) =
 
   const apply = async (udid: string, change: SimulatorSettingsChange): Promise<void> => {
     const appearance = [
+      ...(change.liquidGlass === undefined
+        ? []
+        : ["--liquid-glass-opacity", String(Math.round(change.liquidGlass * 100) / 100)]),
+      ...(change.colorFilter === undefined
+        ? []
+        : change.colorFilter === "none"
+          ? ["--color-filter", "off"]
+          : ["--color-filter", "on", "--color-filter-type", change.colorFilter]),
       ...(change.reduceMotion === undefined ? [] : ["--reduce-motion", onOff(change.reduceMotion)]),
       ...(change.showBorders === undefined ? [] : ["--show-borders", onOff(change.showBorders)]),
       ...(change.reduceTransparency === undefined

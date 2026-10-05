@@ -22,6 +22,8 @@ public protocol SimulatorConnection: AnyObject {
   var phase: SimulatorConnectionPhase { get }
   var state: ScreenSharingSimulatorState? { get }
   var source: SimulatorScreenSource? { get }
+  /// The size of the frames the screen last drew, as they arrive (nil before the first).
+  var frameSize: CGSize? { get }
   func start()
   func stop()
   @discardableResult func send(_ message: ScreenSharingSimulatorMessage) -> Bool

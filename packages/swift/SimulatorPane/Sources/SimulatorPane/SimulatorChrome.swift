@@ -84,17 +84,24 @@ public struct SimulatorChromeDefinition: Decodable, Sendable, Equatable {
   public var resizeRects: [ResizeRect]?
 
   /// The composite's fixed margins (left, right, top, bottom, in points) when the chrome is drawn
-  /// from its composite: as far into the image as any corner's resize rect reaches.
+  /// from its composite: as far into the image as any corner's resize rect reaches, and at least
+  /// as far as the outline's continuous corner curves, so each corner's whole curve is drawn as
+  /// it is rather than partly stretched (or flattened) with the edge beside it.
   public var compositeCaps: (left: Double, right: Double, top: Double, bottom: Double)? {
     guard let rects = resizeRects, !rects.isEmpty, images.composite != nil else { return nil }
+    // A continuous corner of radius r curves from about 1.53 r out, not r.
+    let corner = (paths?.simpleOutsideBorder?.cornerRadiusX ?? 0) * 1.6
+    let radius = (x: corner, y: corner)
     func reach(_ corners: Set<String>, _ extent: (ResizeRect) -> Double) -> Double {
       rects.filter { corners.contains($0.type) }.map(extent).max() ?? 0
     }
     let horizontal = { (rect: ResizeRect) in abs(rect.centerPoint.x) + rect.size.width / 2 }
     let vertical = { (rect: ResizeRect) in abs(rect.centerPoint.y) + rect.size.height / 2 }
     return (
-      reach(["upperLeft", "lowerLeft"], horizontal), reach(["upperRight", "lowerRight"], horizontal),
-      reach(["upperLeft", "upperRight"], vertical), reach(["lowerLeft", "lowerRight"], vertical)
+      max(radius.x, reach(["upperLeft", "lowerLeft"], horizontal)),
+      max(radius.x, reach(["upperRight", "lowerRight"], horizontal)),
+      max(radius.y, reach(["upperLeft", "upperRight"], vertical)),
+      max(radius.y, reach(["lowerLeft", "lowerRight"], vertical))
     )
   }
 
@@ -139,10 +146,25 @@ public struct SimulatorChromeLayout: Equatable, Sendable {
     self.buttons = buttons; self.outerCornerRadius = outerCornerRadius
   }
 
+  /// A clear margin around a bezel's artwork, in points.
+  public struct Margins: Sendable, Equatable {
+    public var left: CGFloat, top: CGFloat, right: CGFloat, bottom: CGFloat
+    public static let zero = Margins(left: 0, top: 0, right: 0, bottom: 0)
+
+    public init(left: CGFloat, top: CGFloat, right: CGFloat, bottom: CGFloat) {
+      (self.left, self.top, self.right, self.bottom) = (left, top, right, bottom)
+    }
+  }
+
+  /// How far a button stands proud of the device's edge at most, as Device Hub draws them.
+  static let buttonReach: CGFloat = 3
+
   /// Lays the chrome around a screen of `screenSize` points. `imageSize` gives each image's
-  /// natural size (its PDF page) so buttons keep their drawn proportions.
+  /// natural size (its PDF page) so buttons keep their drawn proportions. Buttons are placed
+  /// against the device's visible edge, inside the artwork's clear `margins`.
   public init(
-    definition: SimulatorChromeDefinition, screen screenSize: CGSize, imageSize: (String) -> CGSize?
+    definition: SimulatorChromeDefinition, screen screenSize: CGSize, margins: Margins = .zero,
+    imageSize: (String) -> CGSize?
   ) {
     let sizing = definition.images.sizing ?? .init(leftWidth: 18, rightWidth: 18, topHeight: 18, bottomHeight: 18)
     var bezel = CGRect(
@@ -153,10 +175,16 @@ public struct SimulatorChromeLayout: Equatable, Sendable {
         guard let name = input.image, var size = imageSize(name) else { return nil }
         let turned = Self.isTurned(input, size: size)
         if turned { size = CGSize(width: size.height, height: size.width) }
+        let device = CGRect(
+          x: bezel.minX + margins.left, y: bezel.minY + margins.top,
+          width: bezel.width - margins.left - margins.right, height: bezel.height - margins.top - margins.bottom)
+        let frame = Self.place(input, offset: input.offsets.normal, size: size, in: device)
+        let inward = Self.inward(input, frame: frame, device: device)
         return Button(
-          input: input, frame: Self.place(input, offset: input.offsets.normal, size: size, in: bezel),
+          input: input, frame: frame.offsetBy(dx: inward.x, dy: inward.y),
           rolloverFrame: Self.place(
-            input, offset: input.offsets.rollover ?? input.offsets.normal, size: size, in: bezel),
+            input, offset: input.offsets.rollover ?? input.offsets.normal, size: size, in: device
+          ).offsetBy(dx: inward.x, dy: inward.y),
           turned: turned)
       } ?? []
     // Grow the canvas to whatever the buttons need, then move everything into it.
@@ -182,6 +210,16 @@ public struct SimulatorChromeLayout: Equatable, Sendable {
     switch input.anchor {
     case "top", "bottom": size.height > size.width
     default: size.width > size.height
+    }
+  }
+
+  /// How far to move a button in so it stands at most `buttonReach` proud of the device's edge.
+  static func inward(_ input: SimulatorChromeDefinition.Input, frame: CGRect, device: CGRect) -> CGPoint {
+    switch input.anchor {
+    case "top": CGPoint(x: 0, y: max(0, device.minY - frame.minY - buttonReach))
+    case "bottom": CGPoint(x: 0, y: -max(0, frame.maxY - device.maxY - buttonReach))
+    case "right": CGPoint(x: -max(0, frame.maxX - device.maxX - buttonReach), y: 0)
+    default: CGPoint(x: max(0, device.minX - frame.minX - buttonReach), y: 0)
     }
   }
 
@@ -250,12 +288,28 @@ public struct SimulatorChrome: Sendable {
   public let definition: SimulatorChromeDefinition
   public let images: [String: SimulatorPDFImage]
 
+  /// How far in from the composite's edges its artwork starts (left, top, right, bottom, in
+  /// points): a clear margin some composites carry outside the device.
+  public let margins: SimulatorChromeLayout.Margins
+
   public init(_ chrome: ServerSimulatorChrome) throws {
     definition = try SimulatorChromeDefinition(json: chrome.definition)
-    images = chrome.images.compactMapValues { SimulatorPDFImage(base64: $0) }
+    let images = chrome.images.compactMapValues { SimulatorPDFImage(base64: $0) }
+    self.images = images
+    margins = Self.margins(of: definition.images.composite.flatMap { images[$0] })
   }
 
   public func layout(screen: CGSize) -> SimulatorChromeLayout {
-    SimulatorChromeLayout(definition: definition, screen: screen) { images[$0]?.size }
+    SimulatorChromeLayout(definition: definition, screen: screen, margins: margins) { images[$0]?.size }
+  }
+
+  private static func margins(of composite: SimulatorPDFImage?) -> SimulatorChromeLayout.Margins {
+    guard let composite, let image = composite.render(size: composite.size, scale: 2),
+      let opaque = SimulatorArtwork.opaqueBounds(image)
+    else { return .zero }
+    let scale = CGFloat(image.width) / max(1, composite.size.width)
+    return .init(
+      left: opaque.minX / scale, top: opaque.minY / scale, right: (CGFloat(image.width) - opaque.maxX) / scale,
+      bottom: (CGFloat(image.height) - opaque.maxY) / scale)
   }
 }

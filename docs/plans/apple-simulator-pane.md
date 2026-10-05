@@ -34,9 +34,27 @@ arrangement changes, since a stopping video view clears its mailbox's callback),
 one side of the hinge and projected about it (`SimulatorFold`): flat when open, both halves
 tilted toward you as a book, touches flattened back through the projection. Swapping screens
 animates the hinge over stills: the panel swings 180° about the hinge, showing the inner half on
-its front and the cover screen on its back, then hands back to the live stream. Buttons whose
+its front and the cover screen on its back, then hands back to the live stream. The guest wakes
+the screen it moves to black and fades it up from dim, so the viewer holds the stream's frames
+(`SimulatorScreenFeed.awaitWake`) and shows that screen's last still until frames of the new size
+are lit and settled (mean luma steady between frames, or nothing newer for a moment; at most
+1.2 s), and the fold reads as one pane of glass, as in Device Hub. A screen not seen yet (the
+first unfold) stands in with the other screen's still, filled and blurred, as SpringBoard's own
+wake looks. Each half is drawn as a slab in perspective (`SimulatorFold.plane`): its body is one
+shape behind the face, the convex hull of the device's rounded outline projected at the front and
+back of the panel, so the rim that shows as it turns toward you joins the face and rounds its
+corners smoothly, as the device does, faces darken as they turn from the light, and the cover sits a
+panel's thickness above the half it closes on. The right half reaches a hair under the left, so
+the two antialiased edges at the hinge leave no seam, and the open bezel's middle is stretched from
+a plain strip of the composite (its center carries a hinge mark). A posture asked for in this pane
+pins the screen's frame as the button is pressed (`SimulatorScreenFeed.pin`): by the time the
+device answers, the guest has already redrawn the departing screen mid-transition (the next
+screen's layout, squashed), which would otherwise become its still. Buttons whose
 artwork lies across their edge (the inner chrome reuses the cover's) are turned a quarter to lie
-along it. The posture controls are Device Hub's: closed, book and flat glyphs beside Rotate.
+along it. Buttons are placed against the device's visible edge (some composites, like the Duo's
+cover, carry a clear margin outside it) and stand at most 3 points proud, as Device Hub draws them;
+a composite's corner caps reach as far as its continuous corner curves, so stretching never flattens
+a corner. The posture controls are Device Hub's: closed, book and flat glyphs beside Rotate.
 
 Input goes through CoreDevice feature services inside the guest, reached with
 `SimDevice lookup:` → `xpc_endpoint_create_mach_port_4sim` → `xpc_connection_create_from_endpoint`
@@ -74,10 +92,13 @@ and Device Settings and More trail. Shortcuts follow Simulator: ⇧⌘H Home, �
 rotate.
 
 Settings match Device Hub's panel. Appearance, text size and increase contrast go through
-`simctl ui`; location through `simctl location`. Reduce Motion, Show Borders, Reduce Transparency,
-VoiceOver, volume and the audio output/input routes go through `xcrun devicectl device settings
-appearance|voiceover|audio` and read back with `devicectl device info …` (`list audioDevices` names
-the Mac's devices). Those reach CoreDevice helpers CoreSimulator runs in every simulator
+`simctl ui`; location through `simctl location`. Liquid Glass (`--liquid-glass-opacity`, 0 clear to
+1 tinted), Color Filter (`--color-filter on|off` with `--color-filter-type` protanopia, deuteranopia,
+tritanopia or grayscale; read back as `colorFilter.filterType.name`), Reduce Motion, Show Borders,
+Reduce Transparency, VoiceOver, volume and the audio output/input routes go through `xcrun devicectl
+device settings appearance|voiceover|audio` and read back with `devicectl device info …` (`list
+audioDevices` names the Mac's devices). A runtime without Liquid Glass reports no opacity, so the
+slider is left out. Those reach CoreDevice helpers CoreSimulator runs in every simulator
 (`dtconfigurationd`, `com.apple.coredevice.feature.customizeappearancesettings`, `…voiceover`) and,
 for audio, CoreSimulator's host audio route. An Xcode without these `devicectl` commands leaves the
 settings out of the panel.

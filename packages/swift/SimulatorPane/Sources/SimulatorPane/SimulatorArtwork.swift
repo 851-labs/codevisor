@@ -97,10 +97,14 @@ enum SimulatorArtwork {
     let pixels = CGFloat(bitmap.width) / source.width
     for row in 0..<3 {
       for column in 0..<3 {
+        // The middle row and column stretch from a plain strip a quarter of the way along: a
+        // foldable's composite marks the hinge at the middle of its edges, which the open device,
+        // drawn as one piece, doesn't show.
+        let across = Self.plainSpan(sourceColumns, column)
+        let down = Self.plainSpan(sourceRows, row)
         let from = CGRect(
-          x: sourceColumns[column] * pixels, y: sourceRows[row] * pixels,
-          width: (sourceColumns[column + 1] - sourceColumns[column]) * pixels,
-          height: (sourceRows[row + 1] - sourceRows[row]) * pixels
+          x: across.start * pixels, y: down.start * pixels, width: across.length * pixels,
+          height: down.length * pixels
         ).integral
         let to = CGRect(
           x: targetColumns[column], y: targetRows[row], width: targetColumns[column + 1] - targetColumns[column],
@@ -116,6 +120,37 @@ enum SimulatorArtwork {
         context.restoreGState()
       }
     }
+  }
+
+  /// Where slice `index` of a nine-slice is taken from along one axis: the caps as they are, the
+  /// middle as one point of it a quarter of the way along, stretched.
+  static func plainSpan(_ edges: [Double], _ index: Int) -> (start: Double, length: Double) {
+    guard index == 1 else { return (edges[index], edges[index + 1] - edges[index]) }
+    let length = edges[2] - edges[1]
+    return (edges[1] + length / 4, min(1, length))
+  }
+
+  /// Where `image` is opaque, in its pixels: across its middle row and down its middle column, so
+  /// the device's outline and not the buttons around it (drawn separately) or a transparent margin.
+  static func opaqueBounds(_ image: CGImage) -> CGRect? {
+    let width = image.width, height = image.height
+    guard width > 2, height > 2,
+      let context = CGContext(
+        data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+        space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+      let data = context.data
+    else { return nil }
+    context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+    let pixels = data.bindMemory(to: UInt8.self, capacity: width * height * 4)
+    // A bitmap context's first row in memory is the image's top.
+    func opaque(_ x: Int, _ y: Int) -> Bool { pixels[(y * width + x) * 4 + 3] > 127 }
+    let row = height / 2, column = width / 2
+    guard let left = (0..<width).first(where: { opaque($0, row) }),
+      let right = (0..<width).last(where: { opaque($0, row) }),
+      let top = (0..<height).first(where: { opaque(column, $0) }),
+      let bottom = (0..<height).last(where: { opaque(column, $0) })
+    else { return nil }
+    return CGRect(x: left, y: top, width: right - left + 1, height: bottom - top + 1)
   }
 
   /// The screen's alpha mask at `pixels` (native orientation), turned clockwise by `quarterTurns`.

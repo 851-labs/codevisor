@@ -1,19 +1,22 @@
 import CodevisorClient
 import SwiftUI
 
-/// The running device's settings, as Device Hub offers them: appearance and text size,
-/// accessibility, a simulated location, and sound. Settings this Mac's Xcode or the device's
-/// runtime can't change are left out.
+/// The running device's settings, as Device Hub offers them: appearance, Liquid Glass, color
+/// filter and text size, accessibility, a simulated location, and sound. Settings this Mac's
+/// Xcode or the device's runtime can't change are left out.
 struct SimulatorSettingsView: View {
   let model: SimulatorPaneModel
-  /// While a slider is held, its value stays here; the device gets it when it's let go.
-  @State private var textSize: Double?
-  @State private var volume: Double?
 
   static let contentSizes = [
     "extra-small", "small", "medium", "large", "extra-large", "extra-extra-large", "extra-extra-extra-large",
     "accessibility-medium", "accessibility-large", "accessibility-extra-large", "accessibility-extra-extra-large",
     "accessibility-extra-extra-extra-large",
+  ]
+
+  /// Device Hub's color filters, by CoreDevice's name for each.
+  static let colorFilters: [(id: String, title: String)] = [
+    ("none", "None"), ("protanopia", "Red/Green (Protanopia)"), ("deuteranopia", "Green/Red (Deuteranopia)"),
+    ("tritanopia", "Blue/Yellow (Tritanopia)"), ("grayscale", "Grayscale"),
   ]
 
   static let locations: [(id: String, title: String)] = [
@@ -41,7 +44,7 @@ struct SimulatorSettingsView: View {
       }
     }
     #if os(macOS)
-      .frame(width: 340, height: 520)
+      .frame(width: 340, height: 600)
     #else
       .presentationDetents([.medium, .large])
       .presentationDragIndicator(.visible)
@@ -58,24 +61,26 @@ struct SimulatorSettingsView: View {
         }
         .pickerStyle(.segmented)
       }
+      if let opacity = settings.liquidGlass {
+        SettingSlider(
+          "Liquid Glass", value: opacity, in: 0...1, low: ("circle.dotted", "Clear"), high: ("circle.fill", "Tinted"),
+          describe: { $0.formatted(.percent.precision(.fractionLength(0))) }
+        ) { value in
+          model.change { $0.liquidGlass = (value * 100).rounded() / 100 }
+        }
+      }
+      if let filter = settings.colorFilter {
+        Picker("Color Filter", selection: binding(filter) { $0.colorFilter = $1 }) {
+          ForEach(Self.colorFilters, id: \.id) { Text($0.title).tag($0.id) }
+        }
+      }
       if let size = settings.contentSize, let index = Self.contentSizes.firstIndex(of: size) {
-        LabeledContent("Text Size") {
-          Slider(
-            value: Binding(get: { textSize ?? Double(index) }, set: { textSize = $0 }),
-            in: 0...Double(Self.contentSizes.count - 1), step: 1
-          ) {
-            Text("Text Size")
-          } minimumValueLabel: {
-            Image(systemName: "textformat.size.smaller")
-          } maximumValueLabel: {
-            Image(systemName: "textformat.size.larger")
-          } onEditingChanged: { editing in
-            guard !editing, let value = textSize else { return }
-            textSize = nil
-            model.change { $0.contentSize = Self.contentSizes[Int(value.rounded())] }
-          }
-          .labelsHidden()
-          .accessibilityValue(Self.contentSizes[Int((textSize ?? Double(index)).rounded())])
+        SettingSlider(
+          "Text Size", value: Double(index), in: 0...Double(Self.contentSizes.count - 1), step: 1,
+          low: ("textformat.size.smaller", "Smaller"), high: ("textformat.size.larger", "Larger"),
+          describe: { Self.contentSizes[Int($0.rounded())] }
+        ) { value in
+          model.change { $0.contentSize = Self.contentSizes[Int(value.rounded())] }
         }
       }
     }
@@ -105,21 +110,12 @@ struct SimulatorSettingsView: View {
     if settings.volume != nil || settings.audioOutput != nil || settings.audioInput != nil {
       Section("Sound") {
         if let level = settings.volume {
-          LabeledContent("Volume") {
-            Slider(
-              value: Binding(get: { volume ?? level }, set: { volume = $0 }), in: 0...100
-            ) {
-              Text("Volume")
-            } minimumValueLabel: {
-              Image(systemName: "speaker.fill")
-            } maximumValueLabel: {
-              Image(systemName: "speaker.wave.3.fill")
-            } onEditingChanged: { editing in
-              guard !editing, let value = volume else { return }
-              volume = nil
-              model.change { $0.volume = value.rounded() }
-            }
-            .labelsHidden()
+          SettingSlider(
+            "Volume", value: level, in: 0...100, low: ("speaker.fill", "Quieter"),
+            high: ("speaker.wave.3.fill", "Louder"),
+            describe: { "\(Int($0.rounded()))%" }
+          ) { value in
+            model.change { $0.volume = value.rounded() }
           }
         }
         if let route = settings.audioOutput {
@@ -160,5 +156,79 @@ struct SimulatorSettingsView: View {
     _ value: Value, set: @escaping (inout ServerSimulatorSettingsChange, Value) -> Void
   ) -> Binding<Value> {
     Binding(get: { value }, set: { newValue in model.change { set(&$0, newValue) } })
+  }
+}
+
+/// A setting on a slider. Dragged, the device gets the value once it's let go, not at every step
+/// on the way; stepped with the keyboard or VoiceOver (no drag), each step goes straight through.
+private struct SettingSlider: View {
+  let title: String
+  let value: Double
+  let range: ClosedRange<Double>
+  let step: Double?
+  /// The symbol at each end, and what it's called aloud.
+  let low: (symbol: String, name: String)
+  let high: (symbol: String, name: String)
+  let describe: (Double) -> String
+  let commit: (Double) -> Void
+  @State private var held: Double?
+  @State private var dragging = false
+
+  init(
+    _ title: String, value: Double, in range: ClosedRange<Double>, step: Double? = nil, low: (String, String),
+    high: (String, String),
+    describe: @escaping (Double) -> String, commit: @escaping (Double) -> Void
+  ) {
+    self.title = title
+    self.value = value
+    self.range = range
+    self.step = step
+    self.low = low
+    self.high = high
+    self.describe = describe
+    self.commit = commit
+  }
+
+  var body: some View {
+    let shown = held ?? value
+    let binding = Binding(
+      get: { shown },
+      set: { new in
+        if dragging { held = new } else { commit(new) }
+      })
+    LabeledContent(title) {
+      Group {
+        if let step {
+          Slider(value: binding, in: range, step: step) {
+            Text(title)
+          } minimumValueLabel: {
+            Image(systemName: low.symbol).accessibilityLabel(low.name)
+          } maximumValueLabel: {
+            Image(systemName: high.symbol).accessibilityLabel(high.name)
+          } onEditingChanged: {
+            editingChanged($0)
+          }
+        } else {
+          Slider(value: binding, in: range) {
+            Text(title)
+          } minimumValueLabel: {
+            Image(systemName: low.symbol).accessibilityLabel(low.name)
+          } maximumValueLabel: {
+            Image(systemName: high.symbol).accessibilityLabel(high.name)
+          } onEditingChanged: {
+            editingChanged($0)
+          }
+        }
+      }
+      .labelsHidden()
+      .accessibilityValue(describe(shown))
+    }
+  }
+
+  private func editingChanged(_ editing: Bool) {
+    dragging = editing
+    guard !editing, let value = held else { return }
+    held = nil
+    commit(value)
   }
 }

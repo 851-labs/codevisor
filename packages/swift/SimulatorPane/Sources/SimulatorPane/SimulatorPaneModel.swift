@@ -314,6 +314,15 @@ public final class SimulatorPaneModel {
     connection?.send(message) ?? false
   }
 
+  /// Bumped as this pane asks for a posture, before the device answers: the canvas keeps what
+  /// the screen shows right then, as the guest's own fold soon redraws it mid-transition.
+  private(set) var postureRequests = 0
+
+  public func setPosture(_ posture: String) {
+    postureRequests += 1
+    send(.posture(posture))
+  }
+
   public func rotate(clockwise: Bool) {
     let current = deviceState?.orientation ?? .portrait
     send(.rotate(current.turned(clockwise: clockwise)))

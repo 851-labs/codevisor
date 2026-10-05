@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import SwiftUI
 import Testing
 
 @testable import SimulatorPane
@@ -28,17 +29,29 @@ import Testing
     let layout = SimulatorChromeLayout(
       definition: Self.definition, screen: CGSize(width: 420, height: 912)
     ) { Self.imageSizes[$0] }
-    // Each side button sticks out by its depth minus its inward offset; the canvas grows to fit
-    // the rolled-out position, so nothing is clipped when the pointer slides a button out.
-    #expect(layout.frame == CGRect(x: 13, y: 0, width: 456, height: 948))
-    #expect(layout.screen == CGRect(x: 31, y: 18, width: 420, height: 912))
-    #expect(layout.canvas == CGSize(width: 482, height: 948))
+    // Each side button would stick out by its depth minus its inward offset (8 here); as Device
+    // Hub draws them it stands just 3 proud, its rolled-out position moving in with it. The canvas
+    // grows to fit that position, so nothing is clipped when the pointer slides a button out.
+    #expect(layout.frame == CGRect(x: 8, y: 0, width: 456, height: 948))
+    #expect(layout.screen == CGRect(x: 26, y: 18, width: 420, height: 912))
+    #expect(layout.canvas == CGSize(width: 472, height: 948))
     let action = layout.buttons.first { $0.input.name == "action" }
     #expect(action?.frame == CGRect(x: 5, y: 180, width: 16, height: 34))
     #expect(action?.rolloverFrame == CGRect(x: 0, y: 180, width: 16, height: 34))
     let power = layout.buttons.first { $0.input.name == "power" }
-    #expect(power?.frame == CGRect(x: 461, y: 293, width: 16, height: 101))
+    #expect(power?.frame == CGRect(x: 451, y: 293, width: 16, height: 101))
     #expect(power?.rolloverFrame.maxX == layout.canvas.width)
+  }
+
+  @Test func buttonsArePlacedAgainstTheDevicesVisibleEdge() {
+    // A composite with a 10-point clear margin on its right: the power button hangs off the
+    // device's edge, not the margin's.
+    let margins = SimulatorChromeLayout.Margins(left: 0, top: 0, right: 10, bottom: 0)
+    let layout = SimulatorChromeLayout(
+      definition: Self.definition, screen: CGSize(width: 420, height: 912), margins: margins
+    ) { Self.imageSizes[$0] }
+    let power = layout.buttons.first { $0.input.name == "power" }
+    #expect(power.map { $0.frame.maxX - (layout.frame.maxX - 10) } == 3)
   }
 
   @Test func buttonsWithoutArtworkAreLeftOff() {
@@ -97,12 +110,12 @@ import Testing
     let volume = layout.buttons.first { $0.input.name == "volume-up" }
     #expect(volume?.turned == true)
     #expect(volume?.frame.size == CGSize(width: 16, height: 63))
-    // Hanging out of the left edge by its depth less the offset, as an upright button would.
-    #expect(volume.map { layout.frame.minX - $0.frame.minX } == 8)
+    // Hanging out of the left edge as an upright button would, just 3 proud.
+    #expect(volume.map { layout.frame.minX - $0.frame.minX } == 3)
     let power = layout.buttons.first { $0.input.name == "power" }
     #expect(power?.turned == true)
     #expect(power?.frame.size == CGSize(width: 107, height: 16))
-    #expect(power.map { layout.frame.minY - $0.frame.minY } == 8)
+    #expect(power.map { layout.frame.minY - $0.frame.minY } == 3)
     // Artwork that already lies along its edge is left as drawn.
     #expect(
       Self.definition.inputs.map { inputs in
@@ -137,6 +150,72 @@ import Testing
     #expect(abs(drawn.x - center.x) < abs(flat.x - center.x) + 0.001)
     let back = SimulatorFold.flatten(drawn, hinge: 130, center: center, depth: depth)
     #expect(abs(back.x - flat.x) < 0.01 && abs(back.y - flat.y) < 0.01)
+  }
+
+  private static func apply(_ transform: ProjectionTransform, _ point: CGPoint) -> CGPoint {
+    let w = point.x * transform.m13 + point.y * transform.m23 + transform.m33
+    return CGPoint(
+      x: (point.x * transform.m11 + point.y * transform.m21 + transform.m31) / w,
+      y: (point.x * transform.m12 + point.y * transform.m22 + transform.m32) / w)
+  }
+
+  /// Where a point in space is drawn, seen from `depth` in front of `center` (z toward you).
+  private static func perspective(_ x: CGFloat, _ y: CGFloat, _ z: CGFloat, center: CGPoint, depth: CGFloat) -> CGPoint
+  {
+    let scale = depth / (depth - z)
+    return CGPoint(x: center.x + (x - center.x) * scale, y: center.y + (y - center.y) * scale)
+  }
+
+  @Test(arguments: [true, false])
+  func aSliceBehindAHalfsFaceIsDrawnWhereItStandsInSpace(left: Bool) {
+    let center = CGPoint(x: 500, y: 350)
+    let depth = SimulatorFold.depth(width: 1000)
+    let degrees = 60.0, inset: CGFloat = 20
+    let transform = SimulatorFold.tilt(degrees, left: left, center: center, depth: depth, inset: inset)
+    let c = CGFloat(cos(degrees * .pi / 180)), s = CGFloat(sin(degrees * .pi / 180))
+    let sign: CGFloat = left ? -1 : 1
+    for flat in [CGPoint(x: center.x + sign * 400, y: 50), CGPoint(x: center.x + sign * 120, y: 640)] {
+      // `inset` behind the screen, `a` out from the hinge, turned toward you about it.
+      let a = abs(flat.x - center.x)
+      let expected = Self.perspective(
+        center.x + sign * (a * c + inset * s), flat.y, a * s - inset * c, center: center, depth: depth)
+      let drawn = Self.apply(transform, flat)
+      #expect(abs(drawn.x - expected.x) < 0.001 && abs(drawn.y - expected.y) < 0.001)
+    }
+  }
+
+  @Test func aHalfsBodyIsTheHullOfItsRoundedOutlineCutAtTheHinge() {
+    let rect = CGRect(x: 100, y: 50, width: 400, height: 300)
+    let outline = SimulatorFold.outline(rect, corners: .init(all: 40))
+    // Every point lies on the rounded rectangle, inside its frame, and the corners are rounded off.
+    #expect(outline.allSatisfy { rect.insetBy(dx: -0.001, dy: -0.001).contains($0) })
+    #expect(!outline.contains { abs($0.x - rect.minX) < 0.001 && abs($0.y - rect.minY) < 0.001 })
+    let left = SimulatorFold.clip(outline, atX: 300, keepingLeft: true)
+    #expect(left.allSatisfy { $0.x <= 300.001 } && left.contains { abs($0.x - 300) < 0.001 })
+    // A convex outline is its own hull, and a point inside it doesn't change that.
+    let hull = SimulatorFold.hull(left + [CGPoint(x: 200, y: 200)])
+    #expect(hull.count <= left.count && !hull.contains(CGPoint(x: 200, y: 200)))
+  }
+
+  @Test func aBezelsOutlineIsWhereItsArtworkIsOpaque() throws {
+    // A 40×30 image, opaque but for a margin: 2 left, 6 right, 1 top, 3 bottom.
+    let context = try #require(
+      CGContext(
+        data: nil, width: 40, height: 30, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+    context.setFillColor(CGColor(gray: 0.2, alpha: 1))
+    // Core Graphics counts y up from the bottom: 3 rows clear below, 1 above.
+    context.fill(CGRect(x: 2, y: 3, width: 32, height: 26))
+    let image = try #require(context.makeImage())
+    #expect(SimulatorArtwork.opaqueBounds(image) == CGRect(x: 2, y: 1, width: 32, height: 26))
+  }
+
+  @Test func aCompositesMiddleStretchesFromAPlainStripAwayFromTheHingeMark() {
+    let edges: [Double] = [0, 40, 600, 660]
+    // Caps are taken whole; the middle from one point a quarter of the way along, clear of its center.
+    #expect(SimulatorArtwork.plainSpan(edges, 0) == (0, 40))
+    #expect(SimulatorArtwork.plainSpan(edges, 2) == (600, 60))
+    #expect(SimulatorArtwork.plainSpan(edges, 1) == (180, 1))
   }
 
   @Test func turningANormalizedPointBackAndForthReturnsIt() {

@@ -124,6 +124,20 @@ export const SimulatorLocation = Schema.Literals([
   "freeway-drive"
 ])
 
+/// A color filter for color blindness, or none (Device Hub's choices; CoreDevice's names).
+export const SimulatorColorFilter = Schema.Literals([
+  "none",
+  "protanopia",
+  "deuteranopia",
+  "tritanopia",
+  "grayscale"
+])
+
+/// How opaque Liquid Glass is drawn: 0 fully clear, 1 fully tinted.
+export const SimulatorLiquidGlass = Schema.Number.check(
+  Schema.isBetween({ minimum: 0, maximum: 1 })
+)
+
 /// One of the Mac's audio devices the simulator's sound can play through or record from.
 export const SimulatorAudioDevice = Schema.Struct({
   uid: Schema.String,
@@ -138,6 +152,8 @@ export const SimulatorVolume = Schema.Number.check(Schema.isBetween({ minimum: 0
 /// What the device reports; a setting the runtime (or this Xcode) doesn't support is absent.
 export const SimulatorSettings = Schema.Struct({
   appearance: Schema.optional(SimulatorAppearance),
+  liquidGlass: Schema.optional(SimulatorLiquidGlass),
+  colorFilter: Schema.optional(SimulatorColorFilter),
   contentSize: Schema.optional(SimulatorContentSize),
   increaseContrast: Schema.optional(Schema.Boolean),
   reduceMotion: Schema.optional(Schema.Boolean),
@@ -156,6 +172,8 @@ export type SimulatorSettings = typeof SimulatorSettings.Type
 export const SimulatorSettingsChange = Schema.Struct({
   udid: Schema.String,
   appearance: Schema.optional(SimulatorAppearance),
+  liquidGlass: Schema.optional(SimulatorLiquidGlass),
+  colorFilter: Schema.optional(SimulatorColorFilter),
   contentSize: Schema.optional(SimulatorContentSize),
   increaseContrast: Schema.optional(Schema.Boolean),
   reduceMotion: Schema.optional(Schema.Boolean),

@@ -144,6 +144,10 @@ public struct ServerSimulatorSettings: Codable, Sendable, Equatable {
   public static let systemAudioRoute = "system"
 
   public var appearance: String?
+  /// How opaque Liquid Glass is: 0 clear, 1 tinted.
+  public var liquidGlass: Double?
+  /// `"none"`, `"protanopia"`, `"deuteranopia"`, `"tritanopia"` or `"grayscale"`.
+  public var colorFilter: String?
   public var contentSize: String?
   public var increaseContrast: Bool?
   public var reduceMotion: Bool?
@@ -158,12 +162,15 @@ public struct ServerSimulatorSettings: Codable, Sendable, Equatable {
   public var audioInputs: [ServerSimulatorAudioDevice]?
 
   public init(
-    appearance: String? = nil, contentSize: String? = nil, increaseContrast: Bool? = nil,
+    appearance: String? = nil, liquidGlass: Double? = nil, colorFilter: String? = nil, contentSize: String? = nil,
+    increaseContrast: Bool? = nil,
     reduceMotion: Bool? = nil, showBorders: Bool? = nil, reduceTransparency: Bool? = nil, voiceOver: Bool? = nil,
     location: String = "none", volume: Double? = nil, audioOutput: String? = nil, audioInput: String? = nil,
     audioOutputs: [ServerSimulatorAudioDevice]? = nil, audioInputs: [ServerSimulatorAudioDevice]? = nil
   ) {
     self.appearance = appearance
+    self.liquidGlass = liquidGlass
+    self.colorFilter = colorFilter
     self.contentSize = contentSize
     self.increaseContrast = increaseContrast
     self.reduceMotion = reduceMotion
@@ -182,6 +189,8 @@ public struct ServerSimulatorSettings: Codable, Sendable, Equatable {
   public func applying(_ change: ServerSimulatorSettingsChange) -> Self {
     var settings = self
     if let value = change.appearance { settings.appearance = value }
+    if let value = change.liquidGlass { settings.liquidGlass = value }
+    if let value = change.colorFilter { settings.colorFilter = value }
     if let value = change.contentSize { settings.contentSize = value }
     if let value = change.increaseContrast { settings.increaseContrast = value }
     if let value = change.reduceMotion { settings.reduceMotion = value }
@@ -199,6 +208,8 @@ public struct ServerSimulatorSettings: Codable, Sendable, Equatable {
 public struct ServerSimulatorSettingsChange: Codable, Sendable, Equatable {
   public var udid: String
   public var appearance: String?
+  public var liquidGlass: Double?
+  public var colorFilter: String?
   public var contentSize: String?
   public var increaseContrast: Bool?
   public var reduceMotion: Bool?

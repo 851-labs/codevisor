@@ -24,6 +24,9 @@ struct SimulatorDeviceCanvas: View {
   #endif
   /// Each screen's bezel and screen mask, by face, at the scale the device is drawn.
   @State private var bezels: [String: CGImage] = [:]
+  /// Where each bezel's artwork is opaque, in its layout's canvas: the device's own outline,
+  /// inside any transparent margin its artwork carries.
+  @State private var outlines: [String: CGRect] = [:]
   @State private var masks: [String: CGImage] = [:]
   /// The angle the device is drawn at as it's held. It keeps counting past a full turn, so each
   /// turn animates the short way (portrait to landscape left is -90°, not +270°).
@@ -31,14 +34,16 @@ struct SimulatorDeviceCanvas: View {
   @State private var feed = SimulatorScreenFeed()
   /// A foldable's hinge as drawn, in degrees open; it eases to each new posture.
   @State private var hinge: Double?
-  /// Folding between screens: drawn from a still of the screen it left until the hinge settles.
+  /// Folding between screens: the screen it left shows a still until the hinge settles.
   @State private var fold: Fold?
+  /// What each screen last showed, drawn under its live video: a screen coming into view shows it
+  /// until the guest has woken that screen (`SimulatorScreenFeed.waking`), rather than black.
+  @State private var stills: [String: CGImage] = [:]
 
   private struct Fold {
     let id = UUID()
-    /// The screen shown before, and what it showed.
+    /// The screen shown before.
     let from: String
-    let snapshot: CGImage?
   }
 
   /// One of the device's screens laid out in its chrome, and how it's mounted in the device.
@@ -168,7 +173,9 @@ struct SimulatorDeviceCanvas: View {
         angle = nil
         hinge = nil
         fold = nil
+        stills = [:]
       }
+      .onChange(of: model.postureRequests) { feed.pin() }
       .onChange(of: PostureKey(posture: state?.posture, display: state?.display), initial: true) { old, new in
         postureChanged(from: old, to: new)
       }
@@ -182,18 +189,25 @@ struct SimulatorDeviceCanvas: View {
         let artwork = await Task.detached(priority: .userInitiated) {
           var bezels: [String: CGImage] = [:]
           var masks: [String: CGImage] = [:]
+          var outlines: [String: CGRect] = [:]
           for job in jobs {
             bezels[job.id] = job.chrome.flatMap {
               SimulatorArtwork.bezel(chrome: $0, layout: job.layout, scale: pixelScale)
+            }
+            outlines[job.id] = bezels[job.id].flatMap(SimulatorArtwork.opaqueBounds).map {
+              CGRect(
+                x: $0.minX / pixelScale, y: $0.minY / pixelScale, width: $0.width / pixelScale,
+                height: $0.height / pixelScale)
             }
             let pixels = CGSize(
               width: job.layout.screen.width * pixelScale, height: job.layout.screen.height * pixelScale)
             masks[job.id] = job.display.flatMap { SimulatorArtwork.mask(display: $0, pixels: pixels, quarterTurns: 0) }
           }
-          return (bezels, masks)
+          return (bezels, masks, outlines)
         }.value
         bezels = artwork.0
         masks = artwork.1
+        outlines = artwork.2
       }
     }
   }
@@ -220,8 +234,8 @@ struct SimulatorDeviceCanvas: View {
     }
   }
 
-  /// Eases the hinge to the new posture. Swapping screens folds over a still of the one left
-  /// (the guest blanks and wakes the other meanwhile), then hands back to the live stream.
+  /// Eases the hinge to the new posture. Swapping screens, the one left keeps a still of what it
+  /// showed while the other comes in live, as Device Hub's fold reads as one pane of glass.
   private func postureChanged(from old: PostureKey, to new: PostureKey) {
     guard let target = Self.hingeAngle(new.posture) else {
       hinge = nil
@@ -232,10 +246,12 @@ struct SimulatorDeviceCanvas: View {
       hinge = target
       return
     }
-    var duration = 0.45
+    var duration = 0.35
     if let from = old.display, old.display != new.display {
-      fold = Fold(from: from, snapshot: snapshot(of: from))
-      duration = 0.75
+      if let image = snapshot(of: from) { stills[from] = image }
+      feed.awaitWake()
+      fold = Fold(from: from)
+      duration = 0.5
     }
     let id = fold?.id
     withAnimation(.timingCurve(0.45, 0, 0.2, 1, duration: duration)) {
@@ -274,65 +290,87 @@ struct SimulatorDeviceCanvas: View {
 
   // MARK: Drawing
 
+  /// A foldable is always its fold scene, closed included, so each screen's video view lives
+  /// through every posture change (a new one would start black): the cover's on the first copy of
+  /// the stream, the inner halves' on the other two.
   @ViewBuilder private func content(current: Face, foldable: (cover: Face, inner: Face)?, scale: CGFloat) -> some View {
-    let halves = foldable != nil && hinge != nil && (fold != nil || current.id == foldable?.inner.id)
+    // Keyed by the scene drawn, as a foldable is a plain screen until its hinge is known.
     let sources = feed.sources(
-      for: model.connection?.source, arrangement: fold != nil ? "fold" : halves ? "halves" : "screen \(current.id)")
-    if let foldable, let hinge, halves {
+      for: model.connection?.source, arrangement: foldable == nil || hinge == nil ? "screen \(current.id)" : "foldable")
+    if let foldable, let hinge {
       let inner = foldable.inner, cover = foldable.cover
       SimulatorFoldScene(
         hinge: hinge,
         size: CGSize(width: inner.presented.width * scale, height: inner.presented.height * scale),
         hingeX: inner.bezel.midX * scale,
+        bezel: Self.scaled(outline(inner), scale),
+        cornerRadius: inner.layout.outerCornerRadius * scale,
         coverSize: CGSize(width: cover.presented.width * scale, height: cover.presented.height * scale),
         coverHingeX: cover.bezel.minX * scale,
+        coverBezel: Self.scaled(outline(cover), scale),
+        coverCornerRadius: cover.layout.outerCornerRadius * scale,
         shadowRadius: 24 * scale,
         inner: { half in
-          if let fold {
-            still(inner, image: fold.from == inner.id ? fold.snapshot : nil, scale: scale)
-          } else {
-            live(inner, source: sources.indices.contains(half) ? sources[half] : nil, scale: scale, half: half)
-          }
+          screenFace(
+            inner, source: sources.indices.contains(half + 1) ? sources[half + 1] : nil, current: current,
+            scale: scale, half: half)
         },
         cover: {
-          still(cover, image: fold?.from == cover.id ? fold?.snapshot : nil, scale: scale)
+          screenFace(cover, source: sources.first ?? nil, current: current, scale: scale)
         })
     } else {
-      live(current, source: sources.first ?? nil, scale: scale)
+      screenFace(current, source: sources.first ?? nil, current: current, scale: scale)
         .shadow(color: .black.opacity(0.35), radius: 24 * scale, y: 10 * scale)
     }
   }
 
-  /// A screen's device, its buttons pressable and its screen live, turned as it's mounted. Drawn
-  /// as one `half` of a foldable, it keeps only the buttons on that side of the hinge.
-  private func live(_ face: Face, source: SimulatorScreenSource?, scale: CGFloat, half: Int? = nil) -> some View {
-    mounted(face, scale: scale) {
-      chrome(face, scale: scale, interactive: true) { button in
+  /// The device's outline as drawn, turned as it's mounted: the bezel artwork's opaque extent,
+  /// or its frame until the artwork's been drawn.
+  private func outline(_ face: Face) -> CGRect {
+    Self.rotate(outlines[face.id] ?? face.layout.frame, in: face.layout.canvas, quarterTurns: face.mount)
+  }
+
+  /// A screen's device, turned as it's mounted: its last still under its live video, which shows
+  /// once the stream's frames are this screen's. The screen showing takes its buttons; the one
+  /// being left keeps its still until the fold is done. Drawn as one `half` of a foldable, it
+  /// keeps only the buttons on that side of the hinge.
+  private func screenFace(
+    _ face: Face, source: SimulatorScreenSource?, current: Face, scale: CGFloat, half: Int? = nil
+  ) -> some View {
+    let showing = face.id == current.id && fold == nil
+    let live = fold?.from != face.id
+    return mounted(face, scale: scale) {
+      chrome(face, scale: scale, interactive: showing) { button in
         guard let half else { return true }
         let center = Self.rotate(button.frame, in: face.layout.canvas, quarterTurns: face.mount).midX
         return (center < face.bezel.midX) == (half == 0)
       }
       screenShape(face) {
-        if let source { SimulatorScreenView(source: source, mask: masks[face.id], input: input(bend: nil)) }
+        if let image = stills[face.id] {
+          Image(decorative: image, scale: 1).resizable()
+        } else if let (other, image) = stills.first(where: { $0.key != face.id }) {
+          standIn(image, mount: state?.mountings?[other] ?? 0, on: face, scale: scale)
+        }
+        if live, let source {
+          SimulatorScreenView(source: source, mask: masks[face.id], input: input(bend: nil))
+            .opacity(streams(face) ? 1 : 0)
+            .animation(.easeOut(duration: 0.15), value: feed.waking)
+        }
       }
       .frame(width: face.layout.screen.width * scale, height: face.layout.screen.height * scale)
       .offset(x: face.layout.screen.minX * scale, y: face.layout.screen.minY * scale)
       .allowsHitTesting(false)
     }
+    .accessibilityHidden(!showing)
   }
 
-  /// A screen's device showing a still (or a dark screen), for folding.
-  private func still(_ face: Face, image: CGImage?, scale: CGFloat) -> some View {
-    mounted(face, scale: scale) {
-      chrome(face, scale: scale, interactive: false) { _ in true }
-      screenShape(face) {
-        if let image { Image(decorative: image, scale: 1).resizable() }
-      }
-      .frame(width: face.layout.screen.width * scale, height: face.layout.screen.height * scale)
-      .offset(x: face.layout.screen.minX * scale, y: face.layout.screen.minY * scale)
-    }
-    .allowsHitTesting(false)
-    .accessibilityHidden(true)
+  /// Whether the stream's frames are `face`'s screen, awake: just after a swap they're still the
+  /// other one's, which would stretch across this screen, then the new one's, black and fading up.
+  private func streams(_ face: Face) -> Bool {
+    guard !feed.waking else { return false }
+    guard let frame = model.connection?.frameSize, frame.height > 0, face.layout.screen.height > 0 else { return true }
+    let ratio = (frame.width / frame.height) / (face.layout.screen.width / face.layout.screen.height)
+    return abs(ratio - 1) < 0.01
   }
 
   /// The device as it's made, then turned as the screen is mounted, filling `presented`.
@@ -428,6 +466,31 @@ struct SimulatorDeviceCanvas: View {
       key: { usage, down in model.send(.key(usage: usage, down: down)) },
       scroll: { delta in if family == "Apple Watch" { model.send(.crown(delta: delta)) } },
       frame: { size in model.connection?.presented(frameSize: size) })
+  }
+
+}
+
+/// Geometry and stand-ins, kept apart from the view's body.
+extension SimulatorDeviceCanvas {
+  private static func scaled(_ rect: CGRect, _ scale: CGFloat) -> CGRect {
+    CGRect(x: rect.minX * scale, y: rect.minY * scale, width: rect.width * scale, height: rect.height * scale)
+  }
+
+  /// A screen never seen yet, coming into view: the other screen's still, upright as the viewer
+  /// sees it, filling this one and blurred, as SpringBoard's wallpaper looks while a screen
+  /// wakes. Better than black glass until the guest's frames for it arrive.
+  private func standIn(_ image: CGImage, mount: Int, on face: Face, scale: CGFloat) -> some View {
+    let turns = ((mount - face.mount) % 4 + 4) % 4
+    let size = CGSize(width: face.layout.screen.width * scale, height: face.layout.screen.height * scale)
+    let turned = turns % 2 == 0 ? size : CGSize(width: size.height, height: size.width)
+    return Image(decorative: image, scale: 1)
+      .resizable()
+      .scaledToFill()
+      .frame(width: turned.width, height: turned.height)
+      .clipped()
+      .blur(radius: 30 * scale, opaque: true)
+      .rotationEffect(.degrees(Double(turns) * 90))
+      .frame(width: size.width, height: size.height)
   }
 
   /// A touch on a book's tilted screen, where it lands on the flat one.

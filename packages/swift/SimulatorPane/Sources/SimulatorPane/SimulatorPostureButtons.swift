@@ -10,7 +10,7 @@ struct SimulatorPostureButtons: View {
     ForEach(state?.postures ?? [], id: \.self) { posture in
       let selected = state?.posture == posture
       Button {
-        model.send(.posture(posture))
+        model.setPosture(posture)
       } label: {
         Label {
           Text(posture.capitalized)

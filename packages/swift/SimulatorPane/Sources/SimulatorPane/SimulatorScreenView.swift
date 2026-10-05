@@ -81,7 +81,9 @@ struct SimulatorScreenView {
     init(source: SimulatorScreenSource?) {
       super.init(frame: .zero)
       wantsLayer = true
-      layer?.backgroundColor = source == nil ? NSColor.clear.cgColor : NSColor.black.cgColor
+      // Clear, and the video clear until its first frame: the canvas keeps a still of the screen
+      // (or black) underneath, so a new view never flashes black.
+      layer?.backgroundColor = NSColor.clear.cgColor
       maskLayer.contentsGravity = .resize
       imageLayer.contentsGravity = .resize
       layer?.addSublayer(imageLayer)
@@ -111,7 +113,8 @@ struct SimulatorScreenView {
         let metal = try? ScreenSharingMetalView(
           mailbox: mailbox, metrics: metrics, renderOnArrival: true, offMainPreparation: true)
       else { return }
-      metal.clearColor = MTLClearColorMake(0, 0, 0, 1)
+      metal.clearColor = MTLClearColorMake(0, 0, 0, 0)
+      metal.layer?.isOpaque = false
       metal.frame = bounds
       metal.autoresizingMask = [.width, .height]
       metal.onFrameSize = { [weak self] size in self?.input?.frame(size) }
@@ -267,7 +270,9 @@ struct SimulatorScreenView {
 
     init(source: SimulatorScreenSource?) {
       super.init(frame: .zero)
-      backgroundColor = source == nil ? .clear : .black
+      // Clear, and the video clear until its first frame: the canvas keeps a still of the screen
+      // (or black) underneath, so a new view never flashes black.
+      backgroundColor = .clear
       isMultipleTouchEnabled = true
       maskLayer.contentsGravity = .resize
       imageLayer.contentsGravity = .resize
@@ -296,7 +301,9 @@ struct SimulatorScreenView {
       self.mailbox = mailbox
       guard let metal = try? ScreenSharingMetalView(mailbox: mailbox, metrics: metrics, renderOnArrival: true)
       else { return }
-      metal.clearColor = MTLClearColorMake(0, 0, 0, 1)
+      metal.clearColor = MTLClearColorMake(0, 0, 0, 0)
+      metal.isOpaque = false
+      metal.backgroundColor = .clear
       metal.frame = bounds
       metal.autoresizingMask = [.flexibleWidth, .flexibleHeight]
       metal.isUserInteractionEnabled = false
