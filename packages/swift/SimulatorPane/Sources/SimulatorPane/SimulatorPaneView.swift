@@ -65,28 +65,37 @@ public struct SimulatorPaneView: View {
         ProgressView()
       }
     } else if let device = model.device {
-      if let activity = model.activity {
-        SimulatorStatusView(device: device, model: model) {
-          ProgressView(activity).controlSize(.small)
-        }
-      } else if device.isBooted {
-        SimulatorDeviceCanvas(model: model, device: device)
-      } else {
-        SimulatorStatusView(device: device, model: model) {
-          if device.isShutdown {
-            Button("Start") { model.perform(.boot) }
-              .buttonStyle(.glassProminent)
-              .controlSize(.large)
-              .keyboardShortcut(.defaultAction)
-          } else {
-            ProgressView("\(device.state)…").controlSize(.small)
-          }
-        }
-      }
+      deviceContent(device)
+        #if os(iOS)
+          // The device is the screen's title (see the workspace screen); tapping it switches
+          // devices. Only while there's a device, so a pane on its chooser keeps a plain title.
+          .toolbarTitleMenu { SimulatorDeviceMenuItems(model: model) }
+        #endif
     } else if model.activity != nil {
       ProgressView(model.activity ?? "")
     } else {
       SimulatorDeviceChooser(model: model)
+    }
+  }
+
+  @ViewBuilder private func deviceContent(_ device: ServerSimulatorDevice) -> some View {
+    if let activity = model.activity {
+      SimulatorStatusView(device: device, model: model) {
+        ProgressView(activity).controlSize(.small)
+      }
+    } else if device.isBooted {
+      SimulatorDeviceCanvas(model: model, device: device)
+    } else {
+      SimulatorStatusView(device: device, model: model) {
+        if device.isShutdown {
+          Button("Start") { model.perform(.boot) }
+            .buttonStyle(.glassProminent)
+            .controlSize(.large)
+            .keyboardShortcut(.defaultAction)
+        } else {
+          ProgressView("\(device.state)…").controlSize(.small)
+        }
+      }
     }
   }
 }

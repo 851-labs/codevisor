@@ -8,8 +8,8 @@ extension WorkspaceScreen {
     return simulatorPaneModel(for: pane)
   }
 
-  /// A Simulator pane's device, settings and actions beside the workspace's New Tab button, and
-  /// the device's own controls along the bottom bar.
+  /// A Simulator pane's actions beside the workspace's New Tab button, and the device's own
+  /// controls along the bottom bar. (Its device is the screen's title, and the pane adds the title menu.)
   @ToolbarContentBuilder var simulatorToolbar: some ToolbarContent {
     if let model = activeSimulatorModel {
       SimulatorPaneToolbar(model: model) { data, name in
@@ -17,6 +17,10 @@ extension WorkspaceScreen {
       }
     }
   }
+
+  /// A Simulator pane's title and subtitle once it shows a device: its name and OS.
+  var simulatorTitle: String? { activeSimulatorModel?.device?.name }
+  var simulatorSubtitle: String? { activeSimulatorModel?.device?.runtime.name }
 
   func simulatorPaneModel(for pane: PaneDescriptorState) -> SimulatorPaneModel? {
     guard let workspace = resolvedWorkspace else { return nil }

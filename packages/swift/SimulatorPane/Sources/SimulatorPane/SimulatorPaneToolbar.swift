@@ -31,14 +31,10 @@ public struct SimulatorPaneToolbar: ToolbarContent {
         }
       }
     #else
+      // The device is the screen's title, and its menu the title menu (see the workspace screen);
+      // settings live in the actions menu, declared before the workspace's New Tab button.
       if let device = model.device {
-        ToolbarItem(id: "simulator.device", placement: .principal) {
-          SimulatorDeviceMenu(model: model, device: device)
-        }
-        .sharedBackgroundVisibility(.hidden)
-        // Declared before the workspace's New Tab button, so they sit to its left.
-        ToolbarItemGroup(placement: .topBarTrailing) {
-          if device.isBooted { SimulatorSettingsButton(model: model) }
+        ToolbarItem(id: "simulator.actions", placement: .topBarTrailing) {
           SimulatorActionsMenu(model: model, device: device)
         }
       }
@@ -59,8 +55,8 @@ public struct SimulatorPaneToolbar: ToolbarContent {
   }
 }
 
-/// The Mac's simulators to switch to, grouped by kind with the running ones marked, then a
-/// new one: the menu behind an iPhone's centered title.
+/// The Mac's simulators to switch to, iPhones first with the running ones marked, then Manage
+/// Simulators: an iPhone or iPad's title menu.
 public struct SimulatorDeviceMenuItems: View {
   let model: SimulatorPaneModel
 
@@ -85,48 +81,22 @@ public struct SimulatorDeviceMenuItems: View {
   }
 }
 
-#if os(iOS)
-  /// An iPhone's centered title: the device and its OS, opening the device menu.
-  struct SimulatorDeviceMenu: View {
+#if os(macOS)
+  /// Opens the device's settings in a popover. (On an iPhone or iPad they're in the actions menu.)
+  struct SimulatorSettingsButton: View {
     let model: SimulatorPaneModel
-    let device: ServerSimulatorDevice
 
     var body: some View {
-      Menu {
-        SimulatorDeviceMenuItems(model: model)
-      } label: {
-        HStack(spacing: 4) {
-          VStack(spacing: 0) {
-            Text(device.name).font(.headline).lineLimit(1)
-            Text(device.runtime.name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-          }
-          Image(systemName: "chevron.down").font(.caption2.weight(.bold)).foregroundStyle(.secondary)
-        }
-        .foregroundStyle(.primary)
-      }
-      .accessibilityLabel("Simulator: \(device.name), \(device.runtime.name)")
+      let showing = Binding(get: { model.showsSettings }, set: { model.showsSettings = $0 })
+      Button("Device Settings", systemImage: "slider.horizontal.3") { model.showsSettings.toggle() }
+        .help("Device Settings")
+        .popover(isPresented: showing, arrowEdge: .bottom) { SimulatorSettingsView(model: model) }
     }
   }
 #endif
 
-/// Opens the device's settings: a popover on a Mac, a sheet on an iPhone or iPad.
-struct SimulatorSettingsButton: View {
-  let model: SimulatorPaneModel
-
-  var body: some View {
-    let showing = Binding(get: { model.showsSettings }, set: { model.showsSettings = $0 })
-    Button("Device Settings", systemImage: "slider.horizontal.3") { model.showsSettings.toggle() }
-      .help("Device Settings")
-      #if os(macOS)
-        .popover(isPresented: showing, arrowEdge: .bottom) { SimulatorSettingsView(model: model) }
-      #else
-        // A plain sheet, sliding up as sheets do, rather than a popover zooming out of the button.
-        .sheet(isPresented: showing) { SimulatorSettingsView(model: model) }
-      #endif
-  }
-}
-
-/// Everything else you can do to the device: restart, shut down, rename, delete.
+/// Everything else you can do to the device: restart, shut down, rename, delete (and, on an
+/// iPhone or iPad, its settings).
 struct SimulatorActionsMenu: View {
   let model: SimulatorPaneModel
   let device: ServerSimulatorDevice
@@ -136,6 +106,13 @@ struct SimulatorActionsMenu: View {
 
   var body: some View {
     Menu("More", systemImage: "ellipsis") {
+      #if os(iOS)
+        // On an iPhone or iPad the bar has no room for a separate settings button.
+        if device.isBooted {
+          Button("Device Settings", systemImage: "slider.horizontal.3") { model.showsSettings = true }
+          Divider()
+        }
+      #endif
       if device.isBooted {
         Button("Restart", systemImage: "arrow.clockwise") { model.perform(.restart) }
         Button("Shut Down", systemImage: "power") { model.perform(.shutdown) }
@@ -151,6 +128,11 @@ struct SimulatorActionsMenu: View {
     }
     .menuIndicator(.hidden)
     .help("More")
+    #if os(iOS)
+      .sheet(isPresented: Binding(get: { model.showsSettings }, set: { model.showsSettings = $0 })) {
+        SimulatorSettingsView(model: model)
+      }
+    #endif
     .alert("Rename Simulator", isPresented: $renaming) {
       TextField("Name", text: $name)
       Button("Cancel", role: .cancel) {}

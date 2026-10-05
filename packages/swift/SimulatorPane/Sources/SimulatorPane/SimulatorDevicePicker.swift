@@ -3,7 +3,7 @@
   import CodevisorClient
   import SwiftUI
 
-  /// The Mac's device picker, where the window title would be: the device and its OS, opening a
+  /// The Mac's device picker, where the window title would be: the device's name, opening a
   /// searchable list of the Mac's simulators by kind, with a footer to manage them. The same
   /// autocomplete menu as the Review pane's branch picker.
   struct SimulatorDevicePicker: View {
@@ -40,17 +40,19 @@
       Autocomplete.Menu {
         Self.entries(model: model)
       } label: {
-        // The device and its OS, with the chevron beside the name as the Review pane's is.
-        HStack(alignment: .firstTextBaseline, spacing: 4) {
-          VStack(alignment: .leading, spacing: 0) {
-            Text(device.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
-            Text(device.runtime.name).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
-          }
+        // One line, the name and a chevron, as the Review pane's branch picker is; the OS is in
+        // the list.
+        HStack(spacing: 4) {
+          Text(device.name)
+            .font(.system(size: 13, weight: .semibold))
+            .lineLimit(1)
+            .truncationMode(.middle)
           Image(systemName: "chevron.down")
             .font(.system(size: 9, weight: .semibold))
             .foregroundStyle(.secondary)
             .accessibilityHidden(true)
         }
+        .frame(maxWidth: 280)
         // The toolbar's hover highlight wraps the label's frame; give the text room inside it.
         .padding(.horizontal, 8)
         .padding(.vertical, 3)

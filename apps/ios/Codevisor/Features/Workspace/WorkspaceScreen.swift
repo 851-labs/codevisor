@@ -335,7 +335,7 @@ struct WorkspaceScreen: View {
     // the transcript its height; it returns once the sidebar is collapsed
     // or floating, when nothing else names the screen.
     .navigationTitle(hidesTitleBesideSidebar ? "" : baseTitle)
-    .navigationSubtitle(hidesTitleBesideSidebar ? "" : chatSubtitle)
+    .navigationSubtitle(hidesTitleBesideSidebar ? "" : subtitle)
     .navigationBarBackButtonHidden(isNewChatPresentation)
     .navigationBarTitleDisplayMode(.inline)
     // Sent chats and terminals align their title to the leading edge;
@@ -470,6 +470,7 @@ struct WorkspaceScreen: View {
     if pane.kind != .chat, let custom = singlePaneTab(showing: pane.id)?.customTitle {
       return custom
     }
+    if let simulatorTitle { return simulatorTitle }
     return title(for: pane)
   }
 
@@ -480,8 +481,9 @@ struct WorkspaceScreen: View {
     }
   }
 
-  private var chatSubtitle: String {
+  private var subtitle: String {
     if let promotionNavigationTitle { return promotionNavigationTitle.subtitle }
+    if !isDraft, let simulatorSubtitle { return simulatorSubtitle }
     guard !isDraft, activePane?.kind == .chat else { return "" }
     let projectName = resolvedProject.flatMap {
       $0.isScratch || $0.isRunTargetPlaceholder ? nil : $0.name
