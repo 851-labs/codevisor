@@ -13,8 +13,8 @@ protocol SimulatorFrameSink: AnyObject, Sendable {
 }
 
 /// One simulator screen's frames: copied out of the live framebuffer as the simulator draws,
-/// turned upright for how the device is held, scaled to what the encoder takes, and handed to
-/// every viewer's sink.
+/// scaled to what the encoder takes, and handed to every viewer's sink. They go out as the screen
+/// is made; viewers turn them with the device.
 final class SimulatorScreenCapture: @unchecked Sendable {
   /// The encoder's limits (ScreenSharingVideoConfiguration).
   static let maximumSize = CGSize(width: 3840, height: 2160)
@@ -32,27 +32,23 @@ final class SimulatorScreenCapture: @unchecked Sendable {
   private var pending = false
   /// A new size waits for every sink's encoder to take it; frames meanwhile are dropped.
   private var resizing = false
-  /// Clockwise quarter turns applied to the framebuffer (screen mounting plus how it's held).
-  private var turns = 0
   private(set) var outputSize: CGSize = .zero
 
   init(screen: SimulatorRuntime.Screen) {
     self.screen = screen
   }
 
-  /// The size frames will have for `turns`, from the framebuffer's current size.
-  func size(forTurns turns: Int) -> CGSize? {
+  /// The size frames will have, from the framebuffer's current size.
+  var size: CGSize? {
     guard let surface = screen.surface else { return nil }
-    return Self.outputSize(
-      width: IOSurfaceGetWidth(surface), height: IOSurfaceGetHeight(surface), turns: turns)
+    return Self.outputSize(width: IOSurfaceGetWidth(surface), height: IOSurfaceGetHeight(surface))
   }
 
-  static func outputSize(width: Int, height: Int, turns: Int) -> CGSize {
-    let turned = turns % 2 == 0 ? CGSize(width: width, height: height) : CGSize(width: height, height: width)
-    let scale = min(1, maximumSize.width / max(1, turned.width), maximumSize.height / max(1, turned.height))
+  static func outputSize(width: Int, height: Int) -> CGSize {
+    let scale = min(1, maximumSize.width / CGFloat(max(1, width)), maximumSize.height / CGFloat(max(1, height)))
     // A hair of slack so a side scaled exactly to a limit isn't floored below it.
-    func even(_ value: CGFloat) -> CGFloat { max(64, ((value * scale + 0.001) / 2).rounded(.down) * 2) }
-    return CGSize(width: even(turned.width), height: even(turned.height))
+    func even(_ value: Int) -> CGFloat { max(64, ((CGFloat(value) * scale + 0.001) / 2).rounded(.down) * 2) }
+    return CGSize(width: even(width), height: even(height))
   }
 
   @MainActor func start() {
@@ -69,14 +65,6 @@ final class SimulatorScreenCapture: @unchecked Sendable {
     if let token { SimulatorRuntime.stopObserving(screen, token: token) }
     token = nil
     queue.async { [weak self] in self?.sinks.removeAll() }
-  }
-
-  func setTurns(_ turns: Int) {
-    queue.async { [weak self] in
-      guard let self else { return }
-      self.turns = ((turns % 4) + 4) % 4
-      self.frameArrived()
-    }
   }
 
   func add(_ sink: any SimulatorFrameSink) {
@@ -104,7 +92,7 @@ final class SimulatorScreenCapture: @unchecked Sendable {
   private func convert() {
     guard let surface = screen.surface else { return }
     let width = IOSurfaceGetWidth(surface), height = IOSurfaceGetHeight(surface)
-    let size = Self.outputSize(width: width, height: height, turns: turns)
+    let size = Self.outputSize(width: width, height: height)
     if size != outputSize {
       // Each encoder must learn the new size before frames of that size reach it.
       outputSize = size
@@ -122,9 +110,6 @@ final class SimulatorScreenCapture: @unchecked Sendable {
     }
     guard let output = pixelBuffer(size: size) else { return }
     var image = CIImage(ioSurface: surface)
-    // Core Image is y-up: a clockwise turn on screen is a negative rotation here.
-    image = image.transformed(by: CGAffineTransform(rotationAngle: -CGFloat(turns) * .pi / 2))
-    image = image.transformed(by: CGAffineTransform(translationX: -image.extent.minX, y: -image.extent.minY))
     image = image.transformed(
       by: CGAffineTransform(scaleX: size.width / image.extent.width, y: size.height / image.extent.height))
     // Core Image works in linear light: name the output's space, or it gets linear values and the

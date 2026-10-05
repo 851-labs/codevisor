@@ -47,13 +47,23 @@ struct SimulatorStreamHostTests {
     #expect(SimulatorStreamHost.edgeCode(nil, turns: 1) == 0)
   }
 
-  @Test("Frames fit the encoder: turned, scaled into 3840×2160, even sides")
+  @Test("Frames fit the encoder: scaled into 3840×2160, even sides")
   func outputSizes() {
     // A tall iPhone framebuffer is taller than the encoder allows.
-    #expect(SimulatorScreenCapture.outputSize(width: 1260, height: 2736, turns: 0) == CGSize(width: 994, height: 2160))
-    // Held landscape, the same screen fits at full size.
-    #expect(SimulatorScreenCapture.outputSize(width: 1260, height: 2736, turns: 1) == CGSize(width: 2736, height: 1260))
-    #expect(SimulatorScreenCapture.outputSize(width: 422, height: 514, turns: 0) == CGSize(width: 422, height: 514))
+    #expect(SimulatorScreenCapture.outputSize(width: 1260, height: 2736) == CGSize(width: 994, height: 2160))
+    #expect(SimulatorScreenCapture.outputSize(width: 2736, height: 1260) == CGSize(width: 2736, height: 1260))
+    #expect(SimulatorScreenCapture.outputSize(width: 422, height: 514) == CGSize(width: 422, height: 514))
+  }
+
+  @Test("Screens are mounted as Device Hub draws them: only the Duo's inner screen is sideways")
+  func screenMounting() {
+    // An iPad's panel is rotated 270° and its main screen 90° back; a Watch's 90° and 270°.
+    #expect(SimulatorRuntime.screenTurns(nativeRotation: 270, mainScreenOrientation: .pi / 2) == 0)
+    #expect(SimulatorRuntime.screenTurns(nativeRotation: 90, mainScreenOrientation: 3 * .pi / 2) == 0)
+    #expect(SimulatorRuntime.screenTurns(nativeRotation: 0, mainScreenOrientation: 0) == 0)
+    // The iPhone Duo's inner screen: turned a quarter clockwise, it opens in landscape.
+    #expect(SimulatorRuntime.screenTurns(nativeRotation: 270, mainScreenOrientation: 0) == 1)
+    #expect(SimulatorRuntime.screenTurns(nativeRotation: 90, mainScreenOrientation: 0) == 3)
   }
 
   @Test("Orientation codes match what each guest path expects")
@@ -65,5 +75,20 @@ struct SimulatorStreamHostTests {
       ])
     // GSEvent (earlier runtimes): 3 landscape right, 4 landscape left.
     #expect(ScreenSharingSimulatorOrientation.allCases.map(SimulatorDeviceControl.gsEventValue) == [1, 4, 2, 3])
+  }
+
+  @Test("Device state is IOKit's compact serialization, small enough for the guest's relay")
+  func deviceState() {
+    let hinge = SimulatorDeviceControl.deviceState(source: "hinge-slider-control", type: "range", value: .integer(180))
+    #expect(
+      String(decoding: hinge, as: UTF8.self)
+        == "<dict><key>source</key><string>hinge-slider-control</string><key>type</key><string>range</string>"
+        + "<key>value</key><integer>180</integer></dict>")
+    // locationd refused a 328-byte payload; stay well under it.
+    #expect(hinge.count < 200)
+    let escaped = SimulatorDeviceControl.deviceState(source: "a<b", type: "c&d", value: .string("e>f"))
+    #expect(String(decoding: escaped, as: UTF8.self).contains("<string>a&lt;b</string>"))
+    #expect(String(decoding: escaped, as: UTF8.self).contains("<string>c&amp;d</string>"))
+    #expect(String(decoding: escaped, as: UTF8.self).contains("<string>e&gt;f</string>"))
   }
 }

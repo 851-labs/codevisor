@@ -48,7 +48,11 @@ public struct SimulatorPaneToolbar: ToolbarContent {
           ToolbarItem(id: "simulator.rotate", placement: .bottomBar) { SimulatorRotateButton(model: model) }
         }
         if model.deviceState?.postures.isEmpty == false {
-          ToolbarItem(id: "simulator.posture", placement: .bottomBar) { SimulatorPosturePicker(model: model) }
+          // One item: separate ones each show their title and spill into the overflow menu.
+          ToolbarItem(id: "simulator.posture", placement: .bottomBar) {
+            HStack(spacing: 4) { SimulatorPostureButtons(model: model) }
+              .labelStyle(.iconOnly)
+          }
         }
       }
     #endif

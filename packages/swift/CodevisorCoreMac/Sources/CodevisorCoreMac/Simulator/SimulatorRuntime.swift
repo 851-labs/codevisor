@@ -124,17 +124,48 @@ enum SimulatorRuntime {
 
   /// The device type's capabilities.plist `displays`, by device name ("primary", "primary-1").
   static func displayCapabilities(_ device: NSObject) -> [String: [String: Any]] {
-    guard let type = object(device, "deviceType"), let bundle = object(type, "bundle") as? Bundle,
-      let url = bundle.url(forResource: "capabilities", withExtension: "plist"),
-      let plist = NSDictionary(contentsOf: url) as? [String: Any],
-      let capabilities = plist["capabilities"] as? [String: Any],
-      let displays = capabilities["displays"] as? [[String: Any]]
-    else { return [:] }
+    guard let displays = capabilities(device)?["displays"] as? [[String: Any]] else { return [:] }
     var byName: [String: [String: Any]] = [:]
     for display in displays {
       if let name = display["deviceName"] as? String { byName[name] = display }
     }
     return byName
+  }
+
+  /// Clockwise quarter turns each screen is mounted at in the device, by device name: how far
+  /// its framebuffer is turned from the device held upright.
+  static func screenTurns(_ device: NSObject) -> [String: Int] {
+    let main = (capabilities(device)?["ScreenDimensionsCapability"] as? [String: Any])?["main-screen-orientation"]
+    return displayCapabilities(device).mapValues {
+      screenTurns(nativeRotation: $0["nativeRotation"] as? Int ?? 0, mainScreenOrientation: main as? Double ?? 0)
+    }
+  }
+
+  /// A screen's `nativeRotation` (degrees, counterclockwise) with the device's
+  /// `main-screen-orientation` (radians) added: an iPad's panel is rotated 270° and its main screen
+  /// another 90°, back upright, as a Watch's is; the iPhone Duo's inner screen ends up a quarter
+  /// turn from its body, which is why Device Hub shows it open in landscape.
+  static func screenTurns(nativeRotation: Int, mainScreenOrientation: Double) -> Int {
+    let degrees = nativeRotation + Int((mainScreenOrientation * 180 / .pi).rounded())
+    let counterclockwise = ((degrees % 360) + 360) % 360 / 90
+    return (4 - counterclockwise) % 4
+  }
+
+  private static func capabilities(_ device: NSObject) -> [String: Any]? {
+    guard let type = object(device, "deviceType"), let url = capabilitiesURL(type),
+      let plist = NSDictionary(contentsOf: url) as? [String: Any]
+    else { return nil }
+    return plist["capabilities"] as? [String: Any]
+  }
+
+  /// The device type's capabilities.plist. CoreSimulator 1174 (Xcode 27.1) made `bundle` a
+  /// SimProfileBundle rather than an NSBundle, so it's found from `bundlePath`, which both have.
+  private static func capabilitiesURL(_ type: AnyObject) -> URL? {
+    if let path = object(type, "bundlePath") as? String {
+      let url = URL(fileURLWithPath: path).appending(path: "Contents/Resources/capabilities.plist")
+      if FileManager.default.fileExists(atPath: url.path) { return url }
+    }
+    return (object(type, "bundle") as? Bundle)?.url(forResource: "capabilities", withExtension: "plist")
   }
 
   // MARK: Screens

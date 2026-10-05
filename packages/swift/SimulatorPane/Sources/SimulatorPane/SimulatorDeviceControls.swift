@@ -89,35 +89,9 @@ struct SimulatorRotateButton: View {
   }
 }
 
-/// How a foldable is open: one choice of several, so a segmented picker.
-struct SimulatorPosturePicker: View {
-  let model: SimulatorPaneModel
-
-  var body: some View {
-    let state = model.deviceState
-    Picker(
-      "Posture",
-      selection: Binding(
-        get: { state?.posture ?? "" },
-        set: { model.send(.posture($0)) })
-    ) {
-      ForEach(state?.postures ?? [], id: \.self) { posture in
-        Label(posture.capitalized, systemImage: SimulatorArtwork.symbol(posture: posture))
-          .labelStyle(.iconOnly)
-          .help(posture.capitalized)
-          .tag(posture)
-      }
-    }
-    .pickerStyle(.segmented)
-    .labelsHidden()
-    .fixedSize()
-    .help("Posture")
-  }
-}
-
 #if os(macOS)
   /// Device Hub's action bar: one glass capsule of icon buttons (Home, Screenshot), and Rotate in
-  /// a glass circle of its own beside it.
+  /// a glass circle of its own beside it, or in a capsule with a foldable's postures.
   struct SimulatorActionBar: View {
     let model: SimulatorPaneModel
     let device: ServerSimulatorDevice
@@ -133,12 +107,21 @@ struct SimulatorPosturePicker: View {
           }
           .padding(.horizontal, 2)
           .glassEffect(.regular.interactive(), in: .capsule)
-          if SimulatorRotateButton.shown(model: model, device: device) {
+          let rotates = SimulatorRotateButton.shown(model: model, device: device)
+          if model.deviceState?.postures.isEmpty == false {
+            // A foldable's Rotate shares a capsule with its postures, a rule between them.
+            HStack(spacing: 0) {
+              if rotates {
+                SimulatorRotateButton(model: model)
+                Divider().frame(height: 18).padding(.horizontal, 4)
+              }
+              SimulatorPostureButtons(model: model)
+            }
+            .padding(.horizontal, 2)
+            .glassEffect(.regular.interactive(), in: .capsule)
+          } else if rotates {
             SimulatorRotateButton(model: model)
               .glassEffect(.regular.interactive(), in: .circle)
-          }
-          if model.deviceState?.postures.isEmpty == false {
-            SimulatorPosturePicker(model: model)
           }
         }
       }

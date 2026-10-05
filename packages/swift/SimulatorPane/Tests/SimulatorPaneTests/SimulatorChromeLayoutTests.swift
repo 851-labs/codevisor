@@ -74,4 +74,77 @@ import Testing
     #expect(SimulatorDeviceCanvas.shortestTurn(from: 90, to: 180) == 90)
     #expect(SimulatorDeviceCanvas.shortestTurn(from: 180, to: 90) == -90)
   }
+
+  @Test func artworkDrawnForTheOtherEdgeIsTurnedToLieAlongIt() {
+    // The iPhone Duo's inner chrome reuses its cover's top-edge volume button (63×16) on its
+    // left side, and its side power button (16×107) on its top.
+    let definition = try! SimulatorChromeDefinition(
+      json: Data(
+        """
+        {
+          "identifier": "phone14",
+          "images": { "sizing": { "leftWidth": 17, "rightWidth": 17, "topHeight": 17, "bottomHeight": 17 } },
+          "inputs": [
+            { "name": "volume-up", "image": "Vol BTN", "anchor": "left", "align": "leading",
+              "offsets": { "normal": { "x": 8, "y": 114 }, "rollover": { "x": 5, "y": 114 } } },
+            { "name": "power", "image": "X Power BTN", "anchor": "top", "align": "leading",
+              "offsets": { "normal": { "x": 196, "y": 8 }, "rollover": { "x": 196, "y": 4 } } }
+          ]
+        }
+        """.utf8))
+    let sizes = ["Vol BTN": CGSize(width: 63, height: 16), "X Power BTN": CGSize(width: 16, height: 107)]
+    let layout = SimulatorChromeLayout(definition: definition, screen: CGSize(width: 669, height: 951)) { sizes[$0] }
+    let volume = layout.buttons.first { $0.input.name == "volume-up" }
+    #expect(volume?.turned == true)
+    #expect(volume?.frame.size == CGSize(width: 16, height: 63))
+    // Hanging out of the left edge by its depth less the offset, as an upright button would.
+    #expect(volume.map { layout.frame.minX - $0.frame.minX } == 8)
+    let power = layout.buttons.first { $0.input.name == "power" }
+    #expect(power?.turned == true)
+    #expect(power?.frame.size == CGSize(width: 107, height: 16))
+    #expect(power.map { layout.frame.minY - $0.frame.minY } == 8)
+    // Artwork that already lies along its edge is left as drawn.
+    #expect(
+      Self.definition.inputs.map { inputs in
+        inputs.allSatisfy { !SimulatorChromeLayout.isTurned($0, size: Self.imageSizes[$0.image ?? ""] ?? .zero) }
+      } == true)
+  }
+
+  @Test func foldingTurnsTheHalvesAsDeviceHubDoes() {
+    // Flat, nothing turns; a book tilts both halves alike; shut, the left half has swung right over.
+    #expect(SimulatorFold.angles(hinge: 180) == (left: 0, right: 0))
+    let book = SimulatorFold.angles(hinge: 130)
+    #expect(book.left == book.right && book.left > 0 && book.left < 30)
+    #expect(SimulatorFold.angles(hinge: 0) == (left: 180, right: 0))
+    // Closing past a book carries on smoothly from it.
+    let nearBook = SimulatorFold.angles(hinge: 129.9)
+    #expect(abs(nearBook.left - book.left) < 0.5 && abs(nearBook.right - book.right) < 0.5)
+    #expect(SimulatorFold.closing(hinge: 130) == 0 && SimulatorFold.closing(hinge: 0) == 1)
+  }
+
+  @Test(arguments: [CGPoint(x: 40, y: 30), CGPoint(x: 700, y: 600), CGPoint(x: 499, y: 5)])
+  func aTouchOnATiltedHalfLandsWhereItWasDrawnFrom(flat: CGPoint) {
+    let center = CGPoint(x: 500, y: 350)
+    let depth = SimulatorFold.depth(width: 1000)
+    let left = flat.x < center.x
+    let angle = SimulatorFold.angles(hinge: 130)
+    let transform = SimulatorFold.tilt(left ? angle.left : angle.right, left: left, center: center, depth: depth)
+    let w = flat.x * transform.m13 + flat.y * transform.m23 + transform.m33
+    let drawn = CGPoint(
+      x: (flat.x * transform.m11 + flat.y * transform.m21 + transform.m31) / w,
+      y: (flat.x * transform.m12 + flat.y * transform.m22 + transform.m32) / w)
+    // A tilted half is drawn foreshortened toward the hinge, and flattening undoes it.
+    #expect(abs(drawn.x - center.x) < abs(flat.x - center.x) + 0.001)
+    let back = SimulatorFold.flatten(drawn, hinge: 130, center: center, depth: depth)
+    #expect(abs(back.x - flat.x) < 0.01 && abs(back.y - flat.y) < 0.01)
+  }
+
+  @Test func turningANormalizedPointBackAndForthReturnsIt() {
+    let point = CGPoint(x: 0.2, y: 0.7)
+    for turns in 0..<4 {
+      let there = SimulatorDeviceCanvas.unturn(point, turns: turns)
+      let back = SimulatorDeviceCanvas.unturn(there, turns: 4 - turns)
+      #expect(abs(back.x - point.x) < 1e-9 && abs(back.y - point.y) < 1e-9)
+    }
+  }
 }

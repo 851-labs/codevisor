@@ -66,10 +66,37 @@ public struct SimulatorChromeDefinition: Decodable, Sendable, Equatable {
     public var simpleOutsideBorder: Border?
   }
 
+  /// Newer chromes (the iPhone Duo's) draw the bezel from one composite image rather than the
+  /// nine slices, which are left as "unused" placeholders. These mark, per corner, the areas the
+  /// composite keeps as they are while the rest stretches to the screen.
+  public struct ResizeRect: Decodable, Sendable, Equatable {
+    /// The corner the rect is measured from: "upperLeft", "upperRight", "lowerLeft", "lowerRight".
+    public var type: String
+    /// The rect's center, from that corner (negative when measured from the right or top).
+    public var centerPoint: Point
+    public var size: Size
+  }
+
   public var identifier: String
   public var images: Images
   public var inputs: [Input]?
   public var paths: Paths?
+  public var resizeRects: [ResizeRect]?
+
+  /// The composite's fixed margins (left, right, top, bottom, in points) when the chrome is drawn
+  /// from its composite: as far into the image as any corner's resize rect reaches.
+  public var compositeCaps: (left: Double, right: Double, top: Double, bottom: Double)? {
+    guard let rects = resizeRects, !rects.isEmpty, images.composite != nil else { return nil }
+    func reach(_ corners: Set<String>, _ extent: (ResizeRect) -> Double) -> Double {
+      rects.filter { corners.contains($0.type) }.map(extent).max() ?? 0
+    }
+    let horizontal = { (rect: ResizeRect) in abs(rect.centerPoint.x) + rect.size.width / 2 }
+    let vertical = { (rect: ResizeRect) in abs(rect.centerPoint.y) + rect.size.height / 2 }
+    return (
+      reach(["upperLeft", "lowerLeft"], horizontal), reach(["upperRight", "lowerRight"], horizontal),
+      reach(["upperLeft", "upperRight"], vertical), reach(["lowerLeft", "lowerRight"], vertical)
+    )
+  }
 
   public init(json: Data) throws {
     self = try JSONDecoder().decode(Self.self, from: json)
@@ -83,6 +110,10 @@ public struct SimulatorChromeLayout: Equatable, Sendable {
     public var frame: CGRect
     /// Where the button moves to while the pointer is over it.
     public var rolloverFrame: CGRect
+    /// The artwork was drawn for the other kind of edge (the iPhone Duo's inner chrome reuses its
+    /// cover's top-edge volume buttons on its side), so it's drawn a quarter turn counterclockwise
+    /// to lie along this one; `frame` is already the turned size.
+    public var turned = false
     public var id: String { input.name }
   }
 
@@ -119,11 +150,14 @@ public struct SimulatorChromeLayout: Equatable, Sendable {
       height: screenSize.height + sizing.topHeight + sizing.bottomHeight)
     var buttons: [Button] =
       definition.inputs?.compactMap { input in
-        guard let name = input.image, let size = imageSize(name) else { return nil }
+        guard let name = input.image, var size = imageSize(name) else { return nil }
+        let turned = Self.isTurned(input, size: size)
+        if turned { size = CGSize(width: size.height, height: size.width) }
         return Button(
           input: input, frame: Self.place(input, offset: input.offsets.normal, size: size, in: bezel),
           rolloverFrame: Self.place(
-            input, offset: input.offsets.rollover ?? input.offsets.normal, size: size, in: bezel))
+            input, offset: input.offsets.rollover ?? input.offsets.normal, size: size, in: bezel),
+          turned: turned)
       } ?? []
     // Grow the canvas to whatever the buttons need, then move everything into it.
     let union = buttons.reduce(bezel) { $0.union($1.rolloverFrame).union($1.frame) }
@@ -140,6 +174,15 @@ public struct SimulatorChromeLayout: Equatable, Sendable {
         height: screenSize.height),
       buttons: buttons,
       outerCornerRadius: definition.paths?.simpleOutsideBorder?.cornerRadiusX ?? 60)
+  }
+
+  /// Whether a button's artwork lies across its edge rather than along it: long side out from a
+  /// side edge, or up from the top or bottom.
+  static func isTurned(_ input: SimulatorChromeDefinition.Input, size: CGSize) -> Bool {
+    switch input.anchor {
+    case "top", "bottom": size.height > size.width
+    default: size.width > size.height
+    }
   }
 
   /// DeviceKit's placement: an offset from the anchored edge (inward positive on the left and

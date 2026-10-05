@@ -35,6 +35,10 @@ enum SimulatorArtwork {
       context.draw(bitmap, in: CGRect(origin: .zero, size: rect.size))
       context.restoreGState()
     }
+    if let caps = chrome.definition.compositeCaps, let name = images.composite, let composite = chrome.images[name] {
+      drawComposite(composite, caps: caps, in: frame, scale: scale, context: context)
+      return context.makeImage()
+    }
     let topLeft = size(images.topLeft), topRight = size(images.topRight)
     let bottomLeft = size(images.bottomLeft), bottomRight = size(images.bottomRight)
     draw(images.topLeft, CGRect(origin: frame.origin, size: topLeft))
@@ -70,6 +74,48 @@ enum SimulatorArtwork {
         x: frame.maxX - size(images.right).width, y: frame.minY + topRight.height, width: size(images.right).width,
         height: frame.height - topRight.height - bottomRight.height))
     return context.makeImage()
+  }
+
+  /// A composite bezel as a nine-slice: corners as drawn, edges stretched along them, the middle
+  /// stretched both ways, so it fits a frame of any size (the Duo's inner screen is larger than its
+  /// composite). Points throughout, in a context already flipped to a top-left origin.
+  private static func drawComposite(
+    _ composite: SimulatorPDFImage, caps: (left: Double, right: Double, top: Double, bottom: Double),
+    in frame: CGRect, scale: CGFloat, context: CGContext
+  ) {
+    let source = composite.size
+    guard source.width > 0, source.height > 0, let bitmap = composite.render(size: source, scale: scale) else { return }
+    // Caps can't exceed half of either the image or the frame.
+    let left = min(caps.left, source.width / 2, frame.width / 2)
+    let right = min(caps.right, source.width / 2, frame.width / 2)
+    let top = min(caps.top, source.height / 2, frame.height / 2)
+    let bottom = min(caps.bottom, source.height / 2, frame.height / 2)
+    let sourceColumns = [0, left, source.width - right, source.width]
+    let sourceRows = [0, top, source.height - bottom, source.height]
+    let targetColumns = [frame.minX, frame.minX + left, frame.maxX - right, frame.maxX]
+    let targetRows = [frame.minY, frame.minY + top, frame.maxY - bottom, frame.maxY]
+    let pixels = CGFloat(bitmap.width) / source.width
+    for row in 0..<3 {
+      for column in 0..<3 {
+        let from = CGRect(
+          x: sourceColumns[column] * pixels, y: sourceRows[row] * pixels,
+          width: (sourceColumns[column + 1] - sourceColumns[column]) * pixels,
+          height: (sourceRows[row + 1] - sourceRows[row]) * pixels
+        ).integral
+        let to = CGRect(
+          x: targetColumns[column], y: targetRows[row], width: targetColumns[column + 1] - targetColumns[column],
+          height: targetRows[row + 1] - targetRows[row])
+        guard from.width > 0, from.height > 0, to.width > 0, to.height > 0, let piece = bitmap.cropping(to: from)
+        else { continue }
+        context.saveGState()
+        // CGContext draws images bottom-up; flip locally so the piece isn't upside down.
+        context.translateBy(x: to.minX, y: to.maxY)
+        context.scaleBy(x: 1, y: -1)
+        context.interpolationQuality = .high
+        context.draw(piece, in: CGRect(origin: .zero, size: to.size))
+        context.restoreGState()
+      }
+    }
   }
 
   /// The screen's alpha mask at `pixels` (native orientation), turned clockwise by `quarterTurns`.
@@ -129,16 +175,6 @@ enum SimulatorArtwork {
     case "Apple TV": "appletv"
     case "Apple Vision": "vision.pro"
     default: "iphone"
-    }
-  }
-
-  static func symbol(posture: String) -> String {
-    switch posture.lowercased() {
-    case "closed": "iphone"
-    case "book": "book"
-    case "open", "flat": "rectangle.portrait.split.2x1"
-    case "tent": "triangle"
-    default: "circle"
     }
   }
 }

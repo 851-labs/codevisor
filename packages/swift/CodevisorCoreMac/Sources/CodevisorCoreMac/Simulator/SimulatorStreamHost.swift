@@ -155,10 +155,10 @@ final class SimulatorStreamHost {
       do {
         let device = try attach(udid: udid)
         // The framebuffer appears once the screen callbacks are registered; give it a moment.
-        var size = device.capture?.size(forTurns: mountedTurns(device))
+        var size = device.capture?.size
         for _ in 0..<60 where size == nil {
           try? await Task.sleep(for: .milliseconds(50))
-          size = device.capture?.size(forTurns: mountedTurns(device))
+          size = device.capture?.size
         }
         guard let capture = device.capture, let size else {
           release(udid: udid)
@@ -239,24 +239,15 @@ final class SimulatorStreamHost {
     let capture = SimulatorScreenCapture(screen: screen)
     device.capture = capture
     device.displayName = screen.name
-    capture.setTurns(mountedTurns(device))
     capture.start()
   }
 
   /// Clockwise quarter turns from the framebuffer to what the viewer sees: how the screen is
-  /// mounted in the device, then how the device is held. Touches arrive in this space.
+  /// mounted in the device, then how the device is held. Viewers turn frame and screen together
+  /// this far, like glass in a real device, and touches arrive in this space.
   private func turns(_ device: Device) -> Int {
     let held = device.control.canRotate ? device.control.orientation.quarterTurns : 0
-    return held + mountedTurns(device)
-  }
-
-  /// How the screen is mounted in the device: the video is sent this way up, so it fits the
-  /// device's frame as it's drawn upright, and viewers turn frame and screen together as the
-  /// device is held, like glass in a real device.
-  private func mountedTurns(_ device: Device) -> Int {
-    let capabilities =
-      (try? SimulatorRuntime.device(udid: device.control.udid)).map(SimulatorRuntime.displayCapabilities) ?? [:]
-    return (capabilities[device.displayName ?? device.control.displayName]?["nativeRotation"] as? Int ?? 0) / 90
+    return held + device.control.screenTurns
   }
 
   private func release(udid: String) {

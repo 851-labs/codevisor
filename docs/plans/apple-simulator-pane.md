@@ -17,13 +17,26 @@ posture — on macOS and iOS clients. It replaces the `codevisor-ios-simulator` 
 
 ## Video and input
 
-The host registers for a screen's frame callbacks, copies the framebuffer, turns it to fit the device
-as it's made (the screen's `nativeRotation`; the Duo's inner screen is mounted sideways), scales it
+The host registers for a screen's frame callbacks, copies the framebuffer as it is, scales it
 within the encoder's 3840×2160, and feeds every viewer's WebRTC sender. Viewers draw that screen
-inside the device's frame and turn both together as the device is held, so rotation animates like
-a real device and iOS rotates its own interface inside the glass. Touches are taken over the screen
-as the viewer sees it, in upright normalized coordinates, and the host maps them back to the
-framebuffer.
+inside the device's frame and turn both together: by how the screen is mounted in the device
+(`screenTurns` in the state) plus how the device is held, so rotation animates like a real device
+and iOS rotates its own interface inside the glass. A screen's mounting is its capabilities'
+`nativeRotation` plus the device's `main-screen-orientation` (radians): an iPad's 270° and 90° (a
+Watch's 90° and 270°) cancel, so only the iPhone Duo's inner screen is sideways, and it opens in
+landscape, as in Device Hub. Touches are taken over the screen as the viewer sees it, in upright
+normalized coordinates, and the host maps them back to the framebuffer.
+
+A foldable is drawn at one size whichever screen shows (the state's `mountings` give every
+screen's mounting, so the viewer lays out both). On the inner screen the device is two live copies
+(`SimulatorScreenFeed` tees the receiver's frames into a mailbox per copy, renewed whenever the
+arrangement changes, since a stopping video view clears its mailbox's callback), each clipped to
+one side of the hinge and projected about it (`SimulatorFold`): flat when open, both halves
+tilted toward you as a book, touches flattened back through the projection. Swapping screens
+animates the hinge over stills: the panel swings 180° about the hinge, showing the inner half on
+its front and the cover screen on its back, then hands back to the live stream. Buttons whose
+artwork lies across their edge (the inner chrome reuses the cover's) are turned a quarter to lie
+along it. The posture controls are Device Hub's: closed, book and flat glyphs beside Rotate.
 
 Input goes through CoreDevice feature services inside the guest, reached with
 `SimDevice lookup:` → `xpc_endpoint_create_mach_port_4sim` → `xpc_connection_create_from_endpoint`
@@ -31,14 +44,21 @@ Input goes through CoreDevice feature services inside the guest, reached with
 the host side disconnects). Messages are `{messageType, isBarrier, featureIdentifier, payload}`:
 
 - `com.apple.coredevice.feature.remote.hid.digitizer`: `IndigoDigitizerEvent` (`pointOne`,
-  `pointTwo`, `eventType` 0/1/2, `edge` 1 top 2 left 3 bottom 4 right, `target`),
+  `pointTwo`, `eventType` 0/1/2, `edge` 1 top 2 left 3 bottom 4 right, `target`: 0 the main
+  touchscreen, otherwise the screen's `screenID`, 3 for the Duo's inner screen). The guest's
+  `dtuhidd` brings its touchscreens up about half a second after a connection, so the host connects
+  as it attaches.
   `IndigoButtonEvent` (`usagePage`, `usageCode`, `state` 1/2), `IndigoKeyboardButtonEvent`.
 - `com.apple.coredevice.feature.remote.hid.vendordefined`: `IndigoVendorDefinedEvent`
-  (`usagePage` 0xFF61, `usage` 0x5B, `version` 0 — all uint64 — and `data`, an XML plist the guest's
-  locationd relays to CoreMotion). Device Hub's rotation is
+  (`usagePage` 0xFF61, `usage` 0x5B, `version` 0 — all uint64 — and `data`, a dictionary the guest's
+  locationd relays to CoreMotion). locationd reads it with `IOCFUnserialize`, so `data` is IOKit's
+  serialization (plist tags without the XML declaration or DOCTYPE, integers not reals), and its
+  relay refuses anything past a few hundred bytes, which a full XML plist of one value already is. Device Hub's rotation is
   `{source: "orientation-picker-control", type: "enum", value: "portrait"|"pud"|"landscape-left"|"landscape-right"}`;
   a foldable's hinge is `{source: "hinge-slider-control", type: "range", value: <integer degrees>}`
   (closed 0, book ≈130, open 180; ramped so SpringBoard swaps screens as it passes thresholds).
+  The guest can't be asked its hinge angle, so the host folds a foldable closed as it attaches, to
+  match the posture it reports.
 - `com.apple.coredevice.feature.remote.devicecontrol.orientation`: `OrientationRequest`
   `{changeOrientation: {_0: "landscapeLeft"}}`.
 

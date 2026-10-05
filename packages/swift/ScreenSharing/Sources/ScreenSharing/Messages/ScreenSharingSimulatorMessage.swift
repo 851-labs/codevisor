@@ -104,12 +104,20 @@ public struct ScreenSharingSimulatorState: Codable, Sendable, Equatable {
   public var display: String?
   /// Whether this host can turn the device; a viewer hides Rotate when it can't.
   public var canRotate: Bool
+  /// Clockwise quarter turns the streamed screen is mounted at in the device (the iPhone Duo's
+  /// inner screen is sideways). The video comes as the screen is made; a viewer turns it, frame
+  /// and all, this far plus however the device is held. Nil from hosts before it, meaning upright.
+  public var screenTurns: Int?
+  /// How every screen of the device is mounted, by name, in clockwise quarter turns: a foldable
+  /// is drawn at one size whichever screen shows, as it is in the hand.
+  public var mountings: [String: Int]?
 
   public init(
     orientation: ScreenSharingSimulatorOrientation, posture: String? = nil, postures: [String] = [],
-    display: String? = nil, canRotate: Bool = true
+    display: String? = nil, canRotate: Bool = true, screenTurns: Int? = nil, mountings: [String: Int]? = nil
   ) {
     self.orientation = orientation; self.posture = posture; self.postures = postures
-    self.display = display; self.canRotate = canRotate
+    self.display = display; self.canRotate = canRotate; self.screenTurns = screenTurns
+    self.mountings = mountings
   }
 }
