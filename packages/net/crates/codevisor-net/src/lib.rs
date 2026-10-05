@@ -14,7 +14,7 @@ pub mod media;
 pub mod message_stream;
 
 pub use config::{NetConfig, PathPolicy, RelaySpec, secret_key_from_hex};
-pub use endpoint::{NetAddr, NetConnection, NetEndpoint, PathInfo, endpoint_id_for, generate_secret_key};
+pub use endpoint::{CancelToken, NetAddr, NetConnection, NetEndpoint, PathInfo, endpoint_id_for, generate_secret_key};
 pub use media::{DatagramRouter, MediaFlow};
 pub use message_stream::{MAX_MESSAGE_BYTES, Message, MessageKind, MessageStream};
 

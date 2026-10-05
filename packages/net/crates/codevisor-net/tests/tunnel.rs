@@ -2,15 +2,19 @@
 //! in-process relay (trusted through `trust_anchors_pem`, the same mechanism
 //! local development uses for its dev CA).
 
-use std::{net::Ipv4Addr, sync::Arc, time::Duration};
+use std::{
+    net::{Ipv4Addr, SocketAddr},
+    sync::Arc,
+    time::Duration,
+};
 
 use base64::Engine;
 use codevisor_net::{
-    ALPN_CHANNELS, ALPN_MEDIA, MediaFlow, MessageKind, NetAddr, NetConfig, NetEndpoint, PathPolicy, RelaySpec,
-    generate_secret_key,
+    ALPN_CHANNELS, ALPN_MEDIA, CancelToken, MediaFlow, MessageKind, NetAddr, NetConfig, NetEndpoint, PathPolicy,
+    RelaySpec, endpoint_id_for, generate_secret_key,
 };
 use iroh_relay::server::{AllowAll, CertConfig, QuicConfig, RelayConfig, Server, ServerConfig, TlsConfig};
-use tokio::net::UdpSocket;
+use tokio::{net::UdpSocket, sync::oneshot};
 
 const ONLINE: Duration = Duration::from_secs(20);
 
@@ -148,4 +152,77 @@ async fn media_flow_bridges_loopback_udp_both_ways() {
     app.send_to(b"rtp-1", (Ipv4Addr::LOCALHOST, viewer_flow.local_port())).await.unwrap();
     let (len, _) = app.recv_from(&mut buffer).await.unwrap();
     assert_eq!(&buffer[..len], b"ack:rtp-1");
+}
+
+/// A UDP hop that forwards whatever a dialer sends to `target` and drops
+/// every reply, so `target` sees a dial whose handshake never completes.
+/// Resolves `forwarded` once the first datagram has been passed on.
+async fn spawn_reply_dropping_hop(target: SocketAddr) -> (SocketAddr, oneshot::Receiver<()>) {
+    let hop = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let addr = hop.local_addr().unwrap();
+    let (forwarded_tx, forwarded_rx) = oneshot::channel();
+    tokio::spawn(async move {
+        let mut forwarded = Some(forwarded_tx);
+        let mut buffer = vec![0u8; 65_536];
+        while let Ok((len, from)) = hop.recv_from(&mut buffer).await {
+            if from == target {
+                continue;
+            }
+            hop.send_to(&buffer[..len], target).await.unwrap();
+            if let Some(forwarded) = forwarded.take() {
+                forwarded.send(()).ok();
+            }
+        }
+    });
+    (addr, forwarded_rx)
+}
+
+#[tokio::test]
+async fn a_stalled_handshake_does_not_hold_up_later_dials() {
+    let server = Arc::new(NetEndpoint::bind(config(PathPolicy::DirectOnly, vec![], vec![])).await.unwrap());
+    let stalled_client = NetEndpoint::bind(config(PathPolicy::DirectOnly, vec![], vec![])).await.unwrap();
+    let client = NetEndpoint::bind(config(PathPolicy::DirectOnly, vec![], vec![])).await.unwrap();
+    let target: SocketAddr = server.addr().direct_addrs[0].parse().unwrap();
+    let (hop, forwarded) = spawn_reply_dropping_hop(target).await;
+
+    // The machine is accepting before anyone dials.
+    let accepting = tokio::spawn({
+        let server = server.clone();
+        async move { server.accept().await }
+    });
+    // First in line: a dialer that never hears back (an app suspended
+    // mid-dial). Its handshake can only end by timing out.
+    let stalled_addr = NetAddr { endpoint_id: server.endpoint_id(), relay_url: None, direct_addrs: vec![hop.to_string()] };
+    let stalled = tokio::spawn(async move { stalled_client.connect(&stalled_addr, ALPN_CHANNELS).await.is_ok() });
+    forwarded.await.unwrap();
+
+    // A dialer behind it still gets in, and is the first connection out.
+    client.connect(&server.addr(), ALPN_CHANNELS).await.expect("dials past the stalled handshake");
+    let accepted = accepting.await.unwrap().expect("handshake succeeds").expect("endpoint open");
+    assert_eq!(accepted.remote_id(), client.endpoint_id());
+    stalled.abort();
+}
+
+#[tokio::test]
+async fn cancelling_a_dial_ends_it() {
+    let client = NetEndpoint::bind(config(PathPolicy::DirectOnly, vec![], vec![])).await.unwrap();
+    // A peer address where nothing ever answers.
+    let silent = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let addr = NetAddr {
+        endpoint_id: endpoint_id_for(&generate_secret_key()),
+        relay_url: None,
+        direct_addrs: vec![silent.local_addr().unwrap().to_string()],
+    };
+    let cancel = Arc::new(CancelToken::default());
+    let dial = tokio::spawn({
+        let cancel = cancel.clone();
+        async move { client.connect_cancellable(&addr, ALPN_CHANNELS, &cancel).await.map(|_| ()) }
+    });
+    // The dial is under way once its first packet arrives.
+    let mut buffer = [0u8; 2048];
+    silent.recv_from(&mut buffer).await.unwrap();
+
+    cancel.cancel();
+    let error = dial.await.unwrap().expect_err("a cancelled dial fails");
+    assert!(error.to_string().contains("cancelled"), "{error:#}");
 }

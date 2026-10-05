@@ -177,6 +177,9 @@ public final class AppEnvironment {
     cloud.onSignedOut = { [weak self] in
       self?.machines.handleCloudAccountSignedOut()
     }
+    cloud.directPaths.onPipeUp = { [weak self] deviceId in
+      self?.machines.cloudMachineBecameReachable(deviceId: deviceId)
+    }
     cloud.onMachinesRefreshed = { [weak self] in
       if let access = self?.pluginAccess { Task { try? await access.syncConsent() } }
       self?.machines.reconcileCloudSelection()

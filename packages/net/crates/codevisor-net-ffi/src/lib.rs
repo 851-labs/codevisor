@@ -125,13 +125,49 @@ impl NetEndpointHandle {
         self.inner.online(Duration::from_millis(timeout_ms.into())).await.map_err(failure)
     }
 
-    pub async fn connect(&self, addr: NetTunnelAddr, alpn: String) -> Result<Arc<NetConnectionHandle>, NetError> {
-        let connection = self.inner.connect(&addr.into(), alpn.as_bytes()).await.map_err(failure)?;
+    /// Dials `addr`. Swift's async glue never cancels the Rust future, so a
+    /// caller that may abandon the dial passes `cancel` and fires it; the
+    /// handshake then stops at once instead of running to its timeout.
+    pub async fn connect(
+        &self,
+        addr: NetTunnelAddr,
+        alpn: String,
+        cancel: Option<Arc<NetCancelToken>>,
+    ) -> Result<Arc<NetConnectionHandle>, NetError> {
+        let addr = addr.into();
+        let connection = match cancel {
+            Some(cancel) => self.inner.connect_cancellable(&addr, alpn.as_bytes(), &cancel.inner).await,
+            None => self.inner.connect(&addr, alpn.as_bytes()).await,
+        }
+        .map_err(failure)?;
         Ok(Arc::new(NetConnectionHandle { inner: connection }))
+    }
+
+    /// Hints that the network may have changed (foreground, path change).
+    pub async fn network_change(&self) {
+        self.inner.network_change().await;
     }
 
     pub async fn close(&self) {
         self.inner.close().await;
+    }
+}
+
+/// Cancels a `connect` from Swift (see `NetEndpointHandle::connect`).
+#[derive(uniffi::Object, Default)]
+pub struct NetCancelToken {
+    inner: net::CancelToken,
+}
+
+#[uniffi::export]
+impl NetCancelToken {
+    #[uniffi::constructor]
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self::default())
+    }
+
+    pub fn cancel(&self) {
+        self.inner.cancel();
     }
 }
 

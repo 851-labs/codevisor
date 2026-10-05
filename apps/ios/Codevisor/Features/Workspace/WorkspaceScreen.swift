@@ -290,11 +290,7 @@ struct WorkspaceScreen: View {
           availability: screenAvailability,
           machineName: machine.name,
           isLocal: false
-        ) {
-          Task {
-            await machines.retryMachine(machine.id)
-          }
-        }
+        )
       } else if missing {
         ContentUnavailableView("Chat Not Found", systemImage: "questionmark.bubble")
       } else if isDraft, draftController == nil {

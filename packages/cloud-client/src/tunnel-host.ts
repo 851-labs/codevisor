@@ -219,6 +219,9 @@ export class MachineTunnel {
     }
   }
 
+  /// `accept` hands over connections in the order their handshakes finish
+  /// (codevisor-net runs them concurrently), so a dialer that stalls
+  /// mid-handshake never holds up the ones behind it.
   async #acceptLoop(endpoint: TunnelEndpoint): Promise<void> {
     for (;;) {
       let connection: TunnelConnection | null

@@ -10,10 +10,13 @@ use anyhow::{Context, Result, anyhow};
 use iroh::{
     Endpoint, EndpointAddr, EndpointId, RelayConfig, RelayMap, RelayMode, RelayUrl, SecretKey,
     Watcher,
-    endpoint::{Connection, presets},
+    endpoint::{Connection, Incoming, presets},
     tls::CaTlsConfig,
 };
-use tokio::{sync::{Mutex, watch}, task::JoinHandle};
+use tokio::{
+    sync::{Mutex, mpsc, watch},
+    task::{JoinHandle, JoinSet},
+};
 
 use crate::{
     config::{NetConfig, PathPolicy},
@@ -51,10 +54,48 @@ pub fn endpoint_id_for(secret_key: &[u8; 32]) -> String {
     SecretKey::from_bytes(secret_key).public().to_string()
 }
 
+/// Handshakes the accept driver runs at once. Past this, new dials are
+/// refused (the dialer retries) instead of queueing behind stalled ones.
+const MAX_PENDING_HANDSHAKES: usize = 64;
+
+/// Ends a dial early: [`NetEndpoint::connect_cancellable`] gives up as soon
+/// as `cancel` is called. Lets callers whose own runtime can't drop the
+/// dialing future (the Swift binding's async glue never cancels Rust
+/// futures) stop an abandoned handshake instead of leaving it to time out.
+#[derive(Debug)]
+pub struct CancelToken(watch::Sender<bool>);
+
+impl Default for CancelToken {
+    fn default() -> Self {
+        Self(watch::channel(false).0)
+    }
+}
+
+impl CancelToken {
+    pub fn cancel(&self) {
+        self.0.send_replace(true);
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        *self.0.borrow()
+    }
+
+    /// Resolves once `cancel` has been called (at once if it already was).
+    pub async fn cancelled(&self) {
+        let mut receiver = self.0.subscribe();
+        // The sender lives in `self`, so this only returns once cancelled.
+        let _ = receiver.wait_for(|cancelled| *cancelled).await;
+    }
+}
+
 pub struct NetEndpoint {
     endpoint: Endpoint,
     addr_updates: Mutex<(watch::Receiver<NetAddr>, bool)>,
     addr_task: JoinHandle<()>,
+    /// Completed handshakes, fed by the accept driver (started by the first
+    /// `accept`, so dial-only endpoints never complete unwanted handshakes).
+    accepted: Mutex<Option<mpsc::UnboundedReceiver<Result<NetConnection>>>>,
+    accept_task: std::sync::Mutex<Option<JoinHandle<()>>>,
 }
 
 impl NetEndpoint {
@@ -107,7 +148,13 @@ impl NetEndpoint {
                 }
             }
         });
-        Ok(Self { endpoint, addr_updates: Mutex::new((receiver, false)), addr_task })
+        Ok(Self {
+            endpoint,
+            addr_updates: Mutex::new((receiver, false)),
+            addr_task,
+            accepted: Mutex::new(None),
+            accept_task: std::sync::Mutex::new(None),
+        })
     }
 
     pub fn endpoint_id(&self) -> String {
@@ -147,15 +194,43 @@ impl NetEndpoint {
         Ok(NetConnection::new(connection))
     }
 
-    /// Accepts the next incoming connection, completing its handshake.
-    /// `Ok(None)` once the endpoint is closed. A failed handshake is an
-    /// `Err` for that attempt only; keep accepting.
+    /// `connect`, abandoned (and its handshake dropped) once `cancel` fires.
+    pub async fn connect_cancellable(&self, addr: &NetAddr, alpn: &[u8], cancel: &CancelToken) -> Result<NetConnection> {
+        tokio::select! {
+            biased;
+            () = cancel.cancelled() => Err(anyhow!("connecting to {} cancelled", addr.endpoint_id)),
+            result = self.connect(addr, alpn) => result,
+        }
+    }
+
+    /// Tells the endpoint the network may have changed (an app returning
+    /// from suspension, a path change the OS reported). iroh re-checks its
+    /// interfaces and, on a real change, rebinds its sockets and re-homes on
+    /// a relay. Harmless when nothing changed.
+    pub async fn network_change(&self) {
+        self.endpoint.network_change().await;
+    }
+
+    /// The next incoming connection with its handshake complete. `Ok(None)`
+    /// once the endpoint is closed. A failed handshake is an `Err` for that
+    /// attempt only; keep accepting.
+    ///
+    /// Handshakes run concurrently: one dialer that stalls mid-handshake
+    /// (an app suspended while dialing) must not hold every later dial in
+    /// the queue until its idle timeout. Initials that wait that long are
+    /// stale by the time they are accepted, and QUIC refuses them.
     pub async fn accept(&self) -> Result<Option<NetConnection>> {
-        let Some(incoming) = self.endpoint.accept().await else {
-            return Ok(None);
-        };
-        let connection = incoming.accept().context("refused incoming connection")?.await?;
-        Ok(Some(NetConnection::new(connection)))
+        let mut accepted = self.accepted.lock().await;
+        let receiver = accepted.get_or_insert_with(|| {
+            let (sender, receiver) = mpsc::unbounded_channel();
+            let task = tokio::spawn(drive_accepts(self.endpoint.clone(), sender));
+            *self.accept_task.lock().expect("accept task lock") = Some(task);
+            receiver
+        });
+        match receiver.recv().await {
+            Some(result) => result.map(Some),
+            None => Ok(None),
+        }
     }
 
     pub fn bound_sockets(&self) -> Vec<String> {
@@ -165,13 +240,61 @@ impl NetEndpoint {
     pub async fn close(&self) {
         self.addr_task.abort();
         self.endpoint.close().await;
+        self.stop_accepting();
+    }
+
+    fn stop_accepting(&self) {
+        if let Some(task) = self.accept_task.lock().expect("accept task lock").take() {
+            task.abort();
+        }
     }
 }
 
 impl Drop for NetEndpoint {
     fn drop(&mut self) {
         self.addr_task.abort();
+        self.stop_accepting();
     }
+}
+
+/// Takes every incoming connection off the endpoint as it arrives and runs
+/// its handshake as its own task, reporting each outcome in completion
+/// order. Aborting the driver aborts its handshakes (the `JoinSet` drops).
+async fn drive_accepts(endpoint: Endpoint, sender: mpsc::UnboundedSender<Result<NetConnection>>) {
+    let mut handshakes = JoinSet::new();
+    loop {
+        tokio::select! {
+            incoming = endpoint.accept() => {
+                let Some(incoming) = incoming else { break };
+                if handshakes.len() >= MAX_PENDING_HANDSHAKES {
+                    incoming.refuse();
+                    let refused = anyhow!("refused incoming connection: {MAX_PENDING_HANDSHAKES} handshakes pending");
+                    if sender.send(Err(refused)).is_err() {
+                        return;
+                    }
+                    continue;
+                }
+                handshakes.spawn(handshake(incoming));
+            }
+            Some(done) = handshakes.join_next(), if !handshakes.is_empty() => {
+                if let Ok(result) = done && sender.send(result).is_err() {
+                    return;
+                }
+            }
+        }
+    }
+    // The endpoint closed: report the handshakes still in flight, which fail
+    // promptly now that their connections are closed.
+    while let Some(done) = handshakes.join_next().await {
+        if let Ok(result) = done && sender.send(result).is_err() {
+            return;
+        }
+    }
+}
+
+async fn handshake(incoming: Incoming) -> Result<NetConnection> {
+    let connection = incoming.accept().context("refused incoming connection")?.await?;
+    Ok(NetConnection::new(connection))
 }
 
 fn iroh_relay_quic_config(port: u16) -> iroh_relay::RelayQuicConfig {

@@ -409,6 +409,36 @@ struct CloudAccountControllerTests {
     #expect(controller.relayServerConfig(for: swapped) != nil)
   }
 
+  @Test("A tunnel transport made before its machine is known starts working once it is")
+  func transportFollowsTheRoster() async throws {
+    let scripted = ScriptedDirectMachine(machine: ScriptedRelayMachine(deviceId: "m1"))
+    let script = ProbeScript()
+    script.answer("m1", with: scripted)
+    let client = FakeCloudClient()
+    client.verifyResult = .success("t")
+    client.sessions["t"] = CloudSessionUser(userId: "u1", email: nil)
+    client.machinesResult = .success([])
+    let (controller, _, _) = makeController(client: client, directPaths: makePathController(script: script))
+    await controller.completeSignIn(ott: "ott")
+
+    // Built at launch, before the roster lists the machine (a chat holds
+    // its client this long): fails as unreachable for now.
+    let transport = controller.machineTransport(forDeviceId: "m1")
+    await #expect(throws: MachineUnreachableError.self) {
+      _ = try await transport.openChannel(
+        channelType: "test", params: nil, compressed: false, onMessage: { _ in }, onClosed: { _ in })
+    }
+
+    // The roster arrives and pins the key: the same transport now reaches it.
+    client.machinesResult = .success([
+      testMachine("m1", publicKey: scripted.machine.publicKey, tunnelEndpoint: "endpoint")
+    ])
+    await controller.refreshMachines()
+    let channel = try await transport.openChannel(
+      channelType: "test", params: nil, compressed: false, onMessage: { _ in }, onClosed: { _ in })
+    #expect(await waitUntil { scripted.machine.channel(channel.id)?.openPayload != nil })
+  }
+
   @Test("Removing a machine drops its pin, so re-adding is a fresh pairing")
   func removeMachineDropsPin() async throws {
     let (controller, client, store) = await makeSignedIn(machines: [testMachine("m1")])

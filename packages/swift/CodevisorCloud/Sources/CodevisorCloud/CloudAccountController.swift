@@ -544,7 +544,7 @@ public final class CloudAccountController {
   }
 
   /// Replaces an existing hub socket after the app returns to the
-  /// foreground, and drops the direct pipes so channel owners reopen from
+  /// foreground, and re-dials the tunnel pipes so channel owners reopen from
   /// their durable cursors; the account refresh keeps machine-list presence
   /// in step with the new hub welcome.
   public func reconnectHub() async {
@@ -554,8 +554,9 @@ public final class CloudAccountController {
     // caught by its own heartbeat within ~15s, but recovery requests
     // race that detection and burn their full timeout against a dead
     // socket — one such timeout is enough to fail the selected machine.
-    // Drop the pipes now; the machine refresh below re-dials them.
-    directPaths.dropAll()
+    // Re-dial every pipe now, on an endpoint told the network changed.
+    // The machines stay known, so this doesn't wait on the refresh below.
+    directPaths.networkChanged()
     if let hub {
       await hub.reconnect()
     }
@@ -685,19 +686,15 @@ extension CloudAccountController: CloudMachineProviding {
   public func relayServerConfig(for machine: CloudMachine) -> CodevisorServerConfig? {
     // TOFU: no relay config for a machine whose key conflicts with its
     // pin — every channel would be opened against the imposter key.
-    guard hubConnection() != nil, let verifiedKey = verifiedMachineKey(for: machine) else {
+    guard hubConnection() != nil, verifiedMachineKey(for: machine) != nil else {
       return nil
     }
-    let endpoint = machineTransport(for: machine, verifiedKey: verifiedKey)
     // The transports tunnel in-process; the baseURL matters only to
     // consumers that dial a real socket (plugin and browser panes), so
     // it becomes the machine's real loopback address once bridged.
-    return CodevisorServerConfig(
-      baseURL: loopbackBaseURL(for: machine) ?? CodevisorMachine.cloudPlaceholderBaseURL,
-      bearerToken: nil,
-      requestTransport: CloudRelayRequestTransport(endpoint: endpoint),
-      webSocketTransport: CloudRelayWebSocketTransport(endpoint: endpoint)
-    )
+    return tunnelServerConfig(
+      deviceId: machine.deviceId,
+      baseURL: loopbackBaseURL(for: machine) ?? CodevisorMachine.cloudPlaceholderBaseURL)
   }
 
   public func loopbackBaseURL(for machine: CloudMachine) -> URL? {
@@ -706,7 +703,7 @@ extension CloudAccountController: CloudMachineProviding {
     else { return nil }
     return loopbackPool.baseURL(
       for: machine.deviceId, key: key,
-      endpoint: machineTransport(for: machine, verifiedKey: key))
+      endpoint: machineTransport(forDeviceId: machine.deviceId))
   }
 
   public func loopbackRevision(for machine: CloudMachine) -> UInt64 {
@@ -719,6 +716,6 @@ extension CloudAccountController: CloudMachineProviding {
     else { return false }
     return await loopbackPool.recover(
       for: machine.deviceId, key: key,
-      endpoint: machineTransport(for: machine, verifiedKey: key))
+      endpoint: machineTransport(forDeviceId: machine.deviceId))
   }
 }

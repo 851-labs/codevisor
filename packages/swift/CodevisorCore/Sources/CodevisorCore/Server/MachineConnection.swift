@@ -189,6 +189,27 @@ extension MachineController {
     }
   }
 
+  /// A remote machine that just failed keeps being retried on the usual
+  /// backoff instead of staying `.failed` until a foreground or an explicit
+  /// retry. The local machine's failures have their own owner (the server
+  /// controller) and are left alone.
+  func scheduleRemoteRecovery(for machineId: String) {
+    guard let machine = machine(for: machineId), !machine.isLocal else { return }
+    schedulePreparationRetry(for: machineId)
+  }
+
+  /// A cloud machine's tunnel just came up. A machine parked `.failed`,
+  /// waiting out its retry backoff, is prepared now: the chat's "Unable to
+  /// connect" line should clear the moment the machine is back, with
+  /// nothing for the user to do.
+  public func cloudMachineBecameReachable(deviceId: String) {
+    let machineId = CodevisorMachine.cloudIdPrefix + deviceId
+    guard machine(for: machineId) != nil, let connection = connectionsById[machineId],
+      connection.preparationTask == nil, case .failed = connection.availability
+    else { return }
+    Task { await self.prepareMachine(machineId) }
+  }
+
   /// Removes everything stored under this Mac's own cloud twin id: its
   /// stream, and every project/session/workspace record that synced under
   /// the duplicate identity.
@@ -288,6 +309,7 @@ extension MachineController {
       // waiting on it forever.
       connection.navigationSyncState = .stale(connection.status?.label ?? "Unreachable")
       markFailed(for: machineId, message: connection.status?.label ?? "Unreachable")
+      scheduleRemoteRecovery(for: machineId)
       return
     }
     markReady(for: machineId)

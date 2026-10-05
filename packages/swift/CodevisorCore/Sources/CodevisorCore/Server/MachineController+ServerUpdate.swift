@@ -273,6 +273,8 @@ extension MachineController {
       let message = "The server did not come back after updating. Check it on the machine directly."
       connection.updatePhase = .failed(message)
       markFailed(for: machineId, message: message)
+      // It may still come back (a slow restart): keep checking.
+      scheduleRemoteRecovery(for: machineId)
     } catch {
       let message = serverErrorMessage(error)
       connection.updatePhase = .failed(message)
@@ -281,6 +283,7 @@ extension MachineController {
         resumeEventStream(for: machineId)
       } else {
         markFailed(for: machineId, message: message)
+        scheduleRemoteRecovery(for: machineId)
       }
     }
   }

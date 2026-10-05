@@ -134,8 +134,9 @@ impl TunnelEndpoint {
         Ok(TunnelConnection { inner: connection })
     }
 
-    /// The next incoming connection; `null` once the endpoint is closed.
-    /// A failed handshake rejects this call only — keep accepting.
+    /// The next incoming connection, in handshake-completion order (one
+    /// stalled handshake doesn't hold up the rest); `null` once the endpoint
+    /// is closed. A failed handshake rejects this call only — keep accepting.
     #[napi]
     pub async fn accept(&self) -> Result<Option<TunnelConnection>> {
         let inner = self.inner.clone();

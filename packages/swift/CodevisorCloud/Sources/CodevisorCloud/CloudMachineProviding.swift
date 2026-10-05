@@ -15,6 +15,13 @@ public protocol CloudMachineProviding: AnyObject {
   /// A server config whose transports tunnel through the cloud relay to
   /// this machine — nil when the relay isn't available (signed out).
   func relayServerConfig(for machine: CloudMachine) -> CodevisorServerConfig?
+  /// A tunnel-backed config for a cloud device id the roster may not list
+  /// yet (launch, before the first refresh or pin load). It resolves the
+  /// machine and its verified key on every request, failing with
+  /// `MachineUnreachableError` until it can — so a client built early
+  /// starts working once the machine is known, instead of never. Nil when
+  /// signed out.
+  func relayServerConfig(forDeviceId deviceId: String) -> CodevisorServerConfig?
   /// A real `http://127.0.0.1:<port>` base URL for this machine, served by
   /// an in-app loopback bridge that forwards a transparent TCP byte stream
   /// onto the relay — for baseURL consumers that must dial a real socket
@@ -40,6 +47,7 @@ public protocol CloudMachineProviding: AnyObject {
 }
 
 public extension CloudMachineProviding {
+  func relayServerConfig(forDeviceId deviceId: String) -> CodevisorServerConfig? { nil }
   func loopbackBaseURL(for machine: CloudMachine) -> URL? { nil }
   func loopbackRevision(for machine: CloudMachine) -> UInt64 { 0 }
   func recoverLoopbackBridge(for machine: CloudMachine) async -> Bool { false }

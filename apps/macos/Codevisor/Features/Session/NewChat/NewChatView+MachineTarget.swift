@@ -66,11 +66,7 @@ extension NewChatView {
         startupProgress: composerMachine.isLocal ? environment.localServer?.startupProgress : nil,
         appUpdateInProgress: environment.appUpdate.isUpdating,
         restart: composerMachine.isLocal ? { AppRelauncher.relaunch() } : nil
-      ) {
-        Task {
-          await environment.machines.retryMachine(composerMachine.id)
-        }
-      }
+      )
     } else if paneDraftId == nil {
       // An embedded draft pane must not override the workspace title.
       content.navigationTitle("New chat")

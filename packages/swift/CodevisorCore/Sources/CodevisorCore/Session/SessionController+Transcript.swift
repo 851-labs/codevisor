@@ -150,8 +150,19 @@ extension SessionController {
   public var isTakingLongerThanExpected: Bool {
     model?.isTakingLongerThanExpected ?? false
   }
+  /// The chat's ephemeral connection line. Recovery is the app's job, not
+  /// the user's: this only reports the state, and clears by itself once the
+  /// machine answers again.
   public var connectionRecoveryMessage: String? {
-    if model != nil, serverAvailability != .ready { return "Reconnecting…" }
+    if model != nil {
+      switch serverAvailability {
+      case .ready: break
+      case .waiting: return "Reconnecting…"
+      case .failed:
+        let name = machines?.machine(for: project.serverId)?.name
+        return name.map { "Unable to connect to \($0)…" } ?? "Unable to connect to this machine…"
+      }
+    }
     return model?.connectionRecoveryMessage
   }
 

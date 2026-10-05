@@ -14,6 +14,11 @@ struct CodevisorApp: App {
   @State private var startupInProgress = false
   @State private var hasCompletedBootstrap = false
   @State private var recoveryInProgress = false
+  /// A foreground or network-path trigger that arrived while a recovery was
+  /// running. Its information is newer than what that pass started from
+  /// (the network typically comes back just after the foreground), so it
+  /// earns one more pass rather than being dropped.
+  @State private var recoveryRequestedAgain = false
 
   init() {
     _environment = State(initialValue: nil)
@@ -187,18 +192,24 @@ struct CodevisorApp: App {
   /// a network handoff. Replace it on foreground, then re-prepare the
   /// every machine so metadata and event streams reconcile immediately.
   private func recoverAfterForeground(environment: AppEnvironment) async {
-    guard !recoveryInProgress else { return }
+    guard !recoveryInProgress else {
+      recoveryRequestedAgain = true
+      return
+    }
     recoveryInProgress = true
     defer { recoveryInProgress = false }
-    // Everything at once: nothing here has to wait for anything else, and
-    // the open chat catches up as soon as its own machine answers rather
-    // than after the cloud hub reconnects.
-    async let roster: Void = environment.cloud.retryIfUnverified()
-    async let hub: Void = environment.cloud.reconnectHub()
-    async let machineRecovery: Void = environment.prepareAllMachines()
-    async let chatRecovery: Void = ChatControllerCache.shared.reconcileInFlightControllers()
-    TerminalSessionCache.shared.reconnectAll()
-    _ = await (roster, hub, machineRecovery, chatRecovery)
+    repeat {
+      recoveryRequestedAgain = false
+      // Everything at once: nothing here has to wait for anything else, and
+      // the open chat catches up as soon as its own machine answers rather
+      // than after the cloud hub reconnects.
+      async let roster: Void = environment.cloud.retryIfUnverified()
+      async let hub: Void = environment.cloud.reconnectHub()
+      async let machineRecovery: Void = environment.prepareAllMachines()
+      async let chatRecovery: Void = ChatControllerCache.shared.reconcileInFlightControllers()
+      TerminalSessionCache.shared.reconnectAll()
+      _ = await (roster, hub, machineRecovery, chatRecovery)
+    } while recoveryRequestedAgain
     // Re-sweep fleet update state with transport restored.
     Task { await environment.updateCenter.backgroundRefresh() }
   }

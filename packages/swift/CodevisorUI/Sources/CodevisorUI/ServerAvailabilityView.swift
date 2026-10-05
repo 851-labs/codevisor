@@ -13,7 +13,6 @@ public struct ServerAvailabilityView: View {
   private let isLocal: Bool
   private let startupProgress: LocalServerStartupProgress?
   private let appUpdateInProgress: Bool
-  private let retry: () -> Void
   /// Re-points the caller at this Mac. Offered only for remote machines
   /// whose wait is open-ended (see `ServerAvailabilityFallbackPolicy`);
   /// nil when the caller has no local machine to fall back to.
@@ -37,8 +36,7 @@ public struct ServerAvailabilityView: View {
     startupProgress: LocalServerStartupProgress? = nil,
     appUpdateInProgress: Bool = false,
     useLocalMachine: (() -> Void)? = nil,
-    restart: (() -> Void)? = nil,
-    retry: @escaping () -> Void
+    restart: (() -> Void)? = nil
   ) {
     self.machineId = machineId
     self.availability = availability
@@ -46,7 +44,6 @@ public struct ServerAvailabilityView: View {
     self.isLocal = isLocal
     self.startupProgress = startupProgress
     self.appUpdateInProgress = appUpdateInProgress
-    self.retry = retry
     self.useLocalMachine = useLocalMachine
     self.restart = restart
   }
@@ -93,13 +90,14 @@ public struct ServerAvailabilityView: View {
           .frame(maxWidth: 360)
         }
 
-        if isFailed || offersLocalMachine || offersSlowStartRestart {
+        // No "Try Again": reconnecting is the app's job. A failed remote
+        // machine keeps being retried, and this page opens on its own once
+        // it answers. Only the local server, which the app itself starts,
+        // offers a remedy (Restart).
+        if (isFailed && isLocal && restart != nil) || offersLocalMachine || offersSlowStartRestart {
           HStack(spacing: 10) {
             if isFailed, let restart, isLocal {
               Button("Restart", action: restart)
-                .buttonStyle(.borderedProminent)
-            } else if isFailed {
-              Button("Try Again", action: retry)
                 .buttonStyle(.borderedProminent)
             } else if offersSlowStartRestart, let restart {
               Button("Restart", action: restart)
@@ -213,7 +211,7 @@ public struct ServerAvailabilityView: View {
     case .ready:
       "Codevisor is ready."
     case let .failed(message):
-      message
+      isLocal ? message : "\(message) Codevisor will reconnect automatically once it's reachable."
     }
   }
 }

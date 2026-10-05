@@ -13,6 +13,10 @@ import Observation
 /// something is listening; the round trip proves it holds the pinned key).
 /// Pipes repair themselves: a pipe that drops re-dials immediately, and a
 /// failed dial retries with backoff, without waiting for a roster refresh.
+/// When dials fail with no pipe up at all, the endpoint itself is suspect
+/// (iOS can reclaim a suspended app's sockets without iroh noticing): it is
+/// rebuilt — once until a pipe comes up or the network changes again — and
+/// the machine re-dialed at once, once per failure streak.
 @MainActor
 @Observable
 public final class CloudDirectPathController {
@@ -56,6 +60,15 @@ public final class CloudDirectPathController {
   /// (the retry backs off from `reprobeInterval` up to 10 minutes).
   @ObservationIgnored var retryTasks: [String: Task<Void, Never>] = [:]
   @ObservationIgnored private var failures: [String: Int] = [:]
+  /// Machines whose current failure streak already had its immediate
+  /// re-dial on a rebuilt endpoint.
+  @ObservationIgnored private var redialedForStreak: Set<String> = []
+  /// Whether the endpoint was rebuilt and nothing has come up on it since:
+  /// rebuilding again wouldn't help (every machine is unreachable, or the
+  /// network is down), so failures just back off.
+  @ObservationIgnored private var rebuiltSinceLastPipe = false
+  /// The latest endpoint rebuild; dials wait for it before dialing.
+  @ObservationIgnored private var endpointRebuild: Task<Void, Never>?
   @ObservationIgnored private var lastAttempt: [String: ContinuousClock.Instant] = [:]
   /// The latest reconciled machines, so a dropped or failed pipe re-dials on
   /// its own instead of waiting for the next roster refresh.
@@ -63,6 +76,7 @@ public final class CloudDirectPathController {
   /// Channel opens waiting for a machine's pipe to come up.
   @ObservationIgnored private var waiters: [String: [UUID: CheckedContinuation<Void, Never>]] = [:]
   private let prober: Prober
+  private let rebuildEndpoint: @Sendable () async -> Void
   private let reprobeInterval: Duration
   private let sleep: @Sendable (Duration) async throws -> Void
   /// The app's tunnel endpoint, configured from each hub welcome.
@@ -73,19 +87,26 @@ public final class CloudDirectPathController {
     reprobeInterval: Duration = .seconds(60),
     tunnel: CloudTunnelEndpoint? = nil,
     sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
-    prober: Prober? = nil
+    prober: Prober? = nil,
+    rebuildEndpoint: (@Sendable () async -> Void)? = nil
   ) {
     let tunnel = tunnel ?? CloudTunnelEndpoint(credentialStore: credentialStore)
     self.tunnel = tunnel
     self.reprobeInterval = reprobeInterval
     self.sleep = sleep
     self.prober = prober ?? Self.defaultProber(credentialStore: credentialStore, tunnel: tunnel)
+    self.rebuildEndpoint = rebuildEndpoint ?? { await tunnel.rebuild() }
   }
 
   /// Fired (on the main actor) once a tunnel config has been applied, so the
   /// owner can re-dial machines whose earlier dial ran before the tunnel
   /// endpoint existed.
   @ObservationIgnored public var onTunnelConfigured: (@MainActor () -> Void)?
+
+  /// Fired (on the main actor) with a machine's device id whenever its pipe
+  /// comes up, so whoever tracks the machine's availability can stop
+  /// waiting out a retry backoff and use it now.
+  @ObservationIgnored public var onPipeUp: (@MainActor (String) -> Void)?
 
   /// Applies a hub welcome's tunnel config (relay map), then lifts the
   /// re-dial throttle so the next reconcile dials again.
@@ -139,6 +160,7 @@ public final class CloudDirectPathController {
     retryTasks.removeValue(forKey: deviceId)?.cancel()
     lastAttempt[deviceId] = .now
     dialing.insert(deviceId)
+    let rebuild = endpointRebuild
     let generation = UUID()
     connectionGenerations[deviceId] = generation
     let onDown: @Sendable () -> Void = { [weak self] in
@@ -146,6 +168,8 @@ public final class CloudDirectPathController {
       Task { @MainActor in self.handleDown(deviceId: deviceId, generation: generation) }
     }
     probeTasks[deviceId] = Task { [weak self, prober] in
+      // Never dial the endpoint a rebuild is replacing.
+      await rebuild?.value
       let pipe = await prober(machine, onDown)
       guard let self, !Task.isCancelled, self.connectionGenerations[deviceId] == generation else {
         await pipe?.connection.shutdown()
@@ -154,7 +178,7 @@ public final class CloudDirectPathController {
       self.probeTasks[deviceId] = nil
       self.dialing.remove(deviceId)
       guard let pipe else {
-        self.scheduleRetry(deviceId)
+        self.dialFailed(deviceId)
         return
       }
       let connection = pipe.connection
@@ -162,7 +186,8 @@ public final class CloudDirectPathController {
         await connection.shutdown()
         return
       }
-      self.failures[deviceId] = nil
+      self.resetFailures(deviceId)
+      self.rebuiltSinceLastPipe = false
       self.connections[deviceId] = (connection, machine.publicKey)
       self.machineIds.insert(deviceId)
       self.pathReaders[deviceId] = pipe.path
@@ -170,7 +195,33 @@ public final class CloudDirectPathController {
       self.startPathRefresh()
       self.resumeWaiters(deviceId)
       Log.cloud.log("Tunnel to machine \(deviceId, privacy: .public) is up")
+      self.onPipeUp?(deviceId)
     }
+  }
+
+  /// A failed dial. With no pipe up at all, the endpoint is the likelier
+  /// culprit than the machine: rebuild it (unless that was already tried
+  /// since the last pipe came up) and dial again right away, once per
+  /// failure streak. Otherwise back off.
+  private func dialFailed(_ deviceId: String) {
+    if connections.isEmpty, !redialedForStreak.contains(deviceId) {
+      redialedForStreak.insert(deviceId)
+      if !rebuiltSinceLastPipe {
+        rebuiltSinceLastPipe = true
+        Log.cloud.notice(
+          "Tunnel to machine \(deviceId, privacy: .public) failed with no pipe up; rebuilding the endpoint")
+        let rebuildEndpoint = rebuildEndpoint
+        endpointRebuild = Task { await rebuildEndpoint() }
+      }
+      startProbe(deviceId)
+      return
+    }
+    scheduleRetry(deviceId)
+  }
+
+  private func resetFailures(_ deviceId: String) {
+    failures[deviceId] = nil
+    redialedForStreak.remove(deviceId)
   }
 
   /// A failed dial retries on its own, backing off from `reprobeInterval`.
@@ -200,9 +251,28 @@ public final class CloudDirectPathController {
     Log.cloud.log("Tunnel to machine \(deviceId, privacy: .public) went down")
     // The pipe dying is fresh information (the network changed): re-dial
     // now rather than on the next roster refresh.
-    failures[deviceId] = nil
+    resetFailures(deviceId)
     guard probeTasks[deviceId] == nil else { return }
     startProbe(deviceId)
+  }
+
+  /// The network may have changed under every pipe: the app is back from
+  /// suspension, or the OS reported a new path. Tells the endpoint, then
+  /// replaces every pipe and in-flight dial with a fresh dial, skipping any
+  /// backoff. A pipe that survived suspension half-open would otherwise
+  /// stall requests until its heartbeat noticed.
+  ///
+  /// Unlike `dropAll`, the machines stay known: the re-dial must not wait
+  /// for a roster refresh, which can fail on the same bad network.
+  public func networkChanged() {
+    let tunnel = tunnel
+    Task { await tunnel.networkChanged() }
+    // A new network is a new chance for a rebuild to help.
+    rebuiltSinceLastPipe = false
+    for deviceId in known.keys.sorted() {
+      discardPipe(deviceId)
+      startProbe(deviceId)
+    }
   }
 
   /// The pipe for a machine, iff it seals toward exactly the given
@@ -215,14 +285,23 @@ public final class CloudDirectPathController {
   /// The pipe for a machine, waiting up to `timeout` for one that is still
   /// being dialed (app launch, a network change). Throws when the machine
   /// stays unreachable.
+  ///
+  /// `machine` is the caller's view of the machine, used to dial it when
+  /// the controller doesn't know it yet (after `dropAll`, before the
+  /// roster refresh that would reconcile it).
   public func awaitTransport(
     for deviceId: String,
     publicKey: String,
+    machine: CloudMachine? = nil,
     timeout: Duration = .seconds(15)
   ) async throws -> any CloudChannelTransport {
     if let transport = transport(for: deviceId, publicKey: publicKey) { return transport }
-    // Nothing in flight: kick a dial rather than wait out a backoff.
-    if probeTasks[deviceId] == nil, retryTasks[deviceId] != nil { startProbe(deviceId) }
+    // Someone is waiting on this machine right now: dial unless a dial is
+    // already in flight, rather than wait out a backoff or a roster refresh.
+    if known[deviceId] == nil, let machine, machine.deviceId == deviceId {
+      known[deviceId] = machine
+    }
+    if probeTasks[deviceId] == nil { startProbe(deviceId) }
     let id = UUID()
     let sleep = sleep
     let timer = Task { [weak self] in
@@ -250,17 +329,24 @@ public final class CloudDirectPathController {
     waiters[deviceId]?.removeValue(forKey: id)?.resume()
   }
 
-  /// Silently tears down one machine's pipe (removal, key change).
+  /// Silently tears down one machine's pipe and forgets it (removal, key
+  /// change).
   public func drop(deviceId: String) {
+    discardPipe(deviceId)
+    known[deviceId] = nil
+    resumeWaiters(deviceId)
+  }
+
+  /// Silently ends a machine's pipe, dial and pending retry, and its
+  /// failure streak. The machine stays known.
+  private func discardPipe(_ deviceId: String) {
     connectionGenerations[deviceId] = nil
     probeTasks.removeValue(forKey: deviceId)?.cancel()
     retryTasks.removeValue(forKey: deviceId)?.cancel()
-    known[deviceId] = nil
-    failures[deviceId] = nil
+    resetFailures(deviceId)
     machineIds.remove(deviceId)
     dialing.remove(deviceId)
     forgetPath(deviceId)
-    resumeWaiters(deviceId)
     guard let entry = connections.removeValue(forKey: deviceId) else { return }
     Task { await entry.connection.shutdown() }
   }
@@ -299,6 +385,7 @@ public final class CloudDirectPathController {
       drop(deviceId: deviceId)
     }
     lastAttempt = [:]
+    rebuiltSinceLastPipe = false
   }
 }
 
@@ -310,7 +397,7 @@ public struct CloudTunnelUnavailableError: LocalizedError, Equatable {
 
   public var errorDescription: String? {
     hasTunnel
-      ? "Couldn't reach this machine. Check that it's online and connected to the internet."
+      ? "Check that it's online and connected to the internet."
       : "This machine's Codevisor is too old to connect. Update Codevisor on it."
   }
 }

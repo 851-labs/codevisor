@@ -63,6 +63,10 @@ enum CloudTunnelIdentity {
 /// The app's single tunnel endpoint. Bound while the hub reports the tunnel
 /// enabled, rebound when the relay map changes, closed on sign-out. Machines
 /// are dialed by key; the endpoint picks direct or relayed paths itself.
+///
+/// Every bind is chained behind its predecessor: a new binding first closes
+/// the endpoint it replaces, so at most one is ever live and every handle
+/// gets closed by whichever binding supersedes it.
 public actor CloudTunnelEndpoint {
   public static let channelsALPN = "codevisor/channels/1"
 
@@ -108,51 +112,51 @@ public actor CloudTunnelEndpoint {
   /// Applies a welcome's tunnel config. Idempotent for an unchanged config.
   public func configure(_ newConfig: CloudTunnelConfig) async {
     guard newConfig != config else { return }
-    generation &+= 1
-    let requestGeneration = generation
     config = newConfig
-    defer {
-      let waiters = configWaiters.values
-      configWaiters.removeAll()
-      for waiter in waiters { waiter.resume() }
-    }
-    await closeEndpoint()
-    guard generation == requestGeneration else { return }
-    guard newConfig.enabled else { return }
-    let secretKeyHex: String
-    do {
-      secretKeyHex = CloudTunnelIdentity.secretKeyHex(for: try credentialStore.ensureAppDeviceIdentity())
-    } catch {
-      Log.cloud.error("Tunnel unavailable: no device identity (\(String(describing: error), privacy: .public))")
-      return
-    }
-    let endpointConfig = NetEndpointConfig(
-      secretKeyHex: secretKeyHex,
-      relays: newConfig.relays.map { NetRelay(url: $0.url, quicPort: $0.quicPort.map { UInt16(clamping: $0) }) },
-      trustAnchorsPem: trustAnchorsPem,
-      pathPolicy: "auto",
-      alpns: [Self.channelsALPN]
-    )
-    let bindEndpoint = bindEndpoint
-    binding = Task {
-      do {
-        let handle = try await bindEndpoint(endpointConfig)
-        Log.cloud.notice("Tunnel endpoint up as \(handle.endpointId(), privacy: .public)")
-        return handle
-      } catch {
-        Log.cloud.error("Tunnel endpoint failed to bind: \(String(describing: error), privacy: .public)")
-        return nil
-      }
-    }
+    replaceBinding(with: newConfig.enabled ? newConfig : nil)
+    let waiters = configWaiters.values
+    configWaiters.removeAll()
+    for waiter in waiters { waiter.resume() }
   }
 
   /// The bound endpoint (waiting for an in-flight bind), or nil when the
-  /// tunnel is off or failed to start. Before the first hub welcome has
+  /// tunnel is off or can't start. Before the first hub welcome has
   /// configured the tunnel, waits for it (bounded): machine probes start at
   /// sign-in, racing that welcome, and must not conclude "no tunnel" early.
+  ///
+  /// A failed bind is retried here, on the next caller's behalf: one bad
+  /// moment (no network at launch, a missing identity) must not leave the
+  /// tunnel down until the relay map happens to change.
   public func endpoint() async -> NetEndpointHandle? {
     if config == nil { await waitForFirstConfig() }
+    let attempt = binding
+    if let handle = await attempt?.value { return handle }
+    // Superseded while waiting (rebuild, reconfiguration): use the newer one.
+    guard binding == attempt else { return await binding?.value }
+    guard let config, config.enabled else { return nil }
+    replaceBinding(with: config)
     return await binding?.value
+  }
+
+  /// Replaces the endpoint with a freshly bound one on the same config.
+  ///
+  /// The recovery for an endpoint that stopped working without iroh
+  /// noticing: iOS can reclaim a suspended app's sockets, and coming back
+  /// on the same network is not an interface change iroh reacts to. Live
+  /// connections on the old endpoint end; dials made after this call use
+  /// the new one.
+  public func rebuild() {
+    guard let config, config.enabled else { return }
+    Log.cloud.notice("Rebuilding the tunnel endpoint")
+    replaceBinding(with: config)
+  }
+
+  /// Hints that the network may have changed (the app came back to the
+  /// foreground, the OS reported a new path). iroh re-checks its interfaces
+  /// and rebinds and re-homes when they changed. Never starts a bind.
+  public func networkChanged() async {
+    guard let handle = await binding?.value else { return }
+    await handle.networkChange()
   }
 
   private func waitForFirstConfig() async {
@@ -173,15 +177,49 @@ public actor CloudTunnelEndpoint {
   }
 
   public func shutdown() async {
-    generation &+= 1
     config = nil
-    await closeEndpoint()
+    replaceBinding(with: nil)
+    _ = await binding?.value
   }
 
-  private func closeEndpoint() async {
+  /// Starts the binding that supersedes the current one: it closes the
+  /// previous endpoint first, then binds `config` (nil = tunnel off) unless
+  /// a newer binding has superseded it meanwhile.
+  private func replaceBinding(with config: CloudTunnelConfig?) {
+    generation &+= 1
+    let requestGeneration = generation
     let previous = binding
-    binding = nil
-    if let handle = await previous?.value { await handle.close() }
+    let endpointConfig = config.flatMap(endpointConfig(for:))
+    let bindEndpoint = bindEndpoint
+    binding = Task {
+      if let handle = await previous?.value { await handle.close() }
+      guard generation == requestGeneration, let endpointConfig else { return nil }
+      do {
+        let handle = try await bindEndpoint(endpointConfig)
+        Log.cloud.notice("Tunnel endpoint up as \(handle.endpointId(), privacy: .public)")
+        return handle
+      } catch {
+        Log.cloud.error("Tunnel endpoint failed to bind: \(String(describing: error), privacy: .public)")
+        return nil
+      }
+    }
+  }
+
+  private func endpointConfig(for config: CloudTunnelConfig) -> NetEndpointConfig? {
+    let secretKeyHex: String
+    do {
+      secretKeyHex = CloudTunnelIdentity.secretKeyHex(for: try credentialStore.ensureAppDeviceIdentity())
+    } catch {
+      Log.cloud.error("Tunnel unavailable: no device identity (\(String(describing: error), privacy: .public))")
+      return nil
+    }
+    return NetEndpointConfig(
+      secretKeyHex: secretKeyHex,
+      relays: config.relays.map { NetRelay(url: $0.url, quicPort: $0.quicPort.map { UInt16(clamping: $0) }) },
+      trustAnchorsPem: trustAnchorsPem,
+      pathPolicy: "auto",
+      alpns: [Self.channelsALPN]
+    )
   }
 }
 
@@ -224,7 +262,7 @@ extension CloudTunnelEndpoint {
     let addr = NetTunnelAddr(
       endpointId: address.endpointId, relayUrl: address.relayUrl, directAddrs: address.directAddrs)
     do {
-      let connection = try await handle.connect(addr: addr, alpn: CloudTunnelMediaRoute.mediaALPN)
+      let connection = try await handle.connect(addr: addr, alpn: CloudTunnelMediaRoute.mediaALPN, cancel: nil)
       let flow = try await connection.bindMedia(flowId: flowId)
       return CloudTunnelMediaRoute(
         endpointId: handle.endpointId(), flowId: flowId, connection: connection, flow: flow)

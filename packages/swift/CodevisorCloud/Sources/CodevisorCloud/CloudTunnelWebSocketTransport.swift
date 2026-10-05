@@ -66,6 +66,11 @@ final class CloudTunnelSocket: ServerWebSocketConnecting, @unchecked Sendable {
   private var connection: NetConnectionHandle?
   private var cancelled = false
   private var recordedCloseCode: URLSessionWebSocketTask.CloseCode = .invalid
+  /// Stops the dial in Rust when the socket is cancelled mid-handshake. The
+  /// generated Swift glue never cancels a Rust future, so cancelling
+  /// `opened` alone would leave the handshake running to its timeout — and
+  /// the machine waiting on it.
+  private let dialCancel = NetCancelToken()
   /// Dials lazily and opens the connection's one message stream. Set once in
   /// init (after every other property), read-only afterwards.
   private var opened: Task<NetMessageStreamHandle, any Error>!
@@ -76,9 +81,12 @@ final class CloudTunnelSocket: ServerWebSocketConnecting, @unchecked Sendable {
       relayUrl: address.relayUrl,
       directAddrs: address.directAddrs
     )
+    let dialCancel = dialCancel
     opened = Task { [weak self] in
       guard let handle = await endpoint.endpoint() else { throw CloudTunnelError.unavailable }
-      let connection = try await handle.connect(addr: addr, alpn: CloudTunnelEndpoint.channelsALPN)
+      try Task.checkCancellation()
+      let connection = try await handle.connect(
+        addr: addr, alpn: CloudTunnelEndpoint.channelsALPN, cancel: dialCancel)
       guard let self, self.adopt(connection) else {
         connection.close(code: 1000, reason: "cancelled")
         throw CancellationError()
@@ -127,6 +135,7 @@ final class CloudTunnelSocket: ServerWebSocketConnecting, @unchecked Sendable {
       return self.connection
     }
     opened.cancel()
+    dialCancel.cancel()
     connection?.close(code: UInt32(closeCode.rawValue), reason: "")
   }
 

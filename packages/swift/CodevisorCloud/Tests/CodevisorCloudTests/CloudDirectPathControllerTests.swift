@@ -74,13 +74,15 @@ func testMachine(
 @MainActor
 func makePathController(
   script: ProbeScript,
-  clock: TestClock = TestClock()
+  clock: TestClock = TestClock(),
+  rebuilds: TestSignal = TestSignal()
 ) -> CloudDirectPathController {
   CloudDirectPathController(
     credentialStore: InMemoryCloudCredentialStore(),
     reprobeInterval: .seconds(60),
     sleep: clock.sleep,
-    prober: script.prober
+    prober: script.prober,
+    rebuildEndpoint: { rebuilds.signal() }
   )
 }
 
@@ -107,7 +109,9 @@ struct CloudDirectPathControllerTests {
     ])
     await settle(controller)
 
-    #expect(script.probes.sorted() == ["m1", "m2"])
+    // m2 may be dialed twice: if its failure lands before m1's pipe is
+    // up, nothing is up yet and it gets the immediate re-dial.
+    #expect(Set(script.probes) == ["m1", "m2"])
     #expect(controller.machineIds == ["m1"])
     #expect(controller.transport(for: "m1", publicKey: scripted.machine.publicKey) != nil)
     // A transport is only handed out for the exact verified key the pipe
@@ -136,27 +140,80 @@ struct CloudDirectPathControllerTests {
     #expect(controller.machineIds == ["m1"])
   }
 
-  @Test("A failed dial retries on its own, backing off")
+  @Test("With no pipe up, a failed dial rebuilds the endpoint and re-dials once, then backs off")
   func failedDialRetries() async throws {
     let script = ProbeScript()
     let clock = TestClock()
-    let controller = makePathController(script: script, clock: clock)
+    let rebuilds = TestSignal()
+    let controller = makePathController(script: script, clock: clock, rebuilds: rebuilds)
     controller.reconcile(machines: [testMachine("m1", publicKey: "key")])
-    await settle(controller)
-    #expect(controller.machineIds.isEmpty)
 
-    // Unreachable again: the next retry waits twice as long.
+    // Nothing is up, so the endpoint itself is suspect (iOS may have
+    // reclaimed its sockets): rebuilt once, dialed again at once.
     await clock.waitForSleep(.seconds(60))
+    #expect(script.probes == ["m1", "m1"])
+    #expect(rebuilds.value == 1)
+
+    // Still unreachable on the fresh endpoint: plain backoff from here,
+    // without rebuilding again.
     clock.advance(by: .seconds(60))
-    #expect(await waitUntil { script.probes.count == 2 })
-    await settle(controller)
+    #expect(await waitUntil { script.probes.count == 3 })
     await clock.waitForSleep(.seconds(120))
+    #expect(rebuilds.value == 1)
 
     // Reachable now: the next retry brings it up.
     script.answer("m1", with: ScriptedDirectMachine())
     clock.advance(by: .seconds(120))
     #expect(await waitUntil { controller.machineIds == ["m1"] })
-    #expect(script.probes == ["m1", "m1", "m1"])
+    #expect(script.probes.count == 4)
+  }
+
+  @Test("With another pipe up, a failed dial backs off and leaves the endpoint alone")
+  func failureBesideALivePipe() async throws {
+    let script = ProbeScript()
+    let clock = TestClock()
+    let rebuilds = TestSignal()
+    script.answer("m1", with: ScriptedDirectMachine())
+    let controller = makePathController(script: script, clock: clock, rebuilds: rebuilds)
+    controller.reconcile(machines: [testMachine("m1", publicKey: "key")])
+    await settle(controller)
+    #expect(controller.machineIds == ["m1"])
+
+    // The endpoint demonstrably works, so m2's failure is m2's own.
+    controller.reconcile(machines: [testMachine("m1", publicKey: "key"), testMachine("m2", publicKey: "key")])
+    await clock.waitForSleep(.seconds(60))
+    #expect(script.probes == ["m1", "m2"])
+    #expect(rebuilds.value == 0)
+  }
+
+  @Test("A network change replaces every pipe and pending retry with a dial now, without the roster")
+  func networkChangeRedials() async throws {
+    let script = ProbeScript()
+    let clock = TestClock()
+    let controller = makePathController(script: script, clock: clock)
+    var reachable: [String] = []
+    controller.onPipeUp = { reachable.append($0) }
+    controller.reconcile(machines: [testMachine("m1", publicKey: "key")])
+    await clock.waitForSleep(.seconds(60))
+    #expect(script.probes.count == 2)
+    #expect(reachable.isEmpty)
+
+    // Back in the foreground with the machine reachable: no waiting out the
+    // minute-long backoff, and no roster refresh needed.
+    script.answer("m1", with: ScriptedDirectMachine())
+    controller.networkChanged()
+    #expect(await waitUntil { controller.machineIds == ["m1"] })
+    #expect(script.probes.count == 3)
+    // Whoever tracks the machine's availability hears it's back.
+    #expect(reachable == ["m1"])
+
+    // A pipe that is up may be half-open after suspension: it is replaced
+    // by a fresh dial too.
+    script.answer("m1", with: ScriptedDirectMachine())
+    controller.networkChanged()
+    #expect(controller.machineIds.isEmpty)
+    #expect(await waitUntil { controller.machineIds == ["m1"] })
+    #expect(script.probes.count == 4)
   }
 
   @Test("A tunnel address arriving after launch dials right away")
@@ -202,6 +259,19 @@ struct CloudDirectPathControllerTests {
     await #expect(throws: CloudTunnelUnavailableError(machineDeviceId: "old", hasTunnel: false)) {
       try await stuck.value
     }
+  }
+
+  @Test("An open for a machine the controller hasn't been told about dials it")
+  func awaitTransportDialsAGivenMachine() async throws {
+    let script = ProbeScript()
+    script.answer("m1", with: ScriptedDirectMachine())
+    let controller = makePathController(script: script)
+    // As after `dropAll`, before the roster refresh that would reconcile it.
+    let transport = try await controller.awaitTransport(
+      for: "m1", publicKey: "key",
+      machine: testMachine("m1", publicKey: "key", tunnelEndpoint: "endpoint"))
+    #expect(transport is CloudDirectTransport)
+    #expect(script.probes == ["m1"])
   }
 
   @Test("Removed machines and key changes drop their pipe; dropAll clears everything")

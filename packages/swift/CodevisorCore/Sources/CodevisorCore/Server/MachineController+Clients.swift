@@ -54,7 +54,15 @@ extension MachineController {
     // cloud project at launch once fetched the local server's harness
     // catalog through this fallback and persisted it under the cloud
     // machine's cache key — poisoning every later composer open.
-    if CodevisorMachine.cloudDeviceId(forMachineId: machineId) != nil {
+    //
+    // While signed in, the client resolves the machine per request: it
+    // fails until the roster and key pins know the machine, then works.
+    // Chats hold their client for life, so one built during launch must
+    // not stay unreachable after the machine appears.
+    if let deviceId = CodevisorMachine.cloudDeviceId(forMachineId: machineId) {
+      if let config = cloudProvider?.relayServerConfig(forDeviceId: deviceId) {
+        return CodevisorServerClient(config: config, requestGate: requestGate, machineId: machineId)
+      }
       return CodevisorServerClient(config: .unreachable(machineId: machineId))
     }
     guard let machine = machine(for: machineId) else {
