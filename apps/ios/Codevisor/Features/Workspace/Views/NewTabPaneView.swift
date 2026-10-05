@@ -61,7 +61,7 @@ struct NewTabPaneView: View {
             Image(systemName: "plusminus")
           }
           if supportsSimulator {
-            newTabOption(title: "Simulator", action: onNewSimulator) {
+            newTabOption(title: "Open Simulator", action: onNewSimulator) {
               Image(systemName: "iphone")
             }
           }

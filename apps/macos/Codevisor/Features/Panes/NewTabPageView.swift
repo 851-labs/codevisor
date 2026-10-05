@@ -80,8 +80,8 @@ struct NewTabPageView: View {
       NewTabOption(id: "review", title: "Review Changes", kind: .review),
     ]
       + (supportsScreenSharing
-        ? [NewTabOption(id: "screen-sharing", title: "Screen Sharing", kind: .screenSharing)] : [])
-      + (supportsSimulator ? [NewTabOption(id: "simulator", title: "Simulator", kind: .simulator)] : [])
+        ? [NewTabOption(id: "screen-sharing", title: "Open Desktop", kind: .screenSharing)] : [])
+      + (supportsSimulator ? [NewTabOption(id: "simulator", title: "Open Simulator", kind: .simulator)] : [])
       + pluginOptions
   }
 
