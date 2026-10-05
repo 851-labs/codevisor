@@ -198,7 +198,7 @@ extension VirtualizedTranscriptScrollView {
         }
         .markdownImageActions(
           MarkdownImageActions(
-            open: { [weak self] url in self?.markdownImageActions?.open(url) ?? false },
+            open: { [weak self] url in self?.markdownImageActions?.open(url) },
             openInNewTab: { [weak self] url in self?.markdownImageActions?.openInNewTab?(url) },
             copy: { [weak self] url in self?.markdownImageActions?.copy?(url) })
         )

@@ -12,19 +12,30 @@ import os
 @Observable
 final class QuickLookController {
   private(set) var previewURL: URL?
+  /// The item whose bytes are being fetched and written for Quick Look, so
+  /// its thumbnail can show that the click is in progress.
+  private(set) var loadingItem: QuickLookItem?
   /// Quick Look may continue reading a replaced preview URL asynchronously,
   /// so retain every directory used by the active system preview until it closes.
   private var temporaryDirectories: [URL] = []
   private var presentationTask: Task<Void, Never>?
   private var presentationID = UUID()
 
-  func present(_ item: QuickLookItem, attachmentStore: AttachmentImageStore?) {
+  /// Returns the preparation work, which finishes once the preview is
+  /// showing, has failed, or was superseded by another item.
+  @discardableResult
+  func present(_ item: QuickLookItem, attachmentStore: AttachmentImageStore?) -> Task<Void, Never> {
     presentationTask?.cancel()
     presentationID = UUID()
     let presentationID = presentationID
+    loadingItem = item
 
-    presentationTask = Task { [weak self] in
+    let task = Task { [weak self] in
       guard let self else { return }
+      defer {
+        // A newer presentation owns `loadingItem` once it has started.
+        if presentationID == self.presentationID { self.loadingItem = nil }
+      }
       let itemName = item.name
       let itemMimeType = item.mimeType
       do {
@@ -62,6 +73,8 @@ final class QuickLookController {
         self.showFailure(for: itemName, error: error)
       }
     }
+    presentationTask = task
+    return task
   }
 
   /// Called by the native SwiftUI Quick Look modifier. The system writes nil
@@ -74,6 +87,7 @@ final class QuickLookController {
     presentationTask?.cancel()
     presentationTask = nil
     presentationID = UUID()
+    loadingItem = nil
     scheduleTemporaryDirectoryCleanup()
   }
 

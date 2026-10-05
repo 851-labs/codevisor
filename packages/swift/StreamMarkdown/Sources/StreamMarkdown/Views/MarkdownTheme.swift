@@ -46,10 +46,18 @@ public struct MarkdownLinkAction: @unchecked Sendable {
 
   /// Activates a link. An inline image is a different affordance from a
   /// text link to the same file — its primary activation previews — so
-  /// image activations go to the image handler first.
+  /// image activations go to the image handler first. `imagePreparing`
+  /// receives the host's preview work so the surface can show it loading.
   @MainActor
-  public func activate(_ url: URL, isImage: Bool) -> Bool {
-    if isImage, let images, images.open(url) { return true }
+  public func activate(
+    _ url: URL,
+    isImage: Bool,
+    imagePreparing: (Task<Void, Never>) -> Void = { _ in }
+  ) -> Bool {
+    if isImage, let images, let preparing = images.open(url) {
+      imagePreparing(preparing)
+      return true
+    }
     return handler(url)
   }
 }
@@ -57,12 +65,15 @@ public struct MarkdownLinkAction: @unchecked Sendable {
 /// What the host does with an image rendered inline: the primary
 /// activation (a preview) and the secondary actions its menu offers.
 public struct MarkdownImageActions: @unchecked Sendable {
-  public var open: @MainActor (URL) -> Bool
+  /// Starts a preview. Nil leaves the image to the link handler; otherwise
+  /// the task runs until the preview is showing (or has failed), and the
+  /// surface marks the image as loading meanwhile.
+  public var open: @MainActor (URL) -> Task<Void, Never>?
   public var openInNewTab: (@MainActor (URL) -> Void)?
   public var copy: (@MainActor (URL) -> Void)?
 
   public init(
-    open: @escaping @MainActor (URL) -> Bool,
+    open: @escaping @MainActor (URL) -> Task<Void, Never>?,
     openInNewTab: (@MainActor (URL) -> Void)? = nil,
     copy: (@MainActor (URL) -> Void)? = nil
   ) {

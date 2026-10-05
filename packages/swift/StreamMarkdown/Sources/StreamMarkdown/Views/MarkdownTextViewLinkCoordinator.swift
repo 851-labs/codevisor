@@ -38,9 +38,18 @@
   }
 
   @MainActor
-  func handleMarkdownLink(_ link: Any, isImage: Bool = false, action: MarkdownLinkAction?) -> Bool {
+  func handleMarkdownLink(
+    _ link: Any,
+    isImage: Bool = false,
+    action: MarkdownLinkAction?,
+    in textView: NSTextView? = nil,
+    at index: Int? = nil
+  ) -> Bool {
     guard let url = markdownLinkURL(link), let action else { return false }
-    return action.activate(url, isImage: isImage)
+    return action.activate(url, isImage: isImage) { [weak textView] preparing in
+      guard let textView, let index else { return }
+      MarkdownImageLoadingIndicator.track(preparing, in: textView, characterIndex: index)
+    }
   }
 
   func markdownLinkURL(_ link: Any) -> URL? {

@@ -265,17 +265,16 @@ struct AssistantTurnBody: View {
   private var imageActions: MarkdownImageActions {
     MarkdownImageActions(
       open: { url in
-        guard let file = markdownLinkPreviewFile(url) else { return false }
-        guard let attachmentImages else { return true }
-        Task {
+        guard let file = markdownImagePreviewFile(url.relativeString) else { return nil }
+        guard let attachmentImages else { return Task {} }
+        return Task {
           guard let url = await materializeQuickLookURL(for: file, store: attachmentImages) else { return }
           linkedQuickLookURL = url
         }
-        return true
       },
       openInNewTab: { url in _ = openFileDocument?(url.relativeString) },
       copy: { url in
-        guard let file = markdownLinkPreviewFile(url), let attachmentImages else { return }
+        guard let file = markdownImagePreviewFile(url.relativeString), let attachmentImages else { return }
         Task { _ = await AttachmentClipboard.copy(file, using: attachmentImages) }
       })
   }

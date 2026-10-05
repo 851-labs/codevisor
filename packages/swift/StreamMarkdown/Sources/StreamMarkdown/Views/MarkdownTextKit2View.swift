@@ -147,9 +147,9 @@
       false
     }
 
-    func textView(_: NSTextView, clickedOnLink link: Any, at index: Int) -> Bool {
-      guard let url = markdownLinkURL(link), let linkAction else { return false }
-      return linkAction.activate(url, isImage: textStorage?.streamMarkdownHasImage(at: index) ?? false)
+    func textView(_ textView: NSTextView, clickedOnLink link: Any, at index: Int) -> Bool {
+      let isImage = textStorage?.streamMarkdownHasImage(at: index) ?? false
+      return handleMarkdownLink(link, isImage: isImage, action: linkAction, in: textView, at: index)
     }
 
     /// TextKit 2 delegates link interaction through `.link`. The existing

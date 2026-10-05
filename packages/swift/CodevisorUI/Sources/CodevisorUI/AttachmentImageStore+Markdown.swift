@@ -17,8 +17,9 @@ extension AttachmentImageStore {
 
 /// Attachment embeds can omit the download-name query used by named links.
 /// Resolve their immutable ID directly instead of making an HTTP request to
-/// the synthetic attachments origin.
-func markdownImagePreviewFile(_ source: String) -> PreviewFile? {
+/// the synthetic attachments origin. Drawing and activating an inline image
+/// both resolve through here, so an image that renders also opens.
+public func markdownImagePreviewFile(_ source: String) -> PreviewFile? {
   if let file = markdownAttachmentFile(source) { return file }
   if let url = URL(string: source), url.scheme == "https", url.host == "attachments.codevisor.invalid" {
     let id = String(url.path.dropFirst())

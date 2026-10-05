@@ -176,8 +176,7 @@
         guard case let .link(url) = textItem.content, let linkAction else {
           return defaultAction
         }
-        let isImage = textView.textStorage.streamMarkdownHasImage(at: textItem.range.location)
-        return linkAction.activate(url, isImage: isImage) ? UIAction { _ in } : defaultAction
+        return linkAction.activate(url, in: textView, at: textItem.range.location) ? UIAction { _ in } : defaultAction
       }
 
       public func textView(

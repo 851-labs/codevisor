@@ -16,7 +16,11 @@
           let url = markdownLinkURL(link)
         else { continue }
         let menu = NSMenu()
-        menu.addItem(MarkdownMenuItem("Quick Look", systemImage: "eye") { _ = images.open(url) })
+        menu.addItem(
+          MarkdownMenuItem("Quick Look", systemImage: "eye") { [weak self] in
+            guard let preparing = images.open(url), let self else { return }
+            MarkdownImageLoadingIndicator.track(preparing, in: self, characterIndex: candidate)
+          })
         if let openInNewTab = images.openInNewTab {
           menu.addItem(
             MarkdownMenuItem("Open in New Tab", systemImage: "plus.rectangle.on.rectangle") { openInNewTab(url) })

@@ -38,7 +38,7 @@
 
     public override func clicked(onLink link: Any, at charIndex: Int) {
       let isImage = textStorage?.streamMarkdownHasImage(at: charIndex) ?? false
-      guard !handleMarkdownLink(link, isImage: isImage, action: linkAction) else { return }
+      guard !handleMarkdownLink(link, isImage: isImage, action: linkAction, in: self, at: charIndex) else { return }
       super.clicked(onLink: link, at: charIndex)
     }
 
@@ -292,7 +292,7 @@
     @discardableResult
     func activateServerFileLink(_ value: Any, at index: Int? = nil) -> Bool {
       let isImage = index.map { textStorage?.streamMarkdownHasImage(at: $0) ?? false } ?? false
-      return handleMarkdownLink(value, isImage: isImage, action: linkAction)
+      return handleMarkdownLink(value, isImage: isImage, action: linkAction, in: self, at: index)
     }
 
     private var currentMouseLocation: NSPoint {

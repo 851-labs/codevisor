@@ -45,6 +45,8 @@ struct AttachmentThumbnailView: View {
   @State private var image: UIImage?
   @State private var geometry = AttachmentPreviewGeometryState()
   @State private var quickLookURL: URL?
+  /// The download that will open Quick Look; non-nil while it runs.
+  @State private var previewTask: Task<Void, Never>?
 
   init(attachment: Attachment, inline: Bool = false) {
     file = PreviewFile(attachment: attachment)
@@ -65,6 +67,10 @@ struct AttachmentThumbnailView: View {
           }
           .overlay {
             if file.isVideo { VideoPlayBadge() }
+          }
+          .overlay {
+            AttachmentLoadingOverlay(isLoading: isLoadingPreview)
+              .clipShape(RoundedRectangle(cornerRadius: 8))
           }
       } else {
         fileChip
@@ -136,6 +142,7 @@ struct AttachmentThumbnailView: View {
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("Attachment \(file.name)")
     .accessibilityAddTraits([.isImage, .isButton])
+    .accessibilityValue(isLoadingPreview ? "Loading" : "")
     .attachmentContextMenu(file: file, image: image, openInNewTab: openInNewTab)
   }
 
@@ -174,8 +181,7 @@ struct AttachmentThumbnailView: View {
       preview()
     } label: {
       HStack(spacing: 6) {
-        Image(systemName: "doc")
-          .foregroundStyle(.secondary)
+        AttachmentChipIcon(isLoading: isLoadingPreview)
         Text(file.name)
           // At accessibility sizes, let the name reflow to a second
           // line and the chip widen instead of clipping (HIG:
@@ -198,6 +204,7 @@ struct AttachmentThumbnailView: View {
     .buttonStyle(.plain)
     .pointerHighlight(RoundedRectangle(cornerRadius: 8))
     .accessibilityLabel(file.name)
+    .accessibilityValue(isLoadingPreview ? "Loading" : "")
   }
 
   /// Quick Look needs a file URL: fetch the bytes and materialize them under
@@ -206,10 +213,15 @@ struct AttachmentThumbnailView: View {
     _ = openFileDocument?(FileDocumentLocation.target(for: file))
   }
 
+  private var isLoadingPreview: Bool { previewTask != nil }
+
   private func preview() {
-    guard let attachmentImages else { return }
+    // A second tap while the file is still downloading would only start
+    // the same download again.
+    guard previewTask == nil, let attachmentImages else { return }
     let file = self.file
-    Task {
+    previewTask = Task {
+      defer { previewTask = nil }
       guard let url = await materializeQuickLookURL(for: file, store: attachmentImages) else {
         return
       }

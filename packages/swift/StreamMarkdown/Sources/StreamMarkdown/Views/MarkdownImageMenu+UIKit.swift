@@ -12,7 +12,10 @@
       textView.textStorage.streamMarkdownHasImage(at: textItem.range.location)
     else { return .init(menu: defaultMenu) }
     var actions: [UIAction] = [
-      UIAction(title: "Quick Look", image: UIImage(systemName: "eye")) { _ in _ = images.open(url) }
+      UIAction(title: "Quick Look", image: UIImage(systemName: "eye")) { [weak textView] _ in
+        guard let preparing = images.open(url), let textView else { return }
+        MarkdownImageLoadingIndicator.track(preparing, in: textView, characterIndex: textItem.range.location)
+      }
     ]
     if let openInNewTab = images.openInNewTab {
       actions.append(

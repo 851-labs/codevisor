@@ -95,8 +95,12 @@ struct AttachmentThumbnailView: View {
               VideoPlayBadge()
             }
           }
+          .overlay {
+            AttachmentLoadingOverlay(isLoading: isLoadingPreview)
+              .clipShape(RoundedRectangle(cornerRadius: 8))
+          }
       } else {
-        AttachmentFileChip(name: file.name) {
+        AttachmentFileChip(name: file.name, isLoading: isLoadingPreview) {
           preview()
         }
         .attachmentContextMenu(file: file, image: nil, openInNewTab: openInNewTab)
@@ -166,6 +170,7 @@ struct AttachmentThumbnailView: View {
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("Attachment \(file.name)")
     .accessibilityAddTraits([.isImage, .isButton])
+    .accessibilityValue(isLoadingPreview ? "Loading" : "")
     .attachmentContextMenu(file: file, image: image, openInNewTab: openInNewTab)
   }
 
@@ -199,15 +204,19 @@ struct AttachmentThumbnailView: View {
     _ = openFileDocument?(FileDocumentLocation.target(for: file))
   }
 
+  private var quickLookItem: QuickLookItem {
+    .remote(source: file.source, name: file.name, mimeType: file.mimeType)
+  }
+
+  private var isLoadingPreview: Bool {
+    quickLook?.loadingItem == quickLookItem
+  }
+
   private func preview() {
-    quickLook?.present(
-      .remote(
-        source: file.source,
-        name: file.name,
-        mimeType: file.mimeType
-      ),
-      attachmentStore: attachmentImages
-    )
+    // A second click while the file is still downloading would only
+    // restart the same download.
+    guard !isLoadingPreview else { return }
+    quickLook?.present(quickLookItem, attachmentStore: attachmentImages)
   }
 }
 
@@ -227,12 +236,12 @@ private struct AttachmentThumbnailLoadID: Hashable {
 struct AttachmentFileChip: View {
   @Environment(\.theme) private var theme
   let name: String
+  var isLoading = false
   var onTap: (() -> Void)? = nil
 
   var body: some View {
     HStack(spacing: 6) {
-      Image(systemName: "doc")
-        .foregroundStyle(.secondary)
+      AttachmentChipIcon(isLoading: isLoading)
       Text(name)
         .lineLimit(1)
         .truncationMode(.middle)
@@ -250,6 +259,7 @@ struct AttachmentFileChip: View {
     .contentShape(RoundedRectangle(cornerRadius: 8))
     .onTapGesture { onTap?() }
     .help(name)
+    .accessibilityValue(isLoading ? "Loading" : "")
   }
 }
 

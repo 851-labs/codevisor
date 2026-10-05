@@ -16,11 +16,11 @@ enum TranscriptMarkdownImageOpener {
   ) -> MarkdownImageActions {
     MarkdownImageActions(
       open: { url in
-        guard let file = previewFile(url) else { return false }
-        quickLook?.present(
+        guard let file = previewFile(url) else { return nil }
+        guard let quickLook else { return Task {} }
+        return quickLook.present(
           .remote(source: file.source, name: file.name, mimeType: file.mimeType),
           attachmentStore: attachmentImages)
-        return true
       },
       openInNewTab: { url in _ = openDocument?(url.relativeString) },
       copy: { url in
@@ -32,7 +32,6 @@ enum TranscriptMarkdownImageOpener {
   /// The workspace file or attachment an image source points at; nil for
   /// web images, which have no local bytes to preview or copy.
   static func previewFile(_ url: URL) -> PreviewFile? {
-    markdownAttachmentFile(url.relativeString)
-      ?? markdownLocalFilePath(url.relativeString).map { PreviewFile(serverPath: $0) }
+    markdownImagePreviewFile(url.relativeString)
   }
 }
