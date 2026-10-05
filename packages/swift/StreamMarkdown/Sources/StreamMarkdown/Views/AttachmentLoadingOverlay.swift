@@ -4,9 +4,11 @@ import SwiftUI
 /// cached or nearby file opens before then and never flashes one.
 private let attachmentLoadingDelay: Duration = .milliseconds(150)
 
-/// Dims an attachment thumbnail and shows a spinner while its full file
-/// downloads for Quick Look. The spinner badge matches `VideoPlayBadge`'s
-/// footprint, so it covers a video's play glyph instead of stacking on it.
+/// Dims an attachment and shows a spinner while its full file downloads for
+/// Quick Look. Thumbnails and images drawn inline in Markdown text both use
+/// it, so every attachment shows the same loading state on macOS and iOS.
+/// The spinner badge matches `VideoPlayBadge`'s footprint, so it covers a
+/// video's play glyph instead of stacking on it.
 public struct AttachmentLoadingOverlay: View {
   private let isLoading: Bool
 

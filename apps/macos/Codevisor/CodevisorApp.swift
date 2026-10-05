@@ -113,7 +113,7 @@ struct RootView: View {
   @ClientPreference("sidebar.collapsed", default: false) var sidebarCollapsed
   @State var store: SessionStore?
   @State private var requiresInitialNewChatProjectResolution = false
-  @State private var quickLook = QuickLookController()
+  @State private var quickLook = QuickLookController.withAlerts()
   @State var panelLayout = AdaptivePanelLayout()
 
   var body: some View {

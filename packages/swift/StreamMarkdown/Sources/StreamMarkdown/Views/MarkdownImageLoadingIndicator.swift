@@ -1,13 +1,12 @@
 import Foundation
+import SwiftUI
 
 #if canImport(AppKit)
   import AppKit
   typealias MarkdownLoadingHostView = NSTextView
-  private typealias PlatformView = NSView
 #elseif canImport(UIKit)
   import UIKit
   typealias MarkdownLoadingHostView = UITextView
-  private typealias PlatformView = UIView
 #endif
 
 extension MarkdownLinkAction {
@@ -27,13 +26,12 @@ extension MarkdownLinkAction {
   }
 }
 
-/// Dims an inline image and shows a spinner over it while the host
-/// prepares its preview (for a remote file, a download). It appears only
-/// after a short delay, so a preview that opens quickly never flashes it.
+/// Places the shared `AttachmentLoadingOverlay` over an inline image while
+/// the host prepares its preview (for a remote file, a download). The
+/// overlay owns the delay and appearance; this only finds the image in the
+/// text and keeps the overlay there until the preview is ready.
 @MainActor
 enum MarkdownImageLoadingIndicator {
-  private static let delay: Duration = .milliseconds(150)
-
   private struct Key: Hashable {
     let textView: ObjectIdentifier
     let characterIndex: Int
@@ -41,15 +39,40 @@ enum MarkdownImageLoadingIndicator {
 
   @MainActor
   private final class Indicator {
-    var overlay: PlatformView?
-    var isFinished = false
+    #if canImport(AppKit)
+      let view: NSView
+    #else
+      let host: UIHostingController<AttachmentLoadingOverlay>
+      var view: UIView { host.view }
+    #endif
 
-    func finish() {
-      isFinished = true
-      overlay?.removeFromSuperview()
-      overlay = nil
+    init(frame: CGRect) {
+      #if canImport(AppKit)
+        let container = PassthroughView(frame: frame)
+        let hosting = NSHostingView(rootView: AttachmentLoadingOverlay(isLoading: true))
+        hosting.frame = container.bounds
+        hosting.autoresizingMask = [.width, .height]
+        container.addSubview(hosting)
+        view = container
+      #else
+        host = UIHostingController(rootView: AttachmentLoadingOverlay(isLoading: true))
+        host.view.frame = frame
+        host.view.backgroundColor = .clear
+        host.view.isUserInteractionEnabled = false
+        // Not in a view controller hierarchy: don't inset for safe areas.
+        host.safeAreaRegions = []
+      #endif
     }
+
+    func remove() { view.removeFromSuperview() }
   }
+
+  #if canImport(AppKit)
+    /// Leaves clicks and the image's context menu to the text view beneath.
+    private final class PassthroughView: NSView {
+      override func hitTest(_: NSPoint) -> NSView? { nil }
+    }
+  #endif
 
   private static var active: [Key: Indicator] = [:]
 
@@ -58,30 +81,21 @@ enum MarkdownImageLoadingIndicator {
     in textView: MarkdownLoadingHostView,
     characterIndex: Int
   ) {
+    guard let rect = imageRect(in: textView, characterIndex: characterIndex) else { return }
     let key = Key(textView: ObjectIdentifier(textView), characterIndex: characterIndex)
     // A repeat activation replaces the earlier indicator instead of
     // stacking a second scrim over the same image.
-    active[key]?.finish()
-    let indicator = Indicator()
+    active[key]?.remove()
+    let indicator = Indicator(frame: rect)
+    textView.addSubview(indicator.view)
     active[key] = indicator
 
-    Task { @MainActor [weak textView] in
-      try? await Task.sleep(for: delay)
-      guard !indicator.isFinished, let textView,
-        let rect = imageRect(in: textView, characterIndex: characterIndex)
-      else { return }
-      let overlay = makeOverlay(frame: rect)
-      textView.addSubview(overlay)
-      indicator.overlay = overlay
-    }
     Task { @MainActor in
       await preparing.value
-      indicator.finish()
+      indicator.remove()
       if active[key] === indicator { active[key] = nil }
     }
   }
-
-  // MARK: - Geometry
 
   /// The image attachment's frame in the text view's coordinates.
   private static func imageRect(
@@ -125,66 +139,5 @@ enum MarkdownImageLoadingIndicator {
       return true
     }
     return result
-  }
-
-  // MARK: - Overlay
-
-  #if canImport(AppKit)
-    /// Leaves clicks and the image's context menu to the text view beneath.
-    private final class PassthroughView: NSView {
-      override func hitTest(_: NSPoint) -> NSView? { nil }
-    }
-  #endif
-
-  /// Matches the attachment thumbnail's loading state: a light scrim and a
-  /// white spinner on a dark badge, readable over any image.
-  private static func makeOverlay(frame: CGRect) -> PlatformView {
-    let badgeSize: CGFloat = 28
-    #if canImport(AppKit)
-      let overlay = PassthroughView(frame: frame)
-      overlay.wantsLayer = true
-      overlay.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.25).cgColor
-
-      let badge = NSView(
-        frame: CGRect(
-          x: (frame.width - badgeSize) / 2, y: (frame.height - badgeSize) / 2,
-          width: badgeSize, height: badgeSize))
-      badge.wantsLayer = true
-      badge.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.6).cgColor
-      badge.layer?.cornerRadius = badgeSize / 2
-      badge.autoresizingMask = [.minXMargin, .maxXMargin, .minYMargin, .maxYMargin]
-
-      let spinner = NSProgressIndicator(frame: CGRect(x: 6, y: 6, width: 16, height: 16))
-      spinner.style = .spinning
-      spinner.controlSize = .small
-      spinner.isIndeterminate = true
-      spinner.appearance = NSAppearance(named: .darkAqua)
-      spinner.setAccessibilityLabel("Loading")
-      spinner.startAnimation(nil)
-      badge.addSubview(spinner)
-      overlay.addSubview(badge)
-      return overlay
-    #else
-      let overlay = UIView(frame: frame)
-      overlay.backgroundColor = UIColor.black.withAlphaComponent(0.25)
-      overlay.isUserInteractionEnabled = false
-
-      let badge = UIView(
-        frame: CGRect(
-          x: (frame.width - badgeSize) / 2, y: (frame.height - badgeSize) / 2,
-          width: badgeSize, height: badgeSize))
-      badge.backgroundColor = UIColor.black.withAlphaComponent(0.6)
-      badge.layer.cornerRadius = badgeSize / 2
-      badge.autoresizingMask = [.flexibleLeftMargin, .flexibleRightMargin, .flexibleTopMargin, .flexibleBottomMargin]
-
-      let spinner = UIActivityIndicatorView(style: .medium)
-      spinner.color = .white
-      spinner.center = CGPoint(x: badgeSize / 2, y: badgeSize / 2)
-      spinner.accessibilityLabel = "Loading"
-      spinner.startAnimating()
-      badge.addSubview(spinner)
-      overlay.addSubview(badge)
-      return overlay
-    #endif
   }
 }

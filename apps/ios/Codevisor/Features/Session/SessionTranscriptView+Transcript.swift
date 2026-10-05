@@ -10,35 +10,15 @@ import UIKit
 extension SessionTranscriptView {
   /// Inline images preview in Quick Look; their menu opens a tab or copies.
   var transcriptImageActions: MarkdownImageActions {
-    MarkdownImageActions(
-      open: { url in
-        guard let file = markdownImagePreviewFile(url.relativeString) else { return nil }
-        guard let attachmentImages else { return Task {} }
-        return Task {
-          guard let url = await materializeQuickLookURL(for: file, store: attachmentImages) else { return }
-          linkedQuickLookURL = url
-        }
-      },
-      openInNewTab: { url in _ = openFileDocument?(url.relativeString) },
-      copy: { url in
-        guard let file = markdownImagePreviewFile(url.relativeString), let attachmentImages else { return }
-        Task { _ = await AttachmentClipboard.copy(file, using: attachmentImages) }
-      })
+    TranscriptMarkdownImageOpener.actions(
+      quickLook: quickLook, attachmentImages: attachmentImages, openDocument: openFileDocument)
   }
 
   /// Opens a linked workspace file as a document tab, or in Quick Look when
   /// no tab can host it; web links fall through to the platform.
   func openMarkdownLink(_ url: URL) -> Bool {
-    if openFileDocument?(url.relativeString) == true { return true }
-    guard let file = markdownLinkPreviewFile(url) else { return false }
-    guard let attachmentImages else { return true }
-    Task {
-      guard let url = await materializeQuickLookURL(for: file, store: attachmentImages) else {
-        return
-      }
-      linkedQuickLookURL = url
-    }
-    return true
+    TranscriptMarkdownLinkOpener.open(
+      url, quickLook: quickLook, attachmentImages: attachmentImages, openDocument: openFileDocument)
   }
 
   var transcript: some View {
@@ -108,6 +88,7 @@ extension SessionTranscriptView {
               .reportsStreamingTextAnimationActivity()
               .environment(\.theme, theme)
               .environment(\.attachmentImages, attachmentImages)
+              .environment(\.quickLook, quickLook)
               .environment(\.openFileDocument, openFileDocument)
               .environment(\.openSubagent, openSubagent)
               .markdownImageActions(transcriptImageActions)

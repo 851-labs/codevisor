@@ -1,30 +1,69 @@
-import AppKit
-import Observation
-import UniformTypeIdentifiers
 import CodevisorCore
-import CodevisorUI
+import Foundation
+import Observation
+import SwiftUI
+import UniformTypeIdentifiers
 import os
 
-/// Materializes attachment bytes as local files for SwiftUI's system-owned
-/// Quick Look presentation. The native modifier owns all window chrome,
-/// transitions, keyboard behavior, and dismissal.
+/// What Quick Look is showing: a staged file on hand (composer drafts) or a
+/// remote file fetched from the session's server (history or a live path).
+public enum QuickLookItem: Equatable, Sendable {
+  case local(fileURL: URL, name: String, mimeType: String)
+  case remote(source: PreviewFile.Source, name: String, mimeType: String)
+
+  public init(_ file: PreviewFile) {
+    self = .remote(source: file.source, name: file.name, mimeType: file.mimeType)
+  }
+
+  public var name: String {
+    switch self {
+    case let .local(_, name, _): return name
+    case let .remote(_, name, _): return name
+    }
+  }
+
+  public var mimeType: String {
+    switch self {
+    case let .local(_, _, mimeType): return mimeType
+    case let .remote(_, _, mimeType): return mimeType
+    }
+  }
+}
+
+extension EnvironmentValues {
+  @Entry public var quickLook: QuickLookController? = nil
+}
+
+/// Materializes attachment bytes as local files for the platform's Quick
+/// Look presentation, shared by macOS and iOS. Each app binds `previewURL`
+/// to its native presenter, which owns chrome, transitions, and dismissal;
+/// everything before that (download, temp file, loading state) lives here.
 @MainActor
 @Observable
-final class QuickLookController {
-  private(set) var previewURL: URL?
+public final class QuickLookController {
+  public private(set) var previewURL: URL?
   /// The item whose bytes are being fetched and written for Quick Look, so
   /// its thumbnail can show that the click is in progress.
-  private(set) var loadingItem: QuickLookItem?
+  public private(set) var loadingItem: QuickLookItem?
+  /// Tells the user an item could not be prepared. Platform UI (an alert)
+  /// belongs to the app; without a handler the failure is only logged.
+  @ObservationIgnored public var onFailure: (@MainActor (_ name: String, _ error: Error) -> Void)?
   /// Quick Look may continue reading a replaced preview URL asynchronously,
   /// so retain every directory used by the active system preview until it closes.
   private var temporaryDirectories: [URL] = []
   private var presentationTask: Task<Void, Never>?
   private var presentationID = UUID()
 
+  public init() {}
+
+  public func isLoading(_ item: QuickLookItem) -> Bool {
+    loadingItem == item
+  }
+
   /// Returns the preparation work, which finishes once the preview is
   /// showing, has failed, or was superseded by another item.
   @discardableResult
-  func present(_ item: QuickLookItem, attachmentStore: AttachmentImageStore?) -> Task<Void, Never> {
+  public func present(_ item: QuickLookItem, attachmentStore: AttachmentImageStore?) -> Task<Void, Never> {
     presentationTask?.cancel()
     presentationID = UUID()
     let presentationID = presentationID
@@ -79,7 +118,7 @@ final class QuickLookController {
 
   /// Called by the native SwiftUI Quick Look modifier. The system writes nil
   /// when the user closes its preview.
-  func updatePreviewURL(_ url: URL?) {
+  public func updatePreviewURL(_ url: URL?) {
     guard previewURL != url else { return }
     previewURL = url
     guard url == nil else { return }
@@ -91,7 +130,7 @@ final class QuickLookController {
     scheduleTemporaryDirectoryCleanup()
   }
 
-  func dismiss() {
+  public func dismiss() {
     updatePreviewURL(nil)
   }
 
@@ -112,16 +151,7 @@ final class QuickLookController {
     Log.attachments.error(
       "Quick Look preparation failed for \(name, privacy: .public): \(String(describing: error), privacy: .public)"
     )
-    let alert = NSAlert()
-    alert.alertStyle = .warning
-    alert.messageText = "Unable to Preview Attachment"
-    alert.informativeText = "\(name) could not be prepared for Quick Look. \(error.localizedDescription)"
-    alert.addButton(withTitle: "OK")
-    if let window = NSApp.keyWindow ?? NSApp.mainWindow {
-      alert.beginSheetModal(for: window)
-    } else {
-      alert.runModal()
-    }
+    onFailure?(name, error)
   }
 
   /// The bytes to preview: fetched from the server, or a composer's staged

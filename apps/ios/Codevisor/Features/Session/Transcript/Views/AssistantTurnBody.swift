@@ -17,10 +17,10 @@ struct AssistantTurnBody: View {
   @Environment(\.transcriptInvalidateRowMeasurement)
   private var invalidateRowMeasurement
   @Environment(\.attachmentImages) private var attachmentImages
+  @Environment(\.quickLook) private var quickLook
   @Environment(\.streamingTextAnimationVisibility) private var textAnimationVisibility
   @State private var textAnimationPresentation = StreamingTextAnimationPresentation()
   @State private var hasAutoCollapsed: Bool
-  @State private var linkedQuickLookURL: URL?
   let turn: AssistantTurn
   /// Stable identity for the turn's disclosure keys (the message id).
   let turnId: UUID
@@ -135,7 +135,6 @@ struct AssistantTurnBody: View {
     .markdownLinkHandler(openMarkdownLink)
     .markdownImageActions(imageActions)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .attachmentQuickLookPreview($linkedQuickLookURL)
     .onChange(of: isGenerating) { _, generating in
       if generating {
         if !hasAutoCollapsed {
@@ -263,33 +262,13 @@ struct AssistantTurnBody: View {
 
   /// Inline images preview in Quick Look; their menu opens a tab or copies.
   private var imageActions: MarkdownImageActions {
-    MarkdownImageActions(
-      open: { url in
-        guard let file = markdownImagePreviewFile(url.relativeString) else { return nil }
-        guard let attachmentImages else { return Task {} }
-        return Task {
-          guard let url = await materializeQuickLookURL(for: file, store: attachmentImages) else { return }
-          linkedQuickLookURL = url
-        }
-      },
-      openInNewTab: { url in _ = openFileDocument?(url.relativeString) },
-      copy: { url in
-        guard let file = markdownImagePreviewFile(url.relativeString), let attachmentImages else { return }
-        Task { _ = await AttachmentClipboard.copy(file, using: attachmentImages) }
-      })
+    TranscriptMarkdownImageOpener.actions(
+      quickLook: quickLook, attachmentImages: attachmentImages, openDocument: openFileDocument)
   }
 
   private func openMarkdownLink(_ url: URL) -> Bool {
-    if openFileDocument?(url.relativeString) == true { return true }
-    guard let file = markdownLinkPreviewFile(url) else { return false }
-    guard let attachmentImages else { return true }
-    Task {
-      guard let url = await materializeQuickLookURL(for: file, store: attachmentImages) else {
-        return
-      }
-      linkedQuickLookURL = url
-    }
-    return true
+    TranscriptMarkdownLinkOpener.open(
+      url, quickLook: quickLook, attachmentImages: attachmentImages, openDocument: openFileDocument)
   }
 
   private func autoCollapse() {

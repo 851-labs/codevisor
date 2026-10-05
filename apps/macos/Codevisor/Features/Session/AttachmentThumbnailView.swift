@@ -2,34 +2,8 @@ import SwiftUI
 import AppKit
 import CodevisorCore
 import CodevisorUI
+import StreamMarkdown
 import UniformTypeIdentifiers
-
-// MARK: - Quick Look presentation
-
-/// What Quick Look is showing: a staged file on hand (composer drafts) or a
-/// remote file fetched from the session's server (history or a live path).
-enum QuickLookItem: Equatable {
-  case local(fileURL: URL, name: String, mimeType: String)
-  case remote(source: PreviewFile.Source, name: String, mimeType: String)
-
-  var name: String {
-    switch self {
-    case let .local(_, name, _): return name
-    case let .remote(_, name, _): return name
-    }
-  }
-
-  var mimeType: String {
-    switch self {
-    case let .local(_, _, mimeType): return mimeType
-    case let .remote(_, _, mimeType): return mimeType
-    }
-  }
-}
-
-extension EnvironmentValues {
-  @Entry var quickLook: QuickLookController? = nil
-}
 
 // MARK: - Thumbnails
 
@@ -204,19 +178,15 @@ struct AttachmentThumbnailView: View {
     _ = openFileDocument?(FileDocumentLocation.target(for: file))
   }
 
-  private var quickLookItem: QuickLookItem {
-    .remote(source: file.source, name: file.name, mimeType: file.mimeType)
-  }
-
   private var isLoadingPreview: Bool {
-    quickLook?.loadingItem == quickLookItem
+    quickLook?.isLoading(QuickLookItem(file)) ?? false
   }
 
   private func preview() {
     // A second click while the file is still downloading would only
     // restart the same download.
     guard !isLoadingPreview else { return }
-    quickLook?.present(quickLookItem, attachmentStore: attachmentImages)
+    quickLook?.present(QuickLookItem(file), attachmentStore: attachmentImages)
   }
 }
 

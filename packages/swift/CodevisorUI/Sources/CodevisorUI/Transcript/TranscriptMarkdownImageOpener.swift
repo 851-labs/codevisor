@@ -1,5 +1,4 @@
 import CodevisorCore
-import CodevisorUI
 import Foundation
 import StreamMarkdown
 import TranscriptKit
@@ -8,8 +7,8 @@ import TranscriptKit
 /// Quick Look (a text link to the same file opens a document tab instead),
 /// and its menu can open that tab or copy the original bytes.
 @MainActor
-enum TranscriptMarkdownImageOpener {
-  static func actions(
+public enum TranscriptMarkdownImageOpener {
+  public static func actions(
     quickLook: QuickLookController?,
     attachmentImages: AttachmentImageStore?,
     openDocument: OpenFileDocumentAction?
@@ -18,9 +17,7 @@ enum TranscriptMarkdownImageOpener {
       open: { url in
         guard let file = previewFile(url) else { return nil }
         guard let quickLook else { return Task {} }
-        return quickLook.present(
-          .remote(source: file.source, name: file.name, mimeType: file.mimeType),
-          attachmentStore: attachmentImages)
+        return quickLook.present(QuickLookItem(file), attachmentStore: attachmentImages)
       },
       openInNewTab: { url in _ = openDocument?(url.relativeString) },
       copy: { url in
@@ -31,7 +28,7 @@ enum TranscriptMarkdownImageOpener {
 
   /// The workspace file or attachment an image source points at; nil for
   /// web images, which have no local bytes to preview or copy.
-  static func previewFile(_ url: URL) -> PreviewFile? {
+  public static func previewFile(_ url: URL) -> PreviewFile? {
     markdownImagePreviewFile(url.relativeString)
   }
 }

@@ -1,4 +1,4 @@
-import CodevisorUI
+import CodevisorCore
 import Foundation
 import TranscriptKit
 
@@ -9,8 +9,8 @@ import TranscriptKit
 /// Markdown host, so every rendering of a reply handles file links the same
 /// way.
 @MainActor
-enum TranscriptMarkdownLinkOpener {
-  static func open(
+public enum TranscriptMarkdownLinkOpener {
+  public static func open(
     _ url: URL,
     quickLook: QuickLookController?,
     attachmentImages: AttachmentImageStore?,
@@ -21,10 +21,7 @@ enum TranscriptMarkdownLinkOpener {
       let file = markdownAttachmentFile(url.relativeString)
         ?? markdownLocalFilePath(url.relativeString).map({ PreviewFile(serverPath: $0) })
     else { return false }
-    quickLook?.present(
-      .remote(source: file.source, name: file.name, mimeType: file.mimeType),
-      attachmentStore: attachmentImages
-    )
+    quickLook?.present(QuickLookItem(file), attachmentStore: attachmentImages)
     return true
   }
 }

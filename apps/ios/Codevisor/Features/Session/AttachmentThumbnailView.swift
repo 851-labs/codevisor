@@ -38,15 +38,13 @@ struct AttachmentThumbnailView: View {
   @Environment(\.openFileDocument) private var openFileDocument
   @Environment(\.theme) private var theme
   @Environment(\.attachmentImages) private var attachmentImages
+  @Environment(\.quickLook) private var quickLook
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   let file: PreviewFile
   var inline: Bool
 
   @State private var image: UIImage?
   @State private var geometry = AttachmentPreviewGeometryState()
-  @State private var quickLookURL: URL?
-  /// The download that will open Quick Look; non-nil while it runs.
-  @State private var previewTask: Task<Void, Never>?
 
   init(attachment: Attachment, inline: Bool = false) {
     file = PreviewFile(attachment: attachment)
@@ -108,7 +106,6 @@ struct AttachmentThumbnailView: View {
       key: AttachmentGeometryReadinessPreferenceKey.self,
       value: inline && file.hasVisualPreview && !geometry.isResolved ? 1 : 0
     )
-    .attachmentQuickLookPreview($quickLookURL)
   }
 
   private var imageThumb: some View {
@@ -207,26 +204,19 @@ struct AttachmentThumbnailView: View {
     .accessibilityValue(isLoadingPreview ? "Loading" : "")
   }
 
-  /// Quick Look needs a file URL: fetch the bytes and materialize them under
-  /// the file's real filename so the preview titles correctly.
   private func openInNewTab() {
     _ = openFileDocument?(FileDocumentLocation.target(for: file))
   }
 
-  private var isLoadingPreview: Bool { previewTask != nil }
+  private var isLoadingPreview: Bool {
+    quickLook?.isLoading(QuickLookItem(file)) ?? false
+  }
 
   private func preview() {
     // A second tap while the file is still downloading would only start
     // the same download again.
-    guard previewTask == nil, let attachmentImages else { return }
-    let file = self.file
-    previewTask = Task {
-      defer { previewTask = nil }
-      guard let url = await materializeQuickLookURL(for: file, store: attachmentImages) else {
-        return
-      }
-      quickLookURL = url
-    }
+    guard !isLoadingPreview else { return }
+    quickLook?.present(QuickLookItem(file), attachmentStore: attachmentImages)
   }
 }
 
@@ -241,47 +231,3 @@ private struct AttachmentThumbnailLoadID: Hashable {
 }
 
 // PDFBadge and VideoPlayBadge are shared with the macOS app via CodevisorUI.
-
-// MARK: - Quick Look
-
-/// Fetches a transcript file and writes it under its real filename because
-/// QLPreviewController presents file URLs rather than in-memory bytes.
-@MainActor
-/// The workspace file a Markdown link points at, or nil for web links and
-/// fragments, which the platform opens instead.
-func markdownLinkPreviewFile(_ url: URL) -> PreviewFile? {
-  if let file = markdownAttachmentFile(url.relativeString) { return file }
-  guard let path = markdownLocalFilePath(url.relativeString) else { return nil }
-  return PreviewFile(serverPath: path)
-}
-
-func materializeQuickLookURL(
-  for file: PreviewFile,
-  store: AttachmentImageStore
-) async -> URL? {
-  guard let data = try? await store.data(for: file.source) else { return nil }
-  return await materializeQuickLookURL(data: data, name: file.name)
-}
-
-/// Writes fetched attachment bytes under their display filename for Quick
-/// Look.
-@MainActor
-private func materializeQuickLookURL(data: Data, name: String) async -> URL? {
-  guard !data.isEmpty else { return nil }
-  let directory = FileManager.default.temporaryDirectory
-    .appendingPathComponent("Codevisor-QuickLook", isDirectory: true)
-    .appendingPathComponent(UUID().uuidString, isDirectory: true)
-  let lastPathComponent = (name as NSString).lastPathComponent
-  let filename = lastPathComponent.isEmpty ? "Attachment" : lastPathComponent
-  let url = directory.appendingPathComponent(filename)
-  let written = await Task.detached(priority: .userInitiated) { () -> Bool in
-    do {
-      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-      try data.write(to: url, options: .atomic)
-      return true
-    } catch {
-      return false
-    }
-  }.value
-  return written ? url : nil
-}

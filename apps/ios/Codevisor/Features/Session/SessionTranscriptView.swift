@@ -97,8 +97,8 @@ struct SessionTranscriptView: View {
   /// Fetches and caches transcript attachment previews via the controller's
   /// authenticated client.
   @State var attachmentImages: AttachmentImageStore?
-  /// Quick Look for a workspace file linked from any transcript row.
-  @State var linkedQuickLookURL: URL?
+  /// Downloads and presents Quick Look previews for every row in this chat.
+  @State var quickLook = QuickLookController()
   @State var scrollCommand = TranscriptScrollCommand()
   @State var historyLoadTask: Task<Void, Never>?
   @State var olderHistoryPresentation = TranscriptPaginationPresentationGate()
@@ -133,7 +133,9 @@ struct SessionTranscriptView: View {
 
   var body: some View {
     chat
-      .attachmentQuickLookPreview($linkedQuickLookURL)
+      .attachmentQuickLookPreview(
+        Binding(get: { quickLook.previewURL }, set: { quickLook.updatePreviewURL($0) })
+      )
       .acknowledgesPresentedTurnAttention(
         controller: controller,
         presentationRole: presentationRole
@@ -202,6 +204,7 @@ struct SessionTranscriptView: View {
         }
       }
       .environment(\.attachmentImages, attachmentImages)
+      .environment(\.quickLook, quickLook)
       .task(id: transcriptProjectionRequest) {
         let request = transcriptProjectionRequest
         let key = request.key
