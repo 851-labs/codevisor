@@ -212,12 +212,12 @@ struct SimulatorDeviceCanvas: View {
   }
 
   /// The signed turn, in degrees, from one angle to another the short way round (-180 to 180).
-  static func shortestTurn(from old: Double, to new: Double) -> Double {
+  nonisolated static func shortestTurn(from old: Double, to new: Double) -> Double {
     (new - old + 540).truncatingRemainder(dividingBy: 360) - 180
   }
 
   /// `rect` inside a canvas of `size`, after turning the canvas clockwise by quarter turns.
-  static func rotate(_ rect: CGRect, in size: CGSize, quarterTurns: Int) -> CGRect {
+  nonisolated static func rotate(_ rect: CGRect, in size: CGSize, quarterTurns: Int) -> CGRect {
     switch ((quarterTurns % 4) + 4) % 4 {
     case 1: CGRect(x: size.height - rect.maxY, y: rect.minX, width: rect.height, height: rect.width)
     case 2: CGRect(x: size.width - rect.maxX, y: size.height - rect.maxY, width: rect.width, height: rect.height)

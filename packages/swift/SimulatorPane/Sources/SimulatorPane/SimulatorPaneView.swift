@@ -86,7 +86,7 @@ public struct SimulatorPaneView: View {
     } else if model.activity != nil {
       ProgressView(model.activity ?? "")
     } else {
-      SimulatorDeviceGallery(model: model)
+      SimulatorDeviceChooser(model: model)
     }
   }
 }

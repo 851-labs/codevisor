@@ -1,44 +1,49 @@
 import CodevisorClient
+import CodevisorUI
 import SwiftUI
 
-/// Every simulator on the Mac, to add, rename and delete. On a Mac it's the app's usual managed
-/// list (selection, a + − bar, right-click actions, Delete key); on an iPhone or iPad, swipe to
-/// delete and + in the toolbar.
+/// Every simulator on the Mac, to add, rename and delete. On a Mac it's laid out as the app's
+/// settings lists are: a grouped list whose rows keep their actions in a ⋯ menu, New Simulator…
+/// under it, and Done in the sheet's footer. On an iPhone or iPad it's an inset grouped list with
+/// swipe actions, + in the navigation bar and the system close button.
 struct SimulatorManagerSheet: View {
   let model: SimulatorPaneModel
   let done: () -> Void
-  @State private var selection = Set<String>()
   @State private var creating = false
   @State private var renaming: ServerSimulatorDevice?
   @State private var name = ""
-  @State private var pendingDelete: [ServerSimulatorDevice] = []
+  @State private var pendingDelete: ServerSimulatorDevice?
+  #if os(macOS)
+    @Environment(\.theme) private var theme
+  #endif
 
-  private var devices: [ServerSimulatorDevice] { model.list?.devices ?? [] }
+  private var devices: [ServerSimulatorDevice] { SimulatorFamilies.sorted(model.list?.devices ?? []) }
 
   var body: some View {
     NavigationStack {
-      VStack(spacing: 0) {
-        list
-        #if os(macOS)
-          Divider()
-          addRemoveBar
-        #endif
-      }
-      .navigationTitle("Simulators")
-      .toolbar {
-        ToolbarItem(placement: .confirmationAction) { Button("Done", action: done) }
+      list
+        .navigationTitle("Simulators")
         #if os(iOS)
-          ToolbarItem(placement: .primaryAction) {
-            Button("New Simulator", systemImage: "plus") { creating = true }
+          .navigationBarTitleDisplayMode(.inline)
+          .toolbar {
+            ToolbarItem(placement: .cancellationAction) { Button(role: .close, action: done) }
+            ToolbarItem(placement: .primaryAction) {
+              Button("New Simulator", systemImage: "plus") { creating = true }
+            }
           }
         #endif
-      }
     }
     #if os(macOS)
-      .frame(minWidth: 460, idealWidth: 480, minHeight: 440, idealHeight: 520)
+      .safeAreaInset(edge: .bottom, spacing: 0) {
+        SheetFooter {
+          Button("Done", action: done).keyboardShortcut(.defaultAction)
+        }
+      }
+      .sheetSize(.list)
+      .themedSurface(.sheet)
     #endif
     .sheet(isPresented: $creating) {
-      SimulatorCreateSheet(model: model, showsCreated: false) { creating = false }
+      SimulatorCreateSheet(model: model) { creating = false }
     }
     .alert(
       "Rename Simulator",
@@ -50,104 +55,106 @@ struct SimulatorManagerSheet: View {
       Button("Rename") { model.rename(device.udid, to: name) }
     }
     .confirmationDialog(
-      deleteTitle,
-      isPresented: Binding(get: { !pendingDelete.isEmpty }, set: { if !$0 { pendingDelete = [] } }),
-      titleVisibility: .visible
-    ) {
-      Button(pendingDelete.count == 1 ? "Delete Simulator" : "Delete Simulators", role: .destructive) {
-        let udids = Set(pendingDelete.map(\.udid))
-        selection.subtract(udids)
-        model.delete(udids)
-      }
-    } message: {
-      Text(
-        pendingDelete.count == 1
-          ? "Its apps and data are removed from the Mac." : "Their apps and data are removed from the Mac.")
-    }
-    // A device that's gone (deleted here or elsewhere) can't stay selected.
-    .onChange(of: devices.map(\.udid)) { _, udids in selection.formIntersection(udids) }
-  }
-
-  private var list: some View {
-    List(selection: $selection) {
-      let sorted = SimulatorFamilies.sorted(devices)
-      ForEach(sorted) { device in
-        SimulatorManagerRow(device: device, deleting: model.deleting.contains(device.udid))
-          .tag(device.udid)
-      }
-      .onDelete { offsets in pendingDelete = offsets.map { sorted[$0] } }
-    }
-    .contextMenu(forSelectionType: String.self) { udids in
-      actions(for: devices.filter { udids.contains($0.udid) })
-    }
-    #if os(macOS)
-      .listStyle(.inset)
-      .onDeleteCommand { requestDelete(selection) }
-    #endif
-    .overlay {
-      if devices.isEmpty {
-        ContentUnavailableView {
-          Label("No Simulators", systemImage: "iphone")
-        } description: {
-          Text("Add one to run apps on this Mac.")
-        }
-      }
-    }
-  }
-
-  @ViewBuilder private func actions(for chosen: [ServerSimulatorDevice]) -> some View {
-    if chosen.count == 1, let device = chosen.first {
-      Button("Rename…", systemImage: "pencil") {
-        name = device.name
-        renaming = device
-      }
-    }
-    if !chosen.isEmpty {
-      Button(
-        chosen.count == 1 ? "Delete…" : "Delete \(chosen.count) Simulators…", systemImage: "trash", role: .destructive
-      ) {
-        pendingDelete = chosen
-      }
+      "Delete \(pendingDelete?.name ?? "Simulator")?",
+      isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
+      titleVisibility: .visible,
+      presenting: pendingDelete
+    ) { device in
+      Button("Delete Simulator", role: .destructive) { model.delete([device.udid]) }
+    } message: { _ in
+      Text("Its apps and data are removed from the Mac.")
     }
   }
 
   #if os(macOS)
-    /// The app's add/remove bar under a managed list.
-    private var addRemoveBar: some View {
-      HStack(spacing: 10) {
-        Button {
-          creating = true
-        } label: {
-          Image(systemName: "plus")
+    private var list: some View {
+      Form {
+        Section {
+          if devices.isEmpty {
+            Text("No Simulators").foregroundStyle(.secondary).frame(maxWidth: .infinity)
+          } else {
+            ForEach(devices) { device in row(device) }
+          }
+        } footer: {
+          // Under the list it acts on, trailing, as the settings lists' Add buttons are.
+          HStack {
+            Spacer(minLength: 0)
+            Button {
+              creating = true
+            } label: {
+              Label("New Simulator…", systemImage: "plus")
+            }
+            .settingsActionTint(theme)
+          }
+          .font(.body)
         }
-        .help("New Simulator")
-        .accessibilityLabel("New Simulator")
-        Button {
-          requestDelete(selection)
-        } label: {
-          Image(systemName: "minus")
-        }
-        .disabled(selection.isEmpty)
-        .help("Delete Simulator")
-        .accessibilityLabel("Delete Simulator")
-        Spacer()
       }
-      .buttonStyle(.borderless)
-      .padding(10)
+      .formStyle(.grouped)
+    }
+
+    private func row(_ device: ServerSimulatorDevice) -> some View {
+      let deleting = model.deleting.contains(device.udid)
+      return HStack(spacing: 10) {
+        SimulatorManagerRow(device: device, deleting: deleting)
+        Menu {
+          actions(for: device)
+        } label: {
+          Image(systemName: "ellipsis.circle").foregroundStyle(.secondary)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .settingsActionTint(theme)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .disabled(deleting)
+        .help("Simulator Actions")
+        .accessibilityLabel("Actions for \(device.name)")
+      }
+      .contextMenu { if !deleting { actions(for: device) } }
+    }
+  #else
+    private var list: some View {
+      List {
+        ForEach(devices) { device in
+          let deleting = model.deleting.contains(device.udid)
+          SimulatorManagerRow(device: device, deleting: deleting)
+            .swipeActions(allowsFullSwipe: false) {
+              if !deleting {
+                Button("Delete", systemImage: "trash", role: .destructive) { pendingDelete = device }
+                Button("Rename", systemImage: "pencil") { rename(device) }
+              }
+            }
+            .contextMenu { if !deleting { actions(for: device) } }
+        }
+      }
+      .listStyle(.insetGrouped)
+      .overlay {
+        if devices.isEmpty {
+          ContentUnavailableView {
+            Label("No Simulators", systemImage: "iphone")
+          } description: {
+            Text("Add one to run apps on this Mac.")
+          } actions: {
+            Button("New Simulator…") { creating = true }
+          }
+        }
+      }
     }
   #endif
 
-  private func requestDelete(_ udids: Set<String>) {
-    pendingDelete = devices.filter { udids.contains($0.udid) }
+  @ViewBuilder private func actions(for device: ServerSimulatorDevice) -> some View {
+    Button("Rename…", systemImage: "pencil") { rename(device) }
+    Divider()
+    Button("Delete…", systemImage: "trash", role: .destructive) { pendingDelete = device }
   }
 
-  private var deleteTitle: String {
-    pendingDelete.count == 1
-      ? "Delete \(pendingDelete[0].name)?" : "Delete \(pendingDelete.count) Simulators?"
+  private func rename(_ device: ServerSimulatorDevice) {
+    name = device.name
+    renaming = device
   }
 }
 
-/// A simulator in the manager: its name, then OS and whether it's running or being deleted.
+/// A simulator in a list: its name, then its OS and whether it's running or being deleted.
 struct SimulatorManagerRow: View {
   let device: ServerSimulatorDevice
   let deleting: Bool

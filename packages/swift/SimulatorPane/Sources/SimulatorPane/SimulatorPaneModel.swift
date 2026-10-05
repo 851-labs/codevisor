@@ -266,19 +266,13 @@ public final class SimulatorPaneModel {
     }
   }
 
-  /// Creates a simulator. From the pane it's shown here, started; from Manage Simulators it's
-  /// only added to the list.
-  public func create(name: String, deviceType: String, runtime: String, show: Bool = true) {
-    if show { activity = "Creating…" }
+  /// Creates a simulator (from Manage Simulators): it joins the list without changing the pane.
+  public func create(name: String, deviceType: String, runtime: String) {
     Task {
-      defer { if show { activity = nil } }
       do {
-        let created = try await client.createSimulator(
+        _ = try await client.createSimulator(
           name: name, deviceTypeIdentifier: deviceType, runtimeIdentifier: runtime)
         await refresh()
-        guard show else { return }
-        choose(created)
-        perform(.boot)
       } catch {
         alert = Self.message(for: error)
       }

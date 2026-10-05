@@ -1,3 +1,7 @@
+#if os(macOS)
+  import Autocomplete
+  import CodevisorUI
+#endif
 import CodevisorClient
 import SwiftUI
 
@@ -18,79 +22,92 @@ enum SimulatorFamilies {
   }
 }
 
-/// A pane with no device yet: the Mac's simulators as cards to pick from.
-struct SimulatorDeviceGallery: View {
+/// A pane with no device yet: the Mac's simulators to choose from. On a Mac it's the title's
+/// device picker, centered on the pane as an empty File pane shows its file picker; on an iPhone or
+/// iPad it's an inset grouped list, as the File pane's browser is there.
+struct SimulatorDeviceChooser: View {
   let model: SimulatorPaneModel
-  @State private var creating = false
 
-  var body: some View {
-    let devices = model.list?.devices ?? []
-    if devices.isEmpty {
-      ContentUnavailableView {
-        Label("No Simulators", systemImage: "iphone")
-      } description: {
-        Text("This Mac has no simulators yet.")
-      } actions: {
-        Button("New Simulator…") { creating = true }.buttonStyle(.glassProminent)
+  var body: some View { chooser }
+
+  #if os(macOS)
+    @Environment(\.theme) private var theme
+    @State private var query = ""
+    @State private var focus = Autocomplete.InputFocus()
+
+    private var chooser: some View {
+      // Centered while it fits, scrolling when the pane is shorter (as MacFileOpenPage).
+      GeometryReader { geometry in
+        ScrollView {
+          Autocomplete.Suggestions(query: $query, focus: focus) {
+            SimulatorDevicePicker.entries(model: model)
+          }
+          .autocompleteStyle(Self.style)
+          .autocompleteSearchLabel("Search simulators")
+          .autocompleteEmptyMessage("No matching simulators", noItems: "No simulators")
+          .composerGlassSurface(cornerRadius: 18)
+          .padding(20)
+          .frame(maxWidth: .infinity)
+          .frame(minHeight: geometry.size.height)
+        }
       }
-      .sheet(isPresented: $creating) { SimulatorCreateSheet(model: model) { creating = false } }
-    } else {
-      ScrollView {
-        VStack(alignment: .leading, spacing: 22) {
-          Text("Choose a Simulator").font(.title2.weight(.semibold))
-          LazyVGrid(columns: [GridItem(.adaptive(minimum: 150, maximum: 200), spacing: 12)], spacing: 12) {
-            ForEach(SimulatorFamilies.sorted(devices)) { device in
-              SimulatorDeviceCard(device: device) { model.choose(device.udid) }
+      .background(theme.paneBackground)
+    }
+
+    private static let style: Autocomplete.Style = {
+      var metrics = Autocomplete.Metrics.xcodeMenu
+      metrics.maximumWidth = 480
+      metrics.maximumHeight = 480
+      return Autocomplete.Style(metrics: metrics)
+    }()
+  #else
+    private var devices: [ServerSimulatorDevice] { SimulatorFamilies.sorted(model.list?.devices ?? []) }
+
+    private var chooser: some View {
+      List {
+        Section {
+          ForEach(devices) { device in
+            Button {
+              model.choose(device.udid)
+            } label: {
+              // Choosing opens the device, so it reads as a drill-in row (as the File browser's
+              // folders do).
+              HStack {
+                SimulatorManagerRow(device: device, deleting: model.deleting.contains(device.udid))
+                Image(systemName: "chevron.right")
+                  .font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                  .accessibilityHidden(true)
+              }
             }
           }
-          Button("New Simulator…", systemImage: "plus") { creating = true }
-            .buttonStyle(.glass)
         }
-        .padding(.horizontal, 24)
-        .padding(.top, 24)
-        .padding(.bottom, 24)
-        .frame(maxWidth: 760, alignment: .leading)
-        .frame(maxWidth: .infinity)
-      }
-      .sheet(isPresented: $creating) { SimulatorCreateSheet(model: model) { creating = false } }
-    }
-  }
-}
-
-struct SimulatorDeviceCard: View {
-  let device: ServerSimulatorDevice
-  let choose: () -> Void
-
-  var body: some View {
-    Button(action: choose) {
-      VStack(spacing: 10) {
-        Image(systemName: SimulatorArtwork.symbol(family: device.deviceType.productFamily))
-          .font(.system(size: 34))
-          .symbolRenderingMode(.hierarchical)
-          .foregroundStyle(.secondary)
-          .frame(height: 44)
-        VStack(spacing: 2) {
-          Text(device.name).font(.callout.weight(.medium)).lineLimit(2).multilineTextAlignment(.center)
-          HStack(spacing: 4) {
-            if device.isBooted { Circle().fill(.green).frame(width: 6, height: 6) }
-            Text(device.runtime.name).font(.caption).foregroundStyle(.secondary)
+        if !devices.isEmpty {
+          Section {
+            Button("Manage Simulators…", systemImage: "gearshape") { model.managingSimulators = true }
           }
         }
       }
-      .frame(maxWidth: .infinity, minHeight: 120)
-      .padding(4)
+      .listStyle(.insetGrouped)
+      .contentMargins(.top, 12, for: .scrollContent)
+      .overlay {
+        if devices.isEmpty {
+          ContentUnavailableView {
+            Label("No Simulators", systemImage: "iphone")
+          } description: {
+            Text("This Mac has no simulators yet.")
+          } actions: {
+            Button("Manage Simulators…") { model.managingSimulators = true }
+          }
+        }
+      }
+      .refreshable { await model.refresh() }
     }
-    .buttonStyle(.glass)
-    .buttonBorderShape(.roundedRectangle(radius: 16))
-    .accessibilityLabel("\(device.name), \(device.runtime.name)\(device.isBooted ? ", running" : "")")
-  }
+  #endif
 }
 
 /// Name, device type and OS for a new simulator.
 struct SimulatorCreateSheet: View {
   let model: SimulatorPaneModel
-  /// Whether the pane switches to the new simulator (it doesn't from Manage Simulators).
-  var showsCreated = true
   let done: () -> Void
   @State private var name = ""
   @State private var deviceType = ""
@@ -128,9 +145,7 @@ struct SimulatorCreateSheet: View {
           Button("Create") {
             let typeName = deviceTypes.first { $0.identifier == deviceType }?.name ?? "Simulator"
             let trimmed = name.trimmingCharacters(in: .whitespaces)
-            model.create(
-              name: trimmed.isEmpty ? typeName : trimmed, deviceType: deviceType, runtime: runtime,
-              show: showsCreated)
+            model.create(name: trimmed.isEmpty ? typeName : trimmed, deviceType: deviceType, runtime: runtime)
             done()
           }
           .disabled(deviceType.isEmpty || runtime.isEmpty)
