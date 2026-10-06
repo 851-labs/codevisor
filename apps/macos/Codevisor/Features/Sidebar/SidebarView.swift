@@ -4,7 +4,8 @@ import CodevisorTheming
 import CodevisorUI
 import os
 
-/// The sidebar: a New Chat action and fleet-wide workspaces with their tabs.
+/// The sidebar: a New Chat action and one row per fleet-wide workspace,
+/// optionally grouped by project or machine.
 ///
 /// Built on `ScrollView` + `VStack` (not `List`), because the sidebar-styled
 /// `List` outline coordinator crashes on the current macOS SDK.
@@ -19,9 +20,10 @@ struct SidebarView: View {
   @State private var pendingImport: PendingSessionImport?
   @State var renamingWorkspace: Workspace?
   @State var workspaceRenameTitle = ""
-  @State var renamingTab: SidebarTabRenameRequest?
-  @State var tabRenameTitle = ""
   @State var drag: SidebarDrag?
+  /// The row a keyboard step landed on, scrolled into view.
+  @State var revealedWorkspaceID: UUID?
+  @ClientPreference(SidebarGrouping.preferenceKey, default: SidebarGrouping.flat) var grouping
   @State var dragGeometry = SidebarDragGeometryStore()
   /// Collapsed by default: the archive is a place you go looking for
   /// something, not something that should crowd the live list.
@@ -46,8 +48,8 @@ struct SidebarView: View {
 
   private var sidebarContent: some View {
     VStack(spacing: 0) {
-      // Development identity and New chat stay pinned; workspace
-      // sections scroll together with their tabs.
+      // Development identity and New chat stay pinned; workspace rows
+      // scroll.
       VStack(alignment: .leading, spacing: 1) {
         if CodevisorAppVariant.isDevelopment {
           SidebarDevelopmentWorktreeRow()
@@ -65,8 +67,19 @@ struct SidebarView: View {
       .padding(.horizontal, 8)
       .padding(.top, 8)
 
-      ScrollView {
-        workspaceList(listedSidebarItems)
+      workspacesHeader
+        .padding(.horizontal, 8)
+
+      ScrollViewReader { proxy in
+        ScrollView {
+          workspaceGroupList(workspaceGroups)
+        }
+        .contextMenu { groupingPicker }
+        .onChange(of: revealedWorkspaceID) { _, id in
+          guard let id else { return }
+          withAnimation(Motion.quick(reduceMotion: reduceMotion)) { proxy.scrollTo(id) }
+          revealedWorkspaceID = nil
+        }
       }
       .scrollContentBackground(.hidden)
       .scrollBounceBehavior(.basedOnSize)
@@ -80,28 +93,71 @@ struct SidebarView: View {
     .overlay(alignment: .topLeading) { reorderOverlay }
   }
 
+  /// The Workspaces heading, carrying the grouping menu.
+  private var workspacesHeader: some View {
+    SidebarSectionHeader(title: "Workspaces") {
+      Menu {
+        groupingPicker
+      } label: {
+        Image(systemName: "line.3.horizontal.decrease")
+          .font(.callout.weight(.semibold))
+          .foregroundStyle(.secondary)
+      }
+      .menuStyle(.button)
+      .buttonStyle(.plain)
+      .fixedSize()
+      .help("Group sidebar")
+      .accessibilityLabel("Group sidebar")
+    }
+  }
+
+  /// Shared by the header's menu and the list's context menu.
+  private var groupingPicker: some View {
+    Picker("Group By", selection: $grouping) {
+      ForEach(SidebarGrouping.allCases, id: \.self) { option in
+        Text(option.title).tag(option)
+      }
+    }
+    .pickerStyle(.inline)
+  }
+
+  /// Each group's heading over its rows. A flat sidebar is one untitled
+  /// group.
+  private func workspaceGroupList(_ groups: [SidebarWorkspaceGroup]) -> some View {
+    VStack(alignment: .leading, spacing: 0) {
+      ForEach(groups) { group in
+        if let title = group.title {
+          SidebarSectionHeader(title: title, subtitle: group.subtitle)
+        }
+        workspaceList(group.items)
+      }
+    }
+    .padding(.horizontal, 8)
+    .padding(.bottom, 8)
+    .animation(Motion.listReflow(reduceMotion: reduceMotion), value: groups.map(\.id))
+  }
+
   /// Iterates the precomputed list only; each section resolves its own
   /// workspace, so this body never reads a workspace's contents.
   private func workspaceList(_ items: [WorkspaceSidebarItem]) -> some View {
     // A plain VStack: lazy row materialization re-measures the
     // content mid-bounce, which reads as random overscroll snaps.
     VStack(alignment: .leading, spacing: 1) {
-      // `.geometryGroup()` makes each section translate as one
+      // `.geometryGroup()` makes each row translate as one
       // rigid unit during reflows. Without it a row whose
       // content changes in the same transaction as its move
-      // (the state change that reorders a chat also restyles
-      // its leading icon) animates each subview's position
-      // independently, which reads as shearing/jitter.
+      // (the state change that reorders a workspace also
+      // restyles its leading icon) animates each subview's
+      // position independently, which reads as shearing/jitter.
       ForEach(items) { item in
         SidebarWorkspaceSection(
-          sidebar: self, item: item, selection: selection, draggingID: draggingID
+          sidebar: self, item: item, selection: selection, grouping: grouping, draggingID: draggingID
         )
         .geometryGroup()
         .transition(.identity)
+        .id(item.id)
       }
     }
-    .padding(.horizontal, 8)
-    .padding(.bottom, 8)
     .animation(Motion.listReflow(reduceMotion: reduceMotion), value: items.map(\.id))
   }
 
@@ -132,24 +188,18 @@ struct SidebarView: View {
           },
         )
       )
-      .modifier(
-        SidebarTabRenameAlert(
-          request: $renamingTab,
-          title: $tabRenameTitle,
-          onRename: { renameTab($0, to: $1) }
-        ))
   }
 
   private var sidebarConfiguredView: some View {
     sidebarAlertsView
-      // The docked sidebar answers ⇧⌘[ / ⇧⌘] (the drawer copy
-      // stays passive so there is exactly one owner of the step).
+      // The docked sidebar answers ⌥⌘↑ / ⌥⌘↓ from inside a workspace (the
+      // drawer copy stays passive so there is exactly one owner).
       .task(id: store.map(ObjectIdentifier.init)) {
         guard publishesSceneActions else { return }
-        store?.sidebarTabStepHandler = { offset in stepSidebarTab(offset) }
+        store?.workspaceStepHandler = { offset in stepWorkspace(offset) }
       }
       .onDisappear {
-        if publishesSceneActions { store?.sidebarTabStepHandler = nil }
+        if publishesSceneActions { store?.workspaceStepHandler = nil }
       }
       .focusedSceneValue(
         \.sidebarActions,
@@ -159,7 +209,7 @@ struct SidebarView: View {
           ? SidebarActions(
             newChat: { selection = .newChat(nil) },
             newProject: { startAddProject() },
-            stepTab: { _ = stepSidebarTab($0) }
+            stepWorkspace: { stepWorkspace($0) }
           )
           : nil
       )

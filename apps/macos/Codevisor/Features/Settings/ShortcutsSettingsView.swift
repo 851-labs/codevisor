@@ -52,7 +52,7 @@ private struct ShortcutRow: View {
   }
 
   private var accessibilityValue: String {
-    let keys = shortcut.combo?.accessibilityDescription ?? shortcut.displayString ?? ""
+    let keys = shortcut.accessibilityDescription ?? shortcut.displayString ?? ""
     guard let context = shortcut.context else { return keys }
     return "\(keys). \(context)"
   }

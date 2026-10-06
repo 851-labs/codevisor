@@ -23,9 +23,7 @@ extension SessionContainerView {
   /// A sidebar-originated tab action for this workspace.
   func performCenterTabRequest(_ request: CenterTabRequest) {
     switch request.action {
-    case let .close(tabId): closeCenterTab(tabId)
     case .new: addCenterTab()
-    case let .closeLeaf(leafId): closeLeaf(leafId)
     }
   }
 
@@ -52,11 +50,98 @@ extension SessionContainerView {
     focusSelectedCenterPane()
   }
 
+  /// A chat tab renames its chat; any other tab pins a custom title.
   func renameCenterTab(_ tabId: UUID, to customTitle: String?) {
     environment.workspaceSync.renameTab(
-      workspaceId: selectedWorkspace.id, tabId: tabId,
-      chatSessionId: activePaneDescriptor?.chatSessionId, to: customTitle ?? ""
+      workspaceId: selectedWorkspace.id, tabId: tabId, to: customTitle ?? ""
     )
+  }
+
+  func selectCenterTab(_ tabId: UUID) {
+    store.selectDestination(.tab(tabId), in: selectedWorkspace.id)
+  }
+
+  /// Saves a finished strip drag. The order is shared across devices.
+  func moveCenterTab(_ tabId: UUID, before successorId: UUID?) {
+    environment.workspaceSync.moveTab(tabId, before: successorId, inWorkspace: selectedWorkspace.id)
+  }
+
+  // MARK: - Tab strip
+
+  /// The tab strip shows once a workspace has more than one listed tab.
+  func showsCenterTabBar(in workspace: Workspace) -> Bool {
+    workspace.listedCenterTabs().count > 1
+  }
+
+  /// The workspace's listed tabs as strip items, numbered for ⌘1–⌘9.
+  func centerTabItems(in workspace: Workspace) -> [PaneTabStripItem] {
+    workspace.listedCenterTabs().enumerated().map { index, tab in
+      let descriptor = centerTabDescriptor(tab, in: workspace)
+      let title = centerTabTitle(tab, descriptor: descriptor)
+      return PaneTabStripItem(
+        id: tab.id,
+        name: title,
+        icon: centerTabIcon(descriptor, title: title, in: workspace),
+        canClose: true,
+        shortcutHint: index < 9 ? "⌘\(index + 1)" : nil
+      )
+    }
+  }
+
+  private func centerTabTitle(_ tab: WorkspaceTab, descriptor: PaneDescriptorState?) -> String {
+    guard let descriptor else { return tab.customTitle ?? "New Tab" }
+    // Chat tabs follow the session's LIVE title (auto-titles, renames).
+    if descriptor.kind == .chat { return paneTitle(descriptor) }
+    return tab.customTitle ?? paneTitle(descriptor)
+  }
+
+  private func centerTabIcon(
+    _ descriptor: PaneDescriptorState?, title: String, in workspace: Workspace
+  ) -> PaneTabIcon {
+    let serverId = workspace.serverId
+    let chatSession = descriptor.flatMap { pane -> ChatSession? in
+      guard pane.kind == .chat, let id = pane.chatSessionId else { return nil }
+      return environment.projectList.session(id, serverId: serverId)
+    }
+    let subagentHarnessId = descriptor.flatMap { pane -> String? in
+      guard pane.kind == .subagent, let ownerId = pane.ownerChatSessionId else { return nil }
+      return environment.projectList.session(ownerId, serverId: serverId)?.harnessId
+    }
+    return PaneTabIcon(
+      kind: descriptor?.kind ?? .newTab,
+      isAgentOwned: descriptor?.attachOnly ?? false,
+      browserFavicon: descriptor.flatMap {
+        $0.kind == .browser ? store.localBrowserModel(paneId: $0.id)?.favicon : nil
+      },
+      pluginId: descriptor?.pluginId,
+      pluginPaneType: descriptor?.pluginPaneType,
+      pluginIconClient: environment.machines.client(for: serverId),
+      pluginIconCacheNamespace: serverId,
+      chatSession: chatSession,
+      terminalStatus: descriptor?.terminalAgentStatus,
+      subagentHarnessId: subagentHarnessId,
+      documentPath: title,
+      store: store
+    )
+  }
+
+  /// The pane that names a tab: its active leaf's selected pane. A mounted
+  /// leaf's live model runs ahead of the repository mid-edit (a New Tab
+  /// converting into a terminal), so prefer it when there is one -- without
+  /// creating models for tabs that are not on screen.
+  private func centerTabDescriptor(_ tab: WorkspaceTab, in workspace: Workspace) -> PaneDescriptorState? {
+    let persisted = tab.root.group(id: tab.activeLeafId)
+    let liveKey = SessionStore.CenterLeafKey(workspaceId: workspace.id, groupId: tab.activeLeafId)
+    guard var live = store.centerLeafGroups[liveKey]?.state.selectedPane else {
+      return persisted?.selectedPane ?? tab.root.allGroups.first?.state.selectedPane
+    }
+    // Only this device's edits run ahead. Server-owned fields come from the
+    // record.
+    if let record = persisted?.panes.first(where: { $0.id == live.id }) {
+      live.liveTitle = record.liveTitle
+      live.terminalActivity = record.terminalActivity
+    }
+    return live
   }
 
   /// Closes a whole top tab, asking first if any of its chats is working.

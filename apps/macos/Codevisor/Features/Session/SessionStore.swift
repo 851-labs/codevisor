@@ -17,9 +17,7 @@ struct ClosedPaneRecord: Equatable {
 /// structural commands need the mounted container's pane lifecycle.
 struct CenterTabRequest: Equatable {
   enum Action: Equatable {
-    case close(UUID)
     case new
-    case closeLeaf(UUID)
   }
 
   let workspaceId: UUID
@@ -124,11 +122,10 @@ final class SessionStore {
   @ObservationIgnored var navigationRevision = 0
   /// A structural sidebar command consumed by the owning container.
   var centerTabRequest: CenterTabRequest?
-  /// ⇧⌘[ / ⇧⌘] step through the sidebar's flat pane list, across
-  /// workspaces. Installed by the docked sidebar (which owns that order
-  /// and the route change); returns false when it cannot answer, and the
-  /// container falls back to cycling its own tabs.
-  @ObservationIgnored var sidebarTabStepHandler: ((Int) -> Bool)?
+  /// ⌥⌘↑ / ⌥⌘↓ from inside a workspace: steps the sidebar's workspace
+  /// rows. Installed by the docked sidebar, which owns that order and the
+  /// selection.
+  @ObservationIgnored var workspaceStepHandler: ((Int) -> Void)?
   /// Panes the user closed, newest last, per workspace — what ⌘⇧T brings
   /// back. In memory only: the archive is the durable recovery for chats;
   /// this is the browser-style undo for the current run.

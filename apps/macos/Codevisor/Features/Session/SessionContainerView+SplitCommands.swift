@@ -40,14 +40,18 @@ extension SessionContainerView {
       selectRelativeCenterTab(offset: -1)
     case .nextTab:
       selectRelativeCenterTab(offset: 1)
+    case .previousWorkspace:
+      store.workspaceStepHandler?(-1)
+    case .nextWorkspace:
+      store.workspaceStepHandler?(1)
     case let .selectTab(index):
+      // Numbered as the strip shows them, skipping hidden agent terminals.
       let workspace = navigationWorkspace
-      guard workspace.centerTabs.indices.contains(index) else { return true }
-      store.selectDestination(.tab(workspace.centerTabs[index].id), in: workspace.id)
+      let tabs = workspace.listedCenterTabs()
+      guard tabs.indices.contains(index) else { return true }
+      store.selectDestination(.tab(tabs[index].id), in: workspace.id)
     case let .split(edge):
       splitActiveLeaf(edge: edge)
-    case let .focusSplit(edge):
-      focusAdjacentLeaf(edge: edge)
     case .previousSplit:
       focusRelativeSplit(offset: -1)
     case .nextSplit:
@@ -60,14 +64,15 @@ extension SessionContainerView {
     return true
   }
 
+  /// Cycles the strip's tabs, wrapping at either end.
   func selectRelativeCenterTab(offset: Int) {
-    if store.sidebarTabStepHandler?(offset) == true { return }
     let workspace = navigationWorkspace
-    guard workspace.centerTabs.count > 1,
-      let index = workspace.selectedCenterTabIndex
+    let tabs = workspace.listedCenterTabs()
+    guard tabs.count > 1,
+      let index = tabs.firstIndex(where: { $0.id == workspace.selectedCenterTabId })
     else { return }
-    let target = (index + offset + workspace.centerTabs.count) % workspace.centerTabs.count
-    store.selectDestination(.tab(workspace.centerTabs[target].id), in: workspace.id)
+    let target = (index + offset + tabs.count) % tabs.count
+    store.selectDestination(.tab(tabs[target].id), in: workspace.id)
   }
 
   func splitActiveLeaf(edge: SplitEdge) {

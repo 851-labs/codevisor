@@ -16,6 +16,8 @@ enum ShortcutID: String, CaseIterable, Identifiable, Sendable {
   case selectTab
   case previousTab
   case nextTab
+  case previousWorkspace
+  case nextWorkspace
   case previousSplit
   case nextSplit
   case splitLeft
@@ -70,6 +72,9 @@ struct ShortcutDefinition: Identifiable, Sendable {
   /// `nil` for menu items that intentionally have no key equivalent
   /// (Close Tab, Split Left/Up) and for the ranged shortcuts below.
   let combo: ShortcutCombo?
+  /// Further combos that run the same command. The menu item can carry only
+  /// `combo`, so these are matched by the AppKit key-equivalent paths alone.
+  let alternateCombos: [ShortcutCombo]
   /// Set for shortcuts that are a range rather than one combo, e.g. ⌘1–⌘9.
   /// Takes precedence over `combo` when rendering.
   let displayOverride: String?
@@ -81,6 +86,7 @@ struct ShortcutDefinition: Identifiable, Sendable {
     _ id: ShortcutID,
     _ title: String,
     _ combo: ShortcutCombo?,
+    alternates alternateCombos: [ShortcutCombo] = [],
     displayOverride: String? = nil,
     category: ShortcutCategory,
     context: String? = nil
@@ -88,6 +94,7 @@ struct ShortcutDefinition: Identifiable, Sendable {
     self.id = id
     self.title = title
     self.combo = combo
+    self.alternateCombos = alternateCombos
     self.displayOverride = displayOverride
     self.category = category
     self.context = context
@@ -96,7 +103,12 @@ struct ShortcutDefinition: Identifiable, Sendable {
   /// What the Shortcuts list renders on the right-hand side, or `nil` for
   /// commands that have no key equivalent at all.
   var displayString: String? {
-    displayOverride ?? combo?.displayString
+    displayOverride ?? combo.map { ([$0] + alternateCombos).map(\.displayString).joined(separator: " / ") }
+  }
+
+  /// Every combo, spoken, for VoiceOver.
+  var accessibilityDescription: String? {
+    combo.map { ([$0] + alternateCombos).map(\.accessibilityDescription).joined(separator: " or ") }
   }
 }
 
@@ -142,9 +154,20 @@ enum ShortcutCatalog {
       )
     case .previousTab:
       ShortcutDefinition(
-        .previousTab, "Previous Tab", ShortcutCombo("[", [.command, .shift]), category: .tabsAndSplits)
+        .previousTab, "Previous Tab", ShortcutCombo("[", [.command, .shift]),
+        alternates: [ShortcutCombo(.leftArrow, [.command, .option])], category: .tabsAndSplits)
     case .nextTab:
-      ShortcutDefinition(.nextTab, "Next Tab", ShortcutCombo("]", [.command, .shift]), category: .tabsAndSplits)
+      ShortcutDefinition(
+        .nextTab, "Next Tab", ShortcutCombo("]", [.command, .shift]),
+        alternates: [ShortcutCombo(.rightArrow, [.command, .option])], category: .tabsAndSplits)
+    case .previousWorkspace:
+      ShortcutDefinition(
+        .previousWorkspace, "Previous Workspace", ShortcutCombo(.upArrow, [.command, .option]),
+        category: .tabsAndSplits)
+    case .nextWorkspace:
+      ShortcutDefinition(
+        .nextWorkspace, "Next Workspace", ShortcutCombo(.downArrow, [.command, .option]),
+        category: .tabsAndSplits)
     case .previousSplit:
       ShortcutDefinition(.previousSplit, "Previous Split", ShortcutCombo("[", .command), category: .tabsAndSplits)
     case .nextSplit:
@@ -158,22 +181,16 @@ enum ShortcutCatalog {
     case .splitDown:
       ShortcutDefinition(
         .splitDown, "Split Down", ShortcutCombo("d", [.command, .shift]), category: .tabsAndSplits)
+    // ⌥⌘ + arrows step tabs and workspaces; directional split focus is
+    // menu-only, with ⌘[ / ⌘] still cycling splits.
     case .focusSplitLeft:
-      ShortcutDefinition(
-        .focusSplitLeft, "Focus Split Left", ShortcutCombo(.leftArrow, [.command, .option]),
-        category: .tabsAndSplits)
+      ShortcutDefinition(.focusSplitLeft, "Focus Split Left", nil, category: .tabsAndSplits)
     case .focusSplitRight:
-      ShortcutDefinition(
-        .focusSplitRight, "Focus Split Right", ShortcutCombo(.rightArrow, [.command, .option]),
-        category: .tabsAndSplits)
+      ShortcutDefinition(.focusSplitRight, "Focus Split Right", nil, category: .tabsAndSplits)
     case .focusSplitAbove:
-      ShortcutDefinition(
-        .focusSplitAbove, "Focus Split Above", ShortcutCombo(.upArrow, [.command, .option]),
-        category: .tabsAndSplits)
+      ShortcutDefinition(.focusSplitAbove, "Focus Split Above", nil, category: .tabsAndSplits)
     case .focusSplitBelow:
-      ShortcutDefinition(
-        .focusSplitBelow, "Focus Split Below", ShortcutCombo(.downArrow, [.command, .option]),
-        category: .tabsAndSplits)
+      ShortcutDefinition(.focusSplitBelow, "Focus Split Below", nil, category: .tabsAndSplits)
 
     case .toggleDebugOverlay:
       ShortcutDefinition(
