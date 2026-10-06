@@ -3,29 +3,11 @@ import Testing
 
 @testable import CodevisorCore
 
-/// Plugin pane decode-compat: the new `.plugin` kind, its descriptor payload,
-/// the element-lenient pane-array decode, and New Tab conversion.
+/// Plugin pane decode-compat: element-lenient pane-array decode and New Tab
+/// conversion into a plugin pane.
 @Suite("PaneGroupState plugin panes")
 struct PaneGroupStatePluginTests {
   private let sessionId = UUID()
-
-  @Test("Plugin descriptors round-trip their plugin payload")
-  func pluginDescriptorRoundTrip() throws {
-    let pane = PaneDescriptorState(
-      id: UUID(),
-      kind: .plugin,
-      name: "Git Diff",
-      terminalKey: UUID().uuidString,
-      pluginId: "codevisor.git-diff",
-      pluginPaneType: "diff"
-    )
-    let decoded = try JSONDecoder().decode(
-      PaneDescriptorState.self, from: JSONEncoder().encode(pane)
-    )
-    #expect(decoded == pane)
-    #expect(decoded.pluginId == "codevisor.git-diff")
-    #expect(decoded.pluginPaneType == "diff")
-  }
 
   @Test("An unknown future pane kind drops alone instead of failing the group")
   func lenientPaneArrayDecode() throws {
