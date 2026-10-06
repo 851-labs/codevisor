@@ -291,6 +291,10 @@ export interface HarnessAccountContext {
   /// applying `env`. Setting a variable to "" is not the same: several CLIs
   /// treat an empty-but-present credential as "supplied", not "absent".
   readonly unsetEnv?: ReadonlyArray<string>
+  /// Runs before each turn. A host that keeps the harness's credential files
+  /// current uses it to catch up first, e.g. after the machine slept through
+  /// a scheduled refresh. Best-effort: it never fails the turn.
+  readonly beforeTurn?: () => Promise<void>
   /// Host-owned credentials: adapters never receive the rotating refresh token.
   readonly oauth?: {
     readonly token: (rejectedAccessToken?: string) => Promise<{

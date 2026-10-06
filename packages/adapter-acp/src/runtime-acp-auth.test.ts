@@ -52,6 +52,40 @@ describe("@codevisor/agent-runtime", () => {
     })
   })
 
+  it("lets the host catch credentials up before every turn, without failing one", async () => {
+    const connector = makeConnector()
+    const runtime = makeAcpAgentRuntime({
+      connector,
+      env: { PATH: "/bin" },
+      executableExists: (name) => name === "gemini",
+      locateExecutable: (name) => `/bin/${name}`
+    })
+    const order: string[] = []
+    const beforeTurn = vi.fn(async () => {
+      order.push(`refresh ${connector.connections[0]?.prompts.length ?? 0}`)
+    })
+    const account = { id: "account-1", profileKind: "managed" as const, beforeTurn }
+    const sessionId = await run(
+      runtime.createAgentSession("gemini", "/tmp/turns", () => Promise.resolve(), account)
+    )
+    expect(beforeTurn).not.toHaveBeenCalled()
+
+    await run(runtime.prompt(sessionId, "one"))
+    beforeTurn.mockRejectedValueOnce(new Error("vault offline"))
+    await run(runtime.prompt(sessionId, "two"))
+    await run(runtime.prompt(sessionId, "three"))
+
+    // Each refresh lands before its prompt reaches the harness.
+    expect(order).toEqual(["refresh 0", "refresh 2"])
+    expect(beforeTurn).toHaveBeenCalledTimes(3)
+    expect(connector.connections[0]?.prompts.map(([, text]) => text)).toEqual([
+      "one",
+      "two",
+      "three"
+    ])
+    await run(runtime.closeAgentSession(sessionId))
+  })
+
   it("times out a hung ACP auth probe and closes its connection", async () => {
     vi.useFakeTimers()
     const connector = makeConnector()

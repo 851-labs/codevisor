@@ -155,10 +155,15 @@ export const makeAcpProvider = (
   const handleFor = (
     connection: AcpAgentConnection,
     sessionId: string,
-    emit: RuntimeEmit
+    emit: RuntimeEmit,
+    account?: HarnessAccountContext
   ): AgentSessionHandle => ({
     prompt: (input) =>
       Effect.gen(function* () {
+        if (account?.beforeTurn !== undefined) {
+          const beforeTurn = account.beforeTurn
+          yield* Effect.promise(() => beforeTurn().catch(() => undefined))
+        }
         const turnId = randomUUID()
         yield* adapterPromise("promptTurnStart", () =>
           emit(turnLifecycleEvent(sessionId, turnId, "started"))
@@ -243,7 +248,7 @@ export const makeAcpProvider = (
         const connection = yield* connect(definition, cwd, emit, account)
         return yield* connection.createSession(cwd, toolGateway).pipe(
           Effect.map((metadata) => ({
-            handle: handleFor(connection, metadata.sessionId, emit),
+            handle: handleFor(connection, metadata.sessionId, emit, account),
             metadata
           })),
           // A failed or interrupted setup never enters the runtime's managed
@@ -263,7 +268,7 @@ export const makeAcpProvider = (
         const connection = yield* connect(definition, cwd, emit, account)
         const metadata = yield* connection.loadSession(agentSessionId, cwd, toolGateway)
         return {
-          handle: handleFor(connection, metadata.sessionId, emit),
+          handle: handleFor(connection, metadata.sessionId, emit, account),
           metadata,
           sessionId: metadata.sessionId
         }

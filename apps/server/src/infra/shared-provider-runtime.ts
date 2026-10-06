@@ -2,13 +2,11 @@ import { randomBytes } from "node:crypto"
 import { mkdir, readFile, symlink, writeFile, chmod } from "node:fs/promises"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { dirname, join, isAbsolute, resolve } from "node:path"
-import { pathToFileURL } from "node:url"
 
 import type { HarnessAccountContext } from "@codevisor/agent-runtime"
 import {
   atomicWriteJson,
   MANAGED_REFRESH_PREFIX,
-  openCodeAuthPlugin,
   piAuthExtension,
   providerCredential,
   providerTokenEndpoint,
@@ -56,6 +54,30 @@ const linkResource = async (source: string, destination: string) => {
   }
 }
 
+/// OpenCode re-reads auth.json on every request, and its built-in OAuth
+/// plugins (openai/codex.ts, xai.ts) refresh only once a token is nearly
+/// expired. Keeping the file ahead of that means OpenCode never refreshes on
+/// its own: the rotating grant stays in the vault, and the file holds an inert
+/// placeholder where a refresh token would be. The importer already ignores
+/// anything under the managed prefix.
+const OPENCODE_MANAGED_REFRESH = `${MANAGED_REFRESH_PREFIX}managed`
+/// The vault serves OpenCode tokens with over six minutes left. Rewriting once
+/// seven remain stays clear of xAI's two-minute refresh skew between ticks.
+const OPENCODE_REFRESH_AHEAD_MS = 7 * 60_000
+/// Wall-clock polling rather than one timer per expiry: a Mac's timers stop
+/// while it sleeps, so a long timer can fire well after its token expired.
+const OPENCODE_TICK_MS = 30_000
+const OPENCODE_RETRY_MS = 60_000
+/// A profile no turn has used for this long stops being refreshed in the
+/// background; the next turn catches it up before it starts.
+const OPENCODE_IDLE_MS = 24 * 60 * 60_000
+
+interface OpenCodeProfile {
+  readonly path: string
+  dueAt: number
+  usedAt: number
+}
+
 export const makeSharedProviderRuntime = (options: {
   store: SharedProviderStore
   vault: SharedCredentialVault
@@ -64,7 +86,83 @@ export const makeSharedProviderRuntime = (options: {
 }) => {
   const { store, vault, dataDir } = options
   const url = `${options.baseUrl}/harness/provider-token`
-  const preparing = new Map<string, Promise<HarnessAccountContext>>()
+  const preparing = new Map<string, Promise<unknown>>()
+  /// One profile's files are written by one operation at a time.
+  const serialize = <A>(key: string, operation: () => Promise<A>): Promise<A> => {
+    const previous = preparing.get(key) ?? Promise.resolve()
+    const pending = previous
+      .catch(() => undefined)
+      .then(operation)
+      .finally(() => {
+        if (preparing.get(key) === pending) preparing.delete(key)
+      })
+    preparing.set(key, pending)
+    return pending
+  }
+
+  /// Puts the profile's current shared credentials into an OpenCode auth
+  /// document, and returns when they next need rewriting. A provider the
+  /// vault can't serve right now keeps whatever entry it has, which may still
+  /// be valid; one no longer shared loses its managed entry.
+  const withOpenCodeCredentials = async (
+    profile: string,
+    document: Record<string, unknown>
+  ): Promise<number> => {
+    const rows = await store.records("opencode", profile)
+    const shared = new Set(rows.map((row) => row.providerId))
+    for (const [id, value] of Object.entries(document)) {
+      if (
+        !shared.has(id) &&
+        (value as { refresh?: unknown } | null)?.refresh === OPENCODE_MANAGED_REFRESH
+      )
+        delete document[id]
+    }
+    let dueAt = Number.POSITIVE_INFINITY
+    for (const row of rows) {
+      const token = await vault.token(row.credential).catch(() => undefined)
+      if (!token) {
+        dueAt = Math.min(dueAt, Date.now() + OPENCODE_RETRY_MS)
+        continue
+      }
+      document[row.providerId] = providerCredential(token, OPENCODE_MANAGED_REFRESH)
+      dueAt = Math.min(dueAt, token.expiresAt - OPENCODE_REFRESH_AHEAD_MS)
+    }
+    return dueAt
+  }
+
+  const openCode = new Map<string, OpenCodeProfile>()
+  let ticker: ReturnType<typeof setInterval> | undefined
+  const refreshOpenCode = (profile: string): Promise<void> =>
+    serialize(JSON.stringify(["opencode", profile]), async () => {
+      const entry = openCode.get(profile)
+      if (entry === undefined || Date.now() < entry.dueAt) return
+      try {
+        const document = await readProviderDocument(entry.path)
+        entry.dueAt = await withOpenCodeCredentials(profile, document)
+        await atomicWriteJson(entry.path, document)
+      } catch {
+        entry.dueAt = Date.now() + OPENCODE_RETRY_MS
+      }
+    })
+  const tick = () => {
+    let active = false
+    for (const [profile, entry] of openCode) {
+      if (Date.now() - entry.usedAt > OPENCODE_IDLE_MS) continue
+      active = true
+      if (Date.now() >= entry.dueAt) void refreshOpenCode(profile)
+    }
+    if (!active && ticker !== undefined) {
+      clearInterval(ticker)
+      ticker = undefined
+    }
+  }
+  const keepOpenCodeCurrent = (entry: OpenCodeProfile) => {
+    entry.usedAt = Date.now()
+    if (ticker === undefined) {
+      ticker = setInterval(tick, OPENCODE_TICK_MS)
+      ticker.unref()
+    }
+  }
   const materialize = async (
     harness: ProviderOAuthHarness,
     profile: string,
@@ -104,7 +202,9 @@ export const makeSharedProviderRuntime = (options: {
         delete auth[id]
     }
     let grokApiKey: string | undefined
-    for (const row of rows) {
+    // OpenCode never refreshes for itself (see OPENCODE_MANAGED_REFRESH), so
+    // it gets no broker capability.
+    for (const row of harness === "opencode" ? [] : rows) {
       const slot = providerSlot(harness, profile, row.providerId)
       const capKey = `cap:${providerDigest(slot)}`
       const previous = (await store.local(capKey)) as Capability | undefined
@@ -131,11 +231,11 @@ export const makeSharedProviderRuntime = (options: {
         ...(endpoint ? { endpoint } : {})
       }
     }
-    const manifestPath = join(root, "manifest.json")
-    await atomicWriteJson(manifestPath, manifest)
-    const runtimeEnv: Record<string, string> = {
-      ...base.env,
-      CODEVISOR_PROVIDER_AUTH: manifestPath
+    const runtimeEnv: Record<string, string> = { ...base.env }
+    if (harness !== "opencode") {
+      const manifestPath = join(root, "manifest.json")
+      await atomicWriteJson(manifestPath, manifest)
+      runtimeEnv.CODEVISOR_PROVIDER_AUTH = manifestPath
     }
     let unsetEnv: ReadonlyArray<string> | undefined = base.unsetEnv
     if (harness === "pi") {
@@ -166,15 +266,6 @@ export const makeSharedProviderRuntime = (options: {
     } else if (harness === "opencode") {
       // A default profile also gets isolated credential storage: no managed
       // placeholder or refreshed token is written into a terminal's auth file.
-      const plugin = join(root, "codevisor-auth.mjs")
-      await script(plugin, openCodeAuthPlugin)
-      const config = env.OPENCODE_CONFIG_CONTENT
-        ? (JSON.parse(env.OPENCODE_CONFIG_CONTENT) as Record<string, unknown>)
-        : {}
-      runtimeEnv.OPENCODE_CONFIG_CONTENT = JSON.stringify({
-        ...config,
-        plugin: [...(Array.isArray(config.plugin) ? config.plugin : []), pathToFileURL(plugin).href]
-      })
       runtimeEnv.XDG_DATA_HOME = join(root, "data")
       // Keep existing conversations and repository state when authentication
       // moves to an isolated directory. Relative database paths are native-data
@@ -188,9 +279,27 @@ export const makeSharedProviderRuntime = (options: {
         await linkResource(join(source, name), join(root, "data", "opencode", name))
       }
       // OPENCODE_AUTH_CONTENT is read before auth.json; override inherited
-      // snapshots so they cannot bypass the refresh coordinator.
+      // snapshots so they cannot bypass the credentials kept current here.
       runtimeEnv.OPENCODE_AUTH_CONTENT = ""
-      await atomicWriteJson(join(root, "data", "opencode", "auth.json"), auth)
+      const path = join(root, "data", "opencode", "auth.json")
+      const dueAt = await withOpenCodeCredentials(profile, auth)
+      await atomicWriteJson(path, auth)
+      // One entry per profile for the server's lifetime (its path depends
+      // only on the profile), so every context's hook keeps the same one.
+      const entry = openCode.get(profile) ?? { path, dueAt, usedAt: 0 }
+      entry.dueAt = dueAt
+      openCode.set(profile, entry)
+      keepOpenCodeCurrent(entry)
+      return {
+        ...base,
+        env: runtimeEnv,
+        // The background tick can't run while the machine sleeps; a turn
+        // that starts right after waking catches up first.
+        beforeTurn: async () => {
+          keepOpenCodeCurrent(entry)
+          await refreshOpenCode(profile)
+        }
+      }
     } else {
       runtimeEnv.GROK_HOME = root
       runtimeEnv.GROK_AUTH_PATH = join(root, "auth.json")
@@ -236,18 +345,8 @@ export const makeSharedProviderRuntime = (options: {
     return { ...base, env: runtimeEnv, ...(unsetEnv === undefined ? {} : { unsetEnv }) }
   }
   return {
-    materialize: (...args: Parameters<typeof materialize>) => {
-      const key = JSON.stringify(args.slice(0, 2))
-      const previous = preparing.get(key) ?? Promise.resolve()
-      const pending = previous
-        .catch(() => undefined)
-        .then(() => materialize(...args))
-        .finally(() => {
-          if (preparing.get(key) === pending) preparing.delete(key)
-        })
-      preparing.set(key, pending)
-      return pending
-    },
+    materialize: (...args: Parameters<typeof materialize>) =>
+      serialize(JSON.stringify(args.slice(0, 2)), () => materialize(...args)),
     handle: async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
       response.setHeader("Cache-Control", "no-store")
       if (

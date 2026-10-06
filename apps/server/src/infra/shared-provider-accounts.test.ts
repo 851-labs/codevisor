@@ -189,7 +189,7 @@ describe("provider accounts across machines", () => {
     await host.shared.providers.context(account("grok-build"), base)
   })
 
-  it("preserves OpenCode's database and configured plugins in the managed runtime", async () => {
+  it("preserves OpenCode's database and configuration in the managed runtime", async () => {
     const host = await fleet().machine("opencode-resources")
     await run(host.db.saveHarnessAccount(account("opencode")))
     await host.shared.providers.capture("opencode", "default", "openai", credential())
@@ -202,10 +202,8 @@ describe("provider accounts across machines", () => {
       }
     }
     const context = await host.shared.providers.context(account("opencode"), base)
-    expect(JSON.parse(context.env!.OPENCODE_CONFIG_CONTENT!)).toMatchObject({
-      plugin: ["custom-plugin", expect.stringMatching(/^file:/)],
-      model: "xai/grok-4"
-    })
+    // Nothing is injected into OpenCode: its configuration passes through as is.
+    expect(context.env!.OPENCODE_CONFIG_CONTENT).toBe(base.env.OPENCODE_CONFIG_CONTENT)
     const native = join(host.dataDir, ".local", "share", "opencode")
     expect(context.env!.OPENCODE_DB).toBe(join(native, "work.db"))
     expect(await realpath(join(context.env!.XDG_DATA_HOME!, "opencode", "storage"))).toBe(
@@ -405,7 +403,7 @@ describe("provider accounts across machines", () => {
     expect(await a.shared.providers.configured("pi", "default", true)).toEqual([])
     expect(await a.shared.providers.remove("pi", "default", "anthropic", true)).toBe(false)
   })
-  it("isolates OpenCode provider state per shared profile and preserves its native refresh plugin", async () => {
+  it("isolates OpenCode provider state per shared profile without handing it a refresh grant", async () => {
     const { machine, sync } = fleet()
     const a = await machine("oc-a"),
       b = await machine("oc-b")
@@ -430,10 +428,18 @@ describe("provider accounts across machines", () => {
       profileKind: "default"
     })
     expect(runtime.env!.OPENCODE_AUTH_CONTENT).toBe("")
-    expect(JSON.parse(runtime.env!.OPENCODE_CONFIG_CONTENT!).plugin[0]).toMatch(/^file:/)
-    expect(
-      (await json(join(runtime.env!.XDG_DATA_HOME!, "opencode", "auth.json"))).openai?.refresh
-    ).toMatch(/^codevisor:/)
+    expect(runtime.env!.OPENCODE_CONFIG_CONTENT).toBeUndefined()
+    expect(runtime.env!.CODEVISOR_PROVIDER_AUTH).toBeUndefined()
+    const written = await readFile(
+      join(runtime.env!.XDG_DATA_HOME!, "opencode", "auth.json"),
+      "utf8"
+    )
+    expect(JSON.parse(written).openai).toMatchObject({
+      access: credential().access,
+      refresh: "codevisor:managed",
+      expires: credential().expires
+    })
+    expect(written).not.toContain(credential().refresh)
     await expect(b.shared.providers.configured("opencode", "missing")).rejects.toThrow(
       "profile not found"
     )

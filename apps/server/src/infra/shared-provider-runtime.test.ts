@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import * as fs from "node:fs/promises"
 import { IncomingMessage, ServerResponse } from "node:http"
 import { Socket } from "node:net"
@@ -8,6 +8,7 @@ import { join } from "node:path"
 import { SharedCredentialError, type SharedTokenBundle } from "@codevisor/harness-manager"
 import { describe, expect, it, onTestFinished, vi } from "vitest"
 
+import { run } from "../test-support.js"
 import { fleet } from "./shared-accounts-test-support.js"
 import { makeSharedProviderRuntime, readProviderDocument } from "./shared-provider-runtime.js"
 
@@ -146,6 +147,100 @@ describe("provider token broker", () => {
     f.row.harnessId = "pi"
     await f.send({ body: JSON.stringify({ force: true }) })
     expect(f.read).toHaveBeenCalledTimes(3)
+  })
+})
+
+describe("OpenCode credentials kept current", () => {
+  const access = `header.${Buffer.from(JSON.stringify({ sub: "alice" })).toString("base64url")}.signature`
+  /// One OpenCode default profile sharing an OpenAI sign-in that expires at
+  /// 3,600,000, materialized at time 1000 under the given fake timers.
+  const openCodeProfile = async (
+    toFake: Parameters<typeof vi.useFakeTimers>[0] = { toFake: ["Date"] }
+  ) => {
+    vi.useFakeTimers(toFake)
+    vi.setSystemTime(1000)
+    onTestFinished(() => {
+      vi.useRealTimers()
+    })
+    const f = fleet()
+    const host = await f.machine("opencode-refresh")
+    const account = {
+      id: "opencode-default",
+      harnessId: "opencode",
+      profileKind: "default" as const,
+      label: "Default",
+      authState: "authenticated" as const,
+      canLogin: true,
+      canLogout: true,
+      isActive: true
+    }
+    await run(host.db.saveHarnessAccount(account))
+    await host.shared.providers.capture("opencode", "default", "openai", {
+      type: "oauth",
+      access,
+      refresh: "refresh-alice",
+      expires: 3_600_000
+    })
+    const context = await host.shared.providers.context(account, {
+      id: account.id,
+      profileKind: "default"
+    })
+    const path = join(context.env!.XDG_DATA_HOME!, "opencode", "auth.json")
+    const document = async () => JSON.parse(await readFile(path, "utf8"))
+    return { f, host, account, context, path, document }
+  }
+  // Five minutes left: past the rewrite point, as after a machine slept.
+  const nearExpiry = 3_600_000 - 5 * 60_000
+
+  it("rewrites them before a turn once they near expiry, never exposing the grant", async () => {
+    const { context, path, document } = await openCodeProfile()
+    await context.beforeTurn!()
+    expect((await document()).openai).toMatchObject({
+      access,
+      refresh: "codevisor:managed",
+      expires: 3_600_000
+    })
+    vi.setSystemTime(nearExpiry)
+    await context.beforeTurn!()
+    expect((await document()).openai).toEqual(
+      expect.objectContaining({
+        access: "rotated",
+        refresh: "codevisor:managed",
+        expires: 20_000_000
+      })
+    )
+    expect(await readFile(path, "utf8")).not.toContain("rotated-refresh")
+  })
+
+  it("rewrites them in the background, and stops once no turn has used the profile for a day", async () => {
+    const { document } = await openCodeProfile({
+      toFake: ["Date", "setInterval", "clearInterval"]
+    })
+    expect(vi.getTimerCount()).toBe(1)
+    await vi.advanceTimersByTimeAsync(nearExpiry)
+    await vi.waitFor(async () => expect((await document()).openai.access).toBe("rotated"))
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60_000)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it("keeps a sign-in the vault can't serve right now, and drops one that is no longer shared", async () => {
+    const { f, host, account, context, document } = await openCodeProfile()
+    f.rotate.mockRejectedValueOnce(new Error("offline"))
+    vi.setSystemTime(nearExpiry)
+    await context.beforeTurn!()
+    expect((await document()).openai.access).toBe(access)
+    await host.shared.providers.remove("opencode", account.id, "openai")
+    vi.setSystemTime(nearExpiry + 60_000)
+    await context.beforeTurn!()
+    expect((await document()).openai).toBeUndefined()
+  })
+
+  it("leaves an unreadable credential file alone instead of failing the turn", async () => {
+    const { context, path } = await openCodeProfile()
+    await writeFile(path, "{")
+    vi.setSystemTime(nearExpiry)
+    await expect(context.beforeTurn!()).resolves.toBeUndefined()
+    expect(await readFile(path, "utf8")).toBe("{")
   })
 })
 
