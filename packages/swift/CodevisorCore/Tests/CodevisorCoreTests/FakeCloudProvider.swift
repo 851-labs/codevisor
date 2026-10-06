@@ -70,6 +70,13 @@ final class FakeCloudProvider: CloudMachineProviding {
   private(set) var loopbackRecoveryRequests: [String] = []
   let requestTransport = FakeRelayRequestTransport()
   private(set) var configRequests: [String] = []
+  /// Machines asked to join account sync, in order.
+  private(set) var accountSyncPreparations: [String] = []
+
+  func prepareAccountSync(on client: any CodevisorServerClienting, machineId: String) async -> Bool {
+    accountSyncPreparations.append(machineId)
+    return false
+  }
 
   func relayServerConfig(for machine: CloudMachine) -> CodevisorServerConfig? {
     configRequests.append(machine.deviceId)

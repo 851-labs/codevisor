@@ -13,7 +13,8 @@ public extension HarnessAccountsStore {
         && row["providerId"] == .string(providerId) && row["credential"] != nil
     }
     if exists {
-      _ = try await shared(harnessId, .init(action: "logout", accountId: profileId, providerId: providerId))
+      _ = try await shared(
+        harnessId, .init(action: "logout", accountId: profileId, providerId: providerId), prepared: true)
     }
   }
 
@@ -26,7 +27,9 @@ public extension HarnessAccountsStore {
     var catalog: [ServerOpenCodeAuthProvider] = []
     if !machineId.isEmpty {
       await sync.synchronize(machineId: machineId, namespaces: Self.sharedProviderNamespaces)
-      catalog = try await shared("opencode", .init(action: "providers", accountId: accountId)).openCodeProviders ?? []
+      catalog =
+        try await shared("opencode", .init(action: "providers", accountId: accountId), prepared: true)
+        .openCodeProviders ?? []
     } else if let host = await HarnessFleet.findSharedHost(harnessId: "opencode", environment: environment) {
       let remote = environment.machines.client(for: host.machineId)
       if let accounts = try? await remote.listHarnessAccounts(harnessId: "opencode"),
@@ -73,7 +76,8 @@ public extension HarnessAccountsStore {
           "opencode",
           .init(
             action: "login", accountId: accountId,
-            methodId: methodId, providerId: providerId, inputs: inputs)
+            methodId: methodId, providerId: providerId, inputs: inputs),
+          prepared: true
         ).openCodeFlow
       else { throw CodevisorServerClientError.invalidResponse }
       return flow

@@ -136,13 +136,19 @@ public final class ConfigSync {
     {
       await machines.refreshStatus(for: machineId)
     }
+    // Each namespace is its own round trip; send them together rather than
+    // making a caller wait on one after another. Results apply in order.
+    let outgoing = namespaces.map { ($0, loadNamespace($0)) }
+    let documents = await withTaskGroup(of: (String, ServerSyncDocument?).self) { group in
+      for (namespace, entries) in outgoing {
+        group.addTask { (namespace, try? await client.mergeSyncDocument(namespace: namespace, entries: entries)) }
+      }
+      var documents: [String: ServerSyncDocument] = [:]
+      for await (namespace, document) in group { documents[namespace] = document }
+      return documents
+    }
     for namespace in namespaces {
-      guard
-        let document = try? await client.mergeSyncDocument(
-          namespace: namespace,
-          entries: loadNamespace(namespace)
-        )
-      else { continue }
+      guard let document = documents[namespace] else { continue }
       apply(namespace: namespace, incoming: document.entries)
       receivedNamespaces.insert(namespace)
       persistNamespace(namespace)

@@ -17,6 +17,8 @@ struct HarnessAccountsStoreTests {
         CodevisorServerClient(config: .init(baseURL: URL(string: "http://fixture.test")!, requestTransport: transport))
       }
     )
+    let cloud = FakeCloudProvider()
+    environment.machines.cloudProvider = cloud
     let store = HarnessAccountsStore(environment: environment, machineId: "local", isShared: true)
     let pi = try await store.startPiAuth(providerId: "anthropic", method: "oauth")
     #expect(pi.id == "native-pi")
@@ -27,6 +29,9 @@ struct HarnessAccountsStoreTests {
     #expect(opencode.id == "native-opencode")
     #expect(try await store.answerOpenCodeAuthFlow(id: opencode.id, code: "fixture-code").state == "complete")
     try await store.cancelOpenCodeAuthFlow(id: opencode.id)
+    // Each sign-in asks the account coordinator once: OpenCode's sync pass
+    // already did, so its shared request doesn't ask again.
+    #expect(cloud.accountSyncPreparations == ["local", "local"])
     let paths = await transport.paths
     #expect(paths.contains("/v1/harnesses/pi/shared-accounts"))
     #expect(paths.contains("/v1/harnesses/opencode/shared-accounts"))

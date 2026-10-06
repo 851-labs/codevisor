@@ -22,10 +22,15 @@ import Foundation
     isShared && HarnessRegistry.descriptor(for: harnessId).usesFleetAccountRows
   }
 
+  /// - Parameter prepared: the caller just synchronized shared accounts,
+  ///   which already made sure the machine can reach the account
+  ///   coordinator; asking again is a wasted round trip.
   func shared(
-    _ harnessId: String, _ request: ServerSharedHarnessAccountRequest
+    _ harnessId: String, _ request: ServerSharedHarnessAccountRequest, prepared: Bool = false
   ) async throws -> ServerSharedHarnessAccountResponse {
-    _ = await environment.machines.cloudProvider?.prepareAccountSync(on: client, machineId: machineId)
+    if !prepared {
+      _ = await environment.machines.cloudProvider?.prepareAccountSync(on: client, machineId: machineId)
+    }
     return try await client.sharedHarnessAccount(harnessId: harnessId, request: request)
   }
 
