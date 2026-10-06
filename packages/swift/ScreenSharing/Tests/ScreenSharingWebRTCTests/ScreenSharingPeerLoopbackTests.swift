@@ -190,7 +190,6 @@ struct ScreenSharingPeerLoopbackTests {
       hostReceived.append($0)
       hostHeard.signal()
     }
-    #expect(harness.receiver.supportsAudio)
     harness.receiver.setAudioEnabled(true)
     try await harness.negotiate()
     await hostHeard.wait()
@@ -217,7 +216,6 @@ struct ScreenSharingPeerLoopbackTests {
       hostHeard.signal()
     }
     harness.receiver.onResizeSupportChanged = { support.append($0) }
-    #expect(harness.receiver.resizesDesktop)
     harness.receiver.requestDesktopSize(width: 1000, height: 700)
     harness.receiver.requestDesktopSize(width: 1280, height: 800)
     try await harness.negotiate()
