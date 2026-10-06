@@ -41,6 +41,21 @@ describe("catalog installation routes", () => {
     })
   })
 
+  it("recommends OpenCode 2's own installer even where Homebrew can run", async () => {
+    const lifecycle = makeHarnessLifecycleManager({
+      agents: agentsStub([definition("opencode")], []),
+      db: await makeDb(),
+      resolveEnv: async () => ({ PATH: makeBinDir(["brew", "curl", "npm"]) })
+    })
+    const methods = await installMethodsFor(lifecycle, "opencode")
+    expect(methods.map((m) => [m.id, m.available, m.recommended])).toEqual([
+      ["curl", true, true],
+      ["npm", true, false],
+      ["brew", true, false]
+    ])
+    expect(methods[0]?.command).toBe("curl -fsSL https://opencode.ai/v2/install | bash")
+  })
+
   it.each([false, true])("checks uv availability on PATH (installed: %s)", async (available) => {
     const env = { PATH: makeBinDir(available ? ["uv"] : []) }
     const lifecycle = makeHarnessLifecycleManager({
@@ -91,15 +106,43 @@ describe("catalog installation routes", () => {
       "/opt/homebrew/Cellar/copilot-cli/1.0.0/bin/copilot",
       "brew upgrade copilot-cli"
     ],
-    ["qwen-code", "/opt/homebrew/Cellar/qwen-code/1.0.0/bin/qwen", "brew upgrade qwen-code"]
-  ])("updates %s through its installed owner", async (id, path, command) => {
+    ["qwen-code", "/opt/homebrew/Cellar/qwen-code/1.0.0/bin/qwen", "brew upgrade qwen-code"],
+    // OpenCode 1 installs move to OpenCode 2's package, removing the old one
+    // first where both would own the binary.
+    [
+      "opencode",
+      "/opt/homebrew/Cellar/opencode/1.18.34/bin/opencode",
+      "brew uninstall opencode && brew install anomalyco/tap/opencode-v2"
+    ],
+    [
+      "opencode",
+      "/opt/homebrew/Cellar/opencode-v2/2.0.20/bin/opencode",
+      "brew upgrade opencode-v2"
+    ],
+    [
+      "opencode",
+      "/Users/dev/.npm-global/lib/node_modules/opencode-ai/bin/opencode",
+      "npm uninstall -g opencode-ai && npm install -g @opencode/cli"
+    ],
+    [
+      "opencode",
+      "/Users/dev/.npm-global/lib/node_modules/@opencode/cli/bin/opencode",
+      "npm install -g @opencode/cli@latest"
+    ],
+    [
+      "opencode",
+      "/Users/dev/.opencode/bin/opencode",
+      "curl -fsSL https://opencode.ai/v2/install | bash"
+    ],
+    ["opencode", "/usr/local/bin/opencode", "/usr/local/bin/opencode upgrade"]
+  ])("updates %s through its installed owner (%s)", async (id, path, command) => {
     const { spawnShell, spawns, processes } = fakeSpawner()
     const lifecycle = makeHarnessLifecycleManager({
       agents: agentsStub([definition(id)], [harness(id, path!, "1.0.0")]),
       db: await makeDb(),
       home: "/Users/dev",
       realpath: (p) => p,
-      resolveEnv: async () => ({ PATH: makeBinDir(["brew", "uv"]) }),
+      resolveEnv: async () => ({ PATH: makeBinDir(["brew", "uv", "npm", "curl"]) }),
       fetchImpl: async () => jsonResponse({}, 404),
       spawnShell,
       terminal: fakeTerminal().terminal

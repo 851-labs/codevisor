@@ -176,10 +176,16 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
   }),
   executableHarness("opencode", "OpenCode", "curlybraces", ["opencode"], "opencode", ["acp"], {
     provider: "opencode",
+    // OpenCode 2. Its installer resolves the version from opencode.ai and
+    // downloads from npm, so it never meets GitHub's API rate limit.
     installMethods: [
-      { command: "curl -fsSL https://opencode.ai/install | bash", kind: "curl" },
-      { kind: "npm", packageName: "opencode-ai" },
-      { formula: "anomalyco/tap/opencode", kind: "brew" }
+      {
+        command: "curl -fsSL https://opencode.ai/v2/install | bash",
+        kind: "curl",
+        recommended: true
+      },
+      { kind: "npm", packageName: "@opencode/cli" },
+      { formula: "anomalyco/tap/opencode-v2", kind: "brew" }
     ],
     // OpenCode has a real per-server `enabled` flag — the one JSON harness
     // where a native disable toggle is honest. XDG_CONFIG_HOME is honored by
@@ -195,11 +201,31 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     // its own directory — every global skill is ambiently available.
     skills: { alsoReadsCanonical: true, globalDir: "~/.config/opencode/skills" },
     update: {
-      // `opencode upgrade` detects curl/npm/pnpm/bun/brew itself.
+      // OpenCode 1's packages own the same `opencode` binary; `opencode
+      // upgrade` on OpenCode 1 never reaches 2, so its installs reinstall
+      // through OpenCode 2's own method. Every channel publishes the npm
+      // version (Homebrew's API doesn't cover taps).
+      replaces: { brew: "anomalyco/tap/opencode", npm: "opencode-ai" },
       sources: [
         {
+          apply: { kind: "reinstall" },
+          check: { kind: "npm", packageName: "@opencode/cli" },
+          when: "brew"
+        },
+        {
+          apply: { kind: "reinstall" },
+          check: { kind: "npm", packageName: "@opencode/cli" },
+          when: "npm"
+        },
+        {
+          // The v2 script installs over either version's ~/.opencode/bin.
+          apply: { kind: "reinstall" },
+          check: { kind: "npm", packageName: "@opencode/cli" },
+          when: "curl"
+        },
+        {
           apply: { args: ["upgrade"], kind: "selfUpdate" },
-          check: { kind: "npm", packageName: "opencode-ai" },
+          check: { kind: "npm", packageName: "@opencode/cli" },
           when: "any"
         }
       ]

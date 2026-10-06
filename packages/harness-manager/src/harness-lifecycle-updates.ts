@@ -1,4 +1,6 @@
-import type { HarnessInstallMethodSpec } from "@codevisor/agent-runtime"
+import { realpathSync } from "node:fs"
+
+import type { HarnessDefinition, HarnessInstallMethodSpec } from "@codevisor/agent-runtime"
 import type { HarnessLifecycleState } from "@codevisor/api"
 import type { HarnessPendingUpdateRecord } from "@codevisor/db"
 import { detectBrewPackage, detectInstallOrigin } from "@codevisor/updater"
@@ -6,7 +8,13 @@ import { detectBrewPackage, detectInstallOrigin } from "@codevisor/updater"
 import type { HarnessLifecycleCore } from "./harness-lifecycle-core.js"
 import { matchSource } from "./harness-lifecycle-detection.js"
 import type { HarnessOperationRunner } from "./harness-lifecycle-execution.js"
-import { appBundlePath, run, sparkleFeedUrl, upgradeCommand } from "./harness-lifecycle-support.js"
+import {
+  appBundlePath,
+  installCommand,
+  run,
+  sparkleFeedUrl,
+  upgradeCommand
+} from "./harness-lifecycle-support.js"
 import type { HarnessLifecycleManager } from "./harness-lifecycle-types.js"
 
 export type HarnessUpdateGate = Pick<
@@ -57,6 +65,49 @@ export const makeHarnessUpdateGate = (
     for (const listener of gateListeners) listener(harnessId)
   }
 
+  /// An install of the release line this harness replaces (both own the
+  /// same binary, so the current package can't install beside it): remove
+  /// it, then install the current package.
+  const replacedInstall = (
+    definition: HarnessDefinition,
+    origin: string,
+    path: string,
+    brewFormula: string | undefined
+  ): { readonly command: string; readonly methodId: string } | undefined => {
+    const replaces = definition.update?.replaces
+    const method = (kind: HarnessInstallMethodSpec["kind"]) =>
+      (definition.installMethods ?? []).find((candidate) => candidate.kind === kind)
+    const brew = method("brew")
+    if (
+      brew !== undefined &&
+      brewFormula !== undefined &&
+      replaces?.brew?.split("/").at(-1) === brewFormula
+    )
+      return {
+        command: `brew uninstall ${brewFormula} && ${installCommand(brew)}`,
+        methodId: "brew"
+      }
+    const npm = method("npm")
+    const resolved = (() => {
+      try {
+        return (config.realpath ?? realpathSync)(path)
+      } catch {
+        return path
+      }
+    })()
+    if (
+      npm !== undefined &&
+      origin === "npm" &&
+      replaces?.npm !== undefined &&
+      resolved.includes(`/node_modules/${replaces.npm}/`)
+    )
+      return {
+        command: `npm uninstall -g ${replaces.npm} && ${installCommand(npm)}`,
+        methodId: "npm"
+      }
+    return undefined
+  }
+
   const executeUpdateNow = async (
     harnessId: string,
     onSettled?: (success: boolean) => void
@@ -95,6 +146,18 @@ export const makeHarnessUpdateGate = (
                 config.realpath === undefined ? {} : { realpath: config.realpath }
               )
             : undefined
+        const replacement = replacedInstall(definition, origin, path, detectedBrew?.formula)
+        if (replacement !== undefined) {
+          const { lifecycle, terminalId } = await runOperation({
+            command: replacement.command,
+            harnessId,
+            methodId: replacement.methodId,
+            phase: "updating",
+            ...(targetVersion === undefined ? {} : { targetVersion }),
+            ...(onSettled === undefined ? {} : { onSettled })
+          })
+          return { lifecycle, queued: false, terminalId }
+        }
         const spec: HarnessInstallMethodSpec | undefined =
           detectedBrew === undefined
             ? (definition.installMethods ?? []).find(

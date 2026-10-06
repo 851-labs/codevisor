@@ -135,6 +135,9 @@ export interface HarnessInstallMethodSpec {
   /// curl: the vendor's full install command, shown verbatim to the user
   /// before running (e.g. `curl -fsSL https://claude.ai/install.sh | bash`).
   readonly command?: string
+  /// The vendor's preferred method: recommended whenever it can run, ahead
+  /// of the usual brew, curl, npm order.
+  readonly recommended?: boolean
 }
 
 /// Where to learn the latest available version for one install origin.
@@ -251,7 +254,13 @@ export interface HarnessDefinition {
   readonly installMethods?: ReadonlyArray<HarnessInstallMethodSpec>
   /// Update sources keyed by detected install origin. Absent = no update
   /// support (custom entries, harnesses without a version channel).
-  readonly update?: { readonly sources: ReadonlyArray<HarnessUpdateSource> }
+  readonly update?: {
+    readonly sources: ReadonlyArray<HarnessUpdateSource>
+    /// Packages of an older release line this harness's packages replace
+    /// (both own the same binary): updating an install of one removes it
+    /// before installing the current package.
+    readonly replaces?: { readonly npm?: string; readonly brew?: string }
+  }
   /// Native (harness-owned) MCP config location + shape. Absent = the harness
   /// is skipped by native MCP discovery.
   readonly nativeMcp?: NativeMcpConfigSpec

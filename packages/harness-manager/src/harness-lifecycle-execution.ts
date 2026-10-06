@@ -73,9 +73,11 @@ export const makeHarnessOperationRunner = (
       recommended: false,
       spec
     }))
-    const recommended = METHOD_PREFERENCE.map((kind) =>
-      methods.find((method) => method.kind === kind && method.available)
-    ).find((method) => method !== undefined)
+    const recommended =
+      methods.find((method) => method.spec.recommended === true && method.available) ??
+      METHOD_PREFERENCE.map((kind) =>
+        methods.find((method) => method.kind === kind && method.available)
+      ).find((method) => method !== undefined)
     return methods.map(({ spec: _spec, ...method }) => ({
       ...method,
       recommended: method.id === recommended?.id
