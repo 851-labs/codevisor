@@ -8,7 +8,20 @@ import CodevisorUI
 extension OpenCodeProviderAuthenticationView {
   func loadAccounts() async {
     await perform("Loading profiles…") {
-      let loaded = try await client.listHarnessAccounts(harnessId: "opencode")
+      let loaded: [ServerHarnessAccount]
+      do {
+        loaded = try await client.listHarnessAccounts(harnessId: "opencode")
+      } catch {
+        // Nothing to show yet: the sheet explains the failure in place, with
+        // a retry, rather than an alert over an empty list.
+        guard profilesLoaded else {
+          profilesError = serverErrorMessage(error)
+          return
+        }
+        throw error
+      }
+      profilesError = nil
+      profilesLoaded = true
       accounts = loaded
       if !loaded.contains(where: { $0.id == selectedAccountId }) {
         selectedAccountId =
@@ -191,10 +204,6 @@ extension OpenCodeProviderAuthenticationView {
     cancelPendingFlow()
     providerSearch = ""
     authorizationCode = ""
-    if let pendingMachineSignIn {
-      self.pendingMachineSignIn = nil
-      machineSignIn?(pendingMachineSignIn)
-    }
   }
 
   func cancelPendingFlow() {

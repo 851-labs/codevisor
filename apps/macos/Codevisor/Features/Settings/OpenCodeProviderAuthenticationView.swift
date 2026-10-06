@@ -6,7 +6,6 @@ import CodevisorUI
 struct OpenCodeProviderAuthenticationView: View {
   @Environment(AppEnvironment.self) var environment
   @Environment(\.sharedHarnessAccounts) var isShared
-  @Environment(\.harnessMachineSignIn) var machineSignIn
   @Environment(\.settingsMachineId) private var settingsMachineId
 
   /// The machine this view operates on — pinned by the machine-scoped
@@ -50,7 +49,10 @@ struct OpenCodeProviderAuthenticationView: View {
   @State var isLoadingProviders = false
   @State var errorMessage: String?
   @State var showingProviderSignIn = false
-  @State var pendingMachineSignIn: HarnessMachineSignIn?
+  /// Profiles come in once per sheet; until then the sheet says it is
+  /// loading (or why it couldn't) instead of looking empty.
+  @State var profilesLoaded = false
+  @State var profilesError: String?
   @State private var showingNewProfile = false
   @State var newProfileName = ""
   @State var profilePendingRename: ServerHarnessAccount?
@@ -82,6 +84,8 @@ struct OpenCodeProviderAuthenticationView: View {
         profiles
       }
     }
+    // The hosting sheet shows the current operation in its own footer.
+    .harnessWorking(workingLabel)
     .task { await loadAccounts() }
     .onChange(of: environment.configSync.revisionsByNamespace[HarnessSharedCredentials.namespace]) { _, _ in
       if isShared {
@@ -172,6 +176,7 @@ struct OpenCodeProviderAuthenticationView: View {
         } label: {
           Image(systemName: "plus")
         }
+        .disabled(!profilesLoaded || isWorking)
         .help("Add Profile")
         .accessibilityLabel("Add Profile")
 
@@ -236,6 +241,16 @@ struct OpenCodeProviderAuthenticationView: View {
           }
         }
       }
+    } else if let profilesError {
+      ContentUnavailableView {
+        Label("Couldn’t Load Profiles", systemImage: "exclamationmark.triangle")
+      } description: {
+        Text(profilesError)
+      } actions: {
+        Button("Retry") { Task { await loadAccounts() } }
+      }
+    } else if !profilesLoaded {
+      SheetLoadingView("Loading profiles…")
     } else {
       ContentUnavailableView("No Profile Selected", systemImage: "person.crop.circle")
     }
