@@ -1,4 +1,5 @@
 export * from "./accounts.js"
+export * from "./credential-plugin.js"
 export * from "./integrations.js"
 export * from "./pool.js"
 export * from "./provider.js"
