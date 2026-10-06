@@ -7,7 +7,8 @@ import { canonicalExecutionArgs, type CodevisorExecutionState } from "@codevisor
 const executeToolTitles = new Set([
   "mcp__codevisor__execute",
   "codevisor.execute",
-  "codevisor_execute"
+  "codevisor_execute",
+  "codevisor__execute"
 ])
 /// A gateway event can outrun the harness event that carries the arguments.
 /// Only the latest state per execution is kept, and only briefly.

@@ -71,6 +71,25 @@ describe("ExecutionAnnotator", () => {
     ])
   })
 
+  it("recognizes Grok's spelling of the gateway tool", () => {
+    const f = fixture()
+    const call = output({
+      sessionUpdate: "tool_call",
+      toolCallId: "grok-1",
+      title: "codevisor__execute",
+      status: "in_progress",
+      rawInput: args
+    })
+    expect(f.annotate(call)).toEqual([call])
+    expect(payloads(f.annotate(gateway(running)))).toEqual([
+      {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "grok-1",
+        _meta: { codevisorExecution: running }
+      }
+    ])
+  })
+
   it("holds the latest early gateway state until Claude reports the arguments", () => {
     const f = fixture()
     f.annotate(

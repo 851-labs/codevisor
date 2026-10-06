@@ -419,13 +419,23 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
   executableHarness("devin", "Devin", "brain", ["devin"], "devin", ["acp"], {
     installMethods: [{ command: "curl -fsSL https://cli.devin.ai/install.sh | bash", kind: "curl" }]
   }),
-  executableHarness("grok-build", "Grok Build", "x.square", ["grok"], "grok", ["agent", "stdio"], {
-    installMethods: [
-      { command: "curl -fsSL https://x.ai/cli/install.sh | bash", kind: "curl" },
-      { kind: "npm", packageName: "@xai-official/grok" }
-    ],
-    provider: "grok-build"
-  }),
+  // Codevisor's Build mode is full access, as for the other harnesses: without
+  // --always-approve Grok asks before every tool call.
+  executableHarness(
+    "grok-build",
+    "Grok Build",
+    "x.square",
+    ["grok"],
+    "grok",
+    ["agent", "--always-approve", "stdio"],
+    {
+      installMethods: [
+        { command: "curl -fsSL https://x.ai/cli/install.sh | bash", kind: "curl" },
+        { kind: "npm", packageName: "@xai-official/grok" }
+      ],
+      provider: "grok-build"
+    }
+  ),
   executableHarness("kilo", "Kilo", "shippingbox", ["kilo"], "kilo", ["acp"], {
     installMethods: [
       { kind: "npm", packageName: "@kilocode/cli" },
