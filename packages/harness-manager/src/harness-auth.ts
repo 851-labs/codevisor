@@ -4,8 +4,11 @@ import { join } from "node:path"
 
 import {
   makeOpenCode2Accounts,
+  makeOpenCode2Logins,
   makeOpenCodeServerPool,
-  makeOpenCodeVersionProbe
+  makeOpenCodeVersionProbe,
+  startOpenCodeServer,
+  type OpenCodeServerHold
 } from "@codevisor/adapter-opencode"
 
 import { makeGrokAuth } from "./grok-auth.js"
@@ -62,6 +65,40 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
   const openCodeMajorVersion = config.openCode?.majorVersion ?? makeOpenCodeVersionProbe()
   const openCode2 =
     config.openCode?.accounts ?? makeOpenCode2Accounts({ pool: makeOpenCodeServerPool() })
+  const openCode2Logins = config.openCode?.logins ?? makeOpenCode2Logins()
+  const isOpenCode2 = async (command: string) => ((await openCodeMajorVersion(command)) ?? 1) >= 2
+  /// A throwaway OpenCode 2 server on its own data directory, for a sign-in
+  /// whose credential Codevisor takes into its vault: it never lands in a
+  /// profile OpenCode would refresh on its own.
+  const isolatedOpenCode2 = async (profile: OpenCodeProfile): Promise<OpenCodeServerHold> => {
+    const root = join(config.dataDir, "harness-logins", "opencode", randomUUID())
+    await mkdir(root, { recursive: true, mode: 0o700 })
+    const env = {
+      ...profile.env,
+      OPENCODE_CONFIG_CONTENT: "{}",
+      XDG_DATA_HOME: join(root, "data"),
+      XDG_CONFIG_HOME: join(root, "config"),
+      XDG_STATE_HOME: join(root, "state"),
+      XDG_CACHE_HOME: join(root, "cache")
+    }
+    try {
+      const server = await (config.openCode?.start ?? startOpenCodeServer)({
+        command: profile.command,
+        env,
+        cwd: root
+      })
+      return {
+        server,
+        release: async () => {
+          await server.stop()
+          await rm(root, { recursive: true, force: true })
+        }
+      }
+    } catch (cause) {
+      await rm(root, { recursive: true, force: true })
+      throw cause
+    }
+  }
   const openCodeAuth = makeOpenCodeAuthManager({
     profile: openCodeProfile,
     savedApiKey: async (accountId, providerId, shared) => {
@@ -217,13 +254,52 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
         return provider
       })
     },
-    beginOpenCodeLogin: openCodeAuth.beginLogin,
-    openCodeLoginFlow: openCodeAuth.flow,
-    answerOpenCodeLogin: openCodeAuth.answer,
-    cancelOpenCodeLogin: openCodeAuth.cancel,
+    beginOpenCodeLogin: async (accountId, providerId, methodId, inputs, apiKey, shared = false) => {
+      const profile = await openCodeProfile(accountId)
+      if (!(await isOpenCode2(profile.command)))
+        return openCodeAuth.beginLogin(accountId, providerId, methodId, inputs, apiKey, shared)
+      const providers = config.sharedProviders?.()
+      // A sign-in Codevisor can share goes into its vault, like OpenCode 1's.
+      const captured =
+        apiKey === undefined &&
+        providers !== undefined &&
+        providerOAuthSupported("opencode", providerId)
+      const hold = captured ? await isolatedOpenCode2(profile) : await openCode2.hold(profile)
+      const flow = await openCode2Logins.begin(hold, profile.cwd, {
+        accountId,
+        providerId,
+        methodId,
+        ...(inputs === undefined ? {} : { inputs }),
+        ...(apiKey === undefined ? {} : { apiKey }),
+        ...(captured
+          ? {
+              capture: async (credential) => {
+                if (
+                  !(await providers.capture("opencode", accountId, providerId, credential, shared))
+                )
+                  throw new Error(
+                    "This provider cannot share its sign-in. Update Codevisor and try again."
+                  )
+              }
+            }
+          : {})
+      })
+      // A key replaces a shared sign-in for the same provider.
+      if (apiKey !== undefined) await providers?.remove("opencode", accountId, providerId, shared)
+      return flow
+    },
+    openCodeLoginFlow: (flowId) => openCode2Logins.flow(flowId) ?? openCodeAuth.flow(flowId),
+    answerOpenCodeLogin: async (flowId, code) =>
+      (await openCode2Logins.answer(flowId, code)) ?? openCodeAuth.answer(flowId, code),
+    cancelOpenCodeLogin: (flowId) => {
+      if (openCode2Logins.flow(flowId) === undefined) openCodeAuth.cancel(flowId)
+      else void openCode2Logins.cancel(flowId)
+    },
     logoutOpenCodeProvider: async (accountId, id) => {
-      if (!(await config.sharedProviders?.()?.remove("opencode", accountId, id)))
-        await openCodeAuth.logout(accountId, id)
+      if (await config.sharedProviders?.()?.remove("opencode", accountId, id)) return
+      const profile = await openCodeProfile(accountId)
+      if (await isOpenCode2(profile.command)) await openCode2.removeIntegration(profile, id)
+      else await openCodeAuth.logout(accountId, id)
     },
     subscribe: (listener) => {
       listeners.add(listener)

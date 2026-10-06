@@ -27,16 +27,18 @@ export const makeOpenCode2Accounts = (deps: {
   readonly start?: (options: OpenCodeServerOptions) => Promise<OpenCodeServer>
 }) => {
   const start = deps.start ?? startOpenCodeServer
+  // One control server per binary and data directory: the credentials
+  // live in that directory's database.
+  const hold = (profile: OpenCodeProfileRuntime) =>
+    deps.pool.acquire(
+      JSON.stringify([profile.command, profile.env.XDG_DATA_HOME ?? profile.env.HOME]),
+      () => start({ command: profile.command, env: profile.env, cwd: profile.cwd })
+    )
   const withServer = async <A>(
     profile: OpenCodeProfileRuntime,
     use: (server: OpenCodeServer) => Promise<A>
   ): Promise<A> => {
-    // One control server per binary and data directory: the credentials
-    // live in that directory's database.
-    const key = JSON.stringify([profile.command, profile.env.XDG_DATA_HOME ?? profile.env.HOME])
-    const lease = await deps.pool.acquire(key, () =>
-      start({ command: profile.command, env: profile.env, cwd: profile.cwd })
-    )
+    const lease = await hold(profile)
     try {
       return await use(lease.server)
     } finally {
@@ -44,6 +46,18 @@ export const makeOpenCode2Accounts = (deps: {
     }
   }
   return {
+    /// The profile's control server, held until released (a sign-in in
+    /// progress keeps it running).
+    hold,
+    /// Signs the profile out of one provider: every credential it holds for it.
+    removeIntegration: (profile: OpenCodeProfileRuntime, integrationID: string) =>
+      withServer(profile, async (server) => {
+        const stored = await server.request<{
+          readonly data: ReadonlyArray<{ readonly id: string; readonly integrationID: string }>
+        }>("/api/credential")
+        for (const { id } of stored.data.filter((entry) => entry.integrationID === integrationID))
+          await server.request(`/api/credential/${encodeURIComponent(id)}`, { method: "DELETE" })
+      }),
     /// Makes the profile's Codevisor credentials exactly `desired`, each one
     /// replaced (OpenCode's API can't update a secret in place), so a session
     /// starts with the token Codevisor holds now.

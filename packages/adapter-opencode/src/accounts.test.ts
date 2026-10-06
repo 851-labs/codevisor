@@ -68,3 +68,29 @@ it("replaces only Codevisor's own credentials when syncing a profile", async () 
     ["/api/credential", { body: { ...openai, label: "Codevisor", activate: true } }]
   ])
 })
+
+it("signs a profile out of one provider, whichever credentials it holds", async () => {
+  const calls: Array<[string, unknown]> = []
+  const request = vi.fn(async (path: string, init?: unknown) => {
+    calls.push([path, init])
+    return init === undefined
+      ? {
+          data: [
+            { id: "a", integrationID: "openai" },
+            { id: "b", integrationID: "xai" },
+            { id: "c d", integrationID: "openai" }
+          ]
+        }
+      : undefined
+  })
+  const server = { url: "http://oc", request, stop: vi.fn(async () => undefined) }
+  const accounts = makeOpenCode2Accounts({
+    pool: makeOpenCodeServerPool(),
+    start: async () => server as unknown as OpenCodeServer
+  })
+  await accounts.removeIntegration({ command: "/bin/opencode", cwd: "/home", env: {} }, "openai")
+  expect(calls.slice(1)).toEqual([
+    ["/api/credential/a", { method: "DELETE" }],
+    ["/api/credential/c%20d", { method: "DELETE" }]
+  ])
+})

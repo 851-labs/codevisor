@@ -1,5 +1,9 @@
 import type { spawnClaudeAuthClient } from "@codevisor/adapter-claude"
-import type { makeOpenCode2Accounts } from "@codevisor/adapter-opencode"
+import type {
+  makeOpenCode2Accounts,
+  makeOpenCode2Logins,
+  startOpenCodeServer
+} from "@codevisor/adapter-opencode"
 import type {
   AgentRuntimeService,
   HarnessAccountContext,
@@ -66,7 +70,13 @@ export interface HarnessAuthManagerConfig {
   /// Test seams for OpenCode 2: its version check and its account API.
   readonly openCode?: {
     readonly majorVersion?: (command: string) => Promise<number | undefined>
-    readonly accounts?: Pick<ReturnType<typeof makeOpenCode2Accounts>, "providers">
+    readonly accounts?: Pick<
+      ReturnType<typeof makeOpenCode2Accounts>,
+      "providers" | "hold" | "removeIntegration"
+    >
+    /// Starts the throwaway server a captured sign-in runs on.
+    readonly start?: typeof startOpenCodeServer
+    readonly logins?: ReturnType<typeof makeOpenCode2Logins>
   }
   /// The effective harness catalog (builtins + user-defined entries).
   /// Defaults to `agents.catalog`, falling back to the builtin catalog for
