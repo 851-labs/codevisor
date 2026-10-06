@@ -68,6 +68,8 @@ describe("ClaudeProvider", () => {
     // The session id is assigned client-side and handed to the CLI.
     expect(created.metadata.sessionId).toBeTruthy()
     expect(fake.options?.extraArgs?.["session-id"]).toBe(created.metadata.sessionId)
+    // Claude Code's own system prompt, as in a normal `claude` session.
+    expect(fake.options?.systemPrompt).toEqual({ type: "preset", preset: "claude_code" })
     // Full access is the default posture; the CLI is started in bypass so it
     // matches the advertised mode.
     expect(created.metadata.modes?.currentModeId).toBe("bypassPermissions")
@@ -99,34 +101,57 @@ describe("ClaudeProvider", () => {
     expect(fake.options?.resume).toBeUndefined()
   })
 
-  it("starts Claude with Codevisor's standing instructions only when it has a gateway", async () => {
-    const withGateway = new FakeQuery()
-    const created = run(
-      makeProvider(withGateway).createSession(definition, "/tmp", async () => {}, undefined, {
-        name: "codevisor",
-        url: "http://127.0.0.1:49361/mcp/gateway?gateway=test",
-        bearerToken: "secret",
-        instructions: "You are running inside Codevisor."
-      })
-    )
-    withGateway.push(initMessage())
-    await created
-    expect(withGateway.options?.systemPrompt).toBe("You are running inside Codevisor.")
-    expect(withGateway.options?.mcpServers).toHaveProperty("codevisor")
-
-    const bare = new FakeQuery()
-    const plain = run(makeProvider(bare).createSession(definition, "/tmp", async () => {}))
-    bare.push(initMessage())
-    await plain
-    expect(bare.options).not.toHaveProperty("systemPrompt")
-  })
-
   it("rejects claude binaries older than the version floor", async () => {
     const fake = new FakeQuery()
     const provider = makeProvider(fake, async () => "1.0.44")
     await expect(
       run(provider.createSession(definition, "/tmp", async () => undefined))
     ).rejects.toThrow("older than the required")
+  })
+
+  it("turns off Claude in Chrome whenever Codevisor's browser is attached", async () => {
+    vi.useFakeTimers()
+    const gateway = { bearerToken: "secret", name: "codevisor", url: "http://127.0.0.1:1/mcp" }
+    const fresh = new FakeQuery()
+    const recovered = new FakeQuery()
+    fresh.successors.push(recovered)
+    const started = run(
+      makeProvider(fresh).createSession(definition, "/tmp", async () => {}, undefined, gateway)
+    )
+    fresh.push(initMessage())
+    const created = await started
+    expect(fresh.options?.extraArgs).toEqual({
+      "no-chrome": null,
+      "session-id": created.metadata.sessionId
+    })
+
+    // A recovered stream keeps the flag but drops the fresh-session id.
+    const prompt = run(created.handle.prompt("do work"))
+    await fresh.nextPrompt()
+    fresh.finish()
+    await vi.advanceTimersByTimeAsync(STREAM_RECOVERY_BACKOFF_MS)
+    await recovered.nextPrompt()
+    expect(recovered.options?.extraArgs).toEqual({ "no-chrome": null })
+    expect(recovered.options?.systemPrompt).toEqual({ type: "preset", preset: "claude_code" })
+    recovered.push(resultMessage())
+    await prompt
+
+    const resumed = new FakeQuery()
+    const resuming = run(
+      makeProvider(resumed).loadSession(
+        definition,
+        "previous-session",
+        "/tmp",
+        async () => undefined,
+        undefined,
+        gateway
+      )
+    )
+    await resuming
+    expect(resumed.options).toMatchObject({
+      extraArgs: { "no-chrome": null },
+      resume: "previous-session"
+    })
   })
 
   it("resumes an in-flight turn on a fresh query when the SDK stream dies", async () => {

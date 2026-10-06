@@ -60,11 +60,12 @@ export const resumeSessionAfterStreamDeath = async (
   // The process restarts on what the session is running now — the model,
   // effort, and speed the chat applied since start — not the start options.
   const {
-    extraArgs: _fresh,
+    extraArgs: startArgs,
     model: _startModel,
     settings: _startSettings,
     ...resumeOptions
   } = deps.options
+  const { "session-id": _fresh, ...keptArgs } = startArgs ?? {}
   const nextInput = new InputQueue()
   session.input.end()
   session.input = nextInput
@@ -73,6 +74,7 @@ export const resumeSessionAfterStreamDeath = async (
     prompt: nextInput,
     options: {
       ...resumeOptions,
+      ...(Object.keys(keptArgs).length === 0 ? {} : { extraArgs: keptArgs }),
       ...claudeStartOptions({
         effort: session.currentEffort,
         model: session.currentModel,

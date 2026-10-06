@@ -112,6 +112,10 @@ export const makeStartSession = (deps: StartSessionDeps) => {
       model: savedModel,
       speed: saved.speed
     })
+    // With Codevisor's gateway attached, its browser is the agent's browser:
+    // turn off Claude in Chrome so the agent doesn't get two competing ones.
+    const nativeToolArgs: Record<string, string | null> =
+      toolGateway === undefined ? {} : { "no-chrome": null }
     // Filled in below; the hook and pump close over it.
     let session: ClaudeSession | undefined
     const options: ClaudeOptions = {
@@ -121,15 +125,13 @@ export const makeStartSession = (deps: StartSessionDeps) => {
       env: accountEnv,
       includePartialMessages: true,
       pathToClaudeCodeExecutable: claudePath,
+      // The SDK sends no system prompt unless asked; without Claude Code's
+      // own, the model gets tools and skills but no guidance to use them.
+      systemPrompt: { type: "preset", preset: "claude_code" },
       ...(toolGateway === undefined
         ? {}
         : {
             strictMcpConfig: true,
-            // The SDK's default system prompt is empty, so this adds
-            // Codevisor's standing instructions without replacing anything.
-            ...(toolGateway.instructions === undefined
-              ? {}
-              : { systemPrompt: toolGateway.instructions }),
             mcpServers: {
               [toolGateway.name]: {
                 type: "http" as const,
@@ -249,7 +251,9 @@ export const makeStartSession = (deps: StartSessionDeps) => {
               ]
             })
       },
-      ...(resume === undefined ? { extraArgs: { "session-id": sessionKey } } : { resume })
+      ...(resume === undefined
+        ? { extraArgs: { ...nativeToolArgs, "session-id": sessionKey } }
+        : { ...(toolGateway === undefined ? {} : { extraArgs: nativeToolArgs }), resume })
     }
     const q = queryFn({ prompt: input, options })
 
