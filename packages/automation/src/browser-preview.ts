@@ -29,6 +29,7 @@ export interface BrowserPreviewsOptions {
   readonly idleMs?: number
   readonly setTimer?: (callback: () => void, ms: number) => unknown
   readonly clearTimer?: (timer: unknown) => void
+  readonly now?: () => number
 }
 
 export const BROWSER_PREVIEW_IDLE_MS = 60_000
@@ -55,6 +56,11 @@ interface Session {
   pending: Promise<void>
   idleTimer: unknown
   infoRefreshedAt: number
+  /// A title refresh deferred to the end of the current refresh window.
+  infoTimer: unknown
+  /// Follows the agent's tab's title and address as they change, in the
+  /// browsers that report it; the rest refresh on each browser call.
+  infoWatch: { readonly runtime: BrowserRuntime; readonly dispose: () => void } | undefined
 }
 
 const clampDimension = (value: number): number =>
@@ -99,6 +105,7 @@ export const makeBrowserPreviews = (options: BrowserPreviewsOptions = {}) => {
   const idleMs = options.idleMs ?? BROWSER_PREVIEW_IDLE_MS
   const setTimer = options.setTimer ?? ((callback, ms) => setTimeout(callback, ms).unref())
   const clearTimer = options.clearTimer ?? ((timer) => clearTimeout(timer as NodeJS.Timeout))
+  const now = options.now ?? Date.now
   const sessions = new Map<string, Session>()
 
   const session = (sessionId: string): Session => {
@@ -112,10 +119,67 @@ export const makeBrowserPreviews = (options: BrowserPreviewsOptions = {}) => {
       idleTimer: undefined,
       viewers: new Map(),
       pending: Promise.resolve(),
-      infoRefreshedAt: 0
+      infoRefreshedAt: Number.NEGATIVE_INFINITY,
+      infoTimer: undefined,
+      infoWatch: undefined
     }
     sessions.set(sessionId, created)
     return created
+  }
+
+  const watchInfo = (entry: Session, runtime: BrowserRuntime | undefined): void => {
+    if (entry.infoWatch?.runtime === runtime) return
+    entry.infoWatch?.dispose()
+    entry.infoWatch =
+      runtime === undefined
+        ? undefined
+        : {
+            runtime,
+            dispose: runtime.connection.on("Target.targetInfoChanged", (params) => {
+              const info = params.targetInfo as
+                | { readonly targetId?: unknown; readonly title?: unknown; readonly url?: unknown }
+                | undefined
+              if (info === undefined || info.targetId !== entry.targetId) return
+              publish(entry, {
+                title: typeof info.title === "string" ? info.title : "",
+                url: typeof info.url === "string" ? info.url : ""
+              })
+            })
+          }
+  }
+
+  /// Reads the agent's tab's title and address, at most once a second: a
+  /// call inside the window runs at its end instead, so the last change in a
+  /// burst (the page finishing loading) is never missed.
+  const refreshInfo = (entry: Session): void => {
+    if (entry.infoTimer !== undefined) return
+    const wait = entry.infoRefreshedAt + INFO_REFRESH_MS - now()
+    if (wait > 0) {
+      entry.infoTimer = setTimer(() => {
+        entry.infoTimer = undefined
+        refreshInfo(entry)
+      }, wait)
+      return
+    }
+    const { runtime, targetId } = entry
+    if (runtime === undefined || targetId === undefined) return
+    entry.infoRefreshedAt = now()
+    void runtime.connection
+      .send<{
+        targetInfos: ReadonlyArray<{ targetId: string; title?: string; url?: string }>
+      }>("Target.getTargets")
+      .then(({ targetInfos }) => {
+        const info = targetInfos.find((target) => target.targetId === targetId)
+        if (info === undefined || entry.targetId !== targetId) return
+        publish(entry, { title: info.title ?? "", url: info.url ?? "" })
+      })
+      .catch(() => undefined)
+  }
+
+  const stopInfo = (entry: Session): void => {
+    if (entry.infoTimer !== undefined) clearTimer(entry.infoTimer)
+    entry.infoTimer = undefined
+    watchInfo(entry, undefined)
   }
 
   const startStream = async (entry: Session, dimension: number): Promise<void> => {
@@ -130,6 +194,8 @@ export const makeBrowserPreviews = (options: BrowserPreviewsOptions = {}) => {
           .send("Page.screencastFrameAck", { sessionId: params.sessionId }, cdpSession)
           .catch(() => undefined)
         if (typeof params.data !== "string") return
+        // A new frame often means a new title too.
+        refreshInfo(entry)
         const data = params.data
         const watchers = [...entry.viewers].filter(([, watch]) => watch.watching)
         for (const [viewer] of watchers) viewer.frame(data)
@@ -169,22 +235,6 @@ export const makeBrowserPreviews = (options: BrowserPreviewsOptions = {}) => {
     return entry.pending
   }
 
-  const refreshInfo = (entry: Session, runtime: BrowserRuntime, targetId: string): void => {
-    const now = Date.now()
-    if (now - entry.infoRefreshedAt < INFO_REFRESH_MS) return
-    entry.infoRefreshedAt = now
-    void runtime.connection
-      .send<{
-        targetInfos: ReadonlyArray<{ targetId: string; title?: string; url?: string }>
-      }>("Target.getTargets")
-      .then(({ targetInfos }) => {
-        const info = targetInfos.find((target) => target.targetId === targetId)
-        if (info === undefined || entry.targetId !== targetId) return
-        publish(entry, { title: info.title ?? "", url: info.url ?? "" })
-      })
-      .catch(() => undefined)
-  }
-
   return {
     /// The agent just used `targetId` in `runtime`: show it, live.
     activity: (sessionId: string, runtime: BrowserRuntime, targetId: string): Promise<void> => {
@@ -198,7 +248,8 @@ export const makeBrowserPreviews = (options: BrowserPreviewsOptions = {}) => {
         void reconcile(entry)
       }, idleMs)
       publish(entry, { state: "active" })
-      refreshInfo(entry, runtime, targetId)
+      watchInfo(entry, runtime)
+      refreshInfo(entry)
       return reconcile(entry)
     },
 
@@ -213,6 +264,7 @@ export const makeBrowserPreviews = (options: BrowserPreviewsOptions = {}) => {
       }
       entry.runtime = undefined
       entry.targetId = undefined
+      stopInfo(entry)
       return reconcile(entry)
     },
 
@@ -225,6 +277,7 @@ export const makeBrowserPreviews = (options: BrowserPreviewsOptions = {}) => {
       if (entry.status.state !== "inactive") publish(entry, { state: "stopped" })
       entry.runtime = undefined
       entry.targetId = undefined
+      stopInfo(entry)
       await reconcile(entry)
       if (entry.viewers.size === 0) sessions.delete(sessionId)
     },

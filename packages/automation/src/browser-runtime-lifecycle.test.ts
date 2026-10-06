@@ -4,7 +4,7 @@ import { EventEmitter } from "node:events"
 import { afterEach, expect, it, vi } from "vitest"
 
 import type { BrowserRuntime } from "./browser-cdp-engine.js"
-import { closeBrowserRuntime } from "./browser-runtime-lifecycle.js"
+import { closeBrowserRuntime, waitForTargetsClosed } from "./browser-runtime-lifecycle.js"
 
 function fixture(owned = true) {
   const requested = Promise.withResolvers<void>()
@@ -94,4 +94,32 @@ it("only disconnects from a browser it does not own", async () => {
   expect(connection.send).not.toHaveBeenCalled()
   expect(processHandle.kill).not.toHaveBeenCalled()
   expect(connection.close).toHaveBeenCalledOnce()
+})
+
+it("waits until closed tabs stop being listed, and no longer than the deadline", async () => {
+  const replies: Array<unknown> = [
+    { targetInfos: [{ targetId: "popup" }, { targetId: "other" }] },
+    { targetInfos: [{ targetId: "other" }] }
+  ]
+  const send = vi.fn(async () => replies.shift())
+  const active = { connection: { send } } as unknown as BrowserRuntime
+
+  await waitForTargetsClosed(active, [])
+  expect(send).not.toHaveBeenCalled()
+  await waitForTargetsClosed(active, ["popup"], 2_000, 1)
+  expect(send).toHaveBeenCalledTimes(2)
+
+  // Still listed at the deadline: give up rather than hold the turn's end.
+  send.mockImplementation(async () => ({ targetInfos: [{ targetId: "stuck" }] }))
+  await waitForTargetsClosed(active, ["stuck"], 0)
+  expect(send).toHaveBeenCalledTimes(3)
+
+  // A browser that can't list its tabs, or lists none, has nothing left.
+  send.mockImplementation(async () => {
+    throw new Error("closed")
+  })
+  await waitForTargetsClosed(active, ["popup"])
+  send.mockImplementation(async () => ({}))
+  await waitForTargetsClosed(active, ["popup"])
+  expect(send).toHaveBeenCalledTimes(5)
 })

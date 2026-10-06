@@ -84,9 +84,11 @@ const viewer = () => {
   return { value, statuses, frames }
 }
 
-/// Manual timers: the idle timeout fires when the test says so.
+/// Manual timers and clock: pending timers fire, after time has passed,
+/// when the test says so.
 const timers = () => {
   const pending = new Set<() => void>()
+  let time = 0
   return {
     options: {
       setTimer: (callback: () => void) => {
@@ -95,13 +97,14 @@ const timers = () => {
       },
       clearTimer: (timer: unknown) => {
         pending.delete(timer as () => void)
-      }
+      },
+      now: () => time
     },
     fire: () => {
-      for (const callback of pending) {
-        pending.delete(callback)
-        callback()
-      }
+      time += 60_000
+      const due = new Set(pending)
+      pending.clear()
+      for (const callback of due) callback()
     },
     count: () => pending.size
   }
@@ -189,7 +192,8 @@ describe("Browser live preview", () => {
     subscription.watch(800)
     await previews.activity("chat", chrome.runtime, "tab-1")
     await previews.activity("chat", chrome.runtime, "tab-1")
-    expect(clock.count()).toBe(1)
+    // The idle timeout, and the title refresh the second call deferred.
+    expect(clock.count()).toBe(2)
 
     clock.fire()
     await previews.finish("other")
@@ -304,6 +308,79 @@ describe("Browser live preview", () => {
     await new Promise((resolve) => setImmediate(resolve))
     expect(unattached.methods()).not.toContain("Page.startScreencast")
     expect(missing.statuses.at(-1)).toMatchObject({ state: "active", title: "" })
+  })
+
+  it("follows the tab's title as the page changes it, until the turn ends", async () => {
+    const chrome = browser({ failTargets: true })
+    const previews = makeBrowserPreviews(timers().options)
+    const watcher = viewer()
+    previews.subscribe("chat", watcher.value)
+    await previews.activity("chat", chrome.runtime, "tab-1")
+    await previews.activity("chat", chrome.runtime, "tab-1")
+    const changed = (targetInfo: unknown) =>
+      chrome.handlers.get("undefined:Target.targetInfoChanged")?.({ targetInfo })
+
+    changed({ targetId: "tab-2", title: "Elsewhere", url: "https://other.test/" })
+    changed({ targetId: "tab-1", title: "Loaded", url: "https://example.com/done" })
+    expect(watcher.statuses.at(-1)).toEqual({
+      state: "active",
+      title: "Loaded",
+      url: "https://example.com/done"
+    })
+    changed({ targetId: "tab-1", title: 7 })
+    expect(watcher.statuses.at(-1)).toMatchObject({ title: "", url: "" })
+    changed(undefined)
+
+    // A new browser takes over the watch; the turn's end drops it.
+    const replacement = browser({ failTargets: true })
+    await previews.activity("chat", replacement.runtime, "tab-1")
+    expect(chrome.handlers.has("undefined:Target.targetInfoChanged")).toBe(false)
+    await previews.finish("chat")
+    expect(replacement.handlers.has("undefined:Target.targetInfoChanged")).toBe(false)
+    await previews.activity("chat", replacement.runtime, "tab-1")
+    await previews.close("chat")
+    expect(replacement.handlers.has("undefined:Target.targetInfoChanged")).toBe(false)
+  })
+
+  it("reads the title again after a burst of activity and new frames", async () => {
+    const clock = timers()
+    const chrome = browser()
+    const previews = makeBrowserPreviews(clock.options)
+    const watcher = viewer()
+    previews.subscribe("chat", watcher.value).watch(800)
+    await previews.activity("chat", chrome.runtime, "tab-1")
+    const lookups = () => chrome.methods().filter((method) => method === "Target.getTargets").length
+    expect(lookups()).toBe(1)
+
+    // Frames inside the window share one deferred lookup at its end.
+    chrome.frame("cdp:tab-1", "jpeg-1")
+    chrome.frame("cdp:tab-1", "jpeg-2")
+    expect(lookups()).toBe(1)
+    clock.fire()
+    expect(lookups()).toBe(2)
+
+    // A lookup deferred past the turn's end is dropped with it.
+    chrome.frame("cdp:tab-1", "jpeg-3")
+    await previews.finish("chat")
+    clock.fire()
+    expect(lookups()).toBe(2)
+  })
+
+  it("skips the title lookup for a frame that lands as the turn ends", async () => {
+    let time = 0
+    const chrome = browser()
+    const previews = makeBrowserPreviews({
+      setTimer: () => undefined,
+      clearTimer: () => undefined,
+      now: () => time
+    })
+    previews.subscribe("chat", viewer().value).watch(800)
+    await previews.activity("chat", chrome.runtime, "tab-1")
+    time += 5_000
+    const finished = previews.finish("chat")
+    chrome.frame("cdp:tab-1", "jpeg-1")
+    await finished
+    expect(chrome.methods().filter((method) => method === "Target.getTargets")).toHaveLength(1)
   })
 
   it("uses real timers by default", async () => {

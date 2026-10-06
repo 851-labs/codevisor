@@ -15,6 +15,7 @@ import {
 import type { BrowserRuntime, TargetInfo } from "./browser-cdp-engine.js"
 import { makeBrowserCursorRegistry } from "./browser-cursor.js"
 import { initialPointerState, type PointerState } from "./browser-input.js"
+import { waitForTargetsClosed } from "./browser-runtime-lifecycle.js"
 import { invokeInteractionTools } from "./browser-use-invoke-interaction.js"
 import { invokeMouseTools } from "./browser-use-invoke-mouse.js"
 import { invokeNavigationTools } from "./browser-use-invoke-navigation.js"
@@ -171,6 +172,7 @@ export const makeBrowserToolInvoker = (state: BrowserToolSessionState) => {
           }
           discardTargetState(active, targetId)
         }
+        await waitForTargetsClosed(active, closed)
         if (remembered.size === 0) sessionTargets.delete(sessionKey)
         else sessionTargets.set(sessionKey, remembered)
         sessionDispositions.delete(sessionKey)
