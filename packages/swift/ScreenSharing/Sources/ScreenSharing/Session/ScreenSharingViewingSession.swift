@@ -93,6 +93,9 @@ public protocol ScreenSharingViewingSession: AnyObject {
   var supportsHighDynamicRange: Bool { get }
   /// What the host says it sends, and why it isn't HDR when the viewer asked for it (851-2480).
   var onVideoFormatChanged: ((ScreenSharingDynamicRange, String?) -> Void)? { get set }
+  /// Shared clipboard: while on, the host sends each new copy on `clipboard` unasked. The
+  /// default ignores it.
+  func setClipboardSharing(_ enabled: Bool)
 }
 
 extension ScreenSharingViewingSession {
@@ -107,6 +110,7 @@ extension ScreenSharingViewingSession {
   public func setAudioVolume(_ volume: Float) {}
   public func setDisplayHighDynamicRange(_ supported: Bool) {}
   public var supportsHighDynamicRange: Bool { false }
+  public func setClipboardSharing(_ enabled: Bool) {}
   public var onVideoFormatChanged: ((ScreenSharingDynamicRange, String?) -> Void)? {
     get { nil }
     set {}

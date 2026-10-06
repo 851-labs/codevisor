@@ -25,6 +25,8 @@ final class ScreenSharingPane: Pane {
   private var soundAppliedTo: ObjectIdentifier?
   /// The endpoint the machine's HDR setting was last applied to.
   private var hdrAppliedTo: ObjectIdentifier?
+  /// The endpoint the machine's shared clipboard setting was last applied to.
+  private var clipboardAppliedTo: ObjectIdentifier?
   private let machineId: String
   /// How the machine is reached and where, for the settings sheet (851-2367).
   private let connection: (kind: String, address: String?)
@@ -67,6 +69,17 @@ final class ScreenSharingPane: Pane {
       if let endpoint = store.endpoint, self.hdrAppliedTo != ObjectIdentifier(endpoint) {
         self.hdrAppliedTo = ObjectIdentifier(endpoint)
         endpoint.highDynamicRange = ScreenSharingMachinePreferences().highDynamicRange(machineId: self.machineId)
+      }
+      // Shared clipboard is the machine's setting too, on unless turned off; the toolbar's toggle saves it.
+      if let endpoint = store.endpoint, let clipboard = endpoint.clipboard {
+        let sharing = clipboard.sharing
+        let saved = ScreenSharingMachinePreferences().sharedClipboard(machineId: self.machineId)
+        if self.clipboardAppliedTo != ObjectIdentifier(endpoint) {
+          self.clipboardAppliedTo = ObjectIdentifier(endpoint)
+          clipboard.sharing = saved
+        } else if sharing != saved {
+          ScreenSharingMachinePreferences().setSharedClipboard(sharing, machineId: self.machineId)
+        }
       }
       // Video arriving is what "last connected" means in the settings sheet.
       let viewing = store.phase == .viewing

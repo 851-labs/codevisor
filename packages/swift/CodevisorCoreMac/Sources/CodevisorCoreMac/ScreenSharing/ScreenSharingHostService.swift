@@ -251,15 +251,13 @@ final class ScreenSharingHostService {
         }
       }
     }
-    let pasteboard = ScreenSharingPasteboard()
-    let clipboard = ScreenSharingClipboardTransfer(
-      send: { [weak session] in session?.peer.clipboardChannel.send($0) ?? false },
-      canReceiveUnsolicited: { [weak session] in session?.state == "viewing" && session?.stopping == false },
-      read: { try pasteboard.read() }, write: { try pasteboard.write($0) })
+    let clipboard = ScreenSharingHostClipboard(
+      channel: session.peer.clipboardChannel,
+      canReceiveUnsolicited: { [weak session] in session?.state == "viewing" && session?.stopping == false })
     session.clipboard = clipboard
-    session.peer.clipboardChannel.onMessage = { [weak clipboard] in clipboard?.receive($0) }
-    session.peer.clipboardChannel.onAvailabilityChanged = { [weak clipboard] available in
-      if !available { clipboard?.cancel(reason: "The clipboard channel closed.") }
+    session.peer.clipboardSharingChannel.onMessage = { [weak clipboard] message in
+      guard case .viewer(let sharing) = message else { return }
+      clipboard?.setSharing(sharing)
     }
     session.injector = ScreenSharingInputInjector(displayBounds: CGDisplayBounds(session.displayID))
     let control = ScreenSharingHostControl(
@@ -334,6 +332,8 @@ final class ScreenSharingHostService {
         guard let self, let session, self.current === session else { return }
         session.control?.checkDeadline()
         session.clipboard?.tick()
+        // Shared clipboard: a new copy here goes to the viewer while it controls this Mac.
+        if session.state == "viewing", session.control?.lease != nil { session.clipboard?.poll() }
         if self.lease.isExpired(now: ProcessInfo.processInfo.systemUptime) { await self.end(session); return }
       }
     }

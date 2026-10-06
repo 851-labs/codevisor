@@ -222,7 +222,10 @@ function loopbackFlow() {
 }
 
 /// Sends a unique text through the product's clipboard menu and finds it in
-/// the reference server's input log; the user's clipboard is restored.
+/// the reference server's input log; the user's clipboard is restored. The
+/// shared clipboard (on by default) sends only while the video has focus in a
+/// key window, which a rig in the background never has, so this turns it off
+/// and uses Send Clipboard, the path that remains when it's off.
 function clipboardStep() {
   // pbcopy/pbpaste read and write text in the locale's encoding.
   const utf8 = { env: { ...process.env, LANG: "en_US.UTF-8", LC_ALL: "en_US.UTF-8" } }
@@ -231,7 +234,9 @@ function clipboardStep() {
   try {
     run("pbcopy", [], { input: token, ...utf8 })
     axStep("open the Clipboard menu", "press", "Clipboard")
-    axStep("Send Clipboard to Machine", "press", "Send Clipboard to Machine")
+    axStep("turn off Use Shared Clipboard", "press", "Use Shared Clipboard")
+    axStep("open the Clipboard menu again", "press", "Clipboard")
+    axStep("Send Clipboard", "press", "Send Clipboard")
     // Leaving the machine closes its connection, so wait for the product to confirm the transfer.
     axStep("the viewer confirms the transfer", "wait", "Text sent to the host", "10")
     axStep("open the server's input log", "select", "Loopback VNC server")

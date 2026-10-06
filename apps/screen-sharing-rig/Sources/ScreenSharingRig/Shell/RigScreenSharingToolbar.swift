@@ -35,17 +35,24 @@
       }
       ToolbarItem(id: "screenSharing.clipboard", placement: .primaryAction) {
         if store.endpoint?.supportsClipboard != false {
+          let clipboard = store.endpoint?.clipboard
           Menu {
+            Toggle(
+              "Use Shared Clipboard",
+              isOn: Binding(get: { clipboard?.sharing == true }, set: { clipboard?.sharing = $0 })
+            )
+            .disabled(clipboard == nil)
+            Divider()
             Group {
-              Button("Send Clipboard to Machine") { store.endpoint?.clipboard?.sendLocalText() }
-              Button("Get Clipboard from Machine") { store.endpoint?.clipboard?.getRemoteText() }
+              Button("Send Clipboard") { clipboard?.sendLocalText() }
+              Button("Get Clipboard") { clipboard?.getRemoteText() }
             }
-            .disabled(store.endpoint?.clipboard?.available != true || store.endpoint?.clipboard?.busy == true)
+            .disabled(clipboard?.available != true || clipboard?.busy == true || clipboard?.sharing == true)
           } label: {
             Image(systemName: "doc.on.clipboard")
           }
           .accessibilityLabel("Clipboard")
-          .help("Transfer plain text between clipboards")
+          .help("Share plain text between clipboards")
         }
       }
       ToolbarItem(id: "screenSharing.details", placement: .primaryAction) {

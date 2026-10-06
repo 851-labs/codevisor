@@ -28,10 +28,7 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
   public let diagnostics = ScreenSharingViewerDiagnostics()
   public var failure: String? { session.failure }
   /// Set by the pane: keyboard focus moved into or out of the video surface.
-  public var onFocusChanged: ((Bool) -> Void)? {
-    get { surface.onFocusChanged }
-    set { surface.onFocusChanged = newValue }
-  }
+  public var onFocusChanged: ((Bool) -> Void)?
   /// The first presented frame; fired at most once. The backend turns it into `.ready`.
   var onReady: (() -> Void)?
   let session: any ScreenSharingViewingSession
@@ -40,6 +37,7 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
   private let forwarder: ScreenSharingInputForwarder
   private var subscribers: [UUID: AsyncStream<ScreenSharingControlEvent>.Continuation] = [:]
   private var tickTask: Task<Void, Never>?
+  private var clipboardTask: Task<Void, Never>?
   private var diagnosticsTask: Task<Void, Never>?
   private var presented = false
   private var reportedFailure = false
@@ -157,12 +155,23 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     channel = session.control
     let channel = session.control
     forwarder = ScreenSharingInputForwarder(send: { [weak channel] in channel?.send($0) ?? false })
-    clipboard = session.clipboard.map { ScreenSharingViewerClipboard(channel: $0) }
+    clipboard = session.clipboard.map { channel in
+      ScreenSharingViewerClipboard(
+        channel: channel, setHostSharing: { [weak session] in session?.setClipboardSharing($0) },
+        hasKeyboardFocus: { [weak surface] in
+          guard let view = surface?.view, let window = view.window else { return false }
+          return window.isKeyWindow && window.firstResponder === view
+        })
+    }
     channel?.onMessage = { [weak self] in self?.emit(.message($0)) }
     channel?.onAvailabilityChanged = { [weak self] in self?.emit(.availability($0)) }
     forwarder.onLost = { [weak self] reason in
       self?.surface.endInput()
       self?.emit(.inputLost(reason))
+    }
+    surface.onFocusChanged = { [weak self] focused in
+      if focused { self?.clipboard?.poll() }
+      self?.onFocusChanged?(focused)
     }
     surface.onInput = { [weak forwarder] in forwarder?.forward($0) }
     surface.onInputReleased = { [weak self] in
@@ -209,6 +218,15 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
         }
       }
     }
+    // Shared clipboard: a copy made elsewhere reaches the host soon after the user is back in the video.
+    if clipboard != nil {
+      clipboardTask = Task { [weak self] in
+        while !Task.isCancelled {
+          do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+          self?.clipboard?.poll()
+        }
+      }
+    }
     // Statistics callbacks must never delay the lease's heartbeats, which run on their own timer.
     diagnosticsTask = Task { [weak self] in
       while !Task.isCancelled {
@@ -252,6 +270,7 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
   func beginInput(lease: UUID) -> String? {
     guard surface.beginInput() else { return surface.inputFailureMessage }
     forwarder.begin(lease: lease)
+    clipboard?.setControlling(true)
     if let key = pendingSystemKey {
       pendingSystemKey = nil
       press(key)
@@ -261,6 +280,7 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
 
   func endInput() {
     pendingSystemKey = nil
+    clipboard?.setControlling(false)
     forwarder.end()
     surface.endInput()
   }
@@ -305,6 +325,7 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     endInput()
     clipboard?.close()
     tickTask?.cancel(); tickTask = nil
+    clipboardTask?.cancel(); clipboardTask = nil
     diagnosticsTask?.cancel(); diagnosticsTask = nil
     for continuation in subscribers.values { continuation.finish() }
     subscribers = [:]

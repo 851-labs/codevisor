@@ -40,11 +40,11 @@ struct ScreenSharingDataChannelTests {
       // Created on each peer's transport queue, as the peer creates its own channels.
       host = try await harness.sender.transport.perform { connection in
         try ScreenSharingDataChannel<Data>(
-          connection: connection, id: 16, label: "codevisor.test.v1", encode: { $0 }, decode: decode)
+          connection: connection, id: 30, label: "codevisor.test.v1", encode: { $0 }, decode: decode)
       }
       viewer = try await harness.receiver.transport.perform { connection in
         try ScreenSharingDataChannel<Data>(
-          connection: connection, id: 16, label: "codevisor.test.v1", encode: { $0 }, decode: decode)
+          connection: connection, id: 30, label: "codevisor.test.v1", encode: { $0 }, decode: decode)
       }
       viewer.onMessage = { [self] data in
         received.append(data)

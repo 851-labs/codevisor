@@ -50,7 +50,7 @@ final class ScreenSharingHostSession {
   var codec: ScreenSharingVideoCodec?
   /// HDR: what the viewer's screen can show, the switch in progress, what the viewer was told.
   var hdr = ScreenSharingHostService.DynamicRangeState()
-  var clipboard: ScreenSharingClipboardTransfer?
+  var clipboard: ScreenSharingHostClipboard?
   var stopping = false
   var watchdog: Task<Void, Never>?
   var captureTask: Task<Void, Never>?

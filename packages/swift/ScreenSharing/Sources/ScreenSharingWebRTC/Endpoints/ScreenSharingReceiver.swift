@@ -55,6 +55,10 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
       guard available, let self, let viewerHighDynamicRange = self.viewerHighDynamicRange else { return }
       self.videoFormatChannel.send(.viewer(highDynamicRange: viewerHighDynamicRange))
     }
+    clipboardSharingChannel.onAvailabilityChanged = { [weak self] available in
+      guard available, let self, self.clipboardSharing else { return }
+      self.clipboardSharingChannel.send(.viewer(sharing: true))
+    }
     // 50 packets a second go from the channel's queue to the player's decoder, never through main.
     audioChannel.deliverOffMain { [audioSink] message in
       guard case .packet(let packet) = message else { return false }
@@ -147,6 +151,17 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
     guard case .sending(let range, let reason) = message else { return }
     onVideoFormatChanged?(range, reason)
     metrics.label("hostDynamicRange", reason.map { "\(range.rawValue): \($0)" } ?? range.rawValue)
+  }
+
+  // MARK: Shared clipboard
+
+  /// Whether the viewer wants the host's copies; sent when the channel opens and on each change.
+  private var clipboardSharing = false
+
+  public func setClipboardSharing(_ enabled: Bool) {
+    guard enabled != clipboardSharing else { return }
+    clipboardSharing = enabled
+    clipboardSharingChannel.send(.viewer(sharing: enabled))
   }
 
   // MARK: Audio (851-2379)

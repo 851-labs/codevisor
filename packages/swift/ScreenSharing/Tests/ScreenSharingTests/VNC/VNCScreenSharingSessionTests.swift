@@ -159,6 +159,34 @@ struct VNCScreenSharingSessionTests {
     #expect(await awaitPolled { harness.server.received.contains(.clientCutText("hello")) })
   }
 
+  /// Shared clipboard: the server's copies reach the viewer unasked once sharing is on, but not
+  /// the viewer's own text when the server announces it straight back.
+  @Test func sharedClipboardSendsServerCopiesButNotTheViewersEcho() async throws {
+    let harness = try await Harness()
+    defer { harness.stop() }
+    let channel = try #require(harness.session.clipboard)
+    let written = ScreenSharingMessageLog<String>()
+    let viewer = ScreenSharingClipboardTransfer(
+      send: { channel.send($0) }, canReceiveUnsolicited: { true }, read: { "from viewer" },
+      write: { written.append($0) })
+    let finished = ScreenSharingMessageLog<String?>()
+    viewer.onFinished = { finished.append($0) }
+    channel.onMessage = { viewer.receive($0) }
+
+    harness.server.sendCutText("before sharing")
+    #expect(await awaitPolled { harness.session.metrics.snapshot().counters["vncServerCutTexts"] == 1 })
+    harness.session.setClipboardSharing(true)
+    harness.server.sendCutText("after")
+    #expect(await awaitPolled { written.messages == ["after"] })
+
+    viewer.sendText("from viewer")
+    #expect(await awaitPolled { harness.server.received.contains(.clientCutText("from viewer")) })
+    harness.server.sendCutText("from viewer")
+    harness.server.sendCutText("next")
+    #expect(await awaitPolled { written.messages == ["after", "next"] })
+    #expect(finished.messages.allSatisfy { $0 == nil })
+  }
+
   @Test func serverCloseIsDisconnectedAndCloseIsIdempotent() async throws {
     let harness = try await Harness()
     defer { harness.stop() }

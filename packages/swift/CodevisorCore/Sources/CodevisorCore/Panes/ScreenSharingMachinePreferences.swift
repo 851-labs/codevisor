@@ -56,6 +56,15 @@ public struct ScreenSharingMachinePreferences {
     defaults.set(volume, forKey: "screenSharing.soundVolume.\(machineId)")
   }
 
+  /// Shared clipboard: copies on either Mac reach the other while controlling, on unless turned off.
+  public func sharedClipboard(machineId: String) -> Bool {
+    defaults.object(forKey: "screenSharing.sharedClipboard.\(machineId)") as? Bool ?? true
+  }
+
+  public func setSharedClipboard(_ enabled: Bool, machineId: String) {
+    defaults.set(enabled, forKey: "screenSharing.sharedClipboard.\(machineId)")
+  }
+
   /// When video last arrived from this machine, for the settings sheet (851-2367).
   public func lastConnected(machineId: String) -> Date? {
     defaults.object(forKey: "screenSharing.lastConnected.\(machineId)") as? Date

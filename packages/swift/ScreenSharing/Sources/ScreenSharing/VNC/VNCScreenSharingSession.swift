@@ -214,6 +214,9 @@
       Task { try? await client.setQualityLevel(level) }
     }
 
+    /// Shared clipboard: the server's copies reach the viewer unasked while it's on.
+    public func setClipboardSharing(_ enabled: Bool) { emulator.sharing = enabled }
+
     private func resized(width: Int, height: Int) {
       desktopSize = (width, height)
       translator.width = width

@@ -48,6 +48,8 @@ public class ScreenSharingPeer {
   public let videoFormatChannel: ScreenSharingVideoFormatChannel
   /// An Apple simulator's input and device state; only `simulator:` streams use it.
   public let simulatorChannel: ScreenSharingSimulatorChannel
+  /// Shared clipboard: whether the viewer wants the host's copies.
+  public let clipboardSharingChannel: ScreenSharingClipboardSharingChannel
   public var onConnectionChanged: ((String) -> Void)?
   let codecFactory: ScreenSharingCodecFactory
   let transport: ScreenSharingPeerTransport
@@ -71,6 +73,7 @@ public class ScreenSharingPeer {
     displayChannel = staged.displayChannel
     videoFormatChannel = staged.videoFormatChannel
     simulatorChannel = staged.simulatorChannel
+    clipboardSharingChannel = staged.clipboardSharingChannel
     videoRefresh = staged.videoRefresh
     videoRefresh.onMessage = { [weak self] message in
       guard let self, !self.closed else { return }
@@ -206,11 +209,12 @@ public class ScreenSharingPeer {
     displayChannel.close()
     videoFormatChannel.close()
     simulatorChannel.close()
+    clipboardSharingChannel.close()
     controlChannel.close()
     cancelGathering(CancellationError())
     transport.close(after: [
       videoRefresh, clipboardChannel, cursorChannel, audioChannel, displayChannel, videoFormatChannel,
-      simulatorChannel, controlChannel,
+      simulatorChannel, clipboardSharingChannel, controlChannel,
     ])
     didClose()
   }
@@ -278,6 +282,7 @@ struct ScreenSharingPeerStaging: @unchecked Sendable {
   let displayChannel: ScreenSharingDisplayChannel
   let videoFormatChannel: ScreenSharingVideoFormatChannel
   let simulatorChannel: ScreenSharingSimulatorChannel
+  let clipboardSharingChannel: ScreenSharingClipboardSharingChannel
   let videoRefresh: ScreenSharingDataChannel<ScreenSharingVideoRefreshMessage>
 
   /// What the role adds on the transport's queue, with the factory, the connection, the codec
@@ -370,5 +375,8 @@ struct ScreenSharingPeerStaging: @unchecked Sendable {
     simulatorChannel = try ScreenSharingSimulatorChannel(
       connection: connection, id: 14, label: "codevisor.simulator.v1",
       encode: { try $0.encoded() }, decode: ScreenSharingSimulatorMessage.decode)
+    clipboardSharingChannel = try ScreenSharingClipboardSharingChannel(
+      connection: connection, id: 16, label: "codevisor.clipboard-sharing.v1",
+      encode: { try $0.encoded() }, decode: ScreenSharingClipboardSharingMessage.decode)
   }
 }

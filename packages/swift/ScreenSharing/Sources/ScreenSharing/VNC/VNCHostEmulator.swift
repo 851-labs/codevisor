@@ -24,6 +24,14 @@
     private var extended = false
     /// Text announced to the server (notify), provided when it asks.
     private var announcedText: String?
+    /// Shared clipboard: the server's copies go to the viewer as they arrive.
+    var sharing = false {
+      didSet { if !sharing { waiting = nil } }
+    }
+    /// A server copy that arrived while a transfer was in flight; only the newest is kept.
+    private var waiting: String?
+    /// What the viewer last sent the server, which a server may announce straight back.
+    private var echo: String?
 
     /// With a channel, control is codevisor-server's to give (851-2338): a request goes to the
     /// server, which grants it and may later revoke it for another viewer (last one wins).
@@ -51,6 +59,11 @@
           return text
         },
         write: { [weak self] text in self?.sendText(text) })
+      transfer.onFinished = { [weak self] _ in
+        guard let self, let text = self.waiting else { return }
+        self.waiting = nil
+        self.share(text)
+      }
       controlHost.onMessage = { [weak self] in self?.handle($0) }
       clipboardHost.onMessage = { [weak self] in self?.transfer.receive($0) }
       leaseChannel?.onControlText = { [weak self] text in
@@ -76,7 +89,10 @@
       }
     }
 
-    func serverCutText(_ text: String) { serverText = text }
+    func serverCutText(_ text: String) {
+      serverText = text
+      share(text)
+    }
 
     /// The Extended Clipboard handshake, text only.
     func extendedClipboard(_ message: RFBExtendedClipboard.Message) {
@@ -93,18 +109,36 @@
                 | RFBExtendedClipboard.provide,
               maximumSizes: [UInt32(RFBExtendedClipboard.maximumBytes)])))
       case .notify(let formats):
-        // The server's clipboard changed: fetch it now, so "Get Clipboard" has it.
+        // The server's clipboard changed: fetch it now, for "Get Clipboard" or the shared clipboard.
         if formats & text != 0 { outbox(.extendedClipboard(.request(formats: text))) }
       case .request(let formats):
         if formats & text != 0 { outbox(.extendedClipboard(.provide(text: announcedText))) }
       case .peek:
         outbox(.extendedClipboard(.notify(formats: announcedText == nil ? 0 : text)))
       case .provide(let provided):
-        if let provided { serverText = provided }
+        if let provided {
+          serverText = provided
+          share(provided)
+        }
       }
     }
 
+    private func share(_ text: String) {
+      guard sharing else { return }
+      guard text != echo else {
+        echo = nil
+        return
+      }
+      echo = nil
+      guard !transfer.isBusy else {
+        waiting = text
+        return
+      }
+      transfer.sendText(text)
+    }
+
     private func sendText(_ text: String) {
+      echo = text
       guard extended else {
         outbox(.clientCutText(text))  // Latin-1: a server without the extension
         return

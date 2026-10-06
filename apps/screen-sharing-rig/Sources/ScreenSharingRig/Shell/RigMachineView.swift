@@ -339,6 +339,8 @@
       .onChange(of: model.store?.endpoint?.id) { _, _ in
         model.store?.endpoint?.audio?.apply(RigMachineSettings.sound(model.machine.id))
         model.store?.endpoint?.highDynamicRange = RigMachineSettings.highDynamicRange(model.machine.id)
+        // Shared clipboard starts on, as in the app; the toolbar's toggle lasts the connection.
+        model.store?.endpoint?.clipboard?.sharing = true
       }
       .onChange(of: model.store?.phase) { _, phase in
         if phase == .viewing { RigMachineSettings.setLastConnected(Date(), for: model.machine.id) }
