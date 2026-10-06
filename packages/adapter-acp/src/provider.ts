@@ -39,6 +39,17 @@ const missingRequiredBinary = (
     (binary) => !environment.executableExists(binary, environment.env)
   )
 
+/// The first detect binary or installer location that exists. A login
+/// shell that skips ~/.bashrc misses the PATH entry an installer added there,
+/// so a harness's own install directory counts too.
+const installedBinary = (
+  definition: HarnessDefinition,
+  environment: ProviderEnvironment
+): string | undefined =>
+  [...definition.detectBinaries, ...(definition.fallbackPaths ?? [])].find((binary) =>
+    environment.executableExists(binary, environment.env)
+  )
+
 const resolveLaunch = (
   definition: HarnessDefinition,
   environment: ProviderEnvironment
@@ -47,11 +58,8 @@ const resolveLaunch = (
   if (launch === undefined || missingRequiredBinary(definition, environment) !== undefined) {
     return undefined
   }
-  if (
-    !definition.detectBinaries.some((binary) =>
-      environment.executableExists(binary, environment.env)
-    )
-  ) {
+  const installed = installedBinary(definition, environment)
+  if (installed === undefined) {
     return undefined
   }
   switch (launch.kind) {
@@ -64,7 +72,11 @@ const resolveLaunch = (
         : { args: ["-y", launch.packageName, ...launch.args], command }
     }
     case "executable": {
-      const located = environment.locateExecutable(launch.command, environment.env)
+      const located =
+        environment.locateExecutable(launch.command, environment.env) ??
+        (definition.detectBinaries.includes(installed)
+          ? undefined
+          : environment.locateExecutable(installed, environment.env))
       if (located !== undefined) {
         return { args: launch.args, command: located }
       }
@@ -82,10 +94,7 @@ const unavailableReadiness = (
   definition: HarnessDefinition,
   environment: ProviderEnvironment
 ): Harness["readiness"] => {
-  const installed = definition.detectBinaries.some((binary) =>
-    environment.executableExists(binary, environment.env)
-  )
-  if (!installed) {
+  if (installedBinary(definition, environment) === undefined) {
     return { detail: "CLI not found on PATH", state: "unavailable" }
   }
   const missing = missingRequiredBinary(definition, environment)

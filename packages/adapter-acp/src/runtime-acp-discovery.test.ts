@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { harnessCatalog, locateExecutableOnPath, makeAgentRuntime } from "@codevisor/agent-runtime"
 import { describe, expect, it } from "vitest"
 
-import { makeAcpAgentRuntime, run } from "./test-support.js"
+import { makeAcpAgentRuntime, makeConnector, run } from "./test-support.js"
 
 describe("@codevisor/agent-runtime", () => {
   it("launches directly ACP-capable harnesses from the user's installation", () => {
@@ -175,6 +175,34 @@ describe("@codevisor/agent-runtime", () => {
     })
     // Builtins keep their registry source.
     expect(harnesses.find((harness) => harness.id === "codex")?.source).toBe("registry")
+  })
+
+  it("finds a harness where its installer put it when the login shell's PATH misses it", async () => {
+    const connector = makeConnector()
+    const installed = "/home/me/.my-agent/bin/my-agent"
+    const locate = (name: string) => (name === "~/.my-agent/bin/my-agent" ? installed : undefined)
+    const runtime = makeAcpAgentRuntime({
+      connector,
+      env: { PATH: "/bin", HOME: "/home/me" },
+      executableExists: (name) => locate(name) !== undefined,
+      locateExecutable: locate,
+      extraHarnesses: [
+        {
+          detectBinaries: ["my-agent"],
+          fallbackPaths: ["~/.my-agent/bin/my-agent"],
+          id: "my-agent",
+          launch: { args: ["acp"], command: "my-agent", kind: "executable" },
+          name: "My Agent",
+          provider: "acp",
+          symbolName: "terminal"
+        }
+      ]
+    })
+
+    const harnesses = await run(runtime.discoverHarnesses)
+    expect(harnesses.find((harness) => harness.id === "my-agent")?.readiness.state).toBe("ready")
+    await run(runtime.createAgentSession("my-agent", "/tmp/project", () => Promise.resolve()))
+    expect(connector.requests[0]).toMatchObject({ command: installed, args: ["acp"] })
   })
 
   it("reports disabled custom harnesses as unavailable and refuses their sessions", async () => {

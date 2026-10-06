@@ -4,6 +4,10 @@ import type { HarnessDefinition } from "./types.js"
 
 // Install commands and ACP launch arguments audited against upstream on 2026-09-13.
 // Sources, registry revision, and exclusions: docs/harness-catalog-audit.md.
+/// Where both OpenCode installers put the binary. They add it to PATH only
+/// in ~/.bashrc, which a login shell may never read.
+export const OPENCODE_INSTALL_PATH = "~/.opencode/bin/opencode"
+
 export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
   // Claude Code is driven directly through the Agent SDK against the user's
   // own `claude` binary — no npx adapter, no Node requirement.
@@ -176,6 +180,7 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
   }),
   executableHarness("opencode", "OpenCode", "curlybraces", ["opencode"], "opencode", ["acp"], {
     provider: "opencode",
+    fallbackPaths: [OPENCODE_INSTALL_PATH],
     // OpenCode 2. Its installer resolves the version from opencode.ai and
     // downloads from npm, so it never meets GitHub's API rate limit.
     installMethods: [

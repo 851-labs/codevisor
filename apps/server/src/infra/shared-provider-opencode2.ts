@@ -9,7 +9,11 @@ import {
   SEEDED_CREDENTIAL_PREFIX,
   type SeededOpenCodeCredential
 } from "@codevisor/adapter-opencode"
-import { locateExecutableOnPath, type HarnessAccountContext } from "@codevisor/agent-runtime"
+import {
+  locateExecutableOnPath,
+  OPENCODE_INSTALL_PATH,
+  type HarnessAccountContext
+} from "@codevisor/agent-runtime"
 import type { SharedCredentialVault, SharedTokenBundle } from "@codevisor/harness-manager"
 
 import type { SharedProviderStore } from "./shared-provider-store.js"
@@ -24,12 +28,17 @@ export interface OpenCode2Deps {
   readonly syncCredentials: ReturnType<typeof makeOpenCode2Accounts>["syncCredentials"]
 }
 
+/// The `opencode` binary an environment runs: on PATH, or where OpenCode's
+/// installer put it.
+const locateOpenCode = (env: NodeJS.ProcessEnv): string | undefined =>
+  locateExecutableOnPath("opencode", env) ?? locateExecutableOnPath(OPENCODE_INSTALL_PATH, env)
+
 export const makeOpenCode2Deps = (): OpenCode2Deps => {
   const version = makeOpenCodeVersionProbe()
   const accounts = makeOpenCode2Accounts({ pool: makeOpenCodeServerPool() })
   return {
     majorVersion: async (env) => {
-      const command = locateExecutableOnPath("opencode", env)
+      const command = locateOpenCode(env)
       return command === undefined ? undefined : version(command)
     },
     syncCredentials: accounts.syncCredentials
@@ -155,7 +164,7 @@ export const makeOpenCode2Materializer =
     const sessionEnv = { ...env, ...runtimeEnv }
     await deps.openCode2.syncCredentials(
       {
-        command: locateExecutableOnPath("opencode", sessionEnv) ?? "opencode",
+        command: locateOpenCode(sessionEnv) ?? "opencode",
         cwd: env.HOME ?? root,
         env: sessionEnv
       },
