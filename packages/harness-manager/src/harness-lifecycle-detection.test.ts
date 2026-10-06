@@ -68,6 +68,36 @@ describe("harness lifecycle update detection", () => {
     })
   })
 
+  it("carries a harness's major-version notes only on an update across a major version", async () => {
+    const definition: HarnessDefinition = {
+      ...npmDefinition,
+      update: { ...npmDefinition.update!, majorNotes: "Plugins stop working." }
+    }
+    const check = async (installed: string, latest: string) => {
+      const lifecycle = makeHarnessLifecycleManager({
+        agents: agentsStub(
+          [definition],
+          [harness("fake-cli", "/Users/dev/.local/bin/fake-cli", installed)]
+        ),
+        db: await makeDb(),
+        fetchImpl: async () => jsonResponse({ "dist-tags": { latest } }),
+        home: "/Users/dev",
+        realpath: (path) => path
+      })
+      const checked = (await lifecycle.checkForUpdates(true))[0]?.info
+      // Clients read update knowledge back from stored state; the notes must
+      // survive that, or a major update would run without being confirmed.
+      const [stored] = await lifecycle.decorateHarnesses([
+        harness("fake-cli", "/Users/dev/.local/bin/fake-cli", installed)
+      ])
+      expect(stored?.updateInfo?.notes).toBe(checked?.notes)
+      return checked
+    }
+    expect(await check("1.18.34", "2.0.24")).toMatchObject({ notes: "Plugins stop working." })
+    expect(await check("2.0.20", "2.0.24")).not.toHaveProperty("notes")
+    expect(await check("2.0.24", "2.0.24")).not.toHaveProperty("notes")
+  })
+
   it("suppresses unforced re-checks inside the cache window", async () => {
     const db = await makeDb()
     let calls = 0

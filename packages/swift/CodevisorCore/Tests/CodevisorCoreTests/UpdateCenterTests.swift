@@ -131,6 +131,31 @@ struct UpdateCenterTests {
     controller.stopEventSync()
   }
 
+  @Test("updateAll leaves a major-version harness update for its own confirmed click")
+  func updateAllSkipsMajorUpdates() async throws {
+    let remote = makeRemote("remote-a")
+    let fake = SyncFakeServerClient(projects: [], sessions: [])
+    var major = makeHarness(updateAvailable: true)
+    major.updateInfo?.latestVersion = "2.0.0"
+    major.updateInfo?.notes = "Plugins stop working."
+    fake.configureHarnesses([major])
+    let controller = try makeController(
+      fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: fake],
+      remotes: [remote]
+    )
+    let center = UpdateCenter(machines: controller, appUpdate: AppUpdateModel(currentVersion: "1.0.0"))
+    await controller.refreshStatus(for: remote.id)
+    await center.refresh()
+    let component = try #require(center.components.first { $0.subjectId == "claude-code" })
+    #expect(component.notes == "Plugins stop working.")
+
+    await center.updateAll()
+    #expect(!fake.operationLog.contains("harness.update:claude-code"))
+    await center.update(component)
+    #expect(fake.operationLog.contains("harness.update:claude-code"))
+    controller.stopEventSync()
+  }
+
   @Test("The app row shows the Alpha release identity on the Alpha channel")
   func appAlphaVersion() throws {
     let controller = try makeController(

@@ -115,6 +115,8 @@ public struct ServerHarnessUpdateInfo: Codable, Equatable, Sendable {
   public var installOrigin: String?
   public var channel: String?
   public var checkedAt: String?
+  /// What changes when the update crosses a major version; nil otherwise.
+  public var notes: String?
 
   public init(
     installedVersion: String? = nil,
@@ -123,8 +125,10 @@ public struct ServerHarnessUpdateInfo: Codable, Equatable, Sendable {
     source: String? = nil,
     installOrigin: String? = nil,
     channel: String? = nil,
-    checkedAt: String? = nil
+    checkedAt: String? = nil,
+    notes: String? = nil
   ) {
+    self.notes = notes
     self.installedVersion = installedVersion
     self.latestVersion = latestVersion
     self.updateAvailable = updateAvailable

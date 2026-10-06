@@ -87,7 +87,10 @@ export const HarnessUpdateInfo = Schema.Struct({
   /// Detected install origin of the binary (npm/brew/curl/appBundle/…).
   installOrigin: Schema.optional(Schema.String),
   channel: Schema.optional(Schema.String),
-  checkedAt: Schema.optional(Schema.String)
+  checkedAt: Schema.optional(Schema.String),
+  /// What changes when the available update is a new major version; present
+  /// only then. Clients confirm before running such an update.
+  notes: Schema.optional(Schema.String)
 })
 export type HarnessUpdateInfo = typeof HarnessUpdateInfo.Type
 

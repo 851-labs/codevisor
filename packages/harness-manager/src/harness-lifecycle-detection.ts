@@ -39,6 +39,25 @@ const meaningfullyChanged = (
   previous.latestVersion !== next.latestVersion ||
   previous.installedVersion !== next.installedVersion
 
+/// The leading number of a version ("v2.0.24" → 2); 0 when it has none.
+const majorVersion = (version: string | undefined): number =>
+  Number(version?.match(/^v?(\d+)/)?.[1] ?? 0)
+
+/// Adds the harness's major-version notes when the available update is a
+/// new major version. Derived wherever update knowledge is handed out, from
+/// a fresh check or stored state alike, since the store keeps versions only.
+export const withMajorNotes = (
+  definition: HarnessDefinition | undefined,
+  info: HarnessUpdateInfo
+): HarnessUpdateInfo => {
+  const notes = definition?.update?.majorNotes
+  return notes !== undefined &&
+    info.updateAvailable &&
+    majorVersion(info.latestVersion) > majorVersion(info.installedVersion)
+    ? { ...info, notes }
+    : info
+}
+
 export const matchSource = (
   definition: HarnessDefinition,
   origin: InstallOrigin
@@ -132,7 +151,7 @@ export const makeHarnessUpdateDetection = (core: HarnessLifecycleCore) => {
       installedVersion !== undefined &&
       latest.latestVersion !== undefined &&
       isNewerVersion(latest.latestVersion, installedVersion)
-    const info: HarnessUpdateInfo = {
+    const info: HarnessUpdateInfo = withMajorNotes(definition, {
       updateAvailable,
       installOrigin: origin,
       source: source.check.kind,
@@ -140,7 +159,7 @@ export const makeHarnessUpdateDetection = (core: HarnessLifecycleCore) => {
       ...(installedVersion === undefined ? {} : { installedVersion }),
       ...(latest.latestVersion === undefined ? {} : { latestVersion: latest.latestVersion }),
       ...(latest.channel === undefined ? {} : { channel: latest.channel })
-    }
+    })
     return { harnessId: definition.id, info }
   }
 

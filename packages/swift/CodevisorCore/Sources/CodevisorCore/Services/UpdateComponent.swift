@@ -33,6 +33,9 @@ public struct UpdateComponent: Identifiable, Equatable, Sendable {
   public var statusMessage: String?
   /// Determinate progress (0...1) of an in-flight update, when it has one.
   public var progress: Double?
+  /// What changes when the update crosses a major version. Such an update
+  /// runs only after the user confirms it, never as part of Update All.
+  public var notes: String?
 }
 
 extension UpdateComponent {

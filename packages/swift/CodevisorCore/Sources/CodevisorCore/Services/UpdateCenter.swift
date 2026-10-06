@@ -231,7 +231,8 @@ public final class UpdateCenter {
           latestVersion: harness.updateInfo?.latestVersion,
           updateAvailable: available,
           phase: phase,
-          statusMessage: statusMessage
+          statusMessage: statusMessage,
+          notes: harness.updateInfo?.notes
         )
       }
     }
@@ -467,7 +468,8 @@ public final class UpdateCenter {
   public func updateAll() async {
     // Never install from a list a running check is about to replace.
     while let running = refreshTask { await running.value }
-    await run(components: components.filter(\.updateAvailable))
+    // A major-version update waits for its own confirmed click.
+    await run(components: components.filter { $0.updateAvailable && $0.notes == nil })
     await runDeferredRefreshIfSettled()
   }
 

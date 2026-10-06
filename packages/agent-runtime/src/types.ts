@@ -260,6 +260,9 @@ export interface HarnessDefinition {
     /// (both own the same binary): updating an install of one removes it
     /// before installing the current package.
     readonly replaces?: { readonly npm?: string; readonly brew?: string }
+    /// What changes for the user when an update crosses a major version;
+    /// shown, and confirmed, before such an update runs.
+    readonly majorNotes?: string
   }
   /// Native (harness-owned) MCP config location + shape. Absent = the harness
   /// is skipped by native MCP discovery.

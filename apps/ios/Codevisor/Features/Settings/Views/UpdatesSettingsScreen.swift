@@ -1,4 +1,5 @@
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 
 /// Settings ▸ Updates: a summary with the fleet-wide action on top, then one
@@ -12,7 +13,18 @@ import SwiftUI
 struct UpdatesSettingsScreen: View {
   @Environment(AppEnvironment.self) private var environment
 
+  /// A major-version update awaiting confirmation.
+  @State private var majorUpdate: UpdateComponent?
+
   private var center: UpdateCenter { environment.updateCenter }
+
+  private func requestUpdate(_ component: UpdateComponent) {
+    if component.notes == nil {
+      Task { await center.update(component) }
+    } else {
+      majorUpdate = component
+    }
+  }
 
   /// A sweep has finished at least once, so there is a list to show.
   private var hasLoaded: Bool { center.lastRefreshedAt != nil }
@@ -32,6 +44,7 @@ struct UpdatesSettingsScreen: View {
       }
     }
     .navigationTitle("Updates")
+    .majorUpdateConfirmation($majorUpdate) { component in Task { await center.update(component) } }
     .animation(.default, value: center.components.map(\.id))
     .refreshable {
       // Nothing re-checks while an update runs, so the list stays put.
@@ -180,7 +193,7 @@ struct UpdatesSettingsScreen: View {
         .disabled(center.isUpdatingAll)
     case .idle:
       if component.updateAvailable {
-        Button("Update") { Task { await center.update(component) } }
+        Button("Update") { requestUpdate(component) }
           .buttonStyle(.bordered)
           .disabled(center.isUpdatingAll)
       } else {

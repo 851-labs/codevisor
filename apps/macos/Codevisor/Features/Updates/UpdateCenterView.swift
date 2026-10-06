@@ -24,7 +24,18 @@ struct UpdateCenterView: View {
   /// The component whose failure details popover is open.
   @State private var failureDetailsId: String?
 
+  /// A major-version update awaiting confirmation.
+  @State private var majorUpdate: UpdateComponent?
+
   private var center: UpdateCenter { environment.updateCenter }
+
+  private func requestUpdate(_ component: UpdateComponent) {
+    if component.notes == nil {
+      Task { await center.update(component) }
+    } else {
+      majorUpdate = component
+    }
+  }
 
   /// A sweep has finished at least once, so there is a list to show.
   private var hasLoaded: Bool { center.lastRefreshedAt != nil }
@@ -45,6 +56,7 @@ struct UpdateCenterView: View {
       }
     }
     .settingsPaneFormStyle(theme)
+    .majorUpdateConfirmation($majorUpdate) { component in Task { await center.update(component) } }
     .background {
       if !theme.isSystem { theme.windowBackground }
     }
@@ -226,7 +238,7 @@ struct UpdateCenterView: View {
       }
     case .idle:
       if component.updateAvailable {
-        Button("Update") { Task { await center.update(component) } }
+        Button("Update") { requestUpdate(component) }
           .settingsActionTint(theme)
           .disabled(center.isUpdatingAll)
       } else {

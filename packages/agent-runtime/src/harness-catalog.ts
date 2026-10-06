@@ -211,6 +211,8 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
       // through OpenCode 2's own method. Every channel publishes the npm
       // version (Homebrew's API doesn't cover taps).
       replaces: { brew: "anomalyco/tap/opencode", npm: "opencode-ai" },
+      majorNotes:
+        "OpenCode 2 is a new major version. Plugins written for OpenCode 1 stop working, it no longer runs language servers (LSP), and it reads instructions only from AGENTS.md, not CLAUDE.md. Your sign-ins and settings carry over.",
       sources: [
         {
           apply: { kind: "reinstall" },

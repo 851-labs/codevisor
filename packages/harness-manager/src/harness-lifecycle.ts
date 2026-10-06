@@ -2,7 +2,7 @@ import type { Harness } from "@codevisor/api"
 
 import { makeBundledAppOperations } from "./harness-lifecycle-bundled-app.js"
 import { makeHarnessLifecycleCore } from "./harness-lifecycle-core.js"
-import { makeHarnessUpdateDetection } from "./harness-lifecycle-detection.js"
+import { makeHarnessUpdateDetection, withMajorNotes } from "./harness-lifecycle-detection.js"
 import { makeHarnessOperationRunner } from "./harness-lifecycle-execution.js"
 import type {
   HarnessLifecycleManager,
@@ -52,7 +52,14 @@ export const makeHarnessLifecycleManager = (
             : await runner.resolveInstallMethods(definition).catch(() => [])
         return {
           ...harness,
-          ...(info === undefined ? {} : { updateInfo: info }),
+          ...(info === undefined
+            ? {}
+            : {
+                updateInfo: withMajorNotes(
+                  config.agents.catalog.find((candidate) => candidate.id === harness.id),
+                  info
+                )
+              }),
           ...(lifecycle === undefined ? {} : { lifecycle }),
           ...(methods.length === 0 ? {} : { installMethods: methods })
         }
