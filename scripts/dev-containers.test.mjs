@@ -52,6 +52,7 @@ const makeFakeRepo = async (root) => {
   await mkdir(join(root, "apps/server/dist"), { recursive: true })
   await mkdir(join(root, "packages/sync/dist"), { recursive: true })
   await mkdir(join(root, "packages/sync/src"), { recursive: true })
+  await mkdir(join(root, "packages/sync/resources"), { recursive: true })
   await writeFile(join(root, "package.json"), '{"workspaces":["apps/*","packages/*"]}')
   await writeFile(join(root, "bun.lock"), "lock-v1")
   await writeFile(join(root, "apps/server/package.json"), '{"name":"server"}')
@@ -59,6 +60,7 @@ const makeFakeRepo = async (root) => {
   await writeFile(join(root, "packages/sync/package.json"), '{"name":"sync"}')
   await writeFile(join(root, "packages/sync/dist/index.js"), "export {}")
   await writeFile(join(root, "packages/sync/src/index.ts"), "secret source")
+  await writeFile(join(root, "packages/sync/resources/runtime.wasm"), "wasm-v1")
 }
 
 test("syncLinuxWorkspace copies dists and manifests, never sources", async () => {
@@ -73,12 +75,26 @@ test("syncLinuxWorkspace copies dists and manifests, never sources", async () =>
       "console.log(1)"
     )
     assert.equal(await readFile(join(first.appRoot, "bun.lock"), "utf8"), "lock-v1")
+    // Runtime resources travel with the dist that reads them.
+    assert.equal(
+      await readFile(join(first.appRoot, "packages/sync/resources/runtime.wasm"), "utf8"),
+      "wasm-v1"
+    )
     // Sources never travel; the container needs dists + manifests only.
     await assert.rejects(readFile(join(first.appRoot, "packages/sync/src/index.ts")))
 
     // Unchanged workspace: the copy is skipped entirely.
     const second = await syncLinuxWorkspace(root, containerRoot)
     assert.equal(second.changed, false)
+
+    // A resource change alone re-syncs.
+    await writeFile(join(root, "packages/sync/resources/runtime.wasm"), "wasm-v2")
+    const resourced = await syncLinuxWorkspace(root, containerRoot)
+    assert.equal(resourced.changed, true)
+    assert.equal(
+      await readFile(join(resourced.appRoot, "packages/sync/resources/runtime.wasm"), "utf8"),
+      "wasm-v2"
+    )
 
     // A dist rebuild re-syncs; a removed package's copy disappears.
     await writeFile(join(root, "apps/server/dist/main.js"), "console.log(2)")

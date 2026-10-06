@@ -8,11 +8,15 @@ import { join } from "node:path"
 import { pathExists } from "./dev-shared.mjs"
 
 /// The workspace subset a Linux container needs to run `dist/main.js`:
-/// built output plus manifests, never sources or macOS node_modules. The
-/// container installs its own Linux node_modules into the copy.
+/// built output, runtime resources, and manifests, never sources or macOS
+/// node_modules. The container installs its own Linux node_modules into
+/// the copy.
 const WORKSPACE_ROOTS = ["packages", "apps"]
 // `native` carries prebuilt addons (packages/net: the Linux tunnel addon).
-const PACKAGE_KEEP = ["package.json", "dist", "native"]
+// `resources` carries files the server reads at runtime (the terminal's
+// ghostty-vt.wasm, the skills the gateway serves), as the release runtime does.
+const PACKAGE_RUNTIME = ["dist", "native", "resources"]
+const PACKAGE_KEEP = ["package.json", ...PACKAGE_RUNTIME]
 const ROOT_KEEP = ["package.json", "bun.lock", "bun.lockb", ".npmrc", "bunfig.toml", "patches"]
 
 const copyIfPresent = async (from, to) => {
@@ -36,7 +40,7 @@ const workspacePackageDirectories = async (repoRoot) => {
   return directories
 }
 
-/// A cheap change signature over every manifest and dist mtime: when it
+/// A cheap change signature over every manifest and runtime-file mtime: when it
 /// matches the previous sync, the copy (and the container's install) can be
 /// skipped entirely, so rig restarts stay fast.
 const workspaceSignature = async (repoRoot, packageDirectories) => {
@@ -50,7 +54,7 @@ const workspaceSignature = async (repoRoot, packageDirectories) => {
   for (const directory of packageDirectories.toSorted()) {
     hash.update(directory)
     hash.update(await readFile(join(repoRoot, directory, "package.json")))
-    for (const output of ["dist", "native"]) {
+    for (const output of PACKAGE_RUNTIME) {
       const path = join(repoRoot, directory, output)
       if (await pathExists(path)) hash.update(String(await newestMtime(path)))
     }

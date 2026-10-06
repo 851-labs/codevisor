@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from "node:child_process"
 import {
-  cpSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -10,7 +10,7 @@ import {
   writeFileSync
 } from "node:fs"
 import { homedir } from "node:os"
-import { dirname, join, relative, sep } from "node:path"
+import { basename, dirname, join, relative, sep } from "node:path"
 
 import type { WebSocket } from "ws"
 
@@ -153,8 +153,7 @@ const applyExtensionBranding = (extension: string, branding: BrowserExtensionBra
   } as const
   for (const [destination, source] of Object.entries(generatedIcons)) {
     const generated = join(iconDirectory, source)
-    if (existsSync(generated))
-      cpSync(generated, join(extension, "icons", destination), { force: true })
+    if (existsSync(generated)) copyFileSync(generated, join(extension, "icons", destination))
   }
 }
 
@@ -281,17 +280,54 @@ export const prepareBrowserExtension = (
   if (source === undefined) throw new Error("The Codevisor Chrome extension is missing")
   const extension = join(dataDir, "browser", "extension")
   mkdirSync(dirname(extension), { recursive: true, mode: 0o700 })
-  cpSync(source, extension, { recursive: true, force: true })
-  applyExtensionBranding(extension, branding)
+  // Build the whole extension beside the live one, then swap it in, so a
+  // failed copy never leaves a half-written extension behind.
+  const staged = `${extension}.next-${process.pid}-${(stagedExtensions += 1)}`
+  copyDirectory(source, staged)
+  applyExtensionBranding(staged, branding)
   const relay = new URL("/v1/browser-use/extension/socket", serverBaseUrl)
   relay.protocol = relay.protocol === "https:" ? "wss:" : "ws:"
   writeFileSync(
-    join(extension, "relay-config.js"),
+    join(staged, "relay-config.js"),
     `globalThis.CODEVISOR_RELAY = ${JSON.stringify(relay.toString())}\n`,
     { mode: 0o600 }
   )
+  replaceDirectory(staged, extension)
   createBrowserExtensionArchive(extension)
   return extension
+}
+
+let stagedExtensions = 0
+
+/// File-by-file copy. `cpSync` fails with EACCES on some shared filesystems
+/// (the dev containers' virtiofs mounts) and leaves unreadable partial files.
+const copyDirectory = (source: string, target: string): void => {
+  mkdirSync(target, { recursive: true })
+  for (const entry of readdirSync(source, { withFileTypes: true })) {
+    const from = join(source, entry.name)
+    const to = join(target, entry.name)
+    if (entry.isDirectory()) copyDirectory(from, to)
+    else copyFileSync(from, to)
+  }
+}
+
+/// Moves the old directory aside before renaming the new one in: a rename
+/// works even when the old one holds entries that can't be deleted, so a
+/// damaged copy from an earlier run can never wedge setup. Leftovers from
+/// this and earlier swaps are removed best-effort.
+const replaceDirectory = (staged: string, target: string): void => {
+  const stale = `${target}.stale-${process.pid}-${stagedExtensions}`
+  if (existsSync(target)) renameSync(target, stale)
+  renameSync(staged, target)
+  const parent = dirname(target)
+  for (const entry of readdirSync(parent)) {
+    if (!entry.startsWith(`${basename(target)}.stale-`)) continue
+    try {
+      rmSync(join(parent, entry), { force: true, recursive: true })
+    } catch {
+      // An entry that can't be deleted stays aside, out of the way.
+    }
+  }
 }
 
 interface DevelopmentInstallerOptions {

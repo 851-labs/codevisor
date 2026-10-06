@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -38,6 +38,25 @@ describe("browser extension development installer", () => {
         workingDirectory: "/"
       })
     ).toBe(extension)
+  })
+
+  it("replaces a damaged earlier extension instead of copying over it", async () => {
+    const root = await mkdtemp(join(tmpdir(), "codevisor-extension-replace-"))
+    temporaryDirectories.push(root)
+    const extension = join(root, "browser", "extension")
+    // What an interrupted copy leaves: a truncated file plus one the current
+    // build no longer ships.
+    await mkdir(extension, { recursive: true })
+    await writeFile(join(extension, "popup.js"), "")
+    await writeFile(join(extension, "retired.js"), "old")
+
+    expect(prepareBrowserExtension(root, "http://127.0.0.1:61234")).toBe(extension)
+    expect((await readFile(join(extension, "popup.js"), "utf8")).length).toBeGreaterThan(0)
+    await expect(readFile(join(extension, "retired.js"))).rejects.toThrow()
+    // A second run swaps again and leaves no staging or stale copies behind.
+    prepareBrowserExtension(root, "http://127.0.0.1:61234")
+    const siblings = await readdir(join(root, "browser"))
+    expect(siblings.filter((name) => /\.(next|stale)-/.test(name))).toEqual([])
   })
 
   it("brands the prepared extension for the current development worktree", async () => {

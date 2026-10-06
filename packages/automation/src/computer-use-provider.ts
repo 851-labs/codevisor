@@ -243,14 +243,19 @@ export const makeComputerUseProvider = (
   const repls = makeComputerUseRepls()
   const recordingArtifacts = makeRecordingArtifacts()
   const helperKey = (sessionId: string): string => (perSessionConnections ? sessionId : "shared")
-  const cachedLinuxStatus = process.platform === "linux" ? linuxHelperStatus() : undefined
+  // Kept once available, re-checked until then: installing the accessibility
+  // packages the status asks for enables Computer Use without a restart.
+  let linuxStatus: { readonly available: boolean; readonly detail?: string } | undefined
   const platformStatus = (): { readonly available: boolean; readonly detail?: string } => {
     if (process.platform === "darwin") {
       return macBridgeConfiguration(dataDir) === undefined
         ? { available: false, detail: "Open the native Codevisor app to use Computer Use" }
         : { available: true }
     }
-    if (cachedLinuxStatus !== undefined) return cachedLinuxStatus
+    if (process.platform === "linux") {
+      if (linuxStatus?.available !== true) linuxStatus = linuxHelperStatus()
+      return linuxStatus
+    }
     return { available: false, detail: `Computer Use is unavailable on ${process.platform}` }
   }
   const connect = async (sessionId: string): Promise<HelperClient> => {
