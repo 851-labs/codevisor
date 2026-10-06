@@ -130,13 +130,28 @@ const linuxContainerRuntime = (): boolean => {
 /// Chromium competing for the same cores — 30s was occasionally not enough.
 export const managedBrowserStartupTimeoutMs = 90_000
 
+/// Profiles whose browser this server process launched. A browser found
+/// running on any other profile was left by an earlier server.
+const launchedProfiles = new Set<string>()
+
 export const launchManagedBrowser = async (
   executablePath: string,
   profileDir: string
-): Promise<{ connection: CdpConnection; processHandle?: ChildProcess }> => {
+): Promise<{
+  connection: CdpConnection
+  processHandle?: ChildProcess
+  /// Still running from an earlier server process, whose tab tracking died with it.
+  inherited?: boolean
+}> => {
   const existing = await connectExistingProfile(profileDir)
-  if (existing !== undefined) return { connection: existing }
+  if (existing !== undefined) {
+    return {
+      connection: existing,
+      ...(launchedProfiles.has(profileDir) ? {} : { inherited: true })
+    }
+  }
   rmSync(join(profileDir, "DevToolsActivePort"), { force: true })
+  launchedProfiles.add(profileDir)
   const processHandle = spawn(
     executablePath,
     [
@@ -156,7 +171,9 @@ export const launchManagedBrowser = async (
         containerized: linuxContainerRuntime()
       }),
       ...(managedBrowserHeadless(process.platform, process.env) ? ["--headless=new"] : []),
-      "about:blank"
+      // No startup page: every tab is an agent's, opened and closed by Browser
+      // Use, so none is left sitting at about:blank after a turn.
+      "--no-startup-window"
     ],
     { stdio: "ignore" }
   )

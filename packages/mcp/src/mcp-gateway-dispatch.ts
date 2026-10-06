@@ -292,6 +292,24 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
   ): Promise<unknown> =>
     invokeGatewayTool({ origin }, path, args, signal === undefined ? {} : { signal })
 
+  /// Machines whose browser a chat here drove, per chat. That machine scopes
+  /// the tabs to this chat, so only this machine's turn end can close them.
+  const remoteBrowserUse = new Map<string, Map<string, GatewayOrigin>>()
+
+  /// Closes the tabs a chat's turn opened on other machines' browsers. Best
+  /// effort: an unreachable machine keeps its tabs, as it would its own.
+  const finishRemoteBrowserTurn = async (sessionId: string): Promise<void> => {
+    const machines = remoteBrowserUse.get(sessionId)
+    if (machines === undefined || config.remoteInvoker === undefined) return
+    remoteBrowserUse.delete(sessionId)
+    const invoke = config.remoteInvoker
+    await Promise.all(
+      [...machines].map(([machine, origin]) =>
+        invoke(machine, "browser.finalizeTabs", { native: true }, origin).catch(() => undefined)
+      )
+    )
+  }
+
   /// Sends a sandbox call to another machine through the server's machine
   /// link. Without one, the machine is unreachable before anything is sent.
   const invokeOnMachine = (
@@ -308,10 +326,16 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
         details: { machineId: target.machine, name, phase: "before-send" }
       })
     }
+    if (path.startsWith("browser.") && origin.sessionId !== undefined) {
+      const machines = remoteBrowserUse.get(origin.sessionId) ?? new Map<string, GatewayOrigin>()
+      machines.set(target.machine, origin)
+      remoteBrowserUse.set(origin.sessionId, machines)
+    }
     return config.remoteInvoker(target.machine, path, args, origin, signal)
   }
 
   return {
+    finishRemoteBrowserTurn,
     invokeAutomationProvider,
     invokeGatewayTool,
     invokeOnMachine,

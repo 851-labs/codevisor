@@ -13,6 +13,10 @@ const harness = () => {
   const context = { projectId: "project", sessionId: "session" }
   const targets: Array<{ targetId: string; type: string; title: string; url: string }> = []
   const sent: Array<{ method: string; params: Readonly<Record<string, unknown>> }> = []
+  /// Failure injection: tabs whose close errors (the user already closed
+  /// them), and a create that opens its tab and then fails (a timeout).
+  const failClose = new Set<string>()
+  let failCreate = false
   let created = 0
   const send = async (
     method: string,
@@ -24,9 +28,11 @@ const harness = () => {
       case "Target.createTarget": {
         const targetId = `tab-${++created}`
         targets.push({ targetId, type: "page", title: targetId, url: String(params.url) })
+        if (failCreate) throw new Error("Timed out waiting for Target.createTarget")
         return { targetId }
       }
       case "Target.closeTarget": {
+        if (failClose.has(String(params.targetId))) throw new Error("No target with given id")
         const index = targets.findIndex((target) => target.targetId === params.targetId)
         if (index >= 0) targets.splice(index, 1)
         return { success: true }
@@ -82,7 +88,16 @@ const harness = () => {
     sent
       .filter(({ method }) => method === "Target.closeTarget")
       .map(({ params }) => params.targetId)
-  return { call, newTab, closed, targets }
+  return {
+    call,
+    newTab,
+    closed,
+    targets,
+    failClose,
+    failCreate: () => {
+      failCreate = true
+    }
+  }
 }
 
 describe("Browser tab lifecycle", () => {
@@ -111,5 +126,38 @@ describe("Browser tab lifecycle", () => {
 
     await expect(call("tab_info", { tabId: second })).rejects.toThrow(/does not own that tab/)
     expect(await call("tab_info", { tabId: first })).toMatchObject({ id: first })
+  })
+
+  it("keeps closing the rest when one tab won't close, and forgets it", async () => {
+    const { call, newTab, closed, targets, failClose } = harness()
+    const gone = await newTab()
+    const scratch = await newTab()
+    failClose.add(gone)
+
+    expect(await call("finalizeTabs", { native: true })).toEqual({
+      finalized: true,
+      kept: [],
+      closed: [scratch],
+      released: [],
+      failed: [gone]
+    })
+    expect(targets.map((target) => target.targetId)).toEqual([gone])
+    // Nothing stays tracked, so the next turn's cleanup has nothing to fail on.
+    expect(await call("finalizeTabs", { native: true })).toEqual({
+      finalized: true,
+      kept: [],
+      closed: [],
+      released: []
+    })
+    expect(closed()).toEqual([gone, scratch])
+  })
+
+  it("closes a tab a failed create left behind, and only that tab", async () => {
+    const { call, newTab, targets, failCreate } = harness()
+    const existing = await newTab()
+    failCreate()
+
+    await expect(call("tabs", { action: "new" })).rejects.toThrow(/Timed out/)
+    expect(targets.map((target) => target.targetId)).toEqual([existing])
   })
 })

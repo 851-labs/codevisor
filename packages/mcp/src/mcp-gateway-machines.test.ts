@@ -216,6 +216,48 @@ describe("gateway machines and execution annotations", () => {
     }
   })
 
+  it("closes the tabs a turn opened on another machine's browser when the turn ends", async () => {
+    const { db, manager, remoteCalls } = await studioGateway()
+    const project = await run(db.createProject({ folderPath: "/tmp/mcp-remote-browser" }))
+    const session = await run(
+      db.createSession({ harnessId: "codex", projectId: project.id, title: "Browse" })
+    )
+    const issued = await manager.issueGateway(session.id, project.id)
+    await manager.beginTurn(session.id)
+    const client = await connectClient(issued)
+    try {
+      const executed = await client.callTool({
+        name: "execute",
+        arguments: {
+          description: "Open a page on the MacBook",
+          code: `async () => {
+            const mbp = await machines.get("macbook");
+            await mbp.tools.browser.tabs({ action: "new" });
+            return true;
+          }`
+        }
+      })
+      expect(executed.isError).not.toBe(true)
+      remoteCalls.length = 0
+
+      await manager.finishTurn(session.id)
+      expect(remoteCalls).toEqual([
+        expect.objectContaining({
+          machine: "mbp",
+          path: "browser.finalizeTabs",
+          args: { native: true },
+          origin: expect.objectContaining({ sessionId: session.id })
+        })
+      ])
+      // Finished once: a turn with no remote browser use sends nothing.
+      await manager.finishTurn(session.id)
+      await manager.closeSession(session.id)
+      expect(remoteCalls).toHaveLength(1)
+    } finally {
+      await client.close()
+    }
+  })
+
   it("fails machine-targeted calls as unavailable when the server has no machine link", async () => {
     const { db, manager } = await testManager({
       machine: { id: "studio", name: "Mac Studio" },

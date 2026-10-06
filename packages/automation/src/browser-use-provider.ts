@@ -29,6 +29,7 @@ import {
 import { makeBrowserRepls, browserResultValue } from "./browser-repl.js"
 import { makeBrowserRuntimeFactory } from "./browser-runtime-factory.js"
 import { serializedBrowserOperation, closeBrowserRuntime } from "./browser-runtime-lifecycle.js"
+import { finishSessionTabs, trackPopups } from "./browser-tab-cleanup.js"
 import {
   makeBrowserToolInvoker,
   runtimeKey,
@@ -143,10 +144,20 @@ export const makeBrowserUseProvider = (
   ): Promise<BrowserRuntime> => {
     const key = runtimeKey(context, backend)
     const existing = runtimes.get(key)
-    if (existing !== undefined) return existing
+    if (existing !== undefined) {
+      // A managed browser can exit on its own (closing its last window quits
+      // Chromium on Linux); launch a fresh one instead of failing every call.
+      return existing.then((active) => {
+        if (active.native || !active.connection.closed || runtimes.get(key) !== existing)
+          return active
+        runtimes.delete(key)
+        return runtime(context, backend)
+      })
+    }
     const created = createRuntime(context, backend)
       .then((active) => {
         if (!active) throw new Error("Browser initialization did not produce a connection")
+        trackPopups(sessionTargets, key, active)
         return active
       })
       .catch((cause) => {
@@ -348,6 +359,13 @@ export const makeBrowserUseProvider = (
       }
       const backend = sessionBackends.get(context.sessionId) ?? "builtin"
       sessionBackends.set(context.sessionId, backend)
+      // Nothing to finalize: answer without starting a browser for it.
+      if (
+        toolName === "finalizeTabs" &&
+        args.native === true &&
+        !sessionTargets.has(`${runtimeKey(context, backend)}:${context.sessionId}`)
+      )
+        return jsonResult({ finalized: true, kept: [], closed: [], released: [] })
       let effectiveTool = toolName
       let effectiveArgs = args
       if (toolName === "openTabs") {
@@ -409,21 +427,15 @@ export const makeBrowserUseProvider = (
     },
     finishTurn: async (sessionId) => {
       const context = contexts.get(sessionId)
-      const backend = sessionBackends.get(sessionId)
-      if (!context || !backend) return
-      const key = runtimeKey(context, backend)
-      if (!sessionTargets.has(`${key}:${sessionId}`)) return
-      const active = await runtimes.get(key)
-      if (active)
-        await serializedBrowserOperation(active, () =>
-          invokeTool(context, active, "finalizeTabs", { native: true })
-        )
+      if (context === undefined) return
+      await finishSessionTabs(context, sessionTargets, runtimes, invokeTool)
     },
     closeSession: async (sessionId) => {
       const nativeKey = contexts.has(sessionId)
         ? runtimeKey(contexts.get(sessionId)!, "builtin")
         : undefined
-      await provider.finishTurn?.(sessionId)
+      // Closing the session still releases everything if cleanup failed.
+      await provider.finishTurn?.(sessionId).catch(() => undefined)
       contexts.delete(sessionId)
       await repls.reset(sessionId)
       sessionBackends.delete(sessionId)

@@ -19,6 +19,20 @@ import { observeBrowserRuntime } from "./browser-runtime-events.js"
 import { closeBrowserRuntime } from "./browser-runtime-lifecycle.js"
 import type { BrowserBackend } from "./browser-use-provider-types.js"
 
+const closeBlankPages = async (connection: CdpConnection): Promise<void> => {
+  const { targetInfos } = await connection
+    .send<{ targetInfos: ReadonlyArray<{ targetId: string; type: string; url: string }> }>(
+      "Target.getTargets"
+    )
+    .catch(() => ({ targetInfos: [] }))
+  for (const target of targetInfos) {
+    if (target.type !== "page" || target.url !== "about:blank") continue
+    await connection
+      .send("Target.closeTarget", { targetId: target.targetId })
+      .catch(() => undefined)
+  }
+}
+
 export const makeBrowserRuntimeFactory = (options: {
   dataDir: string
   db: CodevisorDatabaseService | undefined
@@ -48,6 +62,7 @@ export const makeBrowserRuntimeFactory = (options: {
     let processHandle: ChildProcess | undefined
     let owned = false
     let native = false
+    let inherited = false
     if (backend === "extension") {
       connection = await options.connectExtension()
     } else {
@@ -79,6 +94,7 @@ export const makeBrowserRuntimeFactory = (options: {
         connection = launched.connection
         processHandle = launched.processHandle
         owned = launched.processHandle !== undefined
+        inherited = launched.inherited === true
       }
     }
     try {
@@ -103,6 +119,10 @@ export const makeBrowserRuntimeFactory = (options: {
       processHandle?.kill("SIGTERM")
       throw cause
     }
+    // A browser an earlier server left running still holds that server's
+    // tabs, which nothing tracks anymore. Blank ones are pure leftovers;
+    // tabs showing a page may be ones the agent handed to the user.
+    if (inherited) await closeBlankPages(connection)
     const active: BrowserRuntime = {
       connection,
       native,

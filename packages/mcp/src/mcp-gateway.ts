@@ -202,6 +202,7 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
   }
 
   const {
+    finishRemoteBrowserTurn,
     invokeAutomationProvider,
     invokeGatewayTool,
     invokeOnMachine,
@@ -426,6 +427,7 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
   return {
     allTools,
     createGatewayConnection,
+    finishRemoteBrowserTurn,
     gatewayRuntime,
     invokeGatewayTool,
     invokeRemoteGatewayCall,

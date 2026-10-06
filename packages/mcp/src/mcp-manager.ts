@@ -24,6 +24,7 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
   const {
     allTools,
     createGatewayConnection,
+    finishRemoteBrowserTurn,
     gatewayRuntime,
     invokeRemoteGatewayCall,
     refreshGatewayInventories
@@ -85,6 +86,7 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
     ...makeMcpOAuthFlows(core, { oauthProvider, validateOAuthConnection }),
     ...makeMcpGatewayOperations(core, {
       createGatewayConnection,
+      finishRemoteBrowserTurn,
       gatewayRuntime,
       invokeRemoteGatewayCall,
       unsubscribePluginTools,

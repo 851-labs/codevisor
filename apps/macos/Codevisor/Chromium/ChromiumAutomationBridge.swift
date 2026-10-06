@@ -93,6 +93,14 @@ final class ChromiumAutomationBridge {
     model.onClose?()
     return true
   }
+  /// Closes Browser Use tabs that never loaded a page. Tabs that did may be
+  /// the agent's result, so they stay for the user.
+  fileprivate func closeUnusedTabs(_ targetIds: [String]) {
+    for targetId in targetIds {
+      guard let model = model(targetId), !model.hasLoadedPage else { continue }
+      model.onClose?()
+    }
+  }
 
   private func start() {
     guard listener == nil else { return }
@@ -255,6 +263,9 @@ private actor ChromiumAutomationConnection {
     didSet { publishControl() }
   }
   private var childSessions: [String: ChromiumBrowserModel] = [:]
+  /// Tabs this agent connection opened. When the connection ends without the
+  /// server closing them (a server restart or crash), blank ones are closed.
+  private var createdTabs: [String] = []
   private var closed = false
 
   init(connection: NWConnection, bridge: ChromiumAutomationBridge, hub: ChromiumAutomationHub, token: String) {
@@ -288,6 +299,9 @@ private actor ChromiumAutomationConnection {
       Task { @MainActor in _ = try? await model.webView?.cdp("Target.detachFromTarget", ["sessionId": native]) }
     }
     sessions.removeAll(); childSessions.removeAll()
+    let created = createdTabs, bridge = bridge
+    createdTabs.removeAll()
+    if !created.isEmpty { Task { @MainActor in bridge.closeUnusedTabs(created) } }
     hub.assumeIsolated { $0.remove(id) }
   }
   private func receive() {
@@ -401,8 +415,16 @@ private actor ChromiumAutomationConnection {
     case "Target.createTarget":
       guard let model = await bridge.createTarget(session: session, url: params["url"] as? String ?? "about:blank")
       else { throw ChromiumProtocolError("This workspace is no longer open in Codevisor") }
-      _ = try await model.readyView()
-      return ["targetId": model.paneId.uuidString.lowercased()]
+      let targetId = model.paneId.uuidString.lowercased()
+      createdTabs.append(targetId)
+      do {
+        _ = try await model.readyView()
+      } catch {
+        // The agent never learns this tab's id, so nothing else would close it.
+        await bridge.closeUnusedTabs([targetId])
+        throw error
+      }
+      return ["targetId": targetId]
     case "Target.activateTarget":
       let targetId = params["targetId"] as? String ?? ""
       if let owner = popupOwners[targetId] { return try await owner.readyView().cdp(method, params) }

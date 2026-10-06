@@ -100,7 +100,10 @@ class CodevisorConnection {
       if (tab.id === undefined || tab.openerTabId === undefined) return
       if (!this.allowedTabs.has(tab.openerTabId)) return
       this.allowedTabs.add(tab.id)
-      this.send({ method: "Target.targetCreated", params: { targetInfo: tabTarget(tab) } })
+      this.send({
+        method: "Target.targetCreated",
+        params: { targetInfo: { ...tabTarget(tab), openerId: String(tab.openerTabId) } }
+      })
     }
     this.onTabRemoved = (tabId) => {
       if (!this.allowedTabs.delete(tabId)) return

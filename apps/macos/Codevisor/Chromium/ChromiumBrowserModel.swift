@@ -14,6 +14,9 @@ final class ChromiumBrowserModel {
   let suggestions: BrowserSuggestions
   private(set) var webView: CVChromiumView?
   private(set) var url: URL?
+  /// Whether the page ever reached a web address. A Browser Use tab that never
+  /// did is an empty leftover, safe to close when its agent goes away.
+  private(set) var hasLoadedPage = false
   private(set) var title = "Browser"
   private(set) var favicon: NSImage?
   private(set) var isLoading = false
@@ -156,7 +159,10 @@ final class ChromiumBrowserModel {
       // CEF callbacks can arrive while SwiftUI is mounting its native view.
       Task { @MainActor [weak self] in
         guard let self, self.generation == token else { return }
-        if let current = URL(string: address), ["http", "https"].contains(current.scheme) { self.url = current }
+        if let current = URL(string: address), ["http", "https"].contains(current.scheme) {
+          self.url = current
+          self.hasLoadedPage = true
+        }
         self.title = title.isEmpty ? (self.url?.host ?? "Browser") : title
         self.browserWindow?.window?.title = self.title
         self.isLoading = loading

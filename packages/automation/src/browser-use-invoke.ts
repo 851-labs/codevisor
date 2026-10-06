@@ -85,9 +85,11 @@ export const makeBrowserToolInvoker = (state: BrowserToolSessionState) => {
     context: AutomationProviderContext,
     active: BrowserRuntime,
     toolName: string,
-    args: Readonly<Record<string, unknown>>
+    args: Readonly<Record<string, unknown>>,
+    /// Turn-end cleanup finalizes every backend the session used, not only its current one.
+    backendOverride?: BrowserBackend
   ): Promise<CallToolResult> => {
-    const backend = sessionBackends.get(context.sessionId) ?? "managed"
+    const backend = backendOverride ?? sessionBackends.get(context.sessionId) ?? "managed"
     const sessionKey = `${runtimeKey(context, backend)}:${context.sessionId}`
     const groupCreated = async () => {
       const name = names.get(sessionKey)
@@ -139,14 +141,22 @@ export const makeBrowserToolInvoker = (state: BrowserToolSessionState) => {
         const kept: string[] = []
         const closed: string[] = []
         const released: string[] = []
+        const failed: string[] = []
         // Tabs handed to the user stay visible to later turns as origin "kept": the agent can
         // still find, regroup, or reuse them, and no later finalize closes them.
         const remembered = new Map<string, "created" | "claimed" | "kept">()
         for (const [targetId, origin] of controlled) {
           const tabSessionId = active.sessions.get(targetId)
           if (origin === "created" && !keepIds.has(targetId)) {
-            await active.connection.send("Target.closeTarget", { targetId })
-            closed.push(targetId)
+            // One tab that won't close (the user already closed it, or it
+            // vanished with its window) must not leave the rest open, nor stay
+            // tracked so every later turn fails on it again.
+            try {
+              await active.connection.send("Target.closeTarget", { targetId })
+              closed.push(targetId)
+            } catch {
+              failed.push(targetId)
+            }
           } else {
             if (tabSessionId !== undefined) {
               await active.connection
@@ -168,7 +178,13 @@ export const makeBrowserToolInvoker = (state: BrowserToolSessionState) => {
         cursors.release(sessionKey)
         pointers.delete(sessionKey)
         // Report exactly what happened so the agent can describe it to the user accurately.
-        return jsonResult({ finalized: true, kept, closed, released })
+        return jsonResult({
+          finalized: true,
+          kept,
+          closed,
+          released,
+          ...(failed.length === 0 ? {} : { failed })
+        })
       }
       const targetId = selectedTargets.get(sessionKey)
       if (targetId === undefined) return jsonResult({ finalized: true, tabsClosed: false })
@@ -202,9 +218,23 @@ export const makeBrowserToolInvoker = (state: BrowserToolSessionState) => {
       let targets: TargetInfo[] | undefined
       if (action === "new") {
         const url = typeof args.url === "string" ? args.url : "about:blank"
-        const created = await active.connection.send<{ targetId: string }>("Target.createTarget", {
-          url
-        })
+        const before = new Set((await pageTargets(active)).map((target) => target.targetId))
+        const created = await active.connection
+          .send<{ targetId: string }>("Target.createTarget", { url })
+          .catch(async (cause: unknown) => {
+            // A create that times out or fails partway can still open a tab;
+            // nothing would track it, so close whatever appeared that no
+            // session (another chat on the same browser) already owns.
+            const owned = new Set([...sessionTargets.values()].flatMap((map) => [...map.keys()]))
+            const after = await pageTargets(active).catch(() => [])
+            for (const target of after) {
+              if (before.has(target.targetId) || owned.has(target.targetId)) continue
+              await active.connection
+                .send("Target.closeTarget", { targetId: target.targetId })
+                .catch(() => undefined)
+            }
+            throw cause
+          })
         selectedTargets.set(sessionKey, created.targetId)
         const controlled = sessionTargets.get(sessionKey) ?? new Map()
         controlled.set(created.targetId, "created")

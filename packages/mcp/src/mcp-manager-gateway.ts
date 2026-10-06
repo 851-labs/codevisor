@@ -11,6 +11,7 @@ type GatewayHandles = ReturnType<typeof makeMcpGateway>
 
 export interface McpGatewayOperationDeps {
   readonly createGatewayConnection: GatewayHandles["createGatewayConnection"]
+  readonly finishRemoteBrowserTurn: GatewayHandles["finishRemoteBrowserTurn"]
   readonly gatewayRuntime: GatewayHandles["gatewayRuntime"]
   readonly invokeRemoteGatewayCall: GatewayHandles["invokeRemoteGatewayCall"]
   readonly unsubscribePluginTools: (() => void) | undefined
@@ -49,6 +50,7 @@ export const makeMcpGatewayOperations = (
   } = core
   const {
     createGatewayConnection,
+    finishRemoteBrowserTurn,
     gatewayRuntime,
     invokeRemoteGatewayCall,
     unsubscribePluginTools,
@@ -99,9 +101,10 @@ export const makeMcpGatewayOperations = (
         )
       )
     }
-    await Promise.all(
-      [...automationProviders.values()].map((provider) => provider.closeSession(sessionId))
-    )
+    await Promise.all([
+      ...[...automationProviders.values()].map((provider) => provider.closeSession(sessionId)),
+      finishRemoteBrowserTurn(sessionId)
+    ])
     await browserSetupBroker.closeSession(sessionId)
   }
 
@@ -196,9 +199,10 @@ export const makeMcpGatewayOperations = (
   }
 
   const finishTurn = async (sessionId: string) => {
-    await Promise.all(
-      [...automationProviders.values()].map((provider) => provider.finishTurn?.(sessionId))
-    )
+    await Promise.all([
+      ...[...automationProviders.values()].map((provider) => provider.finishTurn?.(sessionId)),
+      finishRemoteBrowserTurn(sessionId)
+    ])
   }
   const beginTurn: McpManager["beginTurn"] = async (sessionId, options) => {
     // Each turn names its own origin: a prompt without a client (automations,
