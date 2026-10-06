@@ -91,31 +91,42 @@ struct HarnessRegistryTests {
     #expect(settings.first { $0.id == "claude-code" }?.symbolName == "sparkle")
   }
 
-  @Test("Shared-host candidates: preferred first, then machines reporting ready, then the rest; unreachable never")
+  @Test(
+    "Shared-host candidates: preferred, then this machine, then installed, then unreported; never offline or missing it"
+  )
   func sharedHostCandidates() {
     let machines: [HarnessFleet.FleetMachine] = [
       .init(id: "a", name: "A", syncKey: "a", isReachable: true),
       .init(id: "b", name: "B", syncKey: "b", isReachable: true),
       .init(id: "c", name: "C", syncKey: "c", isReachable: false),
       .init(id: "d", name: "D", syncKey: nil, isReachable: true),
+      .init(id: "e", name: "E", syncKey: "e", isReachable: true),
+      .init(id: "local", name: "Local", syncKey: "local", isReachable: true, isLocal: true),
     ]
     let readiness: [String: [HarnessFleet.MachineReadiness]] = [
-      "a": [.init(harnessId: "codex", state: "signInRequired", reason: nil)],
+      // Signed out is still a host: hosting only needs the harness installed.
+      "a": [.init(harnessId: "codex", state: "signInRequired", reason: nil, installed: true)],
       "b": [.init(harnessId: "codex", state: "ready", reason: nil)],
       "c": [.init(harnessId: "codex", state: "ready", reason: nil)],
+      "e": [.init(harnessId: "codex", state: "notInstalled", reason: nil)],
+      "local": [.init(harnessId: "codex", state: "signInRequired", reason: nil)],
     ]
+    let candidates = { (preferred: String?, machines: [HarnessFleet.FleetMachine]) in
+      HarnessFleet.sharedHostCandidates(
+        harnessId: "codex", machines: machines, readiness: readiness, preferred: preferred)
+    }
+    #expect(candidates(nil, machines) == ["local", "a", "b", "d"])
+    #expect(candidates("b", machines) == ["b", "local", "a", "d"])
+    // An offline preferred machine, or one without the harness, is not a candidate at all.
+    #expect(candidates("c", machines) == ["local", "a", "b", "d"])
+    #expect(candidates("e", machines) == ["local", "a", "b", "d"])
+    // A local machine reporting no harness is skipped like any other.
+    let missingLocally = readiness.merging(
+      ["local": [.init(harnessId: "codex", state: "notInstalled", reason: nil)]]) { $1 }
     #expect(
-      HarnessFleet.sharedHostCandidates(harnessId: "codex", machines: machines, readiness: readiness, preferred: nil)
-        == ["b", "a", "d"])
-    #expect(
-      HarnessFleet.sharedHostCandidates(harnessId: "codex", machines: machines, readiness: readiness, preferred: "a")
-        == ["a", "b", "d"])
-    // A preferred machine that is offline is not a candidate at all.
-    #expect(
-      HarnessFleet.sharedHostCandidates(harnessId: "codex", machines: machines, readiness: readiness, preferred: "c")
-        == ["b", "a", "d"])
-    #expect(
-      HarnessFleet.sharedHostCandidates(harnessId: "codex", machines: [], readiness: readiness, preferred: "a") == [])
+      HarnessFleet.sharedHostCandidates(
+        harnessId: "codex", machines: machines, readiness: missingLocally, preferred: nil) == ["a", "b", "d"])
+    #expect(candidates("a", []) == [])
   }
 
   private func makeSync() throws -> ConfigSync {

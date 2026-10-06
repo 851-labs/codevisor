@@ -16,22 +16,33 @@ public extension HarnessFleet {
   }
 
   /// Reachable machines, most promising first: the caller's preferred
-  /// machine (the chat's, the selected one), then machines whose readiness
-  /// report says the harness is ready there, then the rest.
+  /// machine (the chat's, the selected one), then this machine, which
+  /// answers without a network hop, then machines whose report says the
+  /// harness is installed, then machines with no report yet. Hosting only
+  /// needs the harness installed: a machine that is signed out is as good
+  /// a host as a ready one. A machine reporting it doesn't have the harness
+  /// is never asked.
   nonisolated static func sharedHostCandidates(
     harnessId: String, machines: [FleetMachine], readiness: [String: [MachineReadiness]], preferred: String?
   ) -> [String] {
-    let reachable = machines.filter(\.isReachable)
-    let ready = Set(
-      reachable.filter { machine in
-        guard let key = machine.syncKey else { return false }
-        return readiness[key]?.contains { $0.harnessId == harnessId && $0.state == "ready" } == true
-      }.map(\.id))
-    var ordered: [String] = []
-    if let preferred, reachable.contains(where: { $0.id == preferred }) { ordered.append(preferred) }
-    ordered += reachable.map(\.id).filter { ready.contains($0) && !ordered.contains($0) }
-    ordered += reachable.map(\.id).filter { !ordered.contains($0) }
-    return ordered
+    func report(_ machine: FleetMachine) -> MachineReadiness? {
+      machine.syncKey.flatMap { readiness[$0]?.first { $0.harnessId == harnessId } }
+    }
+    func installed(_ row: MachineReadiness) -> Bool {
+      row.installed ?? !["notInstalled", "disabled"].contains(row.state)
+    }
+    let reachable = machines.filter { machine in
+      machine.isReachable && report(machine).map(installed) != false
+    }
+    let rank = { (machine: FleetMachine) -> Int in
+      if machine.id == preferred { return 0 }
+      if machine.isLocal { return 1 }
+      return report(machine) == nil ? 3 : 2
+    }
+    // Sorting is stable, so machines of equal rank keep their list order.
+    return reachable.enumerated()
+      .sorted { (rank($0.element), $0.offset) < (rank($1.element), $1.offset) }
+      .map(\.element.id)
   }
 
   /// One online machine that has the harness ready, or nil when none does.

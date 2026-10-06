@@ -9,12 +9,15 @@ public struct FleetMachineInfo: Identifiable, Equatable, Sendable {
   /// The key the machine's server writes its readiness under; nil until probed.
   public var syncKey: String?
   public var isReachable: Bool
+  /// The machine this client runs on: the cheapest one to ask anything.
+  public var isLocal: Bool
 
-  public init(id: String, name: String, syncKey: String?, isReachable: Bool) {
+  public init(id: String, name: String, syncKey: String?, isReachable: Bool, isLocal: Bool = false) {
     self.id = id
     self.name = name
     self.syncKey = syncKey
     self.isReachable = isReachable
+    self.isLocal = isLocal
   }
 
   /// Every machine the client knows, in list order — rows must not jump
@@ -26,7 +29,8 @@ public struct FleetMachineInfo: Identifiable, Equatable, Sendable {
         id: machine.id,
         name: machine.name,
         syncKey: machines.syncKey(forMachineId: machine.id),
-        isReachable: machines.statusByMachineId[machine.id]?.isReachable != false)
+        isReachable: machines.statusByMachineId[machine.id]?.isReachable != false,
+        isLocal: machine.isLocal)
     }
   }
 }
