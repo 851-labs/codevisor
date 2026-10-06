@@ -70,6 +70,31 @@ describe("MCP manager built-in providers and suppression", () => {
       managedAvailable: false
     })
     expect(errors).toHaveBeenCalledWith("Browser Use unavailable: extension archive is unreadable")
+    // Without a browser there is nothing to preview: the card never appears.
+    const statuses: Array<unknown> = []
+    const preview = manager.subscribeBrowserPreview("chat", {
+      status: (status) => statuses.push(status),
+      frame: () => undefined
+    })
+    preview.watch(800)
+    preview.unwatch()
+    preview.close()
+    expect(statuses).toEqual([{ state: "inactive", title: "", url: "" }])
+  })
+
+  it("previews the tab a session's agent drives through the browser provider", async () => {
+    const { manager } = await testManager()
+    const statuses: Array<unknown> = []
+    const preview = manager.subscribeBrowserPreview("chat", {
+      status: (status) => statuses.push(status),
+      frame: () => undefined
+    })
+    preview.close()
+    expect(statuses).toEqual([{ state: "inactive", title: "", url: "" }])
+    // No tool has been touched yet, so nothing is reported.
+    const tools: Array<unknown> = []
+    manager.subscribeAutomationUse("chat", (tool) => tools.push(tool))()
+    expect(tools).toEqual([])
   })
 
   it("drops suppressed servers from resolution, refuses connection, and disconnects", async () => {

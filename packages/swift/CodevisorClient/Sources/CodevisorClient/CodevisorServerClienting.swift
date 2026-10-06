@@ -8,6 +8,9 @@ public protocol CodevisorServerClienting: BrowserStateClienting, SimulatorClient
   ) async throws -> ServerSharedHarnessAccountResponse
   func screenSharing(_ request: ServerScreenSharingRequest) async throws -> ServerScreenSharingReply
   func screenSharingVNCSocket(displayId: String) throws -> any ServerWebSocketConnecting
+  /// A chat agent's live view: the tool it touched last, and the tab it
+  /// drives through Browser Use.
+  func livePreviewSocket(sessionId: UUID) throws -> any ServerWebSocketConnecting
   func exchangeBrowserCookies(_ mutations: [BrowserCookieMutation]) async throws -> BrowserCookieSnapshot
   func browserNavigation(paneId: UUID) async throws -> BrowserNavigation?
   func publishBrowserNavigation(paneId: UUID, navigation: BrowserNavigation) async throws

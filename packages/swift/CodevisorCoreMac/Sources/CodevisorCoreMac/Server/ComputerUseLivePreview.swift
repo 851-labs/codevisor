@@ -322,7 +322,7 @@ public final class ComputerUseLivePreviewViewer {
   }
 
   func update(phase: Phase) { self.phase = phase }
-  func update(title: String) { self.title = title }
+  public func update(title: String) { self.title = title }
   func update(windowContent: ComputerUseWindowContent) {
     guard !isDetached else { return }
     self.windowContent = windowContent

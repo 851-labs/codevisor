@@ -1,6 +1,7 @@
 import type { WebSocket } from "ws"
 
 import type { AutomationToolProvider } from "./automation-provider.js"
+import type { BrowserPreviewSubscription, BrowserPreviewViewer } from "./browser-preview.js"
 
 export type BrowserBackend = "managed" | "extension" | "builtin"
 export type BrowserExtensionSetupMode = "development" | "webStore"
@@ -30,4 +31,9 @@ export interface BrowserUseProvider extends AutomationToolProvider {
   readonly extensionArchivePath: () => string
   readonly extensionIconPath: () => string
   readonly configureExtensionRelay: (serverBaseUrl: string) => void
+  /// A live view of the tab the session's agent is driving.
+  readonly subscribePreview?: (
+    sessionId: string,
+    viewer: BrowserPreviewViewer
+  ) => BrowserPreviewSubscription
 }

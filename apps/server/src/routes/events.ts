@@ -16,6 +16,7 @@ import {
   type CodevisorServerServices,
   type EventFanout
 } from "../server-context.js"
+import { attachLivePreviewSocket, LIVE_PREVIEW_SOCKET_PATH } from "./live-preview-socket.js"
 import { adaptDirectSocket } from "./net-direct.js"
 import { spliceVNCSocket, VNC_SOCKET_PATH } from "./screen-sharing-vnc.js"
 import { attachSyncEventSocket } from "./sync-event-socket.js"
@@ -121,6 +122,17 @@ export const handleUpgrade = async (
       return
     }
     await authorize(services.db, config, request)
+    const previewSession = url.searchParams.get("sessionId")
+    if (
+      request.method === "GET" &&
+      url.pathname === LIVE_PREVIEW_SOCKET_PATH &&
+      previewSession !== null &&
+      services.mcp !== undefined
+    ) {
+      const mcp = services.mcp
+      accept((webSocket) => attachLivePreviewSocket(mcp, previewSession, webSocket))
+      return
+    }
     if (
       request.method === "GET" &&
       url.pathname === VNC_SOCKET_PATH &&

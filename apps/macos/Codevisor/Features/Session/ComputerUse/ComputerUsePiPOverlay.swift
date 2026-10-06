@@ -1,11 +1,12 @@
-//  The floating card over a chat that shows what its agent is controlling.
+//  The floating card over a chat that shows what its agent is controlling:
+//  an app through Computer Use, or a browser tab through Browser Use.
 
 import AppKit
 import CodevisorCoreMac
 import SwiftUI
 
-struct ComputerUsePiPOverlay: View {
-  @State private var model: ComputerUsePiPModel
+struct ComputerUsePiPOverlay<Model: LivePreviewPiPModel>: View {
+  @State private var model: Model
   @State private var isHovering = false
   /// The pointer's offset from the card's resting corner while dragging.
   @State private var dragOffset: CGSize = .zero
@@ -19,15 +20,12 @@ struct ComputerUsePiPOverlay: View {
   private let composerHeight: CGFloat
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-  private static let coordinateSpace = "computer-use-pip-pane"
+  private static var coordinateSpace: String { "computer-use-pip-pane" }
 
-  init(
-    chatSessionID: UUID,
-    source: ComputerUsePiPModel.Source,
-    isTurnRunning: Bool,
-    composerHeight: CGFloat
-  ) {
-    _model = State(initialValue: ComputerUsePiPModel(chatSessionID: chatSessionID, source: source))
+  /// `model` is adopted on first appearance; later values are ignored, as
+  /// with any `@State`, so give the card a stable `id`.
+  init(model: @autoclosure () -> Model, isTurnRunning: Bool, composerHeight: CGFloat) {
+    _model = State(wrappedValue: model())
     self.isTurnRunning = isTurnRunning
     self.composerHeight = composerHeight
   }
@@ -64,7 +62,7 @@ struct ComputerUsePiPOverlay: View {
     }
     .animation(reduceMotion ? nil : .spring(duration: 0.3), value: model.isVisible)
     .onAppear { model.appeared(isTurnRunning: isTurnRunning) }
-    .onChange(of: model.activity) { model.sync() }
+    .onChange(of: model.changeKey) { model.sync() }
     .onChange(of: isTurnRunning) { _, running in model.turnActivityChanged(isRunning: running) }
     .onDisappear { model.teardown() }
   }
@@ -171,7 +169,7 @@ struct ComputerUsePiPOverlay: View {
     let snap = snapAnimation
     return ComputerUsePiPContextMenu(
       title: model.title,
-      showsTarget: !model.isRemote,
+      showsTarget: model.showsTarget,
       canActivateTarget: model.canActivateTarget,
       canReload: model.canReload,
       corner: model.corner,
@@ -190,7 +188,7 @@ struct ComputerUsePiPOverlay: View {
   /// The on-screen pointer scaled by the card's zoom of the window.
   private func cursorScale(cardWidth: CGFloat) -> CGFloat {
     ComputerUseLivePreviewLayout.cursorScale(
-      cardWidth: cardWidth, windowWidth: model.activity?.windowFrame.width ?? 0)
+      cardWidth: cardWidth, windowWidth: model.cursorWindowWidth)
   }
 
   private func card(

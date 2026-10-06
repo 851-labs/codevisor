@@ -19,20 +19,26 @@ extension ChatScreen {
     }
   }
 
-  /// A live view of the window this chat's agent is controlling through
-  /// Computer Use, on this Mac or the chat's host Mac.
+  /// The live view of what this chat's agent is using: the app it controls
+  /// through Computer Use or the tab it drives through Browser Use,
+  /// whichever it touched last, on this Mac or the chat's host machine.
   @ViewBuilder
-  var computerUsePiPOverlay: some View {
-    if let chatSessionID = controller.serverSession?.id,
-      let source = computerUsePiPSource
-    {
+  var livePreviewPiPOverlay: some View {
+    let serverId = controller.project.serverId
+    let supportsBrowser = environment.machines.statusByMachineId[serverId]?.supportsLivePreview == true
+    let computerSource = computerUsePiPSource
+    if let chatSessionID = controller.serverSession?.id, computerSource != nil || supportsBrowser {
       ComputerUsePiPOverlay(
-        chatSessionID: chatSessionID,
-        source: source,
+        model: AgentLivePreviewPiPModel(
+          computer: computerSource.map { ComputerUsePiPModel(chatSessionID: chatSessionID, source: $0) },
+          browser: supportsBrowser
+            ? BrowserUsePiPModel(chatSessionID: chatSessionID, client: environment.machines.client(for: serverId))
+            : nil),
         isTurnRunning: controller.isSending,
         composerHeight: composerHeight
       )
-      .id(chatSessionID)
+      // The model is adopted once: rebuild it when a tool becomes available.
+      .id("\(chatSessionID)/\(computerSource != nil)/\(supportsBrowser)")
     }
   }
 

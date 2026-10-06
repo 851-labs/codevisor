@@ -10,13 +10,21 @@ import type {
   McpTool,
   UpdateMcpServerRequest
 } from "@codevisor/api"
-import type { AutomationToolProvider, BrowserUseProvider } from "@codevisor/automation"
+import type {
+  AutomationToolProvider,
+  BrowserPreviewSubscription,
+  BrowserPreviewViewer,
+  BrowserUseProvider
+} from "@codevisor/automation"
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import type { WebSocket } from "ws"
 
+import type { AutomationTool } from "./mcp-automation-use.js"
 import type { PackagedSkill, SkillSource } from "./mcp-gateway-skills.js"
 import type { ToolGatewayConfig } from "./mcp-gateway.js"
 import type { PluginToolSource } from "./mcp-plugin-tools.js"
+
+export type { AutomationTool } from "./mcp-automation-use.js"
 
 /// Who a gateway call is made for. Local executions carry this machine's
 /// identity; calls forwarded from another machine carry the caller's.
@@ -129,6 +137,18 @@ export interface McpManager {
     answer: QuestionAnswer
   ) => Promise<boolean>
   readonly acceptBrowserExtension: (socket: WebSocket) => void
+  /// A live view of the tab a session's agent is driving, for the
+  /// picture-in-picture card. Works for every browser backend.
+  readonly subscribeBrowserPreview: (
+    sessionId: string,
+    viewer: BrowserPreviewViewer
+  ) => BrowserPreviewSubscription
+  /// Which of Browser Use and Computer Use a session's agent touched last,
+  /// now and on every switch. Returns the unsubscribe.
+  readonly subscribeAutomationUse: (
+    sessionId: string,
+    listener: (tool: AutomationTool) => void
+  ) => () => void
   readonly browserConfiguration: () => Promise<BrowserUseConfiguration>
   readonly setBrowserPreference: (
     preference: BrowserPreference | undefined

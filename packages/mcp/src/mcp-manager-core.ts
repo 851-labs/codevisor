@@ -19,6 +19,7 @@ import {
   unavailableBrowserProvider,
   unavailableComputerProvider
 } from "./mcp-automation-builtins.js"
+import { makeAutomationUse } from "./mcp-automation-use.js"
 import type { GatewayRuntime } from "./mcp-gateway.js"
 import type { McpManagerConfig } from "./mcp-manager-types.js"
 import {
@@ -134,9 +135,10 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
       }
     }
   )
+  const automationUse = makeAutomationUse()
   const automationProviders = new Map<string, AutomationToolProvider>([
-    [browserProvider.id, browserProvider],
-    [computerProvider.id, computerProvider],
+    [browserProvider.id, automationUse.track(browserProvider)],
+    [computerProvider.id, automationUse.track(computerProvider)],
     [codevisorProvider.id, codevisorProvider]
   ])
   const extensionFlowSupported = config.serverKind !== "remote"
@@ -330,6 +332,7 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
 
   return {
     automationProviders,
+    automationUse,
     browserProvider,
     browserSetupBroker,
     builtinProviderState,

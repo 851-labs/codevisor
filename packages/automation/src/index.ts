@@ -1,6 +1,12 @@
 export * from "./automation-provider.js"
 export * from "./browser-cdp.js"
 export * from "./browser-use-provider.js"
+export type {
+  BrowserPreviewState,
+  BrowserPreviewStatus,
+  BrowserPreviewSubscription,
+  BrowserPreviewViewer
+} from "./browser-preview.js"
 export * from "./computer-use-provider.js"
 export * from "./browser-extension-relay.js"
 export * from "./browser-setup-broker.js"

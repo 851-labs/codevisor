@@ -55,6 +55,38 @@ afterAll(async () => {
   }
 })
 
+describe("Browser live preview", () => {
+  it("streams the agent's tab while it works, then stops when the turn ends", async () => {
+    const context = { sessionId: "preview", projectId: "preview" }
+    const states: string[] = []
+    const frames: string[] = []
+    const subscription = provider.subscribePreview!("preview", {
+      status: (status) => states.push(`${status.state}:${status.title}`),
+      frame: (data) => frames.push(data)
+    })
+    try {
+      subscription.watch(800)
+      value(await provider.invoke(context, "use_backend", { backend: "managed" }))
+      value(await provider.invoke(context, "tabs", { action: "new", url: `${origin}/` }))
+      for (let attempt = 0; frames.length === 0 && attempt < 100; attempt += 1)
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      // JPEG frames of the agent's tab, titled after its page.
+      expect(Buffer.from(frames[0]!, "base64").subarray(0, 3).toString("hex")).toBe("ffd8ff")
+      for (let attempt = 0; !states.includes("active:Opener") && attempt < 100; attempt += 1)
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(states).toContain("active:Opener")
+
+      await provider.finishTurn?.("preview")
+      expect(states.at(-1)).toBe("stopped:Opener")
+      const settled = frames.length
+      value(await provider.invoke(context, "tabs", { action: "list" }))
+      expect(frames).toHaveLength(settled)
+    } finally {
+      subscription.close()
+    }
+  })
+})
+
 describe("Browser tab cleanup", () => {
   it("starts with no page and leaves no agent tab or popup after the turn", async () => {
     const context = { sessionId: "cleanup", projectId: "cleanup" }

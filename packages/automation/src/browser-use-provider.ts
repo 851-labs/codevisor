@@ -26,6 +26,8 @@ import {
   openBrowserExtensionWebStore,
   prepareBrowserExtension
 } from "./browser-extension-relay.js"
+import { extensionConnectionReply } from "./browser-extension-status.js"
+import { makeBrowserPreviews } from "./browser-preview.js"
 import { makeBrowserRepls, browserResultValue } from "./browser-repl.js"
 import { makeBrowserRuntimeFactory } from "./browser-runtime-factory.js"
 import { serializedBrowserOperation, closeBrowserRuntime } from "./browser-runtime-lifecycle.js"
@@ -71,6 +73,7 @@ export const makeBrowserUseProvider = (
   const sessionDispositions = new Map<string, Map<string, "deliverable" | "handoff">>()
   const assetInventories = new Map<string, BrowserAssetInventory>()
   const extensionRelay = makeBrowserExtensionRelay()
+  const previews = makeBrowserPreviews()
   const developmentExtensionPath = prepareBrowserExtension(dataDir, "http://127.0.0.1:49361")
   const extensionArchive = browserExtensionArchivePath(developmentExtensionPath)
   const extensionSetupMode: BrowserExtensionSetupMode =
@@ -169,18 +172,7 @@ export const makeBrowserUseProvider = (
   }
 
   const extensionConnectionResult = (): CallToolResult =>
-    jsonResult({
-      backend: "extension",
-      connectionState:
-        extensionEndpoint() !== undefined || extensionRelay.connected()
-          ? "connected"
-          : "needs_setup",
-      connected: extensionEndpoint() !== undefined || extensionRelay.connected(),
-      next:
-        extensionEndpoint() !== undefined || extensionRelay.connected()
-          ? "Call openTabs, then claimTab before inspecting or changing a page."
-          : "Chrome is not connected. Codevisor handles browser selection and extension setup in the composer."
-    })
+    extensionConnectionReply(extensionEndpoint() !== undefined || extensionRelay.connected())
 
   const connectionStatus = async (context: AutomationProviderContext) => {
     const requestedBackend = sessionBackends.get(context.sessionId)
@@ -281,6 +273,7 @@ export const makeBrowserUseProvider = (
     configureExtensionRelay: (serverBaseUrl) => {
       prepareBrowserExtension(dataDir, serverBaseUrl)
     },
+    subscribePreview: previews.subscribe,
     invoke: async (context, toolName, args) => {
       contexts.set(context.sessionId, context)
       if (toolName === "reset") {
@@ -395,12 +388,16 @@ export const makeBrowserUseProvider = (
         if (effectiveTool === "playwright.waitForEvent") {
           return await invokeTool(context, ready, effectiveTool, effectiveArgs)
         }
-        return await serializedBrowserOperation(ready, async () => {
+        const result = await serializedBrowserOperation(ready, async () => {
           await ready.synchronizeCookies?.().catch(() => undefined)
           const result = await invokeTool(context, ready, effectiveTool, effectiveArgs)
           await ready.synchronizeCookies?.().catch(() => undefined)
           return result
         })
+        // The live preview follows the tab the agent is driving.
+        const shown = selectedTargets.get(`${runtimeKey(context, backend)}:${context.sessionId}`)
+        if (shown !== undefined) void previews.activity(context.sessionId, ready, shown)
+        return result
       } catch (cause) {
         if (
           active?.native &&
@@ -427,6 +424,7 @@ export const makeBrowserUseProvider = (
     },
     finishTurn: async (sessionId) => {
       const context = contexts.get(sessionId)
+      await previews.finish(sessionId)
       if (context === undefined) return
       await finishSessionTabs(context, sessionTargets, runtimes, invokeTool)
     },
@@ -436,6 +434,7 @@ export const makeBrowserUseProvider = (
         : undefined
       // Closing the session still releases everything if cleanup failed.
       await provider.finishTurn?.(sessionId).catch(() => undefined)
+      await previews.close(sessionId)
       contexts.delete(sessionId)
       await repls.reset(sessionId)
       sessionBackends.delete(sessionId)

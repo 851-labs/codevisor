@@ -1,3 +1,5 @@
+import type { BrowserPreviewSubscription, BrowserPreviewViewer } from "@codevisor/automation"
+
 import type { McpManagerCore } from "./mcp-manager-core.js"
 import type { McpManager } from "./mcp-manager-types.js"
 import { run } from "./mcp-support.js"
@@ -15,12 +17,28 @@ export type McpBrowserOperations = Pick<
   | "openBrowserExtensionsPage"
   | "setBaseUrl"
   | "setBrowserPreference"
+  | "subscribeAutomationUse"
+  | "subscribeBrowserPreview"
 >
+
+/// A browser provider that can't preview (it failed to start) reports no
+/// activity, so the card never appears.
+const unavailablePreview = (viewer: BrowserPreviewViewer): BrowserPreviewSubscription => {
+  viewer.status({ state: "inactive", title: "", url: "" })
+  return { watch: () => undefined, unwatch: () => undefined, close: () => undefined }
+}
 
 /// Browser Use setup and extension plumbing, plus the base-URL update that
 /// re-points the extension relay when the server binds its port.
 export const makeMcpBrowserOperations = (core: McpManagerCore): McpBrowserOperations => {
-  const { browserProvider, browserSetupBroker, config, extensionFlowSupported, state } = core
+  const {
+    automationUse,
+    browserProvider,
+    browserSetupBroker,
+    config,
+    extensionFlowSupported,
+    state
+  } = core
 
   const browserConfiguration: McpManager["browserConfiguration"] = async () => {
     const status = browserProvider.status()
@@ -69,6 +87,9 @@ export const makeMcpBrowserOperations = (core: McpManagerCore): McpBrowserOperat
       await browserProvider.openExtensionWebStore()
       return browserConfiguration()
     },
+    subscribeBrowserPreview: (sessionId, viewer) =>
+      browserProvider.subscribePreview?.(sessionId, viewer) ?? unavailablePreview(viewer),
+    subscribeAutomationUse: automationUse.subscribe,
     browserExtensionArchive: () => browserProvider.extensionArchivePath(),
     browserExtensionIcon: () => browserProvider.extensionIconPath()
   }

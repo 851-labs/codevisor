@@ -119,6 +119,17 @@ extension CodevisorServerClient {
     applyAuthorization(to: &request)
     return webSocketTransport.connect(request, maximumMessageSize: 1 << 20)
   }
+
+  /// The tool a chat's agent touched last, and status changes and JPEG
+  /// frames of the tab it drives.
+  public func livePreviewSocket(sessionId: UUID) throws -> any ServerWebSocketConnecting {
+    var query = URLComponents()
+    query.queryItems = [URLQueryItem(name: "sessionId", value: sessionId.uuidString.lowercased())]
+    let path = "/v1/live-preview/socket?\(query.percentEncodedQuery ?? "")"
+    var request = URLRequest(url: try websocketURL(for: path))
+    applyAuthorization(to: &request)
+    return webSocketTransport.connect(request, maximumMessageSize: 8 << 20)
+  }
 }
 
 public extension CodevisorServerClienting {
@@ -129,5 +140,9 @@ public extension CodevisorServerClienting {
 
   func screenSharingVNCSocket(displayId: String) throws -> any ServerWebSocketConnecting {
     throw CodevisorServerClientError.httpStatus(501, "This machine has no VNC display.")
+  }
+
+  func livePreviewSocket(sessionId: UUID) throws -> any ServerWebSocketConnecting {
+    throw CodevisorServerClientError.httpStatus(501, "This machine has no live preview.")
   }
 }
