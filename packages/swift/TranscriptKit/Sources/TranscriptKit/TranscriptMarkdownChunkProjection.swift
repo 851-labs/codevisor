@@ -245,6 +245,7 @@ enum TranscriptMarkdownChunkProjection {
     let quoteDepth: Int
     let listDepth: Int
     var listMarkers: [MarkdownFragmentLayout.ListMarker]
+    let listLevels: [MarkdownFragmentLayout.ListLevel]
     let listItemPath: [String]
   }
 
@@ -262,6 +263,7 @@ enum TranscriptMarkdownChunkProjection {
       blocks,
       quoteDepth: quoteDepth,
       listItemPath: [],
+      listLevels: [],
       path: path,
       to: &drafts
     )
@@ -279,6 +281,7 @@ enum TranscriptMarkdownChunkProjection {
           quoteDepth: draft.quoteDepth,
           listDepth: draft.listDepth,
           listMarkers: draft.listMarkers,
+          listLevels: draft.listLevels,
           trailingSpacing: spacing,
           isFirstInSourceBlock: index == 0,
           isLastInSourceBlock: index == grouped.count - 1
@@ -291,6 +294,7 @@ enum TranscriptMarkdownChunkProjection {
     _ blocks: [MarkdownBlock],
     quoteDepth: Int,
     listItemPath: [String],
+    listLevels: [MarkdownFragmentLayout.ListLevel],
     path: String,
     to drafts: inout [FragmentDraft]
   ) {
@@ -299,6 +303,7 @@ enum TranscriptMarkdownChunkProjection {
         block,
         quoteDepth: quoteDepth,
         listItemPath: listItemPath,
+        listLevels: listLevels,
         path: "\(path).b\(index)",
         to: &drafts
       )
@@ -309,6 +314,7 @@ enum TranscriptMarkdownChunkProjection {
     _ block: MarkdownBlock,
     quoteDepth: Int,
     listItemPath: [String],
+    listLevels: [MarkdownFragmentLayout.ListLevel],
     path: String,
     to drafts: inout [FragmentDraft]
   ) {
@@ -318,6 +324,7 @@ enum TranscriptMarkdownChunkProjection {
         blocks,
         quoteDepth: quoteDepth + 1,
         listItemPath: listItemPath,
+        listLevels: listLevels,
         path: "\(path).q",
         to: &drafts
       )
@@ -327,6 +334,7 @@ enum TranscriptMarkdownChunkProjection {
         list,
         quoteDepth: quoteDepth,
         listItemPath: listItemPath,
+        listLevels: listLevels,
         path: "\(path).l",
         to: &drafts
       )
@@ -337,8 +345,9 @@ enum TranscriptMarkdownChunkProjection {
           path: path,
           blocks: [block],
           quoteDepth: quoteDepth,
-          listDepth: listItemPath.count,
+          listDepth: listLevels.count,
           listMarkers: [],
+          listLevels: listLevels,
           listItemPath: listItemPath
         )
       )
@@ -349,9 +358,17 @@ enum TranscriptMarkdownChunkProjection {
     _ list: MarkdownList,
     quoteDepth: Int,
     listItemPath: [String],
+    listLevels: [MarkdownFragmentLayout.ListLevel],
     path: String,
     to drafts: inout [FragmentDraft]
   ) {
+    // One column for the whole list, wide enough for its longest marker, so
+    // "1." and "10000." line up and neither lands on the item's text.
+    let markers = list.items.enumerated().map { index, item in
+      list.marker(for: item, at: index, depth: listLevels.count)
+    }
+    let nestedLevels =
+      listLevels + [MarkdownFragmentLayout.ListLevel(widestMarker: widestMarker(markers))]
     for (index, item) in list.items.enumerated() {
       let itemComponent = "\(path).i\(index)"
       let nestedItemPath = listItemPath + [itemComponent]
@@ -360,6 +377,7 @@ enum TranscriptMarkdownChunkProjection {
         item.blocks,
         quoteDepth: quoteDepth,
         listItemPath: nestedItemPath,
+        listLevels: nestedLevels,
         path: itemComponent,
         to: &drafts
       )
@@ -369,8 +387,9 @@ enum TranscriptMarkdownChunkProjection {
             path: "\(itemComponent).empty",
             blocks: [.paragraph(MarkdownText(""))],
             quoteDepth: quoteDepth,
-            listDepth: nestedItemPath.count,
+            listDepth: nestedLevels.count,
             listMarkers: [],
+            listLevels: nestedLevels,
             listItemPath: nestedItemPath
           )
         )
@@ -378,11 +397,19 @@ enum TranscriptMarkdownChunkProjection {
       drafts[firstDraft].listMarkers.append(
         MarkdownFragmentLayout.ListMarker(
           depth: nestedItemPath.count,
-          text: list.marker(for: item, at: index, depth: nestedItemPath.count - 1)
+          text: markers[index]
         )
       )
       drafts[firstDraft].listMarkers.sort { $0.depth < $1.depth }
     }
+  }
+
+  /// The marker that decides the column. Digit strings grow wider as they
+  /// grow longer, and the bullet and task markers are a single character, so
+  /// length picks the same marker measurement will. Equal lengths keep the
+  /// first marker.
+  private static func widestMarker(_ markers: [String]) -> String {
+    markers.max { $0.utf16.count < $1.utf16.count } ?? ""
   }
 
   private static func groupAdjacentTextDrafts(

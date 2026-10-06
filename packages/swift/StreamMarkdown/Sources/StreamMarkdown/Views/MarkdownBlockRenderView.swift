@@ -234,8 +234,7 @@ public struct MarkdownFragmentRenderView: View {
   }
 
   private var contentIndent: CGFloat {
-    CGFloat(layout.quoteDepth) * MarkdownFragmentMetrics.quoteIndent
-      + CGFloat(layout.listDepth) * MarkdownFragmentMetrics.listIndent
+    CGFloat(layout.quoteDepth) * MarkdownFragmentMetrics.quoteIndent + layout.listContentIndent
   }
 
   private var trailingSpacing: CGFloat {
@@ -260,9 +259,7 @@ public struct MarkdownFragmentRenderView: View {
           .fixedSize()
           .offset(
             x: CGFloat(layout.quoteDepth) * MarkdownFragmentMetrics.quoteIndent
-              + CGFloat(max(0, marker.depth - 1))
-              * MarkdownFragmentMetrics.listIndent
-              + MarkdownFragmentMetrics.listColumn(markers: [marker.text]).markerInset
+              + layout.listMarkerX(depth: marker.depth)
           )
       }
     }

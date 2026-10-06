@@ -1,4 +1,5 @@
 import CoreGraphics
+import MarkdownCore
 
 public enum MarkdownFragmentMetrics {
   /// Bar plus the gap before quoted content.
@@ -21,5 +22,38 @@ public enum MarkdownFragmentMetrics {
     let marker = ceil(markerWidth)
     let width = max(listIndent, marker + listMarkerGap)
     return (min(listMarkerInset, width - listMarkerGap - marker), width)
+  }
+}
+
+public extension MarkdownFragmentLayout {
+  /// Where this row's text starts, after every ancestor list's marker
+  /// column. A wide ordered marker widens its column past `listIndent`;
+  /// indenting by the fixed width draws that marker on top of the text.
+  public var listContentIndent: CGFloat {
+    measuredListColumns.reduce(0) { $0 + $1.width }
+  }
+
+  /// Horizontal origin of a marker at `depth` (1 for the outermost list),
+  /// in the same coordinate space as `listContentIndent`.
+  public func listMarkerX(depth: Int) -> CGFloat {
+    let index = depth - 1
+    let columns = measuredListColumns
+    guard columns.indices.contains(index) else { return 0 }
+    return columns.prefix(index).reduce(CGFloat(0)) { $0 + $1.width } + columns[index].markerInset
+  }
+
+  private var measuredListColumns: [(markerInset: CGFloat, width: CGFloat)] {
+    let levels =
+      listLevels.isEmpty
+      ? Array(repeating: "", count: listDepth)
+      : listLevels.map(\.widestMarker)
+    return levels.map { marker in
+      #if canImport(AppKit) || canImport(UIKit)
+        if !marker.isEmpty {
+          return MarkdownFragmentMetrics.listColumn(markers: [marker])
+        }
+      #endif
+      return (MarkdownFragmentMetrics.listMarkerInset, MarkdownFragmentMetrics.listIndent)
+    }
   }
 }

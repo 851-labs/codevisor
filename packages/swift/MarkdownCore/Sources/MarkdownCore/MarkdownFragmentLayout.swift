@@ -12,6 +12,20 @@ public struct MarkdownFragmentLayout: Sendable, Equatable, Hashable {
     }
   }
 
+  /// One nesting level of a fragmented list, outermost first. `widestMarker`
+  /// is the widest marker in that whole list, so every row of every item —
+  /// including a code block that draws no marker, and item "1." beside item
+  /// "10000." — shares one column. Renderers measure the string; keeping it
+  /// here lets the column follow Dynamic Type instead of a width captured
+  /// when the row was projected.
+  public struct ListLevel: Sendable, Equatable, Hashable {
+    public let widestMarker: String
+
+    public init(widestMarker: String) {
+      self.widestMarker = widestMarker
+    }
+  }
+
   public enum TrailingSpacing: Sendable, Equatable, Hashable {
     case none
     /// Resolved through `MarkdownSpacing.gap(after:before:)`.
@@ -24,6 +38,9 @@ public struct MarkdownFragmentLayout: Sendable, Equatable, Hashable {
   public let quoteDepth: Int
   public let listDepth: Int
   public let listMarkers: [ListMarker]
+  /// Marker columns from the outermost list in. Empty only for rows that
+  /// are not inside a list; a fragmented list row has one entry per depth.
+  public let listLevels: [ListLevel]
   public let trailingSpacing: TrailingSpacing
   public let isFirstInSourceBlock: Bool
   public let isLastInSourceBlock: Bool
@@ -33,6 +50,7 @@ public struct MarkdownFragmentLayout: Sendable, Equatable, Hashable {
     quoteDepth: Int,
     listDepth: Int,
     listMarkers: [ListMarker],
+    listLevels: [ListLevel] = [],
     trailingSpacing: TrailingSpacing,
     isFirstInSourceBlock: Bool = true,
     isLastInSourceBlock: Bool = true
@@ -41,6 +59,7 @@ public struct MarkdownFragmentLayout: Sendable, Equatable, Hashable {
     self.quoteDepth = max(0, quoteDepth)
     self.listDepth = max(0, listDepth)
     self.listMarkers = listMarkers
+    self.listLevels = listLevels
     self.trailingSpacing = trailingSpacing
     self.isFirstInSourceBlock = isFirstInSourceBlock
     self.isLastInSourceBlock = isLastInSourceBlock

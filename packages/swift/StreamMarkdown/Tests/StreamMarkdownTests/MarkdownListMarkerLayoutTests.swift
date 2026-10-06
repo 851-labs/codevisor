@@ -35,4 +35,32 @@ struct MarkdownListMarkerLayoutTests {
     #expect(paragraph.headIndent == MarkdownFragmentMetrics.listIndent)
     #expect(paragraph.tabStops.first?.location == MarkdownFragmentMetrics.listIndent)
   }
+
+  /// Fragmented transcript rows indent through the same column as TextKit.
+  /// A fixed 24pt indent draws "10000." on top of the item.
+  @Test func wideFragmentMarkerClearsItsColumn() {
+    let layout = MarkdownFragmentLayout(
+      quoteDepth: 1,
+      listDepth: 2,
+      listMarkers: [
+        MarkdownFragmentLayout.ListMarker(depth: 1, text: "•"),
+        MarkdownFragmentLayout.ListMarker(depth: 2, text: "10000."),
+      ],
+      listLevels: [
+        MarkdownFragmentLayout.ListLevel(widestMarker: "•"),
+        MarkdownFragmentLayout.ListLevel(widestMarker: "10000."),
+      ],
+      trailingSpacing: .none
+    )
+    let marker = "10000."
+    let font = MarkdownTextRunRenderer.listMarkerFont(for: marker)
+    let markerWidth = (marker as NSString).size(withAttributes: [.font: font]).width
+    let nestedIndent = layout.listContentIndent
+    let nestedOrigin = layout.listMarkerX(depth: 2)
+    // A fixed listIndent per level would stop at 48 and cover the digits.
+    #expect(nestedIndent > CGFloat(layout.listDepth) * MarkdownFragmentMetrics.listIndent)
+    #expect(nestedIndent - nestedOrigin >= ceil(markerWidth) + MarkdownFragmentMetrics.listMarkerGap)
+    #expect(nestedOrigin >= MarkdownFragmentMetrics.listIndent)
+    #expect(layout.listMarkerX(depth: 1) < MarkdownFragmentMetrics.listIndent)
+  }
 }

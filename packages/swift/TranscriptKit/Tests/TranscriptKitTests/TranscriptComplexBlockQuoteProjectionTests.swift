@@ -132,6 +132,58 @@ struct TranscriptComplexBlockQuoteProjectionTests {
     #expect(chunks.flatMap { $0.fragment?.listMarkers ?? [] }.contains { $0.text == "2." })
   }
 
+  /// A list that contains a code block is split into leaf rows. Those rows
+  /// used to indent by a fixed 24pt, so a wide ordered marker was drawn on
+  /// top of the item — including the code row, which draws no marker of its
+  /// own. Every row of the list has to carry the widest marker so the column
+  /// can grow when it is measured.
+  @Test func fragmentedListRowsShareTheWidestMarker() throws {
+    let markdown = """
+      - Outer
+
+        ```
+        outer
+        ```
+
+        10000. Nested
+
+               ```
+               inner
+               ```
+
+      9998. Wide
+
+            ```
+            code
+            ```
+      """
+    let chunks = try markdownChunks(markdown)
+    let rows = chunks.compactMap(\.fragment)
+
+    let nested = rows.filter { $0.listLevels.map(\.widestMarker) == ["•", "10000."] }
+    try #require(!nested.isEmpty)
+    #expect(nested.contains { $0.listMarkers.isEmpty })
+    #expect(nested.allSatisfy { $0.listDepth == 2 })
+
+    let wide = rows.filter { $0.listLevels.map(\.widestMarker) == ["9998."] }
+    try #require(wide.count >= 2)
+    #expect(wide.contains { $0.listMarkers.isEmpty })
+    #expect(wide.contains { $0.listMarkers.contains { $0.text == "9998." } })
+    #expect(rows.allSatisfy { $0.listLevels.count == $0.listDepth })
+  }
+
+  private func markdownChunks(_ markdown: String) throws -> [TranscriptMarkdownChunk] {
+    let message = AssistantMessage(
+      turn: AssistantTurn(entries: [.text(id: "answer", markdown: markdown)])
+    )
+    return try TranscriptRowProjectionCache.project(
+      makeInput(settled: [.assistant(message)]),
+      options: .init(includesConnectingRow: true)
+    ).compactMap { row -> TranscriptMarkdownChunk? in
+      if case let .markdownChunk(chunk) = row.content { chunk } else { nil }
+    }
+  }
+
   private func makeInput(settled: [ConversationItem]) -> TranscriptProjectionInput {
     TranscriptProjectionInput(
       settledConversation: settled,
