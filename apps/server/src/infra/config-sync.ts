@@ -386,6 +386,9 @@ export interface HarnessReadinessRow {
     | "installing"
     | "uninstalling"
   readonly reason?: string | undefined
+  /// The installed CLI's version, so clients can tell major versions apart
+  /// across the fleet (OpenCode 1 and 2 need different account handling).
+  readonly version?: string
 }
 
 /// The one readiness publisher every plane shares: one single-writer entry

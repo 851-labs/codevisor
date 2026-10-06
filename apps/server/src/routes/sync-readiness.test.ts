@@ -197,7 +197,7 @@ describe("/v1/sync/harness-readiness", () => {
             ...harness,
             desiredEnabled: true,
             enabled: false,
-            readiness: { state: "ready" },
+            readiness: { state: "ready", version: "2.0.24" },
             auth: { state: "unauthenticated" }
           })),
           ...list.map((harness) => {
@@ -219,7 +219,8 @@ describe("/v1/sync/harness-readiness", () => {
             id: "missing-cli",
             desiredEnabled: true,
             enabled: false,
-            readiness: { state: "notInstalled", detail: "CLI not found on PATH" }
+            // A version left over from a removed CLI never reaches the fleet.
+            readiness: { state: "notInstalled", detail: "CLI not found on PATH", version: "1.0.0" }
           })),
           // A sign-in check that failed explains itself on the row.
           ...list.map((harness) => ({
@@ -247,13 +248,18 @@ describe("/v1/sync/harness-readiness", () => {
       entries: Array<{ value: { harnesses: Array<{ id: string; state: string }> } }>
     }
     const rows = document.entries[0]?.value.harnesses ?? []
-    expect(rows.some((row) => row.state === "signInRequired")).toBe(true)
+    expect(
+      rows
+        .filter((row) => row.state === "signInRequired")
+        .map((row) => (row as { version?: string }).version)
+    ).toContain("2.0.24")
     expect(rows.find((row) => row.id === "legacy-shape")?.state).toBe("ready")
     const missing = rows.find((row) => row.id === "missing-cli") as
       | { state: string; reason?: string }
       | undefined
     expect(missing?.state).toBe("notInstalled")
     expect(missing?.reason).toBe("CLI not found on PATH")
+    expect(missing).not.toHaveProperty("version")
     expect(rows.find((row) => row.id === "auth-error")).toMatchObject({
       state: "signInRequired",
       reason: "Keychain is locked"

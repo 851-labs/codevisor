@@ -132,11 +132,13 @@ export const refreshHarnessReadiness = async (
                 ? // The check itself failed: say why, so the row's mark can.
                   harness.auth.detail
                 : undefined
+        const version = installed ? harness.readiness.version : undefined
         return {
           id: harness.id,
           state,
           installed,
-          ...(reason ? { reason } : {})
+          ...(reason ? { reason } : {}),
+          ...(version ? { version } : {})
         }
       }
     )
