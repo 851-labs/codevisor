@@ -18,9 +18,8 @@ extension WorkspaceScreen {
     }
   }
 
-  /// A Simulator pane's title and subtitle once it shows a device: its name and OS.
+  /// A Simulator pane's title once it shows a device: its name.
   var simulatorTitle: String? { activeSimulatorModel?.device?.name }
-  var simulatorSubtitle: String? { activeSimulatorModel?.device?.runtime.name }
 
   func simulatorPaneModel(for pane: PaneDescriptorState) -> SimulatorPaneModel? {
     guard let workspace = resolvedWorkspace else { return nil }

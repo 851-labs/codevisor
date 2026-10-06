@@ -479,7 +479,6 @@ struct WorkspaceScreen: View {
 
   private var subtitle: String {
     if let promotionNavigationTitle { return promotionNavigationTitle.subtitle }
-    if !isDraft, let simulatorSubtitle { return simulatorSubtitle }
     guard !isDraft, activePane?.kind == .chat else { return "" }
     let projectName = resolvedProject.flatMap {
       $0.isScratch || $0.isRunTargetPlaceholder ? nil : $0.name
