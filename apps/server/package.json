@@ -21,6 +21,7 @@
     "@codevisor/adapter-codex": "workspace:*",
     "@codevisor/adapter-cursor": "workspace:*",
     "@codevisor/adapter-grok-build": "workspace:*",
+    "@codevisor/adapter-opencode": "workspace:*",
     "@codevisor/agent-runtime": "workspace:*",
     "@codevisor/api": "workspace:*",
     "@codevisor/automation": "workspace:*",

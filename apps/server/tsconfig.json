@@ -23,6 +23,9 @@
       "path": "../../packages/adapter-grok-build"
     },
     {
+      "path": "../../packages/adapter-opencode"
+    },
+    {
       "path": "../../packages/agent-runtime"
     },
     {

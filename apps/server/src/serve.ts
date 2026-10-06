@@ -3,11 +3,6 @@ import { homedir, hostname } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { promisify } from "node:util"
 
-import { makeAcpProvider } from "@codevisor/adapter-acp"
-import { makeClaudeProvider } from "@codevisor/adapter-claude"
-import { makeCodexProvider } from "@codevisor/adapter-codex"
-import { makeCursorProvider } from "@codevisor/adapter-cursor"
-import { makeGrokBuildProvider } from "@codevisor/adapter-grok-build"
 import { makeAgentRuntime, makeShellEnvCache, resolveShellEnv } from "@codevisor/agent-runtime"
 import type { DataUpgradeProgress } from "@codevisor/api"
 import {
@@ -34,6 +29,7 @@ import { makeBlobStore } from "@codevisor/sync"
 import { makeTerminalManager } from "@codevisor/terminal"
 import { Effect } from "effect"
 
+import { agentProviderFactories } from "./agent-providers.js"
 import {
   FAILED_UPGRADE_GRACE_MS,
   startBootListenerIfPortFree,
@@ -276,13 +272,7 @@ export const runServe = (
       ...(customHarnesses.definitions.length === 0
         ? {}
         : { extraHarnesses: customHarnesses.definitions }),
-      providerFactories: [
-        (env, context) => makeAcpProvider(env, context),
-        (env, context) => makeClaudeProvider(env, context),
-        (env, context) => makeCodexProvider(env, context),
-        (env, context) => makeCursorProvider(env, context),
-        (env, context) => makeGrokBuildProvider(env, context)
-      ],
+      providerFactories: agentProviderFactories,
       resolveEnv: shellEnv.refresh
     })
     const sessionActivity = makeActiveWorkSleepInhibitor()

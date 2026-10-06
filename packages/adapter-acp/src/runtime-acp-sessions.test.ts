@@ -269,14 +269,14 @@ describe("@codevisor/agent-runtime", () => {
     const runtime = makeAcpAgentRuntime({
       connector,
       env: { PATH: "/bin" },
-      executableExists: (name) => ["gemini", "opencode"].includes(name),
+      executableExists: (name) => ["gemini", "goose"].includes(name),
       locateExecutable: () => undefined
     })
 
     await run(runtime.createAgentSession("gemini", "/tmp/project", sink))
-    await run(runtime.createAgentSession("opencode", "/tmp/project", sink))
+    await run(runtime.createAgentSession("goose", "/tmp/project", sink))
 
-    expect(connector.requests.map((request) => request.command)).toEqual(["gemini", "opencode"])
+    expect(connector.requests.map((request) => request.command)).toEqual(["gemini", "goose"])
     expect(connector.requests[0]?.args).toEqual(["--acp"])
     expect(connector.requests[1]?.args).toEqual(["acp"])
   })

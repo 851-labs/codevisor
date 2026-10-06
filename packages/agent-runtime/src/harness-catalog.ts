@@ -175,6 +175,7 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     }
   }),
   executableHarness("opencode", "OpenCode", "curlybraces", ["opencode"], "opencode", ["acp"], {
+    provider: "opencode",
     installMethods: [
       { command: "curl -fsSL https://opencode.ai/install | bash", kind: "curl" },
       { kind: "npm", packageName: "opencode-ai" },

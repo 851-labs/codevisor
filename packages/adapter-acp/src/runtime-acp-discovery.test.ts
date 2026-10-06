@@ -35,7 +35,7 @@ describe("@codevisor/agent-runtime", () => {
   it("discovers ready local executables and unavailable harnesses", async () => {
     const runtime = makeAcpAgentRuntime({
       env: { PATH: "/bin" },
-      executableExists: (name) => ["gemini", "opencode", "codex", "cursor-agent"].includes(name),
+      executableExists: (name) => ["gemini", "goose", "codex", "cursor-agent"].includes(name),
       // Pinned so path/version enrichment stays off regardless of what is
       // installed on the machine running the tests (e.g. ChatGPT.app).
       locateExecutable: () => undefined,
@@ -53,7 +53,7 @@ describe("@codevisor/agent-runtime", () => {
     expect(harnesses.find((harness) => harness.id === "codex")?.readiness).toEqual({
       state: "ready"
     })
-    expect(harnesses.find((harness) => harness.id === "opencode")?.readiness).toEqual({
+    expect(harnesses.find((harness) => harness.id === "goose")?.readiness).toEqual({
       state: "ready"
     })
     expect(harnesses.find((harness) => harness.id === "claude-code")?.readiness.detail).toBe(
