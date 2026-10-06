@@ -97,6 +97,61 @@ describe("@codevisor/agent-runtime", () => {
     })
   })
 
+  it("demotes narration before tool calls, so each tool group follows its own text", async () => {
+    // OpenCode's order: narration, tool calls, more narration, more tool calls, the answer.
+    class NarratingConnection extends FakeConnection {
+      override prompt(sessionId: string) {
+        const say = (messageId: string, text: string) =>
+          this.emit({
+            kind: "session.output",
+            subjectId: sessionId,
+            payload: {
+              sessionUpdate: "agent_message_chunk",
+              messageId,
+              content: { type: "text", text }
+            }
+          })
+        const call = (toolCallId: string) =>
+          this.emit({
+            kind: "session.output",
+            subjectId: sessionId,
+            payload: { sessionUpdate: "tool_call", toolCallId, title: "Search" }
+          })
+        return Effect.promise(async () => {
+          await say("m1", "I'll check live results.")
+          await call("t1")
+          await call("t2")
+          await say("m2", "Prices went up.")
+          await call("t3")
+          await say("m3", "Book the 7am nonstop.")
+          return { stopReason: "end_turn" }
+        })
+      }
+    }
+    const runtime = makeAcpAgentRuntime({
+      connector: {
+        connect: (request, emit) => Effect.succeed(new NarratingConnection(request, emit))
+      },
+      env: { PATH: "/bin" },
+      executableExists: (name) => name === "gemini",
+      locateExecutable: (name) => `/bin/${name}`
+    })
+    const events: Array<RuntimeEvent> = []
+    const sessionId = await run(
+      runtime.createAgentSession("gemini", "/tmp/project", (event) => {
+        events.push(event)
+      })
+    )
+    await run(runtime.prompt(sessionId, "flights"))
+
+    const phases = events.flatMap((event) => {
+      const payload = event.payload as { messageId?: string; phase?: string; toolCallId?: string }
+      if (payload.phase !== undefined) return [`${payload.messageId}:${payload.phase}`]
+      return payload.toolCallId === undefined ? [] : [payload.toolCallId]
+    })
+    expect(phases).toEqual(["m1:commentary", "t1", "t2", "m2:commentary", "t3"])
+  })
+
   it("delivers events that arrive with no prompt in flight", async () => {
     // Regression test for the dropped-background-events bug: the sink used to
     // exist only for the duration of a prompt request.

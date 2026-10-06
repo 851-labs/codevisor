@@ -3,6 +3,7 @@ import { Effect } from "effect"
 import type { AgentRuntimeConfig, ProviderFactoryContext } from "./agent-runtime-types.js"
 import { locateExecutableOnPath } from "./executable-locator.js"
 import { harnessCatalog } from "./harness-catalog.js"
+import { makeMessagePhases, type MessagePhases } from "./message-phases.js"
 import {
   runtimeEffect,
   type AgentProvider,
@@ -28,6 +29,7 @@ export interface ManagedSession {
   metadata: AgentSessionMetadata
   sink: RuntimeEventSink
   chain: Promise<void>
+  readonly phases: MessagePhases
 }
 
 /// Runtime state that swaps live after construction: the effective catalog
@@ -169,13 +171,16 @@ export const makeAgentRuntimeCore = (config: AgentRuntimeConfig) => {
         }
       }
     }
-    const next = session.chain
-      .then(() => session.sink(event))
-      .then(
-        () => undefined,
-        /* v8 ignore next -- defensive: a sink failure must not wedge the chain. */
-        () => undefined
-      )
+    let next = session.chain
+    for (const labeled of session.phases.label(event)) {
+      next = next
+        .then(() => session.sink(labeled))
+        .then(
+          () => undefined,
+          /* v8 ignore next -- defensive: a sink failure must not wedge the chain. */
+          () => undefined
+        )
+    }
     session.chain = next
     return next
   }
@@ -232,6 +237,7 @@ export const makeAgentRuntimeCore = (config: AgentRuntimeConfig) => {
       harnessId,
       ...(account === undefined ? {} : { harnessAccountId: account.id }),
       metadata,
+      phases: makeMessagePhases(),
       sink
     })
     return metadata
