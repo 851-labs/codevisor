@@ -31,7 +31,8 @@ enum TranscriptPlanRowProjection {
         lifecycle: lifecycle,
         container: .planDocument,
         documentBlockCount: blocks.count,
-        fragment: chunk.fragment
+        fragment: chunk.fragment,
+        precedingRole: chunk.precedingRole
       )
       rows.append(
         .init(
@@ -42,12 +43,7 @@ enum TranscriptPlanRowProjection {
             lifecycle: lifecycle
           ),
           content: .markdownChunk(projected),
-          estimatedHeight: estimatedHeight(
-            for: chunk.blocks,
-            isFirst: projected.isFirstInDocument,
-            isLast: projected.isLastInDocument,
-            fragment: chunk.fragment
-          ),
+          estimatedHeight: projected.estimatedHeight + (projected.isLastInDocument ? 12 : 0),
           measurementRevision: projected.measurementRevision,
           // Rows inside the card sit flush so the card reads as one
           // surface. The card's last row ends the response the way final
@@ -80,19 +76,5 @@ enum TranscriptPlanRowProjection {
     case .settled:
       .planMarkdown(messageID, ordinal: ordinal, fragment: fragment)
     }
-  }
-
-  private static func estimatedHeight(
-    for blocks: [MarkdownBlock],
-    isFirst: Bool,
-    isLast: Bool,
-    fragment: MarkdownFragmentLayout?
-  ) -> CGFloat {
-    TranscriptMarkdownChunkProjection.estimatedHeight(
-      for: blocks,
-      fragment: fragment
-    )
-      + (fragment == nil && !isFirst ? 10 : 0)
-      + (isLast ? 12 : 0)
   }
 }

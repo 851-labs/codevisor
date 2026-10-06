@@ -1,4 +1,5 @@
 import Foundation
+import MarkdownCore
 import SwiftUI
 
 /// A complete code-block snapshot. `id` remains stable while a streaming block
@@ -99,11 +100,9 @@ public struct MarkdownTheme: Sendable {
   /// Font for `` `inline code` `` chips: monospaced and a touch smaller
   /// than the body text so chips sit flush in a line of prose.
   public var inlineCodeFont: Font
-  public var blockSpacing: CGFloat
-  /// Extra vertical breathing room between list items (points).
-  public var listItemSpacing: CGFloat
-  /// Extra space between wrapped lines within a block (points).
-  public var lineSpacing: CGFloat
+  /// Line heights and the space between blocks, relative to the body font
+  /// size. Resolve to points with `blockGap(after:before:)` and friends.
+  public var spacing: MarkdownSpacing
   public var codeBackground: Color
   /// Background tint for `` `inline code` `` chips.
   public var inlineCodeBackground: Color
@@ -126,9 +125,7 @@ public struct MarkdownTheme: Sendable {
     secondaryTextForeground: Color = .secondary,
     codeForeground: Color = .primary,
     inlineCodeFont: Font = .system(.callout, design: .monospaced),
-    blockSpacing: CGFloat = 10,
-    listItemSpacing: CGFloat = 4,
-    lineSpacing: CGFloat = 3,
+    spacing: MarkdownSpacing = MarkdownSpacing(),
     codeBackground: Color = Color.secondary.opacity(0.12),
     inlineCodeBackground: Color = Color.secondary.opacity(0.18),
     inlineCodeCornerRadius: CGFloat = 4,
@@ -143,9 +140,7 @@ public struct MarkdownTheme: Sendable {
     self.secondaryTextForeground = secondaryTextForeground
     self.codeForeground = codeForeground
     self.inlineCodeFont = inlineCodeFont
-    self.blockSpacing = blockSpacing
-    self.listItemSpacing = listItemSpacing
-    self.lineSpacing = lineSpacing
+    self.spacing = spacing
     self.codeBackground = codeBackground
     self.inlineCodeBackground = inlineCodeBackground
     self.inlineCodeCornerRadius = inlineCodeCornerRadius
@@ -169,9 +164,7 @@ public struct MarkdownTheme: Sendable {
     hasher.combine(secondaryTextForeground)
     hasher.combine(codeForeground)
     hasher.combine(inlineCodeFont)
-    hasher.combine(blockSpacing)
-    hasher.combine(listItemSpacing)
-    hasher.combine(lineSpacing)
+    hasher.combine(spacing)
     hasher.combine(codeBackground)
     hasher.combine(inlineCodeBackground)
     hasher.combine(inlineCodeCornerRadius)

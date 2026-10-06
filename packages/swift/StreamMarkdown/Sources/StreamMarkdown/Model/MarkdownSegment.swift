@@ -28,6 +28,15 @@ public enum MarkdownSegment: Sendable, Equatable {
   }
 }
 
+extension MarkdownSegment {
+  var blocks: [MarkdownBlock] {
+    switch self {
+    case let .textRun(blocks): blocks
+    case let .block(block): [block]
+    }
+  }
+}
+
 /// A document-local identity reconciled across complete MD4C snapshots.
 /// Content may grow or even change block kind while its identity stays mounted.
 struct MarkdownRenderSegment: Identifiable, Sendable, Equatable {

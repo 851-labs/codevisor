@@ -12,15 +12,17 @@
     static func installLink(_ link: URL, into attributes: inout [NSAttributedString.Key: Any]) {
       attributes[.link] = link
     }
+    /// Each level's text style at that style's emphasized weight from the
+    /// HIG's iOS Dynamic Type table. Sizes follow the user's text size.
     static func headingFont(for level: Int) -> UIFont {
-      let style: UIFont.TextStyle =
+      let (style, weight): (UIFont.TextStyle, UIFont.Weight) =
         switch level {
-        case 1: .title2
-        case 2: .title3
-        case 3: .headline
-        default: .subheadline
+        case 1: (.title2, .bold)
+        case 2: (.title3, .semibold)
+        case 3: (.headline, .semibold)
+        default: (.subheadline, .semibold)
         }
-      return styled(.preferredFont(forTextStyle: style), bold: true, italic: false)
+      return .systemFont(ofSize: UIFont.preferredFont(forTextStyle: style).pointSize, weight: weight)
     }
 
     static func styled(_ font: UIFont, bold: Bool, italic: Bool) -> UIFont {

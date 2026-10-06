@@ -223,6 +223,7 @@ struct MarkdownSegmentsView: View {
   var pacingSourceID = "nested"
   var animationPath = "nested"
   var reduceMotion = false
+  var isListItemContent = false
 
   var body: some View {
     MarkdownSegmentListView(
@@ -234,8 +235,19 @@ struct MarkdownSegmentsView: View {
       pacingSourceID: pacingSourceID,
       animationPath: animationPath,
       reduceMotion: reduceMotion,
-      playbackRevision: playbackRevision
+      playbackRevision: playbackRevision,
+      isListItemContent: isListItemContent
     )
+  }
+}
+
+extension MarkdownSegmentListView {
+  fileprivate func gap(before index: Int) -> CGFloat {
+    if isListItemContent { return theme.listItemGap }
+    guard let previous = segments[index - 1].segment.blocks.last?.role,
+      let next = segments[index].segment.blocks.first?.role
+    else { return 0 }
+    return theme.blockGap(after: previous, before: next)
   }
 }
 
@@ -250,6 +262,8 @@ struct MarkdownSegmentListView: View {
   let animationPath: String
   let reduceMotion: Bool
   var playbackRevision = 0
+  /// Blocks inside one list item are spaced like list items.
+  var isListItemContent = false
   @Environment(\.markdownTheme) private var theme
   @State private var blockEntranceSequence = StreamingMarkdownBlockEntranceSequence()
   @State private var blockEntranceRevision = 0
@@ -263,7 +277,7 @@ struct MarkdownSegmentListView: View {
       reduceMotion: reduceMotion
     )
     let _ = blockEntranceRevision
-    VStack(alignment: .leading, spacing: theme.blockSpacing) {
+    VStack(alignment: .leading, spacing: 0) {
       ForEach(Array(segments.enumerated()), id: \.element.id) { index, renderSegment in
         if index < resolution.visibleSegmentCount {
           MarkdownSegmentView(
@@ -279,6 +293,7 @@ struct MarkdownSegmentListView: View {
             playbackRevision: playbackRevision
           )
           .equatable()
+          .padding(.top, index == 0 ? 0 : gap(before: index))
           .transition(
             resolution.revealingSegmentIndex == index
               ? .opacity

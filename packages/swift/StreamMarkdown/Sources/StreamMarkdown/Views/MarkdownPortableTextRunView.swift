@@ -10,9 +10,10 @@
     @Environment(\.markdownTheme) private var theme
 
     var body: some View {
-      VStack(alignment: .leading, spacing: theme.blockSpacing) {
-        ForEach(Array(blocks.enumerated()), id: \.element.id) { _, block in
+      VStack(alignment: .leading, spacing: 0) {
+        ForEach(Array(blocks.enumerated()), id: \.element.id) { index, block in
           blockView(block)
+            .padding(.top, index == 0 ? 0 : theme.blockGap(after: blocks[index - 1].role, before: block.role))
         }
       }
       .lineSpacing(theme.lineSpacing)
@@ -29,7 +30,7 @@
       case let .paragraph(text):
         portableInlineText(text, theme: theme)
       case let .bulletList(items):
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: theme.listItemGap) {
           ForEach(Array(items.enumerated()), id: \.offset) { _, item in
             HStack(alignment: .firstTextBaseline, spacing: 8) {
               Text("•")
@@ -38,7 +39,7 @@
           }
         }
       case let .orderedList(items):
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: theme.listItemGap) {
           ForEach(Array(items.enumerated()), id: \.offset) { _, item in
             HStack(alignment: .firstTextBaseline, spacing: 8) {
               Text("\(item.number).")

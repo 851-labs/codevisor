@@ -157,18 +157,8 @@ final class TranscriptMarkdownRowHost: TranscriptMountedRowHost {
       chunk.container == .planDocument
       ? TranscriptMarkdownRowLayout.planHorizontalInset
       : 0
-    let topInset =
-      chunk.container == .planDocument
-        && chunk.fragment == nil
-        && !chunk.isFirstInDocument
-      ? style.markdown.blockSpacing
-      : 0
-    let fragmentSpacing: CGFloat =
-      switch chunk.fragment?.trailingSpacing {
-      case .block: style.markdown.blockSpacing
-      case .listItem: style.markdown.listItemSpacing
-      case .some(.none), nil: 0
-      }
+    let topInset = chunk.topSpacing(in: style.markdown)
+    let fragmentSpacing = chunk.fragment.map { style.markdown.gap($0.trailingSpacing) } ?? 0
     let planBottom =
       chunk.container == .planDocument && chunk.isLastInDocument
       ? TranscriptMarkdownRowLayout.planBottomInset

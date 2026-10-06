@@ -54,7 +54,8 @@
         cornerRadius: theme.inlineCodeCornerRadius
       )
 
-      for (index, block) in blocks.enumerated() {
+      var previous: MarkdownBlock?
+      for block in blocks {
         let piece = attributedString(
           for: block,
           theme: theme,
@@ -62,16 +63,17 @@
           chipBackground: chipBackground
         )
         guard piece.length > 0 else { continue }
-        if index > 0, result.length > 0 {
+        if let previous {
           result.append(
-            verticalSeparator(
-              size: max(2, (theme.blockSpacing - 2 * theme.lineSpacing) * 0.8),
-              lineSpacing: theme.lineSpacing,
+            blockSeparator(
+              height: theme.blockSeparatorHeight(after: previous.role, before: block.role),
+              ending: result,
               foreground: foreground
             )
           )
         }
         result.append(piece)
+        previous = block
       }
       return result.copy() as! NSAttributedString
     }
@@ -88,7 +90,7 @@
           text,
           baseFont: headingFont(for: level),
           theme: theme,
-          foreground: foreground,
+          foreground: headingForeground(for: level, theme: theme, body: foreground),
           chipBackground: chipBackground
         )
 
@@ -176,19 +178,32 @@
       return output
     }
 
-    static func verticalSeparator(
-      size: CGFloat,
-      lineSpacing: CGFloat,
+    /// Ends the paragraph `text` finishes with and adds an empty paragraph
+    /// exactly `height` points tall. The blank line keeps copied text
+    /// readable; its fixed height makes the gap independent of font
+    /// metrics. The terminator keeps the preceding paragraph's style so the
+    /// line spacing below its last line matches every other line.
+    static func blockSeparator(
+      height: CGFloat,
+      ending text: NSAttributedString,
       foreground: MarkdownNativeColor
     ) -> NSAttributedString {
-      NSAttributedString(
-        string: "\n\n",
-        attributes: baseAttributes(
-          font: .systemFont(ofSize: size),
-          foreground: foreground,
-          lineSpacing: lineSpacing
+      let font = MarkdownNativeFont.systemFont(ofSize: 1)
+      var terminator: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: foreground]
+      if text.length > 0 {
+        terminator[.paragraphStyle] = text.attribute(.paragraphStyle, at: text.length - 1, effectiveRange: nil)
+      }
+      let gap = NSMutableParagraphStyle()
+      gap.minimumLineHeight = height
+      gap.maximumLineHeight = height
+      let separator = NSMutableAttributedString(string: "\n", attributes: terminator)
+      separator.append(
+        NSAttributedString(
+          string: "\n",
+          attributes: [.font: font, .foregroundColor: foreground, .paragraphStyle: gap]
         )
       )
+      return separator
     }
 
     static func baseAttributes(
@@ -215,6 +230,15 @@
 
     static func headingFont(for level: Int) -> MarkdownNativeFont {
       MarkdownNativeTypography.headingFont(for: level)
+    }
+
+    /// H5 and H6 sit below body text in size, so color carries their rank.
+    static func headingForeground(
+      for level: Int,
+      theme: MarkdownTheme,
+      body: MarkdownNativeColor
+    ) -> MarkdownNativeColor {
+      level >= 5 ? MarkdownNativeColor(theme.secondaryTextForeground) : body
     }
 
     private static func styled(_ font: MarkdownNativeFont, bold: Bool, italic: Bool) -> MarkdownNativeFont {

@@ -420,12 +420,10 @@ extension VirtualizedTranscriptScrollView: TranscriptSelectionCoordinating, NSUs
         }
       },
       rowSeparator: { index in
-        // Leaf rows of one fragmented list or quote are laid out flush;
-        // everything else reads as separate paragraphs.
-        guard index > 0, let previous = rowByKey[virtualLayout.keys[index - 1]] else {
-          return "\n\n"
-        }
-        return previous.spacingAfter == 0 ? "\n" : "\n\n"
+        TranscriptSelectionText.rowSeparator(
+          previous: index > 0 ? rowByKey[virtualLayout.keys[index - 1]] : nil,
+          current: rowByKey[virtualLayout.keys[index]]
+        )
       }
     )
   }

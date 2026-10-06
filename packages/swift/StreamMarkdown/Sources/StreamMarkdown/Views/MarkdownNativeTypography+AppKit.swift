@@ -19,16 +19,18 @@
         attributes[.link] = link
       }
     }
+    /// Each level's text style at that style's emphasized weight from the
+    /// HIG's macOS text style table (Headline is bold already).
     static func headingFont(for level: Int) -> NSFont {
-      let style: NSFont.TextStyle =
+      let (style, weight): (NSFont.TextStyle, NSFont.Weight) =
         switch level {
-        case 1: .title1
-        case 2: .title2
-        case 3: .title3
-        case 4: .headline
-        default: .subheadline
+        case 1: (.title1, .bold)
+        case 2: (.title2, .bold)
+        case 3: (.title3, .semibold)
+        case 4: (.headline, .bold)
+        default: (.subheadline, .semibold)
         }
-      return styled(.preferredFont(forTextStyle: style), bold: true, italic: false)
+      return .systemFont(ofSize: NSFont.preferredFont(forTextStyle: style).pointSize, weight: weight)
     }
 
     static func styled(_ font: NSFont, bold: Bool, italic: Bool) -> NSFont {

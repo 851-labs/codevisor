@@ -14,7 +14,8 @@ public struct MarkdownFragmentLayout: Sendable, Equatable, Hashable {
 
   public enum TrailingSpacing: Sendable, Equatable, Hashable {
     case none
-    case block
+    /// Resolved through `MarkdownSpacing.gap(after:before:)`.
+    case block(after: MarkdownBlockRole, before: MarkdownBlockRole)
     case listItem
   }
 

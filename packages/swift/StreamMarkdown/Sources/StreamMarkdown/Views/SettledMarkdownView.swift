@@ -29,7 +29,8 @@
     }
     private var contentKey: ContentKey?
     private var contentViews: [NativeMarkdownContentView] = []
-    private var blockSpacing: CGFloat = 0
+    /// Space above each content view; the first is always zero.
+    private var gaps: [CGFloat] = []
     private var measuredWidth: CGFloat = -1
     private var measuredHeight: CGFloat = 1
 
@@ -83,7 +84,7 @@
         addSubview(view)
       }
       contentKey = key
-      blockSpacing = theme.blockSpacing
+      gaps = Self.gaps(between: blocks, viewCount: contentViews.count, theme: theme)
       measuredWidth = -1
       needsLayout = true
     }
@@ -95,8 +96,7 @@
       measuredHeight = max(
         1,
         contentViews.enumerated().reduce(0) { height, entry in
-          let spacing = entry.offset == 0 ? 0 : blockSpacing
-          return height + spacing + entry.element.contentHeight(forWidth: width)
+          height + gaps[entry.offset] + entry.element.contentHeight(forWidth: width)
         }
       )
       return measuredHeight
@@ -136,10 +136,18 @@
       }
       var y: CGFloat = 0
       for (index, view) in contentViews.enumerated() {
-        if index > 0 { y += blockSpacing }
+        y += gaps[index]
         let height = view.contentHeight(forWidth: bounds.width)
         view.frame = NSRect(x: 0, y: y, width: bounds.width, height: height)
         y += height
+      }
+    }
+
+    /// One view per block unless the whole row is a single text run.
+    private static func gaps(between blocks: [MarkdownBlock], viewCount: Int, theme: MarkdownTheme) -> [CGFloat] {
+      guard viewCount == blocks.count else { return Array(repeating: 0, count: viewCount) }
+      return blocks.indices.map { index in
+        index == 0 ? 0 : theme.blockGap(after: blocks[index - 1].role, before: blocks[index].role)
       }
     }
 

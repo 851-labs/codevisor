@@ -19,6 +19,11 @@ public struct TranscriptMarkdownChunk: Sendable, Equatable {
   /// into independently virtualized leaf rows. Simple quotes stay intact and
   /// leave this nil so they continue through the single TextKit fast path.
   public let fragment: MarkdownFragmentLayout?
+  /// Role of the block directly above this row in the same document when
+  /// this row starts a new block, so the row can add the space that rule
+  /// calls for. Nil for a document's first block and for rows continuing a
+  /// split list or quote, whose fragment layout carries their spacing.
+  public let precedingRole: MarkdownBlockRole?
   /// The complete block count for a plan document, whose fragments need to
   /// know whether they draw the card's first and last edges. Assistant
   /// response chunks use zero so stable prefix rows do not change on append.
@@ -34,7 +39,8 @@ public struct TranscriptMarkdownChunk: Sendable, Equatable {
     container: TranscriptMarkdownContainer,
     animationSourceID: String? = nil,
     documentBlockCount: Int = 0,
-    fragment: MarkdownFragmentLayout? = nil
+    fragment: MarkdownFragmentLayout? = nil,
+    precedingRole: MarkdownBlockRole? = nil
   ) {
     precondition(!blocks.isEmpty, "Markdown chunks must contain at least one block")
     self.messageID = messageID
@@ -47,6 +53,7 @@ public struct TranscriptMarkdownChunk: Sendable, Equatable {
     self.container = container
     self.documentBlockCount = documentBlockCount
     self.fragment = fragment
+    self.precedingRole = precedingRole
   }
 
   /// A source append can leave this rendered prefix unchanged. Its pacing
@@ -58,6 +65,7 @@ public struct TranscriptMarkdownChunk: Sendable, Equatable {
       && lhs.ordinal == rhs.ordinal && lhs.blocks == rhs.blocks
       && lhs.lifecycle == rhs.lifecycle && lhs.container == rhs.container
       && lhs.fragment == rhs.fragment && lhs.documentBlockCount == rhs.documentBlockCount
+      && lhs.precedingRole == rhs.precedingRole
   }
 
   public var animationGroupID: String { "\(messageID.uuidString):\(animationSourceID)" }
@@ -82,7 +90,7 @@ public struct TranscriptMarkdownChunk: Sendable, Equatable {
     TranscriptMarkdownChunkProjection.estimatedHeight(
       for: blocks,
       fragment: fragment
-    )
+    ) + (precedingRole == nil ? 0 : TranscriptMarkdownChunkProjection.estimatedBlockSpacing)
   }
 
   var measurementRevision: Int {
@@ -92,6 +100,7 @@ public struct TranscriptMarkdownChunk: Sendable, Equatable {
     }
     hasher.combine(documentBlockCount)
     hasher.combine(fragment)
+    hasher.combine(precedingRole)
     return hasher.finalize()
   }
 }
@@ -104,12 +113,13 @@ enum TranscriptMarkdownChunkProjection {
   /// for empty or otherwise underestimated blocks.
   static let maximumEstimatedTextChunkHeight: CGFloat = 320
   static let maximumTextBlocksPerChunk = 12
-  static let estimatedBlockSpacing: CGFloat = 10
+  static let estimatedBlockSpacing: CGFloat = 13
 
   struct Chunk: Equatable {
     let firstOrdinal: Int
     let blocks: [MarkdownBlock]
     let fragment: MarkdownFragmentLayout?
+    var precedingRole: MarkdownBlockRole?
 
     init(
       firstOrdinal: Int,
@@ -170,6 +180,10 @@ enum TranscriptMarkdownChunkProjection {
       }
     }
     flushTextBlocks()
+    for index in chunks.indices where chunks[index].fragment?.isFirstInSourceBlock ?? true {
+      let first = chunks[index].firstOrdinal
+      chunks[index].precedingRole = first > 0 ? blocks[first - 1].role : nil
+    }
     return chunks
   }
 
@@ -186,8 +200,8 @@ enum TranscriptMarkdownChunkProjection {
     guard let fragment else { return content }
     switch fragment.trailingSpacing {
     case .none: return content
-    case .block: return content + 10
-    case .listItem: return content + 4
+    case .block: return content + estimatedBlockSpacing
+    case .listItem: return content + 6
     }
   }
 
@@ -401,16 +415,14 @@ enum TranscriptMarkdownChunkProjection {
     in drafts: [FragmentDraft]
   ) -> MarkdownFragmentLayout.TrailingSpacing {
     guard drafts.indices.contains(index + 1) else { return .none }
-    let current = drafts[index].listItemPath
-    let next = drafts[index + 1].listItemPath
-    if !current.isEmpty,
-      current.count == next.count,
-      current.dropLast().elementsEqual(next.dropLast()),
-      current.last != next.last
-    {
+    let current = drafts[index]
+    let next = drafts[index + 1]
+    // Rows inside one list are spaced like its items at every depth, the
+    // same rhythm the flattened TextKit list uses.
+    if !current.listItemPath.isEmpty, !next.listItemPath.isEmpty {
       return .listItem
     }
-    return .block
+    return .block(after: current.blocks[current.blocks.count - 1].role, before: next.blocks[0].role)
   }
 
   private static func requiresStructuralFragmentation(_ blocks: [MarkdownBlock]) -> Bool {

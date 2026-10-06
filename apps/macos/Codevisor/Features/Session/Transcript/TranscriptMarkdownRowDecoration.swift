@@ -114,15 +114,17 @@ final class TranscriptMarkdownRowDecoration: NSView {
       chunk.container == .planDocument && chunk.isLastInDocument
       ? TranscriptMarkdownRowLayout.planBottomInset
       : 0
+    // Structure starts where the row's content does, below its top gap.
+    let top = chunk.topSpacing(in: style.markdown)
     if let context = NSGraphicsContext.current?.cgContext {
       let color = NSColor(style.markdown.quoteBarColor)
       for depth in 0..<fragment.quoteDepth {
         TextKitQuoteBarPainter.fill(
           NSRect(
             x: planInset + CGFloat(depth) * MarkdownFragmentMetrics.quoteIndent,
-            y: 0,
+            y: top,
             width: MarkdownFragmentMetrics.quoteBarWidth,
-            height: max(1, bounds.height - planBottom)
+            height: max(1, bounds.height - top - planBottom)
           ),
           color: color,
           in: context
@@ -144,9 +146,9 @@ final class TranscriptMarkdownRowDecoration: NSView {
       NSAttributedString(string: marker.text, attributes: markerAttributes).draw(
         in: NSRect(
           x: x,
-          y: 0,
+          y: top,
           width: max(1, bounds.width - x),
-          height: bounds.height
+          height: max(1, bounds.height - top)
         )
       )
     }

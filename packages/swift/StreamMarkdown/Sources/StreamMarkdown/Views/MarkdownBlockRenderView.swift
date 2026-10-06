@@ -164,7 +164,7 @@ public struct MarkdownBlockRenderView: View {
     animatesInitialContent: Bool,
     playbackRevision: Int
   ) -> some View {
-    VStack(alignment: .leading, spacing: theme.blockSpacing) {
+    VStack(alignment: .leading, spacing: 0) {
       ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
         MarkdownBlockView(
           block: block,
@@ -177,6 +177,7 @@ public struct MarkdownBlockRenderView: View {
           animationPath: "\(streamID).\(index)",
           reduceMotion: reduceMotion
         )
+        .padding(.top, index == 0 ? 0 : theme.blockGap(after: blocks[index - 1].role, before: block.role))
       }
     }
   }
@@ -238,11 +239,7 @@ public struct MarkdownFragmentRenderView: View {
   }
 
   private var trailingSpacing: CGFloat {
-    switch layout.trailingSpacing {
-    case .none: 0
-    case .block: theme.blockSpacing
-    case .listItem: theme.listItemSpacing
-    }
+    theme.gap(layout.trailingSpacing)
   }
 
   private var structuralDecoration: some View {
@@ -455,7 +452,7 @@ private struct MarkdownRecursiveListView: View {
   var body: some View {
     let markers = list.items.enumerated().map { list.marker(for: $0.element, at: $0.offset) }
     let column = MarkdownFragmentMetrics.listColumn(markers: markers)
-    VStack(alignment: .leading, spacing: theme.listItemSpacing) {
+    VStack(alignment: .leading, spacing: theme.listItemGap) {
       ForEach(Array(list.items.enumerated()), id: \.offset) { index, item in
         // The marker column has a fixed width and the content takes the
         // remainder. Without this, the stack's initial equal-share
@@ -478,7 +475,8 @@ private struct MarkdownRecursiveListView: View {
             documentSource: documentSource,
             pacingSourceID: pacingSourceID,
             animationPath: "\(animationPath).item.\(index)",
-            reduceMotion: reduceMotion
+            reduceMotion: reduceMotion,
+            isListItemContent: true
           )
           .layoutPriority(1)
         }

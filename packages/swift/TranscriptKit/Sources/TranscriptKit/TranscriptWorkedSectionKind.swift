@@ -149,7 +149,8 @@ extension TranscriptAssistantRowProjection {
         let blocks = TranscriptMarkdownParseCache.shared.parse(
           markdown, messageID: message.id, sourceID: sourceID
         )
-        for chunk in TranscriptMarkdownChunkProjection.chunks(from: blocks) {
+        let chunks = TranscriptMarkdownChunkProjection.chunks(from: blocks)
+        for (chunkIndex, chunk) in chunks.enumerated() {
           let projected = TranscriptMarkdownChunk(
             messageID: message.id,
             sourceID: sourceID,
@@ -159,7 +160,8 @@ extension TranscriptAssistantRowProjection {
             lifecycle: lifecycle,
             container: .assistantWorked,
             animationSourceID: entryID,
-            fragment: chunk.fragment
+            fragment: chunk.fragment,
+            precedingRole: chunk.precedingRole
           )
           rows.append(
             .init(
@@ -173,7 +175,7 @@ extension TranscriptAssistantRowProjection {
               content: .markdownChunk(projected),
               estimatedHeight: projected.estimatedHeight,
               measurementRevision: projected.measurementRevision,
-              spacingAfter: chunk.fragment?.isLastInSourceBlock == false ? 0 : 12,
+              spacingAfter: chunkIndex == chunks.count - 1 ? 12 : 0,
               workedSection: .init(identity: identity, role: .content)
             ))
         }

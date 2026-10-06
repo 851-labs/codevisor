@@ -109,6 +109,22 @@ public struct TranscriptSelectionSpan: Equatable, Sendable {
 }
 
 public enum TranscriptSelectionText {
+  /// How a copied row joins the text before it. Leaf rows of one
+  /// fragmented list or quote are laid out flush and join with a newline;
+  /// everything else reads as separate paragraphs, including a Markdown row
+  /// that starts a new block of the same document (those rows also sit
+  /// flush, the next row drawing the gap itself).
+  public static func rowSeparator(
+    previous: TranscriptPresentationRow?,
+    current: TranscriptPresentationRow?
+  ) -> String {
+    guard let previous else { return "\n\n" }
+    if case let .markdownChunk(chunk) = current?.content, chunk.precedingRole != nil {
+      return "\n\n"
+    }
+    return previous.spacingAfter == 0 ? "\n" : "\n\n"
+  }
+
   /// Assembles the plain text covered by `span`.
   ///
   /// Rows contribute their surfaces in order. Surfaces within a row are

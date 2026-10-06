@@ -6,6 +6,7 @@ import TranscriptKit
 public struct TranscriptMarkdownChunkView: View {
   private let chunk: TranscriptMarkdownChunk
   @Environment(\.attachmentImages) private var attachmentImages
+  @Environment(\.markdownTheme) private var markdownTheme
 
   public init(chunk: TranscriptMarkdownChunk) {
     self.chunk = chunk
@@ -23,9 +24,9 @@ public struct TranscriptMarkdownChunkView: View {
           streamID: streamID,
           animationGroupID: animationGroupID,
           isStreaming: chunk.lifecycle == .receiving,
-          isFirst: chunk.isFirstInDocument,
           isLast: chunk.isLastInDocument,
-          fragmentLayout: chunk.fragment
+          fragmentLayout: chunk.fragment,
+          topSpacing: topSpacing
         )
       } else if let fragment = chunk.fragment {
         MarkdownFragmentRenderView(
@@ -36,6 +37,7 @@ public struct TranscriptMarkdownChunkView: View {
           isStreaming: chunk.lifecycle == .receiving,
           layout: fragment
         )
+        .padding(.top, topSpacing)
       } else {
         MarkdownBlockRenderView(
           blocks: chunk.blocks,
@@ -44,8 +46,19 @@ public struct TranscriptMarkdownChunkView: View {
           animationGroupID: animationGroupID,
           isStreaming: chunk.lifecycle == .receiving
         )
+        .padding(.top, topSpacing)
       }
     }
     .environment(\.markdownImageLoader, attachmentImages?.markdownImageLoader ?? .remote)
+  }
+
+  private var topSpacing: CGFloat { chunk.topSpacing(in: markdownTheme) }
+}
+
+public extension TranscriptMarkdownChunk {
+  /// The gap above a row that starts a new block of its document, shared
+  /// by the SwiftUI and native AppKit row renderers.
+  func topSpacing(in theme: MarkdownTheme) -> CGFloat {
+    precedingRole.map { theme.blockGap(after: $0, before: blocks[0].role) } ?? 0
   }
 }

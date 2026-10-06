@@ -12,3 +12,5 @@ public typealias MarkdownList = MarkdownCore.MarkdownList
 public typealias MarkdownBlock = MarkdownCore.MarkdownBlock
 public typealias MarkdownParser = MarkdownCore.MarkdownParser
 public typealias MarkdownFragmentLayout = MarkdownCore.MarkdownFragmentLayout
+public typealias MarkdownSpacing = MarkdownCore.MarkdownSpacing
+public typealias MarkdownBlockRole = MarkdownCore.MarkdownBlockRole

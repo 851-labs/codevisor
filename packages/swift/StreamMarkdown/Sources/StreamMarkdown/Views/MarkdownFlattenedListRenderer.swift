@@ -18,12 +18,15 @@
     private struct RenderContext {
       var contentIndent: CGFloat = 0
       var listDepth = 0
+      /// Blocks directly inside a list item are spaced like list items.
+      var isListItemContent = false
       var quoteBarOffsets: [CGFloat] = []
 
       func listItemContent(indentedBy amount: CGFloat) -> Self {
         var copy = self
         copy.contentIndent += amount
         copy.listDepth += 1
+        copy.isListItemContent = true
         return copy
       }
 
@@ -31,6 +34,7 @@
         var copy = self
         copy.quoteBarOffsets.append(contentIndent)
         copy.contentIndent += quoteIndent
+        copy.isListItemContent = false
         return copy
       }
     }
@@ -111,6 +115,7 @@
       for (index, item) in items.enumerated() {
         if index > 0 {
           appendSpacing(
+            theme.listItemSeparatorHeight,
             context: context,
             to: result,
             theme: theme,
@@ -155,6 +160,9 @@
       for (index, block) in blocks.enumerated() {
         if index > 0 {
           appendSpacing(
+            context.isListItemContent
+              ? theme.listItemSeparatorHeight
+              : theme.blockSeparatorHeight(after: blocks[index - 1].role, before: block.role),
             context: context,
             to: result,
             theme: theme,
@@ -191,7 +199,7 @@
           context: context,
           to: result,
           theme: theme,
-          foreground: foreground,
+          foreground: MarkdownTextRunRenderer.headingForeground(for: level, theme: theme, body: foreground),
           chipBackground: chipBackground
         )
 
@@ -328,14 +336,15 @@
     }
 
     private static func appendSpacing(
+      _ height: CGFloat,
       context: RenderContext,
       to result: NSMutableAttributedString,
       theme: MarkdownTheme,
       foreground: MarkdownNativeColor
     ) {
-      let separator = MarkdownTextRunRenderer.verticalSeparator(
-        size: max(1, (theme.listItemSpacing - 2 * theme.lineSpacing) * 0.8),
-        lineSpacing: theme.lineSpacing,
+      let separator = MarkdownTextRunRenderer.blockSeparator(
+        height: height,
+        ending: result,
         foreground: foreground
       )
       appendDecorated(separator, context: context, to: result, theme: theme)

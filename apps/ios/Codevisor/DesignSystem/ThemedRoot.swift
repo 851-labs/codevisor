@@ -22,22 +22,11 @@ struct ThemedRoot: ViewModifier {
         \.codeHighlightTheme,
         highlight.map { CodeHighlightTheme(key: $0.key, json: $0.json) }
       )
-      .markdownTheme(markdownTheme(theme: theme, highlight: highlight))
+      // Markdown spacing is relative to the body font, so the phone's larger
+      // text gets proportionally more air without overrides.
+      .markdownTheme(makeMarkdownTheme(theme: theme, highlight: highlight))
       .foregroundStyle(theme.isSystem ? AnyShapeStyle(.foreground) : AnyShapeStyle(theme.textPrimary))
       .tint(theme.isSystem ? nil : theme.accent)
-  }
-
-  /// The shared theme bridge, with spacing opened up for the phone: 17pt
-  /// body text needs more line and block air than the Mac's 13pt.
-  private func markdownTheme(
-    theme: Theme,
-    highlight: (key: String, json: String)?
-  ) -> MarkdownTheme {
-    var markdown = makeMarkdownTheme(theme: theme, highlight: highlight)
-    markdown.lineSpacing = 5
-    markdown.blockSpacing = 12
-    markdown.listItemSpacing = 6
-    return markdown
   }
 
   private var resolvedScheme: ThemeDescriptor.SchemeType {

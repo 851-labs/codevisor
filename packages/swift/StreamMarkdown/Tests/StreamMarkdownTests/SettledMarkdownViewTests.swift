@@ -136,6 +136,36 @@ struct SettledMarkdownViewTests {
     }
   }
 
+  /// A transcript reply is split into rows wherever the chunker decides, so
+  /// a block boundary must look the same inside one TextKit run and between
+  /// two views; and headings must sit closer to what they introduce than to
+  /// what precedes them.
+  @Test("Block gaps match across views and rank heading spacing")
+  func blockGapsMatchAcrossViews() {
+    let theme = MarkdownTheme.default
+    func height(_ blocks: [MarkdownBlock]) -> CGFloat {
+      let view = MarkdownTextKit2View()
+      view.setContent(
+        MarkdownTextRunRenderer.attributedString(for: blocks, theme: theme, foregroundColor: .primary))
+      return view.contentHeight(forWidth: 760)
+    }
+    func gap(_ previous: MarkdownBlock, _ next: MarkdownBlock) -> CGFloat {
+      let inRun = height([previous, next]) - height([previous]) - height([next])
+      #expect(abs(inRun - theme.blockGap(after: previous.role, before: next.role)) <= 1)
+      return inRun
+    }
+    let paragraph = MarkdownBlock.paragraph("Body text")
+    let heading = MarkdownBlock.heading(level: 2, text: "Section")
+
+    let aboveHeading = gap(paragraph, heading)
+    let betweenParagraphs = gap(paragraph, paragraph)
+    let belowHeading = gap(heading, paragraph)
+    _ = gap(paragraph, .bulletList(["Item"]))
+
+    #expect(aboveHeading > betweenParagraphs)
+    #expect(betweenParagraphs > belowHeading)
+  }
+
   @Test("Complex blocks report exact non-placeholder heights")
   func complexBlockHeights() {
     let parser = MarkdownParser()

@@ -89,11 +89,12 @@ public struct PlanDocumentBlockView: View {
   private let streamID: String
   private let animationGroupID: String
   private let isStreaming: Bool
-  private let isFirst: Bool
+  /// Space above this chunk inside the card: the gap its first block
+  /// takes from the block before it.
+  private let topSpacing: CGFloat
   private let isLast: Bool
   private let fragmentLayout: MarkdownFragmentLayout?
   @Environment(\.theme) private var theme
-  @Environment(\.markdownTheme) private var markdownTheme
 
   public init(
     block: MarkdownBlock,
@@ -101,16 +102,16 @@ public struct PlanDocumentBlockView: View {
     streamID: String,
     animationGroupID: String? = nil,
     isStreaming: Bool,
-    isFirst: Bool,
     isLast: Bool,
-    fragmentLayout: MarkdownFragmentLayout? = nil
+    fragmentLayout: MarkdownFragmentLayout? = nil,
+    topSpacing: CGFloat = 0
   ) {
     blocks = [block]
     self.documentSource = documentSource
     self.streamID = streamID
     self.animationGroupID = animationGroupID ?? streamID
     self.isStreaming = isStreaming
-    self.isFirst = isFirst
+    self.topSpacing = topSpacing
     self.isLast = isLast
     self.fragmentLayout = fragmentLayout
   }
@@ -121,9 +122,9 @@ public struct PlanDocumentBlockView: View {
     streamID: String,
     animationGroupID: String? = nil,
     isStreaming: Bool,
-    isFirst: Bool,
     isLast: Bool,
-    fragmentLayout: MarkdownFragmentLayout? = nil
+    fragmentLayout: MarkdownFragmentLayout? = nil,
+    topSpacing: CGFloat = 0
   ) {
     precondition(!blocks.isEmpty, "Plan Markdown rows must contain at least one block")
     self.blocks = blocks
@@ -131,7 +132,7 @@ public struct PlanDocumentBlockView: View {
     self.streamID = streamID
     self.animationGroupID = animationGroupID ?? streamID
     self.isStreaming = isStreaming
-    self.isFirst = isFirst
+    self.topSpacing = topSpacing
     self.isLast = isLast
     self.fragmentLayout = fragmentLayout
   }
@@ -143,7 +144,7 @@ public struct PlanDocumentBlockView: View {
         borderWidth: PlanDocumentMetrics.borderWidth
       )
       .padding(.horizontal, PlanDocumentMetrics.horizontalPadding)
-      .padding(.top, fragmentLayout != nil || isFirst ? 0 : markdownTheme.blockSpacing)
+      .padding(.top, topSpacing)
       .padding(.bottom, isLast ? PlanDocumentMetrics.bottomPadding : 0)
       .frame(maxWidth: .infinity, alignment: .leading)
       .background(

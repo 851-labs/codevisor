@@ -197,7 +197,8 @@ enum TranscriptAssistantRowProjection {
           source, messageID: message.id, sourceID: sourceID
         )
         let sourceOrdinal = ordinal
-        for chunk in TranscriptMarkdownChunkProjection.chunks(from: blocks) {
+        let chunks = TranscriptMarkdownChunkProjection.chunks(from: blocks)
+        for (chunkIndex, chunk) in chunks.enumerated() {
           let chunkOrdinal = sourceOrdinal + chunk.firstOrdinal
           let projected = TranscriptMarkdownChunk(
             messageID: message.id,
@@ -208,7 +209,8 @@ enum TranscriptAssistantRowProjection {
             lifecycle: lifecycle,
             container: .assistantResponse,
             animationSourceID: segmentIndex == 0 ? entryID : sourceID,
-            fragment: chunk.fragment
+            fragment: chunk.fragment,
+            precedingRole: chunk.precedingRole
           )
           responseRows.append(
             .init(
@@ -222,7 +224,9 @@ enum TranscriptAssistantRowProjection {
               content: .markdownChunk(projected),
               estimatedHeight: projected.estimatedHeight,
               measurementRevision: projected.measurementRevision,
-              spacingAfter: chunk.fragment?.isLastInSourceBlock == false ? 0 : 10
+              // Rows of one document sit flush: the next row adds the gap
+              // its first block calls for (see `precedingRole`).
+              spacingAfter: chunkIndex == chunks.count - 1 ? 10 : 0
             ))
         }
         ordinal += blocks.count
