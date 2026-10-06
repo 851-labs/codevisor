@@ -48,10 +48,19 @@ struct WorkspaceLayoutCommands: Commands {
 
       Divider()
 
-      ShortcutButton(.previousTab) { stepTab(-1) }
-        .disabled(actions == nil && sidebarActions == nil)
-      ShortcutButton(.nextTab) { stepTab(1) }
-        .disabled(actions == nil && sidebarActions == nil)
+      ShortcutButton(.previousTab) { actions?.previousTab() }
+        .disabled(actions == nil)
+      ShortcutButton(.nextTab) { actions?.nextTab() }
+        .disabled(actions == nil)
+
+      Divider()
+
+      // The sidebar owns the workspace order, so these work from the New
+      // Chat page too.
+      ShortcutButton(.previousWorkspace) { sidebarActions?.stepWorkspace(-1) }
+        .disabled(sidebarActions == nil)
+      ShortcutButton(.nextWorkspace) { sidebarActions?.stepWorkspace(1) }
+        .disabled(sidebarActions == nil)
 
       Divider()
 
@@ -81,19 +90,6 @@ struct WorkspaceLayoutCommands: Commands {
         .disabled(actions == nil)
       ShortcutButton(.focusSplitBelow) { actions?.focus(.bottom) }
         .disabled(actions == nil)
-    }
-  }
-
-  private func stepTab(_ offset: Int) {
-    if let actions {
-      if offset < 0 {
-        actions.previousTab()
-      } else {
-        actions.nextTab()
-      }
-    } else {
-      // The standalone New Chat page has no workspace container.
-      sidebarActions?.stepTab(offset)
     }
   }
 }

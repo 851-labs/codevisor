@@ -17,4 +17,23 @@ public struct PaneNavigationVisibility: Sendable {
   public func includes(_ pane: PaneDescriptorState) -> Bool {
     !hideAgentTerminals || !pane.isAgentTerminal
   }
+
+  /// Whether navigation lists a tab: at least one of its splits shows a
+  /// listed pane (an empty split counts, so a fresh tab is never hidden).
+  public func includes(_ tab: WorkspaceTab) -> Bool {
+    tab.root.allGroups.contains { group in
+      guard let pane = group.state.selectedPane ?? group.state.panes.first else { return true }
+      return includes(pane)
+    }
+  }
+}
+
+extension Workspace {
+  /// The top tabs navigation lists, in order: what the tab strip shows and
+  /// what ⌘1–⌘9 and ⇧⌘[ / ⇧⌘] step through.
+  public func listedCenterTabs(
+    visibility: PaneNavigationVisibility = PaneNavigationVisibility()
+  ) -> [WorkspaceTab] {
+    centerTabs.filter(visibility.includes)
+  }
 }

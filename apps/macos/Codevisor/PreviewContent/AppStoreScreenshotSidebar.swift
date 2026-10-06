@@ -17,19 +17,11 @@
         ScrollView {
           VStack(alignment: .leading, spacing: 1) {
             ForEach(AppStoreScreenshotData.sections) { section in
-              SidebarWorkspaceHeader(
-                name: section.name, machineName: section.machineName, isReordering: false,
-                onArchive: {}, onRename: {}, onNewTab: {}
+              SidebarWorkspaceRow(
+                name: section.name, machineName: section.machineName, status: section.sidebarStatus,
+                isSelected: section.rows.contains { $0.id == selectedRowID },
+                isReordering: false, onActivate: {}, onNewTab: {}, onRename: {}, onArchive: {}
               )
-              ForEach(section.rows) { row in
-                SidebarWorkspaceTabRow(
-                  title: row.title, kind: row.kind, isAgentOwned: false,
-                  chatSession: row.session, store: store,
-                  isSelected: (scene == "conversation" && row.id == AppStoreScreenshotData.id(11))
-                    || (scene == "browser" && row.id == AppStoreScreenshotData.id(13)),
-                  isReordering: false, titleFont: .body, onActivate: {}, onClose: {}
-                )
-              }
             }
           }
         }
@@ -38,27 +30,24 @@
       .padding(.horizontal, 8)
       .themedSurface(.sidebar)
     }
-  }
 
-  private extension ScreenshotSidebarTabRow {
-    var kind: PaneKind {
-      switch icon {
-      case .chat: .chat
-      case .browser: .browser
-      case .terminal: .terminal
-      case .document: .document
+    /// The tab the scene shows; its workspace's row is the selected one.
+    private var selectedRowID: UUID? {
+      switch scene {
+      case "conversation": AppStoreScreenshotData.id(11)
+      case "browser": AppStoreScreenshotData.id(13)
+      default: nil
       }
     }
+  }
 
-    var session: ChatSession? {
-      guard case let .chat(harnessId, _) = icon else { return nil }
-      return ChatSession(
-        id: id, projectId: AppStoreScreenshotData.projectID,
-        serverId: AppStoreScreenshotData.machineID, harnessId: harnessId,
-        title: title, createdAt: AppStoreScreenshotData.date, updatedAt: AppStoreScreenshotData.date,
-        sidebarState: status == .inProgress ? .inProgress : (status == .unread ? .unread : .idle),
-        unreadCount: status == .unread ? 1 : 0
-      )
+  private extension ScreenshotSidebarSection {
+    var sidebarStatus: SidebarWorkspaceStatus {
+      switch status {
+      case .idle: .idle
+      case .unread: .unread
+      case .inProgress: .working
+      }
     }
   }
 #endif

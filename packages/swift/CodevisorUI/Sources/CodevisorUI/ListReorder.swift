@@ -38,4 +38,13 @@ public enum ListReorder {
     result.insert(id, at: index)
     return result
   }
+
+  /// `order` with `id` moved to `index` among `subset`, the rows of one
+  /// group within `order`. The group's new order fills the slots its members
+  /// held, so every row outside the group keeps its place.
+  public static func moving<ID: Hashable>(_ id: ID, to index: Int, within subset: [ID], in order: [ID]) -> [ID] {
+    let members = Set(subset)
+    var regrouped = moving(id, to: index, in: order.filter(members.contains)).makeIterator()
+    return order.map { members.contains($0) ? regrouped.next() ?? $0 : $0 }
+  }
 }

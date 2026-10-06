@@ -65,4 +65,14 @@ struct ListReorderTests {
     #expect(ListReorder.moving("b", to: 3, in: ["a", "b", "c"]) == ["a", "b", "c"])
     #expect(ListReorder.moving("x", to: 0, in: ["a", "b", "c"]) == ["a", "b", "c"])
   }
+
+  @Test func movingWithinAGroupKeepsOtherRowsInPlace() {
+    // Groups interleave in the shared order: lowercase and uppercase.
+    let order = ["a", "B", "b", "C", "c"]
+    let lower = ["a", "b", "c"]
+    #expect(ListReorder.moving("c", to: 0, within: lower, in: order) == ["c", "B", "a", "C", "b"])
+    #expect(ListReorder.moving("a", to: 2, within: lower, in: order) == ["b", "B", "c", "C", "a"])
+    #expect(ListReorder.moving("b", to: 1, within: lower, in: order) == order)
+    #expect(ListReorder.moving("C", to: 0, within: ["B", "C"], in: order) == ["a", "C", "b", "B", "c"])
+  }
 }

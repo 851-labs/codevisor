@@ -27,21 +27,15 @@ extension Workspace {
   }
 
   /// The tab that takes over when the selected tab at `index` closes: the
-  /// nearest tab the sidebar lists — the one above first, then below — so
+  /// nearest tab navigation lists — the one before first, then after — so
   /// closing never lands on a tab holding only hidden agent terminals.
   /// When no listed tab remains, the plain right-neighbor rule applies.
   static func replacementTab(
     afterRemovingAt index: Int, from tabs: [WorkspaceTab],
     visibility: PaneNavigationVisibility = PaneNavigationVisibility()
   ) -> WorkspaceTab {
-    func isListed(_ tab: WorkspaceTab) -> Bool {
-      tab.root.allGroups.contains { group in
-        guard let pane = group.state.selectedPane ?? group.state.panes.first else { return true }
-        return visibility.includes(pane)
-      }
-    }
-    let before = tabs[..<index].last(where: isListed)
-    let after = tabs[index...].first(where: isListed)
+    let before = tabs[..<index].last(where: visibility.includes)
+    let after = tabs[index...].first(where: visibility.includes)
     return before ?? after ?? tabs[min(index, tabs.count - 1)]
   }
 }
