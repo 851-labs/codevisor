@@ -61,7 +61,7 @@ describe("ActiveWorkSleepInhibitor", () => {
       log
     )
 
-    expect(() => inhibitor.update("session-a", true)).not.toThrow()
+    inhibitor.update("session-a", true)
     expect(log).toHaveBeenCalledWith("Active-work sleep assertion failed: caffeinate unavailable")
   })
 
@@ -110,7 +110,7 @@ describe("ActiveWorkSleepInhibitor", () => {
       )
 
       inhibitor.update("session-a", true)
-      expect(() => inhibitor.update("session-a", false)).not.toThrow()
+      inhibitor.update("session-a", false)
       expect(log).toHaveBeenCalledWith("Active-work sleep assertion cleanup failed: cleanup failed")
     }
   })
@@ -133,7 +133,6 @@ describe("ActiveWorkSleepInhibitor", () => {
     spawnMock.mockReturnValue(fallbackChild as unknown as ChildProcess)
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
     const fallback = makeActiveWorkSleepInhibitor({ platform: "darwin" })
-    expect(fallback).toBeDefined()
     fallback?.update("session-b", true)
     expect(spawnMock).toHaveBeenCalledWith(
       "/usr/bin/caffeinate",

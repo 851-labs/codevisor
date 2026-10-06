@@ -76,7 +76,7 @@ describe("startup checkpoints", () => {
     writeFileSync(file, "not a directory")
     const log = vi.spyOn(console, "error").mockImplementation(() => {})
     const reporter = makeStartupReporter({ "startup-status": join(file, "status.json") })
-    expect(() => reporter.checkpoint("initializingServices")).not.toThrow()
+    reporter.checkpoint("initializingServices")
     expect(log.mock.calls.flat().join("\n")).toContain("Startup status unavailable")
   })
 
