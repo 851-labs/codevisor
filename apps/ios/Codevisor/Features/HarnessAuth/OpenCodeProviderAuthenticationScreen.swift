@@ -8,7 +8,6 @@ struct OpenCodeProviderAuthenticationScreen: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.theme) private var theme
   @Environment(\.sharedHarnessAccounts) private var isShared
-  @Environment(\.harnessMachineSignIn) private var machineSignIn
 
   let serverId: String
   let harness: ServerHarness
@@ -55,11 +54,9 @@ struct OpenCodeProviderAuthenticationScreen: View {
                 harness: harness,
                 initialAccount: account,
                 isShared: isShared,
-                machineSignIn: machineSignIn,
                 onChange: { Task { await catalogChanged() } }
               )
               .environment(\.sharedHarnessAccounts, isShared)
-              .environment(\.harnessMachineSignIn, machineSignIn)
             } label: {
               profileRow(account)
             }
@@ -101,12 +98,11 @@ struct OpenCodeProviderAuthenticationScreen: View {
       if let account = requestedAccount {
         OpenCodeProfileScreen(
           serverId: serverId, harness: harness, initialAccount: account,
-          isShared: isShared, machineSignIn: machineSignIn,
+          isShared: isShared,
           initialProviderId: signInRequest?.providerId, startsSignIn: true,
           onChange: { Task { await catalogChanged() } }
         )
         .environment(\.sharedHarnessAccounts, isShared)
-        .environment(\.harnessMachineSignIn, machineSignIn)
       }
     }
     .alert("New Profile", isPresented: $showingNewProfile) {

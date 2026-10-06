@@ -6,7 +6,6 @@ struct OpenCodeProfileScreen: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.theme) private var theme
   let isShared: Bool
-  let machineSignIn: HarnessMachineSignInAction?
 
   let serverId: String
   let harness: ServerHarness
@@ -14,7 +13,6 @@ struct OpenCodeProfileScreen: View {
   let onChange: () -> Void
   let initialProviderId: String?
   let startsSignIn: Bool
-  @State private var pendingMachineSignIn: HarnessMachineSignIn?
   @State private var didOpenRequestedProvider = false
 
   @State private var providers: [ServerOpenCodeAuthProvider] = []
@@ -29,13 +27,11 @@ struct OpenCodeProfileScreen: View {
     harness: ServerHarness,
     initialAccount: ServerHarnessAccount,
     isShared: Bool,
-    machineSignIn: HarnessMachineSignInAction?,
     initialProviderId: String? = nil, startsSignIn: Bool = false,
     onChange: @escaping () -> Void
   ) {
     self.serverId = serverId
     self.isShared = isShared
-    self.machineSignIn = machineSignIn
     self.harness = harness
     _account = State(initialValue: initialAccount)
     self.initialProviderId = initialProviderId
@@ -103,15 +99,7 @@ struct OpenCodeProfileScreen: View {
     .onChange(of: environment.configSync.revisionsByNamespace[HarnessSharedCredentials.namespace]) { _, _ in
       if isShared { Task { await load() } }
     }
-    .sheet(
-      item: $setupProvider,
-      onDismiss: {
-        if let pendingMachineSignIn {
-          self.pendingMachineSignIn = nil
-          machineSignIn?(pendingMachineSignIn)
-        }
-      }
-    ) { request in
+    .sheet(item: $setupProvider) { request in
       OpenCodeProviderSetupSheet(
         serverId: serverId,
         accountId: account.id,
@@ -125,12 +113,6 @@ struct OpenCodeProfileScreen: View {
         }
       )
       .environment(\.sharedHarnessAccounts, isShared)
-      .environment(
-        \.harnessMachineSignIn,
-        HarnessMachineSignInAction { request in
-          pendingMachineSignIn = request
-          setupProvider = nil
-        })
     }
   }
 

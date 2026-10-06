@@ -11,7 +11,6 @@ struct OpenCodeProviderSetupSheet: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.theme) private var theme
   @Environment(\.sharedHarnessAccounts) private var isShared
-  @Environment(\.harnessMachineSignIn) private var machineSignIn
   @Environment(\.dismiss) private var dismiss
   @Environment(\.openURL) private var openURL
 
