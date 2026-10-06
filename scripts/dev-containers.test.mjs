@@ -128,3 +128,28 @@ test("alignDevCloudCredentialUrl preserves credentials while changing the runner
     await rm(root, { recursive: true, force: true })
   }
 })
+
+test("alignDevCloudCredentialUrl rebinds shared accounts to the dev cloud's current route", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codevisor-devc-credential-"))
+  const shared = join(root, "shared-credentials")
+  const credentialsPath = join(root, "cloud.json")
+  try {
+    await mkdir(shared)
+    // cloud.json already follows the route (an earlier run aligned it); the accounts don't yet.
+    await writeFile(credentialsPath, JSON.stringify({ serverUrl: "http://192.168.64.1:4000" }))
+    const sameCloud = { cloud: "http://localhost:4000", account: "account", record: { v: 1 } }
+    const otherCloud = { cloud: "https://cloud.example.com", account: "account" }
+    await writeFile(join(shared, "a.json"), JSON.stringify(sameCloud))
+    await writeFile(join(shared, "b.json"), JSON.stringify(otherCloud))
+    await writeFile(join(shared, "c.json"), JSON.stringify({ account: "local-only" }))
+
+    await alignDevCloudCredentialUrl(credentialsPath, "http://192.168.64.1:4000/")
+
+    const read = async (name) => JSON.parse(await readFile(join(shared, name), "utf8"))
+    assert.deepEqual(await read("a.json"), { ...sameCloud, cloud: "http://192.168.64.1:4000" })
+    assert.deepEqual(await read("b.json"), otherCloud)
+    assert.deepEqual(await read("c.json"), { account: "local-only" })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})

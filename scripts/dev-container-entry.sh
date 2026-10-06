@@ -94,5 +94,21 @@ if [ "${1:-}" = "--provision-only" ]; then
   exit 0
 fi
 
+# The desktop is opt-in (CODEVISOR_DEV_CONTAINER_DESKTOP=1 on the runner). A
+# desktop that won't start leaves the server running without one.
+if [ "${CODEVISOR_DEV_DESKTOP:-}" = "1" ]; then
+  if sh /desktop.sh; then
+    # shellcheck disable=SC1091 # written by /desktop.sh
+    . /tmp/desktop.env
+  else
+    echo "[container] the desktop didn't start; serving without it" >&2
+    CODEVISOR_DEV_DESKTOP=0
+  fi
+fi
+if [ "${CODEVISOR_DEV_DESKTOP:-}" != "1" ] && [ -n "${CODEVISOR_DATA_DIR:-}" ] &&
+  grep -qs '"devContainerDesktop"' "$CODEVISOR_DATA_DIR/screen-sharing.json"; then
+  rm -f "$CODEVISOR_DATA_DIR/screen-sharing.json"
+fi
+
 echo "[container] starting server: $*"
 exec node apps/server/dist/main.js "$@"

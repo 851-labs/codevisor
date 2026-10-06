@@ -13,9 +13,9 @@
 //   same per-worktree hash as ports and bundle identifiers.
 import { execFile, spawn } from "node:child_process"
 import { EventEmitter } from "node:events"
-import { mkdir, readFile, writeFile } from "node:fs/promises"
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 
 import { syncLinuxWorkspace } from "./dev-container-workspace.mjs"
 import { pathExists } from "./dev-shared.mjs"
@@ -168,6 +168,12 @@ export async function containerHostAddress(engine) {
   return gateway
 }
 
+/// CODEVISOR_DEV_CONTAINER_DESKTOP=1 gives each dev container an Xfce desktop
+/// over VNC, to view as a Screen Sharing pane and drive with Computer Use. Off
+/// by default: its packages add to every boot.
+export const wantsContainerDesktop = (environment = process.env) =>
+  environment.CODEVISOR_DEV_CONTAINER_DESKTOP === "1"
+
 /// One-time per-rig-start container preparation: assemble the Linux
 /// workspace copy, make sure the stock image exists, sweep this worktree's
 /// stale containers, and resolve the host address containers use to reach
@@ -181,6 +187,7 @@ export async function prepareDevContainers({ repoRoot, containerRoot, engine, wo
   await sweepStaleContainers(engine, worktreeHash)
   const entryScript = join(repoRoot, "scripts", "dev-container-entry.sh")
   const nativesCheck = join(repoRoot, "scripts", "dev-container-natives.mjs")
+  const desktopScript = join(repoRoot, "scripts", "dev-container-desktop.sh")
   // Server containers share this state and workspace; concurrent first
   // boots would race the same bun download and node_modules install
   // (cross-VM file locks do not serialize virtiofs mounts). Provision
@@ -223,6 +230,8 @@ export async function prepareDevContainers({ repoRoot, containerRoot, engine, wo
     bunCache,
     entryScript,
     nativesCheck,
+    desktopScript,
+    desktop: wantsContainerDesktop(),
     hostAddress: await containerHostAddress(engine)
   }
 }
@@ -268,17 +277,51 @@ const makeContainerHandle = (binary, name) => {
 /// localhost in same-host mode and the VM gateway in container mode. Keep the
 /// persisted credential pointed at the current route so its built-in validity
 /// probe can either reuse the API key or re-provision it after a cloud reset.
+///
+/// Shared accounts (shared-credentials/*.json) are bound to the cloud origin
+/// they entered, and the coordinator refuses one bound elsewhere: switching
+/// between same-host and container mode would sign every shared account out
+/// of the remote. The dev cloud is one server on either route, known by its
+/// port, so those bindings follow the route too; any other origin is kept.
 export async function alignDevCloudCredentialUrl(credentialsPath, serverUrl) {
-  let parsed
+  const parsed = await readJsonObject(credentialsPath)
+  if (parsed === undefined) return
+  if (parsed.serverUrl !== serverUrl) {
+    await writeFile(credentialsPath, `${JSON.stringify({ ...parsed, serverUrl }, null, 2)}\n`, {
+      mode: 0o600
+    })
+  }
+  const origin = serverUrl.replace(/\/+$/, "")
+  const route = new URL(origin)
+  const directory = join(dirname(credentialsPath), "shared-credentials")
+  let names
   try {
-    parsed = JSON.parse(await readFile(credentialsPath, "utf8"))
+    names = await readdir(directory)
   } catch {
     return
   }
-  if (parsed === null || typeof parsed !== "object" || parsed.serverUrl === serverUrl) return
-  await writeFile(credentialsPath, `${JSON.stringify({ ...parsed, serverUrl }, null, 2)}\n`, {
-    mode: 0o600
-  })
+  for (const name of names.filter((entry) => entry.endsWith(".json"))) {
+    const path = join(directory, name)
+    const stored = await readJsonObject(path)
+    if (typeof stored?.cloud !== "string" || stored.cloud === origin) continue
+    let bound
+    try {
+      bound = new URL(stored.cloud)
+    } catch {
+      continue
+    }
+    if (bound.protocol !== route.protocol || bound.port !== route.port) continue
+    await writeFile(path, `${JSON.stringify({ ...stored, cloud: origin })}\n`, { mode: 0o600 })
+  }
+}
+
+const readJsonObject = async (path) => {
+  try {
+    const parsed = JSON.parse(await readFile(path, "utf8"))
+    return parsed !== null && typeof parsed === "object" ? parsed : undefined
+  } catch {
+    return undefined
+  }
 }
 
 /// Launches one dev remote server in either mode, returning a
@@ -341,8 +384,17 @@ export async function launchDevRemoteServer({
       { cwd: repoRoot, env: environment, stdio: "inherit" }
     )
   }
-  const { engine, worktreeHash, appRoot, stateRoot, bunCache, entryScript, nativesCheck } =
-    containerContext
+  const {
+    engine,
+    worktreeHash,
+    appRoot,
+    stateRoot,
+    bunCache,
+    entryScript,
+    nativesCheck,
+    desktopScript,
+    desktop
+  } = containerContext
   const binary = engine === "apple" ? "container" : "docker"
   const toContainerPath = (hostPath) => hostPath.replace(remoteRootHost, "/codevisor-data")
   const containerName = `codevisor-dev-${serverName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${worktreeHash.slice(0, 10)}`
@@ -384,6 +436,8 @@ export async function launchDevRemoteServer({
     `${entryScript}:/entry.sh`,
     "--volume",
     `${nativesCheck}:/natives-check.mjs`,
+    "--volume",
+    `${desktopScript}:/desktop.sh`,
     "--publish",
     `127.0.0.1:${port}:${port}`,
     // The server runs as root in here, and Claude Code refuses
@@ -391,7 +445,10 @@ export async function launchDevRemoteServer({
     // a sandbox. This container IS one — without the flag every claude
     // session (capability inspection included) exits immediately.
     "--env",
-    "IS_SANDBOX=1"
+    "IS_SANDBOX=1",
+    // An Xfce desktop to view and drive (scripts/dev-container-desktop.sh).
+    "--env",
+    `CODEVISOR_DEV_DESKTOP=${desktop ? 1 : 0}`
   ]
   for (const [key, value] of Object.entries(env)) args.push("--env", `${key}=${value}`)
   args.push(

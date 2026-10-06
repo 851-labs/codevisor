@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
+import { wantsContainerDesktop } from "./dev-containers.mjs"
 import { sanitizeAmbientEnvironment } from "./dev-instance.mjs"
 import { developmentLayout, localDevelopmentEnvironment } from "./dev-layout.mjs"
 
@@ -37,4 +38,11 @@ test("ordinary development does not acquire a screen-sharing diagnostic profile"
 
   assert.equal(Object.hasOwn(launch, profileKey), false)
   assert.equal(Object.hasOwn(supplied, profileKey), false)
+})
+
+test("the dev container desktop opt-in survives dev sanitization", () => {
+  const supplied = { CODEVISOR_DEV_CONTAINER_DESKTOP: "1", PATH: "/usr/bin" }
+  sanitizeAmbientEnvironment(supplied)
+  assert.equal(wantsContainerDesktop(supplied), true)
+  assert.equal(wantsContainerDesktop({ PATH: "/usr/bin" }), false)
 })
