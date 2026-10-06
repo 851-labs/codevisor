@@ -55,11 +55,9 @@ private extension ModelConfigMenu {
       // turned off.
       for harness in signInRequiredHarnesses {
         Autocomplete.Section(harness.name, id: "sign-in:\(harness.id)") {
-          Autocomplete.Action(
-            "Sign in to use \(harness.name)…",
-            id: "sign-in:\(harness.id)",
-            systemImage: "person.crop.circle.badge.exclamationmark"
-          ) { showHarnessAccounts(harness.id) }
+          Autocomplete.Action("Sign in to use \(harness.name)…", id: "sign-in:\(harness.id)") {
+            showHarnessAccounts(harness.id)
+          }
           .searchTerms([harness.name, harness.id])
           .help("\(harness.name)'s account on this machine needs to be signed in again")
         }
