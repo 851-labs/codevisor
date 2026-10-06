@@ -11,6 +11,17 @@ export interface OpenCodeProfileRuntime {
   readonly env: NodeJS.ProcessEnv
 }
 
+/// A credential Codevisor keeps in a profile's OpenCode database.
+export interface SeededOpenCodeCredential {
+  readonly id: string
+  readonly integrationID: string
+  readonly value: Readonly<Record<string, unknown>>
+}
+
+/// Ids of every credential Codevisor seeds, so its own are told apart from
+/// ones the user added in OpenCode.
+export const SEEDED_CREDENTIAL_PREFIX = "codevisor-"
+
 export const makeOpenCode2Accounts = (deps: {
   readonly pool: ReturnType<typeof makeOpenCodeServerPool>
   readonly start?: (options: OpenCodeServerOptions) => Promise<OpenCodeServer>
@@ -33,6 +44,26 @@ export const makeOpenCode2Accounts = (deps: {
     }
   }
   return {
+    /// Makes the profile's Codevisor credentials exactly `desired`, each one
+    /// replaced (OpenCode's API can't update a secret in place), so a session
+    /// starts with the token Codevisor holds now.
+    syncCredentials: (
+      profile: OpenCodeProfileRuntime,
+      desired: ReadonlyArray<SeededOpenCodeCredential>
+    ) =>
+      withServer(profile, async (server) => {
+        const stored = await server.request<{
+          readonly data: ReadonlyArray<{ readonly id: string }>
+        }>("/api/credential")
+        for (const { id } of stored.data) {
+          if (id.startsWith(SEEDED_CREDENTIAL_PREFIX))
+            await server.request(`/api/credential/${encodeURIComponent(id)}`, { method: "DELETE" })
+        }
+        for (const credential of desired)
+          await server.request("/api/credential", {
+            body: { ...credential, label: "Codevisor", activate: true }
+          })
+      }),
     providers: (profile: OpenCodeProfileRuntime) =>
       withServer(profile, async (server) =>
         openCodeProvidersFromIntegrations(

@@ -16,6 +16,11 @@ import {
   type ProviderOAuthHarness
 } from "@codevisor/harness-manager"
 
+import {
+  makeOpenCode2Deps,
+  makeOpenCode2Materializer,
+  type OpenCode2Deps
+} from "./shared-provider-opencode2.js"
 import { providerDigest, providerSlot, type SharedProviderStore } from "./shared-provider-store.js"
 
 export const readProviderDocument = async (path: string): Promise<Record<string, unknown>> => {
@@ -83,8 +88,10 @@ export const makeSharedProviderRuntime = (options: {
   vault: SharedCredentialVault
   dataDir: string
   baseUrl: string
+  openCode2?: OpenCode2Deps
 }) => {
   const { store, vault, dataDir } = options
+  const openCode2 = options.openCode2 ?? makeOpenCode2Deps()
   const url = `${options.baseUrl}/harness/provider-token`
   const preparing = new Map<string, Promise<unknown>>()
   /// One profile's files are written by one operation at a time.
@@ -163,6 +170,37 @@ export const makeSharedProviderRuntime = (options: {
       ticker.unref()
     }
   }
+  /// The broker capability standing in for one provider row's grant: kept
+  /// while the row keeps its credential, replaced (revoking the old one)
+  /// when the credential changes.
+  const capabilityFor = async (
+    harness: ProviderOAuthHarness,
+    profile: string,
+    row: { readonly providerId: string; readonly credential: { readonly id: string } }
+  ): Promise<Capability> => {
+    const slot = providerSlot(harness, profile, row.providerId)
+    const capKey = `cap:${providerDigest(slot)}`
+    const previous = (await store.local(capKey)) as Capability | undefined
+    const cap: Capability =
+      previous?.credentialId === row.credential.id
+        ? previous
+        : {
+            capability: randomBytes(32).toString("base64url"),
+            slot,
+            credentialId: row.credential.id
+          }
+    await store.setLocal(capKey, cap)
+    return cap
+  }
+
+  const materializeOpenCode2 = makeOpenCode2Materializer({
+    vault,
+    url,
+    capabilityFor: (profile, row) => capabilityFor("opencode", profile, row),
+    writePrivate: script,
+    openCode2
+  })
+
   const materialize = async (
     harness: ProviderOAuthHarness,
     profile: string,
@@ -201,22 +239,13 @@ export const makeSharedProviderRuntime = (options: {
       )
         delete auth[id]
     }
+    if (harness === "opencode" && ((await openCode2.majorVersion(env)) ?? 1) >= 2)
+      return materializeOpenCode2(profile, root, base, env, rows, auth)
     let grokApiKey: string | undefined
-    // OpenCode never refreshes for itself (see OPENCODE_MANAGED_REFRESH), so
-    // it gets no broker capability.
+    // OpenCode 1 never refreshes for itself (see OPENCODE_MANAGED_REFRESH),
+    // so it gets no broker capability.
     for (const row of harness === "opencode" ? [] : rows) {
-      const slot = providerSlot(harness, profile, row.providerId)
-      const capKey = `cap:${providerDigest(slot)}`
-      const previous = (await store.local(capKey)) as Capability | undefined
-      const cap: Capability =
-        previous?.credentialId === row.credential.id
-          ? previous
-          : {
-              capability: randomBytes(32).toString("base64url"),
-              slot,
-              credentialId: row.credential.id
-            }
-      await store.setLocal(capKey, cap)
+      const cap = await capabilityFor(harness, profile, row)
       // An expired or unavailable provider must not prevent the other
       // providers in the same profile from working. Its native credential is
       // omitted so the harness requests sign-in instead of using stale auth.

@@ -28,6 +28,7 @@ import {
 } from "./shared-account-store.js"
 import { makeSharedClaudeGateway } from "./shared-claude-gateway.js"
 import { makeSharedProviderAccounts } from "./shared-provider-accounts.js"
+import type { OpenCode2Deps } from "./shared-provider-opencode2.js"
 
 const run = Effect.runPromise
 const publicAccount = (record: HarnessAccountRecord): HarnessAccount => {
@@ -44,6 +45,7 @@ export const makeSharedAccounts = (options: {
   readonly vault?: SharedCredentialVault
   readonly environment?: () => Promise<NodeJS.ProcessEnv>
   readonly discover?: typeof discoverNativeAccount
+  readonly openCode2?: OpenCode2Deps
 }) => {
   const { db, auth, dataDir, serverId } = options
   const store = makeSharedAccountStore(db, serverId)

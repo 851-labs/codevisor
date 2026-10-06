@@ -36,3 +36,35 @@ it("lists a profile's providers from its own OpenCode 2 server, started once per
   })
   expect(request).toHaveBeenCalledWith("/api/integration", { location: "/home/me" })
 })
+
+it("replaces only Codevisor's own credentials when syncing a profile", async () => {
+  const calls: Array<[string, unknown]> = []
+  const request = vi.fn(async (path: string, init?: unknown) => {
+    calls.push([path, init])
+    return path === "/api/credential" && init === undefined
+      ? { data: [{ id: "codevisor-openai" }, { id: "codevisor-xai" }, { id: "users-own-key" }] }
+      : undefined
+  })
+  const server = { url: "http://oc", request, stop: vi.fn(async () => undefined) }
+  const accounts = makeOpenCode2Accounts({
+    pool: makeOpenCodeServerPool(),
+    start: async () => server as unknown as OpenCodeServer
+  })
+  const openai = {
+    id: "codevisor-openai",
+    integrationID: "openai",
+    value: {
+      type: "oauth",
+      methodID: "chatgpt-browser",
+      refresh: "codevisor:cap",
+      access: "a",
+      expires: 1
+    }
+  }
+  await accounts.syncCredentials({ command: "/bin/opencode", cwd: "/home", env: {} }, [openai])
+  expect(calls.slice(1)).toEqual([
+    ["/api/credential/codevisor-openai", { method: "DELETE" }],
+    ["/api/credential/codevisor-xai", { method: "DELETE" }],
+    ["/api/credential", { body: { ...openai, label: "Codevisor", activate: true } }]
+  ])
+})

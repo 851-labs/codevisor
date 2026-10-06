@@ -17,6 +17,7 @@ import { latestSyncTimestamp, nextSyncTimestamp } from "@codevisor/sync"
 import { Effect } from "effect"
 
 import type { SharedAccountStore } from "./shared-account-store.js"
+import type { OpenCode2Deps } from "./shared-provider-opencode2.js"
 import { makeSharedProviderRuntime, readProviderDocument } from "./shared-provider-runtime.js"
 import { makeSharedProviderStore, providerDigest, providerSlot } from "./shared-provider-store.js"
 
@@ -28,6 +29,7 @@ export const makeSharedProviderAccounts = (options: {
   dataDir: string
   baseUrl: string
   environment: () => Promise<NodeJS.ProcessEnv>
+  openCode2?: OpenCode2Deps
 }) => {
   const { db, dataDir, environment } = options
   const store = makeSharedProviderStore(options)
