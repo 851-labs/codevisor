@@ -24,7 +24,7 @@ Navigation and capture:
 - tab.goto(url), back(), forward(), reload(), close(), title(), url().
 - tab.screenshot({fullPage?:boolean,clip?:{x,y,width,height},type?:'png'|'jpeg'}).
 - tab.content.export({format?:'markdown'|'html'|'pdf'}): returns a real file and attachments. Markdown exports visible text with title/source; HTML exports the document; PDF uses the browser print engine. Maximum export size is 20 MB. These are generic page exports, not document-editor-native file formats.
-- Binary results have artifacts with local path fields through Codevisor. Use the attaching-files skill to share them; embed an existing path as ![label](<path>) or [Download](<path>).
+- Binary results have artifacts with local path fields through Codevisor. Read the attaching-files skill (through the skills tool) to share them; embed an existing path as ![label](<path>) or [Download](<path>).
 
 Playwright-style page API (tab.playwright):
 - domSnapshot(); locator(css); ref(ref); getByRole(role,{name?:string|RegExp,exact?}); getByLabel, getByPlaceholder, getByText(text,{exact?}); getByTestId(id).

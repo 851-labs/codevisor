@@ -173,7 +173,7 @@ describe("MCP manager secrets and replication", () => {
   })
 
   it("owns, exports, imports, and demotes OAuth material for replication", async () => {
-    const { manager } = await testManager(undefined, { serverId: "test" })
+    const { manager } = await testManager({ serverId: "test" })
     const server = await manager.create({
       authType: "oauth",
       enabled: false,

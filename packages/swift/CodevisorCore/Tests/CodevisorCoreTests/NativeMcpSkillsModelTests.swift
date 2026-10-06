@@ -151,60 +151,33 @@ struct NativeMcpSkillsModelTests {
     #expect(result.scan.harnesses.isEmpty)
   }
 
-  @Test("decodes a skills scan with install states and classifications")
-  func decodesSkillsScan() throws {
+  @Test("decodes the skill store list with optional fields absent")
+  func decodesSkillsList() throws {
     let json = """
       {
-        "canonicalDir": "/home/u/.agents/skills",
-        "global": [
+        "dir": "/home/u/.codevisor/skills",
+        "skills": [
           {
             "name": "Deploy",
             "directoryName": "deploy",
             "description": "Deploy checklist",
-            "path": "/home/u/.agents/skills/deploy",
-            "installs": [
-              { "harnessId": "claude-code", "state": "linked" },
-              { "harnessId": "codex", "state": "notInstalled" },
-              { "harnessId": "cline", "state": "canonical" }
-            ]
-          }
-        ],
-        "harnesses": [
+            "path": "/home/u/.codevisor/skills/deploy"
+          },
           {
-            "harnessId": "claude-code",
-            "harnessName": "Claude Code",
-            "skillsDir": "/home/u/.claude/skills",
-            "skills": [
-              {
-                "harnessId": "claude-code",
-                "directoryName": "ship-it",
-                "name": "Deploy",
-                "path": "/home/u/.claude/skills/ship-it",
-                "classification": "independent",
-                "duplicateOf": "deploy"
-              },
-              {
-                "harnessId": "claude-code",
-                "directoryName": "dangling",
-                "name": "dangling",
-                "path": "/home/u/.claude/skills/dangling",
-                "classification": "broken"
-              }
-            ]
+            "name": "broken",
+            "directoryName": "broken",
+            "path": "/home/u/.codevisor/skills/broken",
+            "invalid": true
           }
         ]
       }
       """
-    let scan = try decoder.decode(ServerSkillsScan.self, from: Data(json.utf8))
-    #expect(scan.canonicalDir == "/home/u/.agents/skills")
-    let skill = try #require(scan.global.first)
-    #expect(skill.installs.map(\.state) == ["linked", "notInstalled", "canonical"])
-    #expect(skill.invalid == nil)
-    #expect(skill.id == "deploy")
-    let harnessSkills = try #require(scan.harnesses.first?.skills)
-    #expect(harnessSkills[0].duplicateOf == "deploy")
-    #expect(harnessSkills[1].classification == "broken")
-    #expect(harnessSkills[1].description == nil)
-    #expect(harnessSkills[0].id == "claude-code|ship-it")
+    let list = try decoder.decode(ServerSkillsList.self, from: Data(json.utf8))
+    #expect(list.dir == "/home/u/.codevisor/skills")
+    #expect(list.skills.map(\.id) == ["deploy", "broken"])
+    #expect(list.skills[0].invalid == nil)
+    #expect(list.skills[1].description == nil)
+    #expect(list.skills[1].invalid == true)
   }
+
 }

@@ -164,26 +164,22 @@ public protocol CodevisorServerClienting: BrowserStateClienting, SimulatorClient
   func restoreNativeMcpRemoval(id: String) async throws -> ServerNativeMcpScan
   /// Toggle a harness's own per-server enable flag (only where one exists).
   func setNativeMcpEnabled(harnessId: String, serverName: String, enabled: Bool) async throws -> ServerNativeMcpScan
-  /// Skills in the canonical ~/.agents/skills store plus each harness's own
-  /// skills directory.
-  func listSkills() async throws -> ServerSkillsScan
+  /// Codevisor's skill store on this machine.
+  func listSkills() async throws -> ServerSkillsList
   /// Read or replace SKILL.md on this machine, preserving supporting files.
   func skillContent(directoryName: String) async throws -> String
-  func updateSkill(directoryName: String, content: String) async throws -> ServerSkillsScan
-  /// Create a skill in the canonical store — from a template, or from
-  /// pasted SKILL.md content.
-  func createSkill(name: String, description: String, content: String?) async throws -> ServerSkillsScan
+  func updateSkill(directoryName: String, content: String) async throws -> ServerSkillsList
+  /// Create a skill in the store — from a template, or from pasted
+  /// SKILL.md content.
+  func createSkill(name: String, description: String, content: String?) async throws -> ServerSkillsList
   /// List the skills a remote source offers (GitHub/GitLab repos, git
   /// URLs, or sites publishing skills via well-known endpoints).
   func discoverRemoteSkills(source: String) async throws -> [ServerRemoteSkillCandidate]
-  /// Import skills from a remote source into the canonical store,
-  /// optionally narrowed to a selection from discovery.
-  func importRemoteSkill(source: String, skillNames: [String]?) async throws -> ServerSkillsScan
-  /// Delete a canonical skill and sweep its links from every harness.
-  func removeSkill(directoryName: String) async throws -> ServerSkillsScan
-  /// Link the named skills (or all of them) into every harness that needs
-  /// a link, bringing harnesses in sync with the shared store.
-  func syncSkills(directoryNames: [String]?) async throws -> ServerSkillsScan
+  /// Import skills from a remote source into the store, optionally
+  /// narrowed to a selection from discovery.
+  func importRemoteSkill(source: String, skillNames: [String]?) async throws -> ServerSkillsList
+  /// Delete a skill from the store.
+  func removeSkill(directoryName: String) async throws -> ServerSkillsList
   /// Plugins installed on this machine (`GET /v1/plugins`). Empty on
   /// servers without the plugins feature.
   func listPlugins() async throws -> [ServerPluginSummary]

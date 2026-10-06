@@ -6,12 +6,8 @@ import {
   DiscoverRemoteSkillsRequest,
   ImportNativeMcpsRequest,
   ImportRemoteSkillRequest,
-  ImportSkillRequest,
-  MakeSkillGlobalRequest,
   RemoveNativeMcpRequest,
   SetNativeMcpEnabledRequest,
-  SetSkillInstalledRequest,
-  SyncSkillsRequest,
   UpdateMcpServerRequest
 } from "@codevisor/api"
 
@@ -136,25 +132,15 @@ export const codevisorExtensionApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
       body: SetNativeMcpEnabledRequest
     }
   ),
-  apiTool("skills.list", "List global and harness-local skills.", "GET", "/v1/skills"),
   apiTool(
-    "skills.create",
-    "Create a global skill in Codevisor's canonical store.",
-    "POST",
-    "/v1/skills",
-    {
-      body: CreateSkillRequest
-    }
+    "skills.list",
+    "List the skills in Codevisor's skill store (agents read them through the `skills` tool).",
+    "GET",
+    "/v1/skills"
   ),
-  apiTool(
-    "skills.import_local",
-    "Import a skill directory from the server filesystem.",
-    "POST",
-    "/v1/skills/import",
-    {
-      body: ImportSkillRequest
-    }
-  ),
+  apiTool("skills.create", "Create a skill in Codevisor's skill store.", "POST", "/v1/skills", {
+    body: CreateSkillRequest
+  }),
   apiTool(
     "skills.discover_remote",
     "Discover skills offered by a remote source.",
@@ -171,33 +157,6 @@ export const codevisorExtensionApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     "/v1/skills/import-remote",
     {
       body: ImportRemoteSkillRequest
-    }
-  ),
-  apiTool(
-    "skills.make_global",
-    "Promote a harness-local skill into the global store.",
-    "POST",
-    "/v1/skills/make-global",
-    {
-      body: MakeSkillGlobalRequest
-    }
-  ),
-  apiTool(
-    "skills.sync",
-    "Synchronize global skills into agent harnesses.",
-    "POST",
-    "/v1/skills/sync",
-    {
-      body: SyncSkillsRequest
-    }
-  ),
-  apiTool(
-    "skills.set_installed",
-    "Install or uninstall one skill for one harness.",
-    "PUT",
-    "/v1/skills/:name/harnesses/:harnessId",
-    {
-      body: SetSkillInstalledRequest
     }
   )
 ]

@@ -27,7 +27,12 @@ import {
 
 /// Plugin and harness tools, including account and provider authentication.
 export const codevisorHarnessApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
-  apiTool("skills.delete", "Delete a global skill.", "DELETE", "/v1/skills/:name"),
+  apiTool(
+    "skills.delete",
+    "Delete a skill from Codevisor's skill store.",
+    "DELETE",
+    "/v1/skills/:name"
+  ),
   apiTool(
     "plugins.get",
     "Inspect one installed plugin and its runtime state.",

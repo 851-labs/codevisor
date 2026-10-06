@@ -12,9 +12,9 @@ import type {
 } from "@codevisor/api"
 import type { AutomationToolProvider, BrowserUseProvider } from "@codevisor/automation"
 import type { CodevisorDatabaseService } from "@codevisor/db"
-import type { ManagedSkillSpec } from "@codevisor/skills"
 import type { WebSocket } from "ws"
 
+import type { PackagedSkill, SkillSource } from "./mcp-gateway-skills.js"
 import type { ToolGatewayConfig } from "./mcp-gateway.js"
 import type { PluginToolSource } from "./mcp-plugin-tools.js"
 
@@ -180,7 +180,12 @@ export interface McpManagerConfig {
   /// installer from Settings; composer setup can still hand the user off to
   /// the app running on that machine. Defaults to "local".
   readonly serverKind?: "local" | "remote"
-  readonly syncManagedSkills?: (skills: ReadonlyArray<ManagedSkillSpec>) => Promise<void>
+  /// The user's saved skills, served through the gateway's `skills` tool
+  /// alongside the built-ins. The server wires its skill store in directly.
+  readonly skillSource?: SkillSource
+  /// Skills shipped by other packages (attaching-files, plugin authoring),
+  /// served through the `skills` tool.
+  readonly packagedSkills?: ReadonlyArray<PackagedSkill>
   /// Installed plugins' declared agent tools, exposed through the gateway as
   /// server "plugin" (`plugin.<pluginId>.<toolName>` paths). The server wires
   /// the plugins manager in directly — the structural PluginToolSource seam

@@ -24,6 +24,8 @@ Use `tools.search` to find a tool and `tools.describe.tool({ path })` for its ex
 
 ## What you can do
 
+Read each skill named below by calling the `skills` tool with its name.
+
 | Goal                                                                                                                                          | Skill                | Entry points                                                                                                                           |
 | --------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | Start other coding agents, each in its own workspace; prompt them, wait on them, read their transcripts, answer their questions, archive them | `codevisor-agents`   | `tools.codevisor.sessions.*`, `tools.codevisor.workspaces.*`                                                                           |

@@ -1,11 +1,11 @@
 import { spawn } from "node:child_process"
-import { cp, mkdtemp, rename, rm } from "node:fs/promises"
+import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { gunzipSync } from "node:zlib"
 
 import type { CodevisorDatabaseService } from "@codevisor/db"
-import type { SkillsManager } from "@codevisor/skills"
+import type { SkillStore } from "@codevisor/skills"
 import {
   freeSyncKey,
   latestSyncTimestamp,
@@ -16,24 +16,27 @@ import {
 } from "@codevisor/sync"
 import { Effect } from "effect"
 
-/// Server half of skills replication. The "skills" sync namespace is the
-/// fleet's desired state — one entry per canonical skill, valued
+/// Server half of skills replication. The "codevisor-skills" sync namespace
+/// is the fleet's desired state — one entry per stored skill, valued
 /// { hash, name } where hash is the TREE hash of the skill directory — and
-/// the blob store carries the bytes. This module reconciles the local
-/// canonical store against the replica in the classic three-way shape:
-/// the private "local.skills-applied" namespace (dot-named, so the HTTP
+/// the blob store carries the bytes. This module reconciles Codevisor's
+/// skill store against the replica in the classic three-way shape:
+/// the private "local.codevisor-skills-applied" namespace (dot-named, so the HTTP
 /// validator can never expose or gossip it) records what this machine last
 /// published or applied, which is how a local edit is told apart from a
 /// replica this machine simply hasn't caught up to. Clients ferry missing
 /// blobs between machines; this module never dials anyone.
-export const SKILLS_SYNC_NAMESPACE = "skills"
-const APPLIED_NAMESPACE = "local.skills-applied"
+/// Skills used to replicate under "skills" from ~/.agents/skills; the store
+/// moved, so its replica starts fresh under a new name (the old rows are
+/// dropped locally by a database migration, never tombstoned).
+export const SKILLS_SYNC_NAMESPACE = "codevisor-skills"
+const APPLIED_NAMESPACE = "local.codevisor-skills-applied"
 const MANAGED_MARKER = ".codevisor-managed-skill"
 
 export interface SkillsSyncStatus {
   /// Local skills (new or edited) published to the replica this pass.
   readonly published: ReadonlyArray<string>
-  /// Replica skills unpacked into the canonical store this pass.
+  /// Replica skills unpacked into the store this pass.
   readonly applied: ReadonlyArray<string>
   /// Local skills removed because a newer tombstone won.
   readonly removed: ReadonlyArray<string>
@@ -57,7 +60,7 @@ export interface SkillsSyncResult {
 
 export interface SkillsSyncDeps {
   readonly db: CodevisorDatabaseService
-  readonly skills: SkillsManager
+  readonly store: Pick<SkillStore, "dir" | "list" | "remove" | "rename" | "replace">
   readonly blobs: BlobStore
   readonly serverId: string
 }
@@ -136,8 +139,9 @@ const entryHash = (entry: SyncEntryRecord): string | undefined => {
 
 /// One reconcile pass; see the module doc for the model.
 export const reconcileSkills = async (deps: SkillsSyncDeps): Promise<SkillsSyncResult> => {
-  const scan = await deps.skills.list()
-  const localSkills = new Map(scan.global.map((skill) => [skill.directoryName, skill]))
+  const localSkills = new Map(
+    (await deps.store.list()).skills.map((skill) => [skill.directoryName, skill])
+  )
   const localHashes = new Map<string, string>()
   for (const [directoryName, skill] of localSkills) {
     localHashes.set(directoryName, await skillTreeHash(skill.path))
@@ -202,13 +206,12 @@ export const reconcileSkills = async (deps: SkillsSyncDeps): Promise<SkillsSyncR
         directoryName,
         (candidate) => localSkills.has(candidate) || replicaByKey.has(candidate)
       )
-      path = join(scan.canonicalDir, key)
-      await rename(join(scan.canonicalDir, directoryName), path)
+      path = join(deps.store.dir, key)
+      await deps.store.rename(directoryName, key)
       localSkills.delete(directoryName)
       localHashes.delete(directoryName)
       localSkills.set(key, { ...skill, directoryName: key, path })
       localHashes.set(key, localHash)
-      await deps.skills.sync({ directoryNames: [key] })
       renamed.push({ from: directoryName, to: key })
     }
     replicaWrites.push({
@@ -222,7 +225,7 @@ export const reconcileSkills = async (deps: SkillsSyncDeps): Promise<SkillsSyncR
   }
 
   // A skill this machine once had (applied is recorded) that is gone from
-  // the canonical store was deleted here: publish the tombstone.
+  // the store was deleted here: publish the tombstone.
   for (const [directoryName] of appliedByKey) {
     if (localSkills.has(directoryName)) continue
     if (replicaByKey.get(directoryName)?.deleted === true) continue
@@ -248,7 +251,7 @@ export const reconcileSkills = async (deps: SkillsSyncDeps): Promise<SkillsSyncR
       // Tombstone: remove the local copy unless a local edit republished
       // above (in which case our newer entry already replaced it).
       if (localSkills.has(directoryName) && appliedByKey.get(directoryName) === localHash) {
-        await deps.skills.remove(directoryName)
+        await deps.store.remove(directoryName)
         appliedWrites.push({ key: directoryName, value: null, deleted: true, timestamp: stamp() })
         appliedByKey.delete(directoryName)
         removed.push(directoryName)
@@ -263,16 +266,13 @@ export const reconcileSkills = async (deps: SkillsSyncDeps): Promise<SkillsSyncR
     const unpacked = await unpackSkillArchive(await deps.blobs.read(wantedHash))
     try {
       if (unpacked.hash !== wantedHash) {
-        // A corrupt blob must not poison the canonical store; drop it so a
-        // client ferries a fresh copy.
+        // A corrupt blob must not poison the store; drop it so a client
+        // ferries a fresh copy.
         deps.blobs.remove(wantedHash)
         missingBlobs.push({ directoryName, hash: wantedHash })
         continue
       }
-      const destination = join(scan.canonicalDir, directoryName)
-      await rm(destination, { recursive: true, force: true })
-      await cp(unpacked.path, destination, { recursive: true, verbatimSymlinks: true })
-      await deps.skills.sync({ directoryNames: [directoryName] })
+      await deps.store.replace(directoryName, unpacked.path)
       appliedWrites.push({ key: directoryName, value: wantedHash, timestamp: stamp() })
       appliedByKey.set(directoryName, wantedHash)
       applied.push(directoryName)

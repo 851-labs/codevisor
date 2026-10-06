@@ -1,15 +1,15 @@
-import { mkdirSync, symlinkSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
 import { afterEach, describe, expect, it } from "vitest"
 
 import {
+  assertSafeChild,
+  copyDirectory,
   isPathSafe,
   parseFrontmatter,
-  resolveParentSymlinks,
-  sanitizeName,
-  skillContentHash
-} from "./skills-manager.js"
+  sanitizeName
+} from "./skills-store.js"
 import { cleanupSkillsTests, makeHome, writeSkill } from "./skills-test-support.js"
 
 afterEach(cleanupSkillsTests)
@@ -61,49 +61,30 @@ describe("parseFrontmatter", () => {
   })
 })
 
-describe("skillContentHash", () => {
-  it("hashes directory trees deterministically", async () => {
-    const home = makeHome()
-    writeSkill(join(home, "a"), { name: "X" })
-    writeSkill(join(home, "b"), { name: "X" })
-    mkdirSync(join(home, "a/refs"), { recursive: true })
-    mkdirSync(join(home, "b/refs"), { recursive: true })
-    writeFileSync(join(home, "a/refs/notes.md"), "notes")
-    writeFileSync(join(home, "b/refs/notes.md"), "notes")
-    expect(await skillContentHash(join(home, "a"))).toBe(await skillContentHash(join(home, "b")))
-  })
-
-  it("changes when contents differ", async () => {
-    const home = makeHome()
-    writeSkill(join(home, "a"), { name: "X" })
-    writeSkill(join(home, "b"), { name: "Y" })
-    expect(await skillContentHash(join(home, "a"))).not.toBe(
-      await skillContentHash(join(home, "b"))
-    )
-  })
-
-  it("folds unreadable entries into the hash without contents", async () => {
-    const home = makeHome()
-    writeSkill(join(home, "a"), { name: "X" })
-    symlinkSync(join(home, "missing"), join(home, "a/dangling"))
-    writeSkill(join(home, "b"), { name: "X" })
-    expect(await skillContentHash(join(home, "a"))).not.toBe(
-      await skillContentHash(join(home, "b"))
-    )
+describe("assertSafeChild", () => {
+  it("returns direct children and rejects traversal or nested names", () => {
+    expect(assertSafeChild("/store", "deploy")).toBe("/store/deploy")
+    for (const name of ["", ".", "..", "a/b", "a\\b", "../x"]) {
+      expect(() => assertSafeChild("/store", name)).toThrow("Invalid skill directory name")
+    }
   })
 })
 
-describe("resolveParentSymlinks", () => {
-  it("resolves through a symlinked parent", async () => {
+describe("copyDirectory", () => {
+  it("copies nested files, skips excluded entries, and skips broken links", async () => {
     const home = makeHome()
-    mkdirSync(join(home, "real"), { recursive: true })
-    symlinkSync(join(home, "real"), join(home, "alias"))
-    const resolved = await resolveParentSymlinks(join(home, "alias/child"))
-    // macOS tempdirs live under /private; compare suffixes.
-    expect(resolved.endsWith("/real/child")).toBe(true)
-  })
-
-  it("returns the input when the parent does not exist", async () => {
-    expect(await resolveParentSymlinks("/nope/child")).toBe("/nope/child")
+    const source = join(home, "source")
+    writeSkill(source, { name: "Source" })
+    mkdirSync(join(source, "refs/deep"), { recursive: true })
+    writeFileSync(join(source, "refs/deep/notes.md"), "notes")
+    writeFileSync(join(source, "metadata.json"), "{}")
+    mkdirSync(join(source, ".git"))
+    writeFileSync(join(source, ".git/HEAD"), "ref")
+    symlinkSync(join(home, "missing"), join(source, "dangling"))
+    await copyDirectory(source, join(home, "copy"))
+    expect(readFileSync(join(home, "copy/refs/deep/notes.md"), "utf8")).toBe("notes")
+    for (const skipped of ["metadata.json", ".git", "dangling"]) {
+      expect(existsSync(join(home, "copy", skipped))).toBe(false)
+    }
   })
 })

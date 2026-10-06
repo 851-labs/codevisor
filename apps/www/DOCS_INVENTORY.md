@@ -15,7 +15,7 @@ planning notes are not published.
 | Projects, worktrees, workspaces, sessions, files, and events  | Concepts and generated API                 | Server route modules and API schemas                       |
 | Harnesses and accounts                                        | Generated API and custom-agent guide       | `packages/harness-manager`, harness routes                 |
 | MCP servers                                                   | Managed/native guide and generated API     | `packages/mcp`, MCP routes                                 |
-| Skills                                                        | Authoring/management guide and API         | `packages/skills`, skills routes                           |
+| Skills                                                        | Store, `skills` tool, and API              | `packages/skills`, skills routes                           |
 | Plugins                                                       | Authoring/runtime/publishing guide and API | `packages/plugins`, plugin routes, public plugin directory |
 | Browser and computer automation                               | MCP relationship and security boundary     | `packages/automation`, browser-use routes                  |
 

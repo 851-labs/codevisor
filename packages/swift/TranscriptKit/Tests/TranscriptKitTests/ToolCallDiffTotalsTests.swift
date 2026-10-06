@@ -100,6 +100,26 @@ struct ToolCallDiffTotalsTests {
       ).displayTitle == "Ran an integration workflow")
   }
 
+  @Test("Gateway skills calls read as listing skills or reading one, across harness spellings")
+  func gatewaySkillsTitle() {
+    for title in ["mcp__codevisor__skills", "codevisor.skills", "codevisor_skills", "codevisor__skills"] {
+      #expect(
+        ToolCall(toolCallId: "list", title: title, status: .inProgress, rawInput: [:]).displayTitle
+          == "Listing skills…")
+      #expect(ToolCall(toolCallId: "listed", title: title, status: .completed).displayTitle == "Listed skills")
+      #expect(
+        ToolCall(toolCallId: "read", title: title, status: .inProgress, rawInput: ["name": "deploy"])
+          .displayTitle == "Reading the deploy skill…")
+      #expect(
+        ToolCall(toolCallId: "done", title: title, status: .completed, rawInput: ["name": "deploy"])
+          .displayTitle == "Read the deploy skill")
+      #expect(
+        ToolCall(toolCallId: "missing", title: title, status: .failed, rawInput: ["name": "ghost"])
+          .displayTitle == "Couldn’t read the ghost skill")
+      #expect(ToolCall(toolCallId: "broken", title: title, status: .failed).displayTitle == "Couldn’t list skills")
+    }
+  }
+
   @Test("Gateway workflows are titled by the model's description, with failures spelled out")
   func gatewayDescriptionTitle() {
     let input: JSONValue = ["description": "List open Linear issues", "code": "async () => 42"]
@@ -118,6 +138,10 @@ struct ToolCallDiffTotalsTests {
         toolCallId: "script", title: "codevisor_execute", status: .completed, rawInput: input,
         meta: ["codevisorExecution": ["state": "failed", "calls": []]]
       ).displayTitle == "List open Linear issues — failed")
+    // Grok spells the gateway tool `codevisor__execute`.
+    #expect(
+      ToolCall(toolCallId: "grok", title: "codevisor__execute", status: .completed, rawInput: input)
+        .displayTitle == "List open Linear issues")
     let long = String(repeating: "x", count: 100)
     #expect(
       ToolCall(

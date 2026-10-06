@@ -14,10 +14,13 @@ import Observation
 public final class ConfigSync {
   /// The namespaces this client gossips. Grows as stores onboard.
   public static let namespaces = [
-    "settings", "skills", "mcps", "harness-accounts", "harnesses", "plugins",
+    "settings", skillsNamespace, "mcps", "harness-accounts", "harnesses", "plugins",
     "mcp-readiness", "mcp-overlays", "harness-credentials", "harness-shared-accounts", "harness-readiness",
-    "plugin-readiness", "skill-readiness",
+    "plugin-readiness",
   ]
+  /// Codevisor's skill store: one entry per skill, `{hash, name}`, with the
+  /// content ferried separately as a blob.
+  public static let skillsNamespace = "codevisor-skills"
 
   private let machines: MachineController
   private let store: any PersistenceStore
@@ -198,7 +201,7 @@ public final class ConfigSync {
 
   // MARK: - Skills ferry
 
-  /// Skills replicate as metadata (the "skills" namespace, gossiped
+  /// Skills replicate as metadata (the "codevisor-skills" namespace, gossiped
   /// above) plus content-addressed archives servers cannot fetch from
   /// each other. This client is the courier: reconcile everywhere,
   /// collect who is missing which blob, carry each blob from any machine
@@ -264,7 +267,7 @@ public final class ConfigSync {
       }
     }
     // New skill content also needs its blob ferried before it applies.
-    if namespace == "skills" {
+    if namespace == Self.skillsNamespace {
       Task { await synchronizeSkills() }
     }
   }

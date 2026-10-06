@@ -1,5 +1,4 @@
-import { createHash } from "node:crypto"
-import { chmod, cp, mkdir, readdir, readFile, realpath, stat } from "node:fs/promises"
+import { chmod, cp, mkdir, readdir, readFile, stat } from "node:fs/promises"
 import { basename, dirname, join, normalize, resolve, sep } from "node:path"
 
 import { parse as parseYaml } from "yaml"
@@ -16,19 +15,28 @@ export class SkillsError extends Error {
   }
 }
 
+/// Where Codevisor used to keep its shared skill store before skills moved
+/// behind the gateway's `skills` tool. Read only by the upgrade migration.
 export const CANONICAL_SKILLS_DIR = "~/.agents/skills"
+/// Marks skill folders Codevisor installed itself. Read only by the upgrade
+/// migration (to remove them) and by local discovery (to skip them).
 export const MANAGED_SKILL_MARKER = ".codevisor-managed-skill"
 export const MANAGED_SKILL_MARKER_CONTENT = "codevisor-managed-skill-v1\n"
-/// Records which packaged source an installed managed skill came from, so
-/// two Codevisor servers sharing one home (a release build and a development
-/// build, or two app versions during an upgrade) converge on the newest
-/// skill instead of overwriting each other on every sync.
-export const MANAGED_SKILL_STATE = ".codevisor-managed-skill.json"
 
-export interface ManagedSkillState {
-  readonly fingerprint: string
-  readonly sourceModifiedMs: number
-}
+/// Names of the built-in skills the gateway's `skills` tool serves. User
+/// skills can't take them, so a built-in never shadows (or is shadowed by) a
+/// user's skill, whichever builtins are enabled.
+export const RESERVED_SKILL_NAMES: ReadonlySet<string> = new Set([
+  "execute",
+  "browser-use",
+  "computer-use",
+  "codevisor",
+  "codevisor-agents",
+  "codevisor-machines",
+  "codevisor-clients",
+  "attaching-files",
+  "create-codevisor-plugin"
+])
 
 /// Kebab-case a skill directory name, converting path-traversal attempts and
 /// special characters into hyphens. Ported from skills installer.ts.
@@ -48,13 +56,26 @@ export const isPathSafe = (basePath: string, targetPath: string): boolean => {
   return normalizedTarget.startsWith(normalizedBase + sep) || normalizedTarget === normalizedBase
 }
 
-/// True when either path contains the other — the "installing a skill onto
-/// its own source" guard. Ported from skills installer.ts.
-export const pathsOverlap = (pathA: string, pathB: string): boolean =>
-  isPathSafe(pathA, pathB) || isPathSafe(pathB, pathA)
-
 export const resolveSymlinkTarget = (linkPath: string, linkTarget: string): string =>
   resolve(dirname(linkPath), linkTarget)
+
+/// A directory name that must reference a direct child of `base`. Rejects
+/// separators and traversal before any path is built from API input.
+export const assertSafeChild = (base: string, name: string): string => {
+  const child = join(base, name)
+  if (
+    name === "" ||
+    name === "." ||
+    name === ".." ||
+    name.includes("/") ||
+    name.includes("\\") ||
+    basename(child) !== name ||
+    !isPathSafe(base, child)
+  ) {
+    throw new SkillsError(`Invalid skill directory name: ${name}`, "invalid")
+  }
+  return child
+}
 
 /// Minimal YAML-only frontmatter parser. Deliberately not gray-matter, whose
 /// built-in `---js` engine is an eval() RCE. Ported from skills frontmatter.ts.
@@ -73,87 +94,6 @@ export const parseFrontmatter = (
 
 export const EXCLUDE_FILES: ReadonlySet<string> = new Set(["metadata.json"])
 export const EXCLUDE_DIRS: ReadonlySet<string> = new Set([".git", "__pycache__", "__pypackages__"])
-
-/// sha256 over the skill folder's sorted relative paths and file contents —
-/// two directories hash equal iff their meaningful contents are identical.
-/// Used to recognize independent copies of canonical skills.
-const newestModification = async (dir: string): Promise<number> => {
-  let newest = 0
-  const walk = async (current: string): Promise<void> => {
-    for (const entry of await readdir(current, { withFileTypes: true })) {
-      const entryPath = join(current, entry.name)
-      if (entry.isDirectory()) {
-        if (!EXCLUDE_DIRS.has(entry.name)) await walk(entryPath)
-        continue
-      }
-      if (EXCLUDE_FILES.has(entry.name)) continue
-      try {
-        newest = Math.max(newest, (await stat(entryPath)).mtimeMs)
-      } catch {
-        // A broken symlink contributes nothing to the modification time.
-      }
-    }
-  }
-  await walk(dir)
-  return newest
-}
-
-export const managedSourceState = async (sourcePath: string): Promise<ManagedSkillState> => ({
-  fingerprint: await skillContentHash(sourcePath),
-  sourceModifiedMs: await newestModification(sourcePath)
-})
-
-export const installedManagedState = async (
-  destination: string
-): Promise<ManagedSkillState | undefined> => {
-  try {
-    const parsed: unknown = JSON.parse(
-      await readFile(join(destination, MANAGED_SKILL_STATE), "utf8")
-    )
-    if (
-      typeof parsed === "object" &&
-      parsed !== null &&
-      typeof (parsed as ManagedSkillState).fingerprint === "string" &&
-      typeof (parsed as ManagedSkillState).sourceModifiedMs === "number"
-    ) {
-      return parsed as ManagedSkillState
-    }
-  } catch {
-    // Installs from before the state file existed are treated as older.
-  }
-  return undefined
-}
-
-export const skillContentHash = async (dir: string): Promise<string> => {
-  const hash = createHash("sha256")
-  const walk = async (current: string, prefix: string): Promise<void> => {
-    const entries = await readdir(current, { withFileTypes: true })
-    const names = entries.map((entry) => entry.name).toSorted()
-    for (const name of names) {
-      const entry = entries.find((candidate) => candidate.name === name) as (typeof entries)[number]
-      const entryPath = join(current, name)
-      const relative = prefix === "" ? name : `${prefix}/${name}`
-      if (entry.isDirectory() || (entry.isSymbolicLink() && (await isDirectory(entryPath)))) {
-        if (EXCLUDE_DIRS.has(name)) continue
-        hash.update(`d:${relative}\n`)
-        await walk(entryPath, relative)
-        continue
-      }
-      if (EXCLUDE_FILES.has(name)) continue
-      try {
-        const content = await readFile(entryPath)
-        hash.update(`f:${relative}:${content.length}\n`)
-        hash.update(content)
-      } catch {
-        // Unreadable file (broken symlink inside the skill): fold its
-        // presence into the hash without contents.
-        hash.update(`x:${relative}\n`)
-      }
-    }
-  }
-  await walk(dir, "")
-  return hash.digest("hex")
-}
 
 export const isDirectory = async (path: string): Promise<boolean> => {
   try {
@@ -201,19 +141,6 @@ export const copyDirectory = async (src: string, dest: string): Promise<void> =>
   )
 }
 
-/// Resolve a path's parent directory through symlinks, keeping the final
-/// component. Ported from skills installer.ts — this is what makes a
-/// user-symlinked `~/.claude/skills -> ~/.agents/skills` read as canonical.
-export const resolveParentSymlinks = async (path: string): Promise<string> => {
-  const resolved = resolve(path)
-  try {
-    const realDir = await realpath(dirname(resolved))
-    return join(realDir, basename(resolved))
-  } catch {
-    return resolved
-  }
-}
-
 export interface SkillDocument {
   readonly name: string
   readonly description: string | undefined
@@ -243,32 +170,5 @@ export const hasSkillFile = async (dir: string): Promise<boolean> => {
     return (await stat(join(dir, "SKILL.md"))).isFile()
   } catch {
     return false
-  }
-}
-
-export interface CanonicalSkill {
-  readonly directoryName: string
-  readonly path: string
-  readonly document: SkillDocument
-  readonly hash: string
-}
-
-export interface HarnessEntry {
-  readonly directoryName: string
-  readonly path: string
-  readonly kind: "linkedTo" | "independent" | "broken"
-  /// For `linkedTo`: the canonical directory name the link resolves to.
-  readonly linkTarget?: string
-  readonly hash?: string
-  readonly document?: SkillDocument
-}
-
-/// realpath when the path exists, the resolved-parent form when it doesn't —
-/// so comparisons against not-yet-created directories still behave.
-export const resolveExisting = async (path: string): Promise<string> => {
-  try {
-    return await realpath(path)
-  } catch {
-    return resolveParentSymlinks(path)
   }
 }

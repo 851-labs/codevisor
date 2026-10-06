@@ -12,7 +12,7 @@ import type { CustomHarnessStore } from "@codevisor/harness-manager"
 import type { McpManager } from "@codevisor/mcp"
 import type { NativeMcpManager } from "@codevisor/mcp"
 import type { PluginRegistryClient, PluginsManager } from "@codevisor/plugins"
-import type { SkillsManager } from "@codevisor/skills"
+import type { SkillStore } from "@codevisor/skills"
 import type { TerminalManagerService } from "@codevisor/terminal"
 import type { ServerUpdateChannel } from "@codevisor/updater"
 import { Effect, PubSub, Schema } from "effect"
@@ -191,9 +191,9 @@ export interface CodevisorServerServices {
   /// Discovery over MCP servers registered directly in harness config files.
   /// Absent on hosts that don't support it — routes 501.
   readonly nativeMcp?: NativeMcpManager
-  /// Skills discovery over the canonical store and harness skills dirs.
-  /// Absent on hosts that don't support it — routes 501.
-  readonly skills?: SkillsManager
+  /// Codevisor's skill store, served to agents by the gateway's `skills`
+  /// tool. Absent on hosts that don't support it — routes 501.
+  readonly skills?: SkillStore
   /// Plugin runtime: supervised local plugin servers whose panes are proxied
   /// under /v1/plugins/:id/app/*. Absent on hosts that don't support it —
   /// routes 501.

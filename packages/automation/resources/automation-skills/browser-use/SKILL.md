@@ -83,7 +83,7 @@ const shot = await tab.screenshot()
 return { path: shot.artifacts[0].path }
 ```
 
-Use the `attaching-files` skill when sending the screenshot to the user.
+Read the `attaching-files` skill (through the `skills` tool) when sending the screenshot to the user.
 
 ## Export page content
 

@@ -2,29 +2,27 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// The Skills pane: one row per skill the fleet carries, with each machine's
-/// condition nested beneath. Skills have no enable switch, so a row is the
-/// skill and its menu; the machine rows carry the one action that matters —
-/// spreading a skill into that machine's harnesses.
+/// The Skills pane: Codevisor's skill store, which agents read through the
+/// tool gateway. The store syncs across devices, so the pane reads and
+/// writes this Mac's copy.
 struct SkillsSettingsView: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.theme) private var theme
-  @State private var model = SkillGlobalModel()
+  @State private var model = SkillListModel()
   @State private var showingCreate = false
   @State private var showingRemoteImport = false
-  @State private var editing: SkillFleetEntry?
-  @State private var pendingRemoval: SkillFleetEntry?
+  @State private var editing: ServerSkill?
+  @State private var pendingRemoval: ServerSkill?
   @State private var actionError: String?
 
-  /// Fleet-level skill creation lands on the local machine; the ferry
-  /// carries the content everywhere else.
+  /// Changes land on this Mac's store; sync carries them everywhere else.
   private var localClient: any CodevisorServerClienting {
     environment.machines.client(for: CodevisorMachine.local.id)
   }
 
   var body: some View {
     Form {
-      SkillFleetSection(
+      SkillListSection(
         model: model,
         onEdit: { editing = $0 },
         onRemove: { pendingRemoval = $0 })
@@ -32,14 +30,14 @@ struct SkillsSettingsView: View {
         EmptyView()
       } footer: {
         SettingsListActions(message: actionError) {
-          Button {
-            showingCreate = true
+          Menu {
+            Button("Add from URL…") { showingRemoteImport = true }
+            Button("Add Manually…") { showingCreate = true }
           } label: {
-            Label("New Skill…", systemImage: "plus")
+            Label("New Skill", systemImage: "plus")
           }
+          .fixedSize()
           .settingsActionTint(theme)
-          Button("Import Skills…") { showingRemoteImport = true }
-            .settingsActionTint(theme)
         }
       }
     }
@@ -47,16 +45,17 @@ struct SkillsSettingsView: View {
     .background {
       if !theme.isSystem { theme.windowBackground }
     }
-    // Skills are plain files that change behind our back (npx skills add,
-    // manual edits) — rescan whenever the pane or the fleet changes.
-    .task(id: environment.machines.allMachines.map(\.id)) { await model.load(in: environment) }
+    // Reload when another device's change syncs in.
+    .task(id: environment.configSync.revisionsByNamespace[ConfigSync.skillsNamespace]) {
+      await model.load(client: localClient)
+    }
     .sheet(isPresented: $showingCreate) {
       SkillCreateSheet { name, description, pasted in
         do {
-          _ = try await localClient.createSkill(
+          let list = try await localClient.createSkill(
             name: name, description: description, content: pasted)
           actionError = nil
-          await model.load(in: environment)
+          model.show(list.skills)
         } catch {
           actionError = ErrorReporter.userFacingMessage(for: error)
           throw error
@@ -68,9 +67,10 @@ struct SkillsSettingsView: View {
         discover: { try await localClient.discoverRemoteSkills(source: $0) },
         onImport: { source, skillNames in
           do {
-            _ = try await localClient.importRemoteSkill(source: source, skillNames: skillNames)
+            let list = try await localClient.importRemoteSkill(
+              source: source, skillNames: skillNames)
             actionError = nil
-            await model.load(in: environment)
+            model.show(list.skills)
           } catch {
             actionError = ErrorReporter.userFacingMessage(for: error)
             throw error
@@ -83,10 +83,10 @@ struct SkillsSettingsView: View {
         load: { try await localClient.skillContent(directoryName: entry.directoryName) },
         onSave: { content in
           do {
-            _ = try await localClient.updateSkill(
+            let list = try await localClient.updateSkill(
               directoryName: entry.directoryName, content: content)
             actionError = nil
-            await model.load(in: environment)
+            model.show(list.skills)
           } catch {
             actionError = ErrorReporter.userFacingMessage(for: error)
             throw error
@@ -107,16 +107,16 @@ struct SkillsSettingsView: View {
       Button("Cancel", role: .cancel) { pendingRemoval = nil }
         .settingsActionTint(theme)
     } message: {
-      Text("It will be removed from every machine.")
+      Text("It will be removed from every device.")
     }
   }
 
-  private func remove(_ entry: SkillFleetEntry) async {
+  private func remove(_ entry: ServerSkill) async {
     pendingRemoval = nil
     do {
-      _ = try await localClient.removeSkill(directoryName: entry.directoryName)
+      let list = try await localClient.removeSkill(directoryName: entry.directoryName)
       actionError = nil
-      await model.load(in: environment)
+      model.show(list.skills)
     } catch {
       actionError = ErrorReporter.userFacingMessage(for: error)
     }

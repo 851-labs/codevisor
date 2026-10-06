@@ -6,7 +6,6 @@ import SwiftUI
 public enum FleetPlane: String, Sendable {
   case harnesses
   case mcps
-  case skills
   case plugins
 
   @MainActor
@@ -14,7 +13,6 @@ public enum FleetPlane: String, Sendable {
     switch self {
     case .harnesses: _ = try await client.reconcileHarnessesSync()
     case .mcps: _ = try await client.reconcileMcpsSync()
-    case .skills: _ = try await client.reconcileSkillsSync()
     case .plugins: _ = try await client.reconcilePluginsSync()
     }
   }
@@ -44,7 +42,7 @@ public struct FleetBlockedMachine: Identifiable, Equatable {
 public extension View {
   /// The failure text as the machine reported it, with the one recovery the
   /// client can offer: another sync pass. A popover on macOS, an alert on
-  /// iOS. Shared by all four fleet pages so a blocked MCP explains itself
+  /// iOS. Shared by every fleet page so a blocked MCP explains itself
   /// exactly the way a blocked harness does.
   func fleetBlockedDetails(item: Binding<FleetBlockedMachine?>) -> some View {
     modifier(FleetBlockedDetailsModifier(item: item))

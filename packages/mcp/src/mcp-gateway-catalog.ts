@@ -1,6 +1,14 @@
-import { codevisorSandboxSignatures, type AutomationToolProvider } from "@codevisor/automation"
+import type { AutomationToolProvider } from "@codevisor/automation"
 import type { Tool } from "@modelcontextprotocol/sdk/types.js"
 
+import { automationSkills } from "./mcp-automation-builtins.js"
+import {
+  executeSkill,
+  packagedSkill,
+  skillEntries,
+  type BuiltinSkill,
+  type SkillEntry
+} from "./mcp-gateway-skills.js"
 import type { McpManagerConfig } from "./mcp-manager-types.js"
 import { PLUGIN_CATALOG_SERVER, pluginToolDefinitions } from "./mcp-plugin-tools.js"
 import { run, type UpstreamConnection } from "./mcp-support.js"
@@ -22,38 +30,27 @@ export interface GatewayCatalogDeps {
   readonly isSuppressed: (name: string) => boolean
 }
 
-const DESCRIPTION_GUIDANCE = [
-  "`description` is the label the user sees for this run. Write a short, plain-text, present-tense phrase that starts with a verb and names what the code does (at most 80 characters; longer labels are cut).",
-  'Good: "Find open Linear issues assigned to me", "Build the macOS app on MacBook", "Create an agent for each failing test".',
-  'Bad: "Running code" (says nothing), "I\'ll search Linear for your issues" (not a verb-first label), "`linear.list_issues` + filter()" (code, not prose).'
-].join("\n")
+/// What each enabled built-in lets the agent do, phrased as abilities rather
+/// than as rules for when to use them, so the model can match any task to them.
+const BUILTIN_CAPABILITIES: Record<string, string> = {
+  browser:
+    "Browser: a real web browser. Open any site, sign in, click, fill in forms, read live pages.",
+  computer: "Desktop: see and control the apps on this Mac, and record the screen.",
+  codevisor:
+    "Codevisor: start other agents, use the user's other machines, control the Codevisor app."
+}
 
-/// Standing instructions every agent Codevisor starts receives (see
-/// ToolGatewayConfig.instructions). Harnesses may defer MCP tool descriptions,
-/// so the choice between Codevisor agents and built-in subagents lives here.
-export const CODEVISOR_AGENT_INSTRUCTIONS = [
-  'You are running inside Codevisor. Its `execute` tool (MCP server "codevisor") reaches the user\'s integrations, their other machines, their open Codevisor windows, and Codevisor itself; the codevisor, codevisor-agents, codevisor-machines, and codevisor-clients skills explain how.',
-  "",
-  "When work could go to another agent, these usually fit best:",
-  "- Your built-in subagents, for help with your current task (exploring the code, research, a quick review, small edits). Nothing is left behind for the user to manage.",
-  "- A new Codevisor chat in the current workspace, for another agent working on the same change beside you when that adds something your subagents can't, like a different harness or model or a conversation the user may want to follow. It shares your checkout, so a scoped task and not editing the same files at once keep things clean.",
-  "- A new Codevisor workspace with its own worktree, for separate pieces of work that each end in their own branch or PR, such as one agent per issue. Each one shows up in the user's sidebar, so they can follow it, jump in, and open or review its PR, which a hidden worktree can't offer."
-].join("\n")
+/// Integration names listed before the line is cut short, so the whole
+/// description stays within Claude Code's 2,048-character limit.
+const INTEGRATION_LIMIT = 40
 
-/// Always in context (skills load only when chosen), so this is where models
-/// learn to pick Codevisor agents over their built-in subagents.
-const DELEGATION_GUIDANCE = [
-  "Other agents: built-in subagents usually fit help with your current task; a Codevisor chat in the current workspace fits another harness or model working on the same change; a new Codevisor workspace with its own worktree fits separate work that ends in its own branch or PR. See the codevisor-agents skill."
-].join(" ")
-
+/// Short on purpose: hosts truncate long tool descriptions (Claude Code at
+/// 2,048 characters) or hide them behind tool search, so this names what the
+/// tool reaches and points at the `skills` tool for everything else.
 export const executeToolDescription = (inventory: string): string =>
   [
-    "Primary Codevisor tool interface. Run sandboxed JavaScript or TypeScript that discovers and composes enabled integration, Browser Use, and Computer Use tools, on this machine or on the user's other machines. The isolate has no filesystem, network, process environment, or credentials.",
-    'Inside code, start with `await tools.search({ query: "<intent>" })`, inspect a match with `await tools.describe.tool({ path })`, then call the exact returned path with `await tools[path](args)`. Pass an async arrow function. Call `status("…")` before slow steps so the user sees progress.',
-    DESCRIPTION_GUIDANCE,
-    DELEGATION_GUIDANCE,
-    `Sandbox globals:\n\`\`\`ts\n${codevisorSandboxSignatures}\n\`\`\``,
-    inventory
+    `Sandboxed TypeScript runtime for using tools like:\n${inventory}`,
+    'Before writing code, call the `skills` tool with name "execute" for how to use this tool.'
   ].join("\n\n")
 
 /// The discovery half of the gateway, split out of mcp-gateway: what tools
@@ -65,33 +62,63 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
   const listPluginTools = (): Promise<ReadonlyArray<Tool>> =>
     pluginToolDefinitions(config.pluginTools)
 
+  const enabledServers = async (projectId?: string, sessionId?: string) =>
+    (await run(config.db.resolveMcpServers(projectId, sessionId))).filter(
+      (server) => server.enabled && !isSuppressed(server.name)
+    )
+
   const integrationInventory = async (projectId?: string, sessionId?: string): Promise<string> => {
-    const names = (await run(config.db.resolveMcpServers(projectId, sessionId)))
-      .filter((server) => server.enabled && !isSuppressed(server.name))
-      .map((server) => server.name.trim())
-      .filter((name) => name.length > 0)
+    const enabled = await enabledServers(projectId, sessionId)
+    const builtins = Object.keys(BUILTIN_CAPABILITIES).filter((id) =>
+      enabled.some((server) => server.id === id)
+    )
+    const names = [
+      ...enabled
+        .filter((server) => !(server.id in BUILTIN_CAPABILITIES))
+        .map((server) => server.name.trim()),
+      // Plugin tools are named `<pluginId>.<tool>`; list each plugin once.
+      ...(await listPluginTools()).map((tool) => tool.name.slice(0, tool.name.lastIndexOf(".")))
+    ]
+      .filter((name, index, all) => name.length > 0 && all.indexOf(name) === index)
       .toSorted((left, right) => left.localeCompare(right))
-    const pluginTools = await listPluginTools()
-    const lines =
-      names.length === 0
-        ? ["Available integrations: none."]
-        : ["Available integrations through Codevisor:", ...names.map((name) => `- ${name}`)]
-    if (pluginTools.length > 0) {
-      lines.push(
-        'Installed plugin tools (call through server "plugin"):',
-        ...pluginTools.map((tool) => `- plugin.${tool.name} — ${tool.description}`)
-      )
-    }
-    return lines.join("\n")
+    const shown = names.slice(0, INTEGRATION_LIMIT)
+    const more = names.length - shown.length
+    return [
+      ...builtins.map((id) => `- ${BUILTIN_CAPABILITIES[id]}`),
+      ...(names.length === 0
+        ? []
+        : [`- Integrations: ${shown.join(", ")}${more > 0 ? `, and ${more} more` : ""}.`])
+    ].join("\n")
+  }
+
+  const builtinSkills: ReadonlyArray<BuiltinSkill> = [
+    executeSkill,
+    ...automationSkills(),
+    ...(config.packagedSkills ?? []).map((skill) =>
+      packagedSkill({ name: skill.name, path: () => skill.path, summary: skill.summary })
+    )
+  ]
+
+  /// The skills a session can read through the `skills` tool.
+  const sessionSkills = async (
+    projectId?: string,
+    sessionId?: string
+  ): Promise<ReadonlyArray<SkillEntry>> => {
+    const enabledIds = new Set(
+      (await enabledServers(projectId, sessionId)).map((server) => server.id)
+    )
+    return skillEntries(
+      builtinSkills,
+      { enabledIds, pluginTools: await listPluginTools() },
+      config.skillSource
+    )
   }
 
   const allTools = async (
     projectId?: string,
     sessionId?: string
   ): Promise<ReadonlyArray<{ server: CatalogServer; tool: Tool }>> => {
-    const enabled = (await run(config.db.resolveMcpServers(projectId, sessionId))).filter(
-      (server) => server.enabled && !isSuppressed(server.name)
-    )
+    const enabled = await enabledServers(projectId, sessionId)
     const results = await Promise.allSettled(
       enabled.map(async (server) => {
         const provider = automationProviders.get(server.id)
@@ -190,6 +217,7 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
     gatewayServerAllowed,
     integrationInventory,
     listPluginTools,
-    searchCatalog
+    searchCatalog,
+    sessionSkills
   }
 }

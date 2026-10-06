@@ -74,7 +74,7 @@ let video = await recording.stop()
 computer.write(video)
 ```
 
-The stopped result includes `file.path`, `file.name`, `file.mimeType`, `file.sizeBytes`, duration and dimensions. In Codevisor, `file.path` points to a durable local attachment and the result includes `file.fileId` and ready-to-use `markdown`. **Put that returned Markdown in your final reply** to embed the video in chat. `computer.write(video)` reports the artifact to you; it does not itself send the user a final response. Do not put video bytes or base64 in the reply. If attachment creation fails, the local video remains saved and `recording_status` retries attachment creation; the returned local path can still be shared using the `attaching-files` skill.
+The stopped result includes `file.path`, `file.name`, `file.mimeType`, `file.sizeBytes`, duration and dimensions. In Codevisor, `file.path` points to a durable local attachment and the result includes `file.fileId` and ready-to-use `markdown`. **Put that returned Markdown in your final reply** to embed the video in chat. `computer.write(video)` reports the artifact to you; it does not itself send the user a final response. Do not put video bytes or base64 in the reply. If attachment creation fails, the local video remains saved and `recording_status` retries attachment creation; the returned local path can still be shared using the `attaching-files` skill (read it through the `skills` tool).
 
 - `computer.listRecordingTargets()` lists window IDs, titles, owning apps, and display IDs/dimensions. `isMain` identifies the primary display.
 - `app.startRecording(options?)` records the handle's observed window. Use `app.getWindow(windowId)` and observe it first to choose another window.

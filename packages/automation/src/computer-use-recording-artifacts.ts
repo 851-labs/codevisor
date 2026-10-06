@@ -32,7 +32,7 @@ export const makeRecordingArtifacts = () => {
           file: { ...file, ...attachment, mimeType: "video/mp4" },
           markdown: `![Recording of the fix](<${attachment.path}>)`,
           showToUser:
-            "Embed markdown in your reply to display the video in chat. See the attaching-files skill for file delivery."
+            "Embed markdown in your reply to display the video in chat. Read the attaching-files skill (through the `skills` tool) for file delivery."
         }
       } catch (cause) {
         published.delete(key)

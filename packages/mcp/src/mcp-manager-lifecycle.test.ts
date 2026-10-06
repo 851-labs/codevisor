@@ -203,7 +203,7 @@ describe("MCP manager lifecycle", () => {
   })
 
   it("adopts refresh ownership of tokens recorded under a former identity", async () => {
-    const { manager } = await testManager(undefined, { serverId: "test" })
+    const { manager } = await testManager({ serverId: "test" })
     const legacy = await manager.create({
       authType: "oauth",
       name: "Legacy",
@@ -234,7 +234,7 @@ describe("MCP manager lifecycle", () => {
 
   it("connects a mirror with imported OAuth material, on import and on boot", async () => {
     const upstream = await workingUpstream()
-    const { db, directory, manager } = await testManager(undefined, { serverId: "mirror" })
+    const { db, directory, manager } = await testManager({ serverId: "mirror" })
     const created = await manager.create({
       authType: "oauth",
       name: "Sentry",

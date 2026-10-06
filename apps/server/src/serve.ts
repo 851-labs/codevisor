@@ -26,10 +26,10 @@ import { makeMcpManager } from "@codevisor/mcp"
 import {
   makePluginRegistryClient,
   makePluginsManager,
-  managedPluginSkill,
+  pluginAuthoringSkill,
   resolvePluginRegistryUrl
 } from "@codevisor/plugins"
-import { makeSkillsManager, managedAttachmentSkill } from "@codevisor/skills"
+import { attachingFilesSkill, makeSkillStore, migrateLegacySkills } from "@codevisor/skills"
 import { makeBlobStore } from "@codevisor/sync"
 import { makeTerminalManager } from "@codevisor/terminal"
 import { Effect } from "effect"
@@ -313,9 +313,18 @@ export const runServe = (
           (await sharedAccounts?.providers.staticOverrides(harness)) ?? []
       })
     )
+    // Codevisor's own skill store; agents read it through the gateway.
+    const skillsDir = join(dirname(databasePath), "skills")
+    const skillsEnv = { agents, env: process.env, homedir: homedir() }
     const skills = initializeOptionalServerFeature("Skills", () =>
-      makeSkillsManager({ agents, homedir: homedir(), env: process.env })
+      makeSkillStore({ dir: skillsDir })
     )
+    // Skills left harness folders: clean up older installs, import the
+    // user's own once. Never blocks or fails boot.
+    if (skills !== undefined)
+      void migrateLegacySkills({ ...skillsEnv, storeDir: skillsDir }).catch((cause: unknown) =>
+        console.log(`Skill migration failed: ${failureMessage(cause)}`)
+      )
     // Content-addressed archives the config plane replicates skills through.
     const syncBlobs = makeBlobStore(join(dirname(databasePath), "sync-blobs"))
     const pluginRegistryClient = initializeOptionalServerFeature("Plugin registry", () =>
@@ -340,18 +349,11 @@ export const runServe = (
     // so the read-through cache over the hosted index follows the manager's
     // availability. Env overrides (or the dev cloud) rewire the base URL.
     const pluginRegistry = plugins === undefined ? undefined : pluginRegistryClient
-    // File delivery is available in every harness independently of optional
-    // tools. Plugin authoring follows feature availability. Skill sync must
-    // never block or fail server boot.
-    if (skills !== undefined) {
-      void Promise.resolve()
-        .then(() =>
-          skills.syncManaged([managedAttachmentSkill(), managedPluginSkill(plugins !== undefined)])
-        )
-        .catch((cause: unknown) =>
-          console.log(`Managed skill sync unavailable: ${failureMessage(cause)}`)
-        )
-    }
+    // Packaged skills the gateway serves; a missing one is just dropped.
+    const packagedSkills = [
+      initializeOptionalServerFeature("File delivery skill", attachingFilesSkill),
+      plugins && initializeOptionalServerFeature("Plugin skill", () => pluginAuthoringSkill())
+    ].filter((skill) => skill !== undefined)
     const mcp = initializeOptionalServerFeature("MCP", () =>
       makeMcpManager({
         db,
@@ -360,7 +362,8 @@ export const runServe = (
         machine,
         remoteInvoker: machineLink.invoke,
         serverKind: resolvedKind,
-        ...(skills === undefined ? {} : { syncManagedSkills: skills.syncManaged }),
+        packagedSkills,
+        ...(skills === undefined ? {} : { skillSource: skills }),
         // Installed plugins' declared tools surface to agents through the MCP
         // gateway (server "plugin"); the plugins manager satisfies the mcp
         // package's structural PluginToolSource seam as-is.

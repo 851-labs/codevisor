@@ -1,8 +1,8 @@
 import Foundation
 
 /// What a settings list knows about a machine before reading its report.
-/// Shared by every fleet plane (harnesses, MCPs, skills, plugins) so the
-/// four pages resolve machines the same way.
+/// Shared by every fleet plane (harnesses, MCPs, plugins) so the pages
+/// resolve machines the same way.
 public struct FleetMachineInfo: Identifiable, Equatable, Sendable {
   public var id: String
   public var name: String
@@ -32,10 +32,10 @@ public struct FleetMachineInfo: Identifiable, Equatable, Sendable {
 }
 
 /// One entry on one machine, reduced to what the row actually renders. Each
-/// plane keeps its own state enum (the states genuinely differ: a skill is
+/// plane keeps its own state enum (the states genuinely differ: a plugin is
 /// never "signed out", an MCP is never "waiting to install") and maps it
 /// here, so the mark, the caption, and the details popover stay identical
-/// across all four pages.
+/// across every fleet page.
 public struct FleetRowStatus: Equatable, Sendable {
   /// How much of the user's attention the row deserves. `quiet` renders no
   /// mark at all — "off" and "unreachable" are facts, not problems.

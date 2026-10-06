@@ -82,8 +82,8 @@ export type {
 } from "./plugin-supervisor.js"
 export { defaultSpawnArgv, defaultSpawnShell } from "./plugin-supervisor.js"
 export {
-  managedPluginSkill,
+  pluginAuthoringSkill,
   PLUGIN_AUTHORING_SKILL_DIRECTORY,
   type PluginSkillOptions,
-  type PluginSkillSpec
+  type PluginSkill
 } from "./plugin-skill.js"

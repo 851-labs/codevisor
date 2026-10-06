@@ -2,10 +2,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { makeAgentRuntime } from "@codevisor/agent-runtime"
+import type { SkillsList } from "@codevisor/api"
 
-import { makeSkillsManager } from "./skills-manager.js"
-import type { SkillsManager } from "./skills-manager.js"
+import { makeSkillStore, type CloneSkillSource, type SkillStore } from "./skill-store.js"
 
 export const directories: string[] = []
 
@@ -21,6 +20,9 @@ export const makeHome = (): string => {
   return home
 }
 
+/// The test store lives beside the fake home's harness folders.
+export const storeDir = (home: string): string => join(home, "store")
+
 export const writeSkill = (
   dir: string,
   options: { readonly name?: string; readonly description?: string; readonly body?: string } = {}
@@ -35,28 +37,15 @@ export const writeSkill = (
 
 export const manager = (
   home: string,
-  env: Record<string, string | undefined> = {}
-): SkillsManager => makeSkillsManager({ agents: makeAgentRuntime({}), env, homedir: home })
+  options: { readonly clone?: CloneSkillSource } = {}
+): SkillStore =>
+  makeSkillStore({
+    dir: storeDir(home),
+    ...(options.clone === undefined ? {} : { overrides: { clone: options.clone } })
+  })
 
-export const globalSkill = (
-  scan: Awaited<ReturnType<SkillsManager["list"]>>,
-  directoryName: string
-) => {
-  const skill = scan.global.find((candidate) => candidate.directoryName === directoryName)
-  if (skill === undefined) throw new Error(`missing global skill ${directoryName}`)
+export const storedSkill = (list: SkillsList, directoryName: string) => {
+  const skill = list.skills.find((candidate) => candidate.directoryName === directoryName)
+  if (skill === undefined) throw new Error(`missing skill ${directoryName}`)
   return skill
 }
-
-export const group = (scan: Awaited<ReturnType<SkillsManager["list"]>>, harnessId: string) => {
-  const found = scan.harnesses.find((candidate) => candidate.harnessId === harnessId)
-  if (found === undefined) throw new Error(`missing harness group ${harnessId}`)
-  return found
-}
-
-export const installState = (
-  scan: Awaited<ReturnType<SkillsManager["list"]>>,
-  directoryName: string,
-  harnessId: string
-): string | undefined =>
-  globalSkill(scan, directoryName).installs.find((install) => install.harnessId === harnessId)
-    ?.state

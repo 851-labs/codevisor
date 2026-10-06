@@ -222,6 +222,10 @@ struct WorkedItemsTests {
     )
     #expect(ToolCallSummary.describe([described]) == "Triage new Sentry issues")
     #expect(ToolCallSummary.describe([calls[0], described]) == "Used 2 integration tools")
+    let skill = ToolCall(
+      toolCallId: "5", title: "mcp__codevisor__skills", status: .completed, rawInput: ["name": "deploy"])
+    #expect(ToolCallSummary.describe([skill]) == "Read the deploy skill")
+    #expect(ToolCallSummary.describe([skill, described]) == "Used 2 integration tools")
   }
 
   private func call(_ kind: ToolKind) -> ToolCall {

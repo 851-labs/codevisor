@@ -16,7 +16,6 @@ import {
   BUILTIN_MCP_SERVERS,
   type BuiltinMcpId,
   initializeAutomationProvider,
-  managedAutomationSkills,
   unavailableBrowserProvider,
   unavailableComputerProvider
 } from "./mcp-automation-builtins.js"
@@ -163,37 +162,6 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
       ...(typeof status.detail === "string" ? { detail: status.detail } : {})
     }
   }
-  const syncManagedAutomationSkills = async (
-    records: ReadonlyArray<McpServerRecord>
-  ): Promise<void> => {
-    if (config.syncManagedSkills === undefined) return
-    await config.syncManagedSkills(
-      managedAutomationSkills(
-        new Set(
-          records
-            .filter((record) => record.enabled && !state.locallySuppressed.has(record.name))
-            .map((record) => record.id)
-        )
-      )
-    )
-  }
-
-  const syncManagedAutomationSkillsFromDb = async (): Promise<void> => {
-    try {
-      const records = await Promise.all(
-        BUILTIN_MCP_SERVERS.map((builtin) => run(config.db.getMcpServer(builtin.id)))
-      )
-      await syncManagedAutomationSkills(
-        records.filter((record): record is McpServerRecord => record !== undefined)
-      )
-    } catch (cause) {
-      // Managed automation skills are optional. A missing packaged resource
-      // or unreadable user skill directory must not fail an otherwise valid
-      // MCP settings mutation or escape as an unhandled background rejection.
-      reportBackgroundFailure("Managed automation skill synchronization failed", cause)
-    }
-  }
-
   const builtinsReady = Promise.all(
     BUILTIN_MCP_SERVERS.map(async (builtin) => {
       const provider = automationProviders.get(builtin.id)!
@@ -239,11 +207,11 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
       )
     })
   )
-    .then(syncManagedAutomationSkills)
+    .then(() => undefined)
     .catch((cause: unknown) => {
-      // Built-in MCP registration and managed-skill installation are optional
-      // feature initialization. Preserve external MCPs and the rest of the
-      // server when a packaged resource or user skill directory is unavailable.
+      // Built-in MCP registration is optional feature initialization.
+      // Preserve external MCPs and the rest of the server when a packaged
+      // resource is unavailable.
       reportBackgroundFailure("Built-in MCP initialization failed", cause)
     })
 
@@ -394,7 +362,6 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
     selfServerId,
     sessionGatewayIds,
     state,
-    syncManagedAutomationSkillsFromDb,
     turnClientIds
   }
 }

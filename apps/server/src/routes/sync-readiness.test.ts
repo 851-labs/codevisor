@@ -13,14 +13,12 @@ import {
   pluginsStub,
   pluginSummary,
   run,
-  skillsStub,
   startWithApp
 } from "../test-support.js"
 import {
   refreshHarnessReadiness,
   refreshMcpReadiness,
-  refreshPluginReadiness,
-  refreshSkillReadiness
+  refreshPluginReadiness
 } from "./sync-readiness.js"
 
 const machine = (id: string) => ({ id }) as CodevisorServerConfig
@@ -319,69 +317,5 @@ describe("/v1/sync/plugin-readiness", () => {
         { id: "owner.off", state: "machineOnly" }
       ]
     })
-  })
-})
-
-/// The skill-readiness surface — the reported half of the skills plane.
-describe("/v1/sync/skill-readiness", () => {
-  it("publishes this machine's skill readiness and announces the change", async () => {
-    const { services } = await makeServices("server-skr")
-    await run(
-      services.db.mergeSyncEntries("skills", [
-        {
-          key: "vnc-change",
-          value: { hash: "b", name: "vnc-change" },
-          timestamp: { wallMs: 1, counter: 0, deviceId: "elsewhere" }
-        }
-      ])
-    )
-    const fanout = await run(makeEventFanout)
-    const announced = Promise.withResolvers<unknown>()
-    const unsubscribe = fanout.subscribe((event) => {
-      if (event.kind === "sync.changed" && event.subjectId === "skill-readiness") {
-        announced.resolve(event.payload)
-      }
-    })
-    await refreshSkillReadiness(
-      services,
-      machine("server-skr"),
-      fanout,
-      skillsStub([]) as unknown as NonNullable<CodevisorServerServices["skills"]>,
-      []
-    )
-
-    // The local skill was never published to the fleet; the fleet skill
-    // has not arrived and, with no pass to explain it, carries no reason.
-    const expected = {
-      skills: [
-        { directoryName: "deploy", state: "machineOnly" },
-        { directoryName: "vnc-change", state: "awaitingContent" }
-      ]
-    }
-    const entries = await run(services.db.getSyncEntries("skill-readiness"))
-    expect(entries.map((entry) => entry.key)).toEqual(["server-skr"])
-    expect(entries[0]?.value).toEqual(expected)
-    expect(await announced.promise).toMatchObject({
-      namespace: "skill-readiness",
-      entries: [{ key: "server-skr", value: expected }]
-    })
-    unsubscribe()
-  })
-})
-
-describe("refreshSkillReadiness", () => {
-  it("swallows scan failures", async () => {
-    const fanout = await run(makeEventFanout)
-    const { services } = await makeServices("server-skr-edge")
-    const config = machine("server-skr-edge")
-
-    // A failing scan never breaks the pass that triggered the refresh.
-    const poisoned = {
-      list: () => Promise.reject(new Error("boom"))
-    } as unknown as NonNullable<CodevisorServerServices["skills"]>
-    await expect(
-      refreshSkillReadiness(services, config, fanout, poisoned, [])
-    ).resolves.toBeUndefined()
-    expect(await run(services.db.getSyncEntries("skill-readiness"))).toEqual([])
   })
 })

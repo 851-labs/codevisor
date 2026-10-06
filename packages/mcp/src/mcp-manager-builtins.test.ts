@@ -38,32 +38,6 @@ describe("MCP manager built-in providers and suppression", () => {
     expect((await manager.resolved()).find((server) => server.id === id)?.enabled).toBe(false)
   })
 
-  it("synchronizes proper managed skills with built-in provider state", async () => {
-    const synchronized: Array<ReadonlyArray<{ directoryName: string; enabled: boolean }>> = []
-    const { manager } = await testManager(async (skills) => {
-      synchronized.push(skills.map(({ directoryName, enabled }) => ({ directoryName, enabled })))
-    })
-    await manager.list()
-    expect(synchronized.at(-1)).toEqual([
-      { directoryName: "browser-use", enabled: true },
-      { directoryName: "computer-use", enabled: true },
-      { directoryName: "codevisor", enabled: true },
-      { directoryName: "codevisor-agents", enabled: true },
-      { directoryName: "codevisor-machines", enabled: true },
-      { directoryName: "codevisor-clients", enabled: true }
-    ])
-
-    await manager.update("computer", { enabled: false })
-    expect(synchronized.at(-1)).toEqual([
-      { directoryName: "browser-use", enabled: true },
-      { directoryName: "computer-use", enabled: false },
-      { directoryName: "codevisor", enabled: true },
-      { directoryName: "codevisor-agents", enabled: true },
-      { directoryName: "codevisor-machines", enabled: true },
-      { directoryName: "codevisor-clients", enabled: true }
-    ])
-  })
-
   it("keeps a Browser Use provider startup failure scoped to Browser Use", async () => {
     const directory = mkdtempSync(join(tmpdir(), "codevisor-browser-provider-failure-"))
     directories.push(directory)
@@ -96,30 +70,6 @@ describe("MCP manager built-in providers and suppression", () => {
       managedAvailable: false
     })
     expect(errors).toHaveBeenCalledWith("Browser Use unavailable: extension archive is unreadable")
-  })
-
-  it("contains managed-skill synchronization failures", async () => {
-    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined)
-    const { manager } = await testManager(async () => {
-      throw new Error("managed skill directory is read-only")
-    })
-
-    await expect(manager.list()).resolves.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: "browser" }),
-        expect.objectContaining({ id: "computer" })
-      ])
-    )
-    expect(errors).toHaveBeenCalledWith(
-      "Built-in MCP initialization failed: managed skill directory is read-only"
-    )
-    await expect(manager.update("computer", { enabled: false })).resolves.toMatchObject({
-      enabled: false,
-      id: "computer"
-    })
-    expect(errors).toHaveBeenCalledWith(
-      "Managed automation skill synchronization failed: managed skill directory is read-only"
-    )
   })
 
   it("drops suppressed servers from resolution, refuses connection, and disconnects", async () => {

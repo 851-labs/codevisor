@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { makeSkillsManager } from "@codevisor/skills"
+import { makeSkillStore } from "@codevisor/skills"
 import { makeBlobStore } from "@codevisor/sync"
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
@@ -11,7 +11,6 @@ import type { CodevisorServerServices } from "../server-context.js"
 import {
   harnesses,
   jsonRequest,
-  makeAgents,
   makeServices,
   readWebSocketEvents,
   run,
@@ -73,7 +72,7 @@ describe("/v1/sync", () => {
     const home = mkdtempSync(join(tmpdir(), "skills-home-"))
     const blobDir = mkdtempSync(join(tmpdir(), "sync-blobs-"))
     tempDirs.push(home, blobDir)
-    const skills = makeSkillsManager({ agents: makeAgents(), homedir: home, env: {} })
+    const skills = makeSkillStore({ dir: join(home, "skills") })
     await skills.create({ name: "Deploy", description: "ship it" })
     const server = await startWithApp({
       ...services,
@@ -89,7 +88,7 @@ describe("/v1/sync", () => {
     const again = await jsonRequest(server, "/v1/sync/skills/reconcile", { method: "POST" })
     expect(again.body).toMatchObject({ published: [], applied: [], removed: [] })
 
-    const document = await jsonRequest(server, "/v1/sync/skills")
+    const document = await jsonRequest(server, "/v1/sync/codevisor-skills")
     const hash = (document.body as { entries: Array<{ value: { hash: string } }> }).entries[0]
       ?.value.hash as string
 

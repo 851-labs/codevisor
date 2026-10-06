@@ -19,7 +19,7 @@ afterEach(cleanupMcpManagerTests)
 describe("recording attachment persistence", () => {
   it("provides the native provider a publisher and returns an embeddable local video through MCP execute", async () => {
     let path = ""
-    const { db, manager, directory } = await testManager(undefined, {
+    const { db, manager, directory } = await testManager({
       makeComputerProvider: () => ({
         id: "computer",
         tools: computerUseTools,

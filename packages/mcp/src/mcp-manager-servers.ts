@@ -89,8 +89,7 @@ export const makeMcpServerOperations = (
     refreshTimers,
     saveRecord,
     secrets,
-    state,
-    syncManagedAutomationSkillsFromDb
+    state
   } = core
   const { allTools, connectUpstream, refreshGatewayInventories } = deps
 
@@ -208,7 +207,6 @@ export const makeMcpServerOperations = (
       } else if (state.connectionState !== "unavailable") {
         await connect(saved.id).catch(() => undefined)
       }
-      await syncManagedAutomationSkillsFromDb()
       await refreshGatewayInventories()
       return publicServer(await record(saved.id))
     }
@@ -336,10 +334,9 @@ export const makeMcpServerOperations = (
         }
       }
     }
+    // Machine-disabling a built-in (Computer Use) also retracts its skills
+    // from the gateway's `skills` tool.
     await refreshGatewayInventories()
-    // Machine-disabling a built-in (Computer Use) must also retract its
-    // managed skill; re-derive from the store now that suppression changed.
-    await syncManagedAutomationSkillsFromDb()
   }
 
   const remove: McpManager["remove"] = async (id) => {

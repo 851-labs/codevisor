@@ -2,18 +2,15 @@ import { execSync } from "node:child_process"
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
-import { makeAgentRuntime } from "@codevisor/agent-runtime"
 import { afterEach, describe, expect, it } from "vitest"
 
-import { makeSkillsManager } from "./skills-manager.js"
-import type { SkillsManager } from "./skills-manager.js"
+import type { SkillStore } from "./skill-store.js"
 import {
   cleanupSkillsTests,
   makeHome,
-  writeSkill,
   manager,
-  globalSkill,
-  installState
+  storedSkill,
+  writeSkill
 } from "./skills-test-support.js"
 
 afterEach(cleanupSkillsTests)
@@ -22,13 +19,7 @@ describe("importRemote", () => {
   const managerWithClone = (
     home: string,
     clone: (url: string, ref: string | undefined, destination: string) => Promise<void>
-  ): SkillsManager =>
-    makeSkillsManager({
-      agents: makeAgentRuntime({}),
-      env: {},
-      homedir: home,
-      overrides: { clone }
-    })
+  ): SkillStore => manager(home, { clone })
 
   it("imports every skill found in a cloned repo", async () => {
     const home = makeHome()
@@ -46,7 +37,7 @@ describe("importRemote", () => {
     })
     const scan = await skills.importRemote({ source: "vercel-labs/skills#main" })
     expect(calls).toEqual([["https://github.com/vercel-labs/skills.git", "main"]])
-    expect(scan.global.map((skill) => skill.directoryName).toSorted()).toEqual(["deploy", "review"])
+    expect(scan.skills.map((skill) => skill.directoryName).toSorted()).toEqual(["deploy", "review"])
   })
 
   it("scopes discovery to the requested subpath", async () => {
@@ -56,7 +47,7 @@ describe("importRemote", () => {
       writeSkill(join(destination, "skills/review"), { name: "Review" })
     })
     const scan = await skills.importRemote({ source: "o/r/skills/deploy" })
-    expect(scan.global.map((skill) => skill.directoryName)).toEqual(["deploy"])
+    expect(scan.skills.map((skill) => skill.directoryName)).toEqual(["deploy"])
   })
 
   it("rejects subpath traversal, empty repos, and clone failures", async () => {
@@ -86,13 +77,13 @@ describe("importRemote", () => {
 
   it("skips existing skills and fails only when nothing was imported", async () => {
     const home = makeHome()
-    writeSkill(join(home, ".agents/skills/deploy"), { name: "Deploy" })
+    writeSkill(join(home, "store/deploy"), { name: "Deploy" })
     const clone = async (_url: string, _ref: string | undefined, destination: string) => {
       writeSkill(join(destination, "deploy"), { body: "different", name: "Deploy" })
       writeSkill(join(destination, "review"), { name: "Review" })
     }
     const scan = await managerWithClone(home, clone).importRemote({ source: "o/r" })
-    expect(scan.global.map((skill) => skill.directoryName).toSorted()).toEqual(["deploy", "review"])
+    expect(scan.skills.map((skill) => skill.directoryName).toSorted()).toEqual(["deploy", "review"])
     // Second run: everything conflicts now.
     await expect(
       managerWithClone(home, clone).importRemote({ source: "o/r" })
@@ -116,7 +107,7 @@ describe("importRemote", () => {
     )
     // Pin the ref too, exercising the default clone's --branch path.
     const scan = await manager(home).importRemote({ source: `${upstream}#main` })
-    expect(globalSkill(scan, "my-skill").description).toBe("From git")
+    expect(storedSkill(scan, "my-skill").description).toBe("From git")
   })
 })
 
@@ -176,11 +167,10 @@ describe("well-known skill sources", () => {
     })
     try {
       const scan = await manager(home).importRemote({ source: site.url })
-      expect(globalSkill(scan, "deploy").description).toBe("Deploy checklist")
-      expect(readFileSync(join(home, ".agents/skills/deploy/refs/notes.md"), "utf8")).toBe("notes")
-      expect(scan.global.map((skill) => skill.directoryName)).toEqual(["deploy"])
+      expect(storedSkill(scan, "deploy").description).toBe("Deploy checklist")
+      expect(readFileSync(join(home, "store/deploy/refs/notes.md"), "utf8")).toBe("notes")
+      expect(scan.skills.map((skill) => skill.directoryName)).toEqual(["deploy"])
       // Auto-install applied to well-known imports too.
-      expect(installState(scan, "deploy", "claude-code")).toBe("linked")
     } finally {
       await site.close()
     }
@@ -246,11 +236,11 @@ describe("well-known skill sources", () => {
     })
     try {
       const scan = await manager(home).importRemote({ source: site.url })
-      expect(scan.global.map((skill) => skill.directoryName).toSorted()).toEqual([
+      expect(scan.skills.map((skill) => skill.directoryName).toSorted()).toEqual([
         "archived",
         "single"
       ])
-      expect(globalSkill(scan, "archived").description).toBe("From archive")
+      expect(storedSkill(scan, "archived").description).toBe("From archive")
     } finally {
       await site.close()
     }
@@ -275,7 +265,7 @@ describe("well-known skill sources", () => {
     try {
       // A deep page URL still resolves through the origin's legacy path.
       const scan = await manager(home).importRemote({ source: `${site.url}/docs/page/` })
-      expect(globalSkill(scan, "deploy")).toBeDefined()
+      expect(storedSkill(scan, "deploy")).toBeDefined()
     } finally {
       await site.close()
     }
@@ -360,12 +350,12 @@ describe("well-known skill sources", () => {
     })
     try {
       const scan = await manager(home).importRemote({ source: `${site.url}/docs` })
-      expect(scan.global.map((skill) => skill.directoryName).toSorted()).toEqual([
+      expect(scan.skills.map((skill) => skill.directoryName).toSorted()).toEqual([
         "no-digest",
         "odd-files",
         "zipped"
       ])
-      expect(globalSkill(scan, "zipped").description).toBe("From zip")
+      expect(storedSkill(scan, "zipped").description).toBe("From zip")
     } finally {
       await site.close()
     }
@@ -399,13 +389,8 @@ describe("remote discovery and selective import", () => {
 
   it("lists a source's skills with existence flags without importing", async () => {
     const home = makeHome()
-    writeSkill(join(home, ".agents/skills/deploy"), { name: "Deploy" })
-    const skills = makeSkillsManager({
-      agents: makeAgentRuntime({}),
-      env: {},
-      homedir: home,
-      overrides: { clone: cloneWithTwoSkills }
-    })
+    writeSkill(join(home, "store/deploy"), { name: "Deploy" })
+    const skills = manager(home, { clone: cloneWithTwoSkills })
     const discovered = await skills.discoverRemote({ source: "o/r" })
     expect(discovered.skills).toEqual([
       { alreadyExists: true, description: "Deploys", directoryName: "deploy", name: "Deploy" },
@@ -413,19 +398,14 @@ describe("remote discovery and selective import", () => {
       { alreadyExists: false, description: "Reviews", directoryName: "review", name: "Review" }
     ])
     // Nothing was imported.
-    expect(existsSync(join(home, ".agents/skills/review"))).toBe(false)
+    expect(existsSync(join(home, "store/review"))).toBe(false)
   })
 
   it("imports only the selected skills", async () => {
     const home = makeHome()
-    const skills = makeSkillsManager({
-      agents: makeAgentRuntime({}),
-      env: {},
-      homedir: home,
-      overrides: { clone: cloneWithTwoSkills }
-    })
+    const skills = manager(home, { clone: cloneWithTwoSkills })
     const scan = await skills.importRemote({ skillNames: ["Review", "plain"], source: "o/r" })
-    expect(scan.global.map((skill) => skill.directoryName)).toEqual(["plain", "review"])
+    expect(scan.skills.map((skill) => skill.directoryName)).toEqual(["plain", "review"])
     await expect(
       skills.importRemote({ skillNames: ["ghost"], source: "o/r" })
     ).rejects.toMatchObject({ code: "notFound" })

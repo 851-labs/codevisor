@@ -6,12 +6,14 @@ import { PluginsError } from "./plugins-error.js"
 
 export const PLUGIN_AUTHORING_SKILL_DIRECTORY = "create-codevisor-plugin"
 
-/// Structurally matches @codevisor/skills ManagedSkillSpec without importing
-/// it — this package's only workspace dependency stays @codevisor/api.
-export interface PluginSkillSpec {
-  readonly directoryName: string
-  readonly sourcePath: string
-  readonly enabled: boolean
+/// A packaged skill the tool gateway serves through its `skills` tool.
+/// Structurally matches @codevisor/mcp's PackagedSkill without importing it —
+/// this package's only workspace dependency stays @codevisor/api.
+export interface PluginSkill {
+  readonly name: string
+  readonly summary: string
+  /// The skill's SKILL.md.
+  readonly path: string
 }
 
 export interface PluginSkillOptions {
@@ -40,15 +42,11 @@ const skillSourcePath = (options: PluginSkillOptions): string => {
   return found
 }
 
-/// The managed-skill spec for the plugin-authoring skill, synced into every
-/// harness's skills directory whenever the plugins feature is available so
-/// agents can author plugins without rediscovering the contract. Disabled
-/// specs carry no source path — sync then only removes installed copies.
-export const managedPluginSkill = (
-  enabled: boolean,
-  options: PluginSkillOptions = {}
-): PluginSkillSpec => ({
-  directoryName: PLUGIN_AUTHORING_SKILL_DIRECTORY,
-  enabled,
-  sourcePath: enabled ? skillSourcePath(options) : ""
+/// The plugin-authoring skill, served by the gateway whenever the plugins
+/// feature is available so agents can author plugins without rediscovering
+/// the contract.
+export const pluginAuthoringSkill = (options: PluginSkillOptions = {}): PluginSkill => ({
+  name: PLUGIN_AUTHORING_SKILL_DIRECTORY,
+  path: join(skillSourcePath(options), "SKILL.md"),
+  summary: "build a Codevisor plugin: a pane, tools, and settings inside Codevisor"
 })

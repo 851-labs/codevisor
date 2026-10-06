@@ -200,7 +200,7 @@ describe("MCP manager gateway", () => {
         }
       ]
       const invocations: Array<ReadonlyArray<unknown>> = []
-      const { db, manager } = await testManager(undefined, {
+      const { db, manager } = await testManager({
         pluginTools: {
           listTools: async () => installedTools,
           invokeTool: async (pluginId, toolName, args, context) => {
@@ -228,10 +228,15 @@ describe("MCP manager gateway", () => {
         }) as unknown as Transport
       )
       try {
-        // The advertised inventory names the plugin tool path outright, so
-        // agents can call it without a search round-trip.
+        // The execute description names the plugin; the execute skill names
+        // each plugin tool path outright, so agents can call it directly.
         const advertised = (await client.listTools()).tools.find((tool) => tool.name === "execute")
-        expect(advertised?.description).toContain("plugin.owner.notes.notes_add — Append a note")
+        expect(advertised?.description).toContain("owner.notes")
+        const executeGuide = async (): Promise<string> =>
+          JSON.stringify(
+            (await client.callTool({ name: "skills", arguments: { name: "execute" } })).content
+          )
+        expect(await executeGuide()).toContain("plugin.owner.notes.notes_add — Append a note")
 
         const viaCode = await client.callTool({
           name: "execute",
@@ -289,17 +294,86 @@ describe("MCP manager gateway", () => {
         })
         installedTools = [
           ...installedTools,
-          { pluginId: "owner.notes", name: "notes_list", description: "List notes" }
+          { pluginId: "owner.todo", name: "todo_list", description: "List todos" }
         ]
         for (const listener of listeners) listener()
         await inventoryChanged.promise
         const refreshed = (await client.listTools()).tools.find((tool) => tool.name === "execute")
-        expect(refreshed?.description).toContain("plugin.owner.notes.notes_list — List notes")
+        expect(refreshed?.description).toContain("owner.notes, owner.todo")
+        expect(await executeGuide()).toContain("plugin.owner.todo.todo_list — List todos")
       } finally {
         await client.close()
       }
     }
   )
+
+  it("serves skills next to execute and refreshes them when the store changes", async () => {
+    let saved = [{ description: "Ships it", directoryName: "deploy", name: "Deploy" }]
+    const listeners: Array<() => void> = []
+    const { db, manager } = await testManager({
+      packagedSkills: [
+        { name: "attaching-files", path: "/missing/SKILL.md", summary: "send files to the user" }
+      ],
+      skillSource: {
+        document: async (directoryName) =>
+          directoryName === "deploy"
+            ? { content: "---\nname: Deploy\n---\nRun deploy.sh", files: [], path: "/store/deploy" }
+            : undefined,
+        list: async () => ({ skills: saved }),
+        subscribe: (listener) => {
+          listeners.push(listener)
+          return () => listeners.splice(0)
+        }
+      }
+    })
+    manager.setBaseUrl(await listen(createServer(manager.handleGatewayRequest)))
+    const project = await run(db.createProject({ folderPath: "/tmp/mcp-skills-project" }))
+    const session = await run(
+      db.createSession({ harnessId: "claude-code", projectId: project.id, title: "Skills" })
+    )
+    const issued = await manager.issueGateway(session.id, project.id)
+    const client = new Client({ name: "skills-test", version: "1" })
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(issued.url), {
+        requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
+      }) as unknown as Transport
+    )
+    try {
+      const tools = (await client.listTools()).tools
+      expect(tools.map((tool) => tool.name)).toEqual(["execute", "skills"])
+      const skills = tools.find((tool) => tool.name === "skills")
+      expect(skills?.description).toContain("- browser-use — ")
+      expect(skills?.description).toContain("- attaching-files — send files to the user")
+      expect(skills?.description).toContain("- deploy — Ships it")
+      const read = await client.callTool({ name: "skills", arguments: { name: "deploy" } })
+      expect(read.content).toEqual([{ type: "text", text: "Run deploy.sh" }])
+
+      // Disabling a builtin retracts its skills from the description.
+      const builtinChanged = Promise.withResolvers<void>()
+      client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
+        builtinChanged.resolve()
+      })
+      await manager.update("browser", { enabled: false })
+      await builtinChanged.promise
+      const withoutBrowser = (await client.listTools()).tools.find((tool) => tool.name === "skills")
+      expect(withoutBrowser?.description).not.toContain("browser-use")
+      expect(
+        (await client.callTool({ name: "skills", arguments: { name: "browser-use" } })).isError
+      ).toBe(true)
+
+      const storeChanged = Promise.withResolvers<void>()
+      client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
+        storeChanged.resolve()
+      })
+      saved = [...saved, { description: "Reviews code", directoryName: "review", name: "Review" }]
+      for (const listener of listeners) listener()
+      await storeChanged.promise
+      const refreshed = (await client.listTools()).tools.find((tool) => tool.name === "skills")
+      expect(refreshed?.description).toContain("- review — Reviews code")
+    } finally {
+      await client.close()
+    }
+  })
 
   it("refuses plugin tool calls when no plugin source is wired", async () => {
     const { db, manager } = await testManager()

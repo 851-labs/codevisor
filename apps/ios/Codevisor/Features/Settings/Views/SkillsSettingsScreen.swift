@@ -4,20 +4,20 @@ import SwiftUI
 
 // MARK: - Skills
 
-/// The Skills screen: one row per skill the fleet carries, with each
-/// machine's condition nested beneath — the same shared section the Mac
-/// renders, so both clients show the same list.
+/// The Skills screen: Codevisor's skill store, the same shared section the
+/// Mac renders. The store syncs across devices, so the screen reads and
+/// writes the selected machine's copy.
 struct SkillsSettingsScreen: View {
   @Environment(AppEnvironment.self) private var environment
-  @State private var model = SkillGlobalModel()
+  @State private var model = SkillListModel()
   @State private var showingCreate = false
   @State private var showingImport = false
-  @State private var editing: SkillFleetEntry?
-  @State private var pendingRemoval: SkillFleetEntry?
+  @State private var editing: ServerSkill?
+  @State private var pendingRemoval: ServerSkill?
   @State private var actionError: String?
 
-  /// Fleet-level creation lands on the selected machine's server; the ferry
-  /// carries the content everywhere else.
+  /// Changes land on the selected machine's store; sync carries them
+  /// everywhere else.
   private var localClient: any CodevisorServerClienting {
     environment.machines.client(for: environment.machines.selectedMachineId)
   }
@@ -29,29 +29,37 @@ struct SkillsSettingsScreen: View {
 
   var body: some View {
     List {
-      SkillFleetSection(
+      SkillListSection(
         model: model,
         onEdit: { editing = $0 },
         onRemove: { pendingRemoval = $0 })
     }
     .navigationTitle("Skills")
     .navigationBarTitleDisplayMode(.inline)
-    .task(id: environment.machines.allMachines.map(\.id)) { await model.load(in: environment) }
+    // Reload when the machine changes or another device's change syncs in.
+    .task(
+      id: ReloadKey(
+        machineId: environment.machines.selectedMachineId,
+        revision: environment.configSync.revisionsByNamespace[ConfigSync.skillsNamespace]
+      )
+    ) {
+      await model.load(client: localClient)
+    }
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
         Menu {
-          Button("New Skill…", systemImage: "plus") { showingCreate = true }
-          Button("Import Skills…", systemImage: "square.and.arrow.down") { showingImport = true }
+          Button("Add from URL…", systemImage: "link") { showingImport = true }
+          Button("Add Manually…", systemImage: "square.and.pencil") { showingCreate = true }
         } label: {
-          Label("Add", systemImage: "plus")
+          Label("New Skill", systemImage: "plus")
         }
       }
     }
     .sheet(isPresented: $showingCreate) {
       SkillCreateSheet(machineName: localMachineName) { name, description, pasted in
-        _ = try await localClient.createSkill(
+        let list = try await localClient.createSkill(
           name: name, description: description, content: pasted)
-        await model.load(in: environment)
+        model.show(list.skills)
       }
     }
     .sheet(isPresented: $showingImport) {
@@ -59,8 +67,8 @@ struct SkillsSettingsScreen: View {
         machineName: localMachineName,
         discover: { try await localClient.discoverRemoteSkills(source: $0) },
         onImport: { source, skillNames in
-          _ = try await localClient.importRemoteSkill(source: source, skillNames: skillNames)
-          await model.load(in: environment)
+          let list = try await localClient.importRemoteSkill(source: source, skillNames: skillNames)
+          model.show(list.skills)
         })
     }
     .sheet(item: $editing) { entry in
@@ -68,9 +76,9 @@ struct SkillsSettingsScreen: View {
         name: entry.name,
         load: { try await localClient.skillContent(directoryName: entry.directoryName) },
         onSave: { content in
-          _ = try await localClient.updateSkill(
+          let list = try await localClient.updateSkill(
             directoryName: entry.directoryName, content: content)
-          await model.load(in: environment)
+          model.show(list.skills)
         })
     }
     .alert(
@@ -84,7 +92,7 @@ struct SkillsSettingsScreen: View {
       }
       Button("Cancel", role: .cancel) { pendingRemoval = nil }
     } message: {
-      Text("It will be removed from every machine.")
+      Text("It will be removed from every device.")
     }
     .alert(
       "Couldn’t update skills",
@@ -96,13 +104,18 @@ struct SkillsSettingsScreen: View {
     }
   }
 
-  private func remove(_ entry: SkillFleetEntry) async {
+  private func remove(_ entry: ServerSkill) async {
     pendingRemoval = nil
     do {
-      _ = try await localClient.removeSkill(directoryName: entry.directoryName)
-      await model.load(in: environment)
+      let list = try await localClient.removeSkill(directoryName: entry.directoryName)
+      model.show(list.skills)
     } catch {
       actionError = ErrorReporter.userFacingMessage(for: error)
     }
+  }
+
+  private struct ReloadKey: Equatable {
+    var machineId: String
+    var revision: UInt64?
   }
 }

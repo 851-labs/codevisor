@@ -193,6 +193,29 @@ struct ConfigSyncTests {
     #expect(fakeA.appliedSkills == ["deploy"])
   }
 
+  @Test("A skills write gossips under codevisor-skills and ferries the content")
+  func skillsWriteFerries() async throws {
+    let remote = makeRemote("remote-a")
+    let fake = SyncFakeServerClient(projects: [], sessions: [])
+    let hash = String(repeating: "b", count: 64)
+    fake.configureWantedSkill(directoryName: "deploy", hash: hash)
+    let local = SyncFakeServerClient(projects: [], sessions: [])
+    local.seedSkillBlob(hash: hash, Data("archive-bytes".utf8))
+    let controller = try makeController(fakes: ["local": local, remote.id: fake], remotes: [remote])
+    await controller.refreshStatus(for: "local")
+    await controller.refreshStatus(for: remote.id)
+    let sync = ConfigSync(machines: controller, store: InMemoryStore())
+
+    sync.set(
+      namespace: "codevisor-skills", key: "deploy",
+      value: .object(["hash": .string(hash), "name": .string("Deploy")]))
+
+    // No sweep runs here: only the namespace's own trigger can ferry.
+    try await waitForSync {
+      fake.syncEntries(namespace: "codevisor-skills").count == 1 && fake.appliedSkills == ["deploy"]
+    }
+  }
+
   @Test("A machine connecting triggers an immediate targeted pass")
   func machineArrivalSyncs() async throws {
     let remote = makeRemote("remote-a")

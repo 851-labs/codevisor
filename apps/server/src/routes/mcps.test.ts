@@ -98,10 +98,10 @@ describe("mcp routes", () => {
       }) as unknown as McpTransport
     )
     const listed = await client.listTools()
-    expect(listed.tools.map((tool) => tool.name)).toEqual(["execute"])
+    expect(listed.tools.map((tool) => tool.name)).toEqual(["execute", "skills"])
     expect(listed.tools.find((tool) => tool.name === "execute")?.description).toContain("PostHog")
     expect(listed.tools.find((tool) => tool.name === "execute")?.description).toContain(
-      "Primary Codevisor tool interface"
+      "Sandboxed TypeScript runtime for using tools like:"
     )
     const toolsChanged = Promise.withResolvers<void>()
     let toolListChanges = 0

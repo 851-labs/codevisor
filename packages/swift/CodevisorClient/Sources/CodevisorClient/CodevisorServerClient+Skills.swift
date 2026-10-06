@@ -2,25 +2,14 @@ import ACPKit
 import CodevisorProtocol
 import Foundation
 
-public struct ServerSkillHarnessInstall: Codable, Equatable, Sendable {
-  public var harnessId: String
-  /// linked | copied | canonical | notInstalled | broken | conflict
-  public var state: String
-
-  public init(harnessId: String, state: String) {
-    self.harnessId = harnessId
-    self.state = state
-  }
-}
-
-/// A skill in the canonical ~/.agents/skills store with per-harness installs.
-public struct ServerGlobalSkill: Codable, Equatable, Identifiable, Sendable {
+/// A skill in Codevisor's own skill store. Agents read it through the tool
+/// gateway's `skills` tool; nothing is installed into harness folders.
+public struct ServerSkill: Codable, Equatable, Identifiable, Sendable {
   public var name: String
   public var directoryName: String
   public var description: String?
   public var path: String
   public var invalid: Bool?
-  public var installs: [ServerSkillHarnessInstall]
 
   public var id: String { directoryName }
 
@@ -29,75 +18,23 @@ public struct ServerGlobalSkill: Codable, Equatable, Identifiable, Sendable {
     directoryName: String,
     description: String? = nil,
     path: String,
-    invalid: Bool? = nil,
-    installs: [ServerSkillHarnessInstall] = []
+    invalid: Bool? = nil
   ) {
     self.name = name
     self.directoryName = directoryName
     self.description = description
     self.path = path
     self.invalid = invalid
-    self.installs = installs
   }
 }
 
-/// A skill found in a harness's own skills directory that is not a link into
-/// the canonical store: an independent copy or a broken link.
-public struct ServerHarnessSkill: Codable, Equatable, Identifiable, Sendable {
-  public var harnessId: String
-  public var directoryName: String
-  public var name: String
-  public var description: String?
-  public var path: String
-  /// independent | broken
-  public var classification: String
-  public var invalid: Bool?
-  public var duplicateOf: String?
+/// The skill store on one machine (`GET /v1/skills`).
+public struct ServerSkillsList: Codable, Equatable, Sendable {
+  public var dir: String
+  public var skills: [ServerSkill]
 
-  public var id: String { "\(harnessId)|\(directoryName)" }
-
-  public init(
-    harnessId: String,
-    directoryName: String,
-    name: String,
-    description: String? = nil,
-    path: String,
-    classification: String,
-    invalid: Bool? = nil,
-    duplicateOf: String? = nil
-  ) {
-    self.harnessId = harnessId
-    self.directoryName = directoryName
-    self.name = name
-    self.description = description
-    self.path = path
-    self.classification = classification
-    self.invalid = invalid
-    self.duplicateOf = duplicateOf
-  }
-}
-
-public struct ServerSkillsHarnessGroup: Codable, Equatable, Identifiable, Sendable {
-  public var harnessId: String
-  public var harnessName: String
-  /// SF Symbol from the harness catalog; nil from older servers.
-  public var harnessSymbol: String?
-  public var skillsDir: String
-  public var skills: [ServerHarnessSkill]
-
-  public var id: String { harnessId }
-
-  public init(
-    harnessId: String,
-    harnessName: String,
-    harnessSymbol: String? = nil,
-    skillsDir: String,
-    skills: [ServerHarnessSkill] = []
-  ) {
-    self.harnessId = harnessId
-    self.harnessName = harnessName
-    self.harnessSymbol = harnessSymbol
-    self.skillsDir = skillsDir
+  public init(dir: String = "", skills: [ServerSkill] = []) {
+    self.dir = dir
     self.skills = skills
   }
 }
@@ -119,24 +56,8 @@ public struct ServerRemoteSkillCandidate: Codable, Equatable, Identifiable, Send
   }
 }
 
-public struct ServerSkillsScan: Codable, Equatable, Sendable {
-  public var canonicalDir: String
-  public var global: [ServerGlobalSkill]
-  public var harnesses: [ServerSkillsHarnessGroup]
-
-  public init(
-    canonicalDir: String = "",
-    global: [ServerGlobalSkill] = [],
-    harnesses: [ServerSkillsHarnessGroup] = []
-  ) {
-    self.canonicalDir = canonicalDir
-    self.global = global
-    self.harnesses = harnesses
-  }
-}
-
 extension CodevisorServerClient {
-  public func listSkills() async throws -> ServerSkillsScan {
+  public func listSkills() async throws -> ServerSkillsList {
     try await get("/v1/skills")
   }
 
@@ -149,7 +70,7 @@ extension CodevisorServerClient {
     return response.content
   }
 
-  public func updateSkill(directoryName: String, content: String) async throws -> ServerSkillsScan {
+  public func updateSkill(directoryName: String, content: String) async throws -> ServerSkillsList {
     try await send(
       "/v1/skills/\(pathComponent(directoryName))",
       method: "PUT",
@@ -176,15 +97,11 @@ extension CodevisorServerClient {
     var skills: [ServerRemoteSkillCandidate]
   }
 
-  private struct SyncSkillsBody: Encodable {
-    var directoryNames: [String]?
-  }
-
   public func createSkill(
     name: String,
     description: String,
     content: String?
-  ) async throws -> ServerSkillsScan {
+  ) async throws -> ServerSkillsList {
     try await send(
       "/v1/skills",
       method: "POST",
@@ -201,7 +118,7 @@ extension CodevisorServerClient {
     return response.skills
   }
 
-  public func importRemoteSkill(source: String, skillNames: [String]?) async throws -> ServerSkillsScan {
+  public func importRemoteSkill(source: String, skillNames: [String]?) async throws -> ServerSkillsList {
     try await send(
       "/v1/skills/import-remote",
       method: "POST",
@@ -209,19 +126,11 @@ extension CodevisorServerClient {
     )
   }
 
-  public func removeSkill(directoryName: String) async throws -> ServerSkillsScan {
+  public func removeSkill(directoryName: String) async throws -> ServerSkillsList {
     try await send(
       "/v1/skills/\(pathComponent(directoryName))",
       method: "DELETE",
       body: Optional<EmptyBody>.none
-    )
-  }
-
-  public func syncSkills(directoryNames: [String]?) async throws -> ServerSkillsScan {
-    try await send(
-      "/v1/skills/sync",
-      method: "POST",
-      body: SyncSkillsBody(directoryNames: directoryNames)
     )
   }
 }

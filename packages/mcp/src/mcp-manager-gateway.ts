@@ -2,7 +2,6 @@ import { randomBytes, timingSafeEqual } from "node:crypto"
 
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js"
 
-import { CODEVISOR_AGENT_INSTRUCTIONS } from "./mcp-gateway-catalog.js"
 import type { makeMcpGateway } from "./mcp-gateway.js"
 import type { McpManagerCore } from "./mcp-manager-core.js"
 import type { McpManager } from "./mcp-manager-types.js"
@@ -15,6 +14,7 @@ export interface McpGatewayOperationDeps {
   readonly gatewayRuntime: GatewayHandles["gatewayRuntime"]
   readonly invokeRemoteGatewayCall: GatewayHandles["invokeRemoteGatewayCall"]
   readonly unsubscribePluginTools: (() => void) | undefined
+  readonly unsubscribeSkills: (() => void) | undefined
 }
 
 export type McpGatewayOperations = Pick<
@@ -51,7 +51,8 @@ export const makeMcpGatewayOperations = (
     createGatewayConnection,
     gatewayRuntime,
     invokeRemoteGatewayCall,
-    unsubscribePluginTools
+    unsubscribePluginTools,
+    unsubscribeSkills
   } = deps
 
   const issueGateway: McpManager["issueGateway"] = async (sessionId, projectId, sink) => {
@@ -68,8 +69,7 @@ export const makeMcpGatewayOperations = (
       return {
         name: "codevisor",
         url: existingUrl.toString(),
-        bearerToken: gatewayBearerToken,
-        instructions: CODEVISOR_AGENT_INSTRUCTIONS
+        bearerToken: gatewayBearerToken
       }
     }
     const gatewayId = randomBytes(24).toString("base64url")
@@ -82,8 +82,7 @@ export const makeMcpGatewayOperations = (
     return {
       name: "codevisor",
       url: url.toString(),
-      bearerToken: gatewayBearerToken,
-      instructions: CODEVISOR_AGENT_INSTRUCTIONS
+      bearerToken: gatewayBearerToken
     }
   }
 
@@ -177,6 +176,7 @@ export const makeMcpGatewayOperations = (
 
   const close: McpManager["close"] = async () => {
     unsubscribePluginTools?.()
+    unsubscribeSkills?.()
     /* v8 ignore next -- timers only exist for the live OAuth refresh adapter. */
     for (const timer of refreshTimers.values()) clearTimeout(timer)
     await Promise.all([...connections.keys()].map(closeConnection))

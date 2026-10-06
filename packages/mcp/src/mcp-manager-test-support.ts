@@ -49,7 +49,6 @@ export const listen = async (server: Server): Promise<string> => {
 }
 
 export const testManager = async (
-  syncManagedSkills?: NonNullable<Parameters<typeof makeMcpManager>[0]["syncManagedSkills"]>,
   extraConfig: Partial<Parameters<typeof makeMcpManager>[0]> = {}
 ): Promise<{ db: CodevisorDatabaseService; manager: McpManager; directory: string }> => {
   const directory = mkdtempSync(join(tmpdir(), "codevisor-mcp-manager-"))
@@ -61,7 +60,6 @@ export const testManager = async (
   const manager = makeMcpManager({
     db,
     dataDir: directory,
-    ...(syncManagedSkills === undefined ? {} : { syncManagedSkills }),
     ...extraConfig
   })
   managers.push(manager)

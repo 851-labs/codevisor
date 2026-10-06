@@ -1,11 +1,9 @@
 import CodevisorCore
 import SwiftUI
 
-/// Editing one skill's SKILL.md. The canonical store is fleet-replicated by
-/// content hash, so an edit here lands everywhere — the sheet says so rather
-/// than naming one machine, which is what the per-machine pages used to do.
-/// Shared by both apps: the Mac had no skill editor at all before, even
-/// though the endpoint and the phone's sheet already existed.
+/// Editing one skill's SKILL.md. Codevisor's skill store syncs across
+/// devices by content hash, so an edit here lands everywhere — the sheet
+/// names the skill, not a machine. Shared by both apps.
 public struct SkillEditorSheet: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(\.theme) private var theme

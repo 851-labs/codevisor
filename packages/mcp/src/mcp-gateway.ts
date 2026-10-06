@@ -20,6 +20,11 @@ import { z } from "zod"
 import { executeToolDescription, makeGatewayCatalog } from "./mcp-gateway-catalog.js"
 import { gatewayToolError, makeGatewayDispatch } from "./mcp-gateway-dispatch.js"
 import { executionArgsHash, makeExecutionRecorder } from "./mcp-gateway-execution.js"
+import {
+  DESCRIPTION_GUIDANCE,
+  skillsToolDescription,
+  skillsToolResult
+} from "./mcp-gateway-skills.js"
 import type { GatewayCallContext, GatewayOrigin, McpManagerConfig } from "./mcp-manager-types.js"
 import { makeRecordingPublisher } from "./mcp-recording-artifacts.js"
 import { type SandboxArtifactPersistence, sandboxOutputContent } from "./mcp-sandbox-results.js"
@@ -35,6 +40,7 @@ export interface GatewayConnection {
   readonly server: McpSdkServer
   readonly transport: StreamableHTTPServerTransport
   readonly executeTool: RegisteredTool
+  readonly skillsTool: RegisteredTool
 }
 
 export interface GatewayRuntime {
@@ -43,6 +49,8 @@ export interface GatewayRuntime {
   /// Live connections keyed by MCP session id (assigned at initialize).
   readonly connections: Map<string, GatewayConnection>
   inventory: string
+  /// The `skills` tool's current description (its skill index).
+  skillsDescription: string
   /// The session's event sink; executions stream their transcript
   /// annotation through it. Replaced whenever the session re-issues.
   sink?: RuntimeEventSink | undefined
@@ -54,9 +62,6 @@ export interface ToolGatewayConfig {
   readonly name: string
   readonly url: string
   readonly bearerToken: string
-  /// Standing instructions the harness adds to the agent's system prompt
-  /// (mirrors @codevisor/agent-runtime's ToolGatewayConfig).
-  readonly instructions?: string
 }
 
 export interface McpGatewayDeps {
@@ -136,7 +141,8 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
     describeCatalogPath,
     gatewayServerAllowed,
     integrationInventory,
-    searchCatalog
+    searchCatalog,
+    sessionSkills
   } = makeGatewayCatalog({
     automationProviders,
     config,
@@ -148,10 +154,18 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
     await Promise.all(
       [...gateways.values()].map(async (gateway) => {
         const inventory = await integrationInventory(gateway.projectId, gateway.sessionId)
-        if (inventory === gateway.inventory) return
+        const skillsDescription = skillsToolDescription(
+          await sessionSkills(gateway.projectId, gateway.sessionId)
+        )
+        const inventoryChanged = inventory !== gateway.inventory
+        const skillsChanged = skillsDescription !== gateway.skillsDescription
         gateway.inventory = inventory
+        gateway.skillsDescription = skillsDescription
         for (const connection of gateway.connections.values()) {
-          connection.executeTool.update({ description: executeToolDescription(inventory) })
+          if (inventoryChanged) {
+            connection.executeTool.update({ description: executeToolDescription(inventory) })
+          }
+          if (skillsChanged) connection.skillsTool.update({ description: skillsDescription })
         }
       })
     )
@@ -227,11 +241,13 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
 
   const gatewayRuntime = async (sessionId: string, projectId?: string): Promise<GatewayRuntime> => {
     const inventory = await integrationInventory(projectId, sessionId)
+    const skillsDescription = skillsToolDescription(await sessionSkills(projectId, sessionId))
     return {
       sessionId,
       ...(projectId === undefined ? {} : { projectId }),
       connections: new Map(),
-      inventory
+      inventory,
+      skillsDescription
     }
   }
 
@@ -247,7 +263,10 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
         description: executeToolDescription(inventory),
         // The description is a display label; any length is accepted and the
         // transcript shortens it, so a long label never fails the call.
-        inputSchema: { description: z.string().min(1), code: z.string().min(1) }
+        inputSchema: {
+          description: z.string().min(1).describe(DESCRIPTION_GUIDANCE),
+          code: z.string().min(1)
+        }
       },
       async ({ code, description }, { signal }) => {
         const recorder = makeExecutionRecorder({
@@ -360,6 +379,29 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
         }
       }
     )
+    // Registered after `execute` so `execute` stays the first listed tool.
+    const skillsTool = sdkServer.registerTool(
+      "skills",
+      {
+        description: runtime.skillsDescription,
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+        inputSchema: {
+          name: z
+            .string()
+            .optional()
+            .describe(
+              'A skill name from this tool\'s description, e.g. "execute". Omit to list every skill.'
+            )
+        }
+      },
+      async ({ name }) => {
+        const result = await skillsToolResult(await sessionSkills(projectId, sessionId), name)
+        return {
+          ...(result.isError ? { isError: true } : {}),
+          content: [{ type: "text" as const, text: result.text }]
+        }
+      }
+    )
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: randomUUID,
       onsessioninitialized: (mcpSessionId) => {
@@ -374,7 +416,8 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
     const connection: GatewayConnection = {
       server: sdkServer,
       transport,
-      executeTool
+      executeTool,
+      skillsTool
     }
     await sdkServer.connect(transport as unknown as Transport)
     return connection

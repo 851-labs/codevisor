@@ -13,6 +13,7 @@ import { makeConnectUpstream } from "./mcp-upstream.js"
 
 export { automationSkillPath } from "./mcp-automation-builtins.js"
 export type { ToolGatewayConfig } from "./mcp-gateway.js"
+export type { PackagedSkill, SkillSource } from "./mcp-gateway-skills.js"
 export type { PluginGatewayTool, PluginToolSource } from "./mcp-plugin-tools.js"
 export { NodeStreamableHttpTransport } from "./mcp-http-transport.js"
 
@@ -48,6 +49,14 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
     )
   })
 
+  // Saved skills appear in each gateway's `skills` tool description.
+  const unsubscribeSkills = config.skillSource?.subscribe(() => {
+    /* v8 ignore next 2 -- refresh failures surface only from a broken skill store. */
+    void refreshGatewayInventories().catch((cause: unknown) =>
+      reportBackgroundFailure("Skill inventory refresh failed", cause)
+    )
+  })
+
   const { oauthProvider, scheduleRefresh, validateOAuthConnection } = makeMcpOAuthRuntime({
     callbackUrl: core.callbackUrl,
     closeConnection: core.closeConnection,
@@ -78,7 +87,8 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
       createGatewayConnection,
       gatewayRuntime,
       invokeRemoteGatewayCall,
-      unsubscribePluginTools
+      unsubscribePluginTools,
+      unsubscribeSkills
     }),
     ...makeMcpBrowserOperations(core)
   }

@@ -8,7 +8,7 @@ import {
   nativeMcpScan,
   nativeMcpStub,
   runningServers,
-  skillsScan,
+  skillsList,
   skillsStub,
   startWithApp
 } from "../test-support.js"
@@ -39,7 +39,7 @@ describe("native MCP and skills routes", () => {
 
     const skillsResponse = await jsonRequest(server, "/v1/skills")
     expect(skillsResponse.status).toBe(200)
-    expect(skillsResponse.body).toEqual(skillsScan)
+    expect(skillsResponse.body).toEqual(skillsList)
 
     // Unknown methods and subpaths fall through to 404.
     expect((await jsonRequest(server, "/v1/native-mcps", { method: "POST" })).status).toBe(404)

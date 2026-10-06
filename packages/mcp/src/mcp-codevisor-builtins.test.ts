@@ -29,7 +29,7 @@ const providers = {
 
 describe("Codevisor built-in tools", () => {
   it("lists its tools in settings and preserves a disabled provider across restarts", async () => {
-    const { db, manager, directory } = await testManager(undefined, providers)
+    const { db, manager, directory } = await testManager(providers)
     const tools = await manager.tools("codevisor")
     expect(tools).toEqual(
       expect.arrayContaining([
@@ -72,7 +72,7 @@ describe("Codevisor built-in tools", () => {
   it.each(["global", "machine", "project", "session"] as const)(
     "enforces a %s disable in discovery, descriptions, and direct calls on a live gateway",
     async (scope) => {
-      const { db, manager } = await testManager(undefined, providers)
+      const { db, manager } = await testManager(providers)
       const base = await listen(createServer(manager.handleGatewayRequest))
       manager.setBaseUrl(base)
       const project = await run(db.createProject({ folderPath: "/tmp/codevisor-toggle-test" }))

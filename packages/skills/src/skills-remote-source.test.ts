@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest"
 
-import { parseSkillSource, SkillsError } from "./skills-manager.js"
+import { parseSkillSource } from "./skills-remote-source.js"
+import { SkillsError } from "./skills-store.js"
 import { cleanupSkillsTests } from "./skills-test-support.js"
 
 afterEach(cleanupSkillsTests)

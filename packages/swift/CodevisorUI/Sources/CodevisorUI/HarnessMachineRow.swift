@@ -2,7 +2,7 @@ import CodevisorCore
 import SwiftUI
 
 /// One machine under a harness. The chrome is `FleetMachineRow`, shared with
-/// the MCP, skills, and plugin pages; only the action a harness offers is
+/// the MCP and plugin pages; only the action a harness offers is
 /// specific to this plane. A failure opens from the row's mark, not from a
 /// button of its own.
 struct HarnessMachineRow: View {

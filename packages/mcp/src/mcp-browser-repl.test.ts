@@ -23,7 +23,7 @@ it("preserves browser cells and applies gateway upload validation and attachment
   directories.push(root)
   const provider = makeBrowserUseProvider(root)
   const nested: string[] = []
-  const { db, manager, directory } = await testManager(undefined, {
+  const { db, manager, directory } = await testManager({
     makeBrowserProvider: () => ({
       ...provider,
       invoke: async (context, name, args) => {

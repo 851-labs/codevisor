@@ -3,7 +3,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { writePluginInstallReceipt } from "@codevisor/plugins"
-import { makeSkillsManager } from "@codevisor/skills"
+import { makeSkillStore } from "@codevisor/skills"
 import { makeBlobStore } from "@codevisor/sync"
 import { describe, expect, it, vi } from "vitest"
 
@@ -12,14 +12,7 @@ import {
   type CodevisorServerConfig,
   type CodevisorServerServices
 } from "../server-context.js"
-import {
-  jsonRequest,
-  makeAgents,
-  makeServices,
-  run,
-  startWithApp,
-  tempDirs
-} from "../test-support.js"
+import { jsonRequest, makeServices, run, startWithApp, tempDirs } from "../test-support.js"
 import {
   makeAuthSyncRefreshScheduler,
   refreshHarnessReadiness,
@@ -108,7 +101,7 @@ describe("runBackgroundSyncReconcile", () => {
     // A plane without its backing services is a silent no-op.
     const { services: bare } = await makeServices("server-bg-bare")
     await runBackgroundSyncReconcile(bare, config, fanout, "skills")
-    expect(await run(bare.db.getSyncEntries("skills"))).toEqual([])
+    expect(await run(bare.db.getSyncEntries("codevisor-skills"))).toEqual([])
 
     // A reconcile that throws never escapes the hook.
     const { services: broken } = await makeServices("server-bg-broken")
@@ -124,24 +117,14 @@ describe("runBackgroundSyncReconcile", () => {
     ).resolves.toBeUndefined()
   })
 
-  it("refreshes skill readiness after a skills pass, explaining stranded skills", async () => {
+  it("publishes the skill store to the fleet after a skills pass", async () => {
     const { services } = await makeServices("server-bg-skills")
     const fanout = await run(makeEventFanout)
     const home = await mkdtemp(join(tmpdir(), "skills-home-"))
     const blobDir = await mkdtemp(join(tmpdir(), "sync-blobs-"))
     tempDirs.push(home, blobDir)
-    const skills = makeSkillsManager({ agents: makeAgents(), homedir: home, env: {} })
+    const skills = makeSkillStore({ dir: join(home, "skills") })
     await skills.create({ name: "Deploy", description: "ship it" })
-    // A fleet skill whose content no machine has ferried here yet.
-    await run(
-      services.db.mergeSyncEntries("skills", [
-        {
-          key: "stranded",
-          value: { hash: "0".repeat(64), name: "stranded" },
-          timestamp: { wallMs: 1, counter: 0, deviceId: "elsewhere" }
-        }
-      ])
-    )
 
     await runBackgroundSyncReconcile(
       { ...services, skills, syncBlobs: makeBlobStore(blobDir) },
@@ -150,18 +133,8 @@ describe("runBackgroundSyncReconcile", () => {
       "skills"
     )
 
-    const readiness = await run(services.db.getSyncEntries("skill-readiness"))
-    expect(readiness.map((entry) => entry.key)).toEqual([config.id])
-    expect(readiness[0]?.value).toEqual({
-      skills: [
-        { directoryName: "deploy", state: "ready" },
-        {
-          directoryName: "stranded",
-          state: "awaitingContent",
-          reason: "Waiting for another machine to send this skill’s content."
-        }
-      ]
-    })
+    const replica = await run(services.db.getSyncEntries("codevisor-skills"))
+    expect(replica.map((entry) => entry.key)).toEqual(["deploy"])
   })
 
   it("fires end to end from a config mutation over HTTP", async () => {

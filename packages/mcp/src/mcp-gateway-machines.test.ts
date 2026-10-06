@@ -15,7 +15,6 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js"
 import { afterEach, describe, expect, it } from "vitest"
 
 import { unavailableBrowserProvider } from "./mcp-automation-builtins.js"
-import { CODEVISOR_AGENT_INSTRUCTIONS } from "./mcp-gateway-catalog.js"
 import { cleanupMcpManagerTests, listen, run, testManager } from "./mcp-manager-test-support.js"
 import type { GatewayOrigin, McpManager } from "./mcp-manager-types.js"
 
@@ -53,7 +52,7 @@ const studioGateway = async () => {
     origin: GatewayOrigin
   }> = []
   const computerContexts: Array<AutomationProviderContext> = []
-  const { db, manager } = await testManager(undefined, {
+  const { db, manager } = await testManager({
     machine: { id: "studio", name: "Mac Studio" },
     makeBrowserProvider: () => unavailableBrowserProvider("Not used in this test"),
     makeComputerProvider: () => ({
@@ -114,8 +113,6 @@ describe("gateway machines and execution annotations", () => {
     const issued = await manager.issueGateway(session.id, project.id, (event) => {
       events.push(event)
     })
-    // Every agent learns when to delegate to Codevisor agents.
-    expect(issued.instructions).toBe(CODEVISOR_AGENT_INSTRUCTIONS)
     await manager.beginTurn(session.id, { clientId: "window-1" })
     const client = await connectClient(issued)
     try {
@@ -220,7 +217,7 @@ describe("gateway machines and execution annotations", () => {
   })
 
   it("fails machine-targeted calls as unavailable when the server has no machine link", async () => {
-    const { db, manager } = await testManager(undefined, {
+    const { db, manager } = await testManager({
       machine: { id: "studio", name: "Mac Studio" },
       makeBrowserProvider: () => unavailableBrowserProvider("Not used in this test")
     })

@@ -130,38 +130,6 @@ struct FleetRowStatusTests {
     #expect(rows[0].status.label == "Connected · 1 tool")
   }
 
-  @Test("Skill rows surface content that never arrived, and offer Sync only where it helps")
-  func skillRows() {
-    let readiness: [String: [SkillFleet.MachineReadiness]] = [
-      "studio-key": [.init(directoryName: "dataviz", state: "ready", reason: nil)],
-      "book-key": [
-        .init(directoryName: "dataviz", state: "outOfSync", reason: "Not in every harness.")
-      ],
-      "vps-key": [.init(directoryName: "dataviz", state: "awaitingContent", reason: nil)],
-    ]
-    let rows = SkillFleet.machineRows(
-      directoryName: "dataviz", readiness: readiness, machines: machines())
-    #expect(rows[0].status == .ready)
-    #expect(rows[0].status.canSync == false)
-    // Only a machine that HAS the content but hasn't spread it can act.
-    #expect(rows[1].status.canSync)
-    #expect(rows[1].status.rowStatus.needsAttention)
-    #expect(rows[2].status == .unreachable)
-    #expect(rows[3].status == .syncing)
-  }
-
-  @Test("Waiting for content reads as progress, not as a failure")
-  func skillAwaitingContentIsBusy() {
-    let rows = SkillFleet.machineRows(
-      directoryName: "dataviz",
-      readiness: [
-        "studio-key": [.init(directoryName: "dataviz", state: "awaitingContent", reason: nil)]
-      ],
-      machines: [machines()[0]])
-    #expect(rows[0].status.rowStatus.isBusy)
-    #expect(rows[0].status.canSync == false)
-  }
-
   @Test("A machine-bound plugin still counts as running, so it can be restarted")
   func machineBoundPluginIsRunning() {
     // It reports machineOnly rather than ready — it is on that machine and
@@ -181,7 +149,6 @@ struct FleetRowStatusTests {
   @Test("Unknown server states degrade to syncing instead of vanishing")
   func unknownStates() {
     #expect(PluginFleet.machineStatus(state: "fromTheFuture", reason: nil) == .syncing)
-    #expect(SkillFleet.machineStatus(state: "fromTheFuture", reason: nil) == .syncing)
     let mcp = McpFleet.machineStatus(
       .init(name: "S", state: "fromTheFuture", reason: "odd", code: nil))
     #expect(mcp == .blocked(reason: "odd"))

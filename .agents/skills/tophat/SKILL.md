@@ -68,10 +68,8 @@ mistakes; do not expand every change into a full product audit.
 
 Read the relevant skills and follow their current instructions. Skills named
 here without a path (`computer-use`, `browser-use`, `attaching-files`) are
-user-level skills installed at `~/.agents/skills/<name>/SKILL.md`; the
-agent-specific directories (`~/.claude/skills`, `~/.codex/skills`) symlink
-there. They may not appear in the session's skill list, so read the file from
-that path before treating one as unavailable.
+Codevisor's built-in skills: read them by calling Codevisor's `skills` tool
+with the skill's name. They are not in the harness's own skill list.
 
 - [run-dev](../run-dev/SKILL.md) owns development startup and runner lifecycle.
   Use `bun run dev` for both native apps, `bun run dev:macos` or
@@ -83,9 +81,9 @@ that path before treating one as unavailable.
   start and respect the one-runner-per-worktree rule.
 - [ios-development](../ios-development/SKILL.md) owns iOS Simulator inspection
   and interaction, including Xcode setup and tool selection.
-- Use the available `computer-use` skill for macOS app interaction and
-  recordings, and `browser-use` for website interaction. Load these skills
-  from the current skill catalog instead of guessing tool APIs.
+- Use the `computer-use` skill for macOS app interaction and recordings, and
+  `browser-use` for website interaction. Read them through the `skills` tool
+  instead of guessing tool APIs.
 
 Confirm that the running app and backend belong to the intended worktree and
 contain the change before testing. Use development data and the real runtime

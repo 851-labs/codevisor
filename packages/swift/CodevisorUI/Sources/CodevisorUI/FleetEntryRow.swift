@@ -7,7 +7,7 @@ import SwiftUI
 /// as one design.
 ///
 /// `isEnabled` is optional because not every plane has a wish to express —
-/// skills are either in the fleet's canonical store or not, and a toggle
+/// skills are either in the store or not, and a toggle
 /// would be a control with nothing behind it.
 public struct FleetEntryRow<Icon: View, Accessory: View, Actions: View>: View {
   /// The trailing column every row ends in: the entry row's menu button, a

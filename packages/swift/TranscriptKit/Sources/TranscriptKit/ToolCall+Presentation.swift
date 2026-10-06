@@ -2,11 +2,13 @@ import Foundation
 import ACPKit
 
 /// Semantic presentation for Codevisor's tool gateway. Each harness spells MCP
-/// names differently (`codevisor.execute`, `mcp__codevisor__execute`, or
-/// `codevisor_execute`), but the transcript should describe the user's action,
+/// names differently (`codevisor.execute`, `mcp__codevisor__execute`,
+/// `codevisor__execute` from Grok, or `codevisor_execute`), but the transcript should describe the user's action,
 /// not the adapter's wire format.
 public enum CodevisorGatewayOperation: String {
   case execute
+  /// Lists Codevisor's skills, or reads one skill's instructions.
+  case skills
 }
 
 extension ToolCall {
@@ -17,7 +19,8 @@ extension ToolCall {
       .lowercased()
 
     let prefixes = [
-      "mcp__codevisor__", "codevisor.", "codevisor_",
+      // `codevisor__` before `codevisor_`, which would leave a stray `_`.
+      "mcp__codevisor__", "codevisor__", "codevisor.", "codevisor_",
       // Persisted transcripts keep their original wire-level tool names.
       "mcp__herdman__", "herdman.", "herdman_",
     ]
@@ -60,7 +63,24 @@ extension ToolCall {
         return "\(description) — failed"
       }
       return "\(description) — failed: \(error)"
+    case .skills:
+      let failed = status == .failed
+      guard let name = skillName else {
+        if failed { return "Couldn’t list skills" }
+        return isSettled ? "Listed skills" : "Listing skills…"
+      }
+      if failed { return "Couldn’t read the \(name) skill" }
+      return isSettled ? "Read the \(name) skill" : "Reading the \(name) skill…"
     }
+  }
+
+  /// The skill a gateway `skills` call reads; nil when it lists them all.
+  var skillName: String? {
+    guard codevisorGatewayOperation == .skills,
+      let name = rawInput?["name"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !name.isEmpty
+    else { return nil }
+    return name
   }
 
   /// The model's own label for a gateway workflow (`execute`'s required

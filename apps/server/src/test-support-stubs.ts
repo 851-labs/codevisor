@@ -1,4 +1,4 @@
-import type { NativeMcpScan, SkillsScan } from "@codevisor/api"
+import type { NativeMcpScan, SkillsList } from "@codevisor/api"
 import { PluginsError } from "@codevisor/plugins"
 import type { PluginsManager, PluginStateEvent } from "@codevisor/plugins"
 import { SkillsError } from "@codevisor/skills"
@@ -30,25 +30,9 @@ export const nativeMcpScan: NativeMcpScan = {
   ]
 }
 
-export const skillsScan: SkillsScan = {
-  canonicalDir: "/home/u/.agents/skills",
-  global: [
-    {
-      directoryName: "deploy",
-      installs: [{ harnessId: "claude-code", state: "linked" }],
-      name: "Deploy",
-      path: "/home/u/.agents/skills/deploy"
-    }
-  ],
-  harnesses: [
-    {
-      harnessId: "claude-code",
-      harnessName: "Claude Code",
-      harnessSymbol: "sparkle",
-      skills: [],
-      skillsDir: "/home/u/.claude/skills"
-    }
-  ]
+export const skillsList: SkillsList = {
+  dir: "/data/skills",
+  skills: [{ directoryName: "deploy", name: "Deploy", path: "/data/skills/deploy" }]
 }
 
 export const nativeMcpRemoval = {
@@ -284,55 +268,46 @@ export const nativeMcpStub = (calls: Array<unknown[]>) => ({
   }
 })
 
-export const skillsStub = (calls: Array<unknown[]>) => ({
-  read: async (directoryName: string) => {
-    calls.push(["read", directoryName])
-    if (!skillsScan.global.some((skill) => skill.directoryName === directoryName)) {
-      throw new SkillsError(`No global skill named ${directoryName}`, "notFound")
+export const skillsStub = (calls: Array<unknown[]>) => {
+  const known = (directoryName: string): void => {
+    if (!skillsList.skills.some((skill) => skill.directoryName === directoryName)) {
+      throw new SkillsError(`No skill named ${directoryName}`, "notFound")
     }
-    return { content: "---\nname: Deploy\ndescription: Deploy checklist\n---\nShip it.\n" }
-  },
-  update: async (directoryName: string, request: unknown) => {
-    calls.push(["update", directoryName, request])
-    if (!skillsScan.global.some((skill) => skill.directoryName === directoryName)) {
-      throw new SkillsError(`No global skill named ${directoryName}`, "notFound")
-    }
-    return skillsScan
-  },
-  create: async (request: unknown) => {
-    calls.push(["create", request])
-    return skillsScan
-  },
-  importLocal: async (request: unknown) => {
-    calls.push(["importLocal", request])
-    return skillsScan
-  },
-  importRemote: async (request: unknown) => {
-    calls.push(["importRemote", request])
-    return skillsScan
-  },
-  sync: async (request?: unknown) => {
-    calls.push(["sync", request])
-    return skillsScan
-  },
-  discoverRemote: async (request: unknown) => {
-    calls.push(["discoverRemote", request])
-    return {
-      skills: [{ alreadyExists: false, directoryName: "deploy", name: "Deploy" } as const]
-    }
-  },
-  list: async () => skillsScan,
-  makeGlobal: async (harnessId: string, directoryName: string) => {
-    calls.push(["makeGlobal", harnessId, directoryName])
-    return skillsScan
-  },
-  remove: async (directoryName: string) => {
-    calls.push(["remove", directoryName])
-    return skillsScan
-  },
-  setInstalled: async (directoryName: string, harnessId: string, installed: boolean) => {
-    calls.push(["setInstalled", directoryName, harnessId, installed])
-    return skillsScan
-  },
-  syncManaged: async () => {}
-})
+  }
+  return {
+    dir: skillsList.dir,
+    read: async (directoryName: string) => {
+      calls.push(["read", directoryName])
+      known(directoryName)
+      return { content: "---\nname: Deploy\ndescription: Deploy checklist\n---\nShip it.\n" }
+    },
+    update: async (directoryName: string, request: unknown) => {
+      calls.push(["update", directoryName, request])
+      known(directoryName)
+      return skillsList
+    },
+    create: async (request: unknown) => {
+      calls.push(["create", request])
+      return skillsList
+    },
+    importRemote: async (request: unknown) => {
+      calls.push(["importRemote", request])
+      return skillsList
+    },
+    discoverRemote: async (request: unknown) => {
+      calls.push(["discoverRemote", request])
+      return {
+        skills: [{ alreadyExists: false, directoryName: "deploy", name: "Deploy" } as const]
+      }
+    },
+    list: async () => skillsList,
+    remove: async (directoryName: string) => {
+      calls.push(["remove", directoryName])
+      return skillsList
+    },
+    replace: async () => undefined,
+    rename: async () => undefined,
+    document: async () => undefined,
+    subscribe: () => () => undefined
+  }
+}

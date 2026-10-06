@@ -1,12 +1,26 @@
 ---
 title: Skills
-description: Share reusable instruction sets across the coding agents on a machine.
+description: Reusable instruction sets every Codevisor agent can read, in any harness.
 icon: BookOpen
 ---
 
-Skills are folders of reusable instructions centered on a `SKILL.md` file. Codevisor keeps the
-canonical user-managed collection in `~/.agents/skills` and materializes each skill where compatible
-agent harnesses can read it.
+Skills are folders of reusable instructions centered on a `SKILL.md` file. Codevisor keeps your
+skills in its own store and serves them to agents through the tool gateway's `skills` tool, next to
+`execute`. Every harness reads them the same way, and Codevisor never writes into a harness's own
+skills folder.
+
+## How agents read skills
+
+Each agent session gets two Codevisor tools:
+
+- `execute` runs sandboxed TypeScript against the browser, desktop apps, integrations, and
+  Codevisor itself.
+- `skills` lists every skill with a one-line summary. Called with a `name`, it returns that skill's
+  instructions, plus the skill's folder and supporting files when it has any.
+
+The list starts with Codevisor's built-in skills (`execute`, `browser-use`, `computer-use`, the
+`codevisor-*` guides, `attaching-files`, and `create-codevisor-plugin`), shown only while their
+feature is enabled, followed by your own skills. Built-in names are reserved.
 
 ## Skill format
 
@@ -26,16 +40,12 @@ references, templates, and other files beside `SKILL.md`.
 
 ## Read the catalog
 
-`GET /v1/skills` returns one complete `SkillsScan`:
+`GET /v1/skills` returns a `SkillsList`: the store's `dir` on the server machine and its `skills`,
+each with `name`, `directoryName`, `description`, and `path`. `GET /v1/skills/{directoryName}`
+returns the `SKILL.md` content, and `PUT` replaces it (the frontmatter must keep a name and
+description).
 
-- `canonicalDir` is the shared store on the server machine.
-- `global` lists canonical skills and their state in every compatible harness.
-- `harnesses` lists independent or broken entries found in each harness's own directory.
-
-An install state is `linked`, `copied`, `canonical`, `notInstalled`, `broken`, or `conflict`.
-Clients should render those states rather than infer installation from paths.
-
-## Create and import
+## Add skills
 
 Create a skill from fields or pasted content:
 
@@ -49,12 +59,11 @@ Content-Type: application/json
 }
 ```
 
-New skills are installed into every compatible harness immediately. If `content` already begins
-with valid frontmatter, Codevisor writes it verbatim and uses its `name` to derive the directory.
+If `content` already begins with valid frontmatter, Codevisor writes it verbatim and uses its `name`
+to derive the directory.
 
-To import a folder already on the server machine, send its absolute `path` to
-`POST /v1/skills/import`. To import from GitHub, GitLab, a git URL, or a site publishing the standard
-well-known skills endpoints, use the remote flow:
+To import from GitHub, GitLab, a git URL, or a site publishing the standard well-known skills
+endpoints:
 
 1. `POST /v1/skills/discover-remote` with `{ "source": "owner/repo" }`.
 2. Present the candidates and their `alreadyExists` values.
@@ -62,39 +71,19 @@ well-known skills endpoints, use the remote flow:
 
 Source formats match the common `npx skills` conventions, including repository subpaths and refs.
 
-## Install into harnesses
+`DELETE /v1/skills/{directoryName}` removes a skill from the store.
 
-Set one canonical skill's state for one harness:
+## Sync across machines
 
-```http
-PUT /v1/skills/{directoryName}/harnesses/{harnessId}
-Content-Type: application/json
+The store replicates across your machines through Codevisor's config sync, so a skill created or
+imported on one machine appears on the others. Removing a skill removes it everywhere.
 
-{ "installed": true }
-```
+## Upgrading from harness-folder skills
 
-Codevisor prefers a relative symlink and falls back to a copy when links are unavailable. It never
-overwrites an unrelated real directory. A conflicting harness copy remains visible as `conflict`
-until the user resolves it.
+Earlier versions kept skills in `~/.agents/skills` and linked them into each harness. On upgrade,
+Codevisor removes the skills it installed there itself (and only those: anything without its
+marker is left alone), and copies your own skills from `~/.agents/skills` into the store once.
+Your original folders are untouched, so harnesses that read them natively still can.
 
-`POST /v1/skills/sync` installs all canonical skills into all link-based harnesses. Supply
-`directoryNames` to limit the operation. Harnesses that read `~/.agents/skills` directly require no
-links, and harnesses that also read it avoid redundant copies.
-
-## Make an existing skill global
-
-`POST /v1/skills/make-global` promotes an independent harness skill:
-
-```json
-{ "harnessId": "claude-code", "directoryName": "release-check" }
-```
-
-Codevisor moves the folder into the canonical store and links it back when that harness needs a
-link. If an identical canonical skill exists, it removes only the verified duplicate and uses the
-canonical copy. Drifted content produces a conflict instead of being destroyed.
-
-Deleting `DELETE /v1/skills/{directoryName}` removes the canonical skill and sweeps its dangling
-links. It does not delete unrelated independent harness skills.
-
-Skill files always live on the machine that runs the agents. Remote clients should use these APIs
-instead of assuming filesystem access. See the [API reference](/docs/api-reference) for every schema.
+Skill files live on the machine that runs the agents. Remote clients should use these APIs instead
+of assuming filesystem access. See the [API reference](/docs/api-reference) for every schema.

@@ -162,8 +162,10 @@ public enum ToolCallSummary {
   public static func describe(_ calls: [ToolCall]) -> String {
     guard !calls.isEmpty else { return "" }
     if calls.allSatisfy(\.isIntegrationPresentationCall) {
-      // A lone workflow reads best as what the model said it was doing.
-      if calls.count == 1, calls[0].integrationDescription != nil,
+      // A lone workflow reads best as what the model said it was doing,
+      // and a lone skills call as the skill it read.
+      if calls.count == 1,
+        calls[0].integrationDescription != nil || calls[0].codevisorGatewayOperation == .skills,
         let title = calls[0].integrationDisplayTitle()
       {
         return title

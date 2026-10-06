@@ -4,17 +4,12 @@ import {
   CreateSkillRequest as CreateSkillRequestSchema,
   DiscoverRemoteSkillsRequest as DiscoverRemoteSkillsRequestSchema,
   ImportRemoteSkillRequest as ImportRemoteSkillRequestSchema,
-  ImportSkillRequest as ImportSkillRequestSchema,
-  MakeSkillGlobalRequest as MakeSkillGlobalRequestSchema,
-  SetSkillInstalledRequest as SetSkillInstalledRequestSchema,
-  SyncSkillsRequest as SyncSkillsRequestSchema,
   UpdateSkillRequest as UpdateSkillRequestSchema
 } from "@codevisor/api"
 
 import {
   HttpFailure,
   matchRoute,
-  matchRouteParams,
   readSchema,
   writeJson,
   type CodevisorServerServices
@@ -45,15 +40,6 @@ export const routeSkills = async (
     }
   }
 
-  if (url.pathname === "/v1/skills/import" && request.method === "POST") {
-    writeJson(
-      response,
-      201,
-      await manager.importLocal(await readSchema(request, ImportSkillRequestSchema))
-    )
-    return true
-  }
-
   if (url.pathname === "/v1/skills/import-remote" && request.method === "POST") {
     writeJson(
       response,
@@ -68,28 +54,6 @@ export const routeSkills = async (
       response,
       200,
       await manager.discoverRemote(await readSchema(request, DiscoverRemoteSkillsRequestSchema))
-    )
-    return true
-  }
-
-  if (url.pathname === "/v1/skills/make-global" && request.method === "POST") {
-    const payload = await readSchema(request, MakeSkillGlobalRequestSchema)
-    writeJson(response, 200, await manager.makeGlobal(payload.harnessId, payload.directoryName))
-    return true
-  }
-
-  if (url.pathname === "/v1/skills/sync" && request.method === "POST") {
-    writeJson(response, 200, await manager.sync(await readSchema(request, SyncSkillsRequestSchema)))
-    return true
-  }
-
-  const installRoute = matchRouteParams(url.pathname, "/v1/skills/:name/harnesses/:harnessId")
-  if (installRoute !== undefined && request.method === "PUT") {
-    const payload = await readSchema(request, SetSkillInstalledRequestSchema)
-    writeJson(
-      response,
-      200,
-      await manager.setInstalled(installRoute.name!, installRoute.harnessId!, payload.installed)
     )
     return true
   }

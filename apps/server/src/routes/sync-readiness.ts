@@ -1,5 +1,4 @@
 import type { PluginsManager } from "@codevisor/plugins"
-import type { SkillsManager } from "@codevisor/skills"
 
 import {
   ACCOUNTS_SYNC_NAMESPACE,
@@ -17,8 +16,6 @@ import {
   readMcpOverlays
 } from "../infra/mcp-fleet.js"
 import { pluginSyncOrigin, PLUGINS_SYNC_NAMESPACE } from "../infra/plugin-sync.js"
-import { publishSkillReadiness, SKILL_READINESS_NAMESPACE } from "../infra/skills-fleet.js"
-import type { SkillsSyncStatus } from "../infra/skills-sync.js"
 import {
   appendAndPublish,
   run,
@@ -152,35 +149,6 @@ export const refreshHarnessReadiness = async (
     if (result.changedEntries.length > 0) {
       void appendAndPublish(services.db, fanout, "sync.changed", HARNESS_READINESS_NAMESPACE, {
         namespace: HARNESS_READINESS_NAMESPACE,
-        entries: result.changedEntries
-      }).catch(swallowError)
-    }
-  } catch {
-    // Best-effort by design; the next pass republishes.
-  }
-}
-
-/// Re-derives and publishes this machine's skill readiness entry after a
-/// skills pass. `missingBlobs` carries the just-finished pass's stranded
-/// entries so "waiting for another machine to send this" survives as the
-/// row's reason. Change-detected and best-effort like the other three.
-export const refreshSkillReadiness = async (
-  services: CodevisorServerServices,
-  config: CodevisorServerConfig,
-  fanout: EventFanout,
-  skills: SkillsManager,
-  missingBlobs: SkillsSyncStatus["missingBlobs"]
-): Promise<void> => {
-  try {
-    const result = await publishSkillReadiness({
-      db: services.db,
-      skills,
-      serverId: config.id,
-      missingBlobs: missingBlobs.map((entry) => entry.directoryName)
-    })
-    if (result.changedEntries.length > 0) {
-      void appendAndPublish(services.db, fanout, "sync.changed", SKILL_READINESS_NAMESPACE, {
-        namespace: SKILL_READINESS_NAMESPACE,
         entries: result.changedEntries
       }).catch(swallowError)
     }

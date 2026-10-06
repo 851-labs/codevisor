@@ -17,8 +17,7 @@ import { discoverHarnesses } from "./harnesses.js"
 import {
   refreshHarnessReadiness,
   refreshMcpReadiness,
-  refreshPluginReadiness,
-  refreshSkillReadiness
+  refreshPluginReadiness
 } from "./sync-readiness.js"
 
 /// The reconcile passes shared by two callers: the explicit
@@ -51,12 +50,7 @@ export const reconcileForNamespace = async (
       const blobs = services.syncBlobs
       const skills = services.skills
       if (blobs === undefined || skills === undefined) return undefined
-      const outcome = await reconcileSkills({ db: services.db, skills, blobs, serverId: config.id })
-      return {
-        ...outcome,
-        refreshReadiness: (fanout) =>
-          refreshSkillReadiness(services, config, fanout, skills, outcome.status.missingBlobs)
-      }
+      return reconcileSkills({ db: services.db, store: skills, blobs, serverId: config.id })
     }
     case "mcps": {
       const mcp = services.mcp

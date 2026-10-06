@@ -103,7 +103,7 @@ extension AppEnvironment {
     if namespace == "settings" { applySyncedSettings() }
     // New skill metadata means some machine is missing the content blob
     // behind it; ferry immediately instead of waiting for the sweep.
-    if namespace == "skills" { Task { await configSync.synchronizeSkills() } }
+    if namespace == ConfigSync.skillsNamespace { Task { await configSync.synchronizeSkills() } }
     // Fleet-wide harness state moved (enables, accounts, ferried
     // credentials): every machine's picker catalog is now suspect. Mark
     // them all stale — the reconcile-response hook refines per machine
