@@ -72,7 +72,61 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Building Alpha $version for $GITHUB_SHA"
 
-  checks:
+  # Former monolithic `checks` job, split so format/lint, typecheck, JS
+  # coverage, and net suites overlap. Same commands as `check:js` + net:*;
+  # fail-hard (no continue-on-error / retries). Turbo concurrency stays at
+  # the package.json default (Wave 2e).
+  lint:
+    needs: metadata
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - run: bun run format:check
+      - run: bun run lint
+      - run: bun run ratchet:check
+      - run: bun run boundaries
+
+  typecheck:
+    needs: metadata
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+
+  test-js:
+    needs: metadata
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: package.json
+      # packages/net test:coverage runs `net-artifact ensure-node`.
+      - uses: ./.github/actions/setup-rust
+      - run: bun install --frozen-lockfile
+      - run: bun run test:coverage
+      - run: bun run dev:scripts:test
+      - run: bun run release:scripts:test
+
+  # The tunnel (docs/plans/codevisor-tunnel.md): Rust unit + integration tests.
+  net-test:
     needs: metadata
     runs-on: ubuntu-24.04
     steps:
@@ -85,11 +139,23 @@ jobs:
           bun-version-file: package.json
       - uses: ./.github/actions/setup-rust
       - run: bun install --frozen-lockfile
-      - run: bun run check:js
-      # The tunnel (docs/plans/codevisor-tunnel.md): Rust unit + integration
-      # tests, then the multi-process test (wrangler, two relays, two servers,
-      # a headless app) through the same launch code as `bun run dev`.
       - run: bun run net:test
+
+  # Multi-process tunnel test (wrangler, two relays, two servers, a headless
+  # app) through the same launch code as `bun run dev`.
+  net-e2e:
+    needs: metadata
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: package.json
+      - uses: ./.github/actions/setup-rust
+      - run: bun install --frozen-lockfile
       - run: bun run net:e2e
 
   server-linux-x64:
@@ -429,7 +495,20 @@ jobs:
   # Written only when every build job succeeded. Publish Alpha attaches it to
   # the Alpha release, which then serves as the record for Stable and Beta.
   provenance:
-    needs: [metadata, checks, server-linux-x64, server-linux-arm64, server-macos-x64, macos, ios]
+    needs:
+      [
+        metadata,
+        lint,
+        typecheck,
+        test-js,
+        net-test,
+        net-e2e,
+        server-linux-x64,
+        server-linux-arm64,
+        server-macos-x64,
+        macos,
+        ios
+      ]
     runs-on: ubuntu-24.04
     steps:
       - name: Record build provenance
