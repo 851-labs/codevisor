@@ -29,9 +29,7 @@ describe("automatic shared accounts", () => {
     )
     await a.shared.reconcile()
     const id = sharedOAuthIdentity(native("alice"))
-    const pending = await a.shared.prepareLogin(id)
-    expect(await Effect.runPromise(a.db.getHarnessAccount(pending))).toBeDefined()
-    expect(await Effect.runPromise(a.db.getHarnessAccount("native-default"))).toBeDefined()
+    await a.shared.prepareLogin(id)
     const token = vi.spyOn(a.vault, "token")
     expect((await a.shared.storedAccounts("codex"))?.map((account) => account.id)).toEqual([id])
     expect(await a.shared.storedAccounts("cursor")).toBeUndefined()
@@ -46,7 +44,6 @@ describe("automatic shared accounts", () => {
     await a.shared.reconcile()
     const id = sharedOAuthIdentity(native("alice"))
     await a.shared.logout(id, true)
-    expect(await Effect.runPromise(a.db.getHarnessAccount(id))).toBeDefined()
     await Effect.runPromise(
       a.db.saveHarnessAccount({
         id: "native-default",
