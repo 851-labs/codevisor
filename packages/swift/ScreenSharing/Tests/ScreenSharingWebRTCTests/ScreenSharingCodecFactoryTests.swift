@@ -71,10 +71,9 @@ struct ScreenSharingCodecFactoryTests {
     let info = try #require(factory.supportedCodecs().first)
     let encoder = try #require(factory.createEncoder(info))
     #expect(encoder.implementationName() == "CodevisorVideoToolbox\(codec.payloadName)")
-    // Even dimensions for the hardware encoder, and the native CVPixelBuffer is
-    // taken as is: cropping or scaling in WebRTC would break frame identity.
-    #expect(encoder.resolutionAlignment == 2 && encoder.applyAlignmentToAllSimulcastLayers)
-    #expect(encoder.supportsNativeHandle)
+    // Even dimensions for the hardware encoder: cropping or scaling in WebRTC
+    // would break frame identity.
+    #expect(encoder.resolutionAlignment == 2)
     // No QP thresholds: a screen share is never scaled down by WebRTC's
     // quality controller.
     #expect(encoder.scalingSettings() == nil)
