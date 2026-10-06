@@ -5,6 +5,8 @@ import type {
   ProviderEnvironment
 } from "@codevisor/agent-runtime"
 
+import { withOpenCodePermissions } from "./permissions.js"
+
 export interface OpenCodeProviderConfig {
   readonly connector?: AcpConnector
   readonly backgroundTerminals?: BackgroundTerminalIntegration
@@ -12,8 +14,14 @@ export interface OpenCodeProviderConfig {
 
 /// OpenCode's own provider. Every OpenCode version still runs its chats
 /// over ACP; OpenCode-specific behavior (OpenCode 2's native server and
-/// credentials) lands here rather than as special cases in generic ACP.
+/// credentials, full-access permissions) lands here rather than as special
+/// cases in generic ACP.
 export const makeOpenCodeProvider = (
   environment: ProviderEnvironment,
   config: OpenCodeProviderConfig = {}
-): AgentProvider => makeAcpProvider(environment, { ...config, providerId: "opencode" })
+): AgentProvider =>
+  makeAcpProvider(environment, {
+    ...config,
+    providerId: "opencode",
+    launchEnv: withOpenCodePermissions
+  })

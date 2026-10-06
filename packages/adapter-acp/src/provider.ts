@@ -118,6 +118,8 @@ export interface AcpProviderConfig {
   /// `terminal/*` with server-owned processes (surfaced as terminal tabs once
   /// they outlive the promotion delay).
   readonly backgroundTerminals?: BackgroundTerminalIntegration
+  /// Adjusts the agent's environment at launch, after the account's.
+  readonly launchEnv?: (env: NodeJS.ProcessEnv) => NodeJS.ProcessEnv
 }
 
 /// Bounds the authentication-only ACP session used during discovery. Some
@@ -130,6 +132,7 @@ export const makeAcpProvider = (
   config: AcpProviderConfig = {}
 ): AgentProvider => {
   const connector = config.connector ?? makeStdioAcpConnector(config.backgroundTerminals)
+  const launchEnv = config.launchEnv ?? ((env: NodeJS.ProcessEnv) => env)
 
   const connect = (
     definition: HarnessDefinition,
@@ -150,11 +153,11 @@ export const makeAcpProvider = (
           args: launch.args,
           command: launch.command,
           cwd,
-          env: {
+          env: launchEnv({
             ...withoutEnv(environment.env, account?.unsetEnv),
             ...(definition.launch?.kind === "executable" ? definition.launch.env : undefined),
             ...account?.env
-          },
+          }),
           harnessId: definition.id
         },
         emit
