@@ -1,4 +1,9 @@
-import { browserCookieKey, type BrowserCookie, type BrowserCookieMutation } from "@codevisor/api"
+import {
+  browserCookieKey,
+  type BrowserCookie,
+  type BrowserCookieEntry,
+  type BrowserCookieMutation
+} from "@codevisor/api"
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import { Effect } from "effect"
 
@@ -49,22 +54,37 @@ export const synchronizeManagedCookies = async (
       })
     )
   }
+  // Chromium refuses some cookies other engines accept. Skip that one cookie:
+  // failing would block every page and agent using this browser. The jar is read
+  // back afterwards, so it is not published as deleted, and it is retried only
+  // once the server has a new revision.
+  const rejected = new Map<string, number>()
+  const importEntry = async (entry: BrowserCookieEntry, cookie: BrowserCookie) => {
+    if (rejected.get(entry.key) === entry.revision) return
+    rejected.delete(entry.key)
+    if (!(await apply(cookie, entry.cookie === null))) rejected.set(entry.key, entry.revision)
+  }
   const apply = async (cookie: BrowserCookie, deleted: boolean) => {
     const { sameSite, domain, ...rest } = cookie
-    await connection.send("Storage.setCookies", {
-      cookies: [
-        {
-          ...rest,
-          ...(domain.startsWith(".")
-            ? { domain }
-            : { url: `${cookie.secure ? "https" : "http"}://${domain}${cookie.path}` }),
-          ...(sameSite === "unspecified"
-            ? {}
-            : { sameSite: sameSite[0]!.toUpperCase() + sameSite.slice(1) }),
-          ...(deleted ? { expires: 1 } : {})
-        }
-      ]
-    })
+    return connection
+      .send("Storage.setCookies", {
+        cookies: [
+          {
+            ...rest,
+            ...(domain.startsWith(".")
+              ? { domain }
+              : { url: `${cookie.secure ? "https" : "http"}://${domain}${cookie.path}` }),
+            ...(sameSite === "unspecified"
+              ? {}
+              : { sameSite: sameSite[0]!.toUpperCase() + sameSite.slice(1) }),
+            ...(deleted ? { expires: 1 } : {})
+          }
+        ]
+      })
+      .then(
+        () => true,
+        () => false
+      )
   }
   const exchange = async () => {
     const local = await read()
@@ -82,7 +102,7 @@ export const synchronizeManagedCookies = async (
         }
         const cookie = entry.cookie ?? now.get(entry.key)
         if (cookie && !equal(now.get(entry.key), entry.cookie)) {
-          await apply(cookie, entry.cookie === null)
+          await importEntry(entry, cookie)
           applied.add(entry.key)
         }
         if (entry.cookie) baseline.set(entry.key, entry.cookie)
@@ -111,7 +131,7 @@ export const synchronizeManagedCookies = async (
       if (!equal(now.get(entry.key), current.get(entry.key))) continue
       const cookie = entry.cookie ?? now.get(entry.key)
       if (cookie && !equal(now.get(entry.key), entry.cookie)) {
-        await apply(cookie, entry.cookie === null)
+        await importEntry(entry, cookie)
         applied.add(entry.key)
       }
       if (entry.cookie) next.set(entry.key, entry.cookie)

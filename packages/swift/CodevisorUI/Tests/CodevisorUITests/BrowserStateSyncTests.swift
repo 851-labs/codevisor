@@ -133,6 +133,30 @@ struct BrowserStateSyncTests {
     #expect(server.sentChanges == 0)
   }
 
+  /// Engines skip cookies they refuse to import. The shared cookie must stay on
+  /// the server, and later polls must not retry the import until it changes.
+  @Test func aCookieTheEngineRejectsIsNotRetriedOrPublishedAsDeleted() async throws {
+    let server = BrowserStateFixture()
+    server.change(cookie, key: cookie.key)
+    let local: [String: BrowserCookie] = [:]
+    var attempts = 0
+    let sync = BrowserCookieSync(
+      client: server, read: { Array(local.values) },
+      apply: { _, _ in attempts += 1 })
+    try await sync.synchronize()
+    try await sync.synchronize()
+    #expect(attempts == 1)
+    #expect(server.entries[cookie.key]?.cookie == cookie)
+    #expect(server.sentChanges == 0)
+    var rotated = cookie; rotated.value = "rotated-fixture"
+    server.change(rotated, key: cookie.key)
+    try await sync.synchronize()
+    try await sync.synchronize()
+    #expect(attempts == 2)
+    #expect(server.entries[cookie.key]?.cookie == rotated)
+    #expect(server.sentChanges == 0)
+  }
+
   @Test func bootstrapDoesNotOverwriteANewLoginWhileTheServerReplies() async throws {
     let server = BrowserStateFixture()
     server.change(cookie, key: cookie.key)

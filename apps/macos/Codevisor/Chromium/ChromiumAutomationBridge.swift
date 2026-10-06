@@ -446,16 +446,26 @@ private actor ChromiumAutomationConnection {
   }
   private func targets() async throws -> [[String: Any]] {
     let models = await bridge.liveModels
+    // One tab that can't start must not fail every agent's browser call. It is
+    // still listed, and attaching to it reports its own error.
+    var ready: CVChromiumView?
+    var failure: Error?
     for model in models {
-      let view = try await model.readyView()
-      let response = try await view.cdp("Target.getTargetInfo")
-      if let info = response["targetInfo"] as? [String: Any], let id = info["targetId"] as? String {
-        nativeOwners[id] = model
+      do {
+        let view = try await model.readyView()
+        let response = try await view.cdp("Target.getTargetInfo")
+        if let info = response["targetInfo"] as? [String: Any], let id = info["targetId"] as? String {
+          nativeOwners[id] = model
+        }
+        _ = try await view.cdp("Target.setDiscoverTargets", ["discover": true])
+        ready = ready ?? view
+      } catch {
+        failure = failure ?? error
       }
-      _ = try await view.cdp("Target.setDiscoverTargets", ["discover": true])
     }
-    guard let first = models.first else { return [] }
-    let all = try await first.readyView().cdp("Target.getTargets")
+    guard !models.isEmpty else { return [] }
+    guard let ready else { throw failure ?? ChromiumProtocolError("Browser tab closed") }
+    let all = try await ready.cdp("Target.getTargets")
     let infos = all["targetInfos"] as? [[String: Any]] ?? []
     // Only include popups whose opener descends from an admitted local pane.
     // Other CEF profiles (remote workspaces and the DevTools frontend) stay private.

@@ -1,6 +1,7 @@
 import AppKit
 import CodevisorClient
 import CodevisorUI
+import OSLog
 
 typealias ChromiumProtocolError = BrowserProtocolError
 
@@ -30,6 +31,7 @@ extension CVChromiumView {
 @MainActor
 final class ChromiumProfiles {
   static let shared = ChromiumProfiles()
+  private static let log = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Codevisor", category: "BrowserCookies")
   private class WeakView { weak var view: CVChromiumView?; init(_ view: CVChromiumView) { self.view = view } }
   private var views: [String: [WeakView]] = [:]
   private var syncs: [String: BrowserCookieSync] = [:]
@@ -69,8 +71,15 @@ final class ChromiumProfiles {
           }
           if let expires = cookie.expires { params["expires"] = expires }
           if cookie.sameSite != "unspecified" { params["sameSite"] = cookie.sameSite.capitalized }
-          let result = try await view.cdp("Network.setCookie", params)
-          if result["success"] as? Bool == false { throw ChromiumProtocolError("Browser could not import a cookie") }
+          // Chromium refuses some cookies other engines accept. Skip that one cookie:
+          // failing here would block every page and agent that uses this profile.
+          // The sync reads the jar back, so a skipped cookie is neither retried nor
+          // published as a deletion.
+          let result = try? await view.cdp("Network.setCookie", params)
+          if result == nil || result?["success"] as? Bool == false {
+            Self.log.error(
+              "Browser rejected cookie \(cookie.name, privacy: .public) for \(cookie.domain, privacy: .public)")
+          }
         }
       })
     syncs[machineId] = sync

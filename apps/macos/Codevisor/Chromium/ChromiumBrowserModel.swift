@@ -242,7 +242,10 @@ final class ChromiumBrowserModel {
 
   func readyView() async throws -> CVChromiumView {
     needsBackgroundHost = true
-    if let readyError { throw readyError }
+    // A failed start is not permanent. Rebuild the browser for each new caller
+    // instead of replaying the old error until someone presses Try Again. The
+    // tab stays admitted so attached agents don't see it close and reopen.
+    if readyError != nil { resetBrowser(keepingAutomationTarget: true) }
     if let view = webView { hostInBackgroundIfNeeded(view) }
     if let view = webView, view.browserIsReady, synchronized { return view }
     start()
@@ -337,7 +340,7 @@ final class ChromiumBrowserModel {
     resetBrowser()
     onNavigate = nil
   }
-  private func resetBrowser() {
+  private func resetBrowser(keepingAutomationTarget: Bool = false) {
     zoomPercent = 100
     canZoomOut = false
     canZoomIn = false
@@ -345,7 +348,7 @@ final class ChromiumBrowserModel {
     synchronized = false
     completeReady(.failure(ChromiumProtocolError("Browser closed")))
     readyError = nil
-    ChromiumAutomationBridge.shared.unregister(paneId)
+    if !keepingAutomationTarget { ChromiumAutomationBridge.shared.unregister(paneId) }
     activationTask?.cancel()
     generation = UUID()
     loadTask?.cancel()

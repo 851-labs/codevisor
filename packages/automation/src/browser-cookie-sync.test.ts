@@ -190,6 +190,32 @@ describe("managed Chromium cookie synchronization", () => {
       sync.stop()
     }
   })
+  it("skips a cookie Chromium rejects without retrying it or deleting the shared copy", async () => {
+    const f = fixture()
+    const rejected = { ...cookie(), name: "rejected" }
+    f.change(rejected)
+    f.change(cookie())
+    const send = f.send.getMockImplementation()!
+    f.send.mockImplementation(async (method, params) => {
+      if (method === "Storage.setCookies" && params?.cookies[0]?.name === "rejected")
+        throw new Error("Invalid cookie fields")
+      return send(method, params)
+    })
+    const sync = await f.start()
+    try {
+      expect(f.jar.map((raw) => raw.name)).toEqual(["session"])
+      await sync.synchronize()
+      const attempts = f.send.mock.calls.filter(
+        ([method, params]) =>
+          method === "Storage.setCookies" && params?.cookies[0]?.name === "rejected"
+      )
+      expect(attempts).toHaveLength(1)
+      expect(f.entries.get(browserCookieKey(rejected))?.cookie).toEqual(rejected)
+      expect(f.exchange.mock.calls.flatMap(([changes]) => changes)).toEqual([])
+    } finally {
+      sync.stop()
+    }
+  })
   it("coalesces overlapping sync, retries periodic errors, and stops its timer", async () => {
     vi.useFakeTimers()
     const f = fixture()
