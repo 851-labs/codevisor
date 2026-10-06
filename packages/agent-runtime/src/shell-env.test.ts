@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import {
   fallbackPathDirectories,
+  makeShellEnvCache,
   nvmBinDirectories,
   resolveShellEnv,
   runShellCommand
@@ -344,5 +345,17 @@ describe("nvmBinDirectories", () => {
     expect(nvmBinDirectories("/h", () => [])).toEqual([])
     // Default lister tolerates a missing directory.
     expect(nvmBinDirectories("/nonexistent-home-for-test")).toEqual([])
+  })
+})
+
+describe("makeShellEnvCache", () => {
+  it("probes once for every reader and again only when refreshed", async () => {
+    let probes = 0
+    const cache = makeShellEnvCache(async () => ({ PATH: `/probe-${++probes}` }))
+    const [first, second] = await Promise.all([cache.current(), cache.current()])
+    expect([first.PATH, second.PATH, probes]).toEqual(["/probe-1", "/probe-1", 1])
+    expect((await cache.refresh()).PATH).toBe("/probe-2")
+    expect((await cache.current()).PATH).toBe("/probe-2")
+    expect(probes).toBe(2)
   })
 })

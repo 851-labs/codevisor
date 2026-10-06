@@ -220,3 +220,14 @@ export const resolveShellEnv = async (
     ])
   }
 }
+
+/// One login-shell probe shared by everything that needs the user's
+/// environment. Starting a login shell runs the user's rc files, so asking
+/// for it on every account click added up. `refresh` probes again (a rescan
+/// after installing a CLI); `current` reuses the latest probe, starting one
+/// on first use.
+export const makeShellEnvCache = (resolve: () => Promise<NodeJS.ProcessEnv>) => {
+  let latest: Promise<NodeJS.ProcessEnv> | undefined
+  const refresh = () => (latest = resolve())
+  return { refresh, current: () => latest ?? refresh() }
+}

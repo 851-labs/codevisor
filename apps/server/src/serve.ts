@@ -8,7 +8,7 @@ import { makeClaudeProvider } from "@codevisor/adapter-claude"
 import { makeCodexProvider } from "@codevisor/adapter-codex"
 import { makeCursorProvider } from "@codevisor/adapter-cursor"
 import { makeGrokBuildProvider } from "@codevisor/adapter-grok-build"
-import { makeAgentRuntime, resolveShellEnv } from "@codevisor/agent-runtime"
+import { makeAgentRuntime, makeShellEnvCache, resolveShellEnv } from "@codevisor/agent-runtime"
 import type { DataUpgradeProgress } from "@codevisor/api"
 import {
   makeAttachmentStore,
@@ -251,8 +251,9 @@ export const runServe = (
     // Start resolving the GUI process's minimal environment without delaying
     // server boot. The first Git operation awaits this shared result so
     // checkout hooks and filters can find user-installed tools such as
-    // Homebrew's git-lfs.
-    const gitEnvironment = resolveShellEnv()
+    // Homebrew's git-lfs. The runtime and harness accounts share the probe.
+    const shellEnv = makeShellEnvCache(() => resolveShellEnv())
+    const gitEnvironment = shellEnv.current()
     // User-defined custom ACP harnesses (~/.codevisor/harnesses.json) merge
     // into the catalog before anything consumes it. Bad entries are skipped
     // with a warning — a hand-edited file must never block server boot.
@@ -282,7 +283,7 @@ export const runServe = (
         (env, context) => makeCursorProvider(env, context),
         (env, context) => makeGrokBuildProvider(env, context)
       ],
-      resolveEnv: () => resolveShellEnv()
+      resolveEnv: shellEnv.refresh
     })
     const sessionActivity = makeActiveWorkSleepInhibitor()
     let sharedAccounts: SharedAccounts | undefined
@@ -294,7 +295,8 @@ export const runServe = (
         db,
         agents,
         terminal,
-        preferDeviceCode: resolvedKind === "remote"
+        preferDeviceCode: resolvedKind === "remote",
+        resolveEnv: shellEnv.current
       })
     )
     if (auth)
@@ -303,7 +305,8 @@ export const runServe = (
         auth,
         dataDir: dirname(databasePath),
         serverId,
-        baseUrl: `http://127.0.0.1:${port}`
+        baseUrl: `http://127.0.0.1:${port}`,
+        environment: shellEnv.current
       })
     // Sync static credentials without overwriting machine-specific providers.
     const credentialFerry = initializeOptionalServerFeature("Credential ferry", () =>

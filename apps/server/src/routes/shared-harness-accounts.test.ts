@@ -169,6 +169,42 @@ it("scopes provider OAuth to shared settings and filters uninspected plugins at 
     (await send("pi", { action: "login", providerId: "anthropic", methodId: "oauth" })).status
   ).toBe(400)
   expect((await send("opencode", { action: "providers" })).status).toBe(404)
+  // A profile added on another device a moment ago is created on demand from
+  // the synced profile list, rather than answered "not found".
+  const sharedProfile = "shared-6f1d2a3b-0c4e-4f5a-9b8c-7d6e5f4a3b2c"
+  auth.sharedOpenCodeProfiles = vi.fn<NonNullable<typeof auth.sharedOpenCodeProfiles>>(async () => {
+    await run(
+      host.db.saveHarnessAccount({
+        id: sharedProfile,
+        harnessId: "opencode",
+        label: "Work",
+        profileKind: "managed",
+        authState: "unauthenticated",
+        canLogin: true,
+        canLogout: false
+      })
+    )
+    return []
+  })
+  auth.openCodeProviders = vi.fn<NonNullable<typeof auth.openCodeProviders>>(async () => [])
+  expect((await send("opencode", { action: "providers", accountId: sharedProfile })).status).toBe(
+    404
+  )
+  const profiles = JSON.stringify({ profiles: [{ id: sharedProfile, label: "Work" }] })
+  await run(
+    host.db.mergeSyncEntries("harness-credentials", [
+      {
+        key: "profiles:opencode",
+        value: profiles,
+        timestamp: { wallMs: 1000, counter: 0, deviceId: "test" }
+      }
+    ])
+  )
+  expect((await send("opencode", { action: "providers", accountId: sharedProfile })).status).toBe(
+    200
+  )
+  expect(auth.sharedOpenCodeProfiles).toHaveBeenCalledWith(profiles)
+  delete auth.sharedOpenCodeProfiles
   await run(
     host.db.saveHarnessAccount({
       id: "oc-default",

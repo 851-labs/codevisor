@@ -89,12 +89,23 @@ export const routeSharedHarnessAccounts = async (
   }
   if (harnessId === "pi" || harnessId === "opencode") {
     const profile = input.accountId ?? "default"
-    const account =
-      harnessId === "opencode"
-        ? (await run(services.db.listHarnessAccounts("opencode"))).find((row) =>
-            profile === "default" ? row.profileKind === "default" : row.id === profile
-          )
-        : undefined
+    const findProfile = async () =>
+      (await run(services.db.listHarnessAccounts("opencode"))).find((row) =>
+        profile === "default" ? row.profileKind === "default" : row.id === profile
+      )
+    let account = harnessId === "opencode" ? await findProfile() : undefined
+    if (harnessId === "opencode" && !account && auth.sharedOpenCodeProfiles) {
+      // A profile added a moment ago only reaches this machine's accounts on
+      // its next credentials pass. Create it from the synced list now rather
+      // than answer a fresh profile with "not found".
+      const saved = (await run(services.db.getSyncEntries("harness-credentials"))).find(
+        (entry) => entry.key === "profiles:opencode" && entry.deleted !== true
+      )
+      if (typeof saved?.value === "string") {
+        await auth.sharedOpenCodeProfiles(saved.value)
+        account = await findProfile()
+      }
+    }
     if (harnessId === "opencode" && !account)
       throw new HttpFailure(404, "OpenCode profile not found")
     const accountId = account?.id ?? "default"
