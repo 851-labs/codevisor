@@ -2,6 +2,12 @@ import { randomUUID } from "node:crypto"
 import { mkdir, readFile, rm } from "node:fs/promises"
 import { join } from "node:path"
 
+import {
+  makeOpenCode2Accounts,
+  makeOpenCodeServerPool,
+  makeOpenCodeVersionProbe
+} from "@codevisor/adapter-opencode"
+
 import { makeGrokAuth } from "./grok-auth.js"
 import { makeHarnessAccountOperations } from "./harness-auth-accounts.js"
 import { makeHarnessAuthCore } from "./harness-auth-core.js"
@@ -51,6 +57,11 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
       authPath: openCodeAuthPath(env)
     }
   }
+  // OpenCode 2 keeps its accounts behind its own server API; OpenCode 1's
+  // control server is a different API entirely.
+  const openCodeMajorVersion = config.openCode?.majorVersion ?? makeOpenCodeVersionProbe()
+  const openCode2 =
+    config.openCode?.accounts ?? makeOpenCode2Accounts({ pool: makeOpenCodeServerPool() })
   const openCodeAuth = makeOpenCodeAuthManager({
     profile: openCodeProfile,
     savedApiKey: async (accountId, providerId, shared) => {
@@ -189,7 +200,11 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
       if (!(await config.sharedProviders?.()?.remove("pi", "default", id))) await piAuth.logout(id)
     },
     openCodeProviders: async (accountId) => {
-      const providers = await openCodeAuth.providers(accountId)
+      const profile = await openCodeProfile(accountId)
+      const providers =
+        ((await openCodeMajorVersion(profile.command)) ?? 1) >= 2
+          ? await openCode2.providers(profile)
+          : await openCodeAuth.providers(accountId)
       const configured = (await config.sharedProviders?.()?.configured("opencode", accountId)) ?? []
       const disabled = (await config.sharedProviders?.()?.disabled?.("opencode", accountId)) ?? []
       return providers.map((provider) => {

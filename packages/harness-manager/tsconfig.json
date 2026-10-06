@@ -11,6 +11,7 @@
     { "path": "../agent-runtime" },
     { "path": "../adapter-claude" },
     { "path": "../adapter-codex" },
+    { "path": "../adapter-opencode" },
     { "path": "../db" },
     { "path": "../terminal" },
     { "path": "../updater" }

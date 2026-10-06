@@ -1,4 +1,5 @@
 import type { spawnClaudeAuthClient } from "@codevisor/adapter-claude"
+import type { makeOpenCode2Accounts } from "@codevisor/adapter-opencode"
 import type {
   AgentRuntimeService,
   HarnessAccountContext,
@@ -62,6 +63,11 @@ export interface HarnessAuthManagerConfig {
   readonly resolveEnv?: () => Promise<NodeJS.ProcessEnv>
   /// Overrides non-interactive authentication commands in tests.
   readonly execFile?: HarnessAuthExec
+  /// Test seams for OpenCode 2: its version check and its account API.
+  readonly openCode?: {
+    readonly majorVersion?: (command: string) => Promise<number | undefined>
+    readonly accounts?: Pick<ReturnType<typeof makeOpenCode2Accounts>, "providers">
+  }
   /// The effective harness catalog (builtins + user-defined entries).
   /// Defaults to `agents.catalog`, falling back to the builtin catalog for
   /// hosts/tests that stub the runtime.

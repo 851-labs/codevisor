@@ -16,7 +16,8 @@
   },
   "dependencies": {
     "@codevisor/adapter-acp": "workspace:*",
-    "@codevisor/agent-runtime": "workspace:*"
+    "@codevisor/agent-runtime": "workspace:*",
+    "@codevisor/api": "workspace:*"
   },
   "devDependencies": {
     "vitest": "4.1.6"

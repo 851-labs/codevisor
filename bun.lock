@@ -194,6 +194,7 @@
       "dependencies": {
         "@codevisor/adapter-acp": "workspace:*",
         "@codevisor/agent-runtime": "workspace:*",
+        "@codevisor/api": "workspace:*",
       },
       "devDependencies": {
         "vitest": "4.1.6",
@@ -279,6 +280,7 @@
       "dependencies": {
         "@codevisor/adapter-claude": "workspace:*",
         "@codevisor/adapter-codex": "workspace:*",
+        "@codevisor/adapter-opencode": "workspace:*",
         "@codevisor/agent-runtime": "workspace:*",
         "@codevisor/api": "workspace:*",
         "@codevisor/db": "workspace:*",

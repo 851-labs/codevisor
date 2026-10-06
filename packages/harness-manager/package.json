@@ -17,6 +17,7 @@
   "dependencies": {
     "@codevisor/adapter-claude": "workspace:*",
     "@codevisor/adapter-codex": "workspace:*",
+    "@codevisor/adapter-opencode": "workspace:*",
     "@codevisor/agent-runtime": "workspace:*",
     "@codevisor/api": "workspace:*",
     "@codevisor/db": "workspace:*",

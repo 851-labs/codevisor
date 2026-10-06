@@ -6,5 +6,5 @@
     "rootDir": "src"
   },
   "include": ["src/**/*.ts"],
-  "references": [{ "path": "../agent-runtime" }, { "path": "../adapter-acp" }]
+  "references": [{ "path": "../api" }, { "path": "../agent-runtime" }, { "path": "../adapter-acp" }]
 }
