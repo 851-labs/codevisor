@@ -8,6 +8,7 @@ import * as acp from "@agentclientprotocol/sdk"
 import {
   adapterPromise,
   summarizeProcessFailure,
+  type AgentSessionMetadata,
   type BackgroundTerminalIntegration,
   type QuestionAnswer,
   type RuntimeEvent
@@ -20,6 +21,7 @@ import { createClientApp, type ConfigureAcpClientApp } from "./client-app.js"
 import { acpClientCapabilities, type AcpConnector } from "./connection.js"
 import { isGenericConnectionClose } from "./internal.js"
 import { runtimeEventFromNotification } from "./notifications.js"
+import { makeAcpPermissionPolicy } from "./permission-policy.js"
 import { isPiStartupInfoNotification, readPiSessionError } from "./pi.js"
 import {
   acpPermissionOutcome,
@@ -82,6 +84,7 @@ export const makeStdioAcpConnectorWithOptions = (
       const stderr = captureStderr(child)
       const pendingQuestions = new Map<string, PendingAcpQuestion>()
       const piStartupInfoBySession = new Map<string, string>()
+      const permissions = makeAcpPermissionPolicy()
       const safeEmit = (event: RuntimeEvent): void => {
         void emit(event).catch(() => undefined)
       }
@@ -145,6 +148,9 @@ export const makeStdioAcpConnectorWithOptions = (
       const extension = options.extension?.({ emit: safeEmit, enqueueQuestion })
       const connection = createClientApp(
         (notification) => {
+          if (notification.update.sessionUpdate === "current_mode_update") {
+            permissions.modeChanged(notification.sessionId, notification.update.currentModeId)
+          }
           const startupInfo = piStartupInfoBySession.get(notification.sessionId)
           if (
             request.harnessId === "pi" &&
@@ -160,6 +166,8 @@ export const makeStdioAcpConnectorWithOptions = (
           for (const event of events) safeEmit(event)
         },
         (params) => {
+          const automatic = permissions.automaticOutcome(params)
+          if (automatic !== undefined) return Promise.resolve(automatic)
           const question = acpPermissionQuestion(params)
           if (question === undefined) {
             return Promise.resolve({ outcome: { outcome: "cancelled" as const } })
@@ -294,8 +302,20 @@ export const makeStdioAcpConnectorWithOptions = (
       const reportedInfo = (
         initialized as { agentInfo?: { name?: string; version?: string } } | undefined
       )?.agentInfo
+      const withModes = Effect.map((metadata: AgentSessionMetadata) => {
+        permissions.sessionModes(metadata.sessionId, metadata.modes)
+        return metadata
+      })
       return {
         ...established,
+        createSession: (cwd, toolGateway) =>
+          established.createSession(cwd, toolGateway).pipe(withModes),
+        loadSession: (sessionId, cwd, toolGateway) =>
+          established.loadSession(sessionId, cwd, toolGateway).pipe(withModes),
+        setMode: (sessionId, modeId) =>
+          established
+            .setMode(sessionId, modeId)
+            .pipe(Effect.map(() => permissions.modeChanged(sessionId, modeId))),
         agentInfo: {
           ...(reportedInfo?.name === undefined ? {} : { name: reportedInfo.name }),
           ...(reportedInfo?.version === undefined ? {} : { version: reportedInfo.version }),

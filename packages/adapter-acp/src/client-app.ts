@@ -18,8 +18,9 @@ export const createClientApp = (
       onSessionUpdate(params)
     })
     // Permission requests are the agent explicitly deferring to the human
-    // (ACP's contract — this is what makes plan mode gate anything), so they
-    // surface as blocking questions rather than being auto-approved.
+    // (ACP's contract — this is what makes plan mode gate anything). The
+    // connector answers them under Codevisor's full-access policy
+    // (permission-policy.ts) and asks the user only where that policy gates.
     .onRequest(acp.methods.client.session.requestPermission, ({ params }) =>
       onPermissionRequest(params)
     )
