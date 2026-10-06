@@ -32,6 +32,12 @@ struct FleetRowStatusTests {
     }
   }
 
+  @Test("An attention status never opens an empty explanation")
+  func attentionAlwaysExplains() {
+    #expect(FleetRowStatus.attention("Needs attention", reason: "  ").reason == FleetRowStatus.blockedFallbackReason)
+    #expect(PluginFleet.MachineStatus.blocked(reason: "").rowStatus.reason == FleetRowStatus.blockedFallbackReason)
+  }
+
   @Test("Plugin rows follow the report, with offline outranking a stale one")
   func pluginRows() {
     let readiness: [String: [PluginFleet.MachineReadiness]] = [

@@ -123,6 +123,51 @@ describe("harness authentication decoration", () => {
     expect(probeHarnessAuth).not.toHaveBeenCalled()
   })
 
+  it("carries the active account's failure onto the harness auth", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "codevisor-auth-detail-"))
+    directories.push(directory)
+    const db = await run(
+      makeDatabase({ filename: join(directory, "codevisor.sqlite"), serverId: "test" })
+    )
+    databases.push(db)
+    await run(
+      db.saveHarnessAccount({
+        id: "gemini-account",
+        harnessId: "gemini",
+        profileKind: "default",
+        label: "Existing Gemini CLI account",
+        authState: "error",
+        detail: "Internal error: service failure",
+        canLogin: true,
+        canLogout: false
+      })
+    )
+    const manager = makeHarnessAuthManager({
+      agents: {} as AgentRuntimeService,
+      dataDir: directory,
+      db,
+      terminal: {} as TerminalManagerService,
+      resolveEnv: () => Promise.resolve({ HOME: directory })
+    })
+
+    const [decorated] = await manager.decorateHarnessesFromStoredState([
+      {
+        id: "gemini",
+        name: "Gemini CLI",
+        symbolName: "diamond",
+        source: "registry",
+        launchKind: "npx",
+        enabled: true,
+        readiness: { state: "ready", path: "/usr/local/bin/gemini" }
+      }
+    ])
+
+    expect(decorated?.auth).toMatchObject({
+      state: "error",
+      detail: "Internal error: service failure"
+    })
+  })
+
   it("does not block catalog decoration on a passive account probe", async () => {
     const directory = mkdtempSync(join(tmpdir(), "codevisor-auth-passive-"))
     directories.push(directory)

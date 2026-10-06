@@ -132,6 +132,9 @@ export const makeHarnessAuthDecoration = (
       state:
         active?.authState ?? (storedAccounts === undefined ? "unavailable" : "unauthenticated"),
       ...(active === undefined ? {} : { activeAccountId: active.id }),
+      // The harness's state is its active account's, so is the why: the
+      // fleet's readiness row reads it to explain a failed check.
+      ...(active?.detail ? { detail: active.detail } : {}),
       accounts,
       loginMethods: loginMethods(harnessId),
       supportsMultipleAccounts:

@@ -49,8 +49,8 @@ public struct FleetRowStatus: Equatable, Sendable {
   public var emphasis: Emphasis
   /// The short phrase the mark's tooltip and VoiceOver use ("Ready").
   public var label: String
-  /// The full failure text, when there is one. Its presence is what offers
-  /// the row a Details… button.
+  /// The full failure text, when there is one. Every attention status has
+  /// one; its presence is what makes the row's mark open the details.
   public var reason: String?
 
   public init(emphasis: Emphasis, label: String, reason: String? = nil) {
@@ -70,8 +70,13 @@ public struct FleetRowStatus: Equatable, Sendable {
     FleetRowStatus(emphasis: .busy, label: label)
   }
 
-  public static func attention(_ label: String, reason: String? = nil) -> FleetRowStatus {
-    FleetRowStatus(emphasis: .attention, label: label, reason: reason)
+  /// A mark that asks for the user's attention always opens an explanation,
+  /// so the reason is required; a blank one falls back rather than opening
+  /// an empty popover.
+  public static func attention(_ label: String, reason: String) -> FleetRowStatus {
+    let reason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+    return FleetRowStatus(
+      emphasis: .attention, label: label, reason: reason.isEmpty ? blockedFallbackReason : reason)
   }
 
   public static func quiet(_ label: String) -> FleetRowStatus {

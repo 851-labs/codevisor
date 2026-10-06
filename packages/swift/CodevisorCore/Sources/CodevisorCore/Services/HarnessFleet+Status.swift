@@ -63,12 +63,17 @@ public extension HarnessFleet {
       }
     }
 
+    /// The machine checked and found no usable account: nothing failed, so
+    /// there is no machine-reported text to show, only what to do about it.
+    static let signInRequiredReason =
+      "This machine has no signed-in account for this harness. Sign in to use it here."
+
     /// The shared row presentation every fleet page renders from.
     public var rowStatus: FleetRowStatus {
       switch self {
       case .ready: .ready()
       case .blocked(let reason), .signInFailed(let reason): .attention(label, reason: reason)
-      case .signInRequired: .attention(label)
+      case .signInRequired: .attention(label, reason: Self.signInRequiredReason)
       default: isBusy ? .busy(label) : .quiet(label)
       }
     }

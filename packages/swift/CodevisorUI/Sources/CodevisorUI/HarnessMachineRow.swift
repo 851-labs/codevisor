@@ -56,12 +56,7 @@ struct HarnessMachineActionButton: View {
   static func details(
     row: HarnessFleet.MachineRow, harnessName: String
   ) -> FleetBlockedMachine? {
-    let reason: String
-    switch row.status {
-    case .blocked(let blocked): reason = blocked
-    case .signInFailed(let failure): reason = failure
-    default: return nil
-    }
+    guard let reason = row.status.rowStatus.reason else { return nil }
     return FleetBlockedMachine(
       plane: .harnesses, machineId: row.machineId, machineName: row.name,
       entryName: harnessName, reason: reason)

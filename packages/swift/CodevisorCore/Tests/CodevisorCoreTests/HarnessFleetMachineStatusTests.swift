@@ -52,6 +52,8 @@ struct HarnessFleetMachineStatusTests {
     let quiet: [Status] = [.ready, .off, .unreachable, .awaitingSignIn]
     for status in attention {
       #expect(status.needsAttention && !status.isBusy, "\(status)")
+      // A mark that asks for attention must have something to say when opened.
+      #expect(status.rowStatus.reason?.isEmpty == false, "\(status)")
     }
     for status in busy {
       #expect(status.isBusy && !status.needsAttention, "\(status)")
