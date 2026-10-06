@@ -2,13 +2,20 @@ import { fileURLToPath } from "node:url"
 
 import { defineConfig } from "vitest/config"
 
-// The runtime's integration tests live in @codevisor/adapter-acp
-// (runtime-acp.test.ts): they exercise the runtime through real adapters, and
-// the adapters depend on this package — the tests can't live here without a
-// package cycle. This config runs that suite as part of this package's test
-// run, with workspace imports aliased back to sources so coverage attributes
-// to this package's files (imports normally resolve to dist, which coverage
-// excludes).
+// Ownership model (Wave 2a): package-local suites + thinner runtime keepers.
+//
+// Adapter packages own their full `test:coverage` runs. This package no longer
+// re-includes the full adapter-claude / adapter-codex / adapter-acp suites.
+//
+// Keepers retained here are only the ACP `runtime-*.test.ts` files that exercise
+// agent-runtime through real adapters. Those tests live in adapter-acp to avoid
+// a package cycle (adapters depend on agent-runtime). Workspace imports are
+// aliased to sources so coverage attributes to this package's files (imports
+// normally resolve to dist, which coverage excludes).
+//
+// Runtime-owned pure helpers (model-selection, attachments, background keys,
+// normalizePromptInput, stdio transport edge cases) are covered by local unit
+// tests in this package — not by replaying Claude/Codex adapter suites.
 const src = (path: string): string => fileURLToPath(new URL(path, import.meta.url))
 
 export default defineConfig({
@@ -21,12 +28,7 @@ export default defineConfig({
     }
   },
   test: {
-    include: [
-      "src/**/*.test.ts",
-      "../adapter-acp/src/*.test.ts",
-      "../adapter-claude/src/*.test.ts",
-      "../adapter-codex/src/*.test.ts"
-    ],
+    include: ["src/**/*.test.ts", "../adapter-acp/src/runtime-*.test.ts"],
     coverage: {
       all: true,
       include: ["src/**/*.ts"],

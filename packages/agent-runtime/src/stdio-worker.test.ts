@@ -136,6 +136,22 @@ it("turns a synchronous non-Error write failure into a session failure", ({ onTe
   expect(failures).toHaveBeenCalledExactlyOnceWith(new Error("broken pipe"))
 })
 
+it("captures stderr, fails on stdin pipe errors, and ignores send after close", ({
+  onTestFinished
+}) => {
+  const child = fixture()
+  const transport = makeNdjsonTransport(child.endpoint)
+  onTestFinished(() => transport.close())
+  const failures = vi.fn()
+  transport.onFailure(failures)
+  child.stderr.emit("data", "cli noise")
+  child.stdin.emit("error", new Error("stdin broke"))
+  expect(failures).toHaveBeenCalledExactlyOnceWith(new Error("stdin broke"))
+  expect(transport.isOpen()).toBe(false)
+  const write = vi.spyOn(child.stdin, "write")
+  transport.send({ id: 2 })
+  expect(write).not.toHaveBeenCalled()
+})
 it("parses worker frames across chunks, skips diagnostics, and acknowledges every chunk", async () => {
   const { parentPort } = await import("node:worker_threads")
   const port = parentPort! as unknown as WorkerDouble
