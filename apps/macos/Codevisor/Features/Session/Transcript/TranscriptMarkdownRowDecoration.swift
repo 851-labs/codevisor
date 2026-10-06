@@ -130,20 +130,22 @@ final class TranscriptMarkdownRowDecoration: NSView {
       }
     }
 
-    let markerAttributes: [NSAttributedString.Key: Any] = [
-      .font: NSFont.preferredFont(forTextStyle: .body),
-      .foregroundColor: NSColor(style.markdown.secondaryTextForeground),
-    ]
+    let bodyFont = NSFont.preferredFont(forTextStyle: .body)
     for marker in fragment.listMarkers {
+      let markerAttributes: [NSAttributedString.Key: Any] = [
+        .font: MarkdownList.isBullet(marker.text) ? NSFont.boldSystemFont(ofSize: bodyFont.pointSize) : bodyFont,
+        .foregroundColor: NSColor(style.markdown.secondaryTextForeground),
+      ]
       let x =
         planInset
         + CGFloat(fragment.quoteDepth) * MarkdownFragmentMetrics.quoteIndent
         + CGFloat(max(0, marker.depth - 1)) * MarkdownFragmentMetrics.listIndent
+        + MarkdownFragmentMetrics.listColumn(markers: [marker.text]).markerInset
       NSAttributedString(string: marker.text, attributes: markerAttributes).draw(
         in: NSRect(
           x: x,
           y: 0,
-          width: MarkdownFragmentMetrics.listMarkerWidth,
+          width: max(1, bounds.width - x),
           height: bounds.height
         )
       )

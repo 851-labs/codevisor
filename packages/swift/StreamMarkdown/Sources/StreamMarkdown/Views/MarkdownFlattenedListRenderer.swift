@@ -5,21 +5,25 @@
   /// Lists and quotes can recurse through each other without creating a
   /// matching recursive SwiftUI layout tree. Truly embedded views (code,
   /// tables, and dividers) continue through `MarkdownRecursiveListView`.
+  /// Converts prose-only structural Markdown into one TextKit document.
+  /// Lists and quotes can recurse through each other without creating a
+  /// matching recursive SwiftUI layout tree. Truly embedded views (code,
+  /// tables, and dividers) continue through `MarkdownRecursiveListView`.
+  /// Every list shape — the parser's simple bullet and ordered forms, full
+  /// lists, and task lists — renders through `appendItems`, so they share
+  /// one marker column and one hanging indent.
   enum MarkdownFlattenedListRenderer {
-    private static let listIndent: CGFloat = 24
-    private static func markerWidth(_ markers: [String]) -> CGFloat {
-      let attributes: [NSAttributedString.Key: Any] = [.font: MarkdownTextRunRenderer.bodyFont]
-      return max(22, ceil(markers.map { ($0 as NSString).size(withAttributes: attributes).width }.max() ?? 0) + 8)
-    }
     private static let quoteIndent = MarkdownFragmentMetrics.quoteIndent
 
     private struct RenderContext {
       var contentIndent: CGFloat = 0
+      var listDepth = 0
       var quoteBarOffsets: [CGFloat] = []
 
-      func indented(by amount: CGFloat) -> Self {
+      func listItemContent(indentedBy amount: CGFloat) -> Self {
         var copy = self
         copy.contentIndent += amount
+        copy.listDepth += 1
         return copy
       }
 
@@ -34,6 +38,11 @@
     private struct PendingMarker {
       let text: String
       let indent: CGFloat
+    }
+
+    private struct Item {
+      let marker: String
+      let blocks: [MarkdownBlock]
     }
 
     static func canRender(_ list: MarkdownList) -> Bool {
@@ -55,26 +64,9 @@
       }
     }
 
+    /// Renders a list or quote block that `canRender` accepts.
     static func attributedString(
-      _ list: MarkdownList,
-      theme: MarkdownTheme,
-      foreground: MarkdownNativeColor,
-      chipBackground: MarkdownNativeChipBackground
-    ) -> NSAttributedString {
-      let result = NSMutableAttributedString()
-      append(
-        list,
-        context: RenderContext(),
-        to: result,
-        theme: theme,
-        foreground: foreground,
-        chipBackground: chipBackground
-      )
-      return result
-    }
-
-    static func attributedString(
-      blockQuote blocks: [MarkdownBlock],
+      _ block: MarkdownBlock,
       theme: MarkdownTheme,
       foreground: MarkdownNativeColor,
       chipBackground: MarkdownNativeChipBackground
@@ -82,8 +74,8 @@
       let result = NSMutableAttributedString()
       var marker: PendingMarker?
       append(
-        blocks,
-        context: RenderContext().quoted(),
+        block,
+        context: RenderContext(),
         pendingMarker: &marker,
         to: result,
         theme: theme,
@@ -94,19 +86,30 @@
     }
   }
 
+  public extension MarkdownFragmentMetrics {
+    /// The shared list column, measured for these markers in the body font.
+    static func listColumn(markers: [String]) -> (markerInset: CGFloat, width: CGFloat) {
+      listColumn(
+        markerWidth: markers.map {
+          ($0 as NSString).size(withAttributes: [.font: MarkdownTextRunRenderer.listMarkerFont(for: $0)]).width
+        }.max() ?? 0
+      )
+    }
+  }
+
   extension MarkdownFlattenedListRenderer {
-    private static func append(
-      _ list: MarkdownList,
+    private static func appendItems(
+      _ items: [Item],
       context: RenderContext,
       to result: NSMutableAttributedString,
       theme: MarkdownTheme,
       foreground: MarkdownNativeColor,
       chipBackground: MarkdownNativeChipBackground
     ) {
-      let markers = list.items.enumerated().map { list.marker(for: $0.element, at: $0.offset) }
-      let width = markerWidth(markers)
-      for (itemIndex, item) in list.items.enumerated() {
-        if itemIndex > 0 {
+      let column = MarkdownFragmentMetrics.listColumn(markers: items.map(\.marker))
+      let contentContext = context.listItemContent(indentedBy: column.width)
+      for (index, item) in items.enumerated() {
+        if index > 0 {
           appendSpacing(
             context: context,
             to: result,
@@ -114,122 +117,30 @@
             foreground: foreground
           )
         }
+        var pendingMarker: PendingMarker? = PendingMarker(
+          text: item.marker,
+          indent: context.contentIndent + column.markerInset
+        )
         append(
-          item,
-          marker: markers[itemIndex],
-          markerWidth: width,
-          context: context,
+          item.blocks,
+          context: contentContext,
+          pendingMarker: &pendingMarker,
+          to: result,
+          theme: theme,
+          foreground: foreground,
+          chipBackground: chipBackground
+        )
+        // An empty item, or one that opens with a nested list, still shows
+        // its own marker on a line of its own.
+        appendPendingMarkerIfNeeded(
+          &pendingMarker,
+          context: contentContext,
           to: result,
           theme: theme,
           foreground: foreground,
           chipBackground: chipBackground
         )
       }
-    }
-
-    private static func append(
-      _ item: MarkdownListItem,
-      marker: String,
-      markerWidth: CGFloat,
-      context: RenderContext,
-      to result: NSMutableAttributedString,
-      theme: MarkdownTheme,
-      foreground: MarkdownNativeColor,
-      chipBackground: MarkdownNativeChipBackground
-    ) {
-      var pendingMarker: PendingMarker? = PendingMarker(
-        text: marker,
-        indent: context.contentIndent
-      )
-      guard !item.blocks.isEmpty else {
-        appendLine(
-          marker: pendingMarker,
-          text: MarkdownText(""),
-          font: MarkdownTextRunRenderer.bodyFont,
-          context: context.indented(by: markerWidth),
-          to: result,
-          theme: theme,
-          foreground: foreground,
-          chipBackground: chipBackground
-        )
-        return
-      }
-
-      let contentContext = context.indented(by: markerWidth)
-      for (blockIndex, block) in item.blocks.enumerated() {
-        if blockIndex > 0 {
-          appendSpacing(
-            context: contentContext,
-            to: result,
-            theme: theme,
-            foreground: foreground
-          )
-        }
-        switch block {
-        case let .list(nested):
-          appendPendingMarkerIfNeeded(
-            &pendingMarker,
-            context: contentContext,
-            to: result,
-            theme: theme,
-            foreground: foreground,
-            chipBackground: chipBackground
-          )
-          append(
-            nested,
-            context: context.indented(by: listIndent),
-            to: result,
-            theme: theme,
-            foreground: foreground,
-            chipBackground: chipBackground
-          )
-
-        case let .bulletList(items):
-          let nestedContext =
-            pendingMarker == nil ? context.indented(by: listIndent) : context
-          pendingMarker = nil
-          appendCompatibilityList(
-            items.map { ("•", $0) },
-            context: nestedContext,
-            to: result,
-            theme: theme,
-            foreground: foreground,
-            chipBackground: chipBackground
-          )
-
-        case let .orderedList(items):
-          let nestedContext =
-            pendingMarker == nil ? context.indented(by: listIndent) : context
-          pendingMarker = nil
-          appendCompatibilityList(
-            items.map { ("\($0.number).", $0.text) },
-            context: nestedContext,
-            to: result,
-            theme: theme,
-            foreground: foreground,
-            chipBackground: chipBackground
-          )
-
-        default:
-          append(
-            block,
-            context: contentContext,
-            pendingMarker: &pendingMarker,
-            to: result,
-            theme: theme,
-            foreground: foreground,
-            chipBackground: chipBackground
-          )
-        }
-      }
-      appendPendingMarkerIfNeeded(
-        &pendingMarker,
-        context: contentContext,
-        to: result,
-        theme: theme,
-        foreground: foreground,
-        chipBackground: chipBackground
-      )
     }
 
     private static func append(
@@ -296,7 +207,7 @@
           chipBackground: chipBackground
         )
 
-      case let .bulletList(items):
+      case .bulletList, .orderedList, .list:
         appendPendingMarkerIfNeeded(
           &pendingMarker,
           context: context,
@@ -305,44 +216,8 @@
           foreground: foreground,
           chipBackground: chipBackground
         )
-        appendCompatibilityList(
-          items.map { ("•", $0) },
-          context: context,
-          to: result,
-          theme: theme,
-          foreground: foreground,
-          chipBackground: chipBackground
-        )
-
-      case let .orderedList(items):
-        appendPendingMarkerIfNeeded(
-          &pendingMarker,
-          context: context,
-          to: result,
-          theme: theme,
-          foreground: foreground,
-          chipBackground: chipBackground
-        )
-        appendCompatibilityList(
-          items.map { ("\($0.number).", $0.text) },
-          context: context,
-          to: result,
-          theme: theme,
-          foreground: foreground,
-          chipBackground: chipBackground
-        )
-
-      case let .list(list):
-        appendPendingMarkerIfNeeded(
-          &pendingMarker,
-          context: context,
-          to: result,
-          theme: theme,
-          foreground: foreground,
-          chipBackground: chipBackground
-        )
-        append(
-          list,
+        appendItems(
+          items(of: block, depth: context.listDepth),
           context: context,
           to: result,
           theme: theme,
@@ -366,34 +241,18 @@
       }
     }
 
-    private static func appendCompatibilityList(
-      _ items: [(String, MarkdownText)],
-      context: RenderContext,
-      to result: NSMutableAttributedString,
-      theme: MarkdownTheme,
-      foreground: MarkdownNativeColor,
-      chipBackground: MarkdownNativeChipBackground
-    ) {
-      let width = markerWidth(items.map { $0.0 })
-      for (index, item) in items.enumerated() {
-        if index > 0 {
-          appendSpacing(
-            context: context,
-            to: result,
-            theme: theme,
-            foreground: foreground
-          )
+    private static func items(of block: MarkdownBlock, depth: Int) -> [Item] {
+      switch block {
+      case let .bulletList(items):
+        items.map { Item(marker: MarkdownList.bullet(depth: depth), blocks: [.paragraph($0)]) }
+      case let .orderedList(items):
+        items.map { Item(marker: "\($0.number).", blocks: [.paragraph($0.text)]) }
+      case let .list(list):
+        list.items.enumerated().map { index, item in
+          Item(marker: list.marker(for: item, at: index, depth: depth), blocks: item.blocks)
         }
-        appendLine(
-          marker: PendingMarker(text: item.0, indent: context.contentIndent),
-          text: item.1,
-          font: MarkdownTextRunRenderer.bodyFont,
-          context: context.indented(by: width),
-          to: result,
-          theme: theme,
-          foreground: foreground,
-          chipBackground: chipBackground
-        )
+      default:
+        []
       }
     }
 
@@ -434,7 +293,7 @@
           NSAttributedString(
             string: "\(marker.text)\t",
             attributes: MarkdownTextRunRenderer.baseAttributes(
-              font: MarkdownTextRunRenderer.bodyFont,
+              font: MarkdownTextRunRenderer.listMarkerFont(for: marker.text),
               foreground: MarkdownNativeColor(theme.secondaryTextForeground),
               lineSpacing: theme.lineSpacing
             )

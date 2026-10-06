@@ -20,4 +20,19 @@ struct MarkdownListMarkerLayoutTests {
       #expect(paragraph.headIndent - paragraph.firstLineHeadIndent >= width + 8)
     }
   }
+
+  /// The parser emits simple bullet/ordered blocks for tight one-line lists
+  /// and full lists otherwise; both must wrap under the same marker column.
+  @Test(arguments: ["- One\n- Two", "1. One\n2. Two", "- [ ] One\n- [x] Two", "- One\n\n  More\n- Two"])
+  func everyListShapeSharesOneHangingIndent(source: String) throws {
+    let theme = MarkdownTheme()
+    let text = MarkdownTextRunRenderer.attributedString(
+      for: MarkdownParser().parse(source), theme: theme, foregroundColor: theme.textForeground)
+    let location = (text.string as NSString).range(of: "One").location
+    try #require(location != NSNotFound)
+    let paragraph = try #require(
+      text.attribute(.paragraphStyle, at: location, effectiveRange: nil) as? NSParagraphStyle)
+    #expect(paragraph.headIndent == MarkdownFragmentMetrics.listIndent)
+    #expect(paragraph.tabStops.first?.location == MarkdownFragmentMetrics.listIndent)
+  }
 }

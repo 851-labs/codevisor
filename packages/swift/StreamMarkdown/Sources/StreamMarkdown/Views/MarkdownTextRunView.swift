@@ -101,42 +101,9 @@
           chipBackground: chipBackground
         )
 
-      case let .bulletList(items):
-        list(
-          items: items.map { (marker: "•", text: $0) },
-          theme: theme,
-          foreground: foreground,
-          chipBackground: chipBackground
-        )
-
-      case let .orderedList(items):
-        list(
-          items: items.map { (marker: "\($0.number).", text: $0.text) },
-          theme: theme,
-          foreground: foreground,
-          chipBackground: chipBackground
-        )
-
-      case let .list(list):
-        if let items = simpleListItems(list) {
-          self.list(
-            items: items,
-            theme: theme,
-            foreground: foreground,
-            chipBackground: chipBackground
-          )
-        } else {
-          MarkdownFlattenedListRenderer.attributedString(
-            list,
-            theme: theme,
-            foreground: foreground,
-            chipBackground: chipBackground
-          )
-        }
-
-      case let .blockQuote(blocks):
+      case .bulletList, .orderedList, .list, .blockQuote:
         MarkdownFlattenedListRenderer.attributedString(
-          blockQuote: blocks,
+          block,
           theme: theme,
           foreground: foreground,
           chipBackground: chipBackground
@@ -147,77 +114,12 @@
       }
     }
 
-    /// A tight list whose items are each one paragraph — or, mid-stream,
-    /// still empty — is the parser's simple list shape in all but name.
-    /// Rendering it through the simple path keeps one marker geometry
-    /// while a streaming list flips between the two forms as items land.
-    private static func simpleListItems(
-      _ list: MarkdownList
-    ) -> [(marker: String, text: MarkdownText)]? {
-      guard list.isTight else { return nil }
-      var items: [(marker: String, text: MarkdownText)] = []
-      for (index, item) in list.items.enumerated() {
-        guard !item.isTask else { return nil }
-        let marker = list.marker(for: item, at: index)
-        switch item.blocks.count {
-        case 0:
-          items.append((marker: marker, text: MarkdownText("")))
-        case 1:
-          guard case let .paragraph(text) = item.blocks[0] else { return nil }
-          items.append((marker: marker, text: text))
-        default:
-          return nil
-        }
-      }
-      return items
-    }
-
     static func canRenderFlattenedList(_ list: MarkdownList) -> Bool {
       MarkdownFlattenedListRenderer.canRender(list)
     }
 
     static func canRenderFlattenedText(_ blocks: [MarkdownBlock]) -> Bool {
       MarkdownFlattenedListRenderer.canRender(blocks)
-    }
-
-    private static func list(
-      items: [(marker: String, text: MarkdownText)],
-      theme: MarkdownTheme,
-      foreground: MarkdownNativeColor,
-      chipBackground: MarkdownNativeChipBackground
-    ) -> NSAttributedString {
-      let result = NSMutableAttributedString()
-      for (index, item) in items.enumerated() {
-        if index > 0 {
-          result.append(
-            verticalSeparator(
-              size: max(1, (theme.listItemSpacing - 2 * theme.lineSpacing) * 0.8),
-              lineSpacing: theme.lineSpacing,
-              foreground: foreground
-            )
-          )
-        }
-        result.append(
-          NSAttributedString(
-            string: "\(item.marker) ",
-            attributes: baseAttributes(
-              font: bodyFont,
-              foreground: MarkdownNativeColor(theme.secondaryTextForeground),
-              lineSpacing: theme.lineSpacing
-            )
-          )
-        )
-        result.append(
-          inlineAttributed(
-            item.text,
-            baseFont: bodyFont,
-            theme: theme,
-            foreground: foreground,
-            chipBackground: chipBackground
-          )
-        )
-      }
-      return result
     }
 
     static func inlineAttributed(
@@ -305,6 +207,10 @@
 
     static var bodyFont: MarkdownNativeFont {
       .preferredFont(forTextStyle: .body)
+    }
+
+    static func listMarkerFont(for marker: String) -> MarkdownNativeFont {
+      styled(bodyFont, bold: MarkdownList.isBullet(marker), italic: false)
     }
 
     static func headingFont(for level: Int) -> MarkdownNativeFont {

@@ -257,13 +257,15 @@ public struct MarkdownFragmentRenderView: View {
       ForEach(layout.listMarkers) { marker in
         Text(marker.text)
           .font(theme.bodyFont)
+          .fontWeight(MarkdownList.isBullet(marker.text) ? .bold : nil)
           .foregroundStyle(theme.secondaryTextForeground)
           .monospacedDigit()
-          .frame(width: MarkdownFragmentMetrics.listMarkerWidth, alignment: .leading)
+          .fixedSize()
           .offset(
             x: CGFloat(layout.quoteDepth) * MarkdownFragmentMetrics.quoteIndent
               + CGFloat(max(0, marker.depth - 1))
               * MarkdownFragmentMetrics.listIndent
+              + MarkdownFragmentMetrics.listColumn(markers: [marker.text]).markerInset
           )
       }
     }
@@ -451,18 +453,22 @@ private struct MarkdownRecursiveListView: View {
   @Environment(\.markdownTheme) private var theme
 
   var body: some View {
+    let markers = list.items.enumerated().map { list.marker(for: $0.element, at: $0.offset) }
+    let column = MarkdownFragmentMetrics.listColumn(markers: markers)
     VStack(alignment: .leading, spacing: theme.listItemSpacing) {
       ForEach(Array(list.items.enumerated()), id: \.offset) { index, item in
-        // The marker is sized first at its natural width and the
-        // content takes the remainder. Without this, the stack's
-        // initial equal-share proposal reaches the native text view,
-        // which fills whatever width it is offered — wrapping every
-        // item at half the row.
-        HStack(alignment: .top, spacing: 8) {
-          Text(list.marker(for: item, at: index))
+        // The marker column has a fixed width and the content takes the
+        // remainder. Without this, the stack's initial equal-share
+        // proposal reaches the native text view, which fills whatever
+        // width it is offered — wrapping every item at half the row.
+        HStack(alignment: .top, spacing: 0) {
+          Text(markers[index])
+            .fontWeight(MarkdownList.isBullet(markers[index]) ? .bold : nil)
             .foregroundStyle(theme.secondaryTextForeground)
             .monospacedDigit()
             .fixedSize()
+            .padding(.leading, column.markerInset)
+            .frame(width: column.width, alignment: .leading)
           MarkdownSegmentsView(
             blocks: item.blocks,
             foregroundColor: foregroundColor,

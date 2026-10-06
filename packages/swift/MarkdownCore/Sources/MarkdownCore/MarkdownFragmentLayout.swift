@@ -47,8 +47,25 @@ public struct MarkdownFragmentLayout: Sendable, Equatable, Hashable {
 }
 
 public extension MarkdownList {
-  func marker(for item: MarkdownListItem, at index: Int) -> String {
+  /// Disc, circle, then square: nested bullet lists stay distinguishable
+  /// from their parent the way browsers vary unordered markers by depth.
+  static func bullet(depth: Int) -> String {
+    switch depth {
+    case 0: "•"
+    case 1: "◦"
+    default: "▪"
+    }
+  }
+
+  /// Bullets are drawn bold; at body size the regular glyphs are too small
+  /// to tell a nested circle from a disc.
+  static func isBullet(_ marker: String) -> Bool {
+    marker == "•" || marker == "◦" || marker == "▪"
+  }
+
+  /// `depth` counts the lists enclosing this one; it only affects bullets.
+  func marker(for item: MarkdownListItem, at index: Int, depth: Int = 0) -> String {
     if item.isTask { return item.isChecked ? "☑" : "☐" }
-    return isOrdered ? "\(start + index)\(delimiter)" : "•"
+    return isOrdered ? "\(start + index)\(delimiter)" : Self.bullet(depth: depth)
   }
 }

@@ -147,10 +147,12 @@ struct SelectableTextViewTests {
         as? NSParagraphStyle
     )
 
-    #expect(outerStyle.firstLineHeadIndent == 0)
-    #expect(outerStyle.headIndent == 22)
-    #expect(nestedStyle.firstLineHeadIndent == 24)
-    #expect(nestedStyle.headIndent == 46)
+    let column = MarkdownFragmentMetrics.listColumn(markers: ["1.", "2."])
+    #expect(outerStyle.firstLineHeadIndent == column.markerInset)
+    #expect(outerStyle.headIndent == column.width)
+    // Nested markers start from the parent item's text, not the row edge.
+    #expect(nestedStyle.firstLineHeadIndent == column.width + column.markerInset)
+    #expect(nestedStyle.headIndent == 2 * column.width)
   }
 
   @Test("Mixed-content lists retain the recursive renderer fallback")
@@ -253,8 +255,9 @@ struct SelectableTextViewTests {
         as? NSParagraphStyle
     )
 
-    #expect(decoration.barOffsets == [22])
-    #expect(style.headIndent == 22 + MarkdownFragmentMetrics.quoteIndent)
+    let column = MarkdownFragmentMetrics.listIndent
+    #expect(decoration.barOffsets == [column])
+    #expect(style.headIndent == column + MarkdownFragmentMetrics.quoteIndent)
   }
 
   @Test("Content updates preserve and clamp selection")

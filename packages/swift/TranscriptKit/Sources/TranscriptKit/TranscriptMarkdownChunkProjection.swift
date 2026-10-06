@@ -364,7 +364,7 @@ enum TranscriptMarkdownChunkProjection {
       drafts[firstDraft].listMarkers.append(
         MarkdownFragmentLayout.ListMarker(
           depth: nestedItemPath.count,
-          text: list.marker(for: item, at: index)
+          text: list.marker(for: item, at: index, depth: nestedItemPath.count - 1)
         )
       )
       drafts[firstDraft].listMarkers.sort { $0.depth < $1.depth }
