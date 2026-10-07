@@ -78,7 +78,9 @@ public enum HarnessRegistry {
       id: "opencode", displayName: "OpenCode", symbolName: "curlybraces",
       accountScope: .fleetCredentials(signInNeedsMachine: true), supportsMultipleAccounts: true,
       usesProviderBrowser: true),
-    .init(id: "pi", displayName: "Pi", accountScope: .fleetCredentials(signInNeedsMachine: true)),
+    .init(
+      id: "pi", displayName: "Pi", symbolName: "function",
+      accountScope: .fleetCredentials(signInNeedsMachine: true)),
     .init(id: "devin", displayName: "Devin", accountScope: .fleetCredentials(signInNeedsMachine: false)),
     .init(id: "cursor", displayName: "Cursor"),
     .init(id: "gemini", displayName: "Gemini CLI", symbolName: "diamond"),

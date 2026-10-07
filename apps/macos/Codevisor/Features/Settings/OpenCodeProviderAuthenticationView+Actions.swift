@@ -1,4 +1,3 @@
-import AppKit
 import CodevisorCore
 import SwiftUI
 import CodevisorUI
@@ -28,40 +27,6 @@ extension OpenCodeProviderAuthenticationView {
           loaded.first(where: {
             signInRequest?.profileId == "default" ? $0.profileKind == "default" : $0.id == signInRequest?.profileId
           })?.id ?? loaded.first(where: \.isActive)?.id ?? loaded.first?.id
-      }
-    }
-  }
-
-  func loadProviders(accountId: String) async {
-    isLoadingProviders = true
-    do {
-      var loaded = try await client.listOpenCodeAuthProviders(accountId: accountId)
-      guard selectedAccountId == accountId else { return }
-      if !isShared, selectedAccount?.profileKind == "default" {
-        loaded = loaded.map { provider in
-          var local = provider
-          local.methods = provider.methods.filter { $0.type == "oauth" }
-          return local
-        }.filter { !$0.methods.isEmpty || $0.credentialType == "oauth" }
-      }
-      providers = loaded
-      providerAccountId = accountId
-      if !loaded.contains(where: { $0.id == selectedProviderId }) {
-        selectedProviderId = loaded.first(where: { $0.credentialType != nil })?.id
-      }
-      selectDefaultMethod()
-    } catch {
-      guard selectedAccountId == accountId else { return }
-      providers = []
-      providerAccountId = accountId
-      selectedProviderId = nil
-      errorMessage = serverErrorMessage(error)
-    }
-    if selectedAccountId == accountId {
-      isLoadingProviders = false
-      if !didOpenRequestedProvider, let signInRequest, errorMessage == nil {
-        didOpenRequestedProvider = true
-        prepareProviderSignIn(providers.first { $0.id == signInRequest.providerId })
       }
     }
   }
@@ -121,108 +86,7 @@ extension OpenCodeProviderAuthenticationView {
     await refreshHarness()
   }
 
-  func prepareProviderSignIn(_ provider: ServerOpenCodeAuthProvider? = nil) {
-    let choice = provider ?? providers.first(where: { $0.credentialType == nil }) ?? providers.first
-    selectedProviderId = choice?.id
-    providerSearch = provider?.name ?? ""
-    openedURL = nil
-    selectDefaultMethod()
-    showingProviderSignIn = choice != nil
-  }
-
-  func submitSelectedMethod() {
-    guard let method = selectedMethod, canSubmit(method) else { return }
-    Task { await beginLogin() }
-  }
-
-  func beginLogin() async {
-    guard let account = selectedAccount, let provider = selectedProvider, let method = selectedMethod else {
-      return
-    }
-    await perform("Starting sign-in…") {
-      let next = try await client.startOpenCodeAuth(
-        accountId: account.id,
-        providerId: provider.id,
-        methodId: method.id,
-        inputs: inputs.isEmpty ? nil : inputs,
-        apiKey: method.type == "api" ? apiKey : nil
-      )
-      await apply(next)
-    }
-  }
-
-  func submitCode(_ flow: ServerOpenCodeAuthFlow) {
-    let code = authorizationCode.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !code.isEmpty else { return }
-    Task {
-      await perform("Verifying…") {
-        let next = try await client.answerOpenCodeAuthFlow(id: flow.id, code: code)
-        authorizationCode = ""
-        await apply(next)
-      }
-    }
-  }
-
-  private func apply(_ next: ServerOpenCodeAuthFlow) async {
-    flow = next
-    if let url = next.authorization?.url, openedURL != url {
-      openedURL = url
-      open(url)
-    }
-    if next.state == "complete" {
-      flow = nil
-      pollingFlowId = nil
-      resetInput()
-      if let accountId = selectedAccountId { await loadProviders(accountId: accountId) }
-      await refreshHarness()
-      showingProviderSignIn = false
-    } else if next.state == "error" {
-      errorMessage = next.error ?? "OpenCode authentication failed."
-      flow = nil
-      pollingFlowId = nil
-    } else if next.state == "running" {
-      beginPolling(next.id)
-    }
-  }
-
-  private func beginPolling(_ id: String) {
-    guard pollingFlowId != id else { return }
-    pollingFlowId = id
-    Task {
-      while !Task.isCancelled, pollingFlowId == id {
-        try? await Task.sleep(for: .seconds(1))
-        guard let next = try? await client.openCodeAuthFlow(id: id) else { continue }
-        let pending = next.state == "running" || next.state == "waiting"
-        if !pending { pollingFlowId = nil }
-        await apply(next)
-        if !pending { return }
-      }
-    }
-  }
-
-  func providerSheetDismissed() {
-    cancelPendingFlow()
-    providerSearch = ""
-    authorizationCode = ""
-  }
-
-  func cancelPendingFlow() {
-    guard let flow, flow.state == "running" || flow.state == "waiting" else { return }
-    self.flow = nil
-    pollingFlowId = nil
-    Task { try? await client.cancelOpenCodeAuthFlow(id: flow.id) }
-  }
-
-  func remove(_ provider: ServerOpenCodeAuthProvider) async {
-    guard let account = selectedAccount else { return }
-    await perform("Removing credential…") {
-      try await client.removeOpenCodeAuthProvider(accountId: account.id, providerId: provider.id)
-      await loadProviders(accountId: account.id)
-      await refreshHarness()
-    }
-  }
-
-  private func refreshHarness() async {
+  func refreshHarness() async {
     if isShared { await loadAccounts(); return }
     if let updated = try? await environment.refreshHarnessAuthentication(
       harnessId: "opencode", onServer: scopedServerId)
@@ -245,14 +109,6 @@ extension OpenCodeProviderAuthenticationView {
     }
   }
 
-  func credentialDescription(_ type: String?) -> String {
-    switch type {
-    case "oauth": return "Provider Account"
-    case "wellknown": return "External Credential"
-    default: return "API Key"
-    }
-  }
-
   func profileName(_ account: ServerHarnessAccount) -> String {
     if account.profileKind == "default" { return "Default Profile" }
     if account.label.hasPrefix("OpenCode profile "),
@@ -261,10 +117,5 @@ extension OpenCodeProviderAuthenticationView {
       return "Profile \(index + 1)"
     }
     return account.label
-  }
-
-  func open(_ value: String) {
-    guard let url = URL(string: value) else { return }
-    NSWorkspace.shared.open(url)
   }
 }

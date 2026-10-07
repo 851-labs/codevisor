@@ -5,7 +5,13 @@ public struct HarnessProviderPicker: View {
   public struct Provider: Identifiable {
     public let id: String
     public let name: String
-    public init(id: String, name: String) { self.id = id; self.name = name }
+    /// Already signed in, so choosing it replaces the credential.
+    public let isConfigured: Bool
+    public init(id: String, name: String, isConfigured: Bool = false) {
+      self.id = id
+      self.name = name
+      self.isConfigured = isConfigured
+    }
   }
 
   @Environment(\.dismiss) private var dismiss
@@ -28,6 +34,7 @@ public struct HarnessProviderPicker: View {
           HStack {
             Text(provider.name).foregroundStyle(.primary)
             Spacer()
+            if provider.isConfigured { Text("Signed In").foregroundStyle(.secondary) }
             if provider.id == selection { Image(systemName: "checkmark") }
           }
         }
