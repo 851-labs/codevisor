@@ -10,6 +10,8 @@ public struct ComposerNoticeRail: View {
   @Environment(\.theme) private var theme
 
   private let message: String
+  /// The full text behind a summarized `message`, shown on request.
+  private let details: String?
   private let kind: Kind
   /// Overrides the kind's default glyph. Notices that aren't about invalid
   /// configuration read better with their own icon — a stalled turn is a
@@ -18,9 +20,11 @@ public struct ComposerNoticeRail: View {
   private let actionTitle: String?
   private let action: (() -> Void)?
   private let onDismiss: (() -> Void)?
+  @State private var isShowingDetails = false
 
   public init(
     _ message: String,
+    details: String? = nil,
     kind: Kind,
     systemImage: String? = nil,
     actionTitle: String? = nil,
@@ -28,6 +32,7 @@ public struct ComposerNoticeRail: View {
     onDismiss: (() -> Void)? = nil
   ) {
     self.message = message
+    self.details = details
     self.kind = kind
     self.systemImage = systemImage
     self.actionTitle = actionTitle
@@ -36,6 +41,38 @@ public struct ComposerNoticeRail: View {
   }
 
   public var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      headline
+      if isShowingDetails, let details {
+        ScrollView {
+          Text(details)
+            .font(.caption.monospaced())
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        // Long dumps scroll inside the banner instead of taking the chat.
+        .frame(maxHeight: 240)
+      }
+    }
+    .foregroundStyle(foregroundColor)
+    .padding(ComposerCardStyle.contentPadding)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background {
+      ZStack {
+        // Notices float beyond the transcript mask, so their base must
+        // be opaque or transcript text bleeds through the status tint.
+        cardStyle.shape
+          .fill(theme.windowBackground)
+        cardStyle.shape
+          .fill(foregroundColor.opacity(0.08))
+      }
+    }
+    // Actionable notices expose their controls as separate VoiceOver
+    // elements; passive notices read as one concise announcement.
+    .accessibilityElement(children: hasControls ? .contain : .combine)
+  }
+
+  private var headline: some View {
     HStack(alignment: .firstTextBaseline, spacing: 8) {
       Image(systemName: systemImage ?? defaultSystemImage)
         .font(.caption)
@@ -48,6 +85,15 @@ public struct ComposerNoticeRail: View {
         // controls stay compact while their hit regions meet at the
         // midpoint of this platform-aware gap.
         HStack(spacing: max(8, Typography.minimumInteractiveTargetSize - 20)) {
+          if details != nil {
+            Button(isShowingDetails ? "Hide Details" : "Show Details") { isShowingDetails.toggle() }
+              .buttonStyle(.plain)
+              .font(.caption.weight(.semibold))
+              .expandedHitTarget(
+                base: 20,
+                minimum: Typography.minimumInteractiveTargetSize
+              )
+          }
           if let actionTitle, let action {
             Button(actionTitle, action: action)
               .buttonStyle(.plain)
@@ -78,26 +124,10 @@ public struct ComposerNoticeRail: View {
         }
       }
     }
-    .foregroundStyle(foregroundColor)
-    .padding(ComposerCardStyle.contentPadding)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .background {
-      ZStack {
-        // Notices float beyond the transcript mask, so their base must
-        // be opaque or transcript text bleeds through the status tint.
-        cardStyle.shape
-          .fill(theme.windowBackground)
-        cardStyle.shape
-          .fill(foregroundColor.opacity(0.08))
-      }
-    }
-    // Actionable notices expose their controls as separate VoiceOver
-    // elements; passive notices read as one concise announcement.
-    .accessibilityElement(children: hasControls ? .contain : .combine)
   }
 
   private var hasControls: Bool {
-    action != nil || onDismiss != nil
+    details != nil || action != nil || onDismiss != nil
   }
 
   private var defaultSystemImage: String {
