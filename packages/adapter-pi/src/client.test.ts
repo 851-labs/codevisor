@@ -1,7 +1,7 @@
 import type { NdjsonTransport } from "@codevisor/agent-runtime"
 import { describe, expect, it, vi } from "vitest"
 
-import { wirePiClient } from "./client.js"
+import { PiExitedError, wirePiClient } from "./client.js"
 
 /// An in-memory transport: records what the client sends and lets a test
 /// write Pi's lines or fail the pipe.
@@ -88,7 +88,10 @@ describe("Pi RPC client", () => {
     pipe.fail(new Error("again"))
     await expect(pending).rejects.toThrow("pi exited")
     expect(closes).toEqual(["pi exited"])
-    await expect(client.command("get_state")).rejects.toThrow("Pi is no longer running.")
+    // A command after Pi exited still says why it exited.
+    const late = client.command("get_state")
+    await expect(late).rejects.toThrow("pi exited")
+    await expect(late).rejects.toBeInstanceOf(PiExitedError)
 
     const second = transport()
     const closing = wirePiClient(second.fake)
@@ -96,6 +99,7 @@ describe("Pi RPC client", () => {
     const outstanding = closing.command("get_state")
     closing.close()
     await expect(outstanding).rejects.toThrow("Pi was closed.")
+    await expect(closing.command("get_state")).rejects.toThrow("Pi was closed.")
     expect(second.closed()).toBe(true)
     expect(closes).toEqual(["pi exited"])
   })

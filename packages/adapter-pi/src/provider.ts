@@ -13,7 +13,7 @@ import {
 } from "@codevisor/agent-runtime"
 import { Effect } from "effect"
 
-import { spawnPiClient, type PiConnector } from "./client.js"
+import { PiExitedError, spawnPiClient, type PiConnector } from "./client.js"
 import { gatewayExtension, writeTemporaryExtension, type ExtensionWriter } from "./gateway.js"
 import { startPiSession, type PiSession } from "./session.js"
 
@@ -143,8 +143,14 @@ export const makePiProvider = (
             state: "error" as const,
             methods: [],
             canLogout: false,
-            // The client rejects with Pi's error.
-            detail: clampFailureDetail((cause as Error).message) ?? "Couldn't check Pi's sign-in."
+            // The client rejects with Pi's error, or why Pi stopped: a Pi
+            // that can't run says so, not that its sign-in is in question.
+            detail:
+              clampFailureDetail(
+                cause instanceof PiExitedError
+                  ? `Pi couldn’t start: ${cause.message}`
+                  : (cause as Error).message
+              ) ?? "Couldn't check Pi's sign-in."
           }
         } finally {
           client.close()

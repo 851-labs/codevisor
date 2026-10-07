@@ -63,6 +63,10 @@ export const spawnPiClient: PiConnector = async (request) => {
 }
 /* v8 ignore stop */
 
+/// Pi itself stopped (it exited, or its pipe failed), as opposed to Pi
+/// answering a command with an error. Carries Pi's own account of why.
+export class PiExitedError extends Error {}
+
 interface Pending {
   readonly resolve: (value: unknown) => void
   readonly reject: (error: Error) => void
@@ -73,16 +77,18 @@ export const wirePiClient = (transport: NdjsonTransport): PiClient => {
   const pending = new Map<string, Pending>()
   let eventHandler: ((event: Record<string, unknown>) => void) | undefined
   const closeHandlers: Array<(error: Error) => void> = []
-  let closed = false
+  /// Why the client stopped, once it has: later commands fail with it, so a
+  /// Pi that died before its first command still says why.
+  let stopped: Error | undefined
 
   const settle = (error: Error, notify: boolean): void => {
-    if (closed) return
-    closed = true
+    if (stopped !== undefined) return
+    stopped = error
     for (const entry of pending.values()) entry.reject(error)
     pending.clear()
     if (notify) for (const handler of closeHandlers) handler(error)
   }
-  transport.onFailure((error) => settle(error, true))
+  transport.onFailure((error) => settle(new PiExitedError(error.message), true))
 
   transport.onLine((line) => {
     let record: Record<string, unknown>
@@ -113,8 +119,8 @@ export const wirePiClient = (transport: NdjsonTransport): PiClient => {
       next += 1
       const id = `codevisor-${next}`
       return new Promise<T>((resolve, reject) => {
-        if (closed) {
-          reject(new Error("Pi is no longer running."))
+        if (stopped !== undefined) {
+          reject(stopped)
           return
         }
         pending.set(id, { reject, resolve: resolve as (value: unknown) => void })

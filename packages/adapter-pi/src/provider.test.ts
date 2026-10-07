@@ -4,6 +4,7 @@ import { join } from "node:path"
 
 import { describe, expect, it, onTestFinished } from "vitest"
 
+import { PiExitedError } from "./client.js"
 import { makePiProvider } from "./provider.js"
 import { piPrompt } from "./session.js"
 import { claude, codex, definition, environment, payloads, run, setup } from "./test-support.js"
@@ -359,10 +360,19 @@ describe("Pi provider", () => {
     })
     client.replies.get_available_models = null
     expect((await run(provider.probeAuth!(definition))).state).toBe("unauthenticated")
-    client.replies.get_available_models = new Error("pi exited")
+    client.replies.get_available_models = new Error("No API key for anthropic")
     expect(await run(provider.probeAuth!(definition))).toMatchObject({
       state: "error",
-      detail: "pi exited"
+      detail: "No API key for anthropic"
+    })
+    // A Pi that can't even run says why, not that its sign-in failed.
+    client.replies.get_available_models = new PiExitedError(
+      "Library not loaded: /usr/local/opt/simdutf/lib/libsimdutf.34.dylib, needed by /usr/local/bin/node"
+    )
+    expect(await run(provider.probeAuth!(definition))).toMatchObject({
+      state: "error",
+      detail:
+        "Pi couldn’t start: Library not loaded: /usr/local/opt/simdutf/lib/libsimdutf.34.dylib, needed by /usr/local/bin/node"
     })
     client.replies.get_available_models = new Error("")
     expect((await run(provider.probeAuth!(definition))).detail).toBe("Couldn't check Pi's sign-in.")

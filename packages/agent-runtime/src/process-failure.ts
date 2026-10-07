@@ -27,6 +27,12 @@ const nodeFooterPattern = /^Node\.js\s+v\d/
 /// `Error: ...`, `TypeError: ...`, `Uncaught Error: ...` — the line we want.
 const errorLinePattern = /^(?:Uncaught\s+)?(?:[A-Za-z_$][\w$]*)?Error:\s*(?<message>\S.*)$/
 
+/// macOS's loader refusing a binary: `dyld[123]: Library not loaded: <lib>`,
+/// then `Referenced from: <UUID> <binary>`. The binary is usually not the
+/// harness but what runs it (a Homebrew Node a dependency upgrade broke).
+const dyldMissingPattern = /^dyld\[\d+\]:\s*(?<message>Library not loaded:\s*\S.*)$/
+const dyldReferencePattern = /^Referenced from:\s*(?:<[^>]*>\s*)?(?<binary>\S.*)$/
+
 /// Minified bundle output: one enormous line with almost no spaces. Real
 /// diagnostics wrap or stay short, so a long line that is <12% whitespace is
 /// source, not a message.
@@ -66,6 +72,16 @@ export const clampFailureDetail = (
 export const summarizeProcessFailure = (stderr: string, fallback: string): string => {
   const lines = stderr.split(/\r?\n/).map((line) => line.trim())
   const meaningful = lines.filter((line) => !isNoise(line))
+
+  const missing = meaningful.findIndex((line) => dyldMissingPattern.test(line))
+  if (missing >= 0) {
+    const message = dyldMissingPattern.exec(meaningful[missing]!)!.groups!.message!
+    const binary = dyldReferencePattern.exec(meaningful[missing + 1] ?? "")?.groups?.binary
+    return clamp(
+      binary === undefined ? message : `${message}, needed by ${binary}`,
+      maxFailureDetailLength
+    )
+  }
 
   for (const line of meaningful) {
     const match = errorLinePattern.exec(line)

@@ -79,6 +79,29 @@ describe("summarizeProcessFailure", () => {
   })
 })
 
+describe("summarizeProcessFailure on macOS loader failures", () => {
+  it("names the missing library and the program that needed it", () => {
+    const stderr = [
+      "dyld[19226]: Library not loaded: /usr/local/opt/simdutf/lib/libsimdutf.34.dylib",
+      "  Referenced from: <A21ECD48-070E-3BA4-98A8-475CFC27343B> /usr/local/Cellar/node@22/22.22.2_2/bin/node",
+      "  Reason: tried: '/usr/local/opt/simdutf/lib/libsimdutf.34.dylib' (no such file)"
+    ].join("\n")
+    expect(summarizeProcessFailure(stderr, "pi exited")).toBe(
+      "Library not loaded: /usr/local/opt/simdutf/lib/libsimdutf.34.dylib, needed by /usr/local/Cellar/node@22/22.22.2_2/bin/node"
+    )
+    // Without the reference line, the library alone.
+    expect(
+      summarizeProcessFailure("dyld[1]: Library not loaded: /opt/lib/libx.dylib\n", "pi exited")
+    ).toBe("Library not loaded: /opt/lib/libx.dylib")
+    expect(
+      summarizeProcessFailure(
+        "dyld[1]: Library not loaded: /opt/lib/libx.dylib\nReferenced from: /bin/tool\n",
+        "x"
+      )
+    ).toBe("Library not loaded: /opt/lib/libx.dylib, needed by /bin/tool")
+  })
+})
+
 describe("clampFailureDetail", () => {
   it("collapses whitespace and truncates", () => {
     expect(clampFailureDetail("  a   b \n c  ")).toBe("a b c")
