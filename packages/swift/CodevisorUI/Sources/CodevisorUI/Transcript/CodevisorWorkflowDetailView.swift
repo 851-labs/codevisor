@@ -42,7 +42,9 @@ private struct ExpandableText: View {
     let isLong = lines.count > Self.previewLines
     VStack(alignment: .leading, spacing: 6) {
       ToolCallMonospacedText(
-        text: isLong && !showsAll ? lines.prefix(Self.previewLines).joined(separator: "\n") + "\n…" : text
+        title: noun.capitalized,
+        text: isLong && !showsAll ? lines.prefix(Self.previewLines).joined(separator: "\n") + "\n…" : text,
+        copyText: text
       )
       if isLong {
         Button(showsAll ? "Show less" : "Show full \(noun) (\(lines.count) lines)") {

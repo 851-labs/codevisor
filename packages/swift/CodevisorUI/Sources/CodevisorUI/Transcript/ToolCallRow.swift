@@ -234,11 +234,9 @@ public struct ToolCallContentCard: View {
   private var genericCard: some View {
     let rawSections = call.rawDetailSections()
     let content = call.content ?? []
-    // A lone section needs no title; several say which is which.
-    let titlesSections = rawSections.count + content.count > 1
     return VStack(alignment: .leading, spacing: 8) {
       ForEach(rawSections) { section in
-        ToolCallRawSectionView(section: section, showsTitle: titlesSections)
+        ToolCallRawSectionView(section: section)
       }
 
       ForEach(Array(content.enumerated()), id: \.offset) { _, content in
@@ -256,13 +254,30 @@ public struct ToolCallContentCard: View {
     .frame(maxWidth: .infinity, alignment: .leading)
   }
 
+  /// What the output is, named like a code block's language or a diff's
+  /// file: the file a read returned, or the kind of output.
+  private var label: String {
+    if call.kind == .read, let path = call.locations?.first?.path {
+      let name = (path as NSString).lastPathComponent
+      return name.isEmpty ? path : name
+    }
+    switch call.kind {
+    case .execute: return "Shell"
+    case .search: return "Search"
+    case .webSearch: return "Sources"
+    case .fetch: return "Fetch"
+    case .question: return "Answer"
+    default: return "Output"
+    }
+  }
+
   @ViewBuilder
   private func contentView(_ content: ToolCallContent) -> some View {
     switch content {
     case let .content(block):
       switch block {
       case let .text(text, _):
-        ToolCallMonospacedText(text: text)
+        ToolCallMonospacedText(title: label, text: text)
       // Web-search sources arrive as resource_link blocks; render each as
       // a tappable title over its host.
       case let .resourceLink(link):
@@ -307,25 +322,23 @@ private struct ToolCallStatusBadge: View {
 
 private struct ToolCallRawSectionView: View {
   let section: ToolCallRawSection
-  let showsTitle: Bool
   @Environment(\.theme) private var theme
   @Environment(\.transcriptInvalidateRowMeasurement) private var invalidateRowMeasurement
   @State private var showsFullText = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: 4) {
-      if showsTitle {
-        Text(section.title)
-          .font(.caption2.weight(.semibold))
-          .foregroundStyle(.secondary)
-      }
       if section.text.isEmpty {
         Text(section.kind == .output ? "No output" : "Empty")
           .font(.caption)
           .italic()
           .foregroundStyle(.secondary)
       } else {
-        ToolCallMonospacedText(text: showsFullText ? section.text : section.preview)
+        ToolCallMonospacedText(
+          title: section.title,
+          text: showsFullText ? section.text : section.preview,
+          copyText: section.text
+        )
       }
       if section.isTruncated {
         Button(showsFullText ? "Show less" : "Show full") {
@@ -341,25 +354,48 @@ private struct ToolCallRawSectionView: View {
   }
 }
 
-/// Tool input and output text, laid out like a code block: lines keep their
-/// length and scroll sideways when they overflow, rather than wrapping (or
-/// spilling past the card). Tall text scrolls within the same capped viewport
-/// as shell output.
+/// Tool input and output text, shown like a code block: a header naming it
+/// with a Copy button, then lines that keep their length and scroll sideways
+/// when they overflow. Tall text scrolls within the same capped viewport as
+/// shell output.
 struct ToolCallMonospacedText: View {
+  let title: String
   let text: String
+  /// What Copy copies, when the text shown is a preview of it.
+  var copyText: String?
   @Environment(\.theme) private var theme
 
   var body: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      HStack {
+        Text(title)
+          .font(.caption2.weight(.semibold))
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+          .truncationMode(.middle)
+        Spacer()
+        CodeHeaderCopyButton(text: copyText ?? text)
+      }
+      .padding(.horizontal, 10)
+      .padding(.vertical, 6)
+
+      Divider()
+
+      output
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(theme.codeBackground)
+    .clipShape(RoundedRectangle(cornerRadius: 8))
+  }
+
+  @ViewBuilder
+  private var output: some View {
     #if canImport(AppKit)
       NativePlainOutputView(text: text, theme: theme, followsTail: false)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.codeBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
     #elseif canImport(UIKit)
       IOSNativePlainOutputView(text: text, theme: theme, followsTail: false)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.codeBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
     #else
       Text(text)
         .font(.system(.caption, design: .monospaced))
