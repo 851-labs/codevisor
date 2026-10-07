@@ -4,6 +4,7 @@ import type { RuntimeEventSink } from "@codevisor/agent-runtime"
 import {
   canonicalExecutionArgs,
   CODEVISOR_EXECUTION_MAX_CALLS,
+  CODEVISOR_EXECUTION_MAX_DESCRIPTION,
   CODEVISOR_EXECUTION_MAX_ERROR,
   CODEVISOR_EXECUTION_MAX_STATUS,
   type CodevisorExecutionCall,
@@ -61,10 +62,17 @@ export const makeExecutionRecorder = (options: {
   readonly sink: RuntimeEventSink | undefined
   readonly sessionId: string
   readonly argsHash: string
+  /// The workflow's label, carried for rows that can't show their own.
+  readonly description?: string
   readonly timers?: ExecutionTimers
 }): ExecutionRecorder => {
   const { sink, sessionId, argsHash } = options
   const timers = options.timers ?? systemTimers
+  const firstLine = options.description?.split("\n").find((line) => line.trim().length > 0)
+  const description =
+    firstLine === undefined
+      ? undefined
+      : truncateText(firstLine, CODEVISOR_EXECUTION_MAX_DESCRIPTION)
   const calls: Array<CodevisorExecutionCall> = []
   let status: string | undefined
   let lastEmitAt = Number.NEGATIVE_INFINITY
@@ -77,6 +85,7 @@ export const makeExecutionRecorder = (options: {
     if (sink === undefined) return
     const execution: CodevisorExecutionState = {
       state,
+      ...(description === undefined ? {} : { description }),
       ...(status === undefined ? {} : { status }),
       calls: [...calls],
       ...(error === undefined ? {} : { error })

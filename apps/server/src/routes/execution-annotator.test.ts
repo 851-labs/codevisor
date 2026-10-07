@@ -250,13 +250,99 @@ describe("ExecutionAnnotator", () => {
         ...(rawInput === undefined ? {} : { rawInput })
       })
     f.annotate(call(0, args))
-    f.annotate(call(1))
+    // Evicting one call forgets only its own arguments.
+    f.annotate(call(1, { ...args, code: "second" }))
     for (let index = 2; index <= 65; index += 1) f.annotate(call(index))
     expect(f.annotate(gateway(running))).toEqual([])
     f.annotate(call(66, { ...args, code: "latest" }))
     expect(f.annotate(gateway(running, { ...args, code: "latest" }))).toHaveLength(1)
     f.annotator.endSession("session")
     expect(f.annotate(gateway(running, { ...args, code: "latest" }))).toEqual([])
+  })
+})
+
+describe("ExecutionAnnotator with OpenCode's Code Mode", () => {
+  /// OpenCode's own code tool: plain `execute`, running OpenCode's script,
+  /// from inside which the model calls the gateway.
+  const host = (fields: Record<string, unknown>) =>
+    output({ toolCallId: "oc-1", title: "execute", ...fields })
+  const labeled: CodevisorExecutionState = { ...running, description: args.description }
+
+  it("attaches the gateway's runs to the Code Mode row that ran them", () => {
+    const f = fixture()
+    const started = host({ sessionUpdate: "tool_call", status: "pending", rawInput: {} })
+    expect(f.annotate(started)).toEqual([started])
+    // Not running code yet: a gateway run can't be its own.
+    expect(f.annotate(gateway(labeled))).toEqual([])
+    const code = { code: "await tools.codevisor.execute({ description, code })" }
+    const runs = host({ sessionUpdate: "tool_call_update", status: "in_progress", rawInput: code })
+    // Once it runs, the run that arrived first is its own.
+    expect(payloads(f.annotate(runs))).toEqual([
+      runs.payload,
+      {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "oc-1",
+        _meta: { codevisorExecution: labeled }
+      }
+    ])
+    // Later updates of that run, and new runs from the same script, follow.
+    const second = { description: "Then list my machines", code: "machines.list()" }
+    const secondRun: CodevisorExecutionState = {
+      state: "running",
+      description: second.description,
+      calls: []
+    }
+    expect(payloads(f.annotate(gateway(secondRun, second)))).toEqual([
+      {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "oc-1",
+        _meta: { codevisorExecution: secondRun }
+      }
+    ])
+    const done = { ...completed, description: args.description }
+    expect(payloads(f.annotate(gateway(done)))).toEqual([
+      { sessionUpdate: "tool_call_update", toolCallId: "oc-1", _meta: { codevisorExecution: done } }
+    ])
+    // The row's own updates keep the state, and the harness's _meta.
+    expect(
+      payloads(
+        f.annotate(
+          host({
+            sessionUpdate: "tool_call_update",
+            status: "in_progress",
+            rawInput: code,
+            _meta: { opencode: 1 }
+          })
+        )
+      )
+    ).toEqual([
+      {
+        toolCallId: "oc-1",
+        title: "execute",
+        sessionUpdate: "tool_call_update",
+        status: "in_progress",
+        rawInput: code,
+        _meta: { opencode: 1, codevisorExecution: done }
+      }
+    ])
+    // Once it settles, a later run is no longer its own.
+    f.annotate(host({ sessionUpdate: "tool_call_update", status: "completed" }))
+    expect(f.annotate(gateway(running, { description: "Later", code: "x" }))).toEqual([])
+  })
+
+  it("leaves a Code Mode row alone when the gateway isn't involved", () => {
+    const f = fixture()
+    const update = host({
+      sessionUpdate: "tool_call_update",
+      status: "in_progress",
+      rawInput: { code: "1 + 1" }
+    })
+    expect(f.annotate(host({ sessionUpdate: "tool_call", status: "pending" }))).toHaveLength(1)
+    expect(f.annotate(update)).toEqual([update])
+    // Running again changes nothing.
+    expect(f.annotate(update)).toEqual([update])
+    const failed = host({ sessionUpdate: "tool_call_update", status: "failed" })
+    expect(f.annotate(failed)).toEqual([failed])
   })
 })
 

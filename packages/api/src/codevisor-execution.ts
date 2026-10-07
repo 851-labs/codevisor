@@ -13,6 +13,10 @@ export interface CodevisorExecutionCall {
 
 export interface CodevisorExecutionState {
   readonly state: "running" | "completed" | "failed"
+  /// The workflow's label (`execute`'s `description`), for rows whose own
+  /// arguments don't carry it: a harness that ran the gateway from inside
+  /// its own code tool (OpenCode's Code Mode).
+  readonly description?: string
   readonly status?: string
   readonly calls: ReadonlyArray<CodevisorExecutionCall>
   readonly error?: string

@@ -173,13 +173,14 @@ describe("gateway machines and execution annotations", () => {
       expect(annotations[0]).toEqual({
         kind: "codevisor_execution",
         argsHash,
-        execution: { state: "running", calls: [] }
+        execution: { state: "running", description: "Build the app on the MacBook", calls: [] }
       })
       expect(annotations.at(-1)).toEqual({
         kind: "codevisor_execution",
         argsHash,
         execution: {
           state: "completed",
+          description: "Build the app on the MacBook",
           status: "Finding the MacBook",
           // machines.get's own lookup is the prelude's, not the script's.
           calls: [
@@ -208,6 +209,8 @@ describe("gateway machines and execution annotations", () => {
       expect(failed.isError).toBe(true)
       expect((events.at(-1)!.payload as { execution: unknown }).execution).toEqual({
         state: "failed",
+        // The label the annotation carries is cut to one short line.
+        description: `${"Check ".repeat(13)}C…`,
         calls: [],
         error: expect.stringContaining("boom")
       })

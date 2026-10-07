@@ -36,6 +36,39 @@ struct CodevisorExecutionPresentationTests {
     #expect(settled.displayTitle == "Build on the MacBook")
   }
 
+  @Test("OpenCode's Code Mode row reads as the workflow it ran, and stays plain otherwise")
+  func codeModeRow() throws {
+    func row(status: String, meta: String) throws -> ToolCall {
+      let json = """
+        {"toolCallId":"oc","title":"execute","status":"\(status)","isSnapshot":true,
+         "rawInput":{"code":"await tools.codevisor.execute({ description, code })"}\(meta)}
+        """
+      return try JSONDecoder().decode(ToolCall.self, from: Data(json.utf8))
+    }
+    let running = try row(
+      status: "in_progress",
+      meta:
+        #","_meta":{"codevisorExecution":{"state":"running","description":"List my machines","status":"Asking the fleet","calls":[]}}"#
+    )
+    #expect(running.isIntegrationPresentationCall)
+    #expect(running.displayTitle == "Asking the fleet")
+    let done = try row(
+      status: "completed",
+      meta: #","_meta":{"codevisorExecution":{"state":"completed","description":"List my machines","calls":[]}}"#
+    )
+    #expect(done.displayTitle == "List my machines")
+    let failed = try row(
+      status: "completed",
+      meta:
+        #","_meta":{"codevisorExecution":{"state":"failed","description":"List my machines","calls":[],"error":"Error: no machines"}}"#
+    )
+    #expect(failed.displayTitle == "List my machines — failed: no machines")
+    // Code that never reached the gateway is OpenCode's own tool.
+    let plain = try row(status: "completed", meta: "")
+    #expect(!plain.isIntegrationPresentationCall)
+    #expect(plain.codevisorExecution == nil)
+  }
+
   @Test("A failed workflow names the error's message without its stack")
   func failedTitle() throws {
     let failed = try snapshot(

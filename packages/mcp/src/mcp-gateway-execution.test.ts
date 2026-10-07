@@ -55,6 +55,38 @@ const recording = (timers?: ExecutionTimers) => {
 }
 
 describe("execution recorder", () => {
+  it("carries the workflow's label, one line and short", async () => {
+    const labeled = (description: string) => {
+      const events: Array<RuntimeEvent> = []
+      const recorder = makeExecutionRecorder({
+        sink: (event) => {
+          events.push(event)
+        },
+        sessionId: "session-1",
+        argsHash: "hash-1",
+        description
+      })
+      return { recorder, events }
+    }
+    const { recorder, events } = labeled("\n  List my machines\nand more detail")
+    await recorder.finish()
+    expect(
+      events.map((event) => (event.payload as { execution: CodevisorExecutionState }).execution)
+    ).toEqual([
+      { state: "running", description: "List my machines", calls: [] },
+      { state: "completed", description: "List my machines", calls: [] }
+    ])
+    const long = labeled("x".repeat(200))
+    const first = (long.events[0]!.payload as { execution: CodevisorExecutionState }).execution
+    expect(first.description).toHaveLength(80)
+    // A blank label is no label.
+    const blank = labeled("  \n ")
+    expect((blank.events[0]!.payload as { execution: CodevisorExecutionState }).execution).toEqual({
+      state: "running",
+      calls: []
+    })
+  })
+
   it("emits the start at once, throttles progress to a trailing update, and always emits the end", async () => {
     const clock = manualTimers()
     const { events, recorder, states } = recording(clock.timers)

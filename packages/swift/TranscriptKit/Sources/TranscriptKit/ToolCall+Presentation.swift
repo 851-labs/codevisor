@@ -27,7 +27,10 @@ extension ToolCall {
     let operation = prefixes.first(where: normalized.hasPrefix).map {
       String(normalized.dropFirst($0.count))
     }
-    return operation.flatMap(CodevisorGatewayOperation.init(rawValue:))
+    if let operation = operation.flatMap(CodevisorGatewayOperation.init(rawValue:)) { return operation }
+    // OpenCode's Code Mode tool (plain `execute`) running a gateway workflow
+    // from its own code: the server attaches the workflow it ran.
+    return normalized == "execute" && meta?["codevisorExecution"] != nil ? .execute : nil
   }
 
   /// Codex's built-in tool discovery is part of the same integration flow
@@ -88,7 +91,7 @@ extension ToolCall {
   /// line is used, capped at the label length the tool asks the model for.
   public var integrationDescription: String? {
     guard codevisorGatewayOperation == .execute,
-      let firstLine = rawInput?["description"]?.stringValue?
+      let firstLine = (rawInput?["description"]?.stringValue ?? codevisorExecution?.description)?
         .split(whereSeparator: \.isNewline).first
     else { return nil }
     let description = firstLine.trimmingCharacters(in: .whitespaces)
@@ -155,6 +158,8 @@ public struct CodevisorExecution: Equatable, Sendable {
   }
 
   public var state: State?
+  /// The workflow's label, for rows whose own arguments don't carry it.
+  public var description: String?
   public var status: String?
   public var calls: [Call]
   public var error: String?
@@ -162,6 +167,7 @@ public struct CodevisorExecution: Equatable, Sendable {
   init?(json: JSONValue) {
     guard case .object = json else { return nil }
     state = json["state"]?.stringValue.flatMap(State.init(rawValue:))
+    description = json["description"]?.stringValue
     status = json["status"]?.stringValue
     error = json["error"]?.stringValue
     calls = (json["calls"]?.arrayValue ?? []).compactMap { call in

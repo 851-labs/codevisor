@@ -19,6 +19,12 @@ const settledStatuses = new Set(["in_progress", "completed", "failed"])
 
 interface TrackedCall {
   title?: string
+  /// A harness's own code tool (OpenCode's Code Mode `execute`), which runs
+  /// the gateway from inside its script: its arguments are the harness's
+  /// code, never the gateway's, so gateway runs attach to it while it runs.
+  host?: boolean
+  /// The host is running its code: gateway runs now come from it.
+  hostRunning?: boolean
   parentToolCallId?: string
   /// The harness's own `_meta`, kept so annotations merge into it instead of
   /// replacing it (the transcript projection replaces top-level fields).
@@ -75,7 +81,7 @@ export class ExecutionAnnotator {
     const { argsHash, execution } = payload
     if (typeof argsHash !== "string" || !isRecord(execution)) return []
     const state = this.session(sessionId)
-    const toolCallId = state.toolCallsByHash.get(argsHash)
+    const toolCallId = state.toolCallsByHash.get(argsHash) ?? this.adoptByHost(state, argsHash)
     if (toolCallId === undefined) {
       this.prunePending(state)
       state.pending.delete(argsHash)
@@ -107,17 +113,22 @@ export class ExecutionAnnotator {
     let state = this.sessions.get(sessionId)
     let tracked = state?.calls.get(toolCallId)
     if (tracked === undefined) {
-      if (typeof payload.title !== "string" || !isExecuteTitle(payload.title)) return [event]
+      const title = typeof payload.title === "string" ? payload.title : undefined
+      const host = title !== undefined && isHostTitle(title)
+      if (title === undefined || (!host && !isExecuteTitle(title))) return [event]
       state ??= this.session(sessionId)
-      tracked = {}
+      tracked = host ? { host } : {}
       state.calls.set(toolCallId, tracked)
       if (state.calls.size > maxTrackedCallsPerSession) {
-        const [evictedId, evicted] = state.calls.entries().next().value!
-        state.calls.delete(evictedId)
-        if (evicted.argsHash !== undefined) state.toolCallsByHash.delete(evicted.argsHash)
+        const [evictedId] = state.calls.keys()
+        state.calls.delete(evictedId!)
+        for (const [hash, id] of state.toolCallsByHash)
+          if (id === evictedId) state.toolCallsByHash.delete(hash)
       }
     }
     state = state!
+    if (tracked.host === true)
+      return this.receiveHostCall(state, event, payload, toolCallId, tracked)
     if (typeof payload.title === "string") tracked.title = payload.title
     if (typeof payload.parentToolCallId === "string") {
       tracked.parentToolCallId = payload.parentToolCallId
@@ -143,6 +154,54 @@ export class ExecutionAnnotator {
     if (pending === undefined) return [published]
     state.pending.delete(argsHash)
     return [published, annotation(event, toolCallId, tracked, pending.execution)]
+  }
+
+  /// A host's own update. Once it runs code, gateway runs that arrived
+  /// before it did are its own.
+  private receiveHostCall(
+    state: SessionState,
+    event: RuntimeEvent,
+    payload: Record<string, unknown>,
+    toolCallId: string,
+    tracked: TrackedCall
+  ): ReadonlyArray<RuntimeEvent> {
+    let published = event
+    if (isRecord(payload._meta)) {
+      const { codevisorExecution: _, ...meta } = payload._meta
+      tracked.meta = meta
+    }
+    if (tracked.execution !== undefined) {
+      published = {
+        ...event,
+        payload: { ...payload, _meta: { ...tracked.meta, codevisorExecution: tracked.execution } }
+      }
+    }
+    const status = String(payload.status)
+    if (status === "completed" || status === "failed") {
+      tracked.hostRunning = false
+      return [published]
+    }
+    const input = payload.rawInput
+    if (!isRecord(input) || typeof input.code !== "string" || tracked.hostRunning === true)
+      return [published]
+    tracked.hostRunning = true
+    this.prunePending(state)
+    const waiting = [...state.pending]
+    if (waiting.length === 0) return [published]
+    for (const [hash] of waiting) {
+      state.pending.delete(hash)
+      state.toolCallsByHash.set(hash, toolCallId)
+    }
+    return [published, annotation(event, toolCallId, tracked, waiting.at(-1)![1].execution)]
+  }
+
+  /// The running host a gateway run with no row of its own came from: the
+  /// most recent one, since a harness runs one tool call at a time.
+  private adoptByHost(state: SessionState, argsHash: string): string | undefined {
+    const running = [...state.calls].findLast(([, call]) => call.hostRunning === true)
+    if (running === undefined) return undefined
+    state.toolCallsByHash.set(argsHash, running[0])
+    return running[0]
   }
 
   private session(sessionId: string): SessionState {
@@ -185,6 +244,10 @@ const annotation = (
 }
 
 const isExecuteTitle = (title: string): boolean => executeToolTitles.has(title.trim().toLowerCase())
+
+/// OpenCode 2 names its Code Mode tool plain `execute`; the gateway's own
+/// tool always carries its server's name.
+const isHostTitle = (title: string): boolean => title.trim().toLowerCase() === "execute"
 
 /// Claude streams tool input, so a partial input is not hashed until the
 /// call is running or both fields the gateway requires are present.

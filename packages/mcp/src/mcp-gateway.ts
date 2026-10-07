@@ -273,7 +273,8 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
         const recorder = makeExecutionRecorder({
           sink: runtime.sink,
           sessionId,
-          argsHash: executionArgsHash({ code, description })
+          argsHash: executionArgsHash({ code, description }),
+          description
         })
         const artifacts = newArtifactCollector()
         const clientId = turnClientId(sessionId)
