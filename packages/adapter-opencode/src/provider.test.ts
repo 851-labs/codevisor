@@ -19,7 +19,7 @@ describe("OpenCode provider", () => {
   it("owns the built-in OpenCode harness instead of routing it through generic ACP", () => {
     const definition = harnessCatalog.find((candidate) => candidate.id === "opencode")
     expect(definition?.provider).toBe("opencode")
-    const provider = makeOpenCodeProvider(environment)
+    const provider = makeOpenCodeProvider(environment, { locateOpenCode: () => undefined })
     expect(provider.id).toBe("opencode")
     expect(provider.readiness(definition!)).toEqual({ state: "ready" })
   })
@@ -33,7 +33,10 @@ describe("OpenCode provider", () => {
         return Effect.fail(new AgentRuntimeError({ message: "stop", operation: "connect" }))
       }
     }
-    const provider = makeOpenCodeProvider(environment, { connector })
+    const provider = makeOpenCodeProvider(environment, {
+      connector,
+      locateOpenCode: () => undefined
+    })
     await Effect.runPromise(
       Effect.flip(
         provider.createSession(definition, "/project", async () => undefined, {
@@ -46,5 +49,30 @@ describe("OpenCode provider", () => {
     const config = JSON.parse(launched[0]!.OPENCODE_CONFIG_CONTENT!)
     expect(config).toMatchObject({ model: "x/y", permission: { external_directory: "allow" } })
     expect(launched[0]!.PATH).toBe("/bin")
+  })
+
+  it("runs the newest OpenCode, not whichever PATH lists first", async () => {
+    const definition = harnessCatalog.find((candidate) => candidate.id === "opencode")!
+    const commands: Array<string> = []
+    const connector: AcpConnector = {
+      connect: (request) => {
+        commands.push(request.command)
+        return Effect.fail(new AgentRuntimeError({ message: "stop", operation: "connect" }))
+      }
+    }
+    const newest = makeOpenCodeProvider(environment, {
+      connector,
+      locateOpenCode: (env) => (env.PATH === "/bin" ? "/home/me/.opencode/bin/opencode" : undefined)
+    })
+    await Effect.runPromise(
+      Effect.flip(newest.createSession(definition, "/p", async () => undefined))
+    )
+    expect(commands).toEqual(["/home/me/.opencode/bin/opencode"])
+    // Other executables are found as before.
+    expect(
+      makeOpenCodeProvider(environment).readiness({ ...definition, detectBinaries: ["nope"] })
+    ).toMatchObject({
+      state: "unavailable"
+    })
   })
 })
