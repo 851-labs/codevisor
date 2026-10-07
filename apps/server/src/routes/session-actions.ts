@@ -33,6 +33,7 @@ import type {
 } from "../server-context.js"
 import { drainPromptQueue, publishPromptQueue } from "./prompt-queue.js"
 import { applySessionConfigPick } from "./session-config.js"
+import { routeSessionTranscript } from "./session-transcript.js"
 import {
   applySessionUpdate,
   createSessionIfMissing,
@@ -111,88 +112,10 @@ export const routeSessionActions = async (
     return true
   }
 
-  const transcriptSessionId = matchRoute(url.pathname, "/v1/sessions/:id/transcript")
-  if (transcriptSessionId !== undefined && request.method === "GET") {
-    const rawBefore = url.searchParams.get("before")
-    const byId =
-      rawBefore?.startsWith("after-id:") === true || rawBefore?.startsWith("before-id:") === true
-    const forward =
-      rawBefore?.startsWith("after:") === true || rawBefore?.startsWith("after-id:") === true
-    const before =
-      rawBefore === null
-        ? undefined
-        : byId
-          ? rawBefore.slice(rawBefore.indexOf(":") + 1)
-          : Number(forward ? rawBefore.slice(6) : rawBefore)
-    if (
-      (typeof before === "number" && (!Number.isSafeInteger(before) || before < 0)) ||
-      (typeof before === "string" && !/^[a-fA-F0-9-]{36}$/.test(before))
-    ) {
-      throw new HttpFailure(400, "Invalid transcript cursor")
-    }
-    const rawLimit = url.searchParams.get("limit")
-    const limit = rawLimit === null ? 32 : Number(rawLimit)
-    if (!Number.isSafeInteger(limit) || limit < 1) {
-      throw new HttpFailure(400, "Invalid transcript page limit")
-    }
-    writeJson(
-      response,
-      200,
-      withUpdateGate(
-        await run(services.db.getTranscriptPage(transcriptSessionId, before, limit, forward)),
-        services,
-        routeState,
-        transcriptSessionId
-      )
-    )
-    return true
-  }
-
-  const transcriptBody = matchRouteParams(url.pathname, "/v1/sessions/:id/transcript/:itemId/body")
-  if (transcriptBody !== undefined && request.method === "GET") {
-    const { id, itemId } = transcriptBody as { readonly id: string; readonly itemId: string }
-    const key = url.searchParams.get("key")
-    const field = url.searchParams.get("field")
-    const position = Number(url.searchParams.get("position") ?? "0")
-    if (key === null || field === null || !Number.isSafeInteger(position) || position < 0) {
-      throw new HttpFailure(400, "Invalid transcript body cursor")
-    }
-    const page = await run(services.db.getTranscriptBodyPage(id, itemId, key, field, position))
-    if (page === undefined) throw new HttpFailure(404, "Transcript body not found")
-    writeJson(response, 200, page)
-    return true
-  }
-
-  const transcriptDetails = matchRouteParams(
-    url.pathname,
-    "/v1/sessions/:id/transcript/:itemId/details"
-  )
-  if (transcriptDetails !== undefined && request.method === "GET") {
-    const { id, itemId } = transcriptDetails as { readonly id: string; readonly itemId: string }
-    const after = url.searchParams.get("after") ?? undefined
-    if (after !== undefined && after !== "latest") {
-      try {
-        const cursor = JSON.parse(Buffer.from(after, "base64url").toString()) as {
-          position?: unknown
-          key?: unknown
-          reverse?: unknown
-        }
-        if (
-          !Number.isSafeInteger(cursor.position) ||
-          typeof cursor.key !== "string" ||
-          (cursor.reverse !== undefined && typeof cursor.reverse !== "boolean")
-        )
-          throw new Error("Invalid cursor")
-      } catch {
-        writeJson(response, 400, { error: "Invalid transcript detail cursor" })
-        return true
-      }
-    }
-    const details = await run(services.db.getTranscriptItemDetails(id, itemId, after))
-    if (details === undefined) {
-      throw new HttpFailure(404, `Transcript item not found: ${itemId}`)
-    }
-    writeJson(response, 200, details)
+  if (
+    request.method === "GET" &&
+    (await routeSessionTranscript(services, routeState, request, response, url))
+  ) {
     return true
   }
 
