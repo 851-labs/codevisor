@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest"
 
 import { makeServices, run } from "../test-support.js"
 import {
+  harnessesSignedInBy,
   makeSharedAccountStore,
   sharedAccountValue,
   SHARED_ACCOUNTS_NAMESPACE
@@ -14,6 +15,24 @@ const row = {
   credential: { id: "credential-id-0001", key: "a".repeat(43) }
 }
 describe("shared account metadata", () => {
+  it("names the harnesses a set of shared sign-in changes affects", () => {
+    expect(
+      harnessesSignedInBy([
+        { key: 'provider:["pi","default","anthropic"]', value: {} },
+        // A signed-out provider still names its harness.
+        { key: 'provider:["opencode","work","openai"]', value: null },
+        { key: 'provider:["pi","default","openai-codex"]', value: {} },
+        { key: "selected:claude-code", value: "shared-account" },
+        { key: row.id, value: row },
+        // Neither a valid provider key nor a valid account names one.
+        { key: "provider:{", value: {} },
+        { key: "provider:[1]", value: {} },
+        { key: "shared-removed", value: null },
+        { key: "alias:x", value: "y" }
+      ])
+    ).toEqual(["pi", "opencode", "claude-code", "codex"])
+  })
+
   it("rejects malformed records and credentials without blocking the rest of a sync document", async () => {
     for (const value of [
       null,

@@ -5,6 +5,7 @@ import { isValidBlobId, isValidSyncNamespace } from "@codevisor/sync"
 
 import { ACCOUNTS_SYNC_NAMESPACE, publishAccountsRoster } from "../infra/config-sync.js"
 import { MCP_OVERLAYS_NAMESPACE } from "../infra/mcp-fleet.js"
+import { harnessesSignedInBy } from "../infra/shared-account-store.js"
 import { verifySkillArchive } from "../infra/skills-sync.js"
 import {
   appendAndPublish,
@@ -17,7 +18,7 @@ import {
   type CodevisorServerServices,
   type EventFanout
 } from "../server-context.js"
-import { refreshMcpReadiness } from "./sync-readiness.js"
+import { refreshHarnessReadiness, refreshMcpReadiness } from "./sync-readiness.js"
 import {
   publishSyncChanged,
   reconcileForNamespace,
@@ -134,7 +135,17 @@ export const routeSync = async (
   if (request.method === "PUT") {
     const body = await readSchema(request, PutSyncRequestSchema)
     const result = await run(services.db.mergeSyncEntries(namespace, body.entries))
-    if (namespace === "harness-shared-accounts") await services.sharedAccounts?.reconcileRemote()
+    if (namespace === "harness-shared-accounts") {
+      await services.sharedAccounts?.reconcileRemote()
+      // A sign-in shared from another machine changes what this machine's
+      // harnesses can use: check them now, then report, even unchanged, so
+      // the fleet sees this machine has caught up rather than waiting on it.
+      const signedIn = harnessesSignedInBy(result.changed)
+      if (signedIn.length > 0)
+        void Promise.allSettled(signedIn.map((harnessId) => services.auth?.refresh(harnessId)))
+          .then(() => refreshHarnessReadiness(services, config, fanout, [], result.changed))
+          .catch(swallowError)
+    }
     if (result.changed.length > 0) {
       void appendAndPublish(services.db, fanout, "sync.changed", namespace, {
         namespace,

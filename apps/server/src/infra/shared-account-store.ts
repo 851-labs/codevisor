@@ -49,6 +49,31 @@ export const sharedAccountValue = (value: unknown): SharedHarnessAccount | undef
   return row
 }
 
+/// The harnesses whose sign-ins a set of shared-account changes affects: a
+/// provider sign-in names its harness in its key, a shared account in its
+/// value, and an account selection in its key.
+export const harnessesSignedInBy = (
+  entries: ReadonlyArray<Pick<SyncEntryRecord, "key" | "value">>
+): ReadonlyArray<string> => {
+  const harnesses = new Set<string>()
+  for (const { key, value } of entries) {
+    if (key.startsWith("provider:")) {
+      try {
+        const [harness] = JSON.parse(key.slice("provider:".length)) as Array<unknown>
+        if (typeof harness === "string") harnesses.add(harness)
+      } catch {
+        // Not a provider sign-in this version writes.
+      }
+    } else if (key.startsWith("selected:")) {
+      harnesses.add(key.slice("selected:".length))
+    } else if (key.startsWith("shared-")) {
+      const harness = sharedAccountValue(value)?.harnessId
+      if (harness !== undefined) harnesses.add(harness)
+    }
+  }
+  return [...harnesses]
+}
+
 export const makeSharedAccountStore = (db: CodevisorDatabaseService, serverId: string) => {
   const listeners = new Set<(entries: ReadonlyArray<SyncEntryRecord>) => void>()
   const entries = () => Effect.runPromise(db.getSyncEntries(SHARED_ACCOUNTS_NAMESPACE))

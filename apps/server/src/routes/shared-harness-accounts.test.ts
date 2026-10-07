@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest"
 
+import { waitFor } from "../changes-test-support.js"
 import { fleet } from "../infra/shared-accounts-test-support.js"
 import { jsonRequest, makeServices, run, runningServers, startWithApp } from "../test-support.js"
 import { makeAuthFixture } from "./harness-auth-test-support.js"
@@ -92,6 +93,13 @@ it("reconciles received credentials and protects the loopback gateway at the rea
     b = await f.machine("target")
   const placeholder = await a.shared.create("claude-code", "Shared")
   await a.shared.saveApiKey(placeholder.id, "fixture-key")
+  await a.shared.providers.capture("pi", "default", "anthropic", {
+    type: "oauth",
+    access: "fixture-access",
+    refresh: "fixture-refresh",
+    expires: 3_600_000
+  })
+  const refresh = vi.spyOn(b.auth, "refresh")
   const server = await startWithApp(b.services)
   runningServers.push(server)
   expect((await jsonRequest(server, "/harness/claude/v1/models")).status).toBe(401)
@@ -104,6 +112,30 @@ it("reconciles received credentials and protects the loopback gateway at the rea
   })
   expect(merged.status).toBe(200)
   expect(await b.shared.accounts("claude-code", true)).toHaveLength(1)
+  // The harnesses whose sign-ins arrived are checked at once, not at the
+  // next sweep.
+  expect(refresh.mock.calls.map(([harnessId]) => harnessId).toSorted()).toEqual([
+    "claude-code",
+    "pi"
+  ])
+  // Then it reports, stamped after the sign-ins, so the fleet can tell it
+  // has caught up with them.
+  const signedInAt = Math.max(
+    ...(await a.shared.store.entries()).map((entry) => entry.timestamp.wallMs)
+  )
+  await waitFor(async () =>
+    (await run(b.db.getSyncEntries("harness-readiness"))).some(
+      (entry) => entry.key === "server-a" && entry.timestamp.wallMs >= signedInAt
+    )
+  )
+  // The same sign-ins again change nothing, so nothing is checked again.
+  refresh.mockClear()
+  const again = await jsonRequest(server, "/v1/sync/harness-shared-accounts", {
+    method: "PUT",
+    body: JSON.stringify({ entries: await a.shared.store.entries() })
+  })
+  expect(again.status).toBe(200)
+  expect(refresh).not.toHaveBeenCalled()
   expect(
     (await jsonRequest(server, "/v1/sync/credentials/reconcile", { method: "POST", body: "{}" }))
       .status

@@ -67,6 +67,7 @@ export const fleet = () => {
     const auth = {
       subscribe: () => () => {},
       refresh: async () => {},
+      decorateHarnessesFromStoredState: async (harnesses: ReadonlyArray<unknown>) => harnesses,
       beginLogin: vi.fn(async (id: string) => ({
         id: "flow",
         accountId: id,

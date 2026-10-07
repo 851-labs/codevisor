@@ -1,4 +1,5 @@
 import type { PluginsManager } from "@codevisor/plugins"
+import type { SyncEntryRecord } from "@codevisor/sync"
 
 import {
   ACCOUNTS_SYNC_NAMESPACE,
@@ -96,7 +97,8 @@ export const refreshHarnessReadiness = async (
   services: CodevisorServerServices,
   config: CodevisorServerConfig,
   fanout: EventFanout,
-  blocked: HarnessSyncStatus["blocked"] = []
+  blocked: HarnessSyncStatus["blocked"] = [],
+  answers?: ReadonlyArray<SyncEntryRecord>
 ): Promise<void> => {
   try {
     const blockedById = new Map(blocked.map(({ id, reason }) => [id, reason]))
@@ -146,7 +148,8 @@ export const refreshHarnessReadiness = async (
       db: services.db,
       namespace: HARNESS_READINESS_NAMESPACE,
       serverId: config.id,
-      value: { harnesses: rows.toSorted((a, b) => a.id.localeCompare(b.id)) }
+      value: { harnesses: rows.toSorted((a, b) => a.id.localeCompare(b.id)) },
+      ...(answers === undefined ? {} : { answers })
     })
     if (result.changedEntries.length > 0) {
       void appendAndPublish(services.db, fanout, "sync.changed", HARNESS_READINESS_NAMESPACE, {

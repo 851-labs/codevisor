@@ -401,14 +401,27 @@ export const publishMachineReadiness = async (deps: {
   readonly serverId: string
   readonly value: object
   readonly now?: () => number
+  /// Changes this report answers (sign-ins that arrived from another
+  /// machine): it is published even when unchanged, stamped after them, so
+  /// the fleet can tell this machine has caught up with them.
+  readonly answers?: ReadonlyArray<SyncEntryRecord>
 }): Promise<{ readonly changedEntries: ReadonlyArray<SyncEntryRecord> }> => {
   const now = deps.now ?? Date.now
+  const answers = deps.answers ?? []
   const replica = await run(deps.db.getSyncEntries(deps.namespace))
   const existing = replica.find((entry) => entry.key === deps.serverId)
-  if (existing !== undefined && JSON.stringify(existing.value) === JSON.stringify(deps.value)) {
+  if (
+    answers.length === 0 &&
+    existing !== undefined &&
+    JSON.stringify(existing.value) === JSON.stringify(deps.value)
+  ) {
     return { changedEntries: [] }
   }
-  const timestamp = nextSyncTimestamp(deps.serverId, latestSyncTimestamp(replica), now())
+  const timestamp = nextSyncTimestamp(
+    deps.serverId,
+    latestSyncTimestamp([...replica, ...answers]),
+    now()
+  )
   const result = await run(
     deps.db.mergeSyncEntries(deps.namespace, [{ key: deps.serverId, value: deps.value, timestamp }])
   )

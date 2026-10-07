@@ -22,7 +22,7 @@ export const observeDatabase = (db: CodevisorDatabaseService): void => {
   for (const [name, operation] of Object.entries(db)) {
     if (
       typeof operation !== "function" ||
-      !/^(append|apply|archive|claim|clear|create|delete|enqueue|import|mark|promote|prune|record|remove|replace|save|set|settle|update|upsert)/.test(
+      !/^(append|apply|archive|claim|clear|create|delete|enqueue|import|mark|merge|promote|prune|record|remove|replace|save|set|settle|update|upsert)/.test(
         name
       )
     )

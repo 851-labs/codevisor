@@ -235,6 +235,17 @@ describe("config sync", () => {
     expect(first.changedEntries).toHaveLength(1)
     // A settled machine republishes nothing.
     expect((await publishMachineReadiness(deps)).changedEntries).toEqual([])
+    // Unless the report answers changes from elsewhere: then it republishes,
+    // stamped after them even when this machine's clock is behind.
+    const signIn = {
+      key: 'provider:["pi","default","anthropic"]',
+      value: {},
+      timestamp: { wallMs: 12_000, counter: 4, deviceId: "server-q" }
+    }
+    const answered = await publishMachineReadiness({ ...deps, answers: [signIn] })
+    expect(answered.changedEntries.map((entry) => entry.timestamp)).toEqual([
+      { wallMs: 12_000, counter: 5, deviceId: "server-p" }
+    ])
 
     const document = await run(services.db.getSyncEntries(PLUGIN_READINESS_NAMESPACE))
     expect(document[0]?.key).toBe("server-p")
