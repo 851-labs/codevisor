@@ -45,6 +45,9 @@ public struct MarkdownSpacing: Sendable, Equatable, Hashable {
   public var minorHeading: CGFloat = 1
   /// Below any heading, so it reads as part of the content it introduces.
   public var belowHeading: CGFloat = 0.15
+  /// Between a paragraph and the list right after it: tighter than the gap
+  /// below the list, so the lead-in reads as part of the list it introduces.
+  public var aboveList: CGFloat = 0.5
   /// Between list items, and between the blocks inside one item.
   public var listItem: CGFloat = 0.25
 
@@ -58,6 +61,7 @@ public struct MarkdownSpacing: Sendable, Equatable, Hashable {
       return level <= 3 ? majorHeading : minorHeading
     }
     if case .heading = previous { return belowHeading }
+    if previous == .paragraph, next == .list { return aboveList }
     return paragraph
   }
 }
