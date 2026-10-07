@@ -1,6 +1,5 @@
-import { lstat, mkdtemp, readFile, rename, rm } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import { basename, join, normalize, resolve, sep } from "node:path"
+import { lstat, rename, rm } from "node:fs/promises"
+import { basename, join } from "node:path"
 
 import type {
   DiscoverRemotePluginRequest,
@@ -19,16 +18,11 @@ import type {
   StagedPlugin
 } from "./plugin-install-types.js"
 import { linkPlugin, unlinkPlugin, type PluginLinkDeps } from "./plugin-link.js"
-import { parsePluginManifest, PLUGIN_MANIFEST_FILENAME } from "./plugin-manifest.js"
-import { readPluginInstallReceipt, type PluginInstallSourceReceipt } from "./plugin-receipt.js"
-import { assertGitAvailable, type FindExecutable } from "./plugin-requirements.js"
+import { readPluginInstallReceipt } from "./plugin-receipt.js"
+import type { FindExecutable } from "./plugin-requirements.js"
 import { makePluginRestore, type PluginRestore } from "./plugin-restore.js"
-import {
-  clonePluginSource,
-  parsePluginSource,
-  type ClonePluginSourceResult,
-  type ParsedPluginSource
-} from "./plugin-source.js"
+import { clonePluginSource, type ClonePluginSourceResult } from "./plugin-source.js"
+import { isPluginPathSafe, stagePluginSource } from "./plugin-staging.js"
 import { scanPlugins, type InstalledPlugin } from "./plugin-store.js"
 import type {
   PluginProcessHandle,
@@ -103,30 +97,12 @@ export interface PluginInstaller extends PluginRestore {
   readonly unlink: (pluginId: string) => Promise<void>
 }
 
-/// Same containment rule as skills-store's isPathSafe: the candidate must be
-/// the root itself or live strictly under it.
-const isPathSafe = (root: string, candidate: string): boolean => {
-  const normalizedRoot = normalize(resolve(root))
-  const normalizedCandidate = normalize(resolve(candidate))
-  return (
-    normalizedCandidate.startsWith(normalizedRoot + sep) || normalizedCandidate === normalizedRoot
-  )
-}
-
-const receiptSource = (source: ParsedPluginSource): PluginInstallSourceReceipt => ({
-  kind: source.repo !== undefined ? "github" : source.local === true ? "local" : "git",
-  tracking: source.repo !== undefined && source.ref === undefined ? "registry" : "pinned",
-  url: source.url,
-  ...(source.repo === undefined ? {} : { repo: source.repo }),
-  ...(source.ref === undefined ? {} : { requestedRef: source.ref }),
-  ...(source.subpath === undefined ? {} : { subpath: source.subpath })
-})
-
 export const makePluginInstaller = (deps: PluginInstallerDeps): PluginInstaller => {
   const clone = deps.clone ?? clonePluginSource
   const spawnShell = deps.spawnShell ?? defaultSpawnShell
   const spawnArgv = deps.spawnArgv ?? defaultSpawnArgv
   const resolveEnv = deps.resolveEnv ?? (() => Promise.resolve(process.env))
+  const stagingDeps = { clone, resolveEnv, findExecutable: deps.findExecutable }
   const platform = deps.platform ?? process.platform
   const receiptNow = deps.receiptNow ?? (() => new Date())
   const transactions = makePluginTransactionEngine({
@@ -136,77 +112,6 @@ export const makePluginInstaller = (deps: PluginInstallerDeps): PluginInstaller 
     verifyInstalled: deps.verifyInstalled
   })
   const updatePlansRoot = join(deps.pluginsRoot, ".codevisor-update-plans")
-
-  /// Stage a source into a fresh temp clone and read its manifest. The
-  /// verbatim install/run commands surfaced from here are exactly what the
-  /// consent UI shows — never derived, never normalized.
-  const stage = async (
-    source: string,
-    sourceOverride?: PluginInstallSourceReceipt
-  ): Promise<StagedPlugin> => {
-    const parsed = parsePluginSource(source)
-    const env = await resolveEnv()
-    await assertGitAvailable(env, deps.findExecutable)
-    const staging = await mkdtemp(join(tmpdir(), "codevisor-plugin-install-"))
-    const cleanup = async (): Promise<void> => {
-      await rm(staging, { force: true, recursive: true })
-    }
-    let resolvedCommit: string
-    try {
-      try {
-        const cloned = await clone(parsed.url, parsed.ref, staging, env)
-        resolvedCommit = cloned.resolvedCommit
-      } catch (cause) {
-        throw new PluginsError(
-          "invalid",
-          `Couldn't fetch ${parsed.url}${parsed.ref === undefined ? "" : ` (${parsed.ref})`}: ${
-            cause instanceof Error ? cause.message : String(cause)
-          }`
-        )
-      }
-      let root = staging
-      if (parsed.subpath !== undefined) {
-        const candidate = join(staging, parsed.subpath)
-        if (!isPathSafe(staging, candidate)) {
-          throw new PluginsError("invalid", `Invalid source path: ${parsed.subpath}`)
-        }
-        root = candidate
-      }
-      let raw: string
-      try {
-        raw = await readFile(join(root, PLUGIN_MANIFEST_FILENAME), "utf8")
-      } catch {
-        throw new PluginsError("invalid", `No ${PLUGIN_MANIFEST_FILENAME} found in ${source}`)
-      }
-      const manifest = parsePluginManifest(raw)
-      // Anti-impersonation: a repo installed as `owner/repo` (or a
-      // github.com URL) may only provide plugins in the `owner.` namespace,
-      // so a fork cannot publish itself under someone else's plugin id.
-      // Local-path sources are dev installs with no owner to validate.
-      if (
-        parsed.local !== true &&
-        parsed.owner !== undefined &&
-        !manifest.id.startsWith(`${parsed.owner.toLowerCase()}.`)
-      ) {
-        throw new PluginsError(
-          "invalid",
-          `Plugin id ${manifest.id} does not match the source owner — plugins from ${parsed.owner} must use ids starting with "${parsed.owner.toLowerCase()}."`
-        )
-      }
-      return {
-        cleanup,
-        env,
-        manifest,
-        manifestRaw: raw,
-        resolvedCommit,
-        root,
-        source: sourceOverride ?? receiptSource(parsed)
-      }
-    } catch (cause) {
-      await cleanup()
-      throw cause
-    }
-  }
 
   const installedWithId = (pluginId: string): InstalledPlugin | undefined =>
     scanPlugins(deps.pluginsRoot).plugins.find((candidate) => candidate.id === pluginId)
@@ -218,7 +123,7 @@ export const makePluginInstaller = (deps: PluginInstallerDeps): PluginInstaller 
   const managedDirectory = (pluginId: string): string => {
     const destination = join(deps.pluginsRoot, pluginId)
     /* v8 ignore next 3 -- unreachable: parsePluginManifest rejects ids with separators. */
-    if (basename(destination) !== pluginId || !isPathSafe(deps.pluginsRoot, destination)) {
+    if (basename(destination) !== pluginId || !isPluginPathSafe(deps.pluginsRoot, destination)) {
       throw new PluginsError("invalid", `Invalid plugin directory name: ${pluginId}`)
     }
     return destination
@@ -292,7 +197,7 @@ export const makePluginInstaller = (deps: PluginInstallerDeps): PluginInstaller 
     }
     const directory = join(updatePlansRoot, `${pluginId}.${planId}`)
     /* v8 ignore next 3 -- the manifest and plan-id patterns make this unreachable. */
-    if (!isPathSafe(updatePlansRoot, directory)) {
+    if (!isPluginPathSafe(updatePlansRoot, directory)) {
       throw new PluginsError("invalid", `Invalid plugin update plan path: ${planId}`)
     }
     return directory
@@ -324,7 +229,7 @@ export const makePluginInstaller = (deps: PluginInstallerDeps): PluginInstaller 
   return {
     ...restore,
     discoverRemote: async (request) => {
-      const staged = await stage(request.source)
+      const staged = await stagePluginSource(request.source, stagingDeps)
       try {
         const { manifest } = staged
         return describePlugin(
@@ -338,7 +243,7 @@ export const makePluginInstaller = (deps: PluginInstallerDeps): PluginInstaller 
       }
     },
     importRemote: async (request) => {
-      const staged = await stage(request.source)
+      const staged = await stagePluginSource(request.source, stagingDeps)
       try {
         await importStaged(staged)
         return staged.manifest
@@ -347,7 +252,7 @@ export const makePluginInstaller = (deps: PluginInstallerDeps): PluginInstaller 
       }
     },
     prepareUpdate: async (request) => {
-      const staged = await stage(request.source, request.sourceReceipt)
+      const staged = await stagePluginSource(request.source, stagingDeps, request.sourceReceipt)
       try {
         if (staged.manifest.id !== request.expectedPluginId) {
           throw new PluginsError(
