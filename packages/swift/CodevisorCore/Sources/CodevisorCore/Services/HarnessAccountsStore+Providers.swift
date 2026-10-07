@@ -122,7 +122,8 @@ public extension HarnessAccountsStore {
     guard isShared else { return try await client.listPiAuthProviders() }
     var catalog: [ServerPiAuthProvider] = []
     if !machineId.isEmpty {
-      catalog = try await shared("pi", .init(action: "providers")).piProviders ?? []
+      await sync.synchronize(machineId: machineId, namespaces: Self.sharedProviderNamespaces)
+      catalog = try await shared("pi", .init(action: "providers"), prepared: true).piProviders ?? []
     } else if let host = await HarnessFleet.findSharedHost(harnessId: "pi", environment: environment),
       let providers = try? await environment.machines.client(for: host.machineId).listPiAuthProviders()
     {
@@ -149,38 +150,29 @@ public extension HarnessAccountsStore {
 
   func startPiAuth(providerId: String, method: String) async throws -> ServerPiAuthFlow {
     guard isShared else { return try await client.startPiAuth(providerId: providerId, method: method) }
-    guard method == "api_key" else {
-      guard let flow = try await shared("pi", .init(action: "login", methodId: method, providerId: providerId)).piFlow
-      else { throw CodevisorServerClientError.invalidResponse }
-      return flow
-    }
-    return try decoded(
-      ServerPiAuthFlow.self,
-      [
-        "id": .string("shared-api-key:\(providerId)"), "providerId": .string(providerId), "state": .string("waiting"),
-        "prompt": .object([
-          "id": .string("api_key"), "type": .string("input"), "message": .string("API Key"), "options": .array([]),
-        ]),
-      ])
+    await sync.synchronize(machineId: machineId, namespaces: Self.sharedProviderNamespaces)
+    guard
+      let flow = try await shared(
+        "pi", .init(action: "login", methodId: method, providerId: providerId), prepared: true
+      ).piFlow
+    else { throw CodevisorServerClientError.invalidResponse }
+    return flow
+  }
+
+  /// A shared API key is written to the synced credentials directly; there
+  /// is no sign-in to run.
+  func savePiKey(providerId: String, key: String) async throws {
+    try await removeSharedOAuth(harnessId: "pi", providerId: providerId)
+    let source = HarnessSharedCredentials.pi
+    let updated = try source.replacingKey(in: source.content(in: sync), providerId: providerId, key: key)
+    sync.set(namespace: Self.namespace, key: source.sourceKey, value: .string(updated))
   }
 
   func answerPiAuthFlow(id: String, value: String) async throws -> ServerPiAuthFlow {
-    guard isShared, id.hasPrefix("shared-api-key:") else {
-      return try await client.answerPiAuthFlow(id: id, value: value)
-    }
-    let providerId = String(id.dropFirst("shared-api-key:".count))
-    try await removeSharedOAuth(harnessId: "pi", providerId: providerId)
-    let source = HarnessSharedCredentials.pi
-    let updated = try source.replacingKey(in: source.content(in: sync), providerId: providerId, key: value)
-    sync.set(namespace: Self.namespace, key: source.sourceKey, value: .string(updated))
-    return try decoded(
-      ServerPiAuthFlow.self, ["id": .string(id), "providerId": .string(providerId), "state": .string("complete")])
+    try await client.answerPiAuthFlow(id: id, value: value)
   }
-
   func piAuthFlow(id: String) async throws -> ServerPiAuthFlow { try await client.piAuthFlow(id: id) }
-  func cancelPiAuthFlow(id: String) async throws {
-    if !id.hasPrefix("shared-api-key:") { try await client.cancelPiAuthFlow(id: id) }
-  }
+  func cancelPiAuthFlow(id: String) async throws { try await client.cancelPiAuthFlow(id: id) }
   func removePiAuthProvider(id: String) async throws {
     guard isShared else { return try await client.removePiAuthProvider(id: id) }
     try await removeSharedOAuth(harnessId: "pi", providerId: id)

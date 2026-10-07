@@ -97,13 +97,14 @@ struct HarnessAccountsStoreTests {
         == nil)
   }
 
-  @Test("Shared Pi credentials use their native login operations")
+  @Test("Shared Pi API keys are saved and removed in the synced credentials")
   func staticCredentials() async throws {
     let environment = AppEnvironment.preview(seedProjects: [])
     let store = HarnessAccountsStore(environment: environment, machineId: "local", isShared: true)
-    let prompt = try await store.startPiAuth(providerId: "openai", method: "api_key")
-    #expect(prompt.prompt?.type == "input")
-    #expect(try await store.answerPiAuthFlow(id: prompt.id, value: "test-key").state == "complete")
+    try await store.savePiKey(providerId: "openai", key: "test-key")
+    #expect(
+      try HarnessSharedCredentials.pi.credentials(from: HarnessSharedCredentials.pi.content(in: environment.configSync))
+        .map(\.id) == ["openai"])
     try await store.removePiAuthProvider(id: "openai")
     #expect(
       try HarnessSharedCredentials.pi.credentials(from: HarnessSharedCredentials.pi.content(in: environment.configSync))
