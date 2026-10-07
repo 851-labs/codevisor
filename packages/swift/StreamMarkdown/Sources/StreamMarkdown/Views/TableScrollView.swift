@@ -108,15 +108,20 @@
       // The document rests on the text column (viewport minus the bleed
       // insets) or grows to the table's min-content width, whichever is
       // wider. The text view rebuilds its `NSTextTable` at that width.
+      //
+      // Its height is exactly the height the host measured for that width.
+      // A self-sizing text view grows in steps as lazy layout catches up and
+      // can settle a point taller than the measurement, which pushes the
+      // bordered document past the viewport: its bottom edge is clipped and
+      // the table scrolls vertically by that point.
       let columnWidth = contentView.bounds.width - contentInsets.left - contentInsets.right
       guard columnWidth > 0 else { return }
       let width = MarkdownTextTableGeometry.width(max(columnWidth, tableTextView.minimumTableWidth))
-      if abs(tableTextView.frame.width - width) > 0.25 {
-        tableTextView.setFrameSize(NSSize(width: width, height: tableTextView.frame.height))
+      let size = NSSize(width: width, height: contentView.bounds.height)
+      if tableTextView.frame.size != size {
+        tableTextView.setFrameSize(size)
       }
       tableTextView.layoutSubtreeIfNeeded()
-      let height = max(contentView.bounds.height, tableTextView.frame.height)
-      let size = NSSize(width: width, height: height)
       if document.frame.size != size {
         document.setFrameSize(size)
       }
@@ -172,8 +177,7 @@
 
     override func layout() {
       super.layout()
-      let frame = NSRect(x: 0, y: 0, width: bounds.width, height: tableTextView.frame.height)
-      if tableTextView.frame != frame { tableTextView.frame = frame }
+      if tableTextView.frame != bounds { tableTextView.frame = bounds }
     }
   }
 #endif

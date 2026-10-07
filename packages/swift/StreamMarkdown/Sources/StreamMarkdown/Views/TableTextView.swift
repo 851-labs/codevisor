@@ -55,6 +55,34 @@
       needsDisplay = true
     }
 
+    // MARK: Redraw granularity
+
+    /// Row separators and the header fill are text-block decorations drawn in
+    /// cell padding, outside every line fragment. AppKit paints a block's
+    /// decorations only while drawing glyphs, so a redraw of just a padding
+    /// strip (a scroll exposing a few points, a link hover) clears a separator
+    /// and paints nothing back. Every redraw spans the full width and reaches
+    /// the text of the rows on both sides of any padding strip.
+    override func setNeedsDisplay(_ invalidRect: NSRect) {
+      super.setNeedsDisplay(Self.redrawRect(covering: invalidRect, in: bounds))
+    }
+
+    override func setNeedsDisplay(_ rect: NSRect, avoidAdditionalLayout flag: Bool) {
+      super.setNeedsDisplay(Self.redrawRect(covering: rect, in: bounds), avoidAdditionalLayout: flag)
+    }
+
+    static func redrawRect(covering rect: NSRect, in bounds: NSRect) -> NSRect {
+      guard !rect.isEmpty, rect.height.isFinite else { return rect }
+      // The tallest glyph-free band is a row's bottom padding, its separator,
+      // and the next row's top padding.
+      let reach = MarkdownTableMetrics.verticalPadding * 2 + 1
+      let widened = NSRect(
+        x: bounds.minX, y: rect.minY - reach,
+        width: bounds.width, height: rect.height + reach * 2
+      )
+      return widened.intersection(bounds)
+    }
+
     override func transcriptPlainText(in range: NSRange) -> String {
       guard let storage = textStorage, let tsv = Self.tsv(from: storage, in: range) else {
         return super.transcriptPlainText(in: range)

@@ -39,14 +39,13 @@
         gestureAxis = preferredAxis(for: event)
       }
 
-      if gestureAxis == .vertical {
-        if shouldConsumeVerticalScroll(event) {
-          super.scrollWheel(with: event)
-        } else if let outerScrollView = enclosingVerticalScrollView {
-          outerScrollView.scrollWheel(with: event)
-        } else {
-          super.scrollWheel(with: event)
-        }
+      // Content that fits has nothing to scroll sideways, so the gesture
+      // belongs to the transcript too; otherwise AppKit rubber-bands the
+      // content under the pointer.
+      let consumes =
+        gestureAxis == .vertical ? shouldConsumeVerticalScroll(event) : overflowsHorizontally
+      if !consumes, let outerScrollView = enclosingVerticalScrollView {
+        outerScrollView.scrollWheel(with: event)
       } else {
         super.scrollWheel(with: event)
       }
@@ -56,6 +55,14 @@
       {
         gestureAxis = nil
       }
+    }
+
+    /// Whether the document is wider than the viewport, counting the
+    /// horizontal content insets the document can scroll into.
+    private var overflowsHorizontally: Bool {
+      guard let documentView else { return false }
+      let scrollableWidth = documentView.frame.width + contentInsets.left + contentInsets.right
+      return scrollableWidth > contentView.bounds.width + 0.5
     }
 
     private func preferredAxis(for event: NSEvent) -> GestureAxis {

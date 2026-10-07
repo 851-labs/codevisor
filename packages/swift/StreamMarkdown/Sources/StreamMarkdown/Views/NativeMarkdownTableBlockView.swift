@@ -49,14 +49,10 @@
       tableView.isSelectable = true
       tableView.drawsBackground = false
       tableView.textContainerInset = .zero
-      tableView.isVerticallyResizable = true
+      // `TableScrollView` sizes the text view to the measured table height.
+      tableView.isVerticallyResizable = false
       tableView.isHorizontallyResizable = false
       tableView.focusRingType = .none
-      tableView.minSize = .zero
-      tableView.maxSize = NSSize(
-        width: CGFloat.greatestFiniteMagnitude,
-        height: CGFloat.greatestFiniteMagnitude
-      )
       tableView.linkTextAttributes = [
         .foregroundColor: NSColor.linkColor,
         .cursor: NSCursor.pointingHand,
