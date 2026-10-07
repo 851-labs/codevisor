@@ -40,6 +40,7 @@ import { makeCustomHarnessStore } from "./infra/custom-harness-store.js"
 import { canonicalDatabasePaths, codevisorRoot, resolveServerDataLayout } from "./infra/data-dir.js"
 import { migrateLegacyLayout, migrateTmpDataDir } from "./infra/legacy-layout.js"
 import { migrateLinuxDataLayout } from "./infra/linux-data-migration.js"
+import { makeOpenCodeSetup, openCodeAccountContexts } from "./infra/opencode-setup.js"
 import { acquireServerLease, type ServerLease } from "./infra/server-lease.js"
 import { makeSharedAccounts, type SharedAccounts } from "./infra/shared-accounts.js"
 import {
@@ -374,6 +375,11 @@ export const runServe = (
       const manager = makeHarnessLifecycleManager({
         agents,
         db,
+        harnessSetup: {
+          opencode: makeOpenCodeSetup(
+            auth === undefined ? {} : { accounts: openCodeAccountContexts(auth) }
+          )
+        },
         resolveEnv: () => resolveShellEnv(),
         terminal
       })
@@ -385,6 +391,9 @@ export const runServe = (
     // Interrupted updates become failures; still-armed ones re-run once the
     // server settles. Fire-and-forget so boot never waits on it.
     void lifecycle?.reconcileOnStartup().catch(() => undefined)
+    // Setup an update outside Codevisor (or before a restart) left unfinished,
+    // such as OpenCode 2's migration; prompts to that harness hold meanwhile.
+    void lifecycle?.finishPendingSetup().catch(() => undefined)
     // Self-heal PATH at boot, fire-and-forget: CLI-/brew-launched servers
     // inherit whatever PATH the parent had, and a slow login-shell probe must
     // not delay the health endpoint the launching app is waiting on.

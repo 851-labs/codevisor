@@ -2,6 +2,7 @@ import { join } from "node:path"
 
 import {
   makeOpenCode2Accounts,
+  makeOpenCodeLocator,
   makeOpenCodeServerPool,
   makeOpenCodeVersionProbe,
   openCodeCredentialPluginFiles,
@@ -9,11 +10,7 @@ import {
   SEEDED_CREDENTIAL_PREFIX,
   type SeededOpenCodeCredential
 } from "@codevisor/adapter-opencode"
-import {
-  locateExecutableOnPath,
-  OPENCODE_INSTALL_PATH,
-  type HarnessAccountContext
-} from "@codevisor/agent-runtime"
+import type { HarnessAccountContext } from "@codevisor/agent-runtime"
 import type { SharedCredentialVault, SharedTokenBundle } from "@codevisor/harness-manager"
 
 import type { SharedProviderStore } from "./shared-provider-store.js"
@@ -28,10 +25,9 @@ export interface OpenCode2Deps {
   readonly syncCredentials: ReturnType<typeof makeOpenCode2Accounts>["syncCredentials"]
 }
 
-/// The `opencode` binary an environment runs: on PATH, or where OpenCode's
-/// installer put it.
-const locateOpenCode = (env: NodeJS.ProcessEnv): string | undefined =>
-  locateExecutableOnPath("opencode", env) ?? locateExecutableOnPath(OPENCODE_INSTALL_PATH, env)
+/// The `opencode` binary an environment runs: the newest installed, as
+/// OpenCode's chats run.
+const locateOpenCode = makeOpenCodeLocator()
 
 export const makeOpenCode2Deps = (): OpenCode2Deps => {
   const version = makeOpenCodeVersionProbe()
