@@ -91,6 +91,25 @@ public struct HarnessRowState: Equatable, Sendable {
     return contents.contains(where: { (try? source.credentials(from: $0).isEmpty) == false })
   }
 
+  /// When the fleet last signed the harness in: the newest shared account or
+  /// provider sign-in that carries a credential. Machines that haven't
+  /// reported since are still picking it up.
+  @MainActor
+  public static func latestSharedSignIn(harnessId: String, sync: ConfigSync) -> Date? {
+    _ = sync.revisionsByNamespace["harness-shared-accounts"]
+    return sync.entries(namespace: "harness-shared-accounts").filter { entry in
+      guard entry.deleted != true, entry.key.hasPrefix("shared-") || entry.key.hasPrefix("provider:"),
+        case .object(let fields) = entry.value,
+        fields["harnessId"] == .string(harnessId),
+        case .object(let credential) = fields["credential"],
+        case .string(let id) = credential["id"], !id.isEmpty,
+        case .string(let key) = credential["key"], !key.isEmpty
+      else { return false }
+      return true
+    }
+    .map(\.timestamp.date).max()
+  }
+
   /// Presence of shared accounts is independent of any machine's local
   /// probe result, installation, or account override.
   @MainActor

@@ -85,11 +85,10 @@ public extension HarnessFleet {
     case notShared
     /// One fleet sign-in, not done yet: the harness row is asking for it.
     case pending
-    /// One fleet sign-in landed recently; machines pick it up on their own.
-    case signedIn
-    /// One fleet sign-in, but the client can't say this machine is catching
-    /// up: no account is known, or one has been there long enough that a
-    /// machine still asking for it is stuck.
+    /// The fleet last signed in at this time. A machine that hasn't reported
+    /// since is still picking it up; one that has, and still asks, needs it.
+    case signedIn(at: Date)
+    /// One fleet sign-in, but no account is known to be signed in.
     case unresolved
   }
 
@@ -147,10 +146,12 @@ public extension HarnessFleet {
   ) -> [MachineRow] {
     machines.map { machine in
       var status: MachineStatus
+      var reportedAt: Date?
       if !machine.isReachable {
         status = .unreachable
       } else if let key = machine.syncKey, let row = readiness[key]?.first(where: { $0.harnessId == harnessId }) {
         status = machineStatus(state: row.state, reason: row.reason)
+        reportedAt = row.reportedAt
         if status == .off, wantsOn { status = .syncing }
       } else {
         status = .syncing
@@ -158,8 +159,9 @@ public extension HarnessFleet {
       if status == .signInRequired {
         switch sharedSignIn {
         case .pending: status = .awaitingSignIn
-        case .signedIn: status = .syncingSignIn
-        case .notShared, .unresolved: break
+        case .signedIn(let signedInAt) where (reportedAt ?? .distantPast) < signedInAt:
+          status = .syncingSignIn
+        case .signedIn, .notShared, .unresolved: break
         }
       }
       return MachineRow(machineId: machine.id, name: machine.name, status: status)

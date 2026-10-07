@@ -81,12 +81,13 @@ private struct HarnessFleetRow<Icon: View>: View {
     let shared = HarnessRowState.shared(
       harnessId: setting.id, sync: environment.configSync,
       authRequired: model.catalog.first(where: { $0.id == setting.id })?.auth?.resolvedState != .notRequired)
-    let hasAccount =
-      sharesAccounts && HarnessRowState.hasSharedAccounts(harnessId: setting.id, sync: environment.configSync)
+    let signedInAt =
+      sharesAccounts
+      ? HarnessRowState.latestSharedSignIn(harnessId: setting.id, sync: environment.configSync) : nil
     let sharedSignIn: HarnessFleet.SharedSignIn =
       !sharesAccounts
       ? .notShared
-      : shared.needsSignIn ? .pending : hasAccount && model.isSyncingSignIn(setting.id) ? .signedIn : .unresolved
+      : shared.needsSignIn ? .pending : signedInAt.map { .signedIn(at: $0) } ?? .unresolved
     let status = HarnessFleet.status(
       harnessId: setting.id, sync: environment.configSync, machines: machines, sharedSignIn: sharedSignIn)
     // A disabled harness has nothing to converge: just the name and the toggle.
@@ -138,9 +139,6 @@ private struct HarnessFleetRow<Icon: View>: View {
         Button("Edit…") { onEditCustom(setting) }
       }
       Button("Uninstall…", role: .destructive) { model.uninstall = setting }
-    }
-    .onChange(of: hasAccount) { had, has in
-      if has, !had { model.noteFleetSignedIn(setting.id) }
     }
     if live, machines.count > 1 {
       // Every harness lists the same machines; rows need identity per pair

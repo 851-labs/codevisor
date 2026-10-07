@@ -85,7 +85,8 @@ struct HarnessFleetMachineStatusTests {
     arguments: [
       (HarnessFleet.SharedSignIn.notShared, Status.signInRequired),
       (.pending, .awaitingSignIn),
-      (.signedIn, .syncingSignIn),
+      // Machine "a" has never reported a time, so it predates any sign-in.
+      (.signedIn(at: Date(timeIntervalSince1970: 1)), .syncingSignIn),
       (.unresolved, .signInRequired),
     ])
   func sharedSignIn(sharing: HarnessFleet.SharedSignIn, expected: Status) {
@@ -96,6 +97,25 @@ struct HarnessFleetMachineStatusTests {
     let rows = HarnessFleet.machineRows(
       harnessId: "claude-code", readiness: readiness, machines: [machine("a"), machine("b")], sharedSignIn: sharing)
     #expect(rows.map(\.status) == [expected, .blocked(reason: "boom")])
+  }
+
+  @Test("A machine that reported before the fleet's sign-in is catching up; one that reported since needs it")
+  func signInCatchUp() {
+    let signedIn = Date(timeIntervalSince1970: 1_000)
+    let readiness: [String: [HarnessFleet.MachineReadiness]] = [
+      "behind": [
+        .init(harnessId: "pi", state: "signInRequired", reason: nil, reportedAt: Date(timeIntervalSince1970: 999))
+      ],
+      "caught-up": [
+        .init(harnessId: "pi", state: "signInRequired", reason: nil, reportedAt: Date(timeIntervalSince1970: 1_000))
+      ],
+      "ready": [.init(harnessId: "pi", state: "ready", reason: nil, reportedAt: Date(timeIntervalSince1970: 1))],
+    ]
+    let rows = HarnessFleet.machineRows(
+      harnessId: "pi", readiness: readiness,
+      machines: [machine("behind"), machine("caught-up"), machine("ready")],
+      sharedSignIn: .signedIn(at: signedIn))
+    #expect(rows.map(\.status) == [.syncingSignIn, .signInRequired, .ready])
   }
 
   @Test("Rows keep machine order regardless of state")
@@ -135,6 +155,39 @@ struct HarnessFleetMachineStatusTests {
     let claude = HarnessFleet.status(harnessId: "claude-code", sync: sync, machines: machines)
     #expect(claude.machines.map(\.status) == [.ready, .syncing, .syncing])
     #expect(!claude.machines.contains { $0.status.needsAttention })
+  }
+
+  @Test("The fleet's sign-in time is its newest shared sign-in with a credential, and reports carry theirs")
+  func signInAndReportTimes() throws {
+    let sync = try makeSync()
+    #expect(HarnessRowState.latestSharedSignIn(harnessId: "pi", sync: sync) == nil)
+    let credential: JSONValue = .object(["id": .string("credential-1"), "key": .string("k")])
+    let anthropic = #"provider:["pi","default","anthropic"]"#
+    sync.set(
+      namespace: "harness-shared-accounts", key: anthropic,
+      value: .object(["harnessId": .string("pi"), "credential": credential]))
+    // Neither another harness's sign-in, one without a credential, a removed
+    // one, nor a selection moves Pi's sign-in time.
+    sync.set(
+      namespace: "harness-shared-accounts", key: #"provider:["opencode","default","openai"]"#,
+      value: .object(["harnessId": .string("opencode"), "credential": credential]))
+    sync.set(
+      namespace: "harness-shared-accounts", key: #"provider:["pi","default","openai"]"#,
+      value: .object(["harnessId": .string("pi"), "credential": .object(["id": .string(""), "key": .string("k")])]))
+    sync.set(
+      namespace: "harness-shared-accounts", key: #"provider:["pi","default","xai"]"#,
+      value: .object(["harnessId": .string("pi"), "credential": credential]))
+    sync.remove(namespace: "harness-shared-accounts", key: #"provider:["pi","default","xai"]"#)
+    sync.set(namespace: "harness-shared-accounts", key: "selected:pi", value: .string("shared-x"))
+    let entries = sync.entries(namespace: "harness-shared-accounts")
+    let signIn = try #require(entries.first { $0.key == anthropic })
+    #expect(HarnessRowState.latestSharedSignIn(harnessId: "pi", sync: sync) == signIn.timestamp.date)
+
+    sync.set(
+      namespace: "harness-readiness", key: "studio",
+      value: .object(["harnesses": .array([.object(["id": .string("pi"), "state": .string("ready")])])]))
+    let report = try #require(sync.entries(namespace: "harness-readiness").first { $0.key == "studio" })
+    #expect(HarnessFleet.readiness(sync)["studio"]?.first?.reportedAt == report.timestamp.date)
   }
 
   private func makeSync() throws -> ConfigSync {

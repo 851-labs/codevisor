@@ -18,6 +18,11 @@ public struct ServerSyncTimestamp: Codable, Equatable, Sendable {
 
 /// One replicated config key. Deletions are tombstones (`deleted: true`),
 /// so a removal beats an older write on replicas that never saw the key.
+public extension ServerSyncTimestamp {
+  /// The wall-clock time the entry was written.
+  var date: Date { Date(timeIntervalSince1970: Double(wallMs) / 1000) }
+}
+
 public struct ServerSyncEntry: Codable, Equatable, Sendable {
   public var key: String
   public var value: JSONValue

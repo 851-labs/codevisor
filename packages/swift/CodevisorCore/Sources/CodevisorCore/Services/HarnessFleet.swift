@@ -14,6 +14,8 @@ public enum HarnessFleet {
     public let installed: Bool?
     /// The installed CLI's version, as the machine reported it.
     public let version: String?
+    /// When the machine last published its readiness.
+    public let reportedAt: Date?
     public var id: String { harnessId }
 
     /// The leading number of `version` ("2.0.24" → 2), when it has one.
@@ -21,9 +23,13 @@ public enum HarnessFleet {
       version.flatMap { Int($0.drop { $0 == "v" }.prefix { $0.isNumber }) }
     }
 
-    public init(harnessId: String, state: String, reason: String?, installed: Bool? = nil, version: String? = nil) {
+    public init(
+      harnessId: String, state: String, reason: String?, installed: Bool? = nil, version: String? = nil,
+      reportedAt: Date? = nil
+    ) {
       self.installed = installed
       self.version = version
+      self.reportedAt = reportedAt
       self.harnessId = harnessId
       self.state = state
       self.reason = reason
@@ -48,7 +54,8 @@ public enum HarnessFleet {
         let installed: Bool? = if case .bool(let value) = fields["installed"] { value } else { nil }
         let version: String? = if case .string(let value) = fields["version"] { value } else { nil }
         return MachineReadiness(
-          harnessId: id, state: state, reason: reason, installed: installed, version: version)
+          harnessId: id, state: state, reason: reason, installed: installed, version: version,
+          reportedAt: entry.timestamp.date)
       }
     }
     return result
