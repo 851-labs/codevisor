@@ -63,6 +63,23 @@ struct CodevisorExecutionPresentationTests {
         #","_meta":{"codevisorExecution":{"state":"failed","description":"List my machines","calls":[],"error":"Error: no machines"}}"#
     )
     #expect(failed.displayTitle == "List my machines — failed: no machines")
+    // A skill read from inside OpenCode's code reads as one.
+    let skill = try row(status: "completed", meta: #","_meta":{"codevisorSkill":{"name":"execute","ok":true}}"#)
+    #expect(skill.isIntegrationPresentationCall)
+    #expect(skill.displayTitle == "Read the execute skill")
+    let reading = try row(status: "in_progress", meta: #","_meta":{"codevisorSkill":{"name":"deploy","ok":true}}"#)
+    #expect(reading.displayTitle == "Reading the deploy skill…")
+    let missing = try row(status: "completed", meta: #","_meta":{"codevisorSkill":{"name":"nope","ok":false}}"#)
+    #expect(missing.displayTitle == "Couldn’t read the nope skill")
+    let listed = try row(status: "completed", meta: #","_meta":{"codevisorSkill":{"ok":true}}"#)
+    #expect(listed.displayTitle == "Listed skills")
+    // A workflow it ran says more than a skill it read first.
+    let both = try row(
+      status: "completed",
+      meta:
+        #","_meta":{"codevisorSkill":{"name":"execute","ok":true},"codevisorExecution":{"state":"completed","description":"List my machines","calls":[]}}"#
+    )
+    #expect(both.displayTitle == "List my machines")
     // Code that never reached the gateway is OpenCode's own tool.
     let plain = try row(status: "completed", meta: "")
     #expect(!plain.isIntegrationPresentationCall)

@@ -22,6 +22,14 @@ export interface CodevisorExecutionState {
   readonly error?: string
 }
 
+/// A gateway `skills` call, for rows that ran it from inside their own code
+/// (OpenCode's Code Mode) and so can't show its arguments.
+export interface CodevisorSkillRead {
+  /// The skill read; absent when the call listed every skill.
+  readonly name?: string
+  readonly ok: boolean
+}
+
 export const CODEVISOR_EXECUTION_MAX_DESCRIPTION = 80
 export const CODEVISOR_EXECUTION_MAX_STATUS = 120
 export const CODEVISOR_EXECUTION_MAX_ERROR = 200

@@ -9,6 +9,7 @@ import {
   errorSummary,
   executionArgsHash,
   makeExecutionRecorder,
+  reportSkillRead,
   type ExecutionTimers
 } from "./mcp-gateway-execution.js"
 
@@ -53,6 +54,33 @@ const recording = (timers?: ExecutionTimers) => {
     events.map((event) => (event.payload as { execution: CodevisorExecutionState }).execution)
   return { events, recorder, states }
 }
+
+describe("skill read reports", () => {
+  it("reach the session sink, and never fail the read", async () => {
+    const events: Array<RuntimeEvent> = []
+    await reportSkillRead((event) => void events.push(event), "session-1", {
+      name: "deploy",
+      ok: true
+    })
+    expect(events).toEqual([
+      {
+        kind: "session.output",
+        subjectId: "session-1",
+        payload: { kind: "codevisor_skill", skill: { name: "deploy", ok: true } }
+      }
+    ])
+    await reportSkillRead(undefined, "session-1", { ok: true })
+    await expect(
+      reportSkillRead(
+        () => {
+          throw new Error("sink closed")
+        },
+        "session-1",
+        { ok: true }
+      )
+    ).resolves.toBeUndefined()
+  })
+})
 
 describe("execution recorder", () => {
   it("carries the workflow's label, one line and short", async () => {

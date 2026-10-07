@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto"
 
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
-import { canonicalExecutionArgs, type CodevisorExecutionState } from "@codevisor/api"
+import {
+  canonicalExecutionArgs,
+  type CodevisorExecutionState,
+  type CodevisorSkillRead
+} from "@codevisor/api"
 
 /// How each harness names the gateway's `execute` tool on its tool rows.
 const executeToolTitles = new Set([
@@ -30,6 +34,8 @@ interface TrackedCall {
   /// replacing it (the transcript projection replaces top-level fields).
   meta?: Record<string, unknown>
   execution?: CodevisorExecutionState
+  /// The gateway skill a host read, when it read one.
+  skill?: CodevisorSkillRead
   argsHash?: string
 }
 
@@ -59,6 +65,7 @@ export class ExecutionAnnotator {
     if (payload.kind === "codevisor_execution") {
       return this.receiveExecution(sessionId, event, payload)
     }
+    if (payload.kind === "codevisor_skill") return this.receiveSkillRead(sessionId, event, payload)
     if (
       (payload.sessionUpdate === "tool_call" || payload.sessionUpdate === "tool_call_update") &&
       typeof payload.toolCallId === "string"
@@ -167,14 +174,11 @@ export class ExecutionAnnotator {
   ): ReadonlyArray<RuntimeEvent> {
     let published = event
     if (isRecord(payload._meta)) {
-      const { codevisorExecution: _, ...meta } = payload._meta
+      const { codevisorExecution: _, codevisorSkill: __, ...meta } = payload._meta
       tracked.meta = meta
     }
-    if (tracked.execution !== undefined) {
-      published = {
-        ...event,
-        payload: { ...payload, _meta: { ...tracked.meta, codevisorExecution: tracked.execution } }
-      }
+    if (tracked.execution !== undefined || tracked.skill !== undefined) {
+      published = { ...event, payload: { ...payload, _meta: annotatedMeta(tracked) } }
     }
     const status = String(payload.status)
     if (status === "completed" || status === "failed") {
@@ -195,10 +199,25 @@ export class ExecutionAnnotator {
     return [published, annotation(event, toolCallId, tracked, waiting.at(-1)![1].execution)]
   }
 
+  /// A gateway skill read. Harnesses that call `skills` directly show its
+  /// arguments themselves; only a read from inside a host needs the label.
+  private receiveSkillRead(
+    sessionId: string,
+    event: RuntimeEvent,
+    payload: Record<string, unknown>
+  ): ReadonlyArray<RuntimeEvent> {
+    const state = this.sessions.get(sessionId)
+    const running = state === undefined ? undefined : runningHost(state)
+    if (running === undefined || !isRecord(payload.skill)) return []
+    const [toolCallId, tracked] = running
+    tracked.skill = payload.skill as unknown as CodevisorSkillRead
+    return [annotationEvent(event, toolCallId, tracked)]
+  }
+
   /// The running host a gateway run with no row of its own came from: the
   /// most recent one, since a harness runs one tool call at a time.
   private adoptByHost(state: SessionState, argsHash: string): string | undefined {
-    const running = [...state.calls].findLast(([, call]) => call.hostRunning === true)
+    const running = runningHost(state)
     if (running === undefined) return undefined
     state.toolCallsByHash.set(argsHash, running[0])
     return running[0]
@@ -221,6 +240,36 @@ export class ExecutionAnnotator {
   }
 }
 
+/// The most recent host running its code: a harness runs one tool call at a
+/// time, so a gateway call with no row of its own came from it.
+const runningHost = (state: SessionState): [string, TrackedCall] | undefined =>
+  [...state.calls].findLast(([, call]) => call.hostRunning === true)
+
+/// The harness's own `_meta` with what the gateway reported for the row.
+const annotatedMeta = (tracked: TrackedCall): Record<string, unknown> => ({
+  ...tracked.meta,
+  ...(tracked.execution === undefined ? {} : { codevisorExecution: tracked.execution }),
+  ...(tracked.skill === undefined ? {} : { codevisorSkill: tracked.skill })
+})
+
+const annotationEvent = (
+  source: RuntimeEvent,
+  toolCallId: string,
+  tracked: TrackedCall
+): RuntimeEvent => ({
+  kind: "session.output",
+  subjectId: source.subjectId,
+  payload: {
+    sessionUpdate: "tool_call_update",
+    toolCallId,
+    // Keeps subagent rows attached to their parent in the projection.
+    ...(tracked.parentToolCallId === undefined
+      ? {}
+      : { parentToolCallId: tracked.parentToolCallId }),
+    _meta: annotatedMeta(tracked)
+  }
+})
+
 const annotation = (
   source: RuntimeEvent,
   toolCallId: string,
@@ -228,19 +277,7 @@ const annotation = (
   execution: CodevisorExecutionState
 ): RuntimeEvent => {
   tracked.execution = execution
-  return {
-    kind: "session.output",
-    subjectId: source.subjectId,
-    payload: {
-      sessionUpdate: "tool_call_update",
-      toolCallId,
-      // Keeps subagent rows attached to their parent in the projection.
-      ...(tracked.parentToolCallId === undefined
-        ? {}
-        : { parentToolCallId: tracked.parentToolCallId }),
-      _meta: { ...tracked.meta, codevisorExecution: execution }
-    }
-  }
+  return annotationEvent(source, toolCallId, tracked)
 }
 
 const isExecuteTitle = (title: string): boolean => executeToolTitles.has(title.trim().toLowerCase())

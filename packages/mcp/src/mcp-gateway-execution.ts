@@ -8,7 +8,8 @@ import {
   CODEVISOR_EXECUTION_MAX_ERROR,
   CODEVISOR_EXECUTION_MAX_STATUS,
   type CodevisorExecutionCall,
-  type CodevisorExecutionState
+  type CodevisorExecutionState,
+  type CodevisorSkillRead
 } from "@codevisor/api"
 
 /// Live transcript annotation for one `execute` call: the latest `status()`
@@ -153,5 +154,24 @@ export const makeExecutionRecorder = (options: {
       }
       await delivery
     }
+  }
+}
+
+/// Reports a `skills` call to the session sink, so a row that ran it from
+/// inside its own code can say which skill it read. Never fails the call.
+export const reportSkillRead = async (
+  sink: RuntimeEventSink | undefined,
+  sessionId: string,
+  skill: CodevisorSkillRead
+): Promise<void> => {
+  if (sink === undefined) return
+  try {
+    await sink({
+      kind: "session.output",
+      subjectId: sessionId,
+      payload: { kind: "codevisor_skill", skill }
+    })
+  } catch {
+    // The read happened; only its label is lost.
   }
 }

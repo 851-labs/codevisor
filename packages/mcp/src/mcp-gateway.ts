@@ -19,7 +19,11 @@ import { z } from "zod"
 
 import { executeToolDescription, makeGatewayCatalog } from "./mcp-gateway-catalog.js"
 import { gatewayToolError, makeGatewayDispatch } from "./mcp-gateway-dispatch.js"
-import { executionArgsHash, makeExecutionRecorder } from "./mcp-gateway-execution.js"
+import {
+  executionArgsHash,
+  makeExecutionRecorder,
+  reportSkillRead
+} from "./mcp-gateway-execution.js"
 import {
   DESCRIPTION_GUIDANCE,
   skillsToolDescription,
@@ -398,6 +402,10 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
       },
       async ({ name }) => {
         const result = await skillsToolResult(await sessionSkills(projectId, sessionId), name)
+        await reportSkillRead(runtime.sink, sessionId, {
+          ...(name === undefined || name.trim() === "" ? {} : { name: name.trim() }),
+          ok: result.isError !== true
+        })
         return {
           ...(result.isError ? { isError: true } : {}),
           content: [{ type: "text" as const, text: result.text }]

@@ -214,6 +214,22 @@ describe("gateway machines and execution annotations", () => {
         calls: [],
         error: expect.stringContaining("boom")
       })
+
+      // Skill reads are reported too, for rows that can't show their own
+      // arguments (OpenCode's Code Mode).
+      const skillReports = async (args: Record<string, unknown>) => {
+        await client.callTool({ name: "skills", arguments: args })
+        return events.at(-1)!.payload
+      }
+      expect(await skillReports({ name: " execute " })).toEqual({
+        kind: "codevisor_skill",
+        skill: { name: "execute", ok: true }
+      })
+      expect(await skillReports({ name: "no-such-skill" })).toEqual({
+        kind: "codevisor_skill",
+        skill: { name: "no-such-skill", ok: false }
+      })
+      expect(await skillReports({})).toEqual({ kind: "codevisor_skill", skill: { ok: true } })
     } finally {
       await client.close()
     }

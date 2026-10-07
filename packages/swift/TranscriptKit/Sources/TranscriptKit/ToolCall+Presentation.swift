@@ -28,9 +28,11 @@ extension ToolCall {
       String(normalized.dropFirst($0.count))
     }
     if let operation = operation.flatMap(CodevisorGatewayOperation.init(rawValue:)) { return operation }
-    // OpenCode's Code Mode tool (plain `execute`) running a gateway workflow
-    // from its own code: the server attaches the workflow it ran.
-    return normalized == "execute" && meta?["codevisorExecution"] != nil ? .execute : nil
+    // OpenCode's Code Mode tool (plain `execute`) calling the gateway from its
+    // own code: the server attaches the workflow it ran, or the skill it read.
+    guard normalized == "execute" else { return nil }
+    if meta?["codevisorExecution"] != nil { return .execute }
+    return meta?["codevisorSkill"] == nil ? nil : .skills
   }
 
   /// Codex's built-in tool discovery is part of the same integration flow
@@ -67,7 +69,7 @@ extension ToolCall {
       }
       return "\(description) — failed: \(error)"
     case .skills:
-      let failed = status == .failed
+      let failed = status == .failed || meta?["codevisorSkill"]?["ok"]?.boolValue == false
       guard let name = skillName else {
         if failed { return "Couldn’t list skills" }
         return isSettled ? "Listed skills" : "Listing skills…"
@@ -80,7 +82,8 @@ extension ToolCall {
   /// The skill a gateway `skills` call reads; nil when it lists them all.
   var skillName: String? {
     guard codevisorGatewayOperation == .skills,
-      let name = rawInput?["name"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+      let name = (rawInput?["name"]?.stringValue ?? meta?["codevisorSkill"]?["name"]?.stringValue)?
+        .trimmingCharacters(in: .whitespacesAndNewlines),
       !name.isEmpty
     else { return nil }
     return name

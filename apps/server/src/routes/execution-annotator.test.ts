@@ -330,6 +330,43 @@ describe("ExecutionAnnotator with OpenCode's Code Mode", () => {
     expect(f.annotate(gateway(running, { description: "Later", code: "x" }))).toEqual([])
   })
 
+  it("labels a Code Mode row with the gateway skill it read", () => {
+    const f = fixture()
+    const skillRead = (skill: unknown) => output({ kind: "codevisor_skill", skill })
+    const read = { name: "execute", ok: true }
+    // Nothing running from a host (or no session yet): the harness's own row,
+    // if any, shows the read itself.
+    expect(f.annotate(skillRead(read))).toEqual([])
+    f.annotate(host({ sessionUpdate: "tool_call", status: "pending", rawInput: {} }))
+    expect(f.annotate(skillRead(read))).toEqual([])
+    const code = { code: 'await tools.codevisor.skills({ name: "execute" })' }
+    f.annotate(host({ sessionUpdate: "tool_call_update", status: "in_progress", rawInput: code }))
+    expect(payloads(f.annotate(skillRead(read)))).toEqual([
+      { sessionUpdate: "tool_call_update", toolCallId: "oc-1", _meta: { codevisorSkill: read } }
+    ])
+    expect(f.annotate(skillRead("not a read"))).toEqual([])
+    // The row keeps it through its own updates.
+    expect(
+      payloads(
+        f.annotate(
+          host({
+            sessionUpdate: "tool_call_update",
+            status: "completed",
+            _meta: { codevisorSkill: "stale" }
+          })
+        )
+      )
+    ).toEqual([
+      {
+        toolCallId: "oc-1",
+        title: "execute",
+        sessionUpdate: "tool_call_update",
+        status: "completed",
+        _meta: { codevisorSkill: read }
+      }
+    ])
+  })
+
   it("leaves a Code Mode row alone when the gateway isn't involved", () => {
     const f = fixture()
     const update = host({
