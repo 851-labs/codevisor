@@ -38,6 +38,9 @@
       "path": "./packages/adapter-opencode"
     },
     {
+      "path": "./packages/adapter-pi"
+    },
+    {
       "path": "./packages/skills"
     },
     {
