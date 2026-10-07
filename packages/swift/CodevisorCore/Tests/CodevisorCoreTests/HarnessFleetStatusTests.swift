@@ -90,6 +90,53 @@ struct HarnessFleetStatusTests {
     #expect(rows[2].reason == "CLI not found on PATH")
   }
 
+  @Test("The add catalog unions every machine's reported harnesses, filling in for older servers")
+  func catalogFromReadiness() throws {
+    let sync = try makeSync()
+    let stamp = ServerSyncTimestamp(wallMs: 1, counter: 0, deviceId: "studio")
+    sync.apply(
+      namespace: "harnesses",
+      incoming: [
+        ServerSyncEntry(
+          key: "auggie",
+          value: .object([
+            "name": .string("Auggie CLI"), "symbolName": .string("a.square"),
+            "enabled": .bool(true), "installed": .bool(true),
+          ]), timestamp: stamp)
+      ])
+    sync.applyRemoteChange(
+      namespace: "harness-readiness",
+      entries: [
+        // A current server reports display identity and that Codex needs no sign-in.
+        ServerSyncEntry(
+          key: "studio",
+          value: .object([
+            "harnesses": .array([
+              .object([
+                "id": .string("codex"), "state": .string("ready"), "name": .string("Codex"),
+                "symbolName": .string("terminal"), "authRequired": .bool(false),
+              ])
+            ])
+          ]), timestamp: stamp),
+        // An older server reports ids only.
+        ServerSyncEntry(
+          key: "laptop",
+          value: .object([
+            "harnesses": .array([
+              .object(["id": .string("codex"), "state": .string("notInstalled")]),
+              .object(["id": .string("auggie"), "state": .string("ready")]),
+              .object(["id": .string("gemini"), "state": .string("notInstalled")]),
+            ])
+          ]), timestamp: ServerSyncTimestamp(wallMs: 1, counter: 0, deviceId: "laptop")),
+      ])
+    #expect(
+      HarnessFleet.catalog(sync) == [
+        .init(id: "auggie", name: "Auggie CLI", symbolName: "a.square", authRequired: true),
+        .init(id: "codex", name: "Codex", symbolName: "terminal", authRequired: false),
+        .init(id: "gemini", name: "Gemini CLI", symbolName: "diamond", authRequired: true),
+      ])
+  }
+
   @Test("Global settings distinguish managed installations from legacy absence")
   func globalSettings() throws {
     let sync = try makeSync()

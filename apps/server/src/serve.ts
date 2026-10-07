@@ -13,8 +13,6 @@ import {
   worktreesRoot
 } from "@codevisor/db"
 import { credentialFerrySources } from "@codevisor/harness-manager"
-import { loadCustomHarnesses } from "@codevisor/harness-manager"
-import type { CustomHarnessLoadResult } from "@codevisor/harness-manager"
 import { makeHarnessLifecycleManager } from "@codevisor/harness-manager"
 import { makeHarnessAuthManager } from "@codevisor/harness-manager"
 import { makeMcpManager } from "@codevisor/mcp"
@@ -36,8 +34,7 @@ import {
   type BootListener
 } from "./boot-listener.js"
 import { makeActiveWorkSleepInhibitor } from "./infra/active-work-sleep-inhibitor.js"
-import { makeCustomHarnessStore } from "./infra/custom-harness-store.js"
-import { canonicalDatabasePaths, codevisorRoot, resolveServerDataLayout } from "./infra/data-dir.js"
+import { canonicalDatabasePaths, resolveServerDataLayout } from "./infra/data-dir.js"
 import { migrateLegacyLayout, migrateTmpDataDir } from "./infra/legacy-layout.js"
 import { migrateLinuxDataLayout } from "./infra/linux-data-migration.js"
 import { makeOpenCodeSetup, openCodeAccountContexts } from "./infra/opencode-setup.js"
@@ -55,7 +52,6 @@ import {
   stabilizeServerWorkingDirectory,
   failureMessage,
   initializeOptionalServerFeature,
-  initializeOptionalServerFeatureAsync,
   writeDataUpgradeStatus,
   parseProcessId,
   monitorAppOwner,
@@ -251,28 +247,8 @@ export const runServe = (
     // Homebrew's git-lfs. The runtime and harness accounts share the probe.
     const shellEnv = makeShellEnvCache(() => resolveShellEnv())
     const gitEnvironment = shellEnv.current()
-    // User-defined custom ACP harnesses (~/.codevisor/harnesses.json) merge
-    // into the catalog before anything consumes it. Bad entries are skipped
-    // with a warning — a hand-edited file must never block server boot.
-    const customHarnesses =
-      (yield* Effect.promise(() =>
-        initializeOptionalServerFeatureAsync("Custom harnesses", () =>
-          loadCustomHarnesses(codevisorRoot())
-        )
-      )) ??
-      ({
-        definitions: [],
-        specs: [],
-        warnings: []
-      } satisfies CustomHarnessLoadResult)
-    for (const warning of customHarnesses.warnings) {
-      console.error(`Custom harnesses: ${warning}`)
-    }
     const agents = makeAgentRuntime({
       ...(backgroundTerminals === undefined ? {} : { backgroundTerminals }),
-      ...(customHarnesses.definitions.length === 0
-        ? {}
-        : { extraHarnesses: customHarnesses.definitions }),
       providerFactories: agentProviderFactories,
       resolveEnv: shellEnv.refresh
     })
@@ -370,7 +346,6 @@ export const runServe = (
         : initializeOptionalServerFeature("Native MCP discovery", () =>
             systemNativeMcpManager({ agents, dataDir: dirname(databasePath), db, mcp })
           )
-    const customHarnessStore = makeCustomHarnessStore(agents)
     const lifecycle = initializeOptionalServerFeature("Harness lifecycle", () => {
       const manager = makeHarnessLifecycleManager({
         agents,
@@ -404,7 +379,6 @@ export const runServe = (
       {
         agents,
         attachments,
-        customHarnesses: customHarnessStore,
         db,
         resolveGitEnvironment: () => gitEnvironment,
         terminal,

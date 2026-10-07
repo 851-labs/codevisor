@@ -162,7 +162,10 @@ describe("Codevisor MCP provider", () => {
       serverUrl: "https://cloud.example",
       sessionToken: "cloud-token"
     })
-    await provider.invoke(callingContext, "harnesses.custom_replace", { body: [] })
+    await provider.invoke(callingContext, "clients.open_page", {
+      clientId: "client",
+      body: { page: "home" }
+    })
     await provider.invoke(callingContext, "sessions.create", {
       id: "new-session",
       harnessId: "codex"
@@ -192,7 +195,7 @@ describe("Codevisor MCP provider", () => {
       serverUrl: "https://cloud.example",
       sessionToken: "cloud-token"
     })
-    expect(JSON.parse(requests[1]!.init.body as string)).toEqual([])
+    expect(JSON.parse(requests[1]!.init.body as string)).toEqual({ page: "home" })
     expect(JSON.parse(requests[2]!.init.body as string)).toMatchObject({
       id: "new-session",
       projectId: "calling project/id",

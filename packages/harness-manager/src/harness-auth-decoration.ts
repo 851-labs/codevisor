@@ -20,7 +20,7 @@ export const makeHarnessAuthDecoration = (
   core: HarnessAuthCore,
   probes: HarnessAuthProbes
 ): HarnessAuthDecoration => {
-  const { acpLoginMethods, catalogNow, config, persistProbe, publicAccount, refreshes } = core
+  const { acpLoginMethods, catalog, config, persistProbe, publicAccount, refreshes } = core
   const { probeAccount } = probes
 
   const ensureDefault = async (harness: Harness): Promise<HarnessAccountRecord> => {
@@ -165,7 +165,7 @@ export const makeHarnessAuthDecoration = (
   }
 
   const refresh = async (harnessId?: string): Promise<void> => {
-    const ids = harnessId === undefined ? catalogNow().map((entry) => entry.id) : [harnessId]
+    const ids = harnessId === undefined ? catalog.map((entry) => entry.id) : [harnessId]
     await Promise.all(
       ids.map(async (id) => {
         const accounts = await run(config.db.listHarnessAccounts(id))

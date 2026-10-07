@@ -7,19 +7,16 @@
     @State private var search = ""
     @State private var selection: String?
 
-    let harnesses: [ServerHarness]
-    let isLoading: Bool
-    let loadFailed: Bool
-    let retry: () -> Void
-    let add: (ServerHarness) -> Void
+    let harnesses: [HarnessFleet.CatalogEntry]
+    let add: (HarnessFleet.CatalogEntry) -> Void
     @ViewBuilder let icon: (String, String) -> Icon
 
-    private var filteredHarnesses: [ServerHarness] {
+    private var filteredHarnesses: [HarnessFleet.CatalogEntry] {
       let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
       return harnesses.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
     }
 
-    private var selectedHarness: ServerHarness? {
+    private var selectedHarness: HarnessFleet.CatalogEntry? {
       filteredHarnesses.first { $0.id == selection }
     }
 
@@ -49,15 +46,7 @@
 
     @ViewBuilder
     private var content: some View {
-      if isLoading && harnesses.isEmpty {
-        SheetLoadingView("Loading harnesses…")
-      } else if loadFailed && harnesses.isEmpty {
-        ContentUnavailableView {
-          Label("Machines Unavailable", systemImage: "desktopcomputer.trianglebadge.exclamationmark")
-        } actions: {
-          Button("Try Again", action: retry)
-        }
-      } else if harnesses.isEmpty {
+      if harnesses.isEmpty {
         ContentUnavailableView("All Harnesses Added", systemImage: "checkmark.circle")
       } else if filteredHarnesses.isEmpty {
         ContentUnavailableView.search(text: search)

@@ -17,16 +17,14 @@ struct HarnessFleetAccountsTarget {
   let preferredMachineId: String?
 }
 
-/// The sheets the shared harness list presents — fleet-shared accounts,
-/// one machine's sign-in, the custom harness editor — owned by whichever
+/// The sheets the shared harness list presents — fleet-shared accounts and
+/// one machine's sign-in — owned by whichever
 /// screen embeds the list (Settings › Harnesses, onboarding) so both
 /// behave identically.
 @MainActor @Observable
 final class HarnessFleetPresenter {
   var accountsSetting: HarnessAccountsPresentation<HarnessFleetAccountsTarget>?
   var signInTarget: HarnessMachineSignInTarget?
-  var editingCustomId: String?
-  var showsCustomEditor = false
 
   func showAccounts(_ setting: HarnessFleet.Setting, startsSignIn: Bool, preferredMachineId: String? = nil) {
     accountsSetting = .init(
@@ -56,25 +54,17 @@ final class HarnessFleetPresenter {
         symbolName: HarnessRegistry.descriptor(for: harnessId).symbolName, enabled: true, installed: true)
     showAccounts(setting, startsSignIn: startsSignIn, preferredMachineId: machineId)
   }
-
-  func editCustom(_ setting: HarnessFleet.Setting) {
-    editingCustomId = setting.id
-    showsCustomEditor = true
-  }
 }
 
 extension View {
-  /// Attaches the harness list's sheets; `model` reloads its catalog after
-  /// a custom harness is edited.
-  func harnessFleetSheets(_ presenter: HarnessFleetPresenter, model: HarnessGlobalModel) -> some View {
-    modifier(HarnessFleetSheetsModifier(presenter: presenter, model: model))
+  /// Attaches the harness list's sheets.
+  func harnessFleetSheets(_ presenter: HarnessFleetPresenter) -> some View {
+    modifier(HarnessFleetSheetsModifier(presenter: presenter))
   }
 }
 
 private struct HarnessFleetSheetsModifier: ViewModifier {
-  @Environment(AppEnvironment.self) private var environment
   @Bindable var presenter: HarnessFleetPresenter
-  let model: HarnessGlobalModel
 
   func body(content: Content) -> some View {
     content
@@ -94,12 +84,6 @@ private struct HarnessFleetSheetsModifier: ViewModifier {
       }
       .sheet(item: $presenter.signInTarget) { target in
         HarnessSignInSheet(serverId: target.machineId, harnessId: target.harnessId, startsSignIn: target.startsSignIn)
-      }
-      .sheet(isPresented: $presenter.showsCustomEditor) {
-        CustomHarnessEditorSheet(editingId: presenter.editingCustomId) { _ in
-          Task { await model.loadCatalog(in: environment) }
-        }
-        .environment(\.settingsMachineId, CodevisorMachine.local.id)
       }
   }
 }

@@ -301,15 +301,6 @@ public extension CodevisorServerClienting {
   /// client overrides this with the real endpoint.
   func listAgentSessions(harnessId: String) async throws -> [SessionInfo] { [] }
 
-  /// Defaults for fakes/older servers without custom-harness support.
-  func listCustomHarnesses() async throws -> [ServerCustomHarnessSpec] { [] }
-  func replaceCustomHarnesses(_ specs: [ServerCustomHarnessSpec]) async throws -> [ServerHarness] {
-    throw CodevisorServerClientError.invalidResponse
-  }
-  func testCustomHarness(_ spec: ServerCustomHarnessSpec) async throws -> ServerCustomHarnessTestResult {
-    throw CodevisorServerClientError.invalidResponse
-  }
-
   /// Defaults for fakes/older servers without lifecycle support.
   func installHarness(id: String, methodId: String?) async throws -> ServerHarnessOperationStarted {
     throw CodevisorServerClientError.invalidResponse

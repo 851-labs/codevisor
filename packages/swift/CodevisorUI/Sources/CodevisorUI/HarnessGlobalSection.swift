@@ -10,33 +10,31 @@ public struct HarnessGlobalSection<Icon: View>: View {
   private let icon: (String, String) -> Icon
   private let onAccounts: (HarnessFleet.Setting, _ startsSignIn: Bool) -> Void
   private let onSignIn: (_ machineId: String, _ harnessId: String, _ startsSignIn: Bool) -> Void
-  private let onEditCustom: ((HarnessFleet.Setting) -> Void)?
 
   /// - Parameters:
   ///   - onAccounts: presents the fleet-shared accounts sheet for a harness.
   ///   - onSignIn: presents machine-bound accounts / sign-in for one machine.
-  ///   - onEditCustom: edits a custom harness definition; nil hides Edit….
   public init(
     model: HarnessGlobalModel,
     onAccounts: @escaping (HarnessFleet.Setting, _ startsSignIn: Bool) -> Void,
     onSignIn: @escaping (_ machineId: String, _ harnessId: String, _ startsSignIn: Bool) -> Void,
-    onEditCustom: ((HarnessFleet.Setting) -> Void)? = nil,
     @ViewBuilder icon: @escaping (String, String) -> Icon
   ) {
     self.model = model
     self.onAccounts = onAccounts
     self.onSignIn = onSignIn
-    self.onEditCustom = onEditCustom
     self.icon = icon
   }
 
   public var body: some View {
     let machines = HarnessFleet.fleetMachines(environment.machines)
+    let catalog = HarnessFleet.catalog(environment.configSync)
     Section {
-      ForEach(HarnessFleet.settings(environment.configSync, catalog: model.catalog)) { setting in
+      ForEach(HarnessFleet.settings(environment.configSync, catalog: catalog)) { setting in
         HarnessFleetRow(
           setting: setting, machines: machines, model: model,
-          onAccounts: onAccounts, onSignIn: onSignIn, onEditCustom: onEditCustom
+          authRequired: catalog.first { $0.id == setting.id }?.authRequired ?? true,
+          onAccounts: onAccounts, onSignIn: onSignIn
         ) {
           icon(setting.id, setting.symbolName)
         }
@@ -52,7 +50,7 @@ public struct HarnessGlobalSection<Icon: View>: View {
 extension HarnessFleet {
   /// The catalog rows, with the display name and symbol a machine reports
   /// for the harness taking precedence over what the row was authored with.
-  static func settings(_ sync: ConfigSync, catalog: [ServerHarness]) -> [Setting] {
+  static func settings(_ sync: ConfigSync, catalog: [CatalogEntry]) -> [Setting] {
     settings(sync).map { setting in
       guard let harness = catalog.first(where: { $0.id == setting.id }) else { return setting }
       var result = setting
@@ -71,16 +69,15 @@ private struct HarnessFleetRow<Icon: View>: View {
   let setting: HarnessFleet.Setting
   let machines: [HarnessFleet.FleetMachine]
   let model: HarnessGlobalModel
+  let authRequired: Bool
   let onAccounts: (HarnessFleet.Setting, _ startsSignIn: Bool) -> Void
   let onSignIn: (_ machineId: String, _ harnessId: String, _ startsSignIn: Bool) -> Void
-  let onEditCustom: ((HarnessFleet.Setting) -> Void)?
   @ViewBuilder let icon: () -> Icon
 
   var body: some View {
     let sharesAccounts = HarnessRowState.sharesFleetAccounts(harnessId: setting.id)
     let shared = HarnessRowState.shared(
-      harnessId: setting.id, sync: environment.configSync,
-      authRequired: model.catalog.first(where: { $0.id == setting.id })?.auth?.resolvedState != .notRequired)
+      harnessId: setting.id, sync: environment.configSync, authRequired: authRequired)
     let signedInAt =
       sharesAccounts
       ? HarnessRowState.latestSharedSignIn(harnessId: setting.id, sync: environment.configSync) : nil
@@ -135,9 +132,6 @@ private struct HarnessFleetRow<Icon: View>: View {
         }
       }
     } actions: {
-      if let onEditCustom, model.customSpecs[setting.id] != nil {
-        Button("Edit…") { onEditCustom(setting) }
-      }
       Button("Uninstall…", role: .destructive) { model.uninstall = setting }
     }
     if live, machines.count > 1 {

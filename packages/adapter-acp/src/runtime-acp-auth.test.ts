@@ -1,9 +1,7 @@
-import { AgentRuntimeError, type RuntimeEmit } from "@codevisor/agent-runtime"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { testAcpConnection, type AcpHarnessLaunchRequest } from "./index.js"
-import { FakeConnection, makeAcpAgentRuntime, makeConnector, run } from "./test-support.js"
+import { makeAcpAgentRuntime, makeConnector, run } from "./test-support.js"
 
 describe("@codevisor/agent-runtime", () => {
   afterEach(() => vi.useRealTimers())
@@ -111,54 +109,6 @@ describe("@codevisor/agent-runtime", () => {
     await vi.advanceTimersByTimeAsync(10_000)
     await timedOut
     expect(connector.connections[0]?.closeCount).toBe(1)
-  })
-
-  it("tests an ACP connection through the injected connector", async () => {
-    const connector = makeConnector()
-    const result = await testAcpConnection(
-      { args: ["acp"], command: "my-agent", env: { EXTRA: "1" } },
-      { connector, env: { PATH: "/bin" } }
-    )
-    expect(result).toEqual({ ok: true })
-    expect(connector.requests[0]).toMatchObject({
-      args: ["acp"],
-      command: "my-agent",
-      env: { EXTRA: "1", PATH: "/bin" },
-      harnessId: "custom-harness-test"
-    })
-    // The probe tears its process down.
-    expect(connector.connections[0]?.closeCount).toBe(1)
-  })
-
-  it("reports handshake identity and surfaces failures without throwing", async () => {
-    const connector = makeConnector()
-    const identified = {
-      ...connector,
-      connect: (request: AcpHarnessLaunchRequest, emit: RuntimeEmit) =>
-        Effect.map(connector.connect(request, emit), (connection) => {
-          ;(connection as FakeConnection).agentInfo = {
-            name: "My Agent",
-            protocolVersion: 1
-          }
-          return connection
-        })
-    }
-    await expect(
-      testAcpConnection({ args: [], command: "my-agent" }, { connector: identified, env: {} })
-    ).resolves.toEqual({ agentName: "My Agent", ok: true, protocolVersion: 1 })
-
-    const failing = {
-      connect: () =>
-        Effect.fail(
-          new AgentRuntimeError({ message: "spawn my-agent ENOENT", operation: "connect" })
-        )
-    }
-    const failure = await testAcpConnection(
-      { args: [], command: "my-agent" },
-      { connector: failing, env: {} }
-    )
-    expect(failure.ok).toBe(false)
-    expect(failure.error).toContain("ENOENT")
   })
 
   it("lists native agent sessions through the provider hook", async () => {

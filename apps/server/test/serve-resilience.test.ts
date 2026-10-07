@@ -24,7 +24,7 @@ describe("optional server feature initialization", () => {
   it("keeps asynchronous feature failures inside their feature boundary", async () => {
     const report = vi.fn()
     const result = await initializeOptionalServerFeatureAsync(
-      "Custom harnesses",
+      "Cloud connection",
       async () => {
         throw new Error("settings unreadable")
       },
@@ -32,7 +32,7 @@ describe("optional server feature initialization", () => {
     )
 
     expect(result).toBeUndefined()
-    expect(report).toHaveBeenCalledWith("Custom harnesses unavailable: settings unreadable")
+    expect(report).toHaveBeenCalledWith("Cloud connection unavailable: settings unreadable")
   })
 
   it("returns successfully initialized features unchanged", async () => {

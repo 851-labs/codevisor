@@ -85,13 +85,6 @@ public protocol CodevisorServerClienting: BrowserStateClienting, SimulatorClient
   /// Codevisor) — the source for onboarding's workspace suggestions and
   /// "import existing chats".
   func listAgentSessions(harnessId: String) async throws -> [SessionInfo]
-  /// User-defined custom ACP harnesses (BYO): persisted server-side in a
-  /// user-editable file and merged into the harness catalog.
-  func listCustomHarnesses() async throws -> [ServerCustomHarnessSpec]
-  /// Whole-list replace; returns the refreshed full harness list.
-  func replaceCustomHarnesses(_ specs: [ServerCustomHarnessSpec]) async throws -> [ServerHarness]
-  /// One-shot ACP initialize handshake for a (possibly unsaved) spec.
-  func testCustomHarness(_ spec: ServerCustomHarnessSpec) async throws -> ServerCustomHarnessTestResult
   /// Starts a one-click install (202-ack; progress arrives via
   /// harness.lifecycle.updated events). Returns the output terminal id.
   func installHarness(id: String, methodId: String?) async throws -> ServerHarnessOperationStarted

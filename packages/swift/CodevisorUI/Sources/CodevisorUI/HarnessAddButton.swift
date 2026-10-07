@@ -18,9 +18,6 @@ public struct HarnessAddButton<Icon: View>: View {
         HarnessAddMenu(
           isPresented: $model.showsPicker,
           harnesses: availableHarnesses,
-          isLoading: model.isLoading,
-          loadFailed: model.loadFailed,
-          retry: { Task { await model.loadCatalog(in: environment) } },
           add: { model.add($0, in: environment) },
           icon: icon
         )
@@ -35,10 +32,6 @@ public struct HarnessAddButton<Icon: View>: View {
     }
     .font(.body)
     .accessibilityLabel("Add Harness")
-    .task(id: environment.machines.allMachines.map(\.id)) { await model.loadCatalog(in: environment) }
-    .onChange(of: model.showsPicker) { _, isPresented in
-      if isPresented { Task { await model.loadCatalog(in: environment) } }
-    }
     .confirmationDialog(
       "Uninstall \(model.uninstall?.name ?? "harness")?",
       isPresented: confirmsUninstall,
@@ -55,19 +48,15 @@ public struct HarnessAddButton<Icon: View>: View {
     Binding(get: { model.uninstall != nil }, set: { if !$0 { model.uninstall = nil } })
   }
 
-  private var availableHarnesses: [ServerHarness] {
-    model.catalog.filter { harness in
-      !HarnessFleet.settings(environment.configSync).contains(where: { $0.id == harness.id })
-    }
+  private var availableHarnesses: [HarnessFleet.CatalogEntry] {
+    let added = Set(HarnessFleet.settings(environment.configSync).map(\.id))
+    return HarnessFleet.catalog(environment.configSync).filter { !added.contains($0.id) }
   }
 
   #if os(iOS)
     private var picker: some View {
       HarnessPickerSheet(
         harnesses: availableHarnesses,
-        isLoading: model.isLoading,
-        loadFailed: model.loadFailed,
-        retry: { Task { await model.loadCatalog(in: environment) } },
         add: { model.add($0, in: environment) },
         icon: icon
       )

@@ -25,8 +25,6 @@ export {
   makeStdioAcpConnector,
   makeStdioAcpConnectorWithOptions,
   stdioAcpConnector,
-  testAcpConnection,
-  type AcpConnectionTestResult,
   type AcpStdioExtension,
   type AcpStdioExtensionContext,
   type AcpStdioExtensionFactory,

@@ -1,7 +1,6 @@
 import { spawn } from "node:child_process"
 import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import { randomUUID } from "node:crypto"
-import { homedir } from "node:os"
 import { Readable, Writable } from "node:stream"
 
 import * as acp from "@agentclientprotocol/sdk"
@@ -317,63 +316,6 @@ export const makeStdioAcpConnector = (
     connectTimeoutMs,
     ...(backgroundTerminals === undefined ? {} : { backgroundTerminals })
   })
-
-/// Result of a one-shot ACP handshake probe — the "Test Connection" action
-/// for user-defined custom harnesses.
-export interface AcpConnectionTestResult {
-  readonly ok: boolean
-  readonly agentName?: string
-  readonly protocolVersion?: number
-  readonly error?: string
-}
-
-/// Spawns `command args…` and performs the ACP initialize handshake, then
-/// tears the process down. Never throws: failures (binary missing, not an
-/// ACP agent, handshake timeout) come back as `{ ok: false, error }` so the
-/// raw cause is showable to the harness developer.
-export const testAcpConnection = async (
-  launch: {
-    readonly command: string
-    readonly args: ReadonlyArray<string>
-    readonly env?: Readonly<Record<string, string>>
-  },
-  options: {
-    readonly env: NodeJS.ProcessEnv
-    readonly cwd?: string
-    readonly timeoutMs?: number
-    /// Injected in tests; defaults to the stdio connector.
-    readonly connector?: AcpConnector
-  }
-): Promise<AcpConnectionTestResult> => {
-  const connector =
-    options.connector ?? makeStdioAcpConnector(undefined, options.timeoutMs ?? 10_000)
-  try {
-    const connection = await Effect.runPromise(
-      connector.connect(
-        {
-          args: launch.args,
-          command: launch.command,
-          cwd: options.cwd ?? homedir(),
-          env: { ...options.env, ...launch.env },
-          harnessId: "custom-harness-test"
-        },
-        () => Promise.resolve()
-      )
-    )
-    const info = connection.agentInfo
-    await Effect.runPromise(connection.close).catch(() => undefined)
-    return {
-      ok: true,
-      ...(info?.name === undefined ? {} : { agentName: info.name }),
-      ...(info?.protocolVersion === undefined ? {} : { protocolVersion: info.protocolVersion })
-    }
-  } catch (cause) {
-    return {
-      ok: false,
-      error: cause instanceof Error ? cause.message : String(cause)
-    }
-  }
-}
 
 const promiseWithTimeout = <A>(
   promise: Promise<A>,

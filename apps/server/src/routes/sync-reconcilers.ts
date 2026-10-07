@@ -63,7 +63,6 @@ export const reconcileForNamespace = async (
     }
     case "harnesses": {
       const lifecycle = services.lifecycle
-      const custom = services.customHarnesses
       const outcome = await reconcileHarnesses({
         db: services.db,
         serverId: config.id,
@@ -76,7 +75,6 @@ export const reconcileForNamespace = async (
             id: harness.id,
             name: harness.name,
             symbolName: harness.symbolName,
-            source: harness.source,
             enabled: harness.enabled,
             installed: harness.readiness.state === "ready",
             // Mirrors the PATCH enable gate: without an auth service there
@@ -98,10 +96,6 @@ export const reconcileForNamespace = async (
         beginUninstall: async (harnessId) => {
           if (lifecycle === undefined) throw new Error("Uninstall unavailable on this machine")
           await lifecycle.beginUninstall(harnessId)
-        },
-        listCustomSpecs: async () => (custom === undefined ? [] : await custom.list()),
-        replaceCustomSpecs: async (specs) => {
-          if (custom !== undefined) await custom.replace(specs)
         }
       })
       return {

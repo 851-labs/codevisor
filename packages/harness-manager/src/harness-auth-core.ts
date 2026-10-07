@@ -59,10 +59,8 @@ const publicAccount = (record: HarnessAccountRecord): HarnessAccount => {
 /// environment, and the managed-profile paths plus the env each account runs
 /// its harness CLI with.
 export const makeHarnessAuthCore = (config: HarnessAuthManagerConfig) => {
-  /// Read lazily on every use: the runtime's catalog is a live view that
-  /// changes when custom harnesses are added/removed at runtime.
-  const catalogNow = (): ReadonlyArray<HarnessDefinition> =>
-    config.catalog ?? config.agents.catalog ?? harnessCatalog
+  /// Hosts and tests that stub the runtime without a catalog get the builtin one.
+  const catalog: ReadonlyArray<HarnessDefinition> = config.agents.catalog ?? harnessCatalog
   const listeners = new Set<(event: HarnessAuthEvent) => void>()
   const probes = new Map<string, Promise<HarnessAccount>>()
   const refreshes = new Map<string, Promise<void>>()
@@ -90,7 +88,7 @@ export const makeHarnessAuthCore = (config: HarnessAuthManagerConfig) => {
   }
 
   const definition = (harnessId: string) => {
-    const value = catalogNow().find((candidate) => candidate.id === harnessId)
+    const value = catalog.find((candidate) => candidate.id === harnessId)
     if (value === undefined) throw new Error(`Unknown harness: ${harnessId}`)
     return value
   }
@@ -241,7 +239,7 @@ export const makeHarnessAuthCore = (config: HarnessAuthManagerConfig) => {
     acpLoginMethods,
     announce,
     apiKeyPath,
-    catalogNow,
+    catalog,
     claudeLogins,
     codexLogins,
     cursorLogins,

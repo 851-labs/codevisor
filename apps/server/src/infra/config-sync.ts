@@ -376,7 +376,13 @@ export const HARNESS_READINESS_NAMESPACE = "harness-readiness"
 
 export interface HarnessReadinessRow {
   readonly id: string
+  /// Display identity, so clients can list a machine's harnesses (the "Add
+  /// Harness" picker) from synced config alone.
+  readonly name: string
+  readonly symbolName: string
   readonly installed?: boolean
+  /// False only when the harness needs no sign-in at all.
+  readonly authRequired: boolean
   readonly state:
     | "ready"
     | "signInRequired"

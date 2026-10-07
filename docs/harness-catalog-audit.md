@@ -100,8 +100,7 @@ newer or manually configured installation is broken.
 | `minion-code`     | Python dependency issue.                                                                           |
 | `qoder`           | ACP initialization fails in 0.2.15/0.2.16; newer npm releases require a fresh compatibility check. |
 
-These public-directory entries need additional integration work or a user-specific
-custom harness command:
+These public-directory entries need additional integration work:
 
 | Entry                                                                                                 | Remaining requirement                                                                             |
 | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |

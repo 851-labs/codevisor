@@ -32,37 +32,20 @@ export interface ManagedSession {
   readonly phases: MessagePhases
 }
 
-/// Runtime state that swaps live after construction: the effective catalog
-/// (setExtraHarnesses), the resolved environment (refreshEnvironment), and
-/// the shared in-flight refresh.
+/// Runtime state that swaps live after construction: the resolved
+/// environment (refreshEnvironment) and the shared in-flight refresh.
 export interface AgentRuntimeState {
-  extraHarnesses: ReadonlyArray<HarnessDefinition>
-  catalog: ReadonlyArray<HarnessDefinition>
   currentEnv: NodeJS.ProcessEnv
   envRefresh: Promise<void> | undefined
 }
-
-/// A colliding extra id is dropped so a custom entry can never shadow (or
-/// break) a builtin harness.
-export const withoutBuiltinCollisions = (
-  definitions: ReadonlyArray<HarnessDefinition>
-): ReadonlyArray<HarnessDefinition> =>
-  definitions.filter((extra) => !harnessCatalog.some((builtin) => builtin.id === extra.id))
 
 /// The registries and per-session plumbing every runtime operation shares:
 /// providers, managed sessions, the lifecycle serializer, and the event
 /// dispatcher that keeps a session's sink observing events in order.
 export const makeAgentRuntimeCore = (config: AgentRuntimeConfig) => {
-  // Effective catalog: builtins first, then injected user-defined entries.
-  // Both are mutable state: setExtraHarnesses swaps them live (the
-  // custom-harness PUT route), so every internal consumer reads them lazily
-  // rather than capturing.
-  const extraHarnesses = withoutBuiltinCollisions(config.extraHarnesses ?? [])
   const state: AgentRuntimeState = {
-    catalog: [...harnessCatalog, ...extraHarnesses],
     currentEnv: config.env ?? process.env,
-    envRefresh: undefined,
-    extraHarnesses
+    envRefresh: undefined
   }
   const locateExecutable = config.locateExecutable ?? locateExecutableOnPath
   const executableExists =
@@ -90,7 +73,7 @@ export const makeAgentRuntimeCore = (config: AgentRuntimeConfig) => {
     return undefined
   }
   const locateReadyBinaries = (): ReadonlyArray<string> =>
-    state.catalog.flatMap((definition) => {
+    harnessCatalog.flatMap((definition) => {
       const path = locateHarnessBinary(definition)
       return path === undefined ? [] : [path]
     })
@@ -200,7 +183,7 @@ export const makeAgentRuntimeCore = (config: AgentRuntimeConfig) => {
     AgentRuntimeError
   > =>
     runtimeEffect("resolveHarness", () => {
-      const definition = state.catalog.find((candidate) => candidate.id === harnessId)
+      const definition = harnessCatalog.find((candidate) => candidate.id === harnessId)
       if (definition === undefined) {
         throw new Error(`Unknown harness: ${harnessId}`)
       }

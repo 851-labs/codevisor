@@ -230,6 +230,15 @@ describe("/v1/sync/harness-readiness", () => {
             enabled: true,
             readiness: { state: "ready" },
             auth: { state: "error", detail: "Keychain is locked" }
+          })),
+          // Nothing to sign in to: the only row that reports no auth need.
+          ...list.map((harness) => ({
+            ...harness,
+            id: "auth-free",
+            desiredEnabled: true,
+            enabled: true,
+            readiness: { state: "ready" },
+            auth: { state: "notRequired" }
           }))
         ]),
       decorateHarnessesFromStoredState: (list: ReadonlyArray<Harness>) =>
@@ -262,7 +271,17 @@ describe("/v1/sync/harness-readiness", () => {
     expect(missing).not.toHaveProperty("version")
     expect(rows.find((row) => row.id === "auth-error")).toMatchObject({
       state: "signInRequired",
-      reason: "Keychain is locked"
+      reason: "Keychain is locked",
+      authRequired: true
+    })
+    // Display identity rides along so clients can build pickers from sync alone.
+    expect(rows.find((row) => row.id === "auth-free")).toEqual({
+      id: "auth-free",
+      name: "Codex",
+      symbolName: "chevron.left.forwardslash.chevron.right",
+      state: "ready",
+      installed: true,
+      authRequired: false
     })
   })
 })

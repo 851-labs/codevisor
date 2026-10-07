@@ -13,7 +13,7 @@ planning notes are not published.
 | Product model, installation, and first run                    | Get-started, install, and quickstart       | `apps/www/public/install.sh`, server CLI                   |
 | Server configuration, auth, security, realtime, and terminals | Verified guides and generated API          | `apps/server/src`, `packages/api/src`                      |
 | Projects, worktrees, workspaces, sessions, files, and events  | Concepts and generated API                 | Server route modules and API schemas                       |
-| Harnesses and accounts                                        | Generated API and custom-agent guide       | `packages/harness-manager`, harness routes                 |
+| Harnesses and accounts                                        | Generated API                              | `packages/harness-manager`, harness routes                 |
 | MCP servers                                                   | Managed/native guide and generated API     | `packages/mcp`, MCP routes                                 |
 | Skills                                                        | Store, `skills` tool, and API              | `packages/skills`, skills routes                           |
 | Plugins                                                       | Authoring/runtime/publishing guide and API | `packages/plugins`, plugin routes, public plugin directory |
@@ -37,7 +37,6 @@ currently covers these route families:
 - Projects, Git branches, worktrees, and filesystem listing
 - Workspaces and panes
 - Harness discovery, accounts, provider authentication, and agent-session discovery
-- Custom ACP harness listing, testing, and replacement
 - Plugin discovery, installation/linking, lifecycle, pane tokens, and tools
 - Managed MCP servers, native MCP discovery/import/editing, and project/session scopes
 - Skills creation, import, synchronization, promotion, installation, and removal

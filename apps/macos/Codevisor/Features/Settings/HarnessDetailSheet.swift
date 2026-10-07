@@ -57,7 +57,7 @@ struct HarnessDetailSheet: View {
           .accessibilityHidden(true)
         // The name is the sheet's navigation title; repeating it here
         // would be the only duplicated string on the surface.
-        Text(sourceLabel)
+        Text("Built-in harness")
           .font(.callout)
           .foregroundStyle(theme.textSecondary)
         Spacer(minLength: 0)
@@ -187,10 +187,6 @@ struct HarnessDetailSheet: View {
     } catch {
       bundledAppError = error.localizedDescription
     }
-  }
-
-  private var sourceLabel: String {
-    harness.source == "custom" ? "Custom harness" : "Built-in harness"
   }
 
   private func originLabel(_ origin: String) -> String {

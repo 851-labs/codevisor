@@ -4,11 +4,7 @@ import type {
   makeOpenCode2Logins,
   startOpenCodeServer
 } from "@codevisor/adapter-opencode"
-import type {
-  AgentRuntimeService,
-  HarnessAccountContext,
-  HarnessDefinition
-} from "@codevisor/agent-runtime"
+import type { AgentRuntimeService, HarnessAccountContext } from "@codevisor/agent-runtime"
 import type {
   Harness,
   HarnessAccount,
@@ -80,10 +76,6 @@ export interface HarnessAuthManagerConfig {
     readonly start?: typeof startOpenCodeServer
     readonly logins?: ReturnType<typeof makeOpenCode2Logins>
   }
-  /// The effective harness catalog (builtins + user-defined entries).
-  /// Defaults to `agents.catalog`, falling back to the builtin catalog for
-  /// hosts/tests that stub the runtime.
-  readonly catalog?: ReadonlyArray<HarnessDefinition>
 }
 
 export interface HarnessAuthManager {

@@ -15,14 +15,13 @@ struct HarnessesSettingsView: View {
       HarnessGlobalSection(
         model: globalModel,
         onAccounts: { presenter.showAccounts($0, startsSignIn: $1) },
-        onSignIn: { presenter.showSignIn(machineId: $0, harnessId: $1, startsSignIn: $2) },
-        onEditCustom: { presenter.editCustom($0) }
+        onSignIn: { presenter.showSignIn(machineId: $0, harnessId: $1, startsSignIn: $2) }
       ) { id, symbol in
         HarnessIcon(harnessId: id, fallbackSymbolName: symbol, size: 18)
       }
     }
     .settingsPaneFormStyle(theme)
-    .harnessFleetSheets(presenter, model: globalModel)
+    .harnessFleetSheets(presenter)
     .onChange(of: settingsRouter.pendingHarnessAccountRequest, initial: true) { _, request in
       // A chat's auth error deep-links with the harness and the machine it
       // ran on; the presenter decides whether accounts are the fleet's or

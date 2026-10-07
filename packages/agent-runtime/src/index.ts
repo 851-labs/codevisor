@@ -2,7 +2,7 @@ import type { Harness } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 import { Cause, Effect } from "effect"
 
-import { makeAgentRuntimeCore, withoutBuiltinCollisions } from "./agent-runtime-core.js"
+import { makeAgentRuntimeCore } from "./agent-runtime-core.js"
 import { makeAgentSessionOperations } from "./agent-runtime-sessions.js"
 import type { AgentRuntimeConfig, AgentRuntimeService } from "./agent-runtime-types.js"
 import { harnessCatalog } from "./harness-catalog.js"
@@ -40,15 +40,9 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
   } = core
 
   return {
-    get catalog() {
-      return state.catalog
-    },
-    setExtraHarnesses: (definitions) => {
-      state.extraHarnesses = withoutBuiltinCollisions(definitions)
-      state.catalog = [...harnessCatalog, ...state.extraHarnesses]
-    },
+    catalog: harnessCatalog,
     discoverHarnesses: Effect.sync(() =>
-      state.catalog.map((definition) => {
+      harnessCatalog.map((definition) => {
         const provider = providers.get(definition.provider)
         let readiness: Harness["readiness"]
         if (definition.disabledReason !== undefined) {
@@ -78,7 +72,7 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
           id: definition.id,
           name: definition.name,
           symbolName: definition.symbolName,
-          source: state.extraHarnesses.includes(definition) ? "custom" : "registry",
+          source: "registry",
           launchKind:
             definition.launch?.kind === "npx" ? ("npx" as const) : ("executable" as const),
           enabled: true,
@@ -89,7 +83,7 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
     ),
     listAgentSessions: (harnessId, account, options) =>
       adapterPromise("listAgentSessions", async () => {
-        const definition = state.catalog.find((candidate) => candidate.id === harnessId)
+        const definition = harnessCatalog.find((candidate) => candidate.id === harnessId)
         if (definition === undefined) {
           throw new Error(`Unknown harness: ${harnessId}`)
         }
@@ -104,7 +98,7 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
         return list === undefined ? [] : await list(definition, account, options)
       }),
     reconcileConfigValue: (harnessId, option, value) => {
-      const definition = state.catalog.find((candidate) => candidate.id === harnessId)
+      const definition = harnessCatalog.find((candidate) => candidate.id === harnessId)
       const provider = definition === undefined ? undefined : providers.get(definition.provider)
       return provider?.reconcileConfigValue?.(option, value)
     },

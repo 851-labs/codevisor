@@ -17,7 +17,6 @@ const movedDocsRedirects: Record<string, string> = {
   "extensions/plugins": "/docs/plugins",
   "extensions/mcp": "/docs/mcp",
   "extensions/skills": "/docs/skills",
-  "extensions/custom-agents": "/docs/custom-agents",
   "server/quickstart": "/docs/quickstart",
   "server/installation": "/docs/installation",
   "server/configuration": "/docs/configuration",

@@ -168,52 +168,6 @@ public struct ServerHarnessLifecycleState: Codable, Equatable, Sendable {
   }
 }
 
-/// A user-defined custom ACP harness spec, mirroring `CustomHarnessSpec` in
-/// @codevisor/api. Launched server-side as `command args…` with `env` merged
-/// into the spawn environment.
-public struct ServerCustomHarnessSpec: Codable, Equatable, Identifiable, Sendable {
-  public var id: String
-  public var name: String
-  public var command: String
-  public var args: [String]?
-  public var env: [String: String]?
-
-  public init(
-    id: String,
-    name: String,
-    command: String,
-    args: [String]? = nil,
-    env: [String: String]? = nil
-  ) {
-    self.id = id
-    self.name = name
-    self.command = command
-    self.args = args
-    self.env = env
-  }
-}
-
-/// Result of the ACP initialize handshake probe ("Test Connection"),
-/// mirroring `CustomHarnessTestResult` in @codevisor/api.
-public struct ServerCustomHarnessTestResult: Codable, Equatable, Sendable {
-  public var ok: Bool
-  public var agentName: String?
-  public var protocolVersion: Int?
-  public var error: String?
-
-  public init(ok: Bool, agentName: String? = nil, protocolVersion: Int? = nil, error: String? = nil) {
-    self.ok = ok
-    self.agentName = agentName
-    self.protocolVersion = protocolVersion
-    self.error = error
-  }
-}
-
-/// Wire wrapper for the custom-harness list routes.
-struct ServerCustomHarnessListEnvelope: Codable, Equatable, Sendable {
-  var harnesses: [ServerCustomHarnessSpec]
-}
-
 /// Dual-install: a desktop app bundling a copy of the harness CLI, with its
 /// own Sparkle-fed update state. Mirrors `HarnessBundledApp` in @codevisor/api.
 public struct ServerHarnessBundledApp: Codable, Equatable, Sendable {

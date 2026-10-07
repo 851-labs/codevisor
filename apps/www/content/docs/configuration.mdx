@@ -30,14 +30,13 @@ codevisor-server serve \
 `CODEVISOR_DATA_DIR` changes the default data directory. An explicit `--db` wins. The canonical
 layout is:
 
-| Path                          | Contents                                 |
-| ----------------------------- | ---------------------------------------- |
-| `~/.codevisor/data`           | SQLite, attachments, keys, sidecar state |
-| `~/.codevisor/server`         | Standalone installed runtime             |
-| `~/.codevisor/logs`           | Logs for non-systemd background runs     |
-| `~/.codevisor/plugins`        | Managed and linked plugins               |
-| `~/.codevisor/repos`          | Codevisor-managed Git clones             |
-| `~/.codevisor/harnesses.json` | Custom ACP harness definitions           |
+| Path                   | Contents                                 |
+| ---------------------- | ---------------------------------------- |
+| `~/.codevisor/data`    | SQLite, attachments, keys, sidecar state |
+| `~/.codevisor/server`  | Standalone installed runtime             |
+| `~/.codevisor/logs`    | Logs for non-systemd background runs     |
+| `~/.codevisor/plugins` | Managed and linked plugins               |
+| `~/.codevisor/repos`   | Codevisor-managed Git clones             |
 
 The CLI also accepts app-lifecycle flags such as `--boot-id`, `--app-owned`, and `--owner-pid`.
 They coordinate a bundled desktop server and are not normal deployment settings.

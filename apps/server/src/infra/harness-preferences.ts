@@ -10,9 +10,6 @@ import { Effect } from "effect"
 /// Every write path (Settings toggle, Install, Uninstall, PATCH) lands here,
 /// so the Settings list and the composer's picker can never disagree.
 export const HARNESSES_SYNC_NAMESPACE = "harnesses"
-/// Custom harness definitions edited on this machine keep their local copy
-/// instead of following the shared definition. Unrelated to enable/install.
-export const CUSTOM_HARNESS_LOCAL_EDITS_NAMESPACE = "local.harness-custom-overrides"
 const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 
 export const harnessPreference = (value: unknown): HarnessPreference | undefined => {
@@ -30,7 +27,7 @@ export const readHarnessSettings = async (
 ): Promise<Map<string, HarnessSettings>> => {
   const result = new Map<string, HarnessSettings>()
   for (const entry of await run(db.getSyncEntries(HARNESSES_SYNC_NAMESPACE))) {
-    if (entry.deleted || entry.key.startsWith("custom:")) continue
+    if (entry.deleted) continue
     const preference = harnessPreference(entry.value)
     if (preference !== undefined) result.set(entry.key, { global: preference })
   }

@@ -156,44 +156,19 @@ describe("/v1/sync", () => {
 
   it("reconciles harnesses over HTTP with auth and lifecycle gates", async () => {
     const { services } = await makeServices("server-hsync")
-    // The seeded global custom spec applies alongside the local definition.
-    const replaced: Array<ReadonlyArray<unknown>> = []
-    const customHarnesses = {
-      list: () => Promise.resolve([{ id: "mybot", name: "My Bot", command: "mybot" }]),
-      replace: (specs: ReadonlyArray<unknown>) => {
-        replaced.push(specs)
-        return Promise.resolve()
-      },
-      test: () => Promise.resolve({ ok: true })
-    } as unknown as NonNullable<CodevisorServerServices["customHarnesses"]>
-    await run(
-      services.db.mergeSyncEntries("harnesses", [
-        {
-          key: "custom:fleetbot",
-          value: { id: "fleetbot", name: "Fleet Bot", command: "fleetbot" },
-          timestamp: { wallMs: 10, counter: 0, deviceId: "z" }
-        }
-      ])
-    )
-    const server = await startWithApp({ ...services, customHarnesses })
+    const server = await startWithApp(services)
 
     // The harness this machine already runs (ready, enabled, nothing to sign
-    // in to) is promoted into the shared catalog; the custom spec applies.
+    // in to) is promoted into the shared catalog.
     const first = await jsonRequest(server, "/v1/sync/harnesses/reconcile", { method: "POST" })
     expect(first.status).toBe(200)
     expect(first.body).toMatchObject({
       published: ["codex"],
-      applied: ["custom:fleetbot"],
+      applied: [],
       blocked: []
     })
-    expect(replaced.at(-1)?.length).toBe(2)
     const doc = await jsonRequest(server, "/v1/sync/harnesses")
     const entries = (doc.body as { entries: Array<{ key: string; value: unknown }> }).entries
-    expect(entries.find((entry) => entry.key === "custom:fleetbot")?.value).toEqual({
-      id: "fleetbot",
-      name: "Fleet Bot",
-      command: "fleetbot"
-    })
     expect(entries.find((entry) => entry.key === "codex")?.value).toMatchObject({
       enabled: true,
       installed: true,
@@ -250,13 +225,6 @@ describe("/v1/sync", () => {
         {
           key: "codex",
           value: { enabled: true, installed: true },
-          timestamp: { wallMs: 10, counter: 0, deviceId: "z" }
-        },
-        // A custom spec arriving on a machine with no custom store: the
-        // apply is a quiet no-op rather than a failure.
-        {
-          key: "custom:orphan",
-          value: { id: "orphan", name: "Orphan", command: "orphan" },
           timestamp: { wallMs: 10, counter: 0, deviceId: "z" }
         }
       ])

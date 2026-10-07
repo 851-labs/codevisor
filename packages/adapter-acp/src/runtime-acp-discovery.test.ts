@@ -2,9 +2,15 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { harnessCatalog, locateExecutableOnPath, makeAgentRuntime } from "@codevisor/agent-runtime"
+import {
+  harnessCatalog,
+  locateExecutableOnPath,
+  makeAgentRuntime,
+  OPENCODE_INSTALL_PATH
+} from "@codevisor/agent-runtime"
 import { describe, expect, it } from "vitest"
 
+import { makeAcpProvider } from "./index.js"
 import { makeAcpAgentRuntime, makeConnector, run } from "./test-support.js"
 
 describe("@codevisor/agent-runtime", () => {
@@ -139,154 +145,21 @@ describe("@codevisor/agent-runtime", () => {
     expect(resolveCalls).toBe(2)
   })
 
-  it("merges injected extra harnesses and tags them as custom", async () => {
-    const runtime = makeAcpAgentRuntime({
-      env: { PATH: "/bin" },
-      executableExists: (name) => name === "my-agent",
-      locateExecutable: () => undefined,
-      extraHarnesses: [
-        {
-          detectBinaries: ["my-agent"],
-          id: "my-agent",
-          launch: { args: ["acp"], command: "my-agent", kind: "executable" },
-          name: "My Agent",
-          provider: "acp",
-          symbolName: "terminal"
-        },
-        {
-          detectBinaries: ["my-agent"],
-          id: "my-npx-agent",
-          launch: { args: [], kind: "npx", packageName: "my-npx-agent" },
-          name: "My npx Agent",
-          provider: "acp",
-          symbolName: "terminal"
-        }
-      ]
-    })
-
-    // The effective catalog is builtins + the extra entries, and is exposed on
-    // the service for consumers (harness auth, lifecycle).
-    expect(runtime.catalog).toHaveLength(harnessCatalog.length + 2)
-    expect(runtime.catalog.find((definition) => definition.id === "my-agent")?.name).toBe(
-      "My Agent"
-    )
-
-    const harnesses = await run(runtime.discoverHarnesses)
-    const custom = harnesses.find((harness) => harness.id === "my-agent")
-    expect(custom).toMatchObject({
-      name: "My Agent",
-      launchKind: "executable",
-      source: "custom",
-      readiness: { state: "ready" }
-    })
-    // A custom harness can still run through npx.
-    expect(harnesses.find((harness) => harness.id === "my-npx-agent")?.launchKind).toBe("npx")
-    // Builtins keep their registry source.
-    expect(harnesses.find((harness) => harness.id === "codex")?.source).toBe("registry")
-  })
-
   it("finds a harness where its installer put it when the login shell's PATH misses it", async () => {
     const connector = makeConnector()
-    const installed = "/home/me/.my-agent/bin/my-agent"
-    const locate = (name: string) => (name === "~/.my-agent/bin/my-agent" ? installed : undefined)
-    const runtime = makeAcpAgentRuntime({
-      connector,
+    const installed = "/home/me/.opencode/bin/opencode"
+    const locate = (name: string) => (name === OPENCODE_INSTALL_PATH ? installed : undefined)
+    const runtime = makeAgentRuntime({
       env: { PATH: "/bin", HOME: "/home/me" },
       executableExists: (name) => locate(name) !== undefined,
       locateExecutable: locate,
-      extraHarnesses: [
-        {
-          detectBinaries: ["my-agent"],
-          fallbackPaths: ["~/.my-agent/bin/my-agent"],
-          id: "my-agent",
-          launch: { args: ["acp"], command: "my-agent", kind: "executable" },
-          name: "My Agent",
-          provider: "acp",
-          symbolName: "terminal"
-        }
-      ]
+      providerFactories: [(env) => makeAcpProvider(env, { connector, providerId: "opencode" })]
     })
 
     const harnesses = await run(runtime.discoverHarnesses)
-    expect(harnesses.find((harness) => harness.id === "my-agent")?.readiness.state).toBe("ready")
-    await run(runtime.createAgentSession("my-agent", "/tmp/project", () => Promise.resolve()))
+    expect(harnesses.find((harness) => harness.id === "opencode")?.readiness.state).toBe("ready")
+    await run(runtime.createAgentSession("opencode", "/tmp/project", () => Promise.resolve()))
     expect(connector.requests[0]).toMatchObject({ command: installed, args: ["acp"] })
-  })
-
-  it("reports disabled custom harnesses as unavailable and refuses their sessions", async () => {
-    const runtime = makeAcpAgentRuntime({
-      env: { PATH: "/bin" },
-      extraHarnesses: [
-        {
-          detectBinaries: ["paused-agent"],
-          disabledReason: "Temporarily paused",
-          id: "paused-agent",
-          launch: { args: ["acp"], command: "paused-agent", kind: "executable" },
-          name: "Paused Agent",
-          provider: "acp",
-          symbolName: "terminal"
-        }
-      ]
-    })
-
-    const harnesses = await run(runtime.discoverHarnesses)
-    expect(harnesses.find((harness) => harness.id === "paused-agent")?.readiness).toEqual({
-      detail: "Temporarily paused",
-      state: "unavailable"
-    })
-    await expect(
-      run(runtime.createAgentSession("paused-agent", "/tmp/project", () => undefined))
-    ).rejects.toThrow("Paused Agent is unavailable: Temporarily paused")
-  })
-
-  it("drops extra harnesses whose id collides with a builtin", async () => {
-    const runtime = makeAcpAgentRuntime({
-      env: { PATH: "/bin" },
-      executableExists: () => false,
-      locateExecutable: () => undefined,
-      extraHarnesses: [
-        {
-          detectBinaries: ["fake-codex"],
-          id: "codex",
-          launch: { args: [], command: "fake-codex", kind: "executable" },
-          name: "Fake Codex",
-          provider: "acp",
-          symbolName: "terminal"
-        }
-      ]
-    })
-
-    expect(runtime.catalog).toHaveLength(harnessCatalog.length)
-    const harnesses = await run(runtime.discoverHarnesses)
-    const codex = harnesses.find((harness) => harness.id === "codex")
-    expect(codex?.name).toBe("Codex")
-    expect(codex?.source).toBe("registry")
-  })
-
-  it("swaps custom entries live via setExtraHarnesses", async () => {
-    const runtime = makeAcpAgentRuntime({
-      env: { PATH: "/bin" },
-      executableExists: () => false,
-      locateExecutable: () => undefined
-    })
-    expect(runtime.catalog).toEqual(harnessCatalog)
-
-    runtime.setExtraHarnesses([
-      {
-        detectBinaries: ["late-agent"],
-        id: "late-agent",
-        launch: { args: ["acp"], command: "late-agent", kind: "executable" },
-        name: "Late Agent",
-        provider: "acp",
-        symbolName: "terminal"
-      }
-    ])
-    expect(runtime.catalog).toHaveLength(harnessCatalog.length + 1)
-    const harnesses = await run(runtime.discoverHarnesses)
-    expect(harnesses.find((harness) => harness.id === "late-agent")?.source).toBe("custom")
-
-    runtime.setExtraHarnesses([])
-    expect(runtime.catalog).toEqual(harnessCatalog)
   })
 
   it("propagates resolveEnv failures as runtime errors and recovers", async () => {

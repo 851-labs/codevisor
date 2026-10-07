@@ -4,7 +4,6 @@ import {
   ApplyPluginUpdateRequest,
   AnswerPiAuthRequest,
   CreateHarnessAccountRequest,
-  CustomHarnessSpec,
   DiscoverRemotePluginRequest,
   ImportRemotePluginRequest,
   LinkPluginRequest,
@@ -16,7 +15,6 @@ import {
   UpdateHarnessAccountRequest,
   UpdateHarnessRequest
 } from "@codevisor/api"
-import { Schema } from "effect"
 
 import {
   stringQuery,
@@ -224,31 +222,6 @@ export const codevisorHarnessApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     "List sessions from a harness's own native store.",
     "GET",
     "/v1/harnesses/:id/agent-sessions"
-  ),
-  apiTool(
-    "harnesses.custom_list",
-    "List user-defined ACP harness specifications.",
-    "GET",
-    "/v1/harnesses/custom"
-  ),
-  apiTool(
-    "harnesses.custom_replace",
-    "Replace all user-defined ACP harness specifications.",
-    "PUT",
-    "/v1/harnesses/custom",
-    {
-      body: Schema.Array(CustomHarnessSpec),
-      wrappedBody: true
-    }
-  ),
-  apiTool(
-    "harnesses.custom_test",
-    "Test an ACP handshake for a custom harness specification.",
-    "POST",
-    "/v1/harnesses/custom/test",
-    {
-      body: CustomHarnessSpec
-    }
   ),
   apiTool(
     "harnesses.accounts_list",

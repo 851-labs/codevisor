@@ -114,9 +114,6 @@ export const HarnessLifecycleState = Schema.Struct({
 })
 export type HarnessLifecycleState = typeof HarnessLifecycleState.Type
 
-/// A user-defined custom ACP harness (BYO): launched as `command args…` with
-/// `env` merged into the launch environment. Persisted in the user-editable
-/// harnesses file and merged into the catalog with source "custom".
 /// Dual-install: a desktop app that bundles a copy of the harness CLI while
 /// the primary install is the user's own (brew/npm/…). The app updates via
 /// its own Sparkle feed; this is the detail sheet's on-demand snapshot.
@@ -128,23 +125,6 @@ export const HarnessBundledApp = Schema.Struct({
   updateAvailable: Schema.Boolean
 })
 export type HarnessBundledApp = typeof HarnessBundledApp.Type
-
-export const CustomHarnessSpec = Schema.Struct({
-  id: Schema.String,
-  name: Schema.String,
-  command: Schema.String,
-  args: Schema.optional(Schema.Array(Schema.String)),
-  env: Schema.optional(Schema.Record(Schema.String, Schema.String))
-})
-export type CustomHarnessSpec = typeof CustomHarnessSpec.Type
-
-export const CustomHarnessTestResult = Schema.Struct({
-  ok: Schema.Boolean,
-  agentName: Schema.optional(Schema.String),
-  protocolVersion: Schema.optional(Schema.Number),
-  error: Schema.optional(Schema.String)
-})
-export type CustomHarnessTestResult = typeof CustomHarnessTestResult.Type
 
 export const HarnessPreference = Schema.Struct({
   enabled: Schema.optional(Schema.Boolean),

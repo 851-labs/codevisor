@@ -8,7 +8,6 @@ import type { AttachmentStore, CodevisorDatabaseService } from "@codevisor/db"
 import type { CredentialSource } from "@codevisor/harness-manager"
 import type { HarnessAuthManager } from "@codevisor/harness-manager"
 import type { HarnessLifecycleManager } from "@codevisor/harness-manager"
-import type { CustomHarnessStore } from "@codevisor/harness-manager"
 import type { McpManager } from "@codevisor/mcp"
 import type { NativeMcpManager } from "@codevisor/mcp"
 import type { PluginRegistryClient, PluginsManager } from "@codevisor/plugins"
@@ -182,9 +181,6 @@ export interface CodevisorServerServices {
   readonly sharedAccounts?: SharedAccounts
   readonly credentialFerry?: ReadonlyArray<CredentialSource>
   readonly mcp?: McpManager
-  /// User-defined custom ACP harness persistence + handshake probe. Absent on
-  /// hosts that don't support it (embedded runtimes, tests) — routes 501.
-  readonly customHarnesses?: CustomHarnessStore
   /// Harness install/update lifecycle (update detection, later install/
   /// update execution). Absent on hosts that don't support it.
   readonly lifecycle?: HarnessLifecycleManager

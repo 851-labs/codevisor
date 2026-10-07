@@ -147,14 +147,6 @@ describe("harness update checks", () => {
       { key: "codex", value: { name: "Codex", enabled: true, installed: true, uninstall: false } }
     ])
 
-    // Custom-harness collection accepts only GET/PUT — other verbs fall
-    // through to later routes rather than mutating the store.
-    const wrongMethod = await jsonRequest(server, "/v1/harnesses/custom", {
-      body: JSON.stringify({}),
-      method: "POST"
-    })
-    expect(wrongMethod.status).toBeGreaterThanOrEqual(400)
-
     const update = await jsonRequest(server, "/v1/harnesses/codex/update", { method: "POST" })
     expect(update.status).toBe(202)
     expect(update.body).toMatchObject({
@@ -292,8 +284,7 @@ describe("harness update checks", () => {
       ["/v1/harnesses/codex/update/pending/apply", "POST"],
       ["/v1/harnesses/codex/update/pending", "DELETE"],
       ["/v1/harnesses/codex/bundled-app", "GET"],
-      ["/v1/harnesses/codex/bundled-app/update", "POST"],
-      ["/v1/harnesses/custom/test", "POST"]
+      ["/v1/harnesses/codex/bundled-app/update", "POST"]
     ] as const) {
       const response = await jsonRequest(server, path, { method })
       expect(response.status, `${method} ${path}`).toBe(501)

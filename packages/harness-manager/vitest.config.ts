@@ -6,9 +6,8 @@ import { defineConfig } from "vitest/config"
 // feeds; the OpenCode
 // server module drives a real `opencode serve` process (rationale carried
 // over from the repo root config when these lived in apps/server). Their
-// focused tests still run; custom-harnesses and credential-ferry stay at
-// 100%. The *-test-support module is shared test
-// scaffolding, not product code.
+// focused tests still run; credential-ferry stays at 100%. The *-test-support
+// module is shared test scaffolding, not product code.
 export default defineConfig({
   test: {
     // These tests spawn fake harness CLIs and auth servers per test; on a loaded CI runner — where every

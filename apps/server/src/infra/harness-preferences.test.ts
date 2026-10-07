@@ -36,8 +36,7 @@ describe("harness preferences", () => {
     const { services } = await makeServices("preferences")
     await run(
       services.db.mergeSyncEntries(HARNESSES_SYNC_NAMESPACE, [
-        { key: "codex", value: { enabled: true, installed: true }, timestamp },
-        { key: "custom:bot", value: { id: "bot", name: "Bot", command: "bot" }, timestamp }
+        { key: "codex", value: { enabled: true, installed: true }, timestamp }
       ])
     )
     // A stale row from the retired override layer must be ignored entirely.
@@ -48,7 +47,6 @@ describe("harness preferences", () => {
     )
     const settings = await readHarnessSettings(services.db)
     expect(settings.get("codex")).toEqual({ global: { enabled: true, installed: true } })
-    expect(settings.has("custom:bot")).toBe(false)
     expect(effectiveHarnessPreference(settings.get("codex"))).toEqual({
       enabled: true,
       installed: true

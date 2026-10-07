@@ -57,23 +57,6 @@ extension CodevisorServerClient {
     return try await get("/v1/harnesses/\(encoded)/agent-sessions")
   }
 
-  public func listCustomHarnesses() async throws -> [ServerCustomHarnessSpec] {
-    let envelope: ServerCustomHarnessListEnvelope = try await get("/v1/harnesses/custom")
-    return envelope.harnesses
-  }
-
-  public func replaceCustomHarnesses(_ specs: [ServerCustomHarnessSpec]) async throws -> [ServerHarness] {
-    try await send(
-      "/v1/harnesses/custom",
-      method: "PUT",
-      body: ServerCustomHarnessListEnvelope(harnesses: specs)
-    )
-  }
-
-  public func testCustomHarness(_ spec: ServerCustomHarnessSpec) async throws -> ServerCustomHarnessTestResult {
-    try await send("/v1/harnesses/custom/test", method: "POST", body: spec)
-  }
-
   public func installHarness(id: String, methodId: String?) async throws -> ServerHarnessOperationStarted {
     struct InstallBody: Encodable { var methodId: String? }
     let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id

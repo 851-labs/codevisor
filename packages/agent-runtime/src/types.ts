@@ -108,7 +108,7 @@ export type HarnessLaunch =
       readonly command: string
       readonly args: ReadonlyArray<string>
       /// Extra environment merged over the resolved shell env when spawning
-      /// the adapter (user-defined custom harnesses). Account env still wins.
+      /// the adapter. Account env still wins.
       readonly env?: Readonly<Record<string, string>>
     }
 
@@ -250,10 +250,10 @@ export interface HarnessDefinition {
   /// Derived UI fallback — `installMethods` is the structured source.
   readonly installHint?: string
   /// Ways Codevisor can install this CLI, in vendor-preference order. Absent
-  /// for harnesses we can't install (bundled-only, custom entries).
+  /// for harnesses we can't install (bundled-only).
   readonly installMethods?: ReadonlyArray<HarnessInstallMethodSpec>
   /// Update sources keyed by detected install origin. Absent = no update
-  /// support (custom entries, harnesses without a version channel).
+  /// support (harnesses without a version channel).
   readonly update?: {
     readonly sources: ReadonlyArray<HarnessUpdateSource>
     /// Packages of an older release line this harness's packages replace

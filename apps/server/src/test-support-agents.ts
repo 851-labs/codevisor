@@ -104,7 +104,6 @@ export const makeAgents = (): AgentRuntimeService & {
     sinks,
     emit,
     catalog: harnessCatalog,
-    setExtraHarnesses: () => {},
     discoverHarnesses: Effect.succeed(harnesses),
     refreshEnvironment: Effect.sync(() => {
       environmentRefreshes.push(environmentRefreshes.length + 1)

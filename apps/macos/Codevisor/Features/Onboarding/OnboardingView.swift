@@ -143,7 +143,7 @@ struct OnboardingView: View {
         projectSetup.addPickedFolders(urls)
       }
     }
-    .harnessFleetSheets(fleetPresenter, model: fleetModel)
+    .harnessFleetSheets(fleetPresenter)
     .sheet(isPresented: $showingGitClone) {
       GitCloneSheet(
         client: environment.machines.client(for: CodevisorMachine.local.id),

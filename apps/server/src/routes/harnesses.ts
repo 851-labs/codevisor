@@ -3,11 +3,8 @@ import { tmpdir } from "node:os"
 
 import type { Harness, HarnessCapability } from "@codevisor/api"
 import { UpdateHarnessRequest as UpdateHarnessRequestSchema } from "@codevisor/api"
-import { parseCustomHarnessDocument } from "@codevisor/harness-manager"
-import { latestSyncTimestamp, nextSyncTimestamp } from "@codevisor/sync"
 
 import {
-  CUSTOM_HARNESS_LOCAL_EDITS_NAMESPACE,
   decorateHarnessSettings,
   HARNESSES_SYNC_NAMESPACE,
   setHarnessPreference
@@ -172,66 +169,6 @@ export const routeHarnesses = async (
     } catch (cause) {
       throw conflictFrom(cause)
     }
-    return true
-  }
-
-  // User-defined custom ACP harnesses (~/.codevisor/harnesses.json).
-  if (
-    url.pathname === "/v1/harnesses/custom" &&
-    (request.method === "GET" || request.method === "PUT")
-  ) {
-    if (services.customHarnesses === undefined)
-      throw new HttpFailure(501, "Custom harnesses unavailable")
-    if (request.method === "GET") {
-      writeJson(response, 200, { harnesses: await services.customHarnesses.list() })
-      return true
-    }
-    // Whole-list replace: the file is the source of truth and stays
-    // hand-editable, so the API rewrites it rather than patching entries.
-    {
-      const body = await readJson(request)
-      const parsed = parseCustomHarnessDocument(body, "request body")
-      if (parsed.warnings.length > 0) {
-        // Reject instead of skipping: the API must never persist entries the
-        // next boot would drop.
-        throw new HttpFailure(400, parsed.warnings.join("; "))
-      }
-      const before = await services.customHarnesses.list()
-      const overrides = await run(services.db.getSyncEntries(CUSTOM_HARNESS_LOCAL_EDITS_NAMESPACE))
-      const changed = [...new Set([...before, ...parsed.specs].map((item) => item.id))].filter(
-        (id) =>
-          JSON.stringify(before.find((item) => item.id === id)) !==
-          JSON.stringify(parsed.specs.find((item) => item.id === id))
-      )
-      await services.customHarnesses.replace(parsed.specs)
-      await run(
-        services.db.mergeSyncEntries(
-          CUSTOM_HARNESS_LOCAL_EDITS_NAMESPACE,
-          changed.map((id) => ({
-            key: id,
-            value: true,
-            timestamp: nextSyncTimestamp("local", latestSyncTimestamp(overrides), Date.now())
-          }))
-        )
-      )
-      writeJson(response, 200, await discoverHarnesses(services, true, undefined, true))
-      return true
-    }
-  }
-
-  // One-shot ACP initialize handshake for a (possibly unsaved) custom spec —
-  // the "Test Connection" action. Blocking with the store's own timeout.
-  if (request.method === "POST" && url.pathname === "/v1/harnesses/custom/test") {
-    if (services.customHarnesses === undefined)
-      throw new HttpFailure(501, "Custom harnesses unavailable")
-    const body = await readJson(request)
-    const parsed = parseCustomHarnessDocument([body], "request body")
-    const spec = parsed.specs[0]
-    if (spec === undefined) {
-      /* v8 ignore next -- the single-entry wrapper always yields a warning when the spec is invalid. */
-      throw new HttpFailure(400, parsed.warnings.join("; ") || "Invalid custom harness spec")
-    }
-    writeJson(response, 200, await services.customHarnesses.test(spec))
     return true
   }
 

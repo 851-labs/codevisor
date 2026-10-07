@@ -137,8 +137,11 @@ export const refreshHarnessReadiness = async (
         const version = installed ? harness.readiness.version : undefined
         return {
           id: harness.id,
+          name: harness.name,
+          symbolName: harness.symbolName,
           state,
           installed,
+          authRequired: harness.auth?.state !== "notRequired",
           ...(reason ? { reason } : {}),
           ...(version ? { version } : {})
         }
