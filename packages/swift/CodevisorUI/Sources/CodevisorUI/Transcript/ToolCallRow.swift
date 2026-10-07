@@ -359,26 +359,25 @@ private struct ToolCallRawSectionView: View {
   }
 }
 
+/// Tool input and output text, laid out like a code block: lines keep their
+/// length and scroll sideways when they overflow, rather than wrapping (or
+/// spilling past the card). Tall text scrolls within the same capped viewport
+/// as shell output.
 struct ToolCallMonospacedText: View {
   let text: String
   @Environment(\.theme) private var theme
 
   var body: some View {
-    #if canImport(AppKit) || canImport(UIKit)
-      SelectableTextView(
-        attributedText: NSAttributedString(
-          string: text,
-          attributes: [
-            .font: OSFont.monospacedSystemFont(
-              ofSize: OSFont.preferredFont(forTextStyle: .caption1).pointSize,
-              weight: .regular
-            ),
-            .foregroundColor: OSColor(theme.textPrimary),
-          ]
-        ),
-        fillsWidth: true
-      )
-      .frame(maxWidth: .infinity, alignment: .leading)
+    #if canImport(AppKit)
+      NativePlainOutputView(text: text, theme: theme, followsTail: false)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.codeBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+    #elseif canImport(UIKit)
+      IOSNativePlainOutputView(text: text, theme: theme, followsTail: false)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.codeBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
     #else
       Text(text)
         .font(.system(.caption, design: .monospaced))
