@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import type { BrowserRuntime } from "./browser-cdp-engine.js"
 import {
+  BROWSER_PREVIEW_SWITCH_HOLD_MS,
   makeBrowserPreviews,
   type BrowserPreviewStatus,
   type BrowserPreviewViewer
@@ -87,12 +88,18 @@ const viewer = () => {
 /// Manual timers and clock: pending timers fire, after time has passed,
 /// when the test says so.
 const timers = () => {
-  const pending = new Set<() => void>()
+  const pending = new Map<() => void, number>()
   let time = 0
+  const run = (elapsed: number) => {
+    time += elapsed
+    const due = [...pending].filter(([, at]) => at <= time).map(([callback]) => callback)
+    for (const callback of due) pending.delete(callback)
+    for (const callback of due) callback()
+  }
   return {
     options: {
-      setTimer: (callback: () => void) => {
-        pending.add(callback)
+      setTimer: (callback: () => void, ms: number) => {
+        pending.set(callback, time + ms)
         return callback
       },
       clearTimer: (timer: unknown) => {
@@ -100,12 +107,9 @@ const timers = () => {
       },
       now: () => time
     },
-    fire: () => {
-      time += 60_000
-      const due = new Set(pending)
-      pending.clear()
-      for (const callback of due) callback()
-    },
+    fire: () => run(60_000),
+    /// Fires only the timers due within `ms`.
+    advance: (ms: number) => run(ms),
     count: () => pending.size
   }
 }
@@ -157,13 +161,15 @@ describe("Browser live preview", () => {
   })
 
   it("follows the agent to another tab and resizes for a bigger viewer", async () => {
+    const clock = timers()
     const chrome = browser()
-    const previews = makeBrowserPreviews(timers().options)
+    const previews = makeBrowserPreviews(clock.options)
     const first = viewer()
     previews.subscribe("chat", first.value).watch(100)
     await previews.activity("chat", chrome.runtime, "tab-1")
     previews.subscribe("chat", viewer().value).watch(1000)
     await previews.activity("chat", chrome.runtime, "tab-1")
+    clock.advance(BROWSER_PREVIEW_SWITCH_HOLD_MS)
     await previews.activity("chat", chrome.runtime, "tab-2")
 
     expect(
@@ -180,7 +186,52 @@ describe("Browser live preview", () => {
       "Page.startScreencast@cdp:tab-2:1000"
     ])
     // A tab without a title is named by its address.
-    expect(first.statuses.at(-1)).toMatchObject({ title: "Example" })
+    expect(first.statuses.at(-1)).toMatchObject({ title: "", url: "https://other.test/" })
+  })
+
+  it("lets each tab hold the screen briefly while the agent works several at once", async () => {
+    const clock = timers()
+    const chrome = browser()
+    const previews = makeBrowserPreviews(clock.options)
+    const watcher = viewer()
+    previews.subscribe("chat", watcher.value).watch(800)
+    const casts = () =>
+      chrome.methods().filter((method) => method.startsWith("Page.startScreencast"))
+    await previews.activity("chat", chrome.runtime, "tab-1")
+    expect(casts()).toEqual(["Page.startScreencast@cdp:tab-1"])
+
+    // Inside tab-1's hold, the agent works tab-2, then tab-1, then tab-2:
+    // the preview stays put until the hold ends, then shows the latest.
+    clock.advance(BROWSER_PREVIEW_SWITCH_HOLD_MS / 3)
+    await previews.activity("chat", chrome.runtime, "tab-2")
+    await previews.activity("chat", chrome.runtime, "tab-1")
+    await previews.activity("chat", chrome.runtime, "tab-2")
+    clock.advance(BROWSER_PREVIEW_SWITCH_HOLD_MS / 3)
+    await previews.activity("chat", chrome.runtime, "tab-1")
+    clock.advance(BROWSER_PREVIEW_SWITCH_HOLD_MS / 3 - 1)
+    await previews.activity("chat", chrome.runtime, "tab-2")
+    await previews.activity("chat", chrome.runtime, "tab-1")
+    expect(casts()).toEqual(["Page.startScreencast@cdp:tab-1"])
+    await previews.activity("chat", chrome.runtime, "tab-2")
+    clock.advance(1)
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(casts()).toEqual(["Page.startScreencast@cdp:tab-1", "Page.startScreencast@cdp:tab-2"])
+    // The new tab's title arrives with it, not a refresh window later.
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(watcher.statuses.at(-1)).toMatchObject({ title: "", url: "https://other.test/" })
+
+    // Once a tab has had its hold, the next one shows at once; a move still
+    // pending when the turn ends is dropped with it.
+    clock.advance(BROWSER_PREVIEW_SWITCH_HOLD_MS)
+    await previews.activity("chat", chrome.runtime, "tab-1")
+    await previews.activity("chat", chrome.runtime, "tab-2")
+    await previews.finish("chat")
+    expect(clock.count()).toBe(0)
+    expect(casts()).toEqual([
+      "Page.startScreencast@cdp:tab-1",
+      "Page.startScreencast@cdp:tab-2",
+      "Page.startScreencast@cdp:tab-1"
+    ])
   })
 
   it("idles after a pause, stops at turn end, and forgets a closed session", async () => {

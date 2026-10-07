@@ -37,6 +37,10 @@ const MIN_DIMENSION = 320
 const MAX_DIMENSION = 1920
 const DEFAULT_DIMENSION = 1280
 const INFO_REFRESH_MS = 1_000
+/// How long a tab stays on screen before the preview moves to another one
+/// the agent works in, so several tabs worked at once take turns at a
+/// readable pace instead of strobing.
+export const BROWSER_PREVIEW_SWITCH_HOLD_MS = 600
 
 interface Stream {
   readonly runtime: BrowserRuntime
@@ -61,6 +65,10 @@ interface Session {
   /// Follows the agent's tab's title and address as they change, in the
   /// browsers that report it; the rest refresh on each browser call.
   infoWatch: { readonly runtime: BrowserRuntime; readonly dispose: () => void } | undefined
+  /// When the tab on screen first showed.
+  shownAt: number
+  /// A move to another tab, deferred until the tab on screen has had its hold.
+  switchTimer: unknown
 }
 
 const clampDimension = (value: number): number =>
@@ -98,7 +106,7 @@ const stopStream = async (entry: Session): Promise<void> => {
 
 /// Live previews of the tabs chats' agents drive, over CDP screencasts. A
 /// screencast runs only while the agent is active and someone watches, and
-/// follows the agent to whichever tab it selects. Works the same for every
+/// follows the agent to whichever tab it works in. Works the same for every
 /// backend: each speaks CDP for the tab, and the in-page agent cursor is part
 /// of the frames.
 export const makeBrowserPreviews = (options: BrowserPreviewsOptions = {}) => {
@@ -121,7 +129,9 @@ export const makeBrowserPreviews = (options: BrowserPreviewsOptions = {}) => {
       pending: Promise.resolve(),
       infoRefreshedAt: Number.NEGATIVE_INFINITY,
       infoTimer: undefined,
-      infoWatch: undefined
+      infoWatch: undefined,
+      shownAt: Number.NEGATIVE_INFINITY,
+      switchTimer: undefined
     }
     sessions.set(sessionId, created)
     return created
@@ -182,6 +192,38 @@ export const makeBrowserPreviews = (options: BrowserPreviewsOptions = {}) => {
     watchInfo(entry, undefined)
   }
 
+  const cancelSwitch = (entry: Session): void => {
+    if (entry.switchTimer !== undefined) clearTimer(entry.switchTimer)
+    entry.switchTimer = undefined
+  }
+
+  /// Puts the tab the agent just used on screen, or, while the tab there is
+  /// still within its hold, once the hold ends. The latest tab wins: a call
+  /// back in the tab on screen cancels a pending move. A new browser shows
+  /// at once, since the old one's tabs are gone.
+  const follow = (entry: Session, runtime: BrowserRuntime, targetId: string): void => {
+    cancelSwitch(entry)
+    if (entry.runtime === runtime && entry.targetId === targetId) return
+    const wait = entry.shownAt + BROWSER_PREVIEW_SWITCH_HOLD_MS - now()
+    if (entry.runtime === runtime && entry.targetId !== undefined && wait > 0) {
+      entry.switchTimer = setTimer(() => {
+        entry.switchTimer = undefined
+        follow(entry, runtime, targetId)
+        refreshInfo(entry)
+        void reconcile(entry)
+      }, wait)
+      return
+    }
+    entry.runtime = runtime
+    entry.targetId = targetId
+    entry.shownAt = now()
+    watchInfo(entry, runtime)
+    // The new tab's title now, not at the end of the old tab's window.
+    if (entry.infoTimer !== undefined) clearTimer(entry.infoTimer)
+    entry.infoTimer = undefined
+    entry.infoRefreshedAt = Number.NEGATIVE_INFINITY
+  }
+
   const startStream = async (entry: Session, dimension: number): Promise<void> => {
     const { runtime, targetId } = entry
     if (runtime === undefined || targetId === undefined || runtime.connection.closed) return
@@ -239,8 +281,6 @@ export const makeBrowserPreviews = (options: BrowserPreviewsOptions = {}) => {
     /// The agent just used `targetId` in `runtime`: show it, live.
     activity: (sessionId: string, runtime: BrowserRuntime, targetId: string): Promise<void> => {
       const entry = session(sessionId)
-      entry.runtime = runtime
-      entry.targetId = targetId
       if (entry.idleTimer !== undefined) clearTimer(entry.idleTimer)
       entry.idleTimer = setTimer(() => {
         entry.idleTimer = undefined
@@ -248,7 +288,7 @@ export const makeBrowserPreviews = (options: BrowserPreviewsOptions = {}) => {
         void reconcile(entry)
       }, idleMs)
       publish(entry, { state: "active" })
-      watchInfo(entry, runtime)
+      follow(entry, runtime, targetId)
       refreshInfo(entry)
       return reconcile(entry)
     },
@@ -264,6 +304,7 @@ export const makeBrowserPreviews = (options: BrowserPreviewsOptions = {}) => {
       }
       entry.runtime = undefined
       entry.targetId = undefined
+      cancelSwitch(entry)
       stopInfo(entry)
       return reconcile(entry)
     },
@@ -277,6 +318,7 @@ export const makeBrowserPreviews = (options: BrowserPreviewsOptions = {}) => {
       if (entry.status.state !== "inactive") publish(entry, { state: "stopped" })
       entry.runtime = undefined
       entry.targetId = undefined
+      cancelSwitch(entry)
       stopInfo(entry)
       await reconcile(entry)
       if (entry.viewers.size === 0) sessions.delete(sessionId)

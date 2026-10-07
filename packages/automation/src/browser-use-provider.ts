@@ -394,8 +394,10 @@ export const makeBrowserUseProvider = (
           await ready.synchronizeCookies?.().catch(() => undefined)
           return result
         })
-        // The live preview follows the tab the agent is driving.
-        const shown = selectedTargets.get(`${runtimeKey(context, backend)}:${context.sessionId}`)
+        // The live preview follows the tab the call named, else the selected tab.
+        const key = `${runtimeKey(context, backend)}:${context.sessionId}`
+        const named = effectiveArgs.tabId
+        const shown = typeof named === "string" ? named : selectedTargets.get(key)
         if (shown !== undefined) void previews.activity(context.sessionId, ready, shown)
         return result
       } catch (cause) {

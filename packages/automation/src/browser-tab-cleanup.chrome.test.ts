@@ -23,10 +23,12 @@ const value = <T = unknown>(result: CallToolResult): T => {
   }
 }
 
-const server = createServer((_request, response) => {
+const server = createServer((request, response) => {
   response.writeHead(200, { "content-type": "text/html" })
   response.end(
-    `<!doctype html><title>Opener</title><button id="open" onclick="window.open('about:blank')">Open</button>`
+    request.url === "/second"
+      ? `<!doctype html><title>Second</title>`
+      : `<!doctype html><title>Opener</title><button id="open" onclick="window.open('about:blank')">Open</button>`
   )
 })
 const directory = mkdtempSync(join(tmpdir(), "browser-tab-cleanup-"))
@@ -83,6 +85,49 @@ describe("Browser live preview", () => {
       expect(frames).toHaveLength(settled)
     } finally {
       subscription.close()
+    }
+  })
+})
+
+describe("Browser live preview across tabs", () => {
+  it("moves to the tab a call names, not only the selected one", async () => {
+    const context = { sessionId: "preview-tabs", projectId: "preview-tabs" }
+    const seen: string[] = []
+    const waiters: Array<{ readonly label: string; readonly resolve: () => void }> = []
+    const subscription = provider.subscribePreview!("preview-tabs", {
+      status: (status) => {
+        const label = `${status.state}:${status.title}`
+        seen.push(label)
+        for (const waiter of waiters.filter((candidate) => candidate.label === label)) {
+          waiters.splice(waiters.indexOf(waiter), 1)
+          waiter.resolve()
+        }
+      },
+      frame: () => undefined
+    })
+    /// Resolves on the next status with this label, or now if it is the latest.
+    const shows = (label: string) =>
+      seen.at(-1) === label
+        ? Promise.resolve()
+        : new Promise<void>((resolve) => waiters.push({ label, resolve }))
+    try {
+      subscription.watch(800)
+      value(await provider.invoke(context, "use_backend", { backend: "managed" }))
+      const opened = value<{ tabs: ReadonlyArray<{ id: string; selected: boolean }> }>(
+        await provider.invoke(context, "tabs", { action: "new", url: `${origin}/` })
+      )
+      const first = opened.tabs.find((tab) => tab.selected)!.id
+      const second = shows("active:Second")
+      value(await provider.invoke(context, "tabs", { action: "new", url: `${origin}/second` }))
+      await second
+
+      // A REPL tab handle names its tab on every call; the selection stays.
+      const back = shows("active:Opener")
+      value(await provider.invoke(context, "tab_info", { tabId: first }))
+      await back
+    } finally {
+      subscription.close()
+      await provider.finishTurn?.("preview-tabs")
     }
   })
 })
