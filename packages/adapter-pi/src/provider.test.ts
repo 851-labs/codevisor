@@ -339,6 +339,38 @@ describe("Pi provider", () => {
     ).toEqual([])
   })
 
+  it("is signed in when Pi has a model to use", async () => {
+    const { provider, client, spawned } = setup()
+    expect(
+      await run(
+        provider.probeAuth!(definition, {
+          id: "pi",
+          profileKind: "default",
+          env: { PI_CODING_AGENT_DIR: "/p" }
+        })
+      )
+    ).toEqual({ state: "authenticated", methods: [], canLogout: false })
+    expect(spawned[0]).toMatchObject({ args: ["--no-session"], env: { PI_CODING_AGENT_DIR: "/p" } })
+    expect(client.closed).toBe(true)
+    client.replies.get_available_models = { models: [] }
+    expect(await run(provider.probeAuth!(definition))).toMatchObject({
+      state: "unauthenticated",
+      detail: "Sign in to a provider to use Pi."
+    })
+    client.replies.get_available_models = null
+    expect((await run(provider.probeAuth!(definition))).state).toBe("unauthenticated")
+    client.replies.get_available_models = new Error("pi exited")
+    expect(await run(provider.probeAuth!(definition))).toMatchObject({
+      state: "error",
+      detail: "pi exited"
+    })
+    client.replies.get_available_models = new Error("")
+    expect((await run(provider.probeAuth!(definition))).detail).toBe("Couldn't check Pi's sign-in.")
+    await expect(
+      run(provider.probeAuth!({ ...definition, detectBinaries: ["missing"] }))
+    ).rejects.toThrow("pi not found on PATH")
+  })
+
   it("sends images inline and other attachments as path notes", () => {
     const image = {
       name: "a.png",

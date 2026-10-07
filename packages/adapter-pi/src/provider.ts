@@ -1,5 +1,6 @@
 import {
   adapterPromise,
+  clampFailureDetail,
   listPiAgentSessions,
   withoutEnv,
   type AgentProvider,
@@ -116,6 +117,38 @@ export const makePiProvider = (
       }),
     // Sessions live in the account's own agent dir when it has one.
     listAgentSessions: (_definition, account) =>
-      scanAgentSessions(account?.env?.PI_CODING_AGENT_DIR)
+      scanAgentSessions(account?.env?.PI_CODING_AGENT_DIR),
+    // Pi is signed in when it has a model to use: any provider it can reach.
+    probeAuth: (definition, account) =>
+      adapterPromise("probeAuth", async () => {
+        const command = locate(definition)
+        if (command === undefined) throw new Error("pi not found on PATH")
+        const client = await connector({
+          command,
+          args: ["--no-session"],
+          cwd: environment.env.HOME ?? process.cwd(),
+          env: { ...withoutEnv(environment.env, account?.unsetEnv), ...account?.env }
+        })
+        try {
+          const available = (await client.command("get_available_models")) as { models?: unknown }
+          const signedIn = Array.isArray(available?.models) && available.models.length > 0
+          return {
+            state: signedIn ? ("authenticated" as const) : ("unauthenticated" as const),
+            methods: [],
+            canLogout: false,
+            ...(signedIn ? {} : { detail: "Sign in to a provider to use Pi." })
+          }
+        } catch (cause) {
+          return {
+            state: "error" as const,
+            methods: [],
+            canLogout: false,
+            // The client rejects with Pi's error.
+            detail: clampFailureDetail((cause as Error).message) ?? "Couldn't check Pi's sign-in."
+          }
+        } finally {
+          client.close()
+        }
+      })
   }
 }
