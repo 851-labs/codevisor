@@ -216,11 +216,10 @@ private struct ShellToolCallDetails: View {
   }
 }
 
-/// The expanded content of a tool call: a labeled card with the output and a
-/// success/failure badge.
+/// The expanded content of a tool call: its output directly under the row,
+/// and a success/failure badge.
 public struct ToolCallContentCard: View {
   let call: ToolCall
-  @Environment(\.theme) private var theme
 
   public var body: some View {
     if let workflow = call.codevisorWorkflowDetails {
@@ -234,19 +233,15 @@ public struct ToolCallContentCard: View {
 
   private var genericCard: some View {
     let rawSections = call.rawDetailSections()
+    let content = call.content ?? []
+    // A lone section needs no title; several say which is which.
+    let titlesSections = rawSections.count + content.count > 1
     return VStack(alignment: .leading, spacing: 8) {
-      HStack {
-        Text(label)
-          .font(.caption2.weight(.semibold))
-          .foregroundStyle(.secondary)
-        Spacer()
-      }
-
       ForEach(rawSections) { section in
-        ToolCallRawSectionView(section: section)
+        ToolCallRawSectionView(section: section, showsTitle: titlesSections)
       }
 
-      ForEach(Array((call.content ?? []).enumerated()), id: \.offset) { _, content in
+      ForEach(Array(content.enumerated()), id: \.offset) { _, content in
         contentView(content)
       }
 
@@ -258,10 +253,7 @@ public struct ToolCallContentCard: View {
         }
       }
     }
-    .padding(10)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(RoundedRectangle(cornerRadius: 8).fill(theme.cardBackground))
-    .themedCardShadow(theme)
   }
 
   @ViewBuilder
@@ -284,19 +276,6 @@ public struct ToolCallContentCard: View {
       Text("Terminal \(terminalId)")
         .font(.caption.monospaced())
         .foregroundStyle(.secondary)
-    }
-  }
-
-  private var label: String {
-    switch call.kind {
-    case .execute: return "Shell"
-    case .read: return "File"
-    case .edit: return "Diff"
-    case .search: return "Search"
-    case .webSearch: return "Sources"
-    case .fetch: return "Fetch"
-    case .question: return "Answer"
-    default: return "Output"
     }
   }
 
@@ -328,15 +307,18 @@ private struct ToolCallStatusBadge: View {
 
 private struct ToolCallRawSectionView: View {
   let section: ToolCallRawSection
+  let showsTitle: Bool
   @Environment(\.theme) private var theme
   @Environment(\.transcriptInvalidateRowMeasurement) private var invalidateRowMeasurement
   @State private var showsFullText = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: 4) {
-      Text(section.title)
-        .font(.caption2.weight(.semibold))
-        .foregroundStyle(.secondary)
+      if showsTitle {
+        Text(section.title)
+          .font(.caption2.weight(.semibold))
+          .foregroundStyle(.secondary)
+      }
       if section.text.isEmpty {
         Text(section.kind == .output ? "No output" : "Empty")
           .font(.caption)
