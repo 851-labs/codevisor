@@ -1,4 +1,4 @@
-import { diffStatsFromUnified, lineCount } from "@codevisor/agent-runtime"
+import { diffStatsFromUnified, lineCount, textsFromUnifiedDiff } from "@codevisor/agent-runtime"
 import type { DiffStat } from "@codevisor/api"
 
 import { isRecord } from "./internal.js"
@@ -44,42 +44,12 @@ export const fileChangeDiffBlocks = (
       case "delete":
         return [{ newText: "", oldText: diff, path, type: "diff" as const }]
       default: {
-        const texts = textsFromUnified(diff)
+        const texts = textsFromUnifiedDiff(diff)
         if (texts === undefined) return []
         return [{ newText: texts.newText, oldText: texts.oldText, path, type: "diff" as const }]
       }
     }
   })
-}
-
-/// Reconstructs old/new text from a unified diff body so the client's DiffView
-/// can render it. Hunk headers reset nothing here — the reconstruction is a
-/// display approximation covering the changed regions and their context.
-const textsFromUnified = (
-  diff: string
-): { oldText: string | null; newText: string } | undefined => {
-  const oldLines: Array<string> = []
-  const newLines: Array<string> = []
-  let sawContent = false
-  for (const line of diff.split("\n")) {
-    if (line.startsWith("+++") || line.startsWith("---") || line.startsWith("@@")) continue
-    if (line.startsWith("+")) {
-      newLines.push(line.slice(1))
-      sawContent = true
-    } else if (line.startsWith("-")) {
-      oldLines.push(line.slice(1))
-      sawContent = true
-    } else {
-      const text = line.startsWith(" ") ? line.slice(1) : line
-      oldLines.push(text)
-      newLines.push(text)
-    }
-  }
-  if (!sawContent) return undefined
-  return {
-    newText: `${newLines.join("\n")}\n`,
-    oldText: oldLines.length === 0 ? null : `${oldLines.join("\n")}\n`
-  }
 }
 
 export const fileChangeTitle = (changes: unknown, done: boolean): string => {

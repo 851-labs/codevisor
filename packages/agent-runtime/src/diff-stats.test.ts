@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest"
 
-import { diffStatsFromTexts, diffStatsFromUnified, lineCount } from "./diff-stats.js"
+import {
+  diffStatsFromTexts,
+  diffStatsFromUnified,
+  lineCount,
+  textsFromUnifiedDiff
+} from "./diff-stats.js"
 
 describe("diff-stats", () => {
   describe("lineCount", () => {
@@ -87,5 +92,21 @@ describe("diff-stats", () => {
     it("counts nothing for an empty diff", () => {
       expect(diffStatsFromUnified("a.txt", "")).toEqual({ added: 0, path: "a.txt", removed: 0 })
     })
+  })
+
+  it("rebuilds the old and new text a unified diff shows", () => {
+    expect(
+      textsFromUnifiedDiff("--- a.txt\n+++ a.txt\n@@ -1,2 +1,2 @@\n alpha\n-beta\n+gamma\n")
+    ).toEqual({ oldText: "alpha\nbeta\n", newText: "alpha\ngamma\n" })
+    expect(textsFromUnifiedDiff("@@ -0,0 +1 @@\n+new\n")).toEqual({
+      oldText: null,
+      newText: "new\n"
+    })
+    // A context line whose leading space was stripped still counts as context.
+    expect(textsFromUnifiedDiff("-a\n+b\nplain")).toEqual({
+      oldText: "a\nplain\n",
+      newText: "b\nplain\n"
+    })
+    expect(textsFromUnifiedDiff("--- a\n+++ a\n")).toBeUndefined()
   })
 })

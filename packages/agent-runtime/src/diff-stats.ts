@@ -41,3 +41,34 @@ export const diffStatsFromUnified = (path: string, unifiedDiff: string): DiffSta
   }
   return { added, path, removed }
 }
+
+/// Reconstructs old/new text from a unified diff body so the client's DiffView
+/// can render it. Hunk headers reset nothing here — the reconstruction is a
+/// display approximation covering the changed regions and their context.
+export const textsFromUnifiedDiff = (
+  diff: string
+): { oldText: string | null; newText: string } | undefined => {
+  const oldLines: Array<string> = []
+  const newLines: Array<string> = []
+  let sawContent = false
+  // A patch's final newline ends its last line; it is not an empty line.
+  for (const line of diff.replace(/\n$/, "").split("\n")) {
+    if (line.startsWith("+++") || line.startsWith("---") || line.startsWith("@@")) continue
+    if (line.startsWith("+")) {
+      newLines.push(line.slice(1))
+      sawContent = true
+    } else if (line.startsWith("-")) {
+      oldLines.push(line.slice(1))
+      sawContent = true
+    } else {
+      const text = line.startsWith(" ") ? line.slice(1) : line
+      oldLines.push(text)
+      newLines.push(text)
+    }
+  }
+  if (!sawContent) return undefined
+  return {
+    newText: `${newLines.join("\n")}\n`,
+    oldText: oldLines.length === 0 ? null : `${oldLines.join("\n")}\n`
+  }
+}
