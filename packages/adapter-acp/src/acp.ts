@@ -12,11 +12,6 @@ export {
 export { type ConfigureAcpClientApp } from "./client-app.js"
 export { runtimeEventFromNotification } from "./notifications.js"
 export { turnLifecycleEvent } from "./internal.js"
-export {
-  extractPiStartupInfo,
-  isPiStartupInfoNotification,
-  piAssistantErrorFromSessionJsonl
-} from "./pi.js"
 export { makeAcpProvider, type AcpProviderConfig } from "./provider.js"
 export { acpPrompt, type AcpPromptCapabilities } from "./prompt.js"
 export { acpPermissionOutcome, acpPermissionQuestion, type AcpMappedQuestion } from "./questions.js"

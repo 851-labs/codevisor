@@ -22,7 +22,6 @@ import { acpClientCapabilities, type AcpConnector } from "./connection.js"
 import { isGenericConnectionClose } from "./internal.js"
 import { runtimeEventFromNotification } from "./notifications.js"
 import { makeAcpPermissionPolicy } from "./permission-policy.js"
-import { isPiStartupInfoNotification, readPiSessionError } from "./pi.js"
 import {
   acpPermissionOutcome,
   acpPermissionQuestion,
@@ -83,7 +82,6 @@ export const makeStdioAcpConnectorWithOptions = (
       spawnFailure.catch(() => undefined)
       const stderr = captureStderr(child)
       const pendingQuestions = new Map<string, PendingAcpQuestion>()
-      const piStartupInfoBySession = new Map<string, string>()
       const permissions = makeAcpPermissionPolicy()
       const safeEmit = (event: RuntimeEvent): void => {
         void emit(event).catch(() => undefined)
@@ -150,15 +148,6 @@ export const makeStdioAcpConnectorWithOptions = (
         (notification) => {
           if (notification.update.sessionUpdate === "current_mode_update") {
             permissions.modeChanged(notification.sessionId, notification.update.currentModeId)
-          }
-          const startupInfo = piStartupInfoBySession.get(notification.sessionId)
-          if (
-            request.harnessId === "pi" &&
-            startupInfo !== undefined &&
-            isPiStartupInfoNotification(notification, startupInfo)
-          ) {
-            piStartupInfoBySession.delete(notification.sessionId)
-            return
           }
           const events = extension?.mapSessionNotification?.(notification) ?? [
             runtimeEventFromNotification(notification)
@@ -286,13 +275,6 @@ export const makeStdioAcpConnectorWithOptions = (
           })),
           canLogout: initialized?.agentCapabilities?.auth?.logout != null
         },
-        ...(request.harnessId === "pi"
-          ? {
-              piStartupInfoBySession,
-              piSessionError: (sessionId: string) =>
-                readPiSessionError(sessionId, request.env.HOME ?? homedir())
-            }
-          : {}),
         ...(extension?.sdkConnectionCustomization === undefined
           ? {}
           : { customization: extension.sdkConnectionCustomization })

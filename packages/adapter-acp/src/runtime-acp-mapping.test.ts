@@ -4,11 +4,8 @@ import {
   acpClientCapabilities,
   acpPermissionOutcome,
   acpPermissionQuestion,
-  extractPiStartupInfo,
-  isPiStartupInfoNotification,
   normalizeAcpConfigOptions,
   normalizeModeState,
-  piAssistantErrorFromSessionJsonl,
   runtimeEventFromNotification
 } from "./index.js"
 
@@ -57,59 +54,6 @@ describe("@codevisor/agent-runtime", () => {
       }
     } as never)
     expect(plain.payload).not.toHaveProperty("diffStats")
-  })
-
-  it("recognizes pi-acp startup info without matching ordinary agent output", () => {
-    const startupInfo = "pi v0.80.9\n\nSkills\n\n- /tmp/SKILL.md\n"
-    const response = {
-      _meta: { piAcp: { startupInfo } },
-      sessionId: "pi-session-1"
-    }
-    const startupNotification = {
-      sessionId: "pi-session-1",
-      update: {
-        content: { text: startupInfo, type: "text" },
-        sessionUpdate: "agent_message_chunk"
-      }
-    } as never
-    const ordinaryNotification = {
-      sessionId: "pi-session-1",
-      update: {
-        content: { text: "Here is the answer.", type: "text" },
-        sessionUpdate: "agent_message_chunk"
-      }
-    } as never
-
-    expect(extractPiStartupInfo(response)).toBe(startupInfo)
-    expect(isPiStartupInfoNotification(startupNotification, startupInfo)).toBe(true)
-    expect(isPiStartupInfoNotification(ordinaryNotification, startupInfo)).toBe(false)
-    expect(extractPiStartupInfo({ _meta: { piAcp: { startupInfo: null } } })).toBeUndefined()
-  })
-
-  it("recovers Pi provider errors that pi-acp reports as empty turns", () => {
-    const providerError = JSON.stringify({
-      type: "message",
-      message: {
-        role: "assistant",
-        content: [],
-        stopReason: "error",
-        errorMessage: '400 {"type":"error","error":{"message":"Add extra usage and try again."}}'
-      }
-    })
-    const successfulAssistant = JSON.stringify({
-      type: "message",
-      message: { role: "assistant", content: [{ type: "text", text: "Done" }], stopReason: "stop" }
-    })
-
-    expect(piAssistantErrorFromSessionJsonl(`{"type":"session"}\n${providerError}\n`)).toBe(
-      "Add extra usage and try again."
-    )
-    expect(
-      piAssistantErrorFromSessionJsonl(`{"type":"session"}\n${successfulAssistant}\n`)
-    ).toBeUndefined()
-    expect(
-      piAssistantErrorFromSessionJsonl('{"type":"message","message":{"role":"user"}}\n')
-    ).toBeUndefined()
   })
 
   it("strips effort suffixes on streamed config_option_update the same as session metadata", () => {

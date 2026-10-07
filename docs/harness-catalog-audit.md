@@ -24,7 +24,7 @@ recorded below.
 These are local macOS/Linux server installations; iOS manages the selected
 server's harnesses. Windows package managers, Docker containers, source builds,
 and project-specific environment setup are not one-click install methods.
-Native Claude, Codex, Cursor, and Grok providers keep their existing integrations.
+Native Claude, Codex, Cursor, Grok, and Pi providers keep their existing integrations.
 Registry IDs `claude-acp`, `codex-acp`, `amp-acp`, and `pi-acp` map to Codevisor's
 existing `claude-code`, `codex`, `amp`, and `pi` IDs.
 
@@ -38,7 +38,7 @@ vendor configuration remain prerequisites for using an installed agent.
 | ------------------ | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Claude Code        | Homebrew, script, npm                               | [Setup](https://code.claude.com/docs/en/setup). Preserve the existing `claude-code@latest` channel; updates follow the actual owning cask.                                                                                                                                                   |
 | Codex              | Homebrew, **script added**, npm                     | [CLI installation](https://developers.openai.com/codex/cli). Script: `https://chatgpt.com/codex/install.sh`, run with `sh`. App-bundled detection and updates remain supported.                                                                                                              |
-| Pi                 | **Script added**, npm                               | [README](https://github.com/earendil-works/pi/tree/main/packages/coding-agent). npm uses the vendor's `--ignore-scripts` option. ACP bridge advanced from `pi-acp@0.0.31` to registry release `0.0.33`; that bridge still needs npx.                                                         |
+| Pi                 | **Script added**, npm                               | [README](https://github.com/earendil-works/pi/tree/main/packages/coding-agent). npm uses the vendor's `--ignore-scripts` option. Codevisor drives Pi's own RPC mode (`pi --mode rpc`) through its Pi adapter; no ACP bridge or npx.                                                          |
 | Gemini CLI         | npm, Homebrew                                       | [Installation](https://github.com/google-gemini/gemini-cli). Launch remains `gemini --acp`.                                                                                                                                                                                                  |
 | OpenCode           | **OpenCode 2**: script (recommended), npm, Homebrew | [Install](https://opencode.ai/v2/docs). The `opencode.ai/v2/install` script, npm `@opencode/cli`, or the `anomalyco/tap/opencode-v2` formula. Updating an OpenCode 1 install removes `opencode-ai` or `anomalyco/tap/opencode` first ([migration](https://opencode.ai/v2/docs/migrate-v1/)). |
 | Goose              | Homebrew, **script added**                          | [Installation](https://github.com/aaif-goose/goose/blob/main/documentation/docs/getting-started/installation.md). `CONFIGURE=false` skips interactive provider setup in the installer.                                                                                                       |

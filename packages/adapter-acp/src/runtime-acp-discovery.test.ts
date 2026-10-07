@@ -9,9 +9,7 @@ import { makeAcpAgentRuntime, makeConnector, run } from "./test-support.js"
 
 describe("@codevisor/agent-runtime", () => {
   it("launches directly ACP-capable harnesses from the user's installation", () => {
-    const directlyCapable = harnessCatalog.filter(
-      (harness) => harness.provider === "acp" && harness.id !== "pi"
-    )
+    const directlyCapable = harnessCatalog.filter((harness) => harness.provider === "acp")
     expect(directlyCapable.some((harness) => harness.launch?.kind === "npx")).toBe(false)
   })
 

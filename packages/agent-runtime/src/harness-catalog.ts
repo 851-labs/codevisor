@@ -124,9 +124,9 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
       ]
     }
   },
-  // Pi exposes an RPC mode but not ACP directly. The pinned adapter bridges
-  // Codevisor's existing ACP provider to the user's installed `pi` binary, so
-  // Pi keeps ownership of its models, settings, extensions, and session store.
+  // Pi is driven directly over its RPC mode (`pi --mode rpc`, the Pi
+  // adapter), so Pi keeps ownership of its models, settings, extensions, and
+  // session store with nothing to install beyond Pi itself.
   {
     detectBinaries: ["pi"],
     id: "pi",
@@ -135,9 +135,8 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
       { command: "curl -fsSL https://pi.dev/install.sh | sh", kind: "curl" },
       { kind: "npm", packageName: "@earendil-works/pi-coding-agent", ignoreScripts: true }
     ],
-    launch: { args: [], kind: "npx", packageName: "pi-acp@0.0.33" },
     name: "Pi",
-    provider: "acp",
+    provider: "pi",
     symbolName: "function",
     update: {
       sources: [

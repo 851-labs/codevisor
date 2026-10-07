@@ -93,29 +93,6 @@ describe("@codevisor/agent-runtime", () => {
     expect(connector.connections[4]?.loaded).toEqual([["agent-existing", "/tmp/other"]])
   })
 
-  it("launches Pi through the pinned ACP adapter", async () => {
-    const connector = makeConnector()
-    const runtime = makeAcpAgentRuntime({
-      connector,
-      env: { PATH: "/bin" },
-      executableExists: (name) => ["npx", "pi"].includes(name),
-      locateExecutable: (name) => `/bin/${name}`
-    })
-
-    const sessionId = await run(
-      runtime.createAgentSession("pi", "/tmp/pi-project", () => undefined)
-    )
-
-    expect(sessionId).toBe("agent-pi-1")
-    expect(connector.requests[0]).toMatchObject({
-      args: ["-y", "pi-acp@0.0.33"],
-      command: "/bin/npx",
-      cwd: "/tmp/pi-project",
-      harnessId: "pi"
-    })
-    await run(runtime.closeAgentSession(sessionId))
-  })
-
   it("times out hung harness inspection and closes its connection", async () => {
     vi.useFakeTimers()
     const connector = makeConnector()

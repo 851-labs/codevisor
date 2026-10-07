@@ -19,7 +19,6 @@ import {
 } from "./config-options.js"
 import type { AcpAgentConnection } from "./connection.js"
 import { isGenericConnectionClose } from "./internal.js"
-import { extractPiStartupInfo } from "./pi.js"
 import { acpPrompt, type AcpPromptCapabilities } from "./prompt.js"
 
 export interface AcpQuestionControls {
@@ -77,8 +76,6 @@ export interface AcpSdkConnectionOptions {
   readonly promptCapabilities?: AcpPromptCapabilities
   readonly questions?: AcpQuestionControls
   readonly auth?: AcpAuthControls
-  readonly piStartupInfoBySession?: Map<string, string>
-  readonly piSessionError?: (sessionId: string) => Promise<string | undefined>
   readonly customization?: AcpSdkConnectionCustomization
 }
 
@@ -216,12 +213,6 @@ export const sdkConnection = (
             params
           )) as NewSessionResponse
         }
-        if (options.piStartupInfoBySession !== undefined) {
-          const startupInfo = extractPiStartupInfo(response)
-          if (startupInfo !== undefined) {
-            options.piStartupInfoBySession.set(response.sessionId, startupInfo)
-          }
-        }
         const metadata = sessionMetadata(response.sessionId, response)
         return (
           options.customization?.customizeSessionMetadata?.(
@@ -250,11 +241,7 @@ export const sdkConnection = (
           prompt: acpPrompt(normalizePromptInput(input), promptCapabilities),
           sessionId
         })
-        const stopDetail = await options.piSessionError?.(sessionId)
-        return {
-          stopReason: response.stopReason,
-          ...(stopDetail === undefined ? {} : { stopDetail })
-        }
+        return { stopReason: response.stopReason }
       }),
     cancel: (sessionId) =>
       adapterPromise("cancel", async () => {
