@@ -21,6 +21,9 @@ public struct HarnessProvidersPane: View {
   @State private var signIn: SignInRequest?
   @State private var pendingRemoval: HarnessProvider?
   @State private var didOpenRequest = false
+  #if os(macOS)
+    @State private var selectedProviderId: String?
+  #endif
 
   public init(
     accounts: HarnessProviderAccounts, harness: ServerHarness, inherited: HarnessSharedCredentials?,
@@ -113,35 +116,63 @@ public struct HarnessProvidersPane: View {
     }
   }
 
+  @ViewBuilder
   private var providerList: some View {
-    List {
-      #if os(iOS)
+    #if os(macOS)
+      VStack(spacing: 0) {
+        List(selection: $selectedProviderId) { providerSection }
+          .listStyle(.inset)
+        Divider()
+        // The table's own +/− controls, as on the profile list beside it.
+        HStack(spacing: 10) {
+          Button {
+            signIn = SignInRequest(providerId: nil)
+          } label: {
+            Image(systemName: "plus")
+          }
+          .disabled(!canAdd)
+          .help("Add Provider")
+          .accessibilityLabel("Add Provider")
+
+          Button {
+            pendingRemoval = accounts.configured.first { $0.id == selectedProviderId }
+          } label: {
+            Image(systemName: "minus")
+          }
+          .disabled(selectedProviderId == nil || accounts.isWorking)
+          .help("Remove Credential")
+          .accessibilityLabel("Remove Credential")
+
+          Spacer()
+        }
+        .buttonStyle(.borderless)
+        .settingsActionTint(theme)
+        .padding(10)
+      }
+      .onChange(of: accounts.configured.map(\.id)) { _, ids in
+        if let selectedProviderId, !ids.contains(selectedProviderId) { self.selectedProviderId = nil }
+      }
+    #else
+      List {
         if let inlineError {
           Section {
             Label(inlineError, systemImage: "exclamationmark.triangle").foregroundStyle(theme.statusError)
           }
         }
-      #endif
-      Section("Providers") {
-        if let inherited {
-          HarnessSharedAccountRows(source: inherited, excludingProviderIds: Set(accounts.configured.map(\.id)))
-        }
-        ForEach(accounts.configured) { provider in
-          row(provider)
-        }
-        #if os(macOS)
-          // A trailing row rather than a +/− bar; removal lives on each
-          // row's context menu.
-          Button("Add Provider…", systemImage: "plus") { signIn = SignInRequest(providerId: nil) }
-            .buttonStyle(.plain)
-            .settingsActionTint(theme)
-            .disabled(!canAdd)
-        #endif
+        providerSection
+      }
+    #endif
+  }
+
+  private var providerSection: some View {
+    Section("Providers") {
+      if let inherited {
+        HarnessSharedAccountRows(source: inherited, excludingProviderIds: Set(accounts.configured.map(\.id)))
+      }
+      ForEach(accounts.configured) { provider in
+        row(provider)
       }
     }
-    #if os(macOS)
-      .listStyle(.inset)
-    #endif
   }
 
   @ViewBuilder
@@ -149,6 +180,7 @@ public struct HarnessProvidersPane: View {
     let replaceable = !provider.methods.isEmpty
     #if os(macOS)
       HarnessProviderRow(provider: provider)
+        .tag(provider.id)
         .contextMenu {
           Button("Replace Credential…") { signIn = SignInRequest(providerId: provider.id) }
             .disabled(!replaceable || accounts.isWorking)
