@@ -28,6 +28,13 @@ export interface LifecycleProcess {
   readonly kill: () => void
 }
 
+/// Setup a harness still has to finish before it can be used, such as
+/// OpenCode 2 migrating OpenCode 1's data.
+export interface PendingHarnessSetup {
+  /// Resolves once the setup is done; rejects with the harness's reason.
+  readonly finish: () => Promise<void>
+}
+
 export interface HarnessLifecycleManagerConfig {
   readonly db: CodevisorDatabaseService
   readonly agents: AgentRuntimeService
@@ -65,6 +72,12 @@ export interface HarnessLifecycleManagerConfig {
   readonly checkCacheMs?: number
   /// Kills a hung install/update run; default 10min.
   readonly operationTimeoutMs?: number
+  /// Per harness: the setup the installed harness still needs, or undefined
+  /// when it needs none. Checked after every install and update, and at
+  /// startup; prompts to the harness hold while it is checked and finished.
+  readonly harnessSetup?: Readonly<
+    Record<string, (env: NodeJS.ProcessEnv) => Promise<PendingHarnessSetup | undefined>>
+  >
   /// Kill switch for the when-idle prompt gate (CODEVISOR_HARNESS_UPDATE_GATE=0):
   /// updates still run, prompts just dispatch on the old binary.
   readonly gateEnabled?: boolean
@@ -125,6 +138,10 @@ export interface HarnessLifecycleManager {
   /// "Update Now" on a queued update — skips the idle wait.
   readonly forcePendingUpdate: (harnessId: string) => Promise<void>
   readonly cancelPendingUpdate: (harnessId: string) => Promise<void>
+  /// Called once at boot: finishes setup an installed harness still needs
+  /// (an update the previous server applied, or one made outside Codevisor),
+  /// showing it as updating while it runs.
+  readonly finishPendingSetup: () => Promise<void>
   /// Called once at boot: interrupted running updates become failures (never
   /// a surviving gate), still-armed pending updates re-run once idle.
   readonly reconcileOnStartup: () => Promise<void>

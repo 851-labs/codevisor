@@ -65,6 +65,8 @@ export const makeHarnessLifecycleCore = (config: HarnessLifecycleManagerConfig) 
   const uninstallRequests = new Set<string>()
   const gateListeners = new Set<(harnessId: string) => void>()
   const startingOperations = new Set<string>()
+  /// Harnesses whose setup is being checked or finished; prompts hold.
+  const settingUp = new Set<string>()
 
   const setOperation = (harnessId: string, state: HarnessLifecycleState | undefined): void => {
     if (state === undefined) operations.delete(harnessId)
@@ -106,8 +108,27 @@ export const makeHarnessLifecycleCore = (config: HarnessLifecycleManagerConfig) 
     envCache = undefined
   }
 
+  /// Sees the harness's pending setup through, holding its prompts until
+  /// it ends either way. `onPending` runs once setup turns out to be needed.
+  const finishSetup = async (harnessId: string, onPending?: () => void): Promise<void> => {
+    const setup = config.harnessSetup?.[harnessId]
+    if (setup === undefined) return
+    settingUp.add(harnessId)
+    try {
+      const pending = await setup(await resolveEnv())
+      if (pending === undefined) return
+      onPending?.()
+      await pending.finish()
+    } finally {
+      settingUp.delete(harnessId)
+      for (const listener of gateListeners) listener(harnessId)
+    }
+  }
+
   return {
     busyCounts,
+    finishSetup,
+    settingUp,
     uninstallRequests,
     gateListeners,
     startingOperations,

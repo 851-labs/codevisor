@@ -33,6 +33,7 @@ describe("archived chats and update turn accounting", () => {
       notifyTurnEnded: (harnessId: string) => turns.push(`end ${harnessId}`),
       notifyTurnStarted: (harnessId: string) => turns.push(`start ${harnessId}`),
       onGateReleased: () => () => {},
+      finishPendingSetup: async () => {},
       reconcileOnStartup: async () => {},
       startPeriodicChecks: () => () => {},
       subscribe: () => () => {}

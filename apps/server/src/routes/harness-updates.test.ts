@@ -42,6 +42,7 @@ describe("harness update checks", () => {
       notifyTurnEnded: () => {},
       notifyTurnStarted: () => {},
       onGateReleased: () => () => {},
+      finishPendingSetup: async () => {},
       reconcileOnStartup: async () => {},
       startPeriodicChecks: () => () => {},
       subscribe: () => () => {}
@@ -114,6 +115,7 @@ describe("harness update checks", () => {
       notifyTurnEnded: () => {},
       notifyTurnStarted: () => {},
       onGateReleased: () => () => {},
+      finishPendingSetup: async () => {},
       reconcileOnStartup: async () => {},
       startPeriodicChecks: () => () => {},
       subscribe: () => () => {}
@@ -320,6 +322,7 @@ describe("harness update checks", () => {
         releaseListener = listener
         return () => {}
       },
+      finishPendingSetup: async () => {},
       reconcileOnStartup: async () => {},
       startPeriodicChecks: () => () => {},
       subscribe: () => () => {}

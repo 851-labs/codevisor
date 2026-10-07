@@ -141,6 +141,7 @@ export const makeHarnessOperationRunner = (
             if (installedVersion !== undefined) {
               await recordVerifiedInstalledVersion(options.harnessId, installedVersion)
             }
+            if (options.phase !== "uninstalling") await core.finishSetup(options.harnessId)
             setOperation(options.harnessId, undefined)
             options.onSettled?.(true)
           } catch (cause) {
@@ -254,6 +255,7 @@ export const makeHarnessOperationRunner = (
         if (recordsHarnessVersion) {
           await recordVerifiedInstalledVersion(harnessId, result.installedVersion)
         }
+        await core.finishSetup(harnessId)
         setOperation(harnessId, undefined)
         onSettled?.(true)
       } catch (cause) {

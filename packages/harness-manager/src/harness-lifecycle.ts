@@ -17,7 +17,8 @@ export type {
   HarnessLifecycleManager,
   HarnessLifecycleManagerConfig,
   HarnessUpdateCheckOutcome,
-  LifecycleProcess
+  LifecycleProcess,
+  PendingHarnessSetup
 } from "./harness-lifecycle-types.js"
 
 export const makeHarnessLifecycleManager = (
@@ -67,6 +68,33 @@ export const makeHarnessLifecycleManager = (
     )
   }
 
+  const finishPendingSetup = async (): Promise<void> => {
+    await Promise.all(
+      Object.keys(config.harnessSetup ?? {}).map(async (harnessId) => {
+        const before = operations.get(harnessId)
+        let shown = false
+        try {
+          await core.finishSetup(harnessId, () => {
+            shown = true
+            core.setOperation(harnessId, {
+              phase: "updating",
+              startedAt: new Date(core.now()).toISOString()
+            })
+          })
+          if (shown) core.setOperation(harnessId, before)
+        } catch (cause) {
+          // A check that can't run leaves readiness to report the harness;
+          // a setup that started and failed is the harness's failed update.
+          if (!shown) return
+          core.setOperation(harnessId, {
+            error: cause instanceof Error ? cause.message : String(cause),
+            phase: "failed"
+          })
+        }
+      })
+    )
+  }
+
   const startPeriodicChecks = (): (() => void) => {
     // Jittered first run so boot-time work (env refresh, auth probes) wins
     // the contention; then a steady cadence.
@@ -104,6 +132,7 @@ export const makeHarnessLifecycleManager = (
       return detection.checkForUpdates(force, harnessIds)
     },
     decorateHarnesses,
+    finishPendingSetup,
     startPeriodicChecks,
     subscribe: (listener) => {
       listeners.add(listener)

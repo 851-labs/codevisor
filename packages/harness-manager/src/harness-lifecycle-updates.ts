@@ -267,6 +267,7 @@ export const makeHarnessUpdateGate = (
 
   const isGated = (harnessId: string): boolean =>
     core.uninstallRequests.has(harnessId) ||
+    core.settingUp.has(harnessId) ||
     (gateEnabled && pendingUpdates.get(harnessId)?.state === "running")
 
   const forcePendingUpdate = async (harnessId: string): Promise<void> => {

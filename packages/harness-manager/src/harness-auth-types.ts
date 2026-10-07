@@ -70,6 +70,8 @@ export interface HarnessAuthManagerConfig {
   /// Test seams for OpenCode 2: its version check and its account API.
   readonly openCode?: {
     readonly majorVersion?: (command: string) => Promise<number | undefined>
+    /// The OpenCode accounts run; the newest installed by default.
+    readonly locate?: (env: NodeJS.ProcessEnv) => string | undefined
     readonly accounts?: Pick<
       ReturnType<typeof makeOpenCode2Accounts>,
       "providers" | "hold" | "removeIntegration"

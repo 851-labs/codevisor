@@ -5,6 +5,7 @@ import { join } from "node:path"
 import {
   makeOpenCode2Accounts,
   makeOpenCode2Logins,
+  makeOpenCodeLocator,
   makeOpenCodeServerPool,
   makeOpenCodeVersionProbe,
   startOpenCodeServer,
@@ -48,13 +49,16 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
       return false
     }
   })
+  const locateOpenCode = config.openCode?.locate ?? makeOpenCodeLocator()
   const openCodeProfile = async (accountId: string): Promise<OpenCodeProfile> => {
     const account = await run(config.db.getHarnessAccount(accountId))
     if (account === undefined) throw new Error(`Harness account not found: ${accountId}`)
     if (account.harnessId !== "opencode") throw new Error("Account is not an OpenCode profile")
     const env = await accountEnv(account)
     return {
-      command: await executable("opencode"),
+      // The newest OpenCode, as its chats run: OpenCode 1 must never touch
+      // data OpenCode 2 has migrated.
+      command: locateOpenCode(env) ?? (await executable("opencode")),
       cwd: profilePath(account) ?? env.HOME ?? process.cwd(),
       env,
       authPath: openCodeAuthPath(env)
