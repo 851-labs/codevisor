@@ -26,6 +26,7 @@ export interface ProjectRow {
   readonly repo_url: string | null
   readonly worktree_base_remote: string | null
   readonly worktree_base_branch: string | null
+  readonly default_run_location: string | null
 }
 
 export interface ArchivedWorktreeRow {

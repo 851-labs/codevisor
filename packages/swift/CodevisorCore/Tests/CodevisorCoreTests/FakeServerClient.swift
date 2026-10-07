@@ -35,6 +35,12 @@ struct FakeServerSnapshot: Sendable {
   /// Projects deleted along with their folder.
   var filesDeletedProjectIDs: [String] = []
   var worktreeBaseUpdates: [FakeWorktreeBaseUpdate] = []
+  var runLocationUpdates: [FakeRunLocationUpdate] = []
+}
+
+struct FakeRunLocationUpdate: Equatable, Sendable {
+  var projectId: String
+  var location: ProjectRunLocation?
 }
 
 struct FakeWorktreeBaseUpdate: Equatable, Sendable {
@@ -67,6 +73,7 @@ actor FakeServerClient: CodevisorServerClienting {
   private var readRequests: [FakeReadRequest] = []
   private var filesDeletedProjectIDs: [String] = []
   private var worktreeBaseUpdates: [FakeWorktreeBaseUpdate] = []
+  private var runLocationUpdates: [FakeRunLocationUpdate] = []
   /// When set, `listProjects` suspends on this first — lets tests hold a
   /// "network" call in flight while the app state changes underneath it.
   private var listDelay: (@Sendable () async -> Void)?
@@ -142,6 +149,17 @@ actor FakeServerClient: CodevisorServerClienting {
 
   func updateProjectWorktreeBase(id: UUID, worktreeBase: ProjectWorktreeBase?) async throws -> ServerProject {
     worktreeBaseUpdates.append(FakeWorktreeBaseUpdate(projectId: id.uuidString, worktreeBase: worktreeBase))
+    changed.signal()
+    guard let project = projects.first(where: { $0.id == id.uuidString }) else {
+      throw CodevisorServerClientError.httpStatus(404, "missing")
+    }
+    return project
+  }
+
+  func updateProjectDefaultRunLocation(
+    id: UUID, defaultRunLocation: ProjectRunLocation?
+  ) async throws -> ServerProject {
+    runLocationUpdates.append(FakeRunLocationUpdate(projectId: id.uuidString, location: defaultRunLocation))
     changed.signal()
     guard let project = projects.first(where: { $0.id == id.uuidString }) else {
       throw CodevisorServerClientError.httpStatus(404, "missing")
@@ -233,7 +251,8 @@ actor FakeServerClient: CodevisorServerClienting {
       deletedSessionIDs: deletedSessionIDs,
       readRequests: readRequests,
       filesDeletedProjectIDs: filesDeletedProjectIDs,
-      worktreeBaseUpdates: worktreeBaseUpdates
+      worktreeBaseUpdates: worktreeBaseUpdates,
+      runLocationUpdates: runLocationUpdates
     )
   }
 }

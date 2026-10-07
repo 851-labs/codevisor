@@ -58,6 +58,9 @@ public struct ServerProject: Codable, Equatable, Sendable {
   public var createdAt: String
   public var locations: [ServerProjectLocation]
   public var worktreeBase: ProjectWorktreeBase? = nil
+  /// A `ProjectRunLocation` raw value. Kept raw so a value from a newer
+  /// server reads as "not chosen" instead of failing the whole listing.
+  public var defaultRunLocation: String? = nil
   /// The git remote the server observed in this project's folder. Absent
   /// on older servers (except for clone-from-git projects) and on folders
   /// without a remote.
@@ -96,6 +99,7 @@ public struct ServerProject: Codable, Equatable, Sendable {
       repoUrl: repoUrl,
       repoKey: repoKey,
       worktreeBase: worktreeBase,
+      defaultRunLocation: defaultRunLocation.flatMap(ProjectRunLocation.init(rawValue:)),
       isScratch: isScratch ?? false
     )
   }
@@ -107,6 +111,7 @@ public struct ServerProject: Codable, Equatable, Sendable {
     createdAt: String,
     locations: [ServerProjectLocation],
     worktreeBase: ProjectWorktreeBase? = nil,
+    defaultRunLocation: String? = nil,
     repoUrl: String? = nil,
     repoKey: String? = nil,
     isScratch: Bool? = nil
@@ -117,6 +122,7 @@ public struct ServerProject: Codable, Equatable, Sendable {
     self.createdAt = createdAt
     self.locations = locations
     self.worktreeBase = worktreeBase
+    self.defaultRunLocation = defaultRunLocation
     self.repoUrl = repoUrl
     self.repoKey = repoKey
     self.isScratch = isScratch

@@ -78,7 +78,10 @@ export const projectFromRow = (
           remote: row.worktree_base_remote,
           branch: row.worktree_base_branch
         }
-      })
+      }),
+  ...(row.default_run_location === "projectDirectory" || row.default_run_location === "newWorktree"
+    ? { defaultRunLocation: row.default_run_location }
+    : {})
 })
 
 export const archivedWorktreeFromRow = (row: ArchivedWorktreeRow): ArchivedWorktree => ({

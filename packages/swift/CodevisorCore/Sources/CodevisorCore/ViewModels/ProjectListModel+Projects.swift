@@ -89,6 +89,17 @@ extension ProjectListModel {
     }
   }
 
+  /// Points every checkout of a project at one run location for new chats.
+  /// Like the base branch, an offline machine's change waits in the outbox.
+  public func setDefaultRunLocation(_ location: ProjectRunLocation, for group: ProjectGroup) {
+    for project in group.members where project.isGitRepository && project.defaultRunLocation != location {
+      enqueue(
+        .setProjectDefaultRunLocation(projectId: project.id, location: location),
+        serverId: project.serverId
+      )
+    }
+  }
+
   /// A project has one base branch. Brings any checkout that differs (added
   /// on another machine later, or offline during a change) onto it; a
   /// project that never chose one is left on the default untouched.

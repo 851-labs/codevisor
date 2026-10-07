@@ -14,6 +14,13 @@ extension ProjectGroup {
   public var worktreeBase: ProjectWorktreeBase {
     members.filter(\.isGitRepository).lazy.compactMap(\.worktreeBase).first ?? .legacyDefault
   }
+
+  /// Where new chats in this project start on every machine and client:
+  /// the choice recorded on its oldest git checkout that has one. Nil when
+  /// none has been chosen, or every checkout's server predates the field.
+  public var defaultRunLocation: ProjectRunLocation? {
+    members.filter(\.isGitRepository).lazy.compactMap(\.defaultRunLocation).first
+  }
 }
 
 /// The remote branches a project's worktrees can start from, merged across

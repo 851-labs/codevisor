@@ -47,6 +47,14 @@ final class JournalingServerClient: CodevisorServerClienting, @unchecked Sendabl
   func updateProjectWorktreeBase(id: UUID, worktreeBase: ProjectWorktreeBase?) async throws -> ServerProject {
     try await journaled { try await base.updateProjectWorktreeBase(id: id, worktreeBase: worktreeBase) }
   }
+
+  func updateProjectDefaultRunLocation(
+    id: UUID, defaultRunLocation: ProjectRunLocation?
+  ) async throws -> ServerProject {
+    try await journaled {
+      try await base.updateProjectDefaultRunLocation(id: id, defaultRunLocation: defaultRunLocation)
+    }
+  }
   func upsertSession(_ session: ChatSession) async throws -> ServerSession {
     try await journaled { try await base.upsertSession(session) }
   }

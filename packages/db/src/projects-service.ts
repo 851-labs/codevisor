@@ -62,8 +62,8 @@ export const makeProjectsService = (
             .prepare(
               `insert into projects (
                 id, name, origin, created_at, repo_url,
-                worktree_base_remote, worktree_base_branch
-              ) values (?, ?, ?, ?, ?, ?, ?)`
+                worktree_base_remote, worktree_base_branch, default_run_location
+              ) values (?, ?, ?, ?, ?, ?, ?, ?)`
             )
             .run(
               projectId,
@@ -72,7 +72,8 @@ export const makeProjectsService = (
               createdAt,
               request.repoUrl ?? null,
               claimedProject.worktreeBase?.remote ?? null,
-              claimedProject.worktreeBase?.branch ?? null
+              claimedProject.worktreeBase?.branch ?? null,
+              claimedProject.defaultRunLocation ?? null
             )
           for (const table of ["project_locations", "sessions", "worktrees"]) {
             sqlite
@@ -152,16 +153,22 @@ export const makeProjectsService = (
           request.worktreeBase === undefined
             ? current.worktreeBase
             : (request.worktreeBase ?? undefined)
+        const defaultRunLocation =
+          request.defaultRunLocation === undefined
+            ? current.defaultRunLocation
+            : (request.defaultRunLocation ?? undefined)
         sqlite
           .prepare(
             `update projects set name = ?,
-              worktree_base_remote = ?, worktree_base_branch = ?
+              worktree_base_remote = ?, worktree_base_branch = ?,
+              default_run_location = ?
              where id = ? collate nocase`
           )
           .run(
             request.name ?? current.name,
             worktreeBase?.remote ?? null,
             worktreeBase?.branch ?? null,
+            defaultRunLocation ?? null,
             id
           )
         return getProject(id)

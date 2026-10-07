@@ -29,6 +29,25 @@ describe("@codevisor/db", () => {
     await run(db.close)
   })
 
+  it("persists and clears a project's default run location", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/run-location" }))
+    expect(project.defaultRunLocation).toBeUndefined()
+
+    await run(db.updateProject(project.id, { defaultRunLocation: "newWorktree" }))
+    expect((await run(db.listProjects))[0]?.defaultRunLocation).toBe("newWorktree")
+
+    // Other project settings leave the choice alone.
+    const rebased = await run(
+      db.updateProject(project.id, { worktreeBase: { remote: "origin", branch: "develop" } })
+    )
+    expect(rebased.defaultRunLocation).toBe("newWorktree")
+    expect(
+      (await run(db.updateProject(project.id, { defaultRunLocation: null }))).defaultRunLocation
+    ).toBeUndefined()
+    await run(db.close)
+  })
+
   it("round-trips the git remote a project was cloned from", async () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     const cloned = await run(

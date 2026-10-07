@@ -18,6 +18,13 @@ public extension CodevisorServerClienting {
     throw CodevisorServerClientError.invalidResponse
   }
 
+  func updateProjectDefaultRunLocation(
+    id: UUID,
+    defaultRunLocation: ProjectRunLocation?
+  ) async throws -> ServerProject {
+    throw CodevisorServerClientError.invalidResponse
+  }
+
   /// Defaults for fakes and relay transports that don't manage a machine's
   /// cloud registration: report "not registered" and refuse to change it.
   func cloudRegistration() async throws -> ServerCloudRegistration {

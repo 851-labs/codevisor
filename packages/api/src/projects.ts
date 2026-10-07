@@ -21,6 +21,11 @@ export const ProjectWorktreeBase = Schema.Struct({
 })
 export type ProjectWorktreeBase = typeof ProjectWorktreeBase.Type
 
+/// Where a new chat in this project runs unless the composer picks
+/// otherwise: the project's own folder, or a fresh git worktree of it.
+export const ProjectRunLocation = Schema.Literals(["projectDirectory", "newWorktree"])
+export type ProjectRunLocation = typeof ProjectRunLocation.Type
+
 /// One remote branch offered by the project settings branch picker.
 export const ProjectGitBranch = Schema.Struct({
   remote: Schema.String,
@@ -47,6 +52,9 @@ export const Project = Schema.Struct({
   /// An explicit base for newly-created worktrees. Absent preserves the
   /// legacy origin/main (then HEAD) behavior for existing projects.
   worktreeBase: Schema.optional(ProjectWorktreeBase),
+  /// The run location new chats start in, last chosen in a composer on any
+  /// client. Absent until one is chosen; clients then use their own default.
+  defaultRunLocation: Schema.optional(ProjectRunLocation),
   /// True for the hidden backing project of a scratch workspace (its folder
   /// lives under ~/codevisor/workspaces). Derived from the folder location by
   /// the server on every response, never stored, so clients can filter these
@@ -152,7 +160,9 @@ export type FsMkdirResponse = typeof FsMkdirResponse.Type
 export const UpdateProjectRequest = Schema.Struct({
   name: Schema.optional(Schema.String),
   /// Null clears an explicit selection and restores the legacy default.
-  worktreeBase: Schema.optional(Schema.NullOr(ProjectWorktreeBase))
+  worktreeBase: Schema.optional(Schema.NullOr(ProjectWorktreeBase)),
+  /// Null clears the choice.
+  defaultRunLocation: Schema.optional(Schema.NullOr(ProjectRunLocation))
 })
 export type UpdateProjectRequest = typeof UpdateProjectRequest.Type
 

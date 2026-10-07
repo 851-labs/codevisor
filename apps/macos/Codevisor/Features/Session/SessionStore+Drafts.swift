@@ -66,12 +66,7 @@ extension SessionStore {
     // Fresh drafts start from the project's remembered run-location
     // choice (worktrees only apply to git projects). Retained drafts
     // returned above keep whatever the user toggled.
-    controller.wantsNewWorktree =
-      restoredProject.isGitRepository
-      && environment.composerDefaults.prefersWorktreeForNewWorkspaces(
-        forServer: restoredProject.serverId,
-        projectId: restoredProject.id
-      )
+    controller.wantsNewWorktree = environment.prefersNewWorktree(for: restoredProject)
     if let persisted { controller.restoreDraft(persisted) }
     enableDraftPersistence(for: controller, slotServerId: draftSlotServerId)
     draftsByServer[draftSlotServerId] = controller

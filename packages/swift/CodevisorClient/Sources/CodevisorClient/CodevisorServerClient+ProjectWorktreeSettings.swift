@@ -36,6 +36,23 @@ private struct UpdateProjectWorktreeBaseBody: Encodable {
   }
 }
 
+private struct UpdateProjectDefaultRunLocationBody: Encodable {
+  var defaultRunLocation: ProjectRunLocation?
+
+  private enum CodingKeys: String, CodingKey {
+    case defaultRunLocation
+  }
+
+  func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    if let defaultRunLocation {
+      try container.encode(defaultRunLocation, forKey: .defaultRunLocation)
+    } else {
+      try container.encodeNil(forKey: .defaultRunLocation)
+    }
+  }
+}
+
 extension CodevisorServerClient {
   public func listProjectGitBranches(projectId: UUID) async throws -> [ServerProjectGitBranch] {
     try await get("/v1/projects/\(projectId.uuidString)/git/branches")
@@ -49,6 +66,19 @@ extension CodevisorServerClient {
       "/v1/projects/\(id.uuidString)",
       method: "PATCH",
       body: UpdateProjectWorktreeBaseBody(worktreeBase: worktreeBase)
+    )
+  }
+
+  /// Servers that predate run locations ignore the field and return the
+  /// project without it.
+  public func updateProjectDefaultRunLocation(
+    id: UUID,
+    defaultRunLocation: ProjectRunLocation?
+  ) async throws -> ServerProject {
+    try await send(
+      "/v1/projects/\(id.uuidString)",
+      method: "PATCH",
+      body: UpdateProjectDefaultRunLocationBody(defaultRunLocation: defaultRunLocation)
     )
   }
 }

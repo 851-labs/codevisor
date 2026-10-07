@@ -65,6 +65,21 @@ struct ModelTests {
     #expect(try configured.project().worktreeBase == configured.worktreeBase)
   }
 
+  @Test("A run location a newer server knows and this client doesn't reads as not chosen")
+  func serverProjectUnknownRunLocation() throws {
+    func decoded(_ location: String) throws -> Project {
+      try JSONDecoder().decode(
+        ServerProject.self,
+        from: Data(
+          #"{"id":"6604c914-659b-401a-a008-edbd7ea9738f","name":"P","origin":"codevisor","createdAt":"2026-08-19T00:00:00.000Z","locations":[],"defaultRunLocation":"\#(location)"}"#
+            .utf8)
+      ).project()
+    }
+
+    #expect(try decoded("newWorktree").defaultRunLocation == .newWorktree)
+    #expect(try decoded("existingWorktree").defaultRunLocation == nil)
+  }
+
   @Test("Legacy project records decode their folderURL into a location")
   func legacyProjectDecoding() throws {
     let id = UUID()

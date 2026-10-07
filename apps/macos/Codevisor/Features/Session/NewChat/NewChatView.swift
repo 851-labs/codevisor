@@ -492,10 +492,9 @@ struct NewChatView: View {
             projectId: project.isScratch ? Project.runTargetPlaceholderID : project.id
           )
           if project.isGitRepository, !project.isScratch {
-            environment.composerDefaults.rememberNewWorkspaceWorktreePreference(
-              serverId: project.serverId,
-              projectId: project.id,
-              createsWorktree: controller.wantsNewWorktree
+            environment.rememberSentRunLocation(
+              newWorktree: controller.wantsNewWorktree,
+              for: project
             )
           }
         }

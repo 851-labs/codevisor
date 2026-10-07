@@ -148,15 +148,10 @@ final class ChatControllerCache {
       attachmentFiles: environment.composerDrafts.attachmentFiles
     )
     controller.applyComposerDefaults()
-    // Fresh drafts start from the machine's remembered run-location
+    // Fresh drafts start from the project's remembered run-location
     // choice (worktrees only apply to git projects). Retained drafts
     // returned above keep whatever the user toggled.
-    controller.wantsNewWorktree =
-      restoredProject.isGitRepository
-      && environment.composerDefaults.prefersWorktreeForNewWorkspaces(
-        forServer: restoredProject.serverId,
-        projectId: restoredProject.id
-      )
+    controller.wantsNewWorktree = environment.prefersNewWorktree(for: restoredProject)
     if let persisted { controller.restoreDraft(persisted) }
     controller.onDraftChange = { [weak drafts = environment.composerDrafts] draft in
       drafts?.saveDraft(draft, forServer: slotServerId)

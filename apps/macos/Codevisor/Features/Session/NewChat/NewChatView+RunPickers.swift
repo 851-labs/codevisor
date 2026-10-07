@@ -296,13 +296,7 @@ extension NewChatView {
       serverId: project.serverId,
       projectId: project.id
     )
-    let prefersWorktree =
-      wantsWorktree
-      ?? (project.isGitRepository
-        && environment.composerDefaults.prefersWorktreeForNewWorkspaces(
-          forServer: project.serverId,
-          projectId: project.id
-        ))
+    let prefersWorktree = wantsWorktree ?? environment.prefersNewWorktree(for: project)
     Task {
       if project.serverId != controller.project.serverId {
         // Another machine's project: the draft re-points there in
@@ -341,11 +335,7 @@ extension NewChatView {
   }
 
   private func selectRunLocation(newWorktree: Bool, controller: SessionController) {
-    environment.composerDefaults.rememberNewWorkspaceWorktreePreference(
-      serverId: controller.project.serverId,
-      projectId: controller.project.id,
-      createsWorktree: newWorktree
-    )
+    environment.rememberRunLocation(newWorktree: newWorktree, for: controller.project)
     controller.wantsNewWorktree = newWorktree
   }
 }

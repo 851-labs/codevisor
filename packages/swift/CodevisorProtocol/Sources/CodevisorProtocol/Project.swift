@@ -14,6 +14,18 @@ public struct ProjectWorktreeBase: Sendable, Codable, Equatable, Hashable {
   public var displayName: String { "\(remote)/\(branch)" }
 }
 
+/// Where a new chat in a project runs unless its composer picks otherwise.
+public enum ProjectRunLocation: String, Sendable, Codable, Equatable, Hashable {
+  case projectDirectory
+  case newWorktree
+
+  public init(newWorktree: Bool) {
+    self = newWorktree ? .newWorktree : .projectDirectory
+  }
+
+  public var isNewWorktree: Bool { self == .newWorktree }
+}
+
 /// A folder a project lives in on one machine. A logical project can have a
 /// location per server; sessions derive their working directory from the
 /// location on the server they run on (or from a worktree).
@@ -70,6 +82,9 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
   /// Explicit worktree base selected in Manage Project. Nil preserves the
   /// server's legacy origin/main fallback for projects not yet configured.
   public var worktreeBase: ProjectWorktreeBase?
+  /// The run location new chats start in, last chosen in a composer on any
+  /// client. Nil until one is chosen (or on servers that predate it).
+  public var defaultRunLocation: ProjectRunLocation?
   /// True for the hidden backing project of a scratch workspace — the empty
   /// folder a brand-new chat starts in (under ~/codevisor/workspaces on its
   /// machine). Server-derived from the folder location on every response.
@@ -87,6 +102,7 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
     repoUrl: String? = nil,
     repoKey: String? = nil,
     worktreeBase: ProjectWorktreeBase? = nil,
+    defaultRunLocation: ProjectRunLocation? = nil,
     isScratch: Bool = false
   ) {
     self.id = id
@@ -98,6 +114,7 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
     self.repoUrl = repoUrl
     self.repoKey = repoKey
     self.worktreeBase = worktreeBase
+    self.defaultRunLocation = defaultRunLocation
     self.isScratch = isScratch
   }
 
@@ -140,7 +157,7 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
 
   private enum Keys: String, CodingKey {
     case id, serverId, name, folderURL, origin, createdAt, locations
-    case isScratch, worktreeBase, repoUrl, repoKey
+    case isScratch, worktreeBase, defaultRunLocation, repoUrl, repoKey
   }
 
   // Custom decoding tolerates records persisted before locations existed
@@ -156,6 +173,9 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
     repoUrl = try container.decodeIfPresent(String.self, forKey: .repoUrl)
     repoKey = try container.decodeIfPresent(String.self, forKey: .repoKey)
     worktreeBase = try container.decodeIfPresent(ProjectWorktreeBase.self, forKey: .worktreeBase)
+    // An unknown value (written by a newer client) reads as "not chosen".
+    defaultRunLocation = try container.decodeIfPresent(String.self, forKey: .defaultRunLocation)
+      .flatMap(ProjectRunLocation.init(rawValue:))
     if let locations = try container.decodeIfPresent([ProjectLocation].self, forKey: .locations) {
       self.locations = locations
     } else if let legacyFolderURL = try container.decodeIfPresent(URL.self, forKey: .folderURL) {
@@ -178,6 +198,7 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
     try container.encodeIfPresent(repoUrl, forKey: .repoUrl)
     try container.encodeIfPresent(repoKey, forKey: .repoKey)
     try container.encodeIfPresent(worktreeBase, forKey: .worktreeBase)
+    try container.encodeIfPresent(defaultRunLocation, forKey: .defaultRunLocation)
     try container.encode(isScratch, forKey: .isScratch)
   }
 }

@@ -105,6 +105,10 @@ describe("@codevisor/api", () => {
       })
     ).toMatchObject({ remote: "upstream", branch: "release/next" })
     expect(decode(UpdateProjectRequest)({ worktreeBase: null })).toEqual({ worktreeBase: null })
+    expect(decode(UpdateProjectRequest)({ defaultRunLocation: "newWorktree" })).toEqual({
+      defaultRunLocation: "newWorktree"
+    })
+    expect(() => decode(UpdateProjectRequest)({ defaultRunLocation: "elsewhere" })).toThrow()
   })
 
   it("accepts client-provided creation metadata", () => {

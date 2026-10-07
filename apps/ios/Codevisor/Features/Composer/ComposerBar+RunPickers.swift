@@ -106,22 +106,13 @@ extension ComposerBar {
     // Selecting the checked row should preserve the draft's own location.
     guard project.serverId != controller.project.serverId || project.id != controller.project.id
     else { return }
-    let prefersWorktree =
-      wantsWorktree
-      ?? environment.composerDefaults.prefersWorktreeForNewWorkspaces(
-        forServer: project.serverId,
-        projectId: project.id
-      )
+    let prefersWorktree = wantsWorktree ?? environment.prefersNewWorktree(for: project)
     applyRunTarget(project, wantsWorktree: prefersWorktree)
   }
 
   private func selectRunLocation(_ newWorktree: Bool) {
     guard liveProject.isGitRepository else { return }
-    environment.composerDefaults.rememberNewWorkspaceWorktreePreference(
-      serverId: controller.project.serverId,
-      projectId: controller.project.id,
-      createsWorktree: newWorktree
-    )
+    environment.rememberRunLocation(newWorktree: newWorktree, for: liveProject)
     controller.wantsNewWorktree = newWorktree
   }
 

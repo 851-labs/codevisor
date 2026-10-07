@@ -232,6 +232,10 @@ public protocol CodevisorServerClienting: BrowserStateClienting, SimulatorClient
     id: UUID,
     worktreeBase: ProjectWorktreeBase?
   ) async throws -> ServerProject
+  func updateProjectDefaultRunLocation(
+    id: UUID,
+    defaultRunLocation: ProjectRunLocation?
+  ) async throws -> ServerProject
   /// Creates the hidden backing project for a brand-new scratch workspace:
   /// the server allocates a memorable name, creates its empty folder under
   /// ~/codevisor/workspaces, and registers a project pointing at it. The

@@ -18,6 +18,8 @@ public enum NavigationIntent: Codable, Equatable, Sendable {
   case deleteProject(projectId: UUID, sessionIds: [UUID], deletesFiles: Bool? = nil)
   /// The branch new worktrees start from. Nil restores the legacy default.
   case setProjectWorktreeBase(projectId: UUID, worktreeBase: ProjectWorktreeBase?)
+  /// Where new chats in the project start. Nil clears the choice.
+  case setProjectDefaultRunLocation(projectId: UUID, location: ProjectRunLocation?)
   case upsertSession(ChatSession, workspaceId: UUID?)
   /// A chat that opening it will create on the server (the new-chat composer
   /// makes the chat before its first message). It is shown right away but
@@ -49,6 +51,7 @@ public enum NavigationIntent: Codable, Equatable, Sendable {
     case let .upsertProject(project): "project:\(project.id)"
     case let .deleteProject(projectId, _, _): "project:\(projectId)"
     case let .setProjectWorktreeBase(projectId, _): "project-base:\(projectId)"
+    case let .setProjectDefaultRunLocation(projectId, _): "project-run-location:\(projectId)"
     case let .upsertSession(session, _): "session:\(session.id)"
     case let .expectSession(session): "session:\(session.id)"
     case let .renameSession(session): "session-title:\(session.id)"
@@ -73,9 +76,9 @@ public enum NavigationIntent: Codable, Equatable, Sendable {
     case let .upsertPane(_, workspaceId), let .closePane(_, workspaceId),
       let .promotePane(_, workspaceId, _), let .movePane(_, workspaceId, _):
       workspaceId
-    case .upsertProject, .deleteProject, .setProjectWorktreeBase, .expectSession, .renameSession,
-      .deleteSession, .markSessionRead, .markSessionUnread, .renameWorkspace, .setWorkspaceArchived,
-      .reorderWorkspace:
+    case .upsertProject, .deleteProject, .setProjectWorktreeBase, .setProjectDefaultRunLocation,
+      .expectSession, .renameSession, .deleteSession, .markSessionRead, .markSessionUnread,
+      .renameWorkspace, .setWorkspaceArchived, .reorderWorkspace:
       nil
     }
   }
@@ -115,6 +118,8 @@ public enum NavigationIntent: Codable, Equatable, Sendable {
       }
     case let .setProjectWorktreeBase(projectId, worktreeBase):
       _ = try await client.updateProjectWorktreeBase(id: projectId, worktreeBase: worktreeBase)
+    case let .setProjectDefaultRunLocation(projectId, location):
+      _ = try await client.updateProjectDefaultRunLocation(id: projectId, defaultRunLocation: location)
     case let .upsertSession(session, workspaceId):
       if let workspaceId {
         _ = try await client.upsertSession(session, workspaceId: workspaceId)

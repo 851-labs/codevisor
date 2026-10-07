@@ -40,6 +40,10 @@ enum NavigationOverlay {
       if let index = records.projects.firstIndex(where: { $0.id == projectId }) {
         records.projects[index].worktreeBase = worktreeBase
       }
+    case let .setProjectDefaultRunLocation(projectId, location):
+      if let index = records.projects.firstIndex(where: { $0.id == projectId }) {
+        records.projects[index].defaultRunLocation = location
+      }
     case let .upsertSession(session, workspaceId):
       upsertSession(session, into: &records)
       if let workspaceId { records.assignments[session.id] = workspaceId }
