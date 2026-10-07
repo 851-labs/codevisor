@@ -152,13 +152,21 @@ describe("@codevisor/agent-runtime", () => {
           name: "My Agent",
           provider: "acp",
           symbolName: "terminal"
+        },
+        {
+          detectBinaries: ["my-agent"],
+          id: "my-npx-agent",
+          launch: { args: [], kind: "npx", packageName: "my-npx-agent" },
+          name: "My npx Agent",
+          provider: "acp",
+          symbolName: "terminal"
         }
       ]
     })
 
-    // The effective catalog is builtins + the extra entry, and is exposed on
+    // The effective catalog is builtins + the extra entries, and is exposed on
     // the service for consumers (harness auth, lifecycle).
-    expect(runtime.catalog).toHaveLength(harnessCatalog.length + 1)
+    expect(runtime.catalog).toHaveLength(harnessCatalog.length + 2)
     expect(runtime.catalog.find((definition) => definition.id === "my-agent")?.name).toBe(
       "My Agent"
     )
@@ -171,6 +179,8 @@ describe("@codevisor/agent-runtime", () => {
       source: "custom",
       readiness: { state: "ready" }
     })
+    // A custom harness can still run through npx.
+    expect(harnesses.find((harness) => harness.id === "my-npx-agent")?.launchKind).toBe("npx")
     // Builtins keep their registry source.
     expect(harnesses.find((harness) => harness.id === "codex")?.source).toBe("registry")
   })
