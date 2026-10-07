@@ -37,20 +37,28 @@ struct HarnessProviderSignInSheet: View {
 
   var body: some View {
     NavigationStack {
-      content.navigationTitle(title)
-        #if os(iOS)
+      #if os(macOS)
+        // Picking a provider needs no title; the list gets the room. A
+        // sign-in in progress is titled with its provider.
+        if draft.signIn != nil {
+          content.navigationTitle(title)
+        } else {
+          content
+        }
+      #else
+        content.navigationTitle(title)
           .navigationBarTitleDisplayMode(.inline)
           .toolbar {
             ToolbarItem(placement: .cancellationAction) {
               Button("Cancel", systemImage: "xmark", role: .cancel) { dismiss() }
-              .labelStyle(.iconOnly)
-              .disabled(draft.isWorking)
+                .labelStyle(.iconOnly)
+                .disabled(draft.isWorking)
             }
             if let actionTitle = draft.actionTitle {
               SheetConfirmToolbarItem(actionTitle, isEnabled: draft.canSubmit) { submit() }
             }
           }
-        #endif
+      #endif
     }
     #if os(macOS)
       .safeAreaInset(edge: .bottom, spacing: 0) {
