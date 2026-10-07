@@ -15,23 +15,12 @@ import {
 } from "./frames.js"
 import { nodePtySpawner } from "./node-pty-spawner.js"
 import { ReplayBuffer } from "./replay-buffer.js"
-import { BUNDLED_GHOSTTY_RESOURCES_DIRECTORY, withShellIntegration } from "./shell-integration.js"
-import {
-  BUNDLED_GHOSTTY_TERMINFO_DIRECTORY,
-  GHOSTTY_TERM,
-  resolveDefaultShell,
-  resolveTerminalName,
-  withDefaultLocale
-} from "./shell.js"
 import { SizeArbiter, type TerminalSize } from "./size-arbiter.js"
+import { makeTerminalLaunch } from "./terminal-launch.js"
 import { createTerminalScreen, replayCovers, resyncFrames } from "./terminal-screen.js"
 import { RESTORED_TERMINAL_SIZE, restoreEntry, snapshotEntry } from "./terminal-snapshot.js"
 import { makeTerminalTitles } from "./terminal-titles.js"
-import type {
-  TerminalManagerConfig,
-  TerminalManagerService,
-  TerminalSpawnRequest
-} from "./types.js"
+import type { TerminalManagerConfig, TerminalManagerService } from "./types.js"
 import { TerminalError } from "./types.js"
 import { createVtTerminal } from "./vt/ghostty-vt.js"
 
@@ -75,12 +64,7 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
 
   /* v8 ignore next -- real node-pty spawning is covered by packaging smoke tests. */
   const spawner = config.spawner ?? nodePtySpawner
-  const env = config.env ?? process.env
-  const terminfoDirectory = config.terminfoDirectory ?? BUNDLED_GHOSTTY_TERMINFO_DIRECTORY
-  const defaultShell = resolveDefaultShell(config, env)
-  const platform = config.platform ?? process.platform
-  const terminalName = resolveTerminalName(platform)
-  const ghosttyResources = config.ghosttyResourcesDirectory ?? BUNDLED_GHOSTTY_RESOURCES_DIRECTORY
+  const prepareSpawn = makeTerminalLaunch(config)
 
   const pushFrame = (terminal: RunningTerminal, frame: TerminalFramePayload): SequencedFrame => {
     const sequenced = sequenceFrame(terminal.nextOutputSeq, frame)
@@ -194,34 +178,7 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
         }
 
         const terminalId = randomUUID()
-        // Match Ghostty's launch environment on macOS. Linux uses the
-        // broadly recognized xterm-256color name so stock distro profiles
-        // enable colors without requiring Ghostty-specific TERM handling.
-        const terminalEnvironment: NodeJS.ProcessEnv = {
-          ...env,
-          ...envOverrides,
-          COLORTERM: "truecolor",
-          TERM: terminalName,
-          TERM_PROGRAM: "ghostty"
-        }
-        if (terminalName === GHOSTTY_TERM) {
-          terminalEnvironment.TERMINFO = terminfoDirectory
-        } else {
-          // An inherited Ghostty-only TERMINFO masks the host's standard
-          // xterm-256color database for shells such as Zsh.
-          delete terminalEnvironment.TERMINFO
-        }
-        const shell = request.shell ?? defaultShell
-        const launch = withShellIntegration(
-          shell,
-          request.args ?? [],
-          withDefaultLocale(terminalEnvironment, platform),
-          {
-            resourcesDirectory: ghosttyResources,
-            platform
-          }
-        )
-        const spawnRequest: TerminalSpawnRequest = { ...request, shell, ...launch }
+        const spawnRequest = prepareSpawn(request, envOverrides)
         const pendingFrames: Array<TerminalFramePayload> = []
         let runningTerminal: RunningTerminal | undefined
         let exitedBeforeRegistration = false
