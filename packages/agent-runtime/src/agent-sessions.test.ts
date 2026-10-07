@@ -8,6 +8,7 @@ import {
   defaultAgentSessionFileSystem,
   listClaudeAgentSessions,
   listCodexAgentSessions,
+  listPiAgentSessions,
   preferHarnessSessionTitles,
   type AgentSessionFileSystem
 } from "./agent-sessions.js"
@@ -361,5 +362,92 @@ describe("defaultAgentSessionFileSystem", () => {
 
     // No ~/.codex at all under this home.
     await expect(listCodexAgentSessions({ homedir: home })).resolves.toEqual([])
+  })
+})
+
+const line = (entry: Record<string, unknown>): string => JSON.stringify(entry)
+
+describe("listPiAgentSessions", () => {
+  const home = "/home/tester"
+  const root = `${home}/.pi/agent/sessions`
+  const header = (id: string, cwd: string) => line({ type: "session", version: 3, id, cwd })
+  const user = (content: unknown) => line({ type: "message", message: { role: "user", content } })
+
+  it("lists sessions with their name, or else their first prompt, newest first", async () => {
+    const fs = makeFakeFs(
+      {
+        [`${root}/--repo-a--/1_a.jsonl`]: [
+          header("pi-a", "/repo/a"),
+          line({ type: "message", message: { role: "system", content: "" } }),
+          user([{ type: "image" }, { type: "text", text: "Fix the build" }]),
+          user("Ignored, not the first")
+        ].join("\n"),
+        [`${root}/--repo-b--/2_b.jsonl`]: [
+          header("pi-b", "/repo/b"),
+          user("First prompt"),
+          line({ type: "session_info", name: "Refactor auth" }),
+          line({ type: "session_info", name: "Renamed later" })
+        ].join("\n"),
+        [`${root}/--repo-b--/3_untitled.jsonl`]: [
+          header("pi-c", "/repo/b"),
+          line({ type: "message", message: { role: "assistant", content: [] } }),
+          line({ type: "message" }),
+          line({ type: "message", message: { role: "user", content: 7 } })
+        ].join("\n"),
+        [`${root}/--repo-b--/notes.txt`]: "not a session",
+        [`${root}/stray.jsonl`]: header("stray", "/repo/a")
+      },
+      ["/repo/a", "/repo/b"],
+      {
+        [`${root}/--repo-a--/1_a.jsonl`]: 1_000,
+        [`${root}/--repo-b--/2_b.jsonl`]: 2_000,
+        [`${root}/--repo-b--/3_untitled.jsonl`]: 3_000
+      }
+    )
+
+    expect(await listPiAgentSessions({ homedir: home, fs })).toEqual([
+      { sessionId: "pi-c", cwd: "/repo/b", updatedAt: new Date(3_000).toISOString() },
+      {
+        sessionId: "pi-b",
+        cwd: "/repo/b",
+        title: "Refactor auth",
+        updatedAt: new Date(2_000).toISOString()
+      },
+      {
+        sessionId: "pi-a",
+        cwd: "/repo/a",
+        title: "Fix the build",
+        updatedAt: new Date(1_000).toISOString()
+      }
+    ])
+  })
+
+  it("reads a profile's own agent dir and skips what isn't a usable session", async () => {
+    const agentDir = "/profiles/pi"
+    const fs = makeFakeFs(
+      {
+        [`${agentDir}/sessions/--x--/gone.jsonl`]: header("gone", "/deleted"),
+        [`${agentDir}/sessions/--x--/no-header.jsonl`]: user("hello"),
+        [`${agentDir}/sessions/--x--/no-id.jsonl`]: line({ type: "session", cwd: "/repo" }),
+        [`${agentDir}/sessions/--x--/no-cwd.jsonl`]: line({ type: "session", id: "x" }),
+        [`${agentDir}/sessions/--x--/kept.jsonl`]: header("kept", "/repo")
+      },
+      ["/repo"]
+    )
+    const sessions = await listPiAgentSessions({ agentDir, fs })
+    expect(sessions.map((session) => session.sessionId)).toEqual(["kept"])
+    // Files that can't be read or stat'ed, and folders named like sessions, are skipped too.
+    const unreadable: AgentSessionFileSystem = { ...fs, readHead: async () => undefined }
+    expect(await listPiAgentSessions({ agentDir, fs: unreadable })).toEqual([])
+    const odd: AgentSessionFileSystem = {
+      ...fs,
+      statFile: async (path) =>
+        path.endsWith("kept.jsonl")
+          ? { mtimeMs: 0, isDirectory: true }
+          : path.endsWith("gone.jsonl")
+            ? undefined
+            : fs.statFile(path)
+    }
+    expect(await listPiAgentSessions({ agentDir, fs: odd })).toEqual([])
   })
 })

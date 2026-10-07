@@ -304,3 +304,67 @@ export const listCodexAgentSessions = async (
   }
   return sessions
 }
+
+const piUserText = (message: Record<string, unknown>): string | undefined => {
+  if (message.role !== "user") return undefined
+  if (typeof message.content === "string") return message.content
+  if (!Array.isArray(message.content)) return undefined
+  return message.content
+    .flatMap((block: { type?: unknown; text?: unknown }) =>
+      block?.type === "text" && typeof block.text === "string" ? [block.text] : []
+    )
+    .join("\n")
+}
+
+/// Pi: `<agent dir>/sessions/--<encoded cwd>--/<timestamp>_<id>.jsonl`, the
+/// agent dir being `PI_CODING_AGENT_DIR` or `~/.pi/agent`. The header line
+/// carries the id and cwd; the title is the session's name, or else its
+/// first user message.
+export const listPiAgentSessions = async (
+  options: AgentSessionScanOptions & { readonly agentDir?: string | undefined } = {}
+): Promise<ReadonlyArray<AgentSessionSummary>> => {
+  const { homedir, limit, fs } = resolved(options)
+  const root = join(options.agentDir ?? join(homedir, ".pi", "agent"), "sessions")
+  const candidates: SessionFileCandidate[] = []
+  for (const directory of await fs.listDirectory(root)) {
+    const folder = join(root, directory)
+    if (!(await fs.statFile(folder))?.isDirectory) continue
+    for (const entry of await fs.listDirectory(folder)) {
+      if (!entry.endsWith(".jsonl")) continue
+      const path = join(folder, entry)
+      const stat = await fs.statFile(path)
+      if (stat !== undefined && !stat.isDirectory) candidates.push({ path, mtimeMs: stat.mtimeMs })
+    }
+  }
+
+  const sessions: AgentSessionSummary[] = []
+  const newest = newestFirst(candidates, limit)
+  const heads = await Promise.all(
+    newest.map((candidate) => fs.readHead(candidate.path, maxReadBytes))
+  )
+  for (const [index, candidate] of newest.entries()) {
+    const lines = (heads[index] ?? "").split("\n")
+    // split() always yields a first element.
+    const header = parseJsonLine(lines[0] as string)
+    if (header?.type !== "session" || typeof header.id !== "string") continue
+    if (typeof header.cwd !== "string" || !(await fs.directoryExists(header.cwd))) continue
+    let name: string | undefined
+    let prompt: string | undefined
+    for (const line of lines.slice(1)) {
+      const entry = parseJsonLine(line)
+      if (entry?.type === "session_info" && typeof entry.name === "string") name ??= entry.name
+      if (entry?.type === "message" && prompt === undefined) {
+        const text = piUserText((entry.message ?? {}) as Record<string, unknown>)
+        if (text !== undefined) prompt = truncatedTitle(text)
+      }
+    }
+    const title = name ?? prompt
+    sessions.push({
+      sessionId: header.id,
+      cwd: header.cwd,
+      ...(title === undefined ? {} : { title }),
+      updatedAt: new Date(candidate.mtimeMs).toISOString()
+    })
+  }
+  return sessions
+}
