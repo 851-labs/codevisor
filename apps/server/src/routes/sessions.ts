@@ -35,10 +35,11 @@ import {
 } from "./session-workspace.js"
 import { withUpdateGate } from "./update-gate.js"
 
+export { reconcileOrphanedSessionTurns } from "./prompt-recovery.js"
+
 export {
   drainPromptQueue,
   makeTurnDispatchListener,
-  reconcileOrphanedSessionTurns,
   reconcileStaleStreamingTurns
 } from "./prompt-queue.js"
 
