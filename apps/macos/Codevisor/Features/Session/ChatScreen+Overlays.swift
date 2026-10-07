@@ -19,6 +19,20 @@ extension ChatScreen {
     }
   }
 
+  /// The find-in-chat bar, floating at the top trailing corner like a
+  /// browser's.
+  @ViewBuilder
+  var findBarOverlay: some View {
+    let model = presentationSurface.findModel
+    if model.isPresented {
+      TranscriptFindBar(model: model)
+        .frame(width: 340)
+        .padding(.top, 12)
+        .padding(.trailing, 16)
+        .transition(.opacity.combined(with: .offset(y: -6)))
+    }
+  }
+
   /// The live view of what this chat's agent is using: the app it controls
   /// through Computer Use or the tab it drives through Browser Use,
   /// whichever it touched last, on this Mac or the chat's host machine.

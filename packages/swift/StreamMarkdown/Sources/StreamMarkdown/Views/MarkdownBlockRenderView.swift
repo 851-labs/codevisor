@@ -270,7 +270,7 @@ public struct MarkdownFragmentRenderView: View {
   }
 }
 
-private extension MarkdownBlock {
+extension MarkdownBlock {
   /// Mirrors the settled renderer's `canRenderAsTextRun` rule. A streaming
   /// list flips between `.bulletList` and `.list` as each item is typed (an
   /// empty trailing item or a loose gap makes it a full list for a flush);

@@ -156,6 +156,10 @@ extension VirtualizedTranscriptScrollView {
       scrollToBottom()
     }
 
+    if projectedRowsChanged || projectionRevisionChanged || activeRowsChanged {
+      scheduleFindRefreshIfNeeded()
+    }
+
     applyPendingInitialPositionIfPossible()
     presentDeferredActivePlaceholderIfNeeded()
     updateInitialPresentationReadiness()

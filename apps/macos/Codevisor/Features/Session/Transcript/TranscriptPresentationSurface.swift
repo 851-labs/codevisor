@@ -10,6 +10,8 @@ import StreamMarkdown
 final class TranscriptPresentationSurface {
   let textAnimationVisibility = StreamingTextAnimationVisibility(initiallyVisible: false)
   let textAnimationRegistry = StreamingTextAnimationRegistry()
+  /// Find-in-chat state; survives the pane's SwiftUI view being rebuilt.
+  let findModel = TranscriptFindModel()
 
   private weak var controller: SessionController?
   private var retainedScrollView: VirtualizedTranscriptScrollView?
@@ -32,6 +34,7 @@ final class TranscriptPresentationSurface {
     if let retainedScrollView { return retainedScrollView }
     let scrollView = VirtualizedTranscriptScrollView()
     retainedScrollView = scrollView
+    scrollView.attachFindModel(findModel)
     return scrollView
   }
 
@@ -64,6 +67,7 @@ final class TranscriptPresentationSurface {
 
   func prepareForEviction() {
     guard let scrollView = retainedScrollView, scrollView.window == nil else { return }
+    findModel.dismiss()
     retainedScrollView = nil
     scrollView.prepareForDismantle()
     scrollView.removeFromSuperview()

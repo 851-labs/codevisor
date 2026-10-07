@@ -38,10 +38,20 @@ private struct NewChatComposerFocusKey: FocusedValueKey {
   typealias Value = NewChatComposerFocus
 }
 
+private struct TranscriptFindKey: FocusedValueKey {
+  typealias Value = TranscriptFindModel
+}
+
 extension FocusedValues {
   var filePane: FilePaneModel? {
     get { self[FilePaneKey.self] }
     set { self[FilePaneKey.self] = newValue }
+  }
+
+  /// The focused chat pane's find-in-chat state.
+  var transcriptFind: TranscriptFindModel? {
+    get { self[TranscriptFindKey.self] }
+    set { self[TranscriptFindKey.self] = newValue }
   }
 
   var sidebarActions: SidebarActions? {
@@ -59,6 +69,7 @@ extension FocusedValues {
 /// chat — the app's primary "new document" action.
 struct FileCommands: Commands {
   @FocusedValue(\.filePane) private var file
+  @FocusedValue(\.transcriptFind) private var chatFind
 
   var body: some Commands {
     CommandGroup(replacing: .newItem) {
@@ -96,6 +107,15 @@ struct FileCommands: Commands {
         .keyboardShortcut("f", modifiers: .command)
         Button("Go to Line…") { file.showsGoToLine = true }
           .keyboardShortcut("g", modifiers: .control)
+      } else if let chatFind {
+        // In this group, not a sibling: see the note on `CloseWindowMenuItem`'s
+        // group above about conditional items costing key equivalents.
+        Button("Find in Chat…") { chatFind.present() }
+          .keyboardShortcut("f", modifiers: .command)
+        Button("Find Next") { chatFind.findNext() }
+          .keyboardShortcut("g", modifiers: .command)
+        Button("Find Previous") { chatFind.findPrevious() }
+          .keyboardShortcut("g", modifiers: [.command, .shift])
       }
     }
   }

@@ -62,6 +62,14 @@
       }
     }
 
+    /// Find-in-chat matches in this view's text.
+    public var transcriptFindHighlights: TranscriptFindHighlights? {
+      didSet {
+        guard transcriptFindHighlights != oldValue else { return }
+        needsDisplay = true
+      }
+    }
+
     private var isForwardingTranscriptSelection = false
 
     // MARK: Mouse routing
@@ -187,24 +195,47 @@
     // MARK: Highlight drawing
 
     open override func draw(_ dirtyRect: NSRect) {
+      drawTranscriptFindHighlights()
       drawTranscriptSelectionHighlight()
       super.draw(dirtyRect)
     }
 
     private func drawTranscriptSelectionHighlight() {
-      guard let range = transcriptSelectionHighlight,
-        let textStorage, let textContainer
-      else { return }
-      let clamped = NSIntersectionRange(range, NSRange(location: 0, length: textStorage.length))
-      guard clamped.length > 0 else { return }
-
+      guard let range = transcriptSelectionHighlight else { return }
       let isEmphasized = window?.isKeyWindow ?? false
       let color =
         isEmphasized
         ? NSColor.selectedTextBackgroundColor
         : NSColor.unemphasizedSelectedTextBackgroundColor
       color.setFill()
+      transcriptTextRects(for: range).forEach { $0.fill() }
+    }
+
+    private func drawTranscriptFindHighlights() {
+      guard let highlights = transcriptFindHighlights else { return }
+      let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+      for (index, range) in highlights.ranges.enumerated() {
+        let isCurrent = index == highlights.currentIndex
+        let color: NSColor =
+          isCurrent
+          ? NSColor.systemOrange.withAlphaComponent(isDark ? 0.75 : 0.85)
+          : NSColor.systemYellow.withAlphaComponent(isDark ? 0.35 : 0.5)
+        color.setFill()
+        for rect in transcriptTextRects(for: range) {
+          NSBezierPath(roundedRect: rect.insetBy(dx: -1, dy: 0), xRadius: 3, yRadius: 3).fill()
+        }
+      }
+    }
+
+    /// Line-fragment rects covering `range`, in view coordinates, with the
+    /// same geometry AppKit uses for a native selection on either TextKit
+    /// generation.
+    public func transcriptTextRects(for range: NSRange) -> [NSRect] {
+      guard let textStorage, let textContainer else { return [] }
+      let clamped = NSIntersectionRange(range, NSRange(location: 0, length: textStorage.length))
+      guard clamped.length > 0 else { return [] }
       let origin = textContainerOrigin
+      var rects: [NSRect] = []
 
       if let textLayoutManager {
         let documentStart = textLayoutManager.documentRange.location
@@ -212,13 +243,13 @@
           let start = textLayoutManager.location(documentStart, offsetBy: clamped.location),
           let end = textLayoutManager.location(documentStart, offsetBy: NSMaxRange(clamped)),
           let textRange = NSTextRange(location: start, end: end)
-        else { return }
+        else { return [] }
         textLayoutManager.enumerateTextSegments(
           in: textRange,
           type: .selection,
           options: []
         ) { _, frame, _, _ in
-          frame.offsetBy(dx: origin.x, dy: origin.y).fill()
+          rects.append(frame.offsetBy(dx: origin.x, dy: origin.y))
           return true
         }
       } else if let layoutManager {
@@ -231,9 +262,10 @@
           withinSelectedGlyphRange: glyphRange,
           in: textContainer
         ) { rect, _ in
-          rect.offsetBy(dx: origin.x, dy: origin.y).fill()
+          rects.append(rect.offsetBy(dx: origin.x, dy: origin.y))
         }
       }
+      return rects
     }
   }
 #endif

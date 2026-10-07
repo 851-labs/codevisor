@@ -109,8 +109,11 @@ struct ChatScreen: View {
         serverId: controller.project.serverId
       )
       .overlay(alignment: .bottom) { bottomChromeOverlay }
+      .overlay(alignment: .topTrailing) { findBarOverlay }
+      .focusedValue(\.transcriptFind, presentationSurface.findModel)
       .overlay { livePreviewPiPOverlay }
       .animation(Motion.quick(reduceMotion: reduceMotion), value: isAtBottom)
+      .animation(Motion.quick(reduceMotion: reduceMotion), value: presentationSurface.findModel.isPresented)
       .onAppear {
         autoFollow = controller.scrollState?.followMode.followsLatest ?? true
         isAtBottom = controller.scrollState?.isAtBottom ?? true
