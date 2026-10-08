@@ -112,6 +112,14 @@ struct ChatScreen: View {
       .overlay(alignment: .topTrailing) { findBarOverlay }
       .focusedValue(\.transcriptFind, presentationSurface.findModel)
       .overlay { livePreviewPiPOverlay }
+      // AppKit sends `cursorUpdate` to the view it hit-tests under the
+      // pointer. Until a view in the hosting view declares a pointer style,
+      // SwiftUI answers that hit test by frame alone, and the full-pane
+      // layer it keeps above the transcript for the floating composer takes
+      // every hit: transcript and composer text fell back to the arrow
+      // whenever the pointer rested (after a scroll, while text streamed).
+      // Declaring one switches SwiftUI to the hit test it uses for clicks.
+      .pointerStyle(.default)
       .animation(Motion.quick(reduceMotion: reduceMotion), value: isAtBottom)
       .animation(Motion.quick(reduceMotion: reduceMotion), value: presentationSurface.findModel.isPresented)
       .onAppear {

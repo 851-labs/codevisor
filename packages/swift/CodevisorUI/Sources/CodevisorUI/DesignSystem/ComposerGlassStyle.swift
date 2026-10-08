@@ -58,8 +58,15 @@ private struct ComposerGlassSurfaceModifier<S: Shape>: ViewModifier {
   let namespace: Namespace.ID?
   let transition: GlassEffectTransition
 
-  @ViewBuilder
   func body(content: Content) -> some View {
+    // The glass is drawn, not hit-tested: without a content shape, clicks
+    // and hover in a surface's padding fall through to whatever lies
+    // beneath it, such as the transcript's text and links.
+    glass(content.contentShape(shape))
+  }
+
+  @ViewBuilder
+  private func glass(_ content: some View) -> some View {
     if let id, let namespace {
       content
         .glassEffect(

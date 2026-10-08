@@ -91,12 +91,12 @@
 
     public override func mouseMoved(with event: NSEvent) {
       super.mouseMoved(with: event)
-      updateLinkHover(at: convert(event.locationInWindow, from: nil))
+      updateLinkHover(at: unoccludedLocation(of: event))
     }
 
     public override func mouseEntered(with event: NSEvent) {
       super.mouseEntered(with: event)
-      updateLinkHover(at: convert(event.locationInWindow, from: nil))
+      updateLinkHover(at: unoccludedLocation(of: event))
     }
 
     public override func mouseExited(with event: NSEvent) {

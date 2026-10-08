@@ -71,6 +71,7 @@
     }
 
     private var isForwardingTranscriptSelection = false
+    private var isPointerRefreshScheduled = false
 
     // MARK: Mouse routing
 
@@ -111,6 +112,68 @@
         return
       }
       nativeMouseUp(with: event)
+    }
+
+    // MARK: Pointer ownership
+
+    /// AppKit delivers tracking-area events by geometry, not by what is on
+    /// screen: a surface scrolled beneath the floating composer still gets
+    /// `mouseMoved` and `cursorUpdate` for a pointer over the composer, and
+    /// `NSTextView` answers them by setting its own I-beam or link cursor.
+    /// Only the surface that would take a click at the pointer may do so.
+    open override func mouseMoved(with event: NSEvent) {
+      guard unoccludedLocation(of: event) != nil else { return }
+      super.mouseMoved(with: event)
+    }
+
+    open override func cursorUpdate(with event: NSEvent) {
+      guard unoccludedLocation(of: event) != nil else { return }
+      super.cursorUpdate(with: event)
+    }
+
+    /// `event`'s location in view coordinates, or nil when another view
+    /// covers this surface there.
+    func unoccludedLocation(of event: NSEvent) -> NSPoint? {
+      guard let hit = window?.contentView?.hitTest(event.locationInWindow),
+        hit === self || hit.isDescendant(of: self)
+      else { return nil }
+      return convert(event.locationInWindow, from: nil)
+    }
+
+    /// AppKit updates the cursor when the pointer crosses into another view,
+    /// not when content slides beneath a resting pointer. A scroll, or text
+    /// streaming in above, can carry a link onto or off the pointer within
+    /// this one view, so the view under the pointer replays the pointer move
+    /// (cursor and link hover) once AppKit has placed it.
+    open override func updateTrackingAreas() {
+      super.updateTrackingAreas()
+      guard !isPointerRefreshScheduled, let window,
+        visibleRect.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil))
+      else { return }
+      isPointerRefreshScheduled = true
+      DispatchQueue.main.async { [weak self] in
+        guard let self else { return }
+        self.isPointerRefreshScheduled = false
+        self.replayPointerMove()
+      }
+    }
+
+    private func replayPointerMove() {
+      // A pressed button means a drag is tracking its own cursor.
+      guard let window, window.isKeyWindow, NSEvent.pressedMouseButtons == 0,
+        let move = NSEvent.mouseEvent(
+          with: .mouseMoved,
+          location: window.mouseLocationOutsideOfEventStream,
+          modifierFlags: NSEvent.modifierFlags,
+          timestamp: ProcessInfo.processInfo.systemUptime,
+          windowNumber: window.windowNumber,
+          context: nil,
+          eventNumber: 0,
+          clickCount: 0,
+          pressure: 0
+        )
+      else { return }
+      mouseMoved(with: move)
     }
 
     open func nativeMouseDown(with event: NSEvent) {
