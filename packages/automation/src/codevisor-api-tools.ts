@@ -2,6 +2,7 @@ import type { CodevisorApiToolSpec } from "./codevisor-api-tool-spec.js"
 import { codevisorClientApiTools } from "./codevisor-api-tools-clients.js"
 import { codevisorExtensionApiTools } from "./codevisor-api-tools-extensions.js"
 import { codevisorHarnessApiTools } from "./codevisor-api-tools-harnesses.js"
+import { codevisorNavigationApiTools } from "./codevisor-api-tools-navigation.js"
 import { codevisorServerApiTools } from "./codevisor-api-tools-server.js"
 import { codevisorSessionApiTools } from "./codevisor-api-tools-sessions.js"
 
@@ -18,6 +19,7 @@ export type {
 /// events, idempotency, and lifecycle side effects have one implementation.
 export const CODEVISOR_API_TOOLS: ReadonlyArray<CodevisorApiToolSpec> = [
   ...codevisorServerApiTools,
+  ...codevisorNavigationApiTools,
   ...codevisorSessionApiTools,
   ...codevisorExtensionApiTools,
   ...codevisorHarnessApiTools,

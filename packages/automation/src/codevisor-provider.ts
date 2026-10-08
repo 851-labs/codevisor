@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto"
-
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js"
 import { Schema } from "effect"
 
@@ -174,9 +172,12 @@ const responseError = async (spec: CodevisorApiToolSpec, response: Response): Pr
 }
 
 /// Fills the defaults an agent-created chat needs: the calling project, and a
-/// fresh workspace. Native sidebars list workspaces, so a chat created without
-/// one runs but never appears to the user. Native clients may create
+/// place in a workspace. Native sidebars list workspaces, so a chat created
+/// without one runs but never appears to the user. Native clients may create
 /// workspace-less rows and attach them later; agents have no such follow-up.
+/// Unless told otherwise, the chat is the caller's own subagent and joins the
+/// caller's workspace as a tab (the server falls back to a new workspace when
+/// the caller has none).
 const sessionCreatePayload = (
   payload: Readonly<Record<string, unknown>>,
   context: AutomationProviderContext
@@ -189,7 +190,9 @@ const sessionCreatePayload = (
   ...("parentSessionId" in payload || context.sessionId === undefined
     ? {}
     : { parentSessionId: context.sessionId }),
-  ...("workspaceId" in payload ? {} : { workspaceId: randomUUID() })
+  ...("workspaceId" in payload || "workspacePlacement" in payload
+    ? {}
+    : { workspacePlacement: "shared" })
 })
 
 const invokeApiTool = async (

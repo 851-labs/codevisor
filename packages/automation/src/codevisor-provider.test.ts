@@ -201,17 +201,19 @@ describe("Codevisor MCP provider", () => {
       projectId: "calling project/id",
       harnessId: "codex"
     })
-    // Sidebars list workspaces, so an agent-created chat must land in one.
-    const created = JSON.parse(requests[2]!.init.body as string) as { workspaceId: string }
-    const unscoped = JSON.parse(requests[4]!.init.body as string) as { workspaceId: string }
-    expect(created.workspaceId).toMatch(/^[0-9a-f-]{36}$/)
-    expect(unscoped.workspaceId).toMatch(/^[0-9a-f-]{36}$/)
-    expect(unscoped.workspaceId).not.toBe(created.workspaceId)
+    // Sidebars list workspaces, so an agent-created chat must land in one: by
+    // default the caller's own, as its subagent's tab.
+    const created = JSON.parse(requests[2]!.init.body as string) as Record<string, unknown>
+    const unscoped = JSON.parse(requests[4]!.init.body as string) as Record<string, unknown>
+    expect(created).toMatchObject({ workspacePlacement: "shared" })
+    expect(created).not.toHaveProperty("workspaceId")
+    expect(unscoped).toMatchObject({ workspacePlacement: "shared" })
     expect(JSON.parse(requests[3]!.init.body as string)).toMatchObject({
       projectId: "explicit-project",
       workspaceId: "existing-workspace",
       parentSessionId: "explicit-parent"
     })
+    expect(JSON.parse(requests[3]!.init.body as string)).not.toHaveProperty("workspacePlacement")
     expect(unscoped).not.toHaveProperty("projectId")
     // An agent-created chat is linked to the agent that started it.
     expect(unscoped).toMatchObject({ parentSessionId: "caller" })

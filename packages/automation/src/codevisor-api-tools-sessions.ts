@@ -41,7 +41,7 @@ export const codevisorSessionApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   ),
   apiTool(
     "sessions.create",
-    "Create a Codevisor coding-agent session in the background. Without workspaceId, the chat gets its own new workspace so it appears in the sidebar; pass an existing workspaceId to add it to that workspace instead. parentSessionId links the new session to the one creating it (defaults to the calling session), and labels (string key/value pairs) let you find it again with sessions.list after your context is compacted. Native sidebars synchronize the new chat without changing the user's selection. Use clients.navigate only when asked to show it.",
+    "Create a Codevisor coding-agent session in the background. workspacePlacement says where it lives relative to your workspace: shared (the default) makes it your subagent in your workspace and worktree, shown as a tab beside you; owned makes it your subagent with its own workspace (pass worktreeName for its own worktree), shown as a tab group in your tab bar and archived with you; independent makes a separate top-level workspace the user manages themselves, so use it only when the user asks for a separate line of work. Subagents never notify the user; you watch them (sessions.wait) and decide what to report. Pass an existing workspaceId to place it there instead. parentSessionId links the new session to the one creating it (defaults to the calling session), and labels (string key/value pairs) let you find it again with sessions.list after your context is compacted. Native sidebars synchronize the new chat without changing the user's selection. Use clients.navigate only when asked to show it.",
     "POST",
     "/v1/sessions",
     { body: CreateSessionRequest }
