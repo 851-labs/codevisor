@@ -154,7 +154,8 @@ it("accepts an actual 2097152-byte relay and refuses 2097153 bytes with recovery
     frame: { t: "data", channelId: "exact-limit", seq: 11 }
   })
   expect(envelope.payload.byteLength).toBe(2097152 - overhead)
-  expect(envelope.payload).toEqual(payload)
+  // Deep object equality enumerates millions of properties for this payload.
+  expect(envelope.payload.every((byte, index) => byte === payload[index])).toBe(true)
 
   const refused = encodeRelayEnvelopes([{ header, payload: new Uint8Array(payload.length + 1) }])
   expect(refused.byteLength).toBe(2097153)
