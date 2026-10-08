@@ -1,5 +1,8 @@
 import type Database from "better-sqlite3"
 
+const subjectColumn = (table: string): string =>
+  table.startsWith("session_") ? "session_id" : table === "nav_settings" ? "key" : "id"
+
 /** Invalidation and the metadata mutation commit together. A crash between a
  * route's write and publish cannot create an invisible navigation change. */
 export const installNavigationJournal = (db: Database.Database): void => {
@@ -17,6 +20,8 @@ export const installNavigationJournal = (db: Database.Database): void => {
       "errored"
     ],
     session_read_state: ["last_seen_sequence", "manually_unread"],
+    nav_folders: undefined,
+    nav_settings: undefined,
     sessions: [
       "title",
       "agent_session_id",
@@ -42,7 +47,7 @@ export const installNavigationJournal = (db: Database.Database): void => {
         begin
           insert into events (server_id, kind, subject_id, created_at, payload)
             values (coalesce((select value from instance_meta where key = 'adopted-server-id'), 'local'),
-              'navigation.changed', ${record}.${table.startsWith("session_") ? "session_id" : "id"}, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), json_object('table', '${table}'${table === "project_locations" ? `, 'projectId', ${record}.project_id` : ""}));
+              'navigation.changed', ${record}.${subjectColumn(table)}, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), json_object('table', '${table}'${table === "project_locations" ? `, 'projectId', ${record}.project_id` : ""}));
           insert into sync_watermarks (subject_id, floor) values ('global', max(0, last_insert_rowid() - 2048))
             on conflict(subject_id) do update set floor = max(floor, excluded.floor);
           delete from events where id <= (select floor from sync_watermarks where subject_id = 'global');

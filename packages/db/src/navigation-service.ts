@@ -3,6 +3,7 @@ import type { NavigationSnapshot } from "@codevisor/api"
 import { attempt } from "./errors.js"
 import { jsonRecord } from "./event-payloads.js"
 import { canonicalUuid } from "./ids.js"
+import { allNavigationRecords, nonEmptyRecords } from "./navigation-records-service.js"
 import {
   projectFromRow,
   sessionFromRow,
@@ -120,7 +121,8 @@ export const makeNavigationService = (context: ServiceContext) => ({
           sqlite
             .prepare("select * from workspace_panes order by position, created_at, id")
             .all() as WorkspacePaneRow[]
-        ).map(workspacePaneFromRow)
+        ).map(workspacePaneFromRow),
+        ...nonEmptyRecords(allNavigationRecords(sqlite))
       }
     })()
   })

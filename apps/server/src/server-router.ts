@@ -17,6 +17,7 @@ import { routeGatewayInvoke } from "./routes/gateway-invoke.js"
 import { discoverCapabilities, routeHarnesses } from "./routes/harnesses.js"
 import { routeMachineMcps } from "./routes/mcp-machine.js"
 import { routeMcps, routeMcpScopes, routeNativeMcps } from "./routes/mcps.js"
+import { routeNavigationRecords } from "./routes/navigation-records.js"
 import { routeNetDirect } from "./routes/net-direct.js"
 import { routePluginProxy, routePlugins } from "./routes/plugins.js"
 import { routeProjects } from "./routes/projects.js"
@@ -370,6 +371,7 @@ export const handleRequest = async (
     if (await routeGatewayInvoke(services, request, response, url)) return
     if (await routeProjects(services, config, fanout, request, response, url)) return
     if (await routeClientControl(routeState.clientControl, config, request, response, url)) return
+    if (await routeNavigationRecords(services, fanout, request, response, url)) return
     if (await routeWorkspaces(services, fanout, routeState, config, request, response, url)) {
       return
     }

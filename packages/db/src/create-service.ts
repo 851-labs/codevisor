@@ -11,6 +11,7 @@ import { makeHarnessService } from "./harness-service.js"
 import { makeMcpService } from "./mcp-service.js"
 import { migrations } from "./migrations.js"
 import { installNavigationJournal } from "./navigation-journal.js"
+import { makeNavigationRecordsService } from "./navigation-records-service.js"
 import { makeNavigationService } from "./navigation-service.js"
 import { migrateProjectLocationState } from "./project-location-state.js"
 import { makeProjectsService } from "./projects-service.js"
@@ -97,6 +98,7 @@ export const createService = (
     ...makeProjectsService(context),
     ...makeWorktreesService(context),
     ...makeWorkspacesService(context),
+    ...makeNavigationRecordsService(context),
     ...makeTerminalPaneTitlesService(context),
     ...makeWorkspaceCreationService(context),
     ...makeSessionsService(context),

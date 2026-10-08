@@ -124,6 +124,7 @@ import {
   MachinesResponse
 } from "./machines.js"
 import { MachineMcpState, SetMachineMcpEnabledRequest } from "./mcps.js"
+import { NavigationRecords, PutNavigationRecordsRequest } from "./navigation-records.js"
 import { NavigationSnapshot } from "./navigation.js"
 import type { Endpoint } from "./openapi-endpoints.js"
 import { PutSyncRequest, SyncDocument } from "./sync.js"
@@ -183,6 +184,7 @@ export const requestSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> =
   "PATCH /v1/projects/:id/mcps/:mcpId": UpdateMcpServerRequest,
   "PATCH /v1/sessions/:id/mcps/:mcpId": UpdateMcpServerRequest,
   "POST /v1/native-mcps/import": ImportNativeMcpsRequest,
+  "PUT /v1/navigation/records": PutNavigationRecordsRequest,
   "POST /v1/native-mcps/remove": RemoveNativeMcpRequest,
   "POST /v1/native-mcps/set-enabled": SetNativeMcpEnabledRequest,
   "POST /v1/skills": CreateSkillRequest,
@@ -310,6 +312,8 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
   "POST /v1/skills/discover-remote": DiscoverRemoteSkillsResult,
   "DELETE /v1/skills/:name": SkillsList,
   "GET /v1/navigation": NavigationSnapshot,
+  "GET /v1/navigation/records": NavigationRecords,
+  "PUT /v1/navigation/records": NavigationRecords,
   "GET /v1/sessions": arrayOf(SessionSummary),
   "POST /v1/sessions": SessionSummary,
   "POST /v1/sessions/wait": WaitForSessionsResponse,

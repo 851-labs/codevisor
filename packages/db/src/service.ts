@@ -41,6 +41,7 @@ import { Effect } from "effect"
 
 import { createService } from "./create-service.js"
 import { DatabaseError, attempt } from "./errors.js"
+import type { NavigationRecordsDatabase } from "./navigation-records-service.js"
 import type {
   FileStorageRecord,
   FileStorageState,
@@ -68,7 +69,7 @@ export interface CodevisorDatabaseConfig {
   readonly onDataUpgradeProgress?: (progress: DataUpgradeProgress) => void
 }
 
-export interface CodevisorDatabaseService {
+export interface CodevisorDatabaseService extends NavigationRecordsDatabase {
   readonly getSessionRuntimeState: (sessionId: string) => Effect.Effect<unknown, DatabaseError>
   readonly saveSessionRuntimeState: (
     sessionId: string,
@@ -142,9 +143,8 @@ export interface CodevisorDatabaseService {
     paneId: string,
     request: UpdateWorkspacePaneRequest
   ) => Effect.Effect<WorkspacePane, DatabaseError>
-  /// Puts the workspace's tab bar in this order (listed first, the rest after
-  /// in their current order) and returns every pane of the workspace. Ids may
-  /// name panes or the tab groups of workspaces it owns.
+  /// Orders the tab bar (panes and owned workspaces' tab groups; listed first,
+  /// the rest after in their current order) and returns the workspace's panes.
   readonly reorderWorkspacePanes: (
     workspaceId: string,
     paneIds: ReadonlyArray<string>

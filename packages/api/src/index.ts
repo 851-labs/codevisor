@@ -35,3 +35,4 @@ export * from "./workspace-placement.js"
 export * from "./workspace-position.js"
 
 export * from "./navigation.js"
+export * from "./navigation-records.js"

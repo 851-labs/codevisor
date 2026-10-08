@@ -127,6 +127,8 @@ export const endpoints = [
   "POST /v1/skills/discover-remote",
   "DELETE /v1/skills/:name",
   "GET /v1/navigation",
+  "GET /v1/navigation/records",
+  "PUT /v1/navigation/records",
   "GET /v1/sessions",
   "POST /v1/sessions",
   "POST /v1/sessions/wait",

@@ -1,6 +1,7 @@
 import type { EventEnvelope, NavigationSnapshot } from "@codevisor/api"
 
 import { jsonRecord } from "./event-payloads.js"
+import { navigationRecordsFor, nonEmptyRecords } from "./navigation-records-service.js"
 import {
   projectFromRow,
   sessionFromRow,
@@ -72,9 +73,22 @@ export const materializeNavigationDelta = (
     if (row === undefined) deleted.push({ table: "workspace_panes", id })
     else panes.push(workspacePaneFromRow(row))
   }
+  const records = navigationRecordsFor(
+    sqlite,
+    ids.get("nav_folders") ?? [],
+    ids.get("nav_settings") ?? []
+  )
   const delta: EventEnvelope = {
     ...last,
-    payload: { eventCursor: last.id, projects, sessions, workspaces, panes, deleted }
+    payload: {
+      eventCursor: last.id,
+      projects,
+      sessions,
+      workspaces,
+      panes,
+      ...nonEmptyRecords(records),
+      deleted
+    }
   }
   const events = [
     ...batch.events.filter((event) => event.kind !== "navigation.changed"),
