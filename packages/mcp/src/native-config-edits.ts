@@ -82,6 +82,25 @@ const withoutKeyVariants = (
 /// re-serializes a whole TOML file, because that would destroy comments and
 /// formatting (the reason @iarna/toml-style round-trips were rejected).
 export const removeTomlTable = (content: string, parentKey: string, name: string): string => {
+  const before = readTomlRemovalTarget(content, parentKey, name)
+  // Match [mcp_servers.docs], [mcp_servers."docs"], and their subtables.
+  const nameForms = `(?:${escapeRegExp(name)}|"${escapeRegExp(name)}")`
+  const headerPattern = new RegExp(
+    `^\\s*\\[${escapeRegExp(parentKey)}\\.${nameForms}(?:\\.[^\\]]+)?\\]\\s*(?:#.*)?$`
+  )
+  const anyHeaderPattern = /^\s*\[/
+
+  const lines = content.split("\n")
+  const after = exciseTomlSections(lines, headerPattern, anyHeaderPattern, parentKey, name)
+  verifyTomlRemoval(before, after, parentKey, name)
+  return after
+}
+
+const readTomlRemovalTarget = (
+  content: string,
+  parentKey: string,
+  name: string
+): Record<string, unknown> => {
   const before = parseToml(content) as Record<string, unknown>
   const parent = before[parentKey]
   if (
@@ -91,39 +110,23 @@ export const removeTomlTable = (content: string, parentKey: string, name: string
   ) {
     throw new NativeConfigUnsupportedError(`No entry named ${name} to remove`)
   }
+  return before
+}
 
-  // Match [mcp_servers.docs], [mcp_servers."docs"], and their subtables.
-  const nameForms = `(?:${escapeRegExp(name)}|"${escapeRegExp(name)}")`
-  const headerPattern = new RegExp(
-    `^\\s*\\[${escapeRegExp(parentKey)}\\.${nameForms}(?:\\.[^\\]]+)?\\]\\s*(?:#.*)?$`
-  )
-  const anyHeaderPattern = /^\s*\[/
-
-  const lines = content.split("\n")
+const exciseTomlSections = (
+  lines: Array<string>,
+  headerPattern: RegExp,
+  anyHeaderPattern: RegExp,
+  parentKey: string,
+  name: string
+): string => {
   const remove = new Set<number>()
   let excised = false
   for (let index = 0; index < lines.length; index += 1) {
     if (!headerPattern.test(lines[index] as string)) continue
     excised = true
-    // Find the section's end: the next table header or EOF…
-    let end = lines.length
-    for (let next = index + 1; next < lines.length; next += 1) {
-      if (anyHeaderPattern.test(lines[next] as string)) {
-        end = next
-        break
-      }
-    }
-    // …then trim back over trailing blanks and comments: those visually
-    // belong to the NEXT section (or are spacing), so they survive.
-    let last = end - 1
-    while (last > index) {
-      const line = (lines[last] as string).trim()
-      if (line === "" || line.startsWith("#")) {
-        last -= 1
-        continue
-      }
-      break
-    }
+    const end = tomlSectionEnd(lines, index, anyHeaderPattern)
+    const last = tomlSectionContentEnd(lines, index, end)
     for (let cut = index; cut <= last; cut += 1) remove.add(cut)
   }
   const kept = lines.filter((_, index) => !remove.has(index))
@@ -132,17 +135,54 @@ export const removeTomlTable = (content: string, parentKey: string, name: string
       `${name} is not defined as a standard [${parentKey}.${name}] table (inline tables and dotted keys can't be edited safely) — edit the file manually`
     )
   }
-  const after = kept.join("\n")
+  return kept.join("\n")
+}
 
-  // Structural verification: the edit removed exactly the one entry.
-  let reparsed: Record<string, unknown>
+const tomlSectionEnd = (lines: Array<string>, index: number, anyHeaderPattern: RegExp): number => {
+  // Find the section's end: the next table header or EOF…
+  let end = lines.length
+  for (let next = index + 1; next < lines.length; next += 1) {
+    if (anyHeaderPattern.test(lines[next] as string)) {
+      end = next
+      break
+    }
+  }
+  return end
+}
+
+const tomlSectionContentEnd = (lines: Array<string>, index: number, end: number): number => {
+  // …then trim back over trailing blanks and comments: those visually
+  // belong to the NEXT section (or are spacing), so they survive.
+  let last = end - 1
+  while (last > index) {
+    const line = (lines[last] as string).trim()
+    if (line === "" || line.startsWith("#")) {
+      last -= 1
+      continue
+    }
+    break
+  }
+  return last
+}
+
+const parseTomlAfterRemoval = (after: string, name: string): Record<string, unknown> => {
   try {
-    reparsed = parseToml(after) as Record<string, unknown>
+    return parseToml(after) as Record<string, unknown>
   } catch {
     throw new NativeConfigUnsupportedError(
       `Removing ${name} would corrupt the file — edit it manually`
     )
   }
+}
+
+const verifyTomlRemoval = (
+  before: Record<string, unknown>,
+  after: string,
+  parentKey: string,
+  name: string
+): void => {
+  // Structural verification: the edit removed exactly the one entry.
+  const reparsed = parseTomlAfterRemoval(after, name)
   const reparsedCanonical = canonicalJson(reparsed)
   const acceptable = withoutKeyVariants(before, parentKey, name).some(
     (variant) => canonicalJson(variant) === reparsedCanonical
@@ -153,7 +193,6 @@ export const removeTomlTable = (content: string, parentKey: string, name: string
       `Removing ${name} would change unrelated configuration — edit the file manually`
     )
   }
-  return after
 }
 
 /// Append a `[parentKey.name]` table (restore). The block is stringified in
