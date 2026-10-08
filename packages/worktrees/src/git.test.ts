@@ -1,9 +1,13 @@
-import { execFileSync } from "node:child_process"
+import childProcess from "node:child_process"
+import { execFileSync, type ChildProcessWithoutNullStreams } from "node:child_process"
+import { EventEmitter } from "node:events"
 import { chmodSync, existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs"
+import { syncBuiltinESMExports } from "node:module"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { PassThrough } from "node:stream"
 
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, onTestFinished, vi } from "vitest"
 
 import { makeGitRepo, testTempDir } from "./git-test-support.js"
 import {
@@ -298,8 +302,6 @@ describe("git helper", () => {
   })
 
   it("emits distinct sanitized frames for progress-style repainting output", async () => {
-    // A fake `git` behaving like a TUI hook: colored panels, carriage-return
-    // repaints of the same frame, and erase sequences on otherwise-empty lines.
     const fakeBin = testTempDir(join(tmpdir(), "codevisor-fake-git-"))
     const fakeGit = join(fakeBin, "git")
     writeFileSync(
@@ -316,44 +318,39 @@ describe("git helper", () => {
       ].join("\n")
     )
     chmodSync(fakeGit, 0o755)
-    const previousPath = process.env["PATH"]
-    process.env["PATH"] = `${fakeBin}:${previousPath ?? ""}`
-    try {
-      const lines: Array<string> = []
-      await addWorktree(fakeBin, join(fakeBin, "worktree"), "codevisor/fake", (_stream, line) => {
+    const lines: Array<string> = []
+    await addWorktree(
+      fakeBin,
+      join(fakeBin, "worktree"),
+      "codevisor/fake",
+      (_stream, line) => {
         lines.push(line)
-      })
-      expect(lines).toEqual(["git submodule update: 1/12", "git submodule update: 12/12", "done"])
-    } finally {
-      process.env["PATH"] = previousPath
-    }
+      },
+      undefined,
+      { ...process.env, PATH: fakeBin }
+    )
+    expect(lines).toEqual(["git submodule update: 1/12", "git submodule update: 12/12", "done"])
   })
 
   it("falls back to the exit code for silent failures and flushes partial output lines", async () => {
-    // A fake `git` that emits an unterminated stdout line and exits non-zero
-    // without writing to stderr.
     const fakeBin = testTempDir(join(tmpdir(), "codevisor-fake-git-"))
     const fakeGit = join(fakeBin, "git")
     writeFileSync(fakeGit, "#!/bin/sh\nprintf 'partial-stdout-line'\nexit 2\n")
     chmodSync(fakeGit, 0o755)
-    const previousPath = process.env["PATH"]
-    process.env["PATH"] = `${fakeBin}:${previousPath ?? ""}`
-    try {
-      const lines: Array<readonly [GitOutputStream, string]> = []
-      const failure = await addWorktree(
-        fakeBin,
-        join(fakeBin, "worktree"),
-        "codevisor/fake",
-        (stream, line) => {
-          lines.push([stream, line])
-        }
-      ).catch((cause: unknown) => cause)
-      expect(failure).toBeInstanceOf(GitError)
-      expect((failure as GitError).message).toContain("exited with code 2")
-      expect(lines).toContainEqual(["stdout", "partial-stdout-line"])
-    } finally {
-      process.env["PATH"] = previousPath
-    }
+    const lines: Array<readonly [GitOutputStream, string]> = []
+    const failure = await addWorktree(
+      fakeBin,
+      join(fakeBin, "worktree"),
+      "codevisor/fake",
+      (stream, line) => {
+        lines.push([stream, line])
+      },
+      undefined,
+      { ...process.env, PATH: fakeBin }
+    ).catch((cause: unknown) => cause)
+    expect(failure).toBeInstanceOf(GitError)
+    expect((failure as GitError).message).toContain("exited with code 2")
+    expect(lines).toContainEqual(["stdout", "partial-stdout-line"])
   })
 })
 
@@ -410,52 +407,94 @@ describe("cloneRepository", () => {
       '#!/bin/sh\necho "stdout line"\necho "ssh=$GIT_SSH_COMMAND"\nexit 0\n'
     )
     chmodSync(join(fakeBin, "git"), 0o755)
-    const previousPath = process.env["PATH"]
-    const previousSsh = process.env["GIT_SSH_COMMAND"]
-    process.env["PATH"] = fakeBin
-    process.env["GIT_SSH_COMMAND"] = "ssh -i /custom/key -oBatchMode=yes"
-    try {
-      const lines: Array<readonly [GitOutputStream, string]> = []
-      await cloneRepository("https://example.com/x.git", "/tmp/unused", (stream, line) => {
+    const lines: Array<readonly [GitOutputStream, string]> = []
+    await cloneRepository(
+      "https://example.com/x.git",
+      "/tmp/unused",
+      (stream, line) => {
         lines.push([stream, line])
-      })
-      expect(lines).toContainEqual(["stdout", "stdout line"])
-      expect(lines).toContainEqual(["stdout", "ssh=ssh -i /custom/key -oBatchMode=yes"])
-    } finally {
-      process.env["PATH"] = previousPath
-      if (previousSsh === undefined) {
-        delete process.env["GIT_SSH_COMMAND"]
-      } else {
-        process.env["GIT_SSH_COMMAND"] = previousSsh
-      }
-    }
+      },
+      { ...process.env, PATH: fakeBin, GIT_SSH_COMMAND: "ssh -i /custom/key -oBatchMode=yes" }
+    )
+    expect(lines).toContainEqual(["stdout", "stdout line"])
+    expect(lines).toContainEqual(["stdout", "ssh=ssh -i /custom/key -oBatchMode=yes"])
   })
 
   it("reports the exit code when git dies silently and spawn errors when git is missing", async () => {
-    // Fake git that exits without writing anything.
     const fakeBin = testTempDir(join(tmpdir(), "codevisor-fake-git-clone-"))
     writeFileSync(join(fakeBin, "git"), "#!/bin/sh\nexit 3\n")
     chmodSync(join(fakeBin, "git"), 0o755)
-    const previousPath = process.env["PATH"]
-    process.env["PATH"] = fakeBin
-    try {
-      const silent = await cloneRepository("https://example.com/x.git", "/tmp/unused").then(
-        () => undefined,
-        (cause: unknown) => cause
-      )
-      expect(silent).toBeInstanceOf(CloneError)
-      expect((silent as CloneError).message).toContain("exited with code 3")
-
-      // Empty PATH: the spawn itself fails.
-      process.env["PATH"] = testTempDir(join(tmpdir(), "codevisor-empty-path-"))
-      const spawnFailure = await cloneRepository("https://example.com/x.git", "/tmp/unused").then(
-        () => undefined,
-        (cause: unknown) => cause
-      )
-      expect(spawnFailure).toBeInstanceOf(CloneError)
-      expect((spawnFailure as CloneError).code).toBeUndefined()
-    } finally {
-      process.env["PATH"] = previousPath
-    }
+    const silent = await cloneRepository("https://example.com/x.git", "/tmp/unused", undefined, {
+      ...process.env,
+      PATH: fakeBin
+    }).catch((cause: unknown) => cause)
+    expect(silent).toBeInstanceOf(CloneError)
+    expect((silent as CloneError).message).toContain("exited with code 3")
+    // Empty PATH: the spawn itself fails.
+    const spawnFailure = await cloneRepository(
+      "https://example.com/x.git",
+      "/tmp/unused",
+      undefined,
+      {
+        ...process.env,
+        PATH: testTempDir(join(tmpdir(), "codevisor-empty-path-"))
+      }
+    ).catch((cause: unknown) => cause)
+    expect(spawnFailure).toBeInstanceOf(CloneError)
+    expect((spawnFailure as CloneError).code).toBeUndefined()
   })
+})
+
+// Prescribed data events protect chunk boundaries that OS pipes may coalesce.
+describe("streamed Git command output", () => {
+  it.each(["worktree", "clone"] as const)(
+    "frames %s output and flushes before rejection",
+    async (operation) => {
+      const stdout = new PassThrough()
+      const stderr = new PassThrough()
+      const child = Object.assign(new EventEmitter(), { stdout, stderr })
+      const spawn = vi.spyOn(childProcess, "spawn")
+      spawn.mockReturnValue(child as unknown as ChildProcessWithoutNullStreams)
+      syncBuiltinESMExports()
+      onTestFinished(() => {
+        spawn.mockRestore()
+        syncBuiltinESMExports()
+        stdout.destroy()
+        stderr.destroy()
+      })
+      const lines: Array<readonly [GitOutputStream, string]> = []
+      const listener = (stream: GitOutputStream, line: string) => lines.push([stream, line])
+      const completed = (
+        operation === "worktree"
+          ? addWorktree("/repo", "/checkout", "codevisor/chunks", listener)
+          : cloneRepository("file:///origin", "/checkout", listener)
+      ).catch((cause: unknown) => cause)
+      stdout.emit("data", "\u001B[3")
+      stdout.emit("data", "2m \tA\u001B[m \r")
+      stdout.emit("data", "\n\u001B[2K\r \tA\rB\n \tA\npa")
+      stdout.emit("data", "rt\r")
+      stdout.emit("data", "\nnext\nend")
+      stderr.emit("data", " \tA\ncomplete failure\nAuthentication failed")
+      expect(lines).toEqual([
+        ["stdout", " \tA"],
+        ["stdout", "B"],
+        ["stdout", " \tA"],
+        ["stdout", "part"],
+        ["stdout", "next"],
+        ["stderr", " \tA"],
+        ["stderr", "complete failure"]
+      ])
+      child.emit("close", 2)
+      expect(lines.slice(-2)).toEqual([
+        ["stdout", "end"],
+        ["stderr", "Authentication failed"]
+      ])
+      const failure = await completed
+      expect(failure).toBeInstanceOf(operation === "worktree" ? GitError : CloneError)
+      expect((failure as GitError).operation).toBe(operation)
+      // Compatibility quirk: diagnostics/classification precede remainder flush.
+      expect((failure as GitError).message).toBe("A\ncomplete failure")
+      if (operation === "clone") expect((failure as CloneError).code).toBeUndefined()
+    }
+  )
 })
