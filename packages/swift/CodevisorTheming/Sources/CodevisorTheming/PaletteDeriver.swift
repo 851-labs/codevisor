@@ -1,79 +1,5 @@
 import Foundation
 
-/// The 16-slot ANSI palette plus core surface colors a terminal needs, derived
-/// from a theme's `terminal.*` keys with editor fallbacks. Slots the theme
-/// doesn't define stay nil so the terminal keeps its own defaults.
-public struct TerminalPalette: Equatable, Sendable {
-  public let background: RGBA
-  public let foreground: RGBA
-  public let cursorColor: RGBA?
-  public let selectionBackground: RGBA?
-  public let selectionForeground: RGBA?
-  /// ANSI colors 0–15 in standard order (black…white, brightBlack…brightWhite).
-  public let ansi: [RGBA?]
-}
-
-/// The opinionated app palette derived from a VSCode/Shiki theme. Authored
-/// theme keys win wherever the theme provides a usable one (accent, row
-/// hover/selection, elevated widget/menu surfaces, status tints — each behind
-/// a legibility guard); derivation (fg-mix surfaces, derived muted text,
-/// luminance-picked status constants) is the fallback, not the rule. The
-/// derivation is adapted from pierre's diffshub app. All colors are concrete
-/// sRGB values; only `border` and the diff backgrounds carry alpha.
-public struct DerivedPalette: Equatable, Sendable {
-  public let isDark: Bool
-
-  // Surfaces
-  public let windowBackground: RGBA
-  public let sidebarBackground: RGBA
-  public let cardBackground: RGBA
-  public let cardHoverBackground: RGBA
-  /// Fill behind a fenced Markdown code block. A code block draws no border
-  /// of its own, so this fill is the only thing separating it from the page
-  /// — unlike `cardBackground`, it is guaranteed to differ from
-  /// `windowBackground`.
-  public let codeBackground: RGBA
-  public let cardBorder: RGBA
-  public let popoverBackground: RGBA
-  public let popoverBorder: RGBA
-  public let composerBackground: RGBA
-  public let bubbleBackground: RGBA
-  /// The pane-group header (tab strip) surface: the pane content color
-  /// nudged toward the foreground, so a selected tab filled with the pane
-  /// surface reads as a cutout opening into the pane below.
-  public let paneHeaderBackground: RGBA
-
-  // Text hierarchy
-  public let textPrimary: RGBA
-  public let textSecondary: RGBA
-  public let textTertiary: RGBA
-
-  // Interaction
-  public let rowHoverBackground: RGBA
-  public let rowSelectedBackground: RGBA
-  public let accent: RGBA
-  public let focusRing: RGBA
-
-  // Borders
-  public let border: RGBA
-  public let borderOpaque: RGBA
-  public let separator: RGBA
-
-  // Status + diff
-  public let statusOK: RGBA
-  public let statusWarn: RGBA
-  public let statusError: RGBA
-  public let diffAddedFg: RGBA
-  public let diffRemovedFg: RGBA
-  public let diffAddedBg: RGBA
-  public let diffRemovedBg: RGBA
-  /// Diff gutter line numbers on the editor surface (pierre's fg-number:
-  /// 65% editor fg toward editor bg).
-  public let diffLineNumberFg: RGBA
-
-  public let terminal: TerminalPalette
-}
-
 public enum PaletteDeriver {
   // Mix weight (fraction of the surface's own foreground blended into its
   // background) for the opaque chrome borders and separators; shared so both
@@ -147,20 +73,143 @@ public enum PaletteDeriver {
     // normalizer already dropped unusable ones; selection is re-checked on
     // its composite), else an accent-tinted wash — pierre's look — else
     // the legacy gray fg-mix.
-    let rowHover =
-      themeColor(resolved, keys: ["list.hoverBackground"], over: sidebarBg)
-      ?? authoredAccent.flatMap {
-        accentRowFill($0, alpha: isDark ? 0.14 : 0.10, text: fg, base: sidebarBg)
-      }
-      ?? fg.mixed(with: sidebarBg, weight: 0.08)
-    let rowSelected =
-      themeColor(resolved, keys: ["list.activeSelectionBackground"], over: sidebarBg)
-      .flatMap { usableRowFill($0, text: fg, base: sidebarBg) ? $0 : nil }
-      ?? authoredAccent.flatMap {
-        accentRowFill($0, alpha: isDark ? 0.28 : 0.22, text: fg, base: sidebarBg)
-      }
-      ?? fg.mixed(with: sidebarBg, weight: 0.14)
+    let rowHover = hoverRowFill(
+      resolved, authoredAccent: authoredAccent, isDark: isDark, text: fg, base: sidebarBg)
+    let rowSelected = selectedRowFill(
+      resolved, authoredAccent: authoredAccent, isDark: isDark, text: fg, base: sidebarBg)
 
+    let elevated = elevatedSurfaces(
+      resolved, editorBg: editorBg, sidebarBg: sidebarBg, fg: fg)
+
+    // Status tints: the theme's own signal colors when they clear the
+    // readable floor on EVERY surface they render on, else the
+    // luminance-picked constants (same values as the web mapping).
+    let statusSurfaces = [sidebarBg, editorBg, elevated.card]
+    let status = statusColors(resolved, surfaces: statusSurfaces, isDark: isDark)
+
+    // Diff colors follow pierre's diffs package instead: bases from the
+    // theme's git decorations (else its ANSI green/red, else pierre's
+    // hardcoded fallbacks), and row backgrounds as an OPAQUE mix of the
+    // editor surface toward the base — 12% light / 20% dark — so
+    // highlighted code sits on exactly the surface the theme's token
+    // colors were designed for.
+    let diff = diffBases(resolved, editorBg: editorBg, isDark: isDark)
+    // mixed(weight:) keeps `weight` of the receiver: rows stay 80% (dark)
+    // / 88% (light) editor bg with just a tint of the base color.
+    let diffRowMix = isDark ? 0.8 : 0.88
+
+    return DerivedPalette(
+      isDark: isDark,
+      windowBackground: editorBg,
+      sidebarBackground: sidebarBg,
+      cardBackground: elevated.card,
+      cardHoverBackground: elevated.cardHover,
+      codeBackground: elevated.code,
+      cardBorder: fg.mixed(with: sidebarBg, weight: 0.12),
+      popoverBackground: elevated.popover,
+      popoverBorder: fg.mixed(with: sidebarBg, weight: 0.18),
+      composerBackground: editorBg,
+      bubbleBackground: fg.mixed(with: sidebarBg, weight: 0.08),
+      paneHeaderBackground: fg.mixed(with: editorBg, weight: 0.06),
+      textPrimary: fg,
+      textSecondary: textSecondary,
+      textTertiary: fg.mixed(with: sidebarBg, weight: 0.45),
+      rowHoverBackground: rowHover,
+      rowSelectedBackground: rowSelected,
+      accent: accent,
+      focusRing: focusRing,
+      border: fg.withAlpha(0.2),
+      borderOpaque: borderOpaque,
+      separator: separator,
+      statusOK: status.ok,
+      statusWarn: status.warn,
+      statusError: status.error,
+      diffAddedFg: diff.addition,
+      diffRemovedFg: diff.deletion,
+      diffAddedBg: editorBg.mixed(with: diff.addition, weight: diffRowMix),
+      diffRemovedBg: editorBg.mixed(with: diff.deletion, weight: diffRowMix),
+      diffLineNumberFg: editorFg.mixed(with: editorBg, weight: 0.65),
+      terminal: terminalPalette(resolved: resolved, editorBg: editorBg, editorFg: editorFg)
+    )
+  }
+
+  private static func hoverRowFill(
+    _ resolved: [String: String], authoredAccent: RGBA?, isDark: Bool, text: RGBA, base: RGBA
+  ) -> RGBA {
+    return
+      themeColor(resolved, keys: ["list.hoverBackground"], over: base)
+      ?? authoredAccent.flatMap {
+        accentRowFill($0, alpha: isDark ? 0.14 : 0.10, text: text, base: base)
+      }
+      ?? text.mixed(with: base, weight: 0.08)
+  }
+
+  private static func selectedRowFill(
+    _ resolved: [String: String], authoredAccent: RGBA?, isDark: Bool, text: RGBA, base: RGBA
+  ) -> RGBA {
+    return
+      themeColor(resolved, keys: ["list.activeSelectionBackground"], over: base)
+      .flatMap { usableRowFill($0, text: text, base: base) ? $0 : nil }
+      ?? authoredAccent.flatMap {
+        accentRowFill($0, alpha: isDark ? 0.28 : 0.22, text: text, base: base)
+      }
+      ?? text.mixed(with: base, weight: 0.14)
+  }
+
+  private static func statusColors(
+    _ resolved: [String: String], surfaces: [RGBA], isDark: Bool
+  ) -> (ok: RGBA, warn: RGBA, error: RGBA) {
+    let statusOK =
+      contrastingThemeColor(
+        resolved,
+        keys: [
+          "terminal.ansiGreen", "terminal.ansiBrightGreen",
+          "gitDecoration.addedResourceForeground",
+        ],
+        over: surfaces, minRatio: ColorMath.minReadableRatio
+      ) ?? constant(isDark ? "#34d399" : "#047857")
+    let statusWarn =
+      contrastingThemeColor(
+        resolved,
+        keys: [
+          "terminal.ansiYellow", "terminal.ansiBrightYellow",
+          "editorWarning.foreground",
+        ],
+        over: surfaces, minRatio: ColorMath.minReadableRatio
+      ) ?? constant(isDark ? "#f59e0b" : "#b45309")
+    let statusError =
+      contrastingThemeColor(
+        resolved,
+        keys: [
+          "terminal.ansiRed", "terminal.ansiBrightRed",
+          "editorError.foreground",
+        ],
+        over: surfaces, minRatio: ColorMath.minReadableRatio
+      ) ?? constant(isDark ? "#fb7185" : "#be123c")
+    return (ok: statusOK, warn: statusWarn, error: statusError)
+  }
+
+  private static func diffBases(
+    _ resolved: [String: String], editorBg: RGBA, isDark: Bool
+  ) -> (addition: RGBA, deletion: RGBA) {
+    let additionBase =
+      themeColor(
+        resolved,
+        keys: ["gitDecoration.addedResourceForeground", "terminal.ansiGreen"],
+        over: editorBg
+      ) ?? constant(isDark ? "#5ecc71" : "#0dbe4e")
+    let deletionBase =
+      themeColor(
+        resolved,
+        keys: ["gitDecoration.deletedResourceForeground", "terminal.ansiRed"],
+        over: editorBg
+      ) ?? constant(isDark ? "#ff6762" : "#ff2e3f")
+    return (addition: additionBase, deletion: deletionBase)
+  }
+
+  private static func elevatedSurfaces(
+    _ resolved: [String: String], editorBg: RGBA, sidebarBg: RGBA, fg: RGBA
+  ) -> (card: RGBA, cardHover: RGBA, code: RGBA, popover: RGBA) {
     // Elevated surfaces: the theme's authored widget/menu surface when it
     // is a genuinely different surface that keeps the fg legible, else the
     // derived fg-nudge. Some dark themes author widgets DARKER than the
@@ -195,92 +244,9 @@ public enum PaletteDeriver {
         sidebarBg: sidebarBg, fg: fg
       ) ?? fg.mixed(with: sidebarBg, weight: 0.07)
 
-    // Status tints: the theme's own signal colors when they clear the
-    // readable floor on EVERY surface they render on, else the
-    // luminance-picked constants (same values as the web mapping).
-    let statusSurfaces = [sidebarBg, editorBg, cardBackground]
-    let statusOK =
-      contrastingThemeColor(
-        resolved,
-        keys: [
-          "terminal.ansiGreen", "terminal.ansiBrightGreen",
-          "gitDecoration.addedResourceForeground",
-        ],
-        over: statusSurfaces, minRatio: ColorMath.minReadableRatio
-      ) ?? constant(isDark ? "#34d399" : "#047857")
-    let statusWarn =
-      contrastingThemeColor(
-        resolved,
-        keys: [
-          "terminal.ansiYellow", "terminal.ansiBrightYellow",
-          "editorWarning.foreground",
-        ],
-        over: statusSurfaces, minRatio: ColorMath.minReadableRatio
-      ) ?? constant(isDark ? "#f59e0b" : "#b45309")
-    let statusError =
-      contrastingThemeColor(
-        resolved,
-        keys: [
-          "terminal.ansiRed", "terminal.ansiBrightRed",
-          "editorError.foreground",
-        ],
-        over: statusSurfaces, minRatio: ColorMath.minReadableRatio
-      ) ?? constant(isDark ? "#fb7185" : "#be123c")
-
-    // Diff colors follow pierre's diffs package instead: bases from the
-    // theme's git decorations (else its ANSI green/red, else pierre's
-    // hardcoded fallbacks), and row backgrounds as an OPAQUE mix of the
-    // editor surface toward the base — 12% light / 20% dark — so
-    // highlighted code sits on exactly the surface the theme's token
-    // colors were designed for.
-    let additionBase =
-      themeColor(
-        resolved,
-        keys: ["gitDecoration.addedResourceForeground", "terminal.ansiGreen"],
-        over: editorBg
-      ) ?? constant(isDark ? "#5ecc71" : "#0dbe4e")
-    let deletionBase =
-      themeColor(
-        resolved,
-        keys: ["gitDecoration.deletedResourceForeground", "terminal.ansiRed"],
-        over: editorBg
-      ) ?? constant(isDark ? "#ff6762" : "#ff2e3f")
-    // mixed(weight:) keeps `weight` of the receiver: rows stay 80% (dark)
-    // / 88% (light) editor bg with just a tint of the base color.
-    let diffRowMix = isDark ? 0.8 : 0.88
-
-    return DerivedPalette(
-      isDark: isDark,
-      windowBackground: editorBg,
-      sidebarBackground: sidebarBg,
-      cardBackground: cardBackground,
-      cardHoverBackground: cardHoverBackground,
-      codeBackground: codeBackground,
-      cardBorder: fg.mixed(with: sidebarBg, weight: 0.12),
-      popoverBackground: popoverBackground,
-      popoverBorder: fg.mixed(with: sidebarBg, weight: 0.18),
-      composerBackground: editorBg,
-      bubbleBackground: fg.mixed(with: sidebarBg, weight: 0.08),
-      paneHeaderBackground: fg.mixed(with: editorBg, weight: 0.06),
-      textPrimary: fg,
-      textSecondary: textSecondary,
-      textTertiary: fg.mixed(with: sidebarBg, weight: 0.45),
-      rowHoverBackground: rowHover,
-      rowSelectedBackground: rowSelected,
-      accent: accent,
-      focusRing: focusRing,
-      border: fg.withAlpha(0.2),
-      borderOpaque: borderOpaque,
-      separator: separator,
-      statusOK: statusOK,
-      statusWarn: statusWarn,
-      statusError: statusError,
-      diffAddedFg: additionBase,
-      diffRemovedFg: deletionBase,
-      diffAddedBg: editorBg.mixed(with: additionBase, weight: diffRowMix),
-      diffRemovedBg: editorBg.mixed(with: deletionBase, weight: diffRowMix),
-      diffLineNumberFg: editorFg.mixed(with: editorBg, weight: 0.65),
-      terminal: terminalPalette(resolved: resolved, editorBg: editorBg, editorFg: editorFg)
+    return (
+      card: cardBackground, cardHover: cardHoverBackground,
+      code: codeBackground, popover: popoverBackground
     )
   }
 
