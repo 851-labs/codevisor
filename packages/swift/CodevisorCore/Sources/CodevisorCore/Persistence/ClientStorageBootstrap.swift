@@ -28,7 +28,6 @@ public enum ClientStorageBootstrap {
   public static let retiredDirectMachinesMigrationID = 2
 
   private static let legacyDataMigrationName = "legacy file and defaults import"
-  private static let legacyCleanupMigrationName = "legacy file and defaults cleanup"
   private static let retiredDirectMachinesMigrationName = "queue directly paired machines for the cloud account"
 
   @MainActor
@@ -133,7 +132,7 @@ public enum ClientStorageBootstrap {
       ).isEmpty
     let legacyPreferencesRemain = !LegacyClientArtifacts.legacyPreferenceKeysPresent(in: legacyDefaults).isEmpty
     if !cleanupIsComplete || legacyFilesRemain || legacyPreferencesRemain {
-      try cleanupLegacyState(
+      try LegacyClientCleanup.run(
         directory: directory,
         legacyDirectories: cleanupDirectories,
         defaults: legacyDefaults,
@@ -223,94 +222,6 @@ public enum ClientStorageBootstrap {
     } catch {
       try? database.failDataMigration(
         id: legacyDataMigrationID,
-        error: String(describing: error)
-      )
-      throw error
-    }
-  }
-
-  private static func cleanupLegacyState(
-    directory: URL,
-    legacyDirectories: [URL],
-    defaults: UserDefaults,
-    database: ClientDatabase,
-    fileManager: FileManager
-  ) throws {
-    try database.beginCleanupMigration(
-      id: legacyCleanupMigrationID,
-      name: legacyCleanupMigrationName
-    )
-    do {
-      let recovery =
-        directory
-        .appendingPathComponent("MigrationRecovery", isDirectory: true)
-        .appendingPathComponent("legacy-client-state-v1", isDirectory: true)
-      try fileManager.createDirectory(
-        at: recovery,
-        withIntermediateDirectories: true
-      )
-
-      for source in try LegacyClientArtifacts.cleanupCandidateFiles(
-        in: legacyDirectories,
-        fileManager: fileManager
-      ) {
-        let destination = recovery.appendingPathComponent(source.lastPathComponent)
-        var recoveredURL = destination
-        if source.lastPathComponent == "machines.json",
-          let sanitized = try database.value(forKey: "machines")
-        {
-          try sanitized.write(to: destination, options: .atomic)
-          try fileManager.removeItem(at: source)
-        } else if fileManager.fileExists(atPath: destination.path) {
-          let sourceData = try Data(contentsOf: source)
-          let destinationData = try Data(contentsOf: destination)
-          if sourceData == destinationData {
-            try fileManager.removeItem(at: source)
-          } else {
-            let alternate = recovery.appendingPathComponent(
-              "\(source.lastPathComponent).reappeared-\(LegacyClientArtifacts.digest(sourceData).prefix(12))"
-            )
-            recoveredURL = alternate
-            if fileManager.fileExists(atPath: alternate.path) {
-              guard try Data(contentsOf: alternate) == sourceData else {
-                throw ClientDatabaseError(
-                  operation: "legacy cleanup",
-                  detail: "Recovery artifact collision for \(source.lastPathComponent)"
-                )
-              }
-              try fileManager.removeItem(at: source)
-            } else {
-              try fileManager.moveItem(at: source, to: alternate)
-            }
-          }
-        } else {
-          try fileManager.moveItem(at: source, to: destination)
-        }
-
-        try database.recordMigrationArtifact(
-          migrationID: legacyDataMigrationID,
-          source: source.lastPathComponent,
-          digest: LegacyClientArtifacts.digest(try Data(contentsOf: recoveredURL)),
-          imported: LegacyClientArtifacts.legacyKey(forFileName: source.lastPathComponent) != nil,
-          cleaned: true
-        )
-      }
-
-      for key in LegacyClientArtifacts.legacyPreferenceKeysPresent(in: defaults) {
-        defaults.removeObject(forKey: key)
-        try database.recordMigrationArtifact(
-          migrationID: legacyDataMigrationID,
-          source: "defaults:\(key)",
-          digest: "",
-          imported: try database.preference(forKey: key) != nil,
-          cleaned: true
-        )
-      }
-
-      try database.completeCleanupMigration(id: legacyCleanupMigrationID)
-    } catch {
-      try? database.failCleanupMigration(
-        id: legacyCleanupMigrationID,
         error: String(describing: error)
       )
       throw error
