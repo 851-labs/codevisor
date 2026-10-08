@@ -72,7 +72,7 @@ function snapshot(path: string) {
   }
 }
 
-function save(path: string, input: unknown) {
+function assertSaveInput(input: unknown): asserts input is { content: string; version: string } {
   if (
     typeof input !== "object" ||
     input === null ||
@@ -87,22 +87,13 @@ function save(path: string, input: unknown) {
       "invalid_request"
     )
   }
-  const bytes = Buffer.from(input.content, "utf8")
-  if (bytes.length > textLimit || textContent(bytes) === null) {
-    throw new HttpFailure(413, "Save a UTF-8 text file smaller than 4 MB.", "file_too_large")
-  }
-  // No asynchronous boundary between checking the revision and committing:
-  // concurrent saves through this server cannot both accept the same base.
-  // Resolve symlinks so atomic replacement preserves the link itself.
-  const current = snapshot(path)
-  if (current.version !== input.version) {
-    throw new HttpFailure(
-      409,
-      "This file changed on the machine. Review the changes before saving.",
-      "file_conflict"
-    )
-  }
-  if (current.reason !== null) throw new HttpFailure(403, current.reason, "permission_denied")
+}
+
+function replaceDocument(
+  current: { path: string },
+  bytes: Buffer,
+  input: { version: string }
+): void {
   const temporary = join(dirname(current.path), `.${basename(current.path)}.${randomUUID()}.tmp`)
   let fd: number | undefined
   try {
@@ -129,6 +120,27 @@ function save(path: string, input: unknown) {
       /* Renamed successfully, or never created. */
     }
   }
+}
+
+function save(path: string, input: unknown) {
+  assertSaveInput(input)
+  const bytes = Buffer.from(input.content, "utf8")
+  if (bytes.length > textLimit || textContent(bytes) === null) {
+    throw new HttpFailure(413, "Save a UTF-8 text file smaller than 4 MB.", "file_too_large")
+  }
+  // No asynchronous boundary between checking the revision and committing:
+  // concurrent saves through this server cannot both accept the same base.
+  // Resolve symlinks so atomic replacement preserves the link itself.
+  const current = snapshot(path)
+  if (current.version !== input.version) {
+    throw new HttpFailure(
+      409,
+      "This file changed on the machine. Review the changes before saving.",
+      "file_conflict"
+    )
+  }
+  if (current.reason !== null) throw new HttpFailure(403, current.reason, "permission_denied")
+  replaceDocument(current, bytes, input)
   return snapshot(current.path)
 }
 
