@@ -41,6 +41,25 @@ describe("session workspaces service", () => {
     await run(db.close)
   })
 
+  it("keeps a chat's tab slot when its current workspace is restated", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/restated-session-pane" }))
+    const workspace = await run(
+      db.upsertWorkspace({ projectId: project.id, name: "Main", hasCustomName: false })
+    )
+    const first = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+    const second = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+    await run(db.setSessionWorkspace(first.id, workspace.id))
+    await run(db.setSessionWorkspace(second.id, workspace.id))
+    const before = await run(db.listWorkspacePanes)
+
+    // Opening the first chat sends the workspace it is already in.
+    await run(db.setSessionWorkspace(first.id, workspace.id))
+
+    expect(await run(db.listWorkspacePanes)).toEqual(before)
+    await run(db.close)
+  })
+
   it("binds sessions to pane workspaces at creation and afterwards", async () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     const project = await run(db.createProject({ folderPath: "/tmp/workspace-sessions" }))

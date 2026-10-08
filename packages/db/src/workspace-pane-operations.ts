@@ -58,12 +58,14 @@ export const upsertWorkspacePane = (
   const now = isoTimestamp()
   const resourceId = upsertResourceId(sqlite, workspaceId, id, request)
   sqlite.transaction(() => {
-    if (request.resourceKind !== undefined && resourceId !== null) {
-      // The explicit client pane wins over a legacy session-id pane,
-      // preserving its stable identity during placeholder conversion.
-      discardConflictingPanes(sqlite, id, request.resourceKind, resourceId, workspaceId)
-    }
-    writePaneUpsert(sqlite, workspaceId, id, request, resourceId, now)
+    // The explicit client pane wins over a legacy session-id pane,
+    // preserving its stable identity during placeholder conversion, and
+    // takes over the replaced pane's tab slot rather than the end.
+    const replacedPosition =
+      request.resourceKind !== undefined && resourceId !== null
+        ? discardConflictingPanes(sqlite, id, request.resourceKind, resourceId, workspaceId)
+        : undefined
+    writePaneUpsert(sqlite, workspaceId, id, request, resourceId, now, replacedPosition)
     assignPaneSession(sqlite, workspaceId, request.resourceKind, resourceId)
   })()
   return readPane(sqlite, id)

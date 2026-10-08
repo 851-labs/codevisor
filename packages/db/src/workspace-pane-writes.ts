@@ -6,13 +6,24 @@ import { nextPanePositionIn } from "./pane-position.js"
 import type { WorkspacePaneRow } from "./rows.js"
 
 /// Delete competing resource panes inside the caller's write transaction.
+/// Returns the tab slot of the pane it replaced in the target workspace, if
+/// any.
 export const discardConflictingPanes = (
   sqlite: Database.Database,
   paneId: string,
   resourceKind: string,
   resourceId: string,
   targetWorkspaceId: string
-): void => {
+): string | undefined => {
+  const replaced = sqlite
+    .prepare(
+      `select min(position) as position from workspace_panes
+         where id <> ? and resource_kind = ? and resource_id = ? and workspace_id = ?
+           and position <> ''`
+    )
+    .get(paneId, resourceKind, resourceId, targetWorkspaceId) as
+    | { readonly position: string | null }
+    | undefined
   sqlite
     .prepare(
       `delete from workspace_panes
@@ -20,6 +31,7 @@ export const discardConflictingPanes = (
            and (workspace_id = ? or ? = 'session')`
     )
     .run(paneId, resourceKind, resourceId, targetWorkspaceId, resourceKind)
+  return replaced?.position ?? undefined
 }
 
 /// Preserve terminal status only when the upsert keeps the same resource.
@@ -62,7 +74,8 @@ export const writePaneUpsert = (
   id: string,
   request: UpsertWorkspacePaneRequest,
   resourceId: string | null,
-  now: string
+  now: string,
+  replacedPosition?: string
 ): void => {
   sqlite
     .prepare(paneUpsertSql)
@@ -76,7 +89,7 @@ export const writePaneUpsert = (
       resourceId,
       request.metadata ?? null,
       request.createdAt ?? now,
-      nextPanePositionIn(sqlite, workspaceId, id),
+      replacedPosition ?? nextPanePositionIn(sqlite, workspaceId, id),
       now
     )
 }

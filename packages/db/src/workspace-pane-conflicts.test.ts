@@ -87,4 +87,34 @@ describe("workspace pane conflicts", () => {
       expect((await run(reopened.getSessionSummary(session.id))).workspaceId).toBe(source.id)
     }
   )
+
+  it("keeps a chat's tab slot when a new pane id replaces its pane", async () => {
+    const { db, source, session } = await seed()
+    await run(
+      db.upsertWorkspacePane(source.id, {
+        id: "terminal-pane",
+        providerId: "codevisor",
+        paneType: "terminal",
+        title: "Terminal"
+      })
+    )
+    const [original] = await run(db.listWorkspacePanes)
+
+    // A device that has not loaded the chat's tab opens it under a fresh id.
+    await run(
+      db.upsertWorkspacePane(source.id, {
+        id: "fresh-pane",
+        providerId: "codevisor",
+        paneType: "chat",
+        title: "Chat",
+        resourceKind: "session",
+        resourceId: session.id
+      })
+    )
+
+    expect(await run(db.listWorkspacePanes)).toEqual([
+      expect.objectContaining({ id: "fresh-pane", position: original?.position }),
+      expect.objectContaining({ id: "terminal-pane" })
+    ])
+  })
 })
