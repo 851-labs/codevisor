@@ -1,4 +1,4 @@
-import { createReadStream, existsSync, statSync, type Stats } from "node:fs"
+import { createReadStream, statSync, type Stats } from "node:fs"
 import { mkdir, readdir } from "node:fs/promises"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { homedir } from "node:os"
@@ -17,6 +17,7 @@ import {
   type CodevisorServerServices
 } from "../server-context.js"
 import { routeFileDocuments } from "./file-documents.js"
+import { directoryEntries } from "./fs-directory-entries.js"
 import { expandFsPath } from "./fs-paths.js"
 import { routeGitReview } from "./git-review.js"
 
@@ -237,24 +238,7 @@ export const routeFs = async (
     throw cause
     /* v8 ignore stop */
   }
-  const entries = names
-    .filter((entry) => {
-      if (!showHidden && entry.name.startsWith(".")) return false
-      if (entry.isDirectory()) return true
-      // Follow directory symlinks (common for workspace layouts); skip broken ones.
-      if (!entry.isSymbolicLink()) return false
-      try {
-        return statSync(join(path, entry.name)).isDirectory()
-      } catch {
-        return false
-      }
-    })
-    .map((entry) => ({
-      name: entry.name,
-      path: join(path, entry.name),
-      isGitRepo: existsSync(join(path, entry.name, ".git"))
-    }))
-    .toSorted((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }))
+  const entries = directoryEntries(path, names, showHidden)
   const body: FsListResponse = {
     path,
     parent: path === "/" ? null : dirname(path),
