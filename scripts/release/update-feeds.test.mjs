@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { test } from "node:test"
@@ -15,8 +15,9 @@ const runNode = (script, args, options = {}) =>
     ...options
   })
 
-test("stable appcast promotion replaces the matching Alpha item", () => {
+test("stable appcast promotion replaces the matching Alpha item", (t) => {
   const directory = mkdtempSync(join(tmpdir(), "codevisor-appcast-"))
+  t.after(() => rmSync(directory, { recursive: true, force: true }))
   const input = join(directory, "old.xml")
   const output = join(directory, "new.xml")
   writeFileSync(
@@ -79,8 +80,9 @@ test("stable appcast promotion replaces the matching Alpha item", () => {
   )
 })
 
-test("release-note retries ignore tags at the release commit", () => {
+test("release-note retries ignore tags at the release commit", (t) => {
   const directory = mkdtempSync(join(tmpdir(), "codevisor-release-notes-"))
+  t.after(() => rmSync(directory, { recursive: true, force: true }))
   const git = (...args) => execFileSync("git", args, { cwd: directory, encoding: "utf8" }).trim()
   git("init", "--quiet")
   git("config", "user.name", "Codevisor Test")
@@ -123,8 +125,7 @@ test("release-note retries ignore tags at the release commit", () => {
   assert.doesNotMatch(alphaNotes, /Base release/)
 })
 
-test("appcast verification requires native release notes metadata and a signed enclosure", () => {
-  const feed = `<?xml version="1.0"?>
+const verificationFeed = `<?xml version="1.0"?>
 <rss><channel>
   <item>
     <sparkle:version>42</sparkle:version>
@@ -135,6 +136,9 @@ test("appcast verification requires native release notes metadata and a signed e
     <enclosure url="https://updates.codevisor.dev/Codevisor.zip" length="123" sparkle:edSignature="signature" />
   </item>
 </channel></rss>`
+
+test("appcast verification requires native release notes metadata and a signed enclosure", () => {
+  const feed = verificationFeed
 
   assert.doesNotThrow(() => verifyAppcast(feed, "42", "alpha"))
   assert.throws(() => verifyAppcast(feed, "42", "stable"), /still has the alpha channel/)
@@ -179,6 +183,62 @@ test("appcast verification requires native release notes metadata and a signed e
       ),
     /no HTTPS full release notes URL/
   )
+})
+
+test("appcast verification rejects an invalid build before channel or contents", () => {
+  assert.throws(() => verifyAppcast(null, "42x", "beta"), {
+    message: "build must be an integer"
+  })
+})
+
+test("appcast verification rejects an unsupported channel before contents", () => {
+  assert.throws(() => verifyAppcast(null, "42", "beta"), {
+    message: "expected channel must be alpha or stable"
+  })
+})
+
+test("appcast verification rejects duplicate builds before item metadata", () => {
+  const feed = "<item><sparkle:version>42</sparkle:version></item>".repeat(2)
+  assert.throws(() => verifyAppcast(feed, "42", "alpha"), {
+    message: "expected exactly one appcast item for build 42"
+  })
+})
+
+test("appcast verification requires the Alpha channel before release metadata", () => {
+  assert.throws(
+    () => verifyAppcast("<item><sparkle:version>42</sparkle:version></item>", "42", "alpha"),
+    { message: "build 42 is not on the Alpha channel" }
+  )
+})
+
+test("appcast verification requires an enclosure", () => {
+  const feed = verificationFeed.replace(
+    '    <enclosure url="https://updates.codevisor.dev/Codevisor.zip" length="123" sparkle:edSignature="signature" />',
+    ""
+  )
+  assert.throws(() => verifyAppcast(feed, "42", "alpha"), {
+    message: "build 42 has no enclosure"
+  })
+})
+
+test("appcast verification requires HTTPS enclosure URLs before length and signature", () => {
+  const feed = verificationFeed.replace(
+    '<enclosure url="https://updates.codevisor.dev/Codevisor.zip" length="123" sparkle:edSignature="signature" />',
+    '<enclosure url="http://updates.codevisor.dev/Codevisor.zip" length="0" />'
+  )
+  assert.throws(() => verifyAppcast(feed, "42", "alpha"), {
+    message: "build 42 has no HTTPS enclosure URL"
+  })
+})
+
+test("appcast verification requires positive enclosure length before signature", () => {
+  const feed = verificationFeed.replace(
+    'length="123" sparkle:edSignature="signature"',
+    'length="0"'
+  )
+  assert.throws(() => verifyAppcast(feed, "42", "alpha"), {
+    message: "build 42 has no positive enclosure length"
+  })
 })
 
 test("Sparkle signing matches the RFC 8032 Ed25519 test vector", () => {

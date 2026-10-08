@@ -1,31 +1,39 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs"
 
-export const verifyAppcast = (contents, build, expectedChannel) => {
+const assertVerificationInputs = (build, expectedChannel) => {
   if (!/^\d+$/.test(build)) throw new Error("build must be an integer")
   if (!["alpha", "stable"].includes(expectedChannel))
     throw new Error("expected channel must be alpha or stable")
+}
 
+const matchingBuildItem = (contents, build) => {
   const matchingItems = [...contents.matchAll(/<item>[\s\S]*?<\/item>/g)]
     .map((match) => match[0])
     .filter((item) => item.includes(`<sparkle:version>${build}</sparkle:version>`))
   if (matchingItems.length !== 1)
     throw new Error(`expected exactly one appcast item for build ${build}`)
+  return matchingItems[0]
+}
 
-  const item = matchingItems[0]
+const verifyItemChannel = (item, build, expectedChannel) => {
   const channel = item.match(/<sparkle:channel>([^<]+)<\/sparkle:channel>/)?.[1]
   if (expectedChannel === "alpha" && channel !== "alpha")
     throw new Error(`build ${build} is not on the Alpha channel`)
   if (expectedChannel === "stable" && channel !== undefined)
     throw new Error(`build ${build} still has the ${channel} channel`)
+}
 
+const verifyReleaseMetadata = (item, build) => {
   if (!/<link>https:\/\/[^<]+<\/link>/.test(item))
     throw new Error(`build ${build} has no HTTPS release page URL`)
   if (!/<sparkle:releaseNotesLink>https:\/\/[^<]+\.md<\/sparkle:releaseNotesLink>/.test(item))
     throw new Error(`build ${build} has no HTTPS Markdown release notes URL`)
   if (!/<sparkle:fullReleaseNotesLink>https:\/\/[^<]+<\/sparkle:fullReleaseNotesLink>/.test(item))
     throw new Error(`build ${build} has no HTTPS full release notes URL`)
+}
 
+const verifySignedEnclosure = (item, build) => {
   const enclosure = item.match(/<enclosure\b[^>]*\/>/)?.[0]
   if (!enclosure) throw new Error(`build ${build} has no enclosure`)
   if (!/\burl="https:\/\/[^"]+"/.test(enclosure))
@@ -34,6 +42,14 @@ export const verifyAppcast = (contents, build, expectedChannel) => {
     throw new Error(`build ${build} has no positive enclosure length`)
   if (!/\bsparkle:edSignature="[^"]+"/.test(enclosure))
     throw new Error(`build ${build} has no EdDSA signature`)
+}
+
+export const verifyAppcast = (contents, build, expectedChannel) => {
+  assertVerificationInputs(build, expectedChannel)
+  const item = matchingBuildItem(contents, build)
+  verifyItemChannel(item, build, expectedChannel)
+  verifyReleaseMetadata(item, build)
+  verifySignedEnclosure(item, build)
 }
 
 if (process.argv[1] === import.meta.filename) {
