@@ -206,12 +206,14 @@ describe("MCP manager lifecycle", () => {
     const { manager } = await testManager({ serverId: "test" })
     const legacy = await manager.create({
       authType: "oauth",
+      enabled: false,
       name: "Legacy",
       transport: "http",
       url: "https://legacy.example.test/mcp"
     })
     const foreign = await manager.create({
       authType: "oauth",
+      enabled: false,
       name: "Foreign",
       transport: "http",
       url: "https://foreign.example.test/mcp"
