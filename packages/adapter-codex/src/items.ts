@@ -36,103 +36,15 @@ export const emitItemLifecycle = (
 
   switch (type) {
     case "imageGeneration": {
-      const failed = item.status === "failed"
-      void session.emit(
-        event({
-          sessionUpdate: started ? "tool_call" : "tool_call_update",
-          kind: "image_generation",
-          toolCallId: itemId,
-          status: started ? "in_progress" : failed ? "failed" : "completed",
-          title: started
-            ? "Generating image"
-            : failed
-              ? "Image generation failed"
-              : "Generated image",
-          ...(!started && !failed
-            ? {
-                generatedImage: {
-                  ...(typeof item.result === "string" ? { result: item.result } : {}),
-                  ...(typeof item.savedPath === "string" ? { savedPath: item.savedPath } : {})
-                }
-              }
-            : {}),
-          ...(failed
-            ? {
-                rawOutput: {
-                  message: "Image generation failed. Try again.",
-                  ...(item.failure == null ? {} : { failure: item.failure })
-                }
-              }
-            : {})
-        })
-      )
+      emitImageItem(session, item, itemId, started, event)
       break
     }
     case "commandExecution": {
-      const command = typeof item.command === "string" ? item.command : ""
-      if (started) {
-        session.itemKinds.set(itemId, "execute")
-        if (command.length > 0) session.itemTitles.set(itemId, command)
-        openCommandTerminal(session, itemId, command, item.source)
-        void session.emit(
-          event({
-            kind: "execute",
-            sessionUpdate: "tool_call",
-            status: "in_progress",
-            title: command.length > 0 ? `Ran ${firstLine(command)}` : "Ran command",
-            toolCallId: itemId,
-            ...(command.length > 0 ? { rawInput: { command } } : {})
-          })
-        )
-      } else {
-        settleCommandTerminal(session, itemId, item)
-        void session.emit(
-          event({
-            sessionUpdate: "tool_call_update",
-            status: commandStatus(item),
-            toolCallId: itemId,
-            ...(command.length > 0 ? { rawInput: { command } } : {}),
-            ...(typeof item.aggregatedOutput === "string"
-              ? { rawOutput: item.aggregatedOutput }
-              : {}),
-            ...(typeof item.exitCode === "number" ? { exitCode: item.exitCode } : {})
-          })
-        )
-      }
+      emitCommandItem(session, item, itemId, started, event)
       break
     }
     case "fileChange": {
-      const stats = fileChangeStats(item.changes)
-      const content = fileChangeDiffBlocks(item.changes)
-      if (started) {
-        // The streamed patchUpdated events may have opened this call already;
-        // tool_call upserts merge in the client, so re-sending is safe and
-        // carries the final title/diff content.
-        session.itemKinds.set(itemId, "edit")
-        session.itemTitles.set(itemId, fileChangeTitle(item.changes, false))
-        void session.emit(
-          event({
-            kind: "edit",
-            sessionUpdate: "tool_call",
-            status: "in_progress",
-            title: fileChangeTitle(item.changes, false),
-            toolCallId: itemId,
-            ...(stats.length === 0 ? {} : { diffStats: stats }),
-            ...(content.length === 0 ? {} : { content })
-          })
-        )
-      } else {
-        void session.emit(
-          event({
-            sessionUpdate: "tool_call_update",
-            status: patchStatus(item),
-            title: fileChangeTitle(item.changes, true),
-            toolCallId: itemId,
-            ...(stats.length === 0 ? {} : { diffStats: stats }),
-            ...(content.length === 0 ? {} : { content })
-          })
-        )
-      }
+      emitFileChangeItem(session, item, itemId, started, event)
       break
     }
     case "plan": {
@@ -151,33 +63,7 @@ export const emitItemLifecycle = (
       break
     }
     case "mcpToolCall": {
-      const title = `${String(item.server ?? "")}.${String(item.tool ?? "")}`
-      if (started) {
-        session.itemKinds.set(itemId, "other")
-        void session.emit(
-          event({
-            kind: "other",
-            sessionUpdate: "tool_call",
-            status: "in_progress",
-            title,
-            toolCallId: itemId,
-            ...(item.arguments === undefined ? {} : { rawInput: item.arguments })
-          })
-        )
-      } else {
-        void session.emit(
-          event({
-            sessionUpdate: "tool_call_update",
-            status: item.status === "failed" ? "failed" : "completed",
-            toolCallId: itemId,
-            ...(item.result !== undefined && item.result !== null
-              ? { rawOutput: item.result }
-              : item.error !== undefined && item.error !== null
-                ? { rawOutput: item.error }
-                : {})
-          })
-        )
-      }
+      emitMcpItem(session, item, itemId, started, event)
       break
     }
     case "webSearch": {
@@ -216,30 +102,190 @@ export const emitItemLifecycle = (
       break
     }
     case "agentMessage": {
-      // Text already streamed via item/agentMessage/delta; the lifecycle only
-      // carries the message's phase (harmony commentary vs final answer).
-      const phase = wirePhase(item.phase)
-      if (started) {
-        if (phase !== undefined) session.messagePhases.set(itemId, phase)
-        break
-      }
-      // Completion can reveal a phase the started item lacked (backends that
-      // tag only the finished item). A zero-length chunk retro-tags the span
-      // clients already streamed; skip when the deltas were tagged all along.
-      if (phase !== undefined && session.messagePhases.get(itemId) !== phase) {
-        void session.emit(
-          event({
-            content: { text: "", type: "text" },
-            messageId: itemId,
-            phase,
-            sessionUpdate: "agent_message_chunk"
-          })
-        )
-      }
-      session.messagePhases.delete(itemId)
+      applyMessagePhase(session, item, itemId, started, event)
       break
     }
     default:
       break
   }
+}
+
+type ItemEvent = (payload: Record<string, unknown>) => RuntimeEvent
+
+function emitImageItem(
+  session: CodexSession,
+  item: Record<string, unknown>,
+  itemId: string,
+  started: boolean,
+  event: ItemEvent
+): void {
+  const failed = item.status === "failed"
+  void session.emit(
+    event({
+      sessionUpdate: started ? "tool_call" : "tool_call_update",
+      kind: "image_generation",
+      toolCallId: itemId,
+      status: started ? "in_progress" : failed ? "failed" : "completed",
+      title: started ? "Generating image" : failed ? "Image generation failed" : "Generated image",
+      ...(!started && !failed
+        ? {
+            generatedImage: {
+              ...(typeof item.result === "string" ? { result: item.result } : {}),
+              ...(typeof item.savedPath === "string" ? { savedPath: item.savedPath } : {})
+            }
+          }
+        : {}),
+      ...(failed
+        ? {
+            rawOutput: {
+              message: "Image generation failed. Try again.",
+              ...(item.failure == null ? {} : { failure: item.failure })
+            }
+          }
+        : {})
+    })
+  )
+}
+
+function emitCommandItem(
+  session: CodexSession,
+  item: Record<string, unknown>,
+  itemId: string,
+  started: boolean,
+  event: ItemEvent
+): void {
+  const command = typeof item.command === "string" ? item.command : ""
+  if (started) {
+    session.itemKinds.set(itemId, "execute")
+    if (command.length > 0) session.itemTitles.set(itemId, command)
+    openCommandTerminal(session, itemId, command, item.source)
+    void session.emit(
+      event({
+        kind: "execute",
+        sessionUpdate: "tool_call",
+        status: "in_progress",
+        title: command.length > 0 ? `Ran ${firstLine(command)}` : "Ran command",
+        toolCallId: itemId,
+        ...(command.length > 0 ? { rawInput: { command } } : {})
+      })
+    )
+  } else {
+    settleCommandTerminal(session, itemId, item)
+    void session.emit(
+      event({
+        sessionUpdate: "tool_call_update",
+        status: commandStatus(item),
+        toolCallId: itemId,
+        ...(command.length > 0 ? { rawInput: { command } } : {}),
+        ...(typeof item.aggregatedOutput === "string" ? { rawOutput: item.aggregatedOutput } : {}),
+        ...(typeof item.exitCode === "number" ? { exitCode: item.exitCode } : {})
+      })
+    )
+  }
+}
+
+function emitFileChangeItem(
+  session: CodexSession,
+  item: Record<string, unknown>,
+  itemId: string,
+  started: boolean,
+  event: ItemEvent
+): void {
+  const stats = fileChangeStats(item.changes)
+  const content = fileChangeDiffBlocks(item.changes)
+  if (started) {
+    // The streamed patchUpdated events may have opened this call already;
+    // tool_call upserts merge in the client, so re-sending is safe and
+    // carries the final title/diff content.
+    session.itemKinds.set(itemId, "edit")
+    session.itemTitles.set(itemId, fileChangeTitle(item.changes, false))
+    void session.emit(
+      event({
+        kind: "edit",
+        sessionUpdate: "tool_call",
+        status: "in_progress",
+        title: fileChangeTitle(item.changes, false),
+        toolCallId: itemId,
+        ...(stats.length === 0 ? {} : { diffStats: stats }),
+        ...(content.length === 0 ? {} : { content })
+      })
+    )
+  } else {
+    void session.emit(
+      event({
+        sessionUpdate: "tool_call_update",
+        status: patchStatus(item),
+        title: fileChangeTitle(item.changes, true),
+        toolCallId: itemId,
+        ...(stats.length === 0 ? {} : { diffStats: stats }),
+        ...(content.length === 0 ? {} : { content })
+      })
+    )
+  }
+}
+
+function emitMcpItem(
+  session: CodexSession,
+  item: Record<string, unknown>,
+  itemId: string,
+  started: boolean,
+  event: ItemEvent
+): void {
+  const title = `${String(item.server ?? "")}.${String(item.tool ?? "")}`
+  if (started) {
+    session.itemKinds.set(itemId, "other")
+    void session.emit(
+      event({
+        kind: "other",
+        sessionUpdate: "tool_call",
+        status: "in_progress",
+        title,
+        toolCallId: itemId,
+        ...(item.arguments === undefined ? {} : { rawInput: item.arguments })
+      })
+    )
+  } else {
+    void session.emit(
+      event({
+        sessionUpdate: "tool_call_update",
+        status: item.status === "failed" ? "failed" : "completed",
+        toolCallId: itemId,
+        ...(item.result !== undefined && item.result !== null
+          ? { rawOutput: item.result }
+          : item.error !== undefined && item.error !== null
+            ? { rawOutput: item.error }
+            : {})
+      })
+    )
+  }
+}
+
+function applyMessagePhase(
+  session: CodexSession,
+  item: Record<string, unknown>,
+  itemId: string,
+  started: boolean,
+  event: ItemEvent
+): void {
+  // Text already streamed via item/agentMessage/delta; the lifecycle only
+  // carries the message's phase (harmony commentary vs final answer).
+  const phase = wirePhase(item.phase)
+  if (started) {
+    if (phase !== undefined) session.messagePhases.set(itemId, phase)
+    return
+  }
+  // Completion can reveal a phase the started item lacked (backends that
+  // tag only the finished item). A zero-length chunk retro-tags the span
+  // clients already streamed; skip when the deltas were tagged all along.
+  if (phase !== undefined && session.messagePhases.get(itemId) !== phase) {
+    void session.emit(
+      event({
+        content: { text: "", type: "text" },
+        messageId: itemId,
+        phase,
+        sessionUpdate: "agent_message_chunk"
+      })
+    )
+  }
+  session.messagePhases.delete(itemId)
 }
