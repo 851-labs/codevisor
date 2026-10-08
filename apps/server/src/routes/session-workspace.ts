@@ -31,17 +31,22 @@ import {
 import { resolveSessionAccount, startSessionAgent } from "./session-creation.js"
 import { sessionEventSink } from "./session-events.js"
 import { withSessionMutation } from "./session-operations.js"
+import { assertCreatableOwner, resolveSessionPlacement } from "./workspace-ownership.js"
 
 const createServerSession = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
   serverId: string,
-  payload: CreateSessionRequest,
+  requested: CreateSessionRequest,
   project: Project
 ): Promise<SessionSummary> => {
+  const payload = await resolveSessionPlacement(services, requested)
   const cwd = await resolveSessionCwdOrFail(services, serverId, project, payload.worktreeName)
   const { accountContext, harnessAccountId } = await resolveSessionAccount(services, payload)
   const workspaceExisted = await assertWorkspaceProject(services, payload.workspaceId, project)
+  if (payload.workspaceId !== undefined) {
+    await assertCreatableOwner(services, payload.workspaceId, payload.parentWorkspaceId)
+  }
   const sessionId = payload.id ?? randomUUID()
   const agentSessionId = await startSessionAgent(
     services,
@@ -80,7 +85,10 @@ const createServerSession = async (
         projectId: project.id,
         name: payload.worktreeName ?? project.name,
         hasCustomName: false,
-        rootDirectory: cwd
+        rootDirectory: cwd,
+        ...(payload.parentWorkspaceId === undefined
+          ? {}
+          : { parentWorkspaceId: payload.parentWorkspaceId })
       },
       session: { ...sessionPayload, workspaceId: undefined }
     })

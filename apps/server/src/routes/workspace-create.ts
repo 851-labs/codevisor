@@ -16,6 +16,7 @@ import {
 } from "../server-context.js"
 import { resolveSessionAccount, startSessionAgent } from "./session-creation.js"
 import { findSession, resolveSessionCwdOrFail } from "./session-workspace.js"
+import { assertCreatableOwner } from "./workspace-ownership.js"
 
 /// POST /v1/workspaces — a workspace born around its first chat. The
 /// workspace row, the session row and the chat pane commit in one database
@@ -41,6 +42,7 @@ export const routeWorkspaceCreate = async (
     throw new HttpFailure(409, "Chat and workspace must belong to the same project")
   }
   const workspaceId = payload.workspace.id.toLowerCase()
+  await assertCreatableOwner(services, workspaceId, payload.workspace.parentWorkspaceId)
   const sessionId = (payload.session.id ?? randomUUID()).toLowerCase()
   const existing = await findSession(services.db, sessionId)
   let sessionPayload = { ...payload.session, id: sessionId, projectId: project.id }

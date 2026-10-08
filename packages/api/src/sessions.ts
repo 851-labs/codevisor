@@ -1,7 +1,6 @@
 import { Schema } from "effect"
 
 import { Labels } from "./labels.js"
-import { CreateProjectRequest } from "./projects.js"
 import { GoalStatus, SessionGoal, SessionOrigin } from "./session-config.js"
 import {
   BackgroundTask,
@@ -11,6 +10,7 @@ import {
   SessionPlan,
   TurnStopKind
 } from "./session-updates.js"
+import { WorkspacePlacement } from "./workspace-placement.js"
 import { WorkspacePosition } from "./workspace-position.js"
 
 export const SessionUsage = Schema.Struct({
@@ -359,6 +359,9 @@ export const CreateSessionRequest = Schema.Struct({
   /// Create the session already belonging to a pane workspace.
   workspaceId: Schema.optional(Schema.String),
   parentSessionId: Schema.optional(Schema.String),
+  /// Owner of the workspace this create makes; ignored when it exists.
+  parentWorkspaceId: Schema.optional(Schema.String),
+  workspacePlacement: Schema.optional(WorkspacePlacement),
   labels: Schema.optional(Labels),
   createdAt: Schema.optional(Schema.String),
   updatedAt: Schema.optional(Schema.String)
@@ -399,35 +402,6 @@ export const MarkSessionReadRequest = Schema.Struct({
   throughSequence: Schema.Number
 })
 export type MarkSessionReadRequest = typeof MarkSessionReadRequest.Type
-
-/// One-round-trip chat open: ensure the project and session records exist and
-/// return the first transcript page together. Replaces the discrete
-/// listProjects → createProject → listSessions → create/update → transcript
-/// sequence, whose 3–4 serial round-trips delayed the first transcript paint
-/// on every chat open (whole seconds over high-latency remote links).
-export const OpenSessionRequest = Schema.Struct({
-  /// Create-if-missing. An existing project is deliberately never updated
-  /// from this snapshot: it was taken when the client's draft was created,
-  /// and pushing it on open could revert changes made in the meantime
-  /// (e.g. un-archiving an archived project).
-  project: Schema.optional(CreateProjectRequest),
-  /// Used only when the session does not exist yet. Its `id`, when present,
-  /// must match the id in the path.
-  session: CreateSessionRequest,
-  /// Applied when the session already exists — the same fields the discrete
-  /// PATCH used to send while opening.
-  update: Schema.optional(UpdateSessionRequest),
-  /// First transcript page size (same default as GET …/transcript).
-  transcriptLimit: Schema.optional(Schema.Number)
-})
-export type OpenSessionRequest = typeof OpenSessionRequest.Type
-
-export const OpenSessionResponse = Schema.Struct({
-  session: SessionSummary,
-  transcript: TranscriptPage,
-  runtime: Schema.Unknown
-})
-export type OpenSessionResponse = typeof OpenSessionResponse.Type
 
 export const PromptRequest = Schema.Struct({
   text: Schema.String,

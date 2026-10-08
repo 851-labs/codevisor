@@ -174,8 +174,9 @@ export const UpdateWorkspacePaneRequest = Schema.Struct({
 })
 export type UpdateWorkspacePaneRequest = typeof UpdateWorkspacePaneRequest.Type
 
-/// Puts a workspace's tabs in this order. Listed panes come first, in the
-/// given order; panes not listed keep their relative order after them.
+/// Puts a workspace's tab bar in this order. Ids name panes or the tab groups
+/// of workspaces it owns; listed ones come first, in the given order, and the
+/// rest keep their relative order after them.
 export const ReorderWorkspacePanesRequest = Schema.Struct({
   paneIds: Schema.Array(Schema.String)
 })

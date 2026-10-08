@@ -29,6 +29,7 @@ import {
 import { matchesLabelFilters } from "./label-filters.js"
 import { createSessionIfMissing } from "./session-workspace.js"
 import { routeWorkspaceCreate } from "./workspace-create.js"
+import { assertWorkspaceOwner } from "./workspace-ownership.js"
 
 /// The workspace with this id, or undefined. Route handlers use it to answer
 /// a retried or stale request with its real outcome -- gone is 404 for an
@@ -252,6 +253,13 @@ export const routeWorkspaces = async (
     const existing = await findWorkspace(services, workspaceId)
     if (existing === undefined) {
       throw new HttpFailure(404, `Workspace not found: ${workspaceId}`)
+    }
+    if (typeof payload.parentWorkspaceId === "string") {
+      assertWorkspaceOwner(
+        await run(services.db.listWorkspaces),
+        workspaceId,
+        payload.parentWorkspaceId
+      )
     }
     const wasArchived = existing.isArchived
     const workspace = await run(services.db.updateWorkspace(workspaceId, payload))
