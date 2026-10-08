@@ -127,11 +127,11 @@ public enum ClientStorageBootstrap {
     let cleanupIsComplete =
       try database.cleanupMigrationState(id: legacyCleanupMigrationID) == "completed"
     let legacyFilesRemain =
-      try !cleanupCandidateFiles(
+      try !LegacyClientArtifacts.cleanupCandidateFiles(
         in: cleanupDirectories,
         fileManager: fileManager
       ).isEmpty
-    let legacyPreferencesRemain = !legacyPreferenceKeysPresent(in: legacyDefaults).isEmpty
+    let legacyPreferencesRemain = !LegacyClientArtifacts.legacyPreferenceKeysPresent(in: legacyDefaults).isEmpty
     if !cleanupIsComplete || legacyFilesRemain || legacyPreferencesRemain {
       try cleanupLegacyState(
         directory: directory,
@@ -142,8 +142,8 @@ public enum ClientStorageBootstrap {
       )
     }
 
-    pruneExpiredRecovery(in: directory, fileManager: fileManager)
-    removeRetiredCaches(in: directory, fileManager: fileManager)
+    LegacyClientArtifacts.pruneExpiredRecovery(in: directory, fileManager: fileManager)
+    LegacyClientArtifacts.removeRetiredCaches(in: directory, fileManager: fileManager)
     return ClientStorage(
       database: database,
       store: store
@@ -162,8 +162,8 @@ public enum ClientStorageBootstrap {
       name: legacyDataMigrationName
     )
     do {
-      let files = try legacyFiles(in: directories, fileManager: fileManager)
-      let preferences = try legacyPreferences(from: defaults)
+      let files = try LegacyClientArtifacts.legacyFiles(in: directories, fileManager: fileManager)
+      let preferences = try LegacyClientArtifacts.legacyPreferences(from: defaults)
 
       var importedValues: [(key: String, data: Data, source: String, digest: String)] = []
       for file in files {
@@ -194,7 +194,7 @@ public enum ClientStorageBootstrap {
           try database.recordMigrationArtifact(
             migrationID: legacyDataMigrationID,
             source: "defaults:\(preference.key)",
-            digest: digest(preference.data),
+            digest: LegacyClientArtifacts.digest(preference.data),
             imported: true,
             cleaned: false
           )
@@ -250,7 +250,7 @@ public enum ClientStorageBootstrap {
         withIntermediateDirectories: true
       )
 
-      for source in try cleanupCandidateFiles(
+      for source in try LegacyClientArtifacts.cleanupCandidateFiles(
         in: legacyDirectories,
         fileManager: fileManager
       ) {
@@ -268,7 +268,7 @@ public enum ClientStorageBootstrap {
             try fileManager.removeItem(at: source)
           } else {
             let alternate = recovery.appendingPathComponent(
-              "\(source.lastPathComponent).reappeared-\(digest(sourceData).prefix(12))"
+              "\(source.lastPathComponent).reappeared-\(LegacyClientArtifacts.digest(sourceData).prefix(12))"
             )
             recoveredURL = alternate
             if fileManager.fileExists(atPath: alternate.path) {
@@ -290,13 +290,13 @@ public enum ClientStorageBootstrap {
         try database.recordMigrationArtifact(
           migrationID: legacyDataMigrationID,
           source: source.lastPathComponent,
-          digest: digest(try Data(contentsOf: recoveredURL)),
-          imported: legacyKey(forFileName: source.lastPathComponent) != nil,
+          digest: LegacyClientArtifacts.digest(try Data(contentsOf: recoveredURL)),
+          imported: LegacyClientArtifacts.legacyKey(forFileName: source.lastPathComponent) != nil,
           cleaned: true
         )
       }
 
-      for key in legacyPreferenceKeysPresent(in: defaults) {
+      for key in LegacyClientArtifacts.legacyPreferenceKeysPresent(in: defaults) {
         defaults.removeObject(forKey: key)
         try database.recordMigrationArtifact(
           migrationID: legacyDataMigrationID,

@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-extension ClientStorageBootstrap {
+enum LegacyClientArtifacts {
   private static let recoveryRetention: TimeInterval = 30 * 24 * 60 * 60
 
   /// Disposable caches whose readers were removed. Nothing imports them, so
