@@ -3,6 +3,68 @@ import { describe, expect, it } from "vitest"
 import { run, setup, UNIFIED_DIFF } from "./test-support.js"
 
 describe("CodexProvider", () => {
+  it("keeps last-turn and cumulative usage distinct and omits nonfinite counters", async () => {
+    const { client, created, events } = await setup()
+    try {
+      client.emit("thread/tokenUsage/updated", {
+        threadId: "thread-new",
+        tokenUsage: {
+          last: { totalTokens: 7 },
+          modelContextWindow: 256,
+          total: {
+            inputTokens: 10,
+            cachedInputTokens: 2,
+            outputTokens: 3,
+            reasoningOutputTokens: 1,
+            totalTokens: 13
+          }
+        }
+      })
+      client.emit("thread/tokenUsage/updated", {
+        threadId: "thread-new",
+        tokenUsage: {
+          last: { totalTokens: Number.NaN },
+          modelContextWindow: Number.POSITIVE_INFINITY,
+          total: {
+            inputTokens: 0,
+            cachedInputTokens: -2,
+            outputTokens: "3",
+            reasoningOutputTokens: null,
+            totalTokens: 9
+          }
+        }
+      })
+      expect(events).toEqual([
+        {
+          kind: "session.updated",
+          payload: {
+            sessionUpdate: "usage_update",
+            used: 7,
+            size: 256,
+            inputTokens: 10,
+            cachedInputTokens: 2,
+            outputTokens: 3,
+            reasoningOutputTokens: 1,
+            totalTokens: 13
+          },
+          subjectId: "thread-new"
+        },
+        {
+          kind: "session.updated",
+          payload: {
+            sessionUpdate: "usage_update",
+            inputTokens: 0,
+            cachedInputTokens: -2,
+            totalTokens: 9
+          },
+          subjectId: "thread-new"
+        }
+      ])
+    } finally {
+      await run(created!.handle.close)
+    }
+  })
+
   it("normalizes Codex context-compaction item lifecycle", async () => {
     const { client, events } = await setup()
     client.emit("item/started", {

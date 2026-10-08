@@ -56,6 +56,211 @@ const refreshCodexSessionTitle = async (session: CodexSession): Promise<void> =>
   }
 }
 
+const emitTokenUsageUpdate = (session: CodexSession, payload: Record<string, unknown>): void => {
+  const tokenUsage = isRecord(payload.tokenUsage) ? payload.tokenUsage : {}
+  const total = isRecord(tokenUsage.total) ? tokenUsage.total : {}
+  const last = isRecord(tokenUsage.last) ? tokenUsage.last : {}
+  void session.emit({
+    kind: "session.updated",
+    payload: {
+      sessionUpdate: "usage_update",
+      ...(finiteNumber(last.totalTokens) === undefined
+        ? {}
+        : { used: finiteNumber(last.totalTokens) }),
+      ...(finiteNumber(tokenUsage.modelContextWindow) === undefined
+        ? {}
+        : { size: finiteNumber(tokenUsage.modelContextWindow) }),
+      ...(finiteNumber(total.inputTokens) === undefined
+        ? {}
+        : { inputTokens: finiteNumber(total.inputTokens) }),
+      ...(finiteNumber(total.cachedInputTokens) === undefined
+        ? {}
+        : { cachedInputTokens: finiteNumber(total.cachedInputTokens) }),
+      ...(finiteNumber(total.outputTokens) === undefined
+        ? {}
+        : { outputTokens: finiteNumber(total.outputTokens) }),
+      ...(finiteNumber(total.reasoningOutputTokens) === undefined
+        ? {}
+        : { reasoningOutputTokens: finiteNumber(total.reasoningOutputTokens) }),
+      ...(finiteNumber(total.totalTokens) === undefined
+        ? {}
+        : { totalTokens: finiteNumber(total.totalTokens) })
+    },
+    subjectId: session.key
+  })
+}
+
+const completeNotificationTurn = (
+  session: CodexSession,
+  payload: Record<string, unknown>
+): void => {
+  const turn = isRecord(payload.turn) ? payload.turn : {}
+  const status = typeof turn.status === "string" ? turn.status : "completed"
+  const stopReason =
+    status === "interrupted" || session.interruptRequested
+      ? "cancelled"
+      : status === "failed"
+        ? "end_turn"
+        : "end_turn"
+  const completedError =
+    status === "failed" && !session.interruptRequested && isRecord(turn.error)
+      ? codexErrorDetails({ error: turn.error })
+      : undefined
+  const terminalError = completedError ?? session.pendingTurnError
+  const pending = session.pendingPrompt
+  session.pendingPrompt = undefined
+  session.interruptRequested = false
+  const turnId = session.activeTurnId ?? randomUUID()
+  session.activeTurnId = undefined
+  session.pendingTurnError = undefined
+  // A turn that ends with questions still open (interrupt, failure)
+  // invalidates them — clients must not keep showing the picker.
+  cancelPendingQuestions(session)
+  // Rate-limited goal accounting flushes before the turn closes so the
+  // final totals are persisted ahead of the ended event.
+  void refreshCodexSessionTitle(session)
+    .then(() => flushPendingGoalSnapshot(session))
+    .then(() =>
+      session.emit({
+        kind: "session.updated",
+        payload: {
+          initiatedBy: pending === undefined ? "agent" : "user",
+          stopReason,
+          ...(terminalError === undefined ? {} : { stopDetail: terminalError.message }),
+          ...(terminalError?.stopKind === undefined ? {} : { stopKind: terminalError.stopKind }),
+          ...(terminalError?.retryable === true ? { retryable: true } : {}),
+          turnId,
+          turnState: "ended"
+        },
+        subjectId: session.key
+      })
+    )
+    .then(() => {
+      pending?.resolve({ stopReason })
+      if (pending !== undefined && status === "completed" && terminalError === undefined) {
+        void session.titleGenerator?.onTurnCompleted()
+      }
+    })
+}
+
+const handleNotificationItemLifecycle = (
+  session: CodexSession,
+  method: string,
+  payload: Record<string, unknown>,
+  parentToolCallId: string | undefined,
+  parentField: { parentToolCallId?: string }
+): void => {
+  const item = isRecord(payload.item) ? payload.item : {}
+  if (item.type === "contextCompaction") {
+    // A collab subagent's context belongs to its nested thread, not the
+    // main chat's status line. Main-thread compaction is a canonical v2
+    // item with matching started/completed ids.
+    if (parentToolCallId === undefined) {
+      void session.emit({
+        kind: "session.output",
+        payload: {
+          sessionUpdate: "context_compaction",
+          ...(typeof item.id === "string" ? { compactionId: item.id } : {}),
+          status: method === "item/started" ? "started" : "completed"
+        },
+        subjectId: session.key
+      })
+    }
+    return
+  }
+  // Codex (as of 0.142) emits no reasoning text deltas — the reasoning
+  // item's lifecycle is the only thinking signal, so an empty thought
+  // chunk drives the client's ephemeral "Thinking…" state through the
+  // otherwise silent gap.
+  if (item.type === "reasoning" && method === "item/started") {
+    void session.emit({
+      kind: "session.output",
+      payload: {
+        content: { text: "", type: "text" },
+        sessionUpdate: "agent_thought_chunk",
+        ...parentField
+      },
+      subjectId: session.key
+    })
+    return
+  }
+  if (item.type === "collabAgentToolCall") {
+    handleCollabItem(session, item, method === "item/started")
+    return
+  }
+  if (item.type === "subAgentActivity") {
+    handleSubAgentActivity(session, item)
+    return
+  }
+  emitItemLifecycle(session, item, method === "item/started", parentToolCallId)
+}
+
+const emitStreamedFilePatch = (
+  session: CodexSession,
+  payload: Record<string, unknown>,
+  parentField: { parentToolCallId?: string }
+): void => {
+  // Codex streams the patch as the model generates it (gated behind the
+  // apply_patch_streaming_events feature we enable at spawn) — this is
+  // the realtime counter signal. These arrive BEFORE item/started for
+  // the same item, so the first one opens the tool call.
+  const itemId = typeof payload.itemId === "string" ? payload.itemId : undefined
+  if (itemId === undefined) return
+  const stats = fileChangeStats(payload.changes)
+  if (!session.itemKinds.has(itemId)) {
+    session.itemKinds.set(itemId, "edit")
+    void session.emit({
+      kind: "session.output",
+      payload: {
+        kind: "edit",
+        sessionUpdate: "tool_call",
+        status: "in_progress",
+        title: fileChangeTitle(payload.changes, false),
+        toolCallId: itemId,
+        ...(stats.length === 0 ? {} : { diffStats: stats }),
+        ...parentField
+      },
+      subjectId: session.key
+    })
+    return
+  }
+  if (stats.length === 0) return
+  void session.emit({
+    kind: "session.output",
+    payload: {
+      diffStats: stats,
+      sessionUpdate: "tool_call_update",
+      status: "in_progress",
+      toolCallId: itemId
+    },
+    subjectId: session.key
+  })
+}
+
+const handleNotificationError = (session: CodexSession, payload: Record<string, unknown>): void => {
+  if (payload.willRetry === true) {
+    void session.emit({
+      kind: "session.updated",
+      payload: {
+        retrying: codexRetryStatus(payload),
+        ...(session.activeTurnId === undefined ? {} : { turnId: session.activeTurnId })
+      },
+      subjectId: session.key
+    })
+    return
+  }
+  const terminalError = codexErrorDetails(payload)
+  if (session.activeTurnId !== undefined) {
+    session.pendingTurnError = terminalError
+    return
+  }
+  void session.emit({
+    kind: "session.error",
+    payload: { message: terminalError.message },
+    subjectId: session.key
+  })
+}
+
 export const handleNotification = (
   session: CodexSession,
   method: string,
@@ -85,37 +290,7 @@ export const handleNotification = (
   const parentField = parentToolCallId === undefined ? {} : { parentToolCallId }
   switch (method) {
     case "thread/tokenUsage/updated": {
-      const tokenUsage = isRecord(payload.tokenUsage) ? payload.tokenUsage : {}
-      const total = isRecord(tokenUsage.total) ? tokenUsage.total : {}
-      const last = isRecord(tokenUsage.last) ? tokenUsage.last : {}
-      void session.emit({
-        kind: "session.updated",
-        payload: {
-          sessionUpdate: "usage_update",
-          ...(finiteNumber(last.totalTokens) === undefined
-            ? {}
-            : { used: finiteNumber(last.totalTokens) }),
-          ...(finiteNumber(tokenUsage.modelContextWindow) === undefined
-            ? {}
-            : { size: finiteNumber(tokenUsage.modelContextWindow) }),
-          ...(finiteNumber(total.inputTokens) === undefined
-            ? {}
-            : { inputTokens: finiteNumber(total.inputTokens) }),
-          ...(finiteNumber(total.cachedInputTokens) === undefined
-            ? {}
-            : { cachedInputTokens: finiteNumber(total.cachedInputTokens) }),
-          ...(finiteNumber(total.outputTokens) === undefined
-            ? {}
-            : { outputTokens: finiteNumber(total.outputTokens) }),
-          ...(finiteNumber(total.reasoningOutputTokens) === undefined
-            ? {}
-            : { reasoningOutputTokens: finiteNumber(total.reasoningOutputTokens) }),
-          ...(finiteNumber(total.totalTokens) === undefined
-            ? {}
-            : { totalTokens: finiteNumber(total.totalTokens) })
-        },
-        subjectId: session.key
-      })
+      emitTokenUsageUpdate(session, payload)
       break
     }
     case "thread/name/updated": {
@@ -144,55 +319,7 @@ export const handleNotification = (
       break
     }
     case "turn/completed": {
-      const turn = isRecord(payload.turn) ? payload.turn : {}
-      const status = typeof turn.status === "string" ? turn.status : "completed"
-      const stopReason =
-        status === "interrupted" || session.interruptRequested
-          ? "cancelled"
-          : status === "failed"
-            ? "end_turn"
-            : "end_turn"
-      const completedError =
-        status === "failed" && !session.interruptRequested && isRecord(turn.error)
-          ? codexErrorDetails({ error: turn.error })
-          : undefined
-      const terminalError = completedError ?? session.pendingTurnError
-      const pending = session.pendingPrompt
-      session.pendingPrompt = undefined
-      session.interruptRequested = false
-      const turnId = session.activeTurnId ?? randomUUID()
-      session.activeTurnId = undefined
-      session.pendingTurnError = undefined
-      // A turn that ends with questions still open (interrupt, failure)
-      // invalidates them — clients must not keep showing the picker.
-      cancelPendingQuestions(session)
-      // Rate-limited goal accounting flushes before the turn closes so the
-      // final totals are persisted ahead of the ended event.
-      void refreshCodexSessionTitle(session)
-        .then(() => flushPendingGoalSnapshot(session))
-        .then(() =>
-          session.emit({
-            kind: "session.updated",
-            payload: {
-              initiatedBy: pending === undefined ? "agent" : "user",
-              stopReason,
-              ...(terminalError === undefined ? {} : { stopDetail: terminalError.message }),
-              ...(terminalError?.stopKind === undefined
-                ? {}
-                : { stopKind: terminalError.stopKind }),
-              ...(terminalError?.retryable === true ? { retryable: true } : {}),
-              turnId,
-              turnState: "ended"
-            },
-            subjectId: session.key
-          })
-        )
-        .then(() => {
-          pending?.resolve({ stopReason })
-          if (pending !== undefined && status === "completed" && terminalError === undefined) {
-            void session.titleGenerator?.onTurnCompleted()
-          }
-        })
+      completeNotificationTurn(session, payload)
       break
     }
     case "item/agentMessage/delta": {
@@ -228,49 +355,7 @@ export const handleNotification = (
     }
     case "item/started":
     case "item/completed": {
-      const item = isRecord(payload.item) ? payload.item : {}
-      if (item.type === "contextCompaction") {
-        // A collab subagent's context belongs to its nested thread, not the
-        // main chat's status line. Main-thread compaction is a canonical v2
-        // item with matching started/completed ids.
-        if (parentToolCallId === undefined) {
-          void session.emit({
-            kind: "session.output",
-            payload: {
-              sessionUpdate: "context_compaction",
-              ...(typeof item.id === "string" ? { compactionId: item.id } : {}),
-              status: method === "item/started" ? "started" : "completed"
-            },
-            subjectId: session.key
-          })
-        }
-        break
-      }
-      // Codex (as of 0.142) emits no reasoning text deltas — the reasoning
-      // item's lifecycle is the only thinking signal, so an empty thought
-      // chunk drives the client's ephemeral "Thinking…" state through the
-      // otherwise silent gap.
-      if (item.type === "reasoning" && method === "item/started") {
-        void session.emit({
-          kind: "session.output",
-          payload: {
-            content: { text: "", type: "text" },
-            sessionUpdate: "agent_thought_chunk",
-            ...parentField
-          },
-          subjectId: session.key
-        })
-        break
-      }
-      if (item.type === "collabAgentToolCall") {
-        handleCollabItem(session, item, method === "item/started")
-        break
-      }
-      if (item.type === "subAgentActivity") {
-        handleSubAgentActivity(session, item)
-        break
-      }
-      emitItemLifecycle(session, item, method === "item/started", parentToolCallId)
+      handleNotificationItemLifecycle(session, method, payload, parentToolCallId, parentField)
       break
     }
     case "item/commandExecution/outputDelta": {
@@ -281,41 +366,7 @@ export const handleNotification = (
       break
     }
     case "item/fileChange/patchUpdated": {
-      // Codex streams the patch as the model generates it (gated behind the
-      // apply_patch_streaming_events feature we enable at spawn) — this is
-      // the realtime counter signal. These arrive BEFORE item/started for
-      // the same item, so the first one opens the tool call.
-      const itemId = typeof payload.itemId === "string" ? payload.itemId : undefined
-      if (itemId === undefined) break
-      const stats = fileChangeStats(payload.changes)
-      if (!session.itemKinds.has(itemId)) {
-        session.itemKinds.set(itemId, "edit")
-        void session.emit({
-          kind: "session.output",
-          payload: {
-            kind: "edit",
-            sessionUpdate: "tool_call",
-            status: "in_progress",
-            title: fileChangeTitle(payload.changes, false),
-            toolCallId: itemId,
-            ...(stats.length === 0 ? {} : { diffStats: stats }),
-            ...parentField
-          },
-          subjectId: session.key
-        })
-        break
-      }
-      if (stats.length === 0) break
-      void session.emit({
-        kind: "session.output",
-        payload: {
-          diffStats: stats,
-          sessionUpdate: "tool_call_update",
-          status: "in_progress",
-          toolCallId: itemId
-        },
-        subjectId: session.key
-      })
+      emitStreamedFilePatch(session, payload, parentField)
       break
     }
     case "thread/goal/updated": {
@@ -349,27 +400,7 @@ export const handleNotification = (
       break
     }
     case "error": {
-      if (payload.willRetry === true) {
-        void session.emit({
-          kind: "session.updated",
-          payload: {
-            retrying: codexRetryStatus(payload),
-            ...(session.activeTurnId === undefined ? {} : { turnId: session.activeTurnId })
-          },
-          subjectId: session.key
-        })
-        break
-      }
-      const terminalError = codexErrorDetails(payload)
-      if (session.activeTurnId !== undefined) {
-        session.pendingTurnError = terminalError
-        break
-      }
-      void session.emit({
-        kind: "session.error",
-        payload: { message: terminalError.message },
-        subjectId: session.key
-      })
+      handleNotificationError(session, payload)
       break
     }
     default:
