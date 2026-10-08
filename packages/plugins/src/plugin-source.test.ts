@@ -101,6 +101,15 @@ describe("parsePluginSource", () => {
       subpath: "plugins/diff",
       url: "https://github.com/acme/tools.git"
     })
+    expect(
+      parsePluginSource("https://github.com/acme/tools/tree/feature%2Fname/plugins%20and%20tools")
+    ).toEqual({
+      owner: "acme",
+      ref: "feature%2Fname",
+      repo: "acme/tools",
+      subpath: "plugins%20and%20tools",
+      url: "https://github.com/acme/tools.git"
+    })
     // A #ref wins over the tree ref; a tree URL without a deeper path has no
     // subpath.
     expect(parsePluginSource("https://github.com/acme/tools/tree/main#pinned")).toEqual({

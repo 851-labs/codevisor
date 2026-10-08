@@ -29,13 +29,7 @@ export interface ParsedPluginSource {
 /// (including `/tree/<ref>/<subpath>`), raw git/ssh/https remotes, and local
 /// filesystem paths (cloned via git, so tests never hit the network).
 export const parsePluginSource = (input: string): ParsedPluginSource => {
-  let source = input.trim()
-  if (source === "") {
-    throw new PluginsError("invalid", "A plugin source is required")
-  }
-  if (source.startsWith("github:")) {
-    source = source.slice("github:".length)
-  }
+  const source = normalizedSource(input)
 
   // Raw git/ssh remotes pass straight through (with optional #ref).
   if (source.startsWith("git@") || source.startsWith("ssh://")) {
@@ -56,41 +50,67 @@ export const parsePluginSource = (input: string): ParsedPluginSource => {
   }
 
   if (source.startsWith("http://") || source.startsWith("https://")) {
-    const [withoutRef, ref] = splitRef(source)
-    const url = new URL(withoutRef)
-    if (url.hostname === "github.com" || url.hostname === "www.github.com") {
-      const segments = url.pathname.split("/").filter((part) => part !== "")
-      const [owner, repoRaw, marker, treeRef, ...rest] = segments
-      if (owner === undefined || repoRaw === undefined) {
-        throw new PluginsError("invalid", `Not a repository URL: ${input}`)
-      }
-      const repo = repoRaw.endsWith(".git") ? repoRaw.slice(0, -4) : repoRaw
-      // github.com/o/r/tree/<ref>/<subpath...>
-      if (marker === "tree" && treeRef !== undefined) {
-        return {
-          owner,
-          repo: `${owner}/${repo}`,
-          ref: ref ?? treeRef,
-          ...(rest.length === 0 ? {} : { subpath: rest.join("/") }),
-          url: `https://github.com/${owner}/${repo}.git`
-        }
-      }
-      const subpath = [marker, treeRef, ...rest].filter(
-        (part): part is string => part !== undefined
-      )
-      return {
-        owner,
-        repo: `${owner}/${repo}`,
-        ref,
-        ...(subpath.length === 0 ? {} : { subpath: subpath.join("/") }),
-        url: `https://github.com/${owner}/${repo}.git`
-      }
-    }
-    // Any other http(s) URL is handed to git verbatim — self-hosted remotes
-    // work, and a non-repository URL fails fast at clone time.
-    return { ref, url: withoutRef }
+    return parseHttpSource(source, input)
   }
 
+  return parseShorthandSource(source, input)
+}
+
+const normalizedSource = (input: string): string => {
+  let source = input.trim()
+  if (source === "") {
+    throw new PluginsError("invalid", "A plugin source is required")
+  }
+  if (source.startsWith("github:")) {
+    source = source.slice("github:".length)
+  }
+
+  return source
+}
+
+const parseHttpSource = (source: string, input: string): ParsedPluginSource => {
+  const [withoutRef, ref] = splitRef(source)
+  const url = new URL(withoutRef)
+  if (url.hostname === "github.com" || url.hostname === "www.github.com") {
+    return parseGitHubSource(url, ref, input)
+  }
+  // Any other http(s) URL is handed to git verbatim — self-hosted remotes
+  // work, and a non-repository URL fails fast at clone time.
+  return { ref, url: withoutRef }
+}
+
+const parseGitHubSource = (
+  url: URL,
+  ref: string | undefined,
+  input: string
+): ParsedPluginSource => {
+  const segments = url.pathname.split("/").filter((part) => part !== "")
+  const [owner, repoRaw, marker, treeRef, ...rest] = segments
+  if (owner === undefined || repoRaw === undefined) {
+    throw new PluginsError("invalid", `Not a repository URL: ${input}`)
+  }
+  const repo = repoRaw.endsWith(".git") ? repoRaw.slice(0, -4) : repoRaw
+  // github.com/o/r/tree/<ref>/<subpath...>
+  if (marker === "tree" && treeRef !== undefined) {
+    return {
+      owner,
+      repo: `${owner}/${repo}`,
+      ref: ref ?? treeRef,
+      ...(rest.length === 0 ? {} : { subpath: rest.join("/") }),
+      url: `https://github.com/${owner}/${repo}.git`
+    }
+  }
+  const subpath = [marker, treeRef, ...rest].filter((part): part is string => part !== undefined)
+  return {
+    owner,
+    repo: `${owner}/${repo}`,
+    ref,
+    ...(subpath.length === 0 ? {} : { subpath: subpath.join("/") }),
+    url: `https://github.com/${owner}/${repo}.git`
+  }
+}
+
+const parseShorthandSource = (source: string, input: string): ParsedPluginSource => {
   // owner/repo[#ref][/subpath] shorthand.
   const [withoutRef, ref] = splitRef(source)
   const segments = withoutRef.split("/").filter((part) => part !== "")
