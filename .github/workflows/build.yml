@@ -156,6 +156,11 @@ jobs:
           bun-version-file: package.json
       - uses: ./.github/actions/setup-rust
       - run: bun install --frozen-lockfile
+      - name: Reserve tunnel fixture listener ports
+        run: |
+          # Probing a listener port does not reserve it from outbound connections.
+          tunnel_reserved_ports="$(sysctl -n net.ipv4.ip_local_reserved_ports)"
+          sudo sysctl -w "net.ipv4.ip_local_reserved_ports=${tunnel_reserved_ports:+${tunnel_reserved_ports},}30000-34999,47000-48999"
       - run: bun run net:e2e
 
   server-linux-x64:
