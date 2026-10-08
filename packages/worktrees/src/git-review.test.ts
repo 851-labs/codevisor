@@ -246,6 +246,62 @@ describe("git review", () => {
     await expect(gitRefs(plain)).rejects.toMatchObject({ code: "not_git_repository" })
   })
 
+  it("budgets repeated blobs per path and admits empty text at the cumulative limit", async () => {
+    const { repo } = makeGitRepo(true)
+    const paths = [
+      "file-00.txt",
+      "file-01.txt",
+      "file-02.txt",
+      "file-03.txt",
+      "file-04.txt",
+      "file-05.txt",
+      "file-06.txt",
+      "file-07.txt",
+      "file-08.txt",
+      "file-09.txt",
+      "file-10.txt",
+      "file-11.txt",
+      "file-12.txt"
+    ]
+    const content = "x".repeat(1024 * 1024)
+    for (const path of paths) write(repo, path, content)
+    write(repo, "z-empty.txt", "")
+    const blob = git(repo, "hash-object", "file-00.txt")
+    const emptyBlob = git(repo, "hash-object", "z-empty.txt")
+
+    const review = await gitDiff(repo, "uncommitted")
+
+    expect(review.truncated).toBe(false)
+    expect(review.files).toHaveLength(14)
+    expect(review.files.map((file) => file.path)).toEqual([...paths, "z-empty.txt"])
+    for (let index = 0; index < 12; index += 1) {
+      const { newText, ...identity } = review.files[index]!
+      expect(identity).toEqual({
+        path: paths[index],
+        status: "added",
+        fingerprint: `${"0".repeat(blob.length)}..${blob}`,
+        oldText: null
+      })
+      expect(newText).toHaveLength(1024 * 1024)
+      expect(Buffer.from(newText!).every((byte) => byte === 0x78)).toBe(true)
+    }
+    expect(review.files[12]).toEqual({
+      path: "file-12.txt",
+      status: "added",
+      fingerprint: `${"0".repeat(blob.length)}..${blob}`,
+      oldText: null,
+      newText: null,
+      omitted: "tooLarge"
+    })
+    expect(review.files[13]).toEqual({
+      path: "z-empty.txt",
+      status: "added",
+      fingerprint: `${"0".repeat(emptyBlob.length)}..${emptyBlob}`,
+      oldText: null,
+      newText: ""
+    })
+  })
+
   it("bounds a review by file count and per-file size", async () => {
     const { repo } = makeGitRepo(true)
     write(repo, "a-large.txt", "x".repeat(1024 * 1024 + 1))
