@@ -71,13 +71,20 @@ describe("fs routes", () => {
     // Symlinks: follow directory links, skip broken ones and plain files.
     const linked = mkdtempSync(join(tmpdir(), "codevisor-fs-links-"))
     tempDirs.push(linked)
+    symlinkSync(join(root, "Alpha"), join(linked, "Alpha-link"))
     symlinkSync(join(root, "beta"), join(linked, "beta-link"))
     symlinkSync(join(root, "gone"), join(linked, "broken-link"))
     symlinkSync(join(root, "file.txt"), join(linked, "file-link"))
     const links = await jsonRequest(server, `/v1/fs/list?path=${encodeURIComponent(linked)}`)
-    expect((links.body as { entries: Array<{ name: string }> }).entries.map((e) => e.name)).toEqual(
-      ["beta-link"]
-    )
+    expect(links.status).toBe(200)
+    expect(links.body).toEqual({
+      path: linked,
+      parent: dirname(linked),
+      entries: [
+        { name: "Alpha-link", path: join(linked, "Alpha-link"), isGitRepo: true },
+        { name: "beta-link", path: join(linked, "beta-link"), isGitRepo: false }
+      ]
+    })
 
     // Unreadable directories surface a permission error, not a crash.
     const sealed = join(root, "sealed")
