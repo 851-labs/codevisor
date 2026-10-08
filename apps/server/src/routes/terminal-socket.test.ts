@@ -1,3 +1,5 @@
+import { once } from "node:events"
+
 import { makeTerminalManager } from "@codevisor/terminal"
 import { describe, expect, it, onTestFinished } from "vitest"
 import { WebSocket, WebSocketServer } from "ws"
@@ -162,20 +164,54 @@ describe("terminal socket sender", () => {
   })
 
   it("uses real timers by default", async () => {
-    const socket = new FakeSocket()
+    const first = Promise.withResolvers<void>()
+    const second = Promise.withResolvers<void>()
+    const socket = {
+      bufferedAmount: 0,
+      sent: [] as Array<unknown>,
+      send(data: string | Uint8Array): void {
+        this.sent.push(JSON.parse(data as string))
+        if (this.sent.length === 1) first.resolve()
+        if (this.sent.length === 2) second.resolve()
+      }
+    }
     const sender = new TerminalSocketSender(socket, {
       binary: false,
       lastOutputSeq: 0,
       resync: () => undefined
     })
     sender.sink({ type: "output", seq: 1, data: "now" })
-    await new Promise((resolve) => setImmediate(resolve))
+    await first.promise
     sender.setRoundTrip(30)
     sender.sink({ type: "output", seq: 2, data: "later" })
-    await new Promise((resolve) => setTimeout(resolve, 30))
+    await second.promise
     expect(socket.sent).toHaveLength(2)
+    expect(socket.sent).toEqual([
+      { type: "output", seq: 1, data: "now" },
+      { type: "output", seq: 2, data: "later" }
+    ])
   })
 })
+
+const observeClientClosure = (client: WebSocket): (() => Promise<void>) => {
+  const closed = Promise.withResolvers<void>()
+  const errors: Array<Error> = []
+  const onError = (error: Error): void => {
+    errors.push(error)
+  }
+  if (client.readyState === WebSocket.CLOSED) closed.resolve()
+  else {
+    client.on("error", onError)
+    client.once("close", () => {
+      client.off("error", onError)
+      closed.resolve()
+    })
+  }
+  return async () => {
+    await closed.promise
+    if (errors.length > 0) throw new AggregateError(errors, "Terminal socket client failed")
+  }
+}
 
 /// A real WebSocket pair, with the server side attached to `terminalId`.
 const connect = async (
@@ -184,15 +220,56 @@ const connect = async (
   client: WebSocket
   messages: Array<unknown>
   sizes: Array<unknown>
+  serverClosed: Promise<void>
   received: (n: number) => Promise<void>
 }> => {
   const server = new WebSocketServer({ port: 0 })
-  onTestFinished(() => server.close())
-  server.on("connection", (socket) => void attach(socket))
-  await new Promise<void>((resolve) => server.once("listening", resolve))
+  let client: WebSocket | undefined
+  let clientClosed: (() => Promise<void>) | undefined
+  let attachmentStarted = false
+  const attached = Promise.withResolvers<PromiseSettledResult<void>>()
+  const serverClosed = Promise.withResolvers<void>()
+  onTestFinished(async () => {
+    const errors: Array<unknown> = []
+    try {
+      if (attachmentStarted) {
+        const result = await attached.promise
+        if (result.status === "rejected") errors.push(result.reason)
+      }
+    } finally {
+      client?.terminate()
+      for (const socket of server.clients) socket.terminate()
+      const results = await Promise.allSettled([
+        clientClosed?.(),
+        new Promise<void>((resolve, reject) => {
+          server.close((error) => (error === undefined ? resolve() : reject(error)))
+        })
+      ])
+      for (const result of results) {
+        if (result.status === "rejected") errors.push(result.reason)
+      }
+    }
+    if (errors.length > 0)
+      throw new AggregateError(errors, "Terminal socket fixture cleanup failed")
+  })
+  server.once("connection", (socket) => {
+    // Promise continuations run after all synchronous close listeners,
+    // including the terminal's ownership release, have finished.
+    socket.once("close", () => serverClosed.resolve())
+    attachmentStarted = true
+    try {
+      attach(socket).then(
+        () => attached.resolve({ status: "fulfilled", value: undefined }),
+        (reason: unknown) => attached.resolve({ status: "rejected", reason })
+      )
+    } catch (reason) {
+      attached.resolve({ status: "rejected", reason })
+    }
+  })
+  await once(server, "listening")
   const { port } = server.address() as { port: number }
-  const client = new WebSocket(`ws://127.0.0.1:${port}`)
-  onTestFinished(() => client.terminate())
+  client = new WebSocket(`ws://127.0.0.1:${port}`)
+  clientClosed = observeClientClosure(client)
   const messages: Array<unknown> = []
   // Size announcements, kept apart from the output the tests follow.
   const sizes: Array<unknown> = []
@@ -210,11 +287,12 @@ const connect = async (
       waiter.resolve()
     }
   })
-  await new Promise<void>((resolve) => client.once("open", resolve))
+  await once(client, "open")
   return {
     client,
     messages,
     sizes,
+    serverClosed: serverClosed.promise,
     received: (count) =>
       messages.length >= count
         ? Promise.resolve()
@@ -334,17 +412,24 @@ describe("terminal socket", () => {
     const current = await connect(attach)
     current.client.send(phoneResize(3))
     // Handled frames are acknowledged, so the client can stop keeping them.
-    await current.received(2)
+    await Promise.all([old.received(3), current.received(2)])
+    expect(old.messages[0]).toEqual({ type: "ready", seq: 0, protocol: 2 })
+    expect(old.messages.slice(1)).toHaveLength(2)
+    expect(old.messages.slice(1)).toEqual(
+      expect.arrayContaining([
+        { type: "ack", seq: 0, clientSeq: 1 },
+        { type: "ack", seq: 0, clientSeq: 2 }
+      ])
+    )
     expect(current.messages).toEqual([
       { type: "ready", seq: 0, protocol: 2 },
       { type: "ack", seq: 0, clientSeq: 3 }
     ])
-    await new Promise((resolve) => setTimeout(resolve, 20))
     old.client.close()
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await old.serverClosed
     expect(released).toEqual([])
     current.client.close()
-    await done.promise
+    await Promise.all([current.serverClosed, done.promise])
     expect(released).toEqual([[handle.terminalId, "phone"]])
   })
 })
