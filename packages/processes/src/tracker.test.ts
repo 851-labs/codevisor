@@ -1,6 +1,8 @@
+import { EventEmitter } from "node:events"
+
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from "vitest"
 
-import { trackProcessTree, type ProcessIdentity } from "./index.mjs"
+import { stopTreeOnExit, trackProcessTree, type ProcessIdentity } from "./index.mjs"
 
 const entry = (pid: number, ppid = 1, pgid = pid, startedAt = "first"): ProcessIdentity => ({
   pid,
@@ -113,6 +115,33 @@ it("does not create a group claim when the first snapshot has no owned processes
   expect(f.stop).toHaveBeenCalledWith([], {})
 })
 
+it.each([
+  ["exits while tracked", [entry(30), entry(31, 30, 31)], false],
+  ["exited before tracking began", [], false],
+  ["left an empty dedicated group", [], true]
+] as const)(
+  "stops polling once a tree that %s has nothing left",
+  async (_case, initial, detached) => {
+    const f = await fixture([...initial], detached)
+    f.set([entry(90)])
+    await vi.advanceTimersByTimeAsync(250)
+    expect(vi.getTimerCount()).toBe(0)
+    const polls = f.list.mock.calls.length
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(f.list).toHaveBeenCalledTimes(polls)
+    await f.tree.stop()
+    expect(f.stop).toHaveBeenCalledWith([], {})
+  }
+)
+
+it("polls from a recent shared listing but stops from a fresh one", async () => {
+  const f = await fixture([entry(30)])
+  await vi.advanceTimersByTimeAsync(250)
+  expect(f.list).toHaveBeenLastCalledWith({ maxAgeMs: 250 })
+  await f.tree.stop()
+  expect(f.list).toHaveBeenLastCalledWith(undefined)
+})
+
 it("waits for a slow scan to finish before scheduling the next poll", async () => {
   const f = await fixture([entry(30)])
   const pending = Promise.withResolvers<ProcessIdentity[]>()
@@ -157,4 +186,27 @@ it("retries shutdown after a failed final scan", async () => {
   await f.tree.stop()
   expect(f.stop).toHaveBeenCalledWith([entry(30)], {})
   expect(vi.getTimerCount()).toBe(0)
+})
+
+it.each([
+  ["already exited", 0, null],
+  ["already killed", null, "SIGKILL"]
+] as const)(
+  "stops a tree whose child %s before tracking finished",
+  (_case, exitCode, signalCode) => {
+    const tree = { stop: vi.fn(async () => {}) }
+    stopTreeOnExit(Object.assign(new EventEmitter(), { exitCode, signalCode }), tree)
+    expect(tree.stop).toHaveBeenCalledOnce()
+  }
+)
+
+it("stops a running child's tree when it exits, absorbing a failed stop", async () => {
+  const child = Object.assign(new EventEmitter(), { exitCode: null, signalCode: null })
+  const tree = { stop: vi.fn(() => Promise.reject(new Error("ps failed"))) }
+  stopTreeOnExit(child, tree)
+  expect(tree.stop).not.toHaveBeenCalled()
+  child.emit("exit", 0, null)
+  expect(tree.stop).toHaveBeenCalledOnce()
+  // The helper's handler was attached first, so it has run once this settles.
+  await expect(tree.stop.mock.results[0]!.value).rejects.toThrow("ps failed")
 })

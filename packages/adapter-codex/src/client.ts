@@ -2,7 +2,12 @@ import { spawn } from "node:child_process"
 
 import { childStdioEndpoint, makeNdjsonTransport } from "@codevisor/agent-runtime"
 import type { NdjsonTransport } from "@codevisor/agent-runtime"
-import { processIdentity, stopProcessTree, trackProcessTree } from "@codevisor/processes"
+import {
+  processIdentity,
+  stopProcessTree,
+  stopTreeOnExit,
+  trackProcessTree
+} from "@codevisor/processes"
 
 /// Minimal JSON-RPC 2.0 client over newline-delimited JSON, the codex
 /// app-server's stdio transport (the `jsonrpc` header is omitted on the wire).
@@ -79,9 +84,7 @@ export const spawnCodexClient: CodexConnector = async (request) => {
   const pid = child.pid!
   const identity = await processIdentity(pid)
   const tree = await trackProcessTree(pid)
-  child.once("exit", () => {
-    void tree.stop().catch(() => undefined)
-  })
+  stopTreeOnExit(child, tree)
   let closing: Promise<void> | undefined
   const closeAndWait = (): Promise<void> => {
     closing ??= (async () => {

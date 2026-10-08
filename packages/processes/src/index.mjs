@@ -2,13 +2,13 @@ import { execFile } from "node:child_process"
 import { setTimeout as sleep } from "node:timers/promises"
 import { promisify } from "node:util"
 
-export { trackProcessTree } from "./tracker.mjs"
+export { stopTreeOnExit, trackProcessTree } from "./tracker.mjs"
 
 const exec = promisify(execFile)
 
 /** @typedef {{pid: number, ppid: number, pgid: number, startedAt: string, state: string}} ProcessIdentity */
 /** @typedef {ProcessIdentity & {command: string}} ProcessTableEntry */
-/** @typedef {{notBefore?: number}} ListOptions */
+/** @typedef {{notBefore?: number, maxAgeMs?: number}} ListOptions */
 /** @typedef {{list: (options?: ListOptions) => Promise<ProcessIdentity[]>, signal: (pid: number, signal: NodeJS.Signals) => void, now: () => number, sleep: (ms: number) => Promise<unknown>}} ProcessSystem */
 
 /** Parse a locale-independent `ps` snapshot, including birth time to reject reused PIDs.
@@ -52,22 +52,33 @@ export async function readProcessTable({ includeCommand = true } = {}) {
  * sharing, dozens of full process listings run in parallel on every poll.
  * A caller joins an in-flight read only when that read started at or after
  * `notBefore`, so nobody acts on a table older than their own request.
+ * Background polls pass `maxAgeMs` instead: they also accept the last
+ * finished table while it is that recent, so every tracked tree shares one
+ * listing per poll interval rather than each running its own.
  * @template T
  * @param {{read: () => Promise<T>, now: () => number}} source
  */
 export function createProcessSampler({ read, now }) {
   /** @type {{startedAt: number, table: Promise<T>} | undefined} */
   let inFlight
+  /** @type {{startedAt: number, table: Promise<T>} | undefined} */
+  let latest
   return {
     /** @param {ListOptions} [options] */
-    list: ({ notBefore = now() } = {}) => {
+    list: ({ maxAgeMs, notBefore = maxAgeMs === undefined ? now() : now() - maxAgeMs } = {}) => {
       if (inFlight !== undefined && inFlight.startedAt >= notBefore) return inFlight.table
+      if (maxAgeMs !== undefined && latest !== undefined && latest.startedAt >= notBefore)
+        return latest.table
       const sample = { startedAt: now(), table: read() }
       inFlight = sample
       const settle = () => {
         if (inFlight === sample) inFlight = undefined
       }
-      sample.table.then(settle, settle)
+      sample.table.then(() => {
+        // An older read finishing late must not replace a newer table.
+        if (latest === undefined || latest.startedAt <= sample.startedAt) latest = sample
+        settle()
+      }, settle)
       return sample.table
     }
   }
@@ -78,8 +89,10 @@ const sharedSampler = createProcessSampler({
   now: () => performance.now()
 })
 
-/** Read process identities, joining a concurrent read that started after this request. */
-export const listProcessIdentities = () => sharedSampler.list()
+/** Read process identities, joining a concurrent read that started after this request
+ * (or, with `maxAgeMs`, reusing one that recent).
+ * @param {ListOptions} [options] */
+export const listProcessIdentities = (options) => sharedSampler.list(options)
 
 /** @type {ProcessSystem} */
 const nativeSystem = {

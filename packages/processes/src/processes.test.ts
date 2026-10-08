@@ -233,11 +233,39 @@ describe("owned process shutdown", () => {
     expect(await first).toBe(10)
     expect(await joined).toBe(10)
     expect(await fresh).toBe(20)
-    // A settled read is never reused.
+    // A settled read is never reused by a caller that needs a fresh table.
     const later = sampler.list({ notBefore: 0 })
     expect(read).toHaveBeenCalledTimes(3)
     pending[2]!(30)
     expect(await later).toBe(30)
+  })
+
+  it("lets background polls share the newest finished listing while it is recent enough", async () => {
+    let clock = 0
+    const pending: Array<(table: number) => void> = []
+    const read = vi.fn(
+      () =>
+        new Promise<number>((resolve) => {
+          pending.push(resolve)
+        })
+    )
+    const sampler = createProcessSampler({ read, now: () => clock })
+    const older = sampler.list()
+    clock = 10
+    const newer = sampler.list()
+    pending[1]!(20)
+    expect(await newer).toBe(20)
+    // The older read finishing last must not replace the newer table.
+    pending[0]!(10)
+    expect(await older).toBe(10)
+    clock = 260
+    expect(await sampler.list({ maxAgeMs: 250 })).toBe(20)
+    expect(read).toHaveBeenCalledTimes(2)
+    clock = 261
+    const stale = sampler.list({ maxAgeMs: 250 })
+    expect(read).toHaveBeenCalledTimes(3)
+    pending[2]!(30)
+    expect(await stale).toBe(30)
   })
 
   it("lets callers retry after a shared process listing fails", async () => {

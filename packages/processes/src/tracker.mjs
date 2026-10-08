@@ -36,10 +36,14 @@ const initialState = (pid, table, detached) => {
   }
 }
 
+const POLL_MS = 250
+
 /** Keep identities while a child runs so cleanup can still find descendants
  * after their parent exits. Dedicated groups also retain orphaned shells.
+ * Polling ends on its own once nothing is left to follow, so a tree whose
+ * owner never calls `stop` or `dispose` does not poll `ps` forever.
  * @param {number} pid
- * @param {{detached?: boolean, list?: () => Promise<import('./index.mjs').ProcessIdentity[]>, stop?: typeof stopProcesses}} [options]
+ * @param {{detached?: boolean, list?: (options?: import('./index.mjs').ListOptions) => Promise<import('./index.mjs').ProcessIdentity[]>, stop?: typeof stopProcesses}} [options]
  */
 export async function trackProcessTree(pid, options = {}) {
   // Every running chat and terminal polls; share each listing between them.
@@ -48,8 +52,9 @@ export async function trackProcessTree(pid, options = {}) {
   const { owner, known, group } = initialState(pid, await list(), options.detached ?? false)
   let trackGroup = group
   let polling = Promise.resolve()
-  const capture = async () => {
-    const table = await list()
+  /** @param {import('./index.mjs').ListOptions} [listOptions] */
+  const capture = async (listOptions) => {
+    const table = await list(listOptions)
     const live = table.filter((entry) => sameProcess(known.get(entry.pid), entry))
     const descendants = new Set(
       processTree(
@@ -80,12 +85,14 @@ export async function trackProcessTree(pid, options = {}) {
   let timer
   /** @returns {void} */
   const schedule = () => {
-    if (disposed) return
+    // With no live identities and no group claim, no later snapshot can add
+    // one: everything this tree owned has exited.
+    if (disposed || (known.size === 0 && !trackGroup)) return
     timer = setTimeout(() => {
-      polling = capture()
+      polling = capture({ maxAgeMs: POLL_MS })
         .catch(() => undefined)
         .then(schedule)
-    }, 250)
+    }, POLL_MS)
     timer.unref()
   }
   const dispose = () => {
@@ -114,4 +121,18 @@ export async function trackProcessTree(pid, options = {}) {
     },
     dispose
   }
+}
+
+/** Stop a tracked tree when its root child exits. The first snapshot can take
+ * long enough on a busy machine that the child already exited (and emitted
+ * `exit`) before the tracker existed; that tree is stopped right away.
+ * @param {Pick<import('node:child_process').ChildProcess, 'exitCode' | 'signalCode' | 'once'>} child
+ * @param {{stop: () => Promise<void>}} tree
+ */
+export function stopTreeOnExit(child, tree) {
+  const stop = () => {
+    void tree.stop().catch(() => undefined)
+  }
+  if (child.exitCode !== null || child.signalCode !== null) stop()
+  else child.once("exit", stop)
 }

@@ -2,7 +2,12 @@ import { spawn } from "node:child_process"
 
 import { childStdioEndpoint, makeNdjsonTransport } from "@codevisor/agent-runtime"
 import type { NdjsonTransport } from "@codevisor/agent-runtime"
-import { processIdentity, stopProcessTree, trackProcessTree } from "@codevisor/processes"
+import {
+  processIdentity,
+  stopProcessTree,
+  stopTreeOnExit,
+  trackProcessTree
+} from "@codevisor/processes"
 
 /// A client for Pi's RPC mode (`pi --mode rpc`): JSON records over stdio.
 /// Commands carry an `id` their `response` repeats; everything else Pi
@@ -48,9 +53,7 @@ export const spawnPiClient: PiConnector = async (request) => {
   const identity = await processIdentity(pid)
   // Pi's bash tool starts commands of its own; they go with the chat.
   const tree = await trackProcessTree(pid)
-  child.once("exit", () => {
-    void tree.stop().catch(() => undefined)
-  })
+  stopTreeOnExit(child, tree)
   return {
     ...client,
     close: () => {

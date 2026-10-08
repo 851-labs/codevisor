@@ -108,6 +108,11 @@ export class FakeConnection implements AcpAgentConnection {
     sessionId: string,
     cwd: string
   ): Effect.Effect<{ readonly sessionId: string; readonly configOptions: [] }, AgentRuntimeError> {
+    if (cwd.includes("fail-load")) {
+      return Effect.fail(
+        new AgentRuntimeError({ message: "Session load failed", operation: "loadSession" })
+      )
+    }
     return Effect.sync(() => {
       this.loaded.push([sessionId, cwd])
       return { configOptions: [], sessionId }

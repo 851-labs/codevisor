@@ -190,6 +190,22 @@ describe("@codevisor/agent-runtime", () => {
     expect(connector.connections[0]?.closeCount).toBe(1)
   })
 
+  it("closes the agent connection when loading a session fails", async () => {
+    const connector = makeConnector()
+    const runtime = makeAcpAgentRuntime({
+      connector,
+      env: { PATH: "/bin" },
+      executableExists: (name) => name === "gemini",
+      locateExecutable: (name) => `/bin/${name}`
+    })
+
+    await expect(
+      run(runtime.loadAgentSession("gemini", "native-session", "/tmp/fail-load", sink))
+    ).rejects.toMatchObject({ message: "Session load failed" })
+    expect(connector.connections[0]?.closeCount).toBe(1)
+    expect(runtime.loadedAgentSessionIds()).toEqual([])
+  })
+
   it("closes a loaded agent session and forgets it", async () => {
     const connector = makeConnector()
     const runtime = makeAcpAgentRuntime({

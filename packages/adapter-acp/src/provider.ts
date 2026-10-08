@@ -278,12 +278,16 @@ export const makeAcpProvider = (
     ): Effect.Effect<LoadedAgentSession, AgentRuntimeError> =>
       Effect.gen(function* () {
         const connection = yield* connect(definition, cwd, emit, account)
-        const metadata = yield* connection.loadSession(agentSessionId, cwd, toolGateway)
-        return {
-          handle: handleFor(connection, metadata.sessionId, emit, account),
-          metadata,
-          sessionId: metadata.sessionId
-        }
+        return yield* connection.loadSession(agentSessionId, cwd, toolGateway).pipe(
+          Effect.map((metadata) => ({
+            handle: handleFor(connection, metadata.sessionId, emit, account),
+            metadata,
+            sessionId: metadata.sessionId
+          })),
+          // Like createSession: a session that never loads is never managed,
+          // so its agent process is ours to close.
+          Effect.onError(() => connection.close.pipe(Effect.ignoreCause))
+        )
       }),
     listAgentSessions: async (definition, account) => {
       try {
