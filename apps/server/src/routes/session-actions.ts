@@ -2,7 +2,6 @@ import type { IncomingMessage, ServerResponse } from "node:http"
 
 import type { PromptAcceptedResponse } from "@codevisor/api"
 import {
-  OpenSessionRequest as OpenSessionRequestSchema,
   CancelRequest,
   PromptRequest,
   ReorderQueuedPromptsRequest,
@@ -15,7 +14,6 @@ import {
 } from "@codevisor/api"
 
 import {
-  appendAndPublish,
   HttpFailure,
   matchRoute,
   matchRouteParams,
@@ -33,15 +31,10 @@ import type {
 } from "../server-context.js"
 import { drainPromptQueue, publishPromptQueue } from "./prompt-queue.js"
 import { applySessionConfigPick } from "./session-config.js"
+import { openSessionAction } from "./session-open-action.js"
 import { routeSessionTranscript } from "./session-transcript.js"
-import {
-  applySessionUpdate,
-  createSessionIfMissing,
-  ensureAgentSessionFor,
-  findSession
-} from "./session-workspace.js"
+import { ensureAgentSessionFor } from "./session-workspace.js"
 import { MAX_PROMPT_ATTACHMENTS } from "./sessions.js"
-import { withUpdateGate } from "./update-gate.js"
 
 /// Per-session action routes: connect, prompt, cancel, mode/config, goals,
 /// questions, queue management, and read/attention state.
@@ -65,51 +58,7 @@ export const routeSessionActions = async (
   // History and saved configuration are independent of the provider process.
   const openSessionId = matchRoute(url.pathname, "/v1/sessions/:id/open")
   if (openSessionId !== undefined && request.method === "POST") {
-    const payload = await readSchema(request, OpenSessionRequestSchema)
-    if (
-      payload.session.id !== undefined &&
-      payload.session.id.toLowerCase() !== openSessionId.toLowerCase()
-    ) {
-      throw new HttpFailure(400, "Session id in body does not match the path")
-    }
-    const limit = payload.transcriptLimit ?? 32
-    if (!Number.isSafeInteger(limit) || limit < 1) {
-      throw new HttpFailure(400, "Invalid transcript page limit")
-    }
-    // Project: create-if-missing. An existing record is never updated from
-    // the open snapshot — it may predate changes made elsewhere (archiving),
-    // and opening a chat must not revert them.
-    if (payload.project?.id !== undefined) {
-      const wanted = payload.project.id.toLowerCase()
-      const exists = (await run(services.db.listProjects)).some(
-        (candidate) => candidate.id.toLowerCase() === wanted
-      )
-      if (!exists) {
-        const project = await run(services.db.createProject(payload.project))
-        await appendAndPublish(services.db, fanout, "project.created", project.id, project)
-      }
-    }
-    const existing = await findSession(services.db, openSessionId)
-    const session =
-      existing === undefined
-        ? (
-            await createSessionIfMissing(services, fanout, routeState, config, {
-              ...payload.session,
-              id: openSessionId
-            })
-          ).session
-        : payload.update === undefined
-          ? existing
-          : await applySessionUpdate(services, fanout, openSessionId, payload.update)
-    const transcript = withUpdateGate(
-      await run(services.db.getTranscriptPage(openSessionId, undefined, limit)),
-      services,
-      routeState,
-      openSessionId
-    )
-    const runtime = await run(services.db.getSessionRuntimeState(openSessionId))
-    writeJson(response, 200, { session, transcript, runtime })
-    return true
+    return openSessionAction(services, fanout, routeState, request, response, config, openSessionId)
   }
 
   if (
