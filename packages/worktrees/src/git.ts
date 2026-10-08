@@ -5,7 +5,14 @@ import { join, resolve } from "node:path"
 
 import type { BranchDiffTotals } from "@codevisor/api"
 
+import { GitCommandOutput, type GitOutputListener } from "./git-output.js"
 import { type CommandPriority, withPriority } from "./low-priority.js"
+
+export {
+  sanitizeGitOutputLine,
+  type GitOutputListener,
+  type GitOutputStream
+} from "./git-output.js"
 
 export class GitError extends Error {
   constructor(
@@ -141,53 +148,6 @@ export const listCodevisorWorktreeBranchNames = async (
 export const isWorktreeBranchCollision = (cause: unknown): boolean =>
   cause instanceof GitError && /branch named ['"].+['"] already exists/i.test(cause.message)
 
-export type GitOutputStream = "stdout" | "stderr"
-export type GitOutputListener = (stream: GitOutputStream, line: string) => void
-
-/// Matches ANSI escape sequences - CSI (colors, cursor moves, erase), OSC
-/// (titles/links), and single-character escapes - that TUI-style checkout
-/// hooks emit. Setup logs render as plain text, so these are stripped.
-// oxlint-disable no-control-regex
-const ansiEscapePattern =
-  /\u001B(?:\[[0-9:;<=>?]*[ -/]*[@-~]|\][^\u0007\u001B]*(?:\u0007|\u001B\\)?|[@-Z\\^_])/g
-// oxlint-enable no-control-regex
-
-/// Strips ANSI escapes and stray control characters and trims trailing
-/// whitespace, leaving a human-readable log line (possibly empty).
-export const sanitizeGitOutputLine = (line: string): string =>
-  line
-    .replace(ansiEscapePattern, "")
-    // eslint-disable-next-line no-control-regex
-    .replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, "")
-    .trimEnd()
-
-/// Splits a chunked byte stream into lines, invoking `onLine` per complete
-/// line; call `flush()` after the stream ends to emit a trailing partial line.
-/// A bare carriage return also ends a line: progress-style output that
-/// repaints in place becomes discrete lines instead of one endless one.
-const lineSplitter = (
-  onLine: (line: string) => void
-): { push: (chunk: string) => void; flush: () => void } => {
-  let buffered = ""
-  return {
-    push: (chunk) => {
-      buffered += chunk
-      const lines = buffered.split(/\r?\n|\r/)
-      // split always yields at least one element, so pop never returns undefined.
-      buffered = lines.pop() as string
-      for (const line of lines) {
-        onLine(line)
-      }
-    },
-    flush: () => {
-      if (buffered.length > 0) {
-        onLine(buffered)
-        buffered = ""
-      }
-    }
-  }
-}
-
 /// Default-branch refs, most specific first; branch totals and reviews use the first found.
 export const branchDiffBaseRefs = ["origin/HEAD", "origin/main", "origin/master", "main", "master"]
 
@@ -277,32 +237,9 @@ export const addWorktree = (
       cwd: repoDir,
       ...(env === undefined ? {} : { env })
     })
-    const stderrLines: Array<string> = []
-    const listen = (stream: GitOutputStream) => {
-      // Progress-style output repaints the same line many times; emit each
-      // distinct frame once and drop lines that were pure escape codes.
-      let lastLine: string | undefined
-      return lineSplitter((raw) => {
-        const line = sanitizeGitOutputLine(raw)
-        if (line.length === 0 || line === lastLine) {
-          return
-        }
-        lastLine = line
-        if (stream === "stderr") {
-          stderrLines.push(line)
-        }
-        onOutput?.(stream, line)
-      })
-    }
-    const stdout = listen("stdout")
-    const stderr = listen("stderr")
-    child.stdout.setEncoding("utf8")
-    child.stderr.setEncoding("utf8")
-    child.stdout.on("data", stdout.push)
-    child.stderr.on("data", stderr.push)
+    const output = new GitCommandOutput(child, onOutput)
     const settle = (failure: GitError | undefined): void => {
-      stdout.flush()
-      stderr.flush()
+      output.flush()
       if (failure === undefined) {
         resolve()
       } else {
@@ -313,7 +250,7 @@ export const addWorktree = (
       settle(new GitError("worktree", cause.message))
     })
     child.once("close", (code) => {
-      const stderrText = stderrLines.join("\n").trim()
+      const stderrText = output.stderrLines.join("\n").trim()
       settle(
         code === 0
           ? undefined
@@ -401,30 +338,9 @@ export const cloneRepository = (
         GIT_SSH_COMMAND: env.GIT_SSH_COMMAND ?? "ssh -oBatchMode=yes"
       }
     })
-    const stderrLines: Array<string> = []
-    const listen = (stream: GitOutputStream) => {
-      let lastLine: string | undefined
-      return lineSplitter((raw) => {
-        const line = sanitizeGitOutputLine(raw)
-        if (line.length === 0 || line === lastLine) {
-          return
-        }
-        lastLine = line
-        if (stream === "stderr") {
-          stderrLines.push(line)
-        }
-        onOutput?.(stream, line)
-      })
-    }
-    const stdout = listen("stdout")
-    const stderr = listen("stderr")
-    child.stdout.setEncoding("utf8")
-    child.stderr.setEncoding("utf8")
-    child.stdout.on("data", stdout.push)
-    child.stderr.on("data", stderr.push)
+    const output = new GitCommandOutput(child, onOutput)
     const settle = (failure: CloneError | undefined): void => {
-      stdout.flush()
-      stderr.flush()
+      output.flush()
       if (failure === undefined) {
         resolve()
       } else {
@@ -439,7 +355,7 @@ export const cloneRepository = (
         settle(undefined)
         return
       }
-      const stderrText = stderrLines.join("\n").trim()
+      const stderrText = output.stderrLines.join("\n").trim()
       const message =
         stderrText.length > 0 ? stderrText : `git clone exited with code ${String(code)}`
       settle(new CloneError(message, classifyCloneFailure(stderrText)))
