@@ -52,6 +52,81 @@ const renderableChatItemPredicate = `(
 const maxInitialTranscriptPageCharacters = 24_000
 const maxOlderTranscriptPageCharacters = 64_000
 
+const resolveTranscriptPosition = (
+  sqlite: ServiceContext["sqlite"],
+  sessionId: string,
+  rawBefore: number | string | undefined
+) => {
+  const before =
+    typeof rawBefore === "string"
+      ? (
+          sqlite
+            .prepare(
+              "select position from chat_items where session_id = ? and (id = ? or lower(message_id) = ?)"
+            )
+            .get(sessionId, canonicalUuid(rawBefore), canonicalUuid(rawBefore)) as
+            | { position: number }
+            | undefined
+        )?.position
+      : rawBefore
+  if (rawBefore !== undefined && before === undefined)
+    throw new Error("Transcript cursor item no longer exists")
+  return before
+}
+
+const transcriptRowsWithinBudget = (
+  candidates: ReadonlyArray<ChatItemRow>,
+  bounded: number
+): ChatItemRow[] => {
+  const pageRows: ChatItemRow[] = []
+  let characters = 0
+  const maxCharacters =
+    bounded <= 8 ? maxInitialTranscriptPageCharacters : maxOlderTranscriptPageCharacters
+  for (const row of candidates) {
+    const rowCharacters = row.text.length + (row.plan_document?.length ?? 0)
+    if (pageRows.length > 0 && characters + rowCharacters > maxCharacters) {
+      break
+    }
+    pageRows.push(row)
+    characters += rowCharacters
+  }
+  return pageRows
+}
+
+const transcriptPageItem = (
+  sqlite: ServiceContext["sqlite"],
+  sessionId: string,
+  row: ChatItemRow
+) => {
+  const item = transcriptFromChatRow(row)
+  if (row.role !== "assistant") {
+    const entry = sqlite
+      .prepare(
+        "select entry_key from transcript_entries where item_id = ? and category = 'text' order by position limit 1"
+      )
+      .get(row.id) as { entry_key: string } | undefined
+    return {
+      ...item,
+      ...(entry === undefined
+        ? {}
+        : { textResource: transcriptTextResource(sqlite, row.id, entry.entry_key) })
+    }
+  }
+  const summary = chatAssistantSummary(sqlite, sessionId, row.id)
+  return {
+    ...item,
+    text: summary.text,
+    textResource: summary.textResource,
+    planResource: summary.planResource,
+    textGeneration: summary.textGeneration,
+    textRevision: summary.textRevision,
+    textPosition: summary.textPosition,
+    ...(summary.planDocument === undefined ? {} : { planDocument: summary.planDocument }),
+    ...(summary.messageId === undefined ? {} : { messageId: summary.messageId }),
+    ...(summary.phase === undefined ? {} : { phase: summary.phase })
+  }
+}
+
 export const makeTranscriptService = (
   context: ServiceContext
 ): Pick<
@@ -104,20 +179,7 @@ export const makeTranscriptService = (
         sqlite.transaction(() => {
           const sessionId = canonicalUuid(rawSessionId)
           const session = getSession(sessionId)
-          const before =
-            typeof rawBefore === "string"
-              ? (
-                  sqlite
-                    .prepare(
-                      "select position from chat_items where session_id = ? and (id = ? or lower(message_id) = ?)"
-                    )
-                    .get(sessionId, canonicalUuid(rawBefore), canonicalUuid(rawBefore)) as
-                    | { position: number }
-                    | undefined
-                )?.position
-              : rawBefore
-          if (rawBefore !== undefined && before === undefined)
-            throw new Error("Transcript cursor item no longer exists")
+          const before = resolveTranscriptPosition(sqlite, sessionId, rawBefore)
           const bounded = Math.max(1, Math.min(64, Math.trunc(limit)))
           const rows = sqlite
             .prepare(
@@ -139,48 +201,9 @@ export const makeTranscriptService = (
               bounded + 1
             ) as ReadonlyArray<ChatItemRow>
           const candidates = rows.slice(0, bounded)
-          const pageRows: ChatItemRow[] = []
-          let characters = 0
-          const maxCharacters =
-            bounded <= 8 ? maxInitialTranscriptPageCharacters : maxOlderTranscriptPageCharacters
-          for (const row of candidates) {
-            const rowCharacters = row.text.length + (row.plan_document?.length ?? 0)
-            if (pageRows.length > 0 && characters + rowCharacters > maxCharacters) {
-              break
-            }
-            pageRows.push(row)
-            characters += rowCharacters
-          }
-          const ordered = forward ? pageRows : [...pageRows].toReversed()
-          const items = ordered.map((row) => {
-            const item = transcriptFromChatRow(row)
-            if (row.role !== "assistant") {
-              const entry = sqlite
-                .prepare(
-                  "select entry_key from transcript_entries where item_id = ? and category = 'text' order by position limit 1"
-                )
-                .get(row.id) as { entry_key: string } | undefined
-              return {
-                ...item,
-                ...(entry === undefined
-                  ? {}
-                  : { textResource: transcriptTextResource(sqlite, row.id, entry.entry_key) })
-              }
-            }
-            const summary = chatAssistantSummary(sqlite, sessionId, row.id)
-            return {
-              ...item,
-              text: summary.text,
-              textResource: summary.textResource,
-              planResource: summary.planResource,
-              textGeneration: summary.textGeneration,
-              textRevision: summary.textRevision,
-              textPosition: summary.textPosition,
-              ...(summary.planDocument === undefined ? {} : { planDocument: summary.planDocument }),
-              ...(summary.messageId === undefined ? {} : { messageId: summary.messageId }),
-              ...(summary.phase === undefined ? {} : { phase: summary.phase })
-            }
-          })
+          const pageRows = transcriptRowsWithinBudget(candidates, bounded)
+          const ordered = forward ? pageRows : pageRows.toReversed()
+          const items = ordered.map((row) => transcriptPageItem(sqlite, sessionId, row))
           const first = ordered[0]?.position
           const last = ordered.at(-1)?.position
           const hasMore =
