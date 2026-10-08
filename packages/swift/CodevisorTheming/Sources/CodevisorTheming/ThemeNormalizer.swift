@@ -35,6 +35,27 @@ public enum ThemeNormalizer {
     let sidebarBackground = originalColors["sideBar.background"] ?? editorBackground
     let sidebarForeground = originalColors["sideBar.foreground"] ?? editorForeground
 
+    fillSurfaces(
+      &colors, originalColors, editorBackground, editorForeground, sidebarBackground, sidebarForeground
+    )
+    fillGitDecorations(&colors, originalColors)
+    repairFocusOutline(&colors, originalColors)
+    repairHoverBackground(&colors, originalColors, sidebarBackground, sidebarForeground)
+    repairSelectionBackground(&colors, originalColors, sidebarBackground, sidebarForeground)
+
+    var result = theme
+    result.colors = colors
+    return result
+  }
+
+  private static func fillSurfaces(
+    _ colors: inout [String: String],
+    _ originalColors: [String: String],
+    _ editorBackground: String?,
+    _ editorForeground: String?,
+    _ sidebarBackground: String?,
+    _ sidebarForeground: String?
+  ) {
     fill(&colors, "editor.background", editorBackground)
     fill(&colors, "editor.foreground", editorForeground)
     fill(&colors, "sideBar.background", sidebarBackground)
@@ -50,7 +71,12 @@ public enum ThemeNormalizer {
       "list.activeSelectionForeground",
       originalColors["list.activeSelectionForeground"] ?? sidebarForeground
     )
+  }
 
+  private static func fillGitDecorations(
+    _ colors: inout [String: String],
+    _ originalColors: [String: String]
+  ) {
     // Git status foreground chains: the dedicated gitDecoration key, then
     // the terminal ANSI color, then the editor gutter background (which
     // catches gutter-only themes like vesper).
@@ -81,7 +107,12 @@ public enum ThemeNormalizer {
         originalColors["editorGutter.deletedBackground"]
       )
     )
+  }
 
+  private static func repairFocusOutline(
+    _ colors: inout [String: String],
+    _ originalColors: [String: String]
+  ) {
     // Focus ring: first non-transparent of [list.focusOutline, focusBorder].
     // A transparent outline is rejected so the resolved key is always a
     // visible color; if neither candidate is visible the key ends absent.
@@ -95,7 +126,14 @@ public enum ThemeNormalizer {
     } else {
       colors.removeValue(forKey: "list.focusOutline")
     }
+  }
 
+  private static func repairHoverBackground(
+    _ colors: inout [String: String],
+    _ originalColors: [String: String],
+    _ sidebarBackground: String?,
+    _ sidebarForeground: String?
+  ) {
     // Hover repair: a hover background that exactly matches the surface, or
     // that sits closer to the text color than the surface (so it would
     // erase the row text), is unusable for any consumer — drop it and let
@@ -107,7 +145,14 @@ public enum ThemeNormalizer {
     {
       colors.removeValue(forKey: "list.hoverBackground")
     }
+  }
 
+  private static func repairSelectionBackground(
+    _ colors: inout [String: String],
+    _ originalColors: [String: String],
+    _ sidebarBackground: String?,
+    _ sidebarForeground: String?
+  ) {
     // Selection repair: the same rules as hover, but selection colors are
     // routinely semi-transparent (`#44475A75`, `#19283c99`), so measure the
     // color as it will actually render — composited over the sidebar
@@ -128,10 +173,6 @@ public enum ThemeNormalizer {
         colors.removeValue(forKey: "list.activeSelectionBackground")
       }
     }
-
-    var result = theme
-    result.colors = colors
-    return result
   }
 
   // Writes `value` to `key` only when it is a real color, so an absent source
