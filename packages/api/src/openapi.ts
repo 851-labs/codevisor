@@ -156,17 +156,8 @@ const queryParameters = (endpoint: Endpoint): ReadonlyArray<JsonObject> => {
   return []
 }
 
-const makeOperation = (
-  endpoint: Endpoint,
-  requests: Partial<Record<Endpoint, Schema.Constraint>>,
-  responses: Partial<Record<Endpoint, Schema.Constraint>>
-): JsonObject => {
-  const [method, rawPath] = endpoint.split(" ") as [string, string]
-  const requestSchema = requests[endpoint]
-  const responseSchema = responses[endpoint]
-  const parameters = [...pathParameters(rawPath), ...queryParameters(endpoint)]
-  const isWebSocket = websocketEndpoints.has(endpoint)
-  const successStatus = noContent.has(endpoint)
+const successStatusFor = (endpoint: Endpoint, isWebSocket: boolean): string =>
+  noContent.has(endpoint)
     ? "204"
     : isWebSocket
       ? "101"
@@ -175,10 +166,13 @@ const makeOperation = (
         : accepted.has(endpoint)
           ? "202"
           : "200"
-  const successResponse: JsonObject = {
-    description: isWebSocket ? "Switching Protocols" : "Success"
-  }
 
+const setSuccessContent = (
+  endpoint: Endpoint,
+  responseSchema: Schema.Constraint | undefined,
+  isWebSocket: boolean,
+  successResponse: JsonObject
+): void => {
   if (responseSchema !== undefined && !isWebSocket) {
     successResponse.content = {
       [endpoint === "GET /v1/events" ? "text/event-stream" : "application/json"]: {
@@ -199,6 +193,53 @@ const makeOperation = (
       "image/png": { schema: { type: "string", format: "binary" } }
     }
   }
+}
+
+const setRequestBody = (
+  endpoint: Endpoint,
+  requestSchema: Schema.Constraint | undefined,
+  operation: JsonObject
+): void => {
+  if (requestSchema !== undefined) {
+    operation.requestBody = {
+      required: true,
+      content: { "application/json": { schema: jsonSchema(requestSchema) } }
+    }
+  }
+  if (endpoint === "POST /v1/files") {
+    operation.requestBody = {
+      required: true,
+      content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } }
+    }
+  }
+}
+
+const setWebSocketMessages = (endpoint: Endpoint, operation: JsonObject): void => {
+  if (endpoint === "GET /v1/events/socket" || endpoint === "GET /v1/sessions/:id/events/socket") {
+    operation["x-websocket-server-message"] = jsonSchema(EventEnvelope)
+  }
+  if (endpoint === "GET /v1/terminals/:id/socket") {
+    operation["x-websocket-client-message"] = jsonSchema(TerminalClientFrame)
+    operation["x-websocket-server-message"] = jsonSchema(TerminalServerFrame)
+  }
+}
+
+const makeOperation = (
+  endpoint: Endpoint,
+  requests: Partial<Record<Endpoint, Schema.Constraint>>,
+  responses: Partial<Record<Endpoint, Schema.Constraint>>
+): JsonObject => {
+  const [method, rawPath] = endpoint.split(" ") as [string, string]
+  const requestSchema = requests[endpoint]
+  const responseSchema = responses[endpoint]
+  const parameters = [...pathParameters(rawPath), ...queryParameters(endpoint)]
+  const isWebSocket = websocketEndpoints.has(endpoint)
+  const successStatus = successStatusFor(endpoint, isWebSocket)
+  const successResponse: JsonObject = {
+    description: isWebSocket ? "Switching Protocols" : "Success"
+  }
+
+  setSuccessContent(endpoint, responseSchema, isWebSocket, successResponse)
 
   const operation: JsonObject = {
     operationId: operationIdFor(method, rawPath),
@@ -224,25 +265,8 @@ const makeOperation = (
     }
   }
   if (parameters.length > 0) operation.parameters = parameters
-  if (requestSchema !== undefined) {
-    operation.requestBody = {
-      required: true,
-      content: { "application/json": { schema: jsonSchema(requestSchema) } }
-    }
-  }
-  if (endpoint === "POST /v1/files") {
-    operation.requestBody = {
-      required: true,
-      content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } }
-    }
-  }
-  if (endpoint === "GET /v1/events/socket" || endpoint === "GET /v1/sessions/:id/events/socket") {
-    operation["x-websocket-server-message"] = jsonSchema(EventEnvelope)
-  }
-  if (endpoint === "GET /v1/terminals/:id/socket") {
-    operation["x-websocket-client-message"] = jsonSchema(TerminalClientFrame)
-    operation["x-websocket-server-message"] = jsonSchema(TerminalServerFrame)
-  }
+  setRequestBody(endpoint, requestSchema, operation)
+  setWebSocketMessages(endpoint, operation)
   return operation
 }
 
