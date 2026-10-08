@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto"
 
 import {
   initialWorkspacePosition,
-  nextPanePosition,
   workspacePositionEpoch,
   isoTimestamp,
   type UpdateWorkspacePaneRequest,
@@ -12,7 +11,7 @@ import {
 
 import { attempt } from "./errors.js"
 import { canonicalUuid } from "./ids.js"
-import { nextPanePositionIn } from "./pane-position.js"
+import { nextPanePositionIn, reorderPanePositions } from "./pane-position.js"
 import { serializeLabels, workspaceFromRow, workspacePaneFromRow } from "./row-mappers.js"
 import type { WorkspacePaneRow, WorkspaceRow } from "./rows.js"
 import { archivedStamp, type ServiceContext } from "./service-context.js"
@@ -368,23 +367,7 @@ export const makeWorkspacesService = (
         )
         return sqlite.transaction(() => {
           const panes = select.all(workspaceId) as ReadonlyArray<WorkspacePaneRow>
-          const known = new Set(panes.map((pane) => pane.id))
-          const listed = paneIds
-            .map((id) => canonicalUuid(id))
-            .filter((id, index, all) => known.has(id) && all.indexOf(id) === index)
-          const unlisted = panes.filter((pane) => !listed.includes(pane.id)).map((pane) => pane.id)
-          // Fresh ascending keys for the whole order, so the result never
-          // depends on the previous keys.
-          const update = sqlite.prepare(
-            "update workspace_panes set position = ?, updated_at = ? where id = ? and position <> ?"
-          )
-          const now = isoTimestamp()
-          let previous: string | undefined
-          for (const id of [...listed, ...unlisted]) {
-            const position = nextPanePosition(previous, Date.now(), id)
-            update.run(position, now, id, position)
-            previous = position
-          }
+          reorderPanePositions(sqlite, panes, paneIds)
           return (select.all(workspaceId) as ReadonlyArray<WorkspacePaneRow>).map(
             workspacePaneFromRow
           )
