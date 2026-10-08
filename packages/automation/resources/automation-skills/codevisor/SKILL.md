@@ -19,8 +19,11 @@ Use `tools.search` to find a tool and `tools.describe.tool({ path })` for its ex
 ## Choosing where work goes
 
 - **Built-in subagents** usually fit help with your current task: exploring the code, research, a quick review, small edits. Nothing is left behind for the user to manage.
-- **A new chat in the current workspace** fits another agent working on the same change beside you, such as a different harness or model for a second opinion or to implement a piece, or a conversation the user may want to follow. It shares your checkout.
-- **A new workspace with its own worktree** fits separate pieces of work that each end in their own branch or PR, like one agent per issue. Each shows up in the user's sidebar, so they can follow it, jump in, and review its PR.
+- **A Codevisor subagent beside you** (`workspacePlacement: "shared"`, the default) fits another agent working on the same change, such as a different harness or model for a second opinion or to implement a piece. It shares your checkout, shows as a tab beside you, and reports to you, not the user.
+- **A Codevisor subagent with its own worktree** (`"owned"`) fits parallel changes that would collide in one checkout. It shows as a tab group under you and archives with you.
+- **An independent agent** (`"independent"`) fits a separate line of work the user asked to manage themselves, like one agent per issue they'll follow up on. It gets its own row in the user's sidebar.
+
+See `codevisor-agents` for how to pick.
 
 ## What you can do
 
