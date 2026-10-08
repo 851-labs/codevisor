@@ -64,6 +64,9 @@ export const UpdateWorkspaceRequest = Schema.Struct({
   /// independent, top-level workspace. Setting a new parent appends the
   /// workspace's tab group at the end of the parent's tab bar.
   parentWorkspaceId: Schema.optional(Schema.NullOr(Schema.String)),
+  /// Moves the owned workspace's tab group in its owner's tab bar; the latest
+  /// move wins, like a tab move. Ignored for a workspace without an owner.
+  parentTabPosition: Schema.optional(WorkspacePosition),
   /// Collapses or expands the owned workspace's tab group on every client.
   groupCollapsed: Schema.optional(Schema.Boolean),
   /// Files the workspace into a sidebar folder; `null` unfiles it.

@@ -155,6 +155,11 @@ export const makeWorkspacesService = (
           },
           request.parentWorkspaceId
         )
+        // A group move only means something for a workspace with an owner.
+        const parentTabPosition =
+          ownership.parentWorkspaceId !== null && request.parentTabPosition !== undefined
+            ? request.parentTabPosition
+            : ownership.parentTabPosition
         const folderId =
           request.folderId === undefined
             ? existing.folder_id
@@ -184,7 +189,7 @@ export const makeWorkspacesService = (
             request.labels === undefined ? 0 : 1,
             serializeLabels(request.labels),
             ownership.parentWorkspaceId,
-            ownership.parentTabPosition,
+            parentTabPosition,
             (request.groupCollapsed ?? existing.group_collapsed === 1) ? 1 : 0,
             folderId,
             id

@@ -93,9 +93,17 @@ describe("@codevisor/db owned workspaces", () => {
     await run(db.close)
   })
 
-  it("stores group collapse and folder filing", async () => {
+  it("stores group moves, group collapse and folder filing", async () => {
     const { db, parent, create } = await seed(tempDatabase())
     const child = await create("worker", parent.id)
+    const moved = "00000000000180000000000000000000000000000000000000008"
+    expect(
+      (await run(db.updateWorkspace(child.id, { parentTabPosition: moved }))).parentTabPosition
+    ).toBe(moved)
+    // A workspace without an owner has no tab group to move.
+    expect(
+      (await run(db.updateWorkspace(parent.id, { parentTabPosition: moved }))).parentTabPosition
+    ).toBeUndefined()
     const folder = "0000000F-0000-0000-0000-000000000001"
     expect(await run(db.updateWorkspace(child.id, { groupCollapsed: true }))).toMatchObject({
       groupCollapsed: true
