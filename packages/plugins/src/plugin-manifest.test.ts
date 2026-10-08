@@ -99,6 +99,44 @@ describe("parsePluginManifest", () => {
     expectInvalid({ ...v2, setup: [{ argv: ["  "] }] }, "must name an executable")
   })
 
+  it.each([
+    {
+      overrides: { id: "Example", version: "v1.2.3" },
+      message: 'Plugin id must be lowercase "owner.name" (letters, digits, hyphens): Example'
+    },
+    {
+      overrides: { version: "v1.2.3", run: { argv: [] } },
+      message: "Plugin version must be valid SemVer: v1.2.3"
+    },
+    {
+      overrides: { setup: [{ argv: ["  "] }], minCodevisorVersion: "1.2" },
+      message: "Plugin setup[0].argv must name an executable"
+    },
+    {
+      overrides: {
+        requirements: {
+          executables: [{ name: "node" }, { name: "node", installHint: "  ", helpUrl: "bad" }]
+        }
+      },
+      message: "Duplicate executable requirement: node"
+    }
+  ])("reports the first failure: $message", ({ overrides, message }) => {
+    const manifest = {
+      ...validManifest,
+      protocolVersion: 2,
+      run: { argv: ["node"] },
+      ...overrides
+    }
+    try {
+      parsePluginManifest(JSON.stringify(manifest))
+      expect.unreachable("manifest should have been rejected")
+    } catch (cause) {
+      expect(cause).toBeInstanceOf(PluginsError)
+      expect((cause as PluginsError).code).toBe("invalid")
+      expect((cause as PluginsError).message).toBe(message)
+    }
+  })
+
   it("validates executable requirement names and guidance", () => {
     const v2 = {
       ...validManifest,
