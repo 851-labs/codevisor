@@ -53,12 +53,7 @@ const parseTextMatcher = (value: unknown, label: string): BrowserTextMatcher => 
   }
 }
 
-export const parseLocator = (value: unknown, depth = 0): BrowserLocator => {
-  if (depth > 12) throw new Error("locator composition is too deeply nested")
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("locator must be a Playwright-style locator object")
-  }
-  const locator = value as Readonly<Record<string, unknown>>
+const validateLocatorDescriptor = (locator: Readonly<Record<string, unknown>>): void => {
   const modes = ["ref", "css", "role", "label", "placeholder", "text", "testId"].filter((key) => {
     const candidate = locator[key]
     return typeof candidate === "string"
@@ -89,9 +84,12 @@ export const parseLocator = (value: unknown, depth = 0): BrowserLocator => {
   ) {
     throw new Error("locator.index must be a non-negative integer or last")
   }
-  const scope = locator.scope === undefined ? undefined : parseLocator(locator.scope, depth + 1)
-  const and = locator.and === undefined ? undefined : parseLocator(locator.and, depth + 1)
-  const or = locator.or === undefined ? undefined : parseLocator(locator.or, depth + 1)
+}
+
+const parseLocatorFilters = (
+  locator: Readonly<Record<string, unknown>>,
+  depth: number
+): BrowserLocator["filters"] => {
   let filters: BrowserLocator["filters"]
   if (locator.filters !== undefined) {
     if (
@@ -117,6 +115,20 @@ export const parseLocator = (value: unknown, depth = 0): BrowserLocator => {
       ...(typeof input.visible === "boolean" ? { visible: input.visible } : {})
     }
   }
+  return filters
+}
+
+export const parseLocator = (value: unknown, depth = 0): BrowserLocator => {
+  if (depth > 12) throw new Error("locator composition is too deeply nested")
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("locator must be a Playwright-style locator object")
+  }
+  const locator = value as Readonly<Record<string, unknown>>
+  validateLocatorDescriptor(locator)
+  const scope = locator.scope === undefined ? undefined : parseLocator(locator.scope, depth + 1)
+  const and = locator.and === undefined ? undefined : parseLocator(locator.and, depth + 1)
+  const or = locator.or === undefined ? undefined : parseLocator(locator.or, depth + 1)
+  const filters = parseLocatorFilters(locator, depth)
   return {
     ...(locator.ref === undefined ? {} : { ref: String(locator.ref) }),
     ...(locator.css === undefined ? {} : { css: String(locator.css) }),
