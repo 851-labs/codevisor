@@ -172,6 +172,48 @@ const fileStatus = (status: string): GitDiffFile["status"] => {
   return "modified"
 }
 
+const sideShas = (change: RawChange): ReadonlyArray<string> =>
+  [change.oldSha, change.newSha].filter((sha) => !isNullSha(sha))
+
+const budgetedPlans = (
+  kept: ReadonlyArray<RawChange>,
+  sizes: ReadonlyMap<string, number>
+): ReadonlyArray<{ readonly change: RawChange; readonly tooLarge: boolean }> => {
+  // Files are budgeted in path order, so which ones lose their text is stable
+  // from one refresh to the next.
+  let budget = maxTextBytes
+  return kept.map((change) => {
+    const shaSizes = sideShas(change).map((sha) => sizes.get(sha)!)
+    const total = shaSizes.reduce((sum, size) => sum + size, 0)
+    const tooLarge = shaSizes.some((size) => size > maxFileBytes) || total > budget
+    if (!tooLarge) budget -= total
+    return { change, tooLarge }
+  })
+}
+
+const projectReviewFile = (
+  change: RawChange,
+  tooLarge: boolean,
+  contents: ReadonlyMap<string, Buffer>
+): GitDiffFile => {
+  const status = fileStatus(change.status)
+  const identity = {
+    path: change.path,
+    ...(status === "renamed" ? { oldPath: change.oldPath } : {}),
+    status,
+    // Both sides' blob ids: identical on every client, and different as
+    // soon as either side's content changes.
+    fingerprint: `${change.oldSha}..${change.newSha}`
+  }
+  if (tooLarge) return { ...identity, oldText: null, newText: null, omitted: "tooLarge" }
+  const oldText = isNullSha(change.oldSha) ? null : decodeText(contents.get(change.oldSha)!)
+  const newText = isNullSha(change.newSha) ? null : decodeText(contents.get(change.newSha)!)
+  if (oldText === undefined || newText === undefined) {
+    return { ...identity, oldText: null, newText: null, omitted: "binary" }
+  }
+  return { ...identity, oldText, newText }
+}
+
 export const diffFiles = async (
   dir: string,
   oldTree: string,
@@ -190,45 +232,14 @@ export const diffFiles = async (
     // Rename detection can emit a renamed file at its old path's position.
     .toSorted((left, right) => Number(left.path > right.path) - Number(left.path < right.path))
   const kept = changes.slice(0, maxFiles)
-  const sideShas = (change: RawChange): ReadonlyArray<string> =>
-    [change.oldSha, change.newSha].filter((sha) => !isNullSha(sha))
   const sizes = await blobSizes(dir, [...new Set(kept.flatMap(sideShas))], env)
 
-  // Files are budgeted in path order, so which ones lose their text is stable
-  // from one refresh to the next.
-  let budget = maxTextBytes
-  const plans = kept.map((change) => {
-    const shaSizes = sideShas(change).map((sha) => sizes.get(sha)!)
-    const total = shaSizes.reduce((sum, size) => sum + size, 0)
-    const tooLarge = shaSizes.some((size) => size > maxFileBytes) || total > budget
-    if (!tooLarge) budget -= total
-    return { change, tooLarge }
-  })
+  const plans = budgetedPlans(kept, sizes)
   const contents = await blobContents(
     dir,
     [...new Set(plans.flatMap((plan) => (plan.tooLarge ? [] : sideShas(plan.change))))],
     env
   )
-  const text = (sha: string): string | null | undefined =>
-    isNullSha(sha) ? null : decodeText(contents.get(sha)!)
-
-  const files = plans.map(({ change, tooLarge }): GitDiffFile => {
-    const status = fileStatus(change.status)
-    const identity = {
-      path: change.path,
-      ...(status === "renamed" ? { oldPath: change.oldPath } : {}),
-      status,
-      // Both sides' blob ids: identical on every client, and different as
-      // soon as either side's content changes.
-      fingerprint: `${change.oldSha}..${change.newSha}`
-    }
-    if (tooLarge) return { ...identity, oldText: null, newText: null, omitted: "tooLarge" }
-    const oldText = text(change.oldSha)
-    const newText = text(change.newSha)
-    if (oldText === undefined || newText === undefined) {
-      return { ...identity, oldText: null, newText: null, omitted: "binary" }
-    }
-    return { ...identity, oldText, newText }
-  })
+  const files = plans.map(({ change, tooLarge }) => projectReviewFile(change, tooLarge, contents))
   return { files, truncated: changes.length > maxFiles }
 }
