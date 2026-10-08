@@ -176,14 +176,20 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
     // An unknown value (written by a newer client) reads as "not chosen".
     defaultRunLocation = try container.decodeIfPresent(String.self, forKey: .defaultRunLocation)
       .flatMap(ProjectRunLocation.init(rawValue:))
+    locations = try Self.decodeLocations(from: container, projectId: id, serverId: serverId)
+  }
+
+  private static func decodeLocations(
+    from container: KeyedDecodingContainer<Keys>, projectId: UUID, serverId: String
+  ) throws -> [ProjectLocation] {
     if let locations = try container.decodeIfPresent([ProjectLocation].self, forKey: .locations) {
-      self.locations = locations
+      return locations
     } else if let legacyFolderURL = try container.decodeIfPresent(URL.self, forKey: .folderURL) {
-      locations = [
-        ProjectLocation(projectId: id, serverId: serverId, folderPath: legacyFolderURL.path)
+      return [
+        ProjectLocation(projectId: projectId, serverId: serverId, folderPath: legacyFolderURL.path)
       ]
     } else {
-      locations = []
+      return []
     }
   }
 
