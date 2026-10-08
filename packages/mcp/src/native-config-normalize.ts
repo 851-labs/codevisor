@@ -73,60 +73,73 @@ export const normalizeNativeServer = (
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return undefined
   const entry = raw as Record<string, unknown>
   switch (harnessId) {
-    case "opencode": {
-      const enabled = entry["enabled"] !== false
-      const url = asString(entry["url"])
-      if (url !== undefined) return remote(entry, url, asStringRecord(entry["headers"]), enabled)
-      const commandParts = asStringArray(entry["command"])
-      const [command, ...args] = commandParts
-      if (command === undefined) return undefined
-      return stdio(entry, command, args, asStringRecord(entry["environment"]), enabled)
-    }
-    case "codex": {
-      const url = asString(entry["url"])
-      if (url !== undefined) return remote(entry, url, asStringRecord(entry["http_headers"]))
-      const command = asString(entry["command"])
-      if (command === undefined) return undefined
-      return stdio(entry, command, asStringArray(entry["args"]), asStringRecord(entry["env"]))
-    }
-    case "goose": {
-      const enabled = entry["enabled"] !== false
-      const url = asString(entry["uri"])
-      if (url !== undefined) return remote(entry, url, asStringRecord(entry["headers"]), enabled)
-      const command = asString(entry["cmd"])
-      if (command === undefined) return undefined
-      return stdio(
-        entry,
-        command,
-        asStringArray(entry["args"]),
-        asStringRecord(entry["envs"]),
-        enabled
-      )
-    }
-    case "cline": {
-      const enabled = entry["disabled"] !== true
-      const url = asString(entry["url"])
-      if (url !== undefined) return remote(entry, url, asStringRecord(entry["headers"]), enabled)
-      const command = asString(entry["command"])
-      if (command === undefined) return undefined
-      return stdio(
-        entry,
-        command,
-        asStringArray(entry["args"]),
-        asStringRecord(entry["env"]),
-        enabled
-      )
-    }
-    default: {
-      // Standard spec-aligned shape: claude-code, gemini, github-copilot-cli,
-      // and project .mcp.json files.
-      const url = asString(entry["url"])
-      if (url !== undefined) return remote(entry, url, asStringRecord(entry["headers"]))
-      const command = asString(entry["command"])
-      if (command === undefined) return undefined
-      return stdio(entry, command, asStringArray(entry["args"]), asStringRecord(entry["env"]))
-    }
+    case "opencode":
+      return normalizeOpenCodeServer(entry)
+    case "codex":
+      return normalizeCodexServer(entry)
+    case "goose":
+      return normalizeGooseServer(entry)
+    case "cline":
+      return normalizeClineServer(entry)
+    default:
+      return normalizeStandardServer(entry)
   }
+}
+
+const normalizeOpenCodeServer = (
+  entry: Record<string, unknown>
+): NormalizedNativeServer | undefined => {
+  const enabled = entry["enabled"] !== false
+  const url = asString(entry["url"])
+  if (url !== undefined) return remote(entry, url, asStringRecord(entry["headers"]), enabled)
+  const commandParts = asStringArray(entry["command"])
+  const [command, ...args] = commandParts
+  if (command === undefined) return undefined
+  return stdio(entry, command, args, asStringRecord(entry["environment"]), enabled)
+}
+
+const normalizeCodexServer = (
+  entry: Record<string, unknown>
+): NormalizedNativeServer | undefined => {
+  const url = asString(entry["url"])
+  if (url !== undefined) return remote(entry, url, asStringRecord(entry["http_headers"]))
+  const command = asString(entry["command"])
+  if (command === undefined) return undefined
+  return stdio(entry, command, asStringArray(entry["args"]), asStringRecord(entry["env"]))
+}
+
+const normalizeGooseServer = (
+  entry: Record<string, unknown>
+): NormalizedNativeServer | undefined => {
+  const enabled = entry["enabled"] !== false
+  const url = asString(entry["uri"])
+  if (url !== undefined) return remote(entry, url, asStringRecord(entry["headers"]), enabled)
+  const command = asString(entry["cmd"])
+  if (command === undefined) return undefined
+  return stdio(entry, command, asStringArray(entry["args"]), asStringRecord(entry["envs"]), enabled)
+}
+
+const normalizeClineServer = (
+  entry: Record<string, unknown>
+): NormalizedNativeServer | undefined => {
+  const enabled = entry["disabled"] !== true
+  const url = asString(entry["url"])
+  if (url !== undefined) return remote(entry, url, asStringRecord(entry["headers"]), enabled)
+  const command = asString(entry["command"])
+  if (command === undefined) return undefined
+  return stdio(entry, command, asStringArray(entry["args"]), asStringRecord(entry["env"]), enabled)
+}
+
+const normalizeStandardServer = (
+  entry: Record<string, unknown>
+): NormalizedNativeServer | undefined => {
+  // Standard spec-aligned shape: claude-code, gemini, github-copilot-cli,
+  // and project .mcp.json files.
+  const url = asString(entry["url"])
+  if (url !== undefined) return remote(entry, url, asStringRecord(entry["headers"]))
+  const command = asString(entry["command"])
+  if (command === undefined) return undefined
+  return stdio(entry, command, asStringArray(entry["args"]), asStringRecord(entry["env"]))
 }
 
 /// Extract a server's cross-harness identity (URL, package name, or command
