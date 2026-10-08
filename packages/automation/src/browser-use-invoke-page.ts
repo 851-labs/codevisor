@@ -15,6 +15,7 @@ import {
 } from "./browser-cdp-engine.js"
 import { delay } from "./browser-cdp.js"
 import { exportBrowserContent } from "./browser-content.js"
+import { readBrowserLogs } from "./browser-logs.js"
 import type { BrowserToolInvocation, BrowserToolSessionState } from "./browser-use-invoke-types.js"
 
 /// Clipboard, console logs, dialogs, viewport, raw CDP access, and page asset bundling.
@@ -109,62 +110,8 @@ export const invokePageTools = async (
       )
       return jsonResult({ written: true })
     }
-    case "dev.logs": {
-      const levels =
-        Array.isArray(args.levels) && args.levels.every((level) => typeof level === "string")
-          ? new Set(args.levels.map((level) => (level === "warning" ? "warn" : level)))
-          : undefined
-      const filter = typeof args.filter === "string" ? args.filter : undefined
-      const normalized = (active.logs.get(page.sessionId) ?? []).map((entry) => {
-        if (entry.method === "Runtime.consoleAPICalled") {
-          const args = Array.isArray(entry.args)
-            ? (entry.args as Array<Readonly<Record<string, unknown>>>)
-            : []
-          const message = args
-            .map((value) => String(value.value ?? value.description ?? value.type ?? ""))
-            .join(" ")
-          return {
-            level: entry.type === "warning" ? "warn" : String(entry.type ?? "log"),
-            message,
-            timestamp: new Date(Number(entry.timestamp ?? Date.now())).toISOString()
-          }
-        }
-        if (entry.method === "Log.entryAdded") {
-          const value =
-            entry.entry !== null && typeof entry.entry === "object"
-              ? (entry.entry as Readonly<Record<string, unknown>>)
-              : {}
-          return {
-            level: value.level === "warning" ? "warn" : String(value.level ?? "log"),
-            message: String(value.text ?? ""),
-            timestamp: new Date(Number(value.timestamp ?? Date.now())).toISOString(),
-            ...(typeof value.url === "string" ? { url: value.url } : {})
-          }
-        }
-        const detail =
-          entry.exceptionDetails !== null && typeof entry.exceptionDetails === "object"
-            ? (entry.exceptionDetails as Readonly<Record<string, unknown>>)
-            : {}
-        const exception =
-          detail.exception !== null && typeof detail.exception === "object"
-            ? (detail.exception as Readonly<Record<string, unknown>>)
-            : {}
-        return {
-          level: "error",
-          message: String(exception.description ?? detail.text ?? "Uncaught page error"),
-          timestamp: new Date(Number(entry.timestamp ?? Date.now())).toISOString(),
-          ...(typeof detail.url === "string" ? { url: detail.url } : {})
-        }
-      })
-      const entries = normalized
-        .filter(
-          (entry) =>
-            (levels === undefined || levels.has(entry.level)) &&
-            (filter === undefined || entry.message.includes(filter))
-        )
-        .slice(-Math.max(1, Math.min(1_000, Number(args.limit ?? 100))))
-      return jsonResult({ entries })
-    }
+    case "dev.logs":
+      return jsonResult({ entries: readBrowserLogs(active.logs, page.sessionId, args) })
     case "getJsDialog":
       return jsonResult({ dialog: active.dialogs.get(page.sessionId) ?? null })
     case "viewport.set": {
