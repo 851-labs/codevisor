@@ -3,13 +3,10 @@ import {
   type CredentialCommand,
   decodeAppToHub,
   decodeMachineToHub,
-  decodeRelayEnvelopes,
   encodeCloudFrame,
   isoTimestamp,
   MACHINE_PEERS_FEATURE,
-  MAX_RELAY_MESSAGE_BYTES,
-  type CloudMachinePresence,
-  type WireRelayEnvelope
+  type CloudMachinePresence
 } from "@codevisor/api"
 import { DurableObject } from "cloudflare:workers"
 
@@ -28,6 +25,7 @@ import {
 import { HUB_MIGRATIONS, machinePresence, machineRow, type SocketAttachment } from "./hub-schema.js"
 import { HubSockets } from "./hub-sockets.js"
 import { hubTunnel } from "./hub-tunnel-events.js"
+import { admitRelayMessage } from "./relay-admission.js"
 import { routeAppRelay, routeMachineRelay, type RelayHubPort } from "./relay-routing.js"
 import { DEFAULT_RESUME_GRACE_MS, ResumeSessions } from "./resume-sessions.js"
 
@@ -169,19 +167,9 @@ export class UserHub extends DurableObject<CloudEnv> {
     // Binary messages are relay envelope batches; text messages are the rare
     // JSON control frames (hello/ping).
     if (typeof message !== "string") {
-      if (message.byteLength > MAX_RELAY_MESSAGE_BYTES) {
-        this.#net.error(socket, "invalid-frame", "relay message exceeds the size limit")
-        return
-      }
-      if (!attachment.helloDone) {
-        this.#net.error(socket, "invalid-frame", "hello required before relaying")
-        return
-      }
-      let envelopes: WireRelayEnvelope[]
-      try {
-        envelopes = decodeRelayEnvelopes(new Uint8Array(message))
-      } catch {
-        this.#net.error(socket, "invalid-frame", "malformed relay message")
+      const envelopes = admitRelayMessage(message, attachment.helloDone)
+      if (typeof envelopes === "string") {
+        this.#net.error(socket, "invalid-frame", envelopes)
         return
       }
       this.#metrics.countRelay(attachment.connectionId, message.byteLength)
