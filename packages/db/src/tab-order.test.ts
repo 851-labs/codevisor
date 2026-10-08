@@ -1,7 +1,7 @@
 import Database from "better-sqlite3"
 import { describe, expect, it } from "vitest"
 
-import { makeDatabase } from "./index.js"
+import { DatabaseError, makeDatabase } from "./index.js"
 import { run, tempDatabase } from "./test-support.js"
 
 const paneIds = [
@@ -38,16 +38,78 @@ const seed = async (filename: string) => {
 describe("@codevisor/db shared tab order", () => {
   it("lists listed panes first, then the rest in their current order", async () => {
     const { db, workspace } = await seed(tempDatabase())
-    const titles = async () => (await run(db.listWorkspacePanes)).map((pane) => pane.title)
+    const titles = async () =>
+      (await run(db.listWorkspacePanes))
+        .filter((pane) => pane.workspaceId === workspace.id)
+        .map((pane) => pane.title)
     expect(await titles()).toEqual(["Chat", "Terminal", "Browser"])
 
-    // Unknown and repeated ids are ignored rather than failing the move.
+    const other = await run(
+      db.upsertWorkspace({ projectId: workspace.projectId, name: "other", hasCustomName: false })
+    )
+    const foreign = await run(
+      db.upsertWorkspacePane(other.id, {
+        id: "foreign-pane",
+        providerId: "codevisor",
+        paneType: "terminal",
+        title: "Other"
+      })
+    )
+    const before = (await run(db.listWorkspacePanes)).filter(
+      (pane) => pane.workspaceId === workspace.id
+    )
+
+    // UUID aliases deduplicate; unknown and foreign ids cannot join this workspace.
     const reordered = await run(
-      db.reorderWorkspacePanes(workspace.id, [browser, "not-a-pane", browser])
+      db.reorderWorkspacePanes(workspace.id, [
+        browser.toUpperCase(),
+        "not-a-pane",
+        foreign.id,
+        browser
+      ])
     )
     expect(reordered.map((pane) => pane.title)).toEqual(["Browser", "Chat", "Terminal"])
     expect(await titles()).toEqual(["Browser", "Chat", "Terminal"])
+    for (const pane of reordered) {
+      const {
+        position: _position,
+        updatedAt: _updatedAt,
+        ...content
+      } = before.find((original) => original.id === pane.id)!
+      expect(pane).toMatchObject(content)
+    }
+    expect((await run(db.listWorkspacePanes)).find((pane) => pane.id === foreign.id)).toEqual(
+      foreign
+    )
     await run(db.close)
+  })
+
+  it("rolls back every pane when a later position write fails", async () => {
+    const filename = tempDatabase()
+    const { db, workspace } = await seed(filename)
+    const sqlite = new Database(filename)
+    try {
+      const before = await run(db.listWorkspacePanes)
+      // Browser writes first; abort Chat's second write after a real change.
+      sqlite.exec(`
+        create trigger reject_pane_move before update of position on workspace_panes
+        when old.id = '${chat}'
+        begin select raise(abort, 'reorder blocked'); end;
+      `)
+      const failure = await run(db.reorderWorkspacePanes(workspace.id, [browser])).catch(
+        (error: unknown) => error
+      )
+      expect(failure).toBeInstanceOf(DatabaseError)
+      expect(failure).toMatchObject({
+        operation: "reorderWorkspacePanes",
+        message: "reorder blocked"
+      })
+      expect(await run(db.listWorkspacePanes)).toEqual(before)
+    } finally {
+      sqlite.exec("drop trigger if exists reject_pane_move")
+      sqlite.close()
+      await run(db.close)
+    }
   })
 
   it("moves a tab without counting it as a content change", async () => {
