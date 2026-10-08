@@ -13,6 +13,7 @@ import {
 import {
   appendAndPublish,
   applyWorkspaceArchiveEffects,
+  archiveOwnedWorkspaces,
   captureWorkspaceRuntime,
   enqueueWorkspaceArchive,
   HttpFailure,
@@ -283,6 +284,14 @@ export const routeWorkspaces = async (
     }
     const workspace = await run(services.db.updateWorkspace(workspaceId, { isArchived: true }))
     await appendAndPublish(services.db, fanout, "workspace.updated", workspace.id, workspace)
+    // Its subagents archive with it and then stand alone, so none points at
+    // a workspace that no longer exists.
+    await archiveOwnedWorkspaces(services, fanout, config, routeState, workspaceId)
+    for (const child of await run(services.db.listWorkspaces)) {
+      if (child.parentWorkspaceId?.toLowerCase() !== workspaceId.toLowerCase()) continue
+      const released = await run(services.db.updateWorkspace(child.id, { parentWorkspaceId: null }))
+      await appendAndPublish(services.db, fanout, "workspace.updated", released.id, released)
+    }
     // Read what the workspace runs before its chats and panes let go of it;
     // the teardown itself is queued once the workspace is gone. A workspace
     // that was already archived is torn down again, which is a no-op after a

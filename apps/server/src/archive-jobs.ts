@@ -130,6 +130,28 @@ export const enqueueWorkspaceArchive = (
   )
 }
 
+/// Archives the live workspaces `workspaceId` owns, and theirs in turn: an
+/// orchestrator's subagents are its own work and leave with it. A worktree a
+/// child shares with its owner is kept until the last of them is archived.
+/// Unarchiving deliberately revives only the workspace the user picked.
+export const archiveOwnedWorkspaces = async (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  config: CodevisorServerConfig,
+  turns: RetiredTurnState,
+  workspaceId: string
+): Promise<void> => {
+  const owned = (await run(services.db.listWorkspaces)).filter(
+    (candidate) =>
+      !candidate.isArchived &&
+      candidate.parentWorkspaceId?.toLowerCase() === workspaceId.toLowerCase()
+  )
+  for (const child of owned) {
+    const archived = await run(services.db.updateWorkspace(child.id, { isArchived: true }))
+    await applyWorkspaceArchiveEffects(services, fanout, config, turns, archived, false)
+  }
+}
+
 /// Applies a workspace's archive transition.
 ///
 /// The event is published first so a client never waits on a process that
@@ -154,6 +176,7 @@ export const applyWorkspaceArchiveEffects = async (
   if (workspace.isArchived) {
     const runtime = await captureWorkspaceRuntime(services, turns, workspace)
     void enqueueWorkspaceArchive(services, fanout, config, workspace, runtime)
+    await archiveOwnedWorkspaces(services, fanout, config, turns, workspace.id)
     return workspace
   }
 

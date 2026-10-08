@@ -183,4 +183,33 @@ describe("owned workspaces", () => {
       assertWorkspaceOwner([cyclicWorkspace("a", "b"), cyclicWorkspace("b", "a")], "c", "a")
     ).not.toThrow()
   })
+
+  it("archives a workspace's subagents with it and keeps them archived when it returns", async () => {
+    const { server, createSession, workspace, patch, parent } = await fixture()
+    const owned = await createSession({ parentSessionId: parent.id, workspacePlacement: "owned" })
+    const nested = await createSession({ parentSessionId: owned.id, workspacePlacement: "owned" })
+    const sibling = await createSession({
+      parentSessionId: parent.id,
+      workspacePlacement: "independent"
+    })
+
+    expect((await patch("ws-parent", { isArchived: true })).status).toBe(200)
+    expect((await workspace(owned.workspaceId!)).isArchived).toBe(true)
+    expect((await workspace(nested.workspaceId!)).isArchived).toBe(true)
+    expect((await workspace(sibling.workspaceId!)).isArchived).toBe(false)
+
+    expect((await patch("ws-parent", { isArchived: false })).status).toBe(200)
+    expect((await workspace(owned.workspaceId!)).isArchived).toBe(true)
+
+    // Deleting the owner archives its live subagents and releases them all.
+    const fresh = await createSession({ parentSessionId: parent.id, workspacePlacement: "owned" })
+    expect(
+      (await jsonRequest(server, "/v1/workspaces/ws-parent", { method: "DELETE" })).status
+    ).toBe(204)
+    expect(await workspace(fresh.workspaceId!)).toMatchObject({ isArchived: true })
+    expect((await workspace(fresh.workspaceId!)).parentWorkspaceId).toBeUndefined()
+    expect((await workspace(owned.workspaceId!)).parentWorkspaceId).toBeUndefined()
+    // The grandchild still belongs to its own (released) owner.
+    expect((await workspace(nested.workspaceId!)).parentWorkspaceId).toBe(owned.workspaceId)
+  })
 })
