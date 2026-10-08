@@ -4,6 +4,35 @@ import Testing
 
 @Suite("ToolCall merging")
 struct ToolCallTests {
+  @Test("Malformed whole status and content fields preserve the call")
+  func malformedWholeFields() throws {
+    let json = #"{"toolCallId":"x","title":"Run","status":{},"content":{},"exitCode":7}"#
+    let call = try JSONDecoder().decode(ToolCall.self, from: Data(json.utf8))
+    #expect(call.toolCallId == "x")
+    #expect(call.title == "Run")
+    #expect(call.exitCode == 7)
+    #expect(call.status == nil)
+    #expect(call.content == nil)
+  }
+
+  @Test("Decoded empty content update clears content and settles while preserving omitted fields")
+  func decodedEmptyContentUpdate() throws {
+    let base = ToolCall(
+      toolCallId: "x", title: "Run", kind: .execute, status: .inProgress,
+      content: [.content(.text("working"))], exitCode: 7
+    )
+    let json = #"{"toolCallId":"x","status":"completed","content":[]}"#
+    let update = try JSONDecoder().decode(ToolCallUpdate.self, from: Data(json.utf8))
+    let merged = base.applying(update)
+    #expect(merged.toolCallId == "x")
+    #expect(merged.title == "Run")
+    #expect(merged.kind == .execute)
+    #expect(merged.exitCode == 7)
+    #expect(merged.content == [])
+    #expect(merged.status == .completed)
+    #expect(merged.isSettled)
+  }
+
   @Test("applying merges only present fields")
   func applyingMerges() {
     let base = ToolCall(toolCallId: "t1", title: "Read file", kind: .read, status: .pending)

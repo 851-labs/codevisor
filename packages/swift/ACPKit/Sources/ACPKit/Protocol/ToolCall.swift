@@ -151,126 +151,6 @@ public struct ToolDetailResource: Codable, Equatable, Sendable {
   public var fields: [Field]
 }
 
-private enum ToolCallKeys: String, CodingKey {
-  case toolCallId, title, kind, status, content, locations, rawInput, rawOutput, exitCode, diffStats
-  case parentToolCallId, detailResource, isSnapshot, stateRevision, statePosition, chatItemId
-  case meta = "_meta"
-}
-
-/// Shared lenient field decoding for `ToolCall` and `ToolCallUpdate`: an
-/// unknown status string becomes nil, and unrecognized content elements are
-/// skipped per-element — a newer server must never make the client drop the
-/// whole event.
-private struct ToolCallFields {
-  init(
-    title: String?, kind: ToolKind?, status: ToolCallStatus?, content: [ToolCallContent]?,
-    locations: [ToolCallLocation]?, rawInput: JSONValue?, rawOutput: JSONValue?, exitCode: Int?,
-    diffStats: [ToolCallDiffStat]?, parentToolCallId: String?, detailResource: ToolDetailResource?,
-    meta: JSONValue?
-  ) {
-    self.title = title
-    self.kind = kind
-    self.status = status
-    self.content = content
-    self.locations = locations
-    self.rawInput = rawInput
-    self.rawOutput = rawOutput
-    self.exitCode = exitCode
-    self.diffStats = diffStats
-    self.parentToolCallId = parentToolCallId
-    self.detailResource = detailResource
-    self.meta = meta
-  }
-
-  var title: String?
-  var kind: ToolKind?
-  var status: ToolCallStatus?
-  var content: [ToolCallContent]?
-  var locations: [ToolCallLocation]?
-  var rawInput: JSONValue?
-  var rawOutput: JSONValue?
-  var exitCode: Int?
-  var diffStats: [ToolCallDiffStat]?
-  var parentToolCallId: String?
-  var detailResource: ToolDetailResource?
-  var meta: JSONValue?
-
-  init(from container: KeyedDecodingContainer<ToolCallKeys>) {
-    title = Self.lenient(String.self, from: container, forKey: .title)
-    kind = Self.lenient(ToolKind.self, from: container, forKey: .kind)
-    // Status and content affect turn liveness (a lost terminal status
-    // leaves the call spinning forever), so their swallows log at .error.
-    do {
-      if let raw = try container.decodeIfPresent(String.self, forKey: .status) {
-        status = ToolCallStatus(rawValue: raw)
-        if status == nil {
-          acpLog.error(
-            "Unknown tool call status \"\(raw, privacy: .public)\" — treating as absent"
-          )
-        }
-      }
-    } catch {
-      acpLog.error(
-        "Tool call status failed to decode: \(String(describing: error), privacy: .public)"
-      )
-    }
-    do {
-      if let elements = try container.decodeIfPresent(
-        [LenientlyDecoded<ToolCallContent>].self, forKey: .content)
-      {
-        content = elements.compactMap(\.value)
-      }
-    } catch {
-      acpLog.error(
-        "Tool call content failed to decode: \(String(describing: error), privacy: .public)"
-      )
-    }
-    locations = Self.lenient([ToolCallLocation].self, from: container, forKey: .locations)
-    rawInput = Self.lenient(JSONValue.self, from: container, forKey: .rawInput)
-    rawOutput = Self.lenient(JSONValue.self, from: container, forKey: .rawOutput)
-    exitCode = Self.lenient(Int.self, from: container, forKey: .exitCode)
-    diffStats = Self.lenient([ToolCallDiffStat].self, from: container, forKey: .diffStats)
-    parentToolCallId = Self.lenient(String.self, from: container, forKey: .parentToolCallId)
-    detailResource = Self.lenient(ToolDetailResource.self, from: container, forKey: .detailResource)
-    meta = Self.lenient(JSONValue.self, from: container, forKey: .meta)
-  }
-
-  static func encode(
-    _ fields: ToolCallFields,
-    to container: inout KeyedEncodingContainer<ToolCallKeys>
-  ) throws {
-    try container.encodeIfPresent(fields.title, forKey: .title)
-    try container.encodeIfPresent(fields.kind, forKey: .kind)
-    try container.encodeIfPresent(fields.status, forKey: .status)
-    try container.encodeIfPresent(fields.content, forKey: .content)
-    try container.encodeIfPresent(fields.locations, forKey: .locations)
-    try container.encodeIfPresent(fields.rawInput, forKey: .rawInput)
-    try container.encodeIfPresent(fields.rawOutput, forKey: .rawOutput)
-    try container.encodeIfPresent(fields.exitCode, forKey: .exitCode)
-    try container.encodeIfPresent(fields.diffStats, forKey: .diffStats)
-    try container.encodeIfPresent(fields.parentToolCallId, forKey: .parentToolCallId)
-    try container.encodeIfPresent(fields.detailResource, forKey: .detailResource)
-    try container.encodeIfPresent(fields.meta, forKey: .meta)
-  }
-
-  // Decodes an optional field, logging (rather than silently dropping) a
-  // value that was present but malformed. Absent keys stay silent.
-  private static func lenient<T: Decodable>(
-    _ type: T.Type,
-    from container: KeyedDecodingContainer<ToolCallKeys>,
-    forKey key: ToolCallKeys
-  ) -> T? {
-    do {
-      return try container.decodeIfPresent(T.self, forKey: key)
-    } catch {
-      acpLog.debug(
-        "Tool call \(key.stringValue, privacy: .public) failed to decode: \(String(describing: error), privacy: .public)"
-      )
-      return nil
-    }
-  }
-}
-
 /// A complete tool call as first reported via a `tool_call` session update.
 public struct ToolCall: Sendable, Codable, Equatable, Identifiable {
   public var isSnapshot: Bool? = nil
@@ -351,74 +231,7 @@ public struct ToolCall: Sendable, Codable, Equatable, Identifiable {
     detailResource = fields.detailResource
     meta = fields.meta
   }
-}
 
-/// A partial update to an in-flight tool call. All fields except the id are optional.
-public struct ToolCallUpdate: Sendable, Codable, Equatable {
-  public var toolCallId: String
-  public var title: String?
-  public var kind: ToolKind?
-  public var status: ToolCallStatus?
-  public var content: [ToolCallContent]?
-  public var locations: [ToolCallLocation]?
-  public var rawInput: JSONValue?
-  public var rawOutput: JSONValue?
-  public var exitCode: Int?
-  public var diffStats: [ToolCallDiffStat]?
-  public var parentToolCallId: String?
-  public var detailResource: ToolDetailResource?
-  public var meta: JSONValue?
-
-  public init(
-    toolCallId: String,
-    title: String? = nil,
-    kind: ToolKind? = nil,
-    status: ToolCallStatus? = nil,
-    content: [ToolCallContent]? = nil,
-    locations: [ToolCallLocation]? = nil,
-    rawInput: JSONValue? = nil,
-    rawOutput: JSONValue? = nil,
-    exitCode: Int? = nil,
-    diffStats: [ToolCallDiffStat]? = nil,
-    parentToolCallId: String? = nil,
-    detailResource: ToolDetailResource? = nil,
-    meta: JSONValue? = nil
-  ) {
-    self.toolCallId = toolCallId
-    self.title = title
-    self.kind = kind
-    self.status = status
-    self.content = content
-    self.locations = locations
-    self.rawInput = rawInput
-    self.rawOutput = rawOutput
-    self.exitCode = exitCode
-    self.diffStats = diffStats
-    self.parentToolCallId = parentToolCallId
-    self.detailResource = detailResource
-    self.meta = meta
-  }
-
-  public init(from decoder: any Decoder) throws {
-    let container = try decoder.container(keyedBy: ToolCallKeys.self)
-    toolCallId = try container.decode(String.self, forKey: .toolCallId)
-    let fields = ToolCallFields(from: container)
-    title = fields.title
-    kind = fields.kind
-    status = fields.status
-    content = fields.content
-    locations = fields.locations
-    rawInput = fields.rawInput
-    rawOutput = fields.rawOutput
-    exitCode = fields.exitCode
-    diffStats = fields.diffStats
-    parentToolCallId = fields.parentToolCallId
-    detailResource = fields.detailResource
-    meta = fields.meta
-  }
-}
-
-extension ToolCall {
   public func encode(to encoder: any Encoder) throws {
     var container = encoder.container(keyedBy: ToolCallKeys.self)
     try container.encode(toolCallId, forKey: .toolCallId)
@@ -435,27 +248,10 @@ extension ToolCall {
       to: &container
     )
   }
-}
 
-extension ToolCallUpdate {
-  public func encode(to encoder: any Encoder) throws {
-    var container = encoder.container(keyedBy: ToolCallKeys.self)
-    try container.encode(toolCallId, forKey: .toolCallId)
-    try ToolCallFields.encode(
-      ToolCallFields(
-        title: title, kind: kind, status: status, content: content, locations: locations,
-        rawInput: rawInput, rawOutput: rawOutput, exitCode: exitCode, diffStats: diffStats,
-        parentToolCallId: parentToolCallId, detailResource: detailResource, meta: meta
-      ),
-      to: &container
-    )
-  }
-}
-
-public extension ToolCall {
   /// Applies a `ToolCallUpdate`, returning a new merged tool call. Only fields
   /// present in the update overwrite existing values.
-  func applying(_ update: ToolCallUpdate) -> ToolCall {
+  public func applying(_ update: ToolCallUpdate) -> ToolCall {
     var result = self
     if let title = update.title { result.title = title }
     if let kind = update.kind { result.kind = kind }
@@ -473,28 +269,7 @@ public extension ToolCall {
   }
 
   /// True once the call has reached a terminal status.
-  var isSettled: Bool {
+  public var isSettled: Bool {
     status == .completed || status == .failed || status == .cancelled
-  }
-}
-
-public extension ToolCallUpdate {
-  /// Builds a `ToolCall` from an update, supplying defaults for required fields.
-  func asToolCall() -> ToolCall {
-    ToolCall(
-      toolCallId: toolCallId,
-      title: title ?? "",
-      kind: kind,
-      status: status,
-      content: content,
-      locations: locations,
-      rawInput: rawInput,
-      rawOutput: rawOutput,
-      exitCode: exitCode,
-      diffStats: diffStats,
-      parentToolCallId: parentToolCallId,
-      detailResource: detailResource,
-      meta: meta
-    )
   }
 }
