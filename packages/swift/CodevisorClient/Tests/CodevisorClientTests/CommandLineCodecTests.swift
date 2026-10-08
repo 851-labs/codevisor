@@ -28,5 +28,18 @@ struct CommandLineCodecTests {
     #expect(throws: CommandLineCodec.ParseError.trailingEscape) {
       try CommandLineCodec.parse("command \\")
     }
+    #expect(throws: CommandLineCodec.ParseError.unterminatedDoubleQuote) {
+      try CommandLineCodec.parse("command \"unfinished")
+    }
+    #expect(throws: CommandLineCodec.ParseError.trailingEscape) {
+      try CommandLineCodec.parse("command \"unfinished\\")
+    }
+  }
+
+  @Test func concatenatesFragmentsAndRespectsQuotedBackslashes() throws {
+    #expect(
+      try CommandLineCodec.parse(#"command pre' single'" double"post 'a\b' "a\b""#) == [
+        "command", "pre single doublepost", #"a\b"#, "ab",
+      ])
   }
 }

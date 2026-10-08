@@ -16,68 +16,87 @@ public enum CommandLineCodec {
   }
 
   public static func parse(_ commandLine: String) throws -> [String] {
-    enum Quote { case none, single, double }
-
-    var result: [String] = []
-    var current = ""
-    var quote = Quote.none
-    var isEscaping = false
-    var hasStartedToken = false
-
+    var parser = Parser()
     for character in commandLine {
+      parser.consume(character)
+    }
+    return try parser.finish()
+  }
+
+  private struct Parser {
+    private enum Quote { case none, single, double }
+
+    private var result: [String] = []
+    private var current = ""
+    private var quote = Quote.none
+    private var isEscaping = false
+    private var hasStartedToken = false
+
+    mutating func consume(_ character: Character) {
       if isEscaping {
         current.append(character)
         isEscaping = false
         hasStartedToken = true
-        continue
+        return
       }
 
       switch quote {
-      case .single:
-        if character == "'" {
-          quote = .none
-        } else {
-          current.append(character)
-        }
-      case .double:
-        if character == "\"" {
-          quote = .none
-        } else if character == "\\" {
-          isEscaping = true
-        } else {
-          current.append(character)
-        }
-      case .none:
-        if character.isWhitespace {
-          if hasStartedToken {
-            result.append(current)
-            current = ""
-            hasStartedToken = false
-          }
-        } else if character == "'" {
-          quote = .single
-          hasStartedToken = true
-        } else if character == "\"" {
-          quote = .double
-          hasStartedToken = true
-        } else if character == "\\" {
-          isEscaping = true
-          hasStartedToken = true
-        } else {
-          current.append(character)
-          hasStartedToken = true
-        }
+      case .single: consumeSingleQuoted(character)
+      case .double: consumeDoubleQuoted(character)
+      case .none: consumeUnquoted(character)
       }
     }
 
-    if isEscaping { throw ParseError.trailingEscape }
-    switch quote {
-    case .single: throw ParseError.unterminatedSingleQuote
-    case .double: throw ParseError.unterminatedDoubleQuote
-    case .none: break
+    private mutating func consumeSingleQuoted(_ character: Character) {
+      if character == "'" {
+        quote = .none
+      } else {
+        current.append(character)
+      }
     }
-    if hasStartedToken { result.append(current) }
-    return result
+
+    private mutating func consumeDoubleQuoted(_ character: Character) {
+      if character == "\"" {
+        quote = .none
+      } else if character == "\\" {
+        isEscaping = true
+      } else {
+        current.append(character)
+      }
+    }
+
+    private mutating func consumeUnquoted(_ character: Character) {
+      if character.isWhitespace {
+        if hasStartedToken {
+          result.append(current)
+          current = ""
+          hasStartedToken = false
+        }
+      } else if character == "'" {
+        quote = .single
+        hasStartedToken = true
+      } else if character == "\"" {
+        quote = .double
+        hasStartedToken = true
+      } else if character == "\\" {
+        isEscaping = true
+        hasStartedToken = true
+      } else {
+        current.append(character)
+        hasStartedToken = true
+      }
+    }
+
+    mutating func finish() throws -> [String] {
+      if isEscaping { throw ParseError.trailingEscape }
+      switch quote {
+      case .single: throw ParseError.unterminatedSingleQuote
+      case .double: throw ParseError.unterminatedDoubleQuote
+      case .none: break
+      }
+      if hasStartedToken { result.append(current) }
+      return result
+    }
   }
 
   public static func format(_ components: [String]) -> String {
