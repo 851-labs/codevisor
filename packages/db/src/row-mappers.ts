@@ -145,7 +145,11 @@ export const workspaceFromRow = (row: WorkspaceRow): Workspace => {
     ...(row.archived_at === null ? {} : { archivedAt: row.archived_at }),
     createdAt: row.created_at,
     ...(row.updated_at === null ? {} : { updatedAt: row.updated_at }),
-    ...(labels === undefined ? {} : { labels })
+    ...(labels === undefined ? {} : { labels }),
+    ...(row.parent_workspace_id === null ? {} : { parentWorkspaceId: row.parent_workspace_id }),
+    ...(row.parent_tab_position === "" ? {} : { parentTabPosition: row.parent_tab_position }),
+    ...(row.group_collapsed === 1 ? { groupCollapsed: true } : {}),
+    ...(row.folder_id === null ? {} : { folderId: row.folder_id })
   }
 }
 

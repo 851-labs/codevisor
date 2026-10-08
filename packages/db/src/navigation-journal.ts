@@ -26,7 +26,9 @@ export const installNavigationJournal = (db: Database.Database): void => {
       "worktree_name",
       "sidebar_state",
       "config_selections",
-      "unavailable_config_selections"
+      "unavailable_config_selections",
+      "parent_session_id",
+      "labels"
     ]
   }
   for (const [table, columns] of Object.entries(tables)) {

@@ -22,7 +22,19 @@ export const Workspace = Schema.Struct({
   sidebarPosition: Schema.optional(WorkspacePosition),
   sidebarOrderRevision: Schema.optional(Schema.Number),
   /// Free-form key/value labels (see `Labels`).
-  labels: Schema.optional(Labels)
+  labels: Schema.optional(Labels),
+  /// The workspace that owns this one: an orchestrating agent's subagent
+  /// with its own worktree. Owned workspaces list under their parent instead
+  /// of the top level and archive with it; absent means independent.
+  parentWorkspaceId: Schema.optional(Schema.String),
+  /// Where the owned workspace's tab group sits in the parent's tab bar, in
+  /// the same key space as the parent's pane positions.
+  parentTabPosition: Schema.optional(WorkspacePosition),
+  /// Whether the owned workspace's tab group is collapsed to its chip.
+  groupCollapsed: Schema.optional(Schema.Boolean),
+  /// The sidebar folder a top-level workspace is filed in. A folder id that
+  /// no longer names a live folder reads as unfiled.
+  folderId: Schema.optional(Schema.String)
 })
 export type Workspace = typeof Workspace.Type
 
@@ -47,7 +59,15 @@ export const UpdateWorkspaceRequest = Schema.Struct({
   /// layout; unarchiving revives only the sessions that cascade archived.
   isArchived: Schema.optional(Schema.Boolean),
   /// Replaces the workspace's labels; an empty object clears them.
-  labels: Schema.optional(Labels)
+  labels: Schema.optional(Labels),
+  /// Makes this workspace owned by another one; `null` promotes it to an
+  /// independent, top-level workspace. Setting a new parent appends the
+  /// workspace's tab group at the end of the parent's tab bar.
+  parentWorkspaceId: Schema.optional(Schema.NullOr(Schema.String)),
+  /// Collapses or expands the owned workspace's tab group on every client.
+  groupCollapsed: Schema.optional(Schema.Boolean),
+  /// Files the workspace into a sidebar folder; `null` unfiles it.
+  folderId: Schema.optional(Schema.NullOr(Schema.String))
 })
 export type UpdateWorkspaceRequest = typeof UpdateWorkspaceRequest.Type
 
@@ -66,7 +86,10 @@ export const UpsertWorkspaceRequest = Schema.Struct({
   createdAt: Schema.optional(Schema.String),
   /// Omitted keeps existing labels, so a native re-upsert never drops the
   /// labels an agent set; an empty object clears them.
-  labels: Schema.optional(Labels)
+  labels: Schema.optional(Labels),
+  /// Creation-only owner (see `Workspace.parentWorkspaceId`). A re-upsert
+  /// never changes ownership; `PATCH` does.
+  parentWorkspaceId: Schema.optional(Schema.String)
 })
 export type UpsertWorkspaceRequest = typeof UpsertWorkspaceRequest.Type
 

@@ -10,6 +10,7 @@ import {
 
 import { attempt } from "./errors.js"
 import { canonicalUuid } from "./ids.js"
+import { ownedTabGroups, resolveOwnership } from "./owned-workspaces.js"
 import { reorderPanePositions } from "./pane-position.js"
 import { serializeLabels, workspaceFromRow, workspacePaneFromRow } from "./row-mappers.js"
 import type { WorkspacePaneRow, WorkspaceRow } from "./rows.js"
@@ -47,13 +48,24 @@ export const upsertWorkspaceRow = (
     existing?.is_archived === 1,
     existing?.archived_at ?? undefined
   )
+  // Ownership is set at creation only: native clients re-upsert the whole
+  // record without knowing it, and `PATCH` is the one way to change it.
+  const ownership =
+    existing === undefined
+      ? resolveOwnership(
+          sqlite,
+          id,
+          { parentWorkspaceId: null, parentTabPosition: "" },
+          request.parentWorkspaceId
+        )
+      : { parentWorkspaceId: null, parentTabPosition: "" }
   sqlite
     .prepare(
       `insert into workspaces (
                  id, server_id, project_id, name, has_custom_name,
                  root_directory, is_archived, archived_at, created_at, updated_at, sidebar_position,
-                 labels
-               ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, null, ?, ?)
+                 labels, parent_workspace_id, parent_tab_position
+               ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, null, ?, ?, ?, ?)
                on conflict(id) do update set
                  project_id = excluded.project_id,
                  name = excluded.name,
@@ -76,6 +88,8 @@ export const upsertWorkspaceRow = (
       request.createdAt ?? now,
       position,
       serializeLabels(request.labels),
+      ownership.parentWorkspaceId,
+      ownership.parentTabPosition,
       request.labels === undefined ? 0 : 1,
       now
     )
@@ -132,13 +146,30 @@ export const makeWorkspacesService = (
           wasArchived,
           existing.archived_at ?? undefined
         )
+        const ownership = resolveOwnership(
+          sqlite,
+          id,
+          {
+            parentWorkspaceId: existing.parent_workspace_id,
+            parentTabPosition: existing.parent_tab_position
+          },
+          request.parentWorkspaceId
+        )
+        const folderId =
+          request.folderId === undefined
+            ? existing.folder_id
+            : request.folderId === null
+              ? null
+              : canonicalUuid(request.folderId)
         sqlite
           .prepare(
             `update workspaces set
                name = ?, has_custom_name = ?, root_directory = ?,
                is_archived = ?, archived_at = ?, updated_at = ?,
                sidebar_position = ?, sidebar_order_revision = ?,
-               labels = case when ? then ? else labels end
+               labels = case when ? then ? else labels end,
+               parent_workspace_id = ?, parent_tab_position = ?,
+               group_collapsed = ?, folder_id = ?
              where id = ?`
           )
           .run(
@@ -152,6 +183,10 @@ export const makeWorkspacesService = (
             existing.sidebar_order_revision + (request.sidebarOrder === undefined ? 0 : 1),
             request.labels === undefined ? 0 : 1,
             serializeLabels(request.labels),
+            ownership.parentWorkspaceId,
+            ownership.parentTabPosition,
+            (request.groupCollapsed ?? existing.group_collapsed === 1) ? 1 : 0,
+            folderId,
             id
           )
         return workspaceFromRow(
@@ -194,7 +229,7 @@ export const makeWorkspacesService = (
         )
         return sqlite.transaction(() => {
           const panes = select.all(workspaceId) as ReadonlyArray<WorkspacePaneRow>
-          reorderPanePositions(sqlite, panes, paneIds)
+          reorderPanePositions(sqlite, panes, paneIds, ownedTabGroups(sqlite, workspaceId))
           return (select.all(workspaceId) as ReadonlyArray<WorkspacePaneRow>).map(
             workspacePaneFromRow
           )

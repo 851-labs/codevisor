@@ -142,8 +142,9 @@ export interface CodevisorDatabaseService {
     paneId: string,
     request: UpdateWorkspacePaneRequest
   ) => Effect.Effect<WorkspacePane, DatabaseError>
-  /// Puts the workspace's tabs in this order (listed first, the rest after
-  /// in their current order) and returns every pane of the workspace.
+  /// Puts the workspace's tab bar in this order (listed first, the rest after
+  /// in their current order) and returns every pane of the workspace. Ids may
+  /// name panes or the tab groups of workspaces it owns.
   readonly reorderWorkspacePanes: (
     workspaceId: string,
     paneIds: ReadonlyArray<string>

@@ -73,6 +73,10 @@ export interface WorkspaceRow {
   readonly created_at: string
   readonly updated_at: string | null
   readonly labels?: string | null
+  readonly parent_workspace_id: string | null
+  readonly parent_tab_position: string
+  readonly group_collapsed: number
+  readonly folder_id: string | null
 }
 
 export interface WorkspacePaneRow {
