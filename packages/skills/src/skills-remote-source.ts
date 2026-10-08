@@ -18,6 +18,32 @@ export const materializeWellKnownSkills = async (
   sourceUrl: string,
   staging: string
 ): Promise<void> => {
+  const { entries, indexDir } = await discoverWellKnownIndex(sourceUrl)
+  for (const entry of entries) {
+    await materializeWellKnownEntry(entry, indexDir, staging)
+  }
+}
+
+const readWellKnownIndex = async (
+  indexUrl: string
+): Promise<ReadonlyArray<Record<string, unknown>> | undefined> => {
+  try {
+    const response = await fetch(indexUrl)
+    if (!response.ok) return undefined
+    const parsed = (await response.json()) as { skills?: unknown }
+    if (!Array.isArray(parsed.skills)) return undefined
+    return parsed.skills.filter(
+      (entry): entry is Record<string, unknown> => entry !== null && typeof entry === "object"
+    )
+  } catch {
+    // Unreachable host or invalid JSON at this candidate — try the next.
+    return undefined
+  }
+}
+
+const discoverWellKnownIndex = async (
+  sourceUrl: string
+): Promise<{ entries: ReadonlyArray<Record<string, unknown>>; indexDir: string }> => {
   const trimmed = sourceUrl.replace(/\/+$/, "")
   const origin = new URL(trimmed).origin
   const bases = [...new Set([trimmed, origin])]
@@ -28,19 +54,10 @@ export const materializeWellKnownSkills = async (
   for (const base of bases) {
     for (const path of wellKnownPaths) {
       const indexUrl = `${base}/${path}/index.json`
-      try {
-        const response = await fetch(indexUrl)
-        if (!response.ok) continue
-        const parsed = (await response.json()) as { skills?: unknown }
-        if (!Array.isArray(parsed.skills)) continue
-        entries = parsed.skills.filter(
-          (entry): entry is Record<string, unknown> => entry !== null && typeof entry === "object"
-        )
-        indexDir = `${base}/${path}`
-        break
-      } catch {
-        // Unreachable host or invalid JSON at this candidate — try the next.
-      }
+      entries = await readWellKnownIndex(indexUrl)
+      if (entries === undefined) continue
+      indexDir = `${base}/${path}`
+      break
     }
     if (entries !== undefined) break
   }
@@ -50,48 +67,89 @@ export const materializeWellKnownSkills = async (
       "invalid"
     )
   }
+  return { entries, indexDir }
+}
 
-  for (const entry of entries) {
-    const name = typeof entry["name"] === "string" ? entry["name"] : undefined
-    if (name === undefined || name === "") continue
-    const directory = join(staging, sanitizeName(name))
-    try {
-      if (Array.isArray(entry["files"])) {
-        // Legacy format: fetch each listed file from <indexDir>/<name>/.
-        await mkdir(directory, { recursive: true })
-        for (const file of entry["files"]) {
-          if (typeof file !== "string") continue
-          const destination = join(directory, file)
-          if (!isPathSafe(directory, destination)) continue
-          const response = await fetch(`${indexDir}/${encodeURIComponent(name)}/${file}`)
-          if (!response.ok) throw new Error(`Failed to fetch ${file}`)
-          await mkdir(dirname(destination), { recursive: true })
-          await writeFile(destination, Buffer.from(await response.arrayBuffer()))
-        }
-        continue
-      }
-      const artifactUrl = typeof entry["url"] === "string" ? entry["url"] : undefined
-      if (artifactUrl === undefined) continue
-      const response = await fetch(new URL(artifactUrl, `${indexDir}/`))
-      if (!response.ok) throw new Error(`Failed to fetch ${artifactUrl}`)
-      const bytes = Buffer.from(await response.arrayBuffer())
-      const digest = entry["digest"]
-      if (typeof digest === "string" && digest.startsWith("sha256:")) {
-        const actual = `sha256:${createHash("sha256").update(bytes).digest("hex")}`
-        if (actual !== digest) throw new Error("Artifact digest mismatch")
-      }
-      await mkdir(directory, { recursive: true })
-      if (entry["type"] === "skill-md") {
-        await writeFile(join(directory, "SKILL.md"), bytes)
-        continue
-      }
-      await extractArchive(bytes, directory)
-    } catch {
-      // A broken entry never poisons the rest of the index; the skill is
-      // simply absent from discovery.
-      await rm(directory, { force: true, recursive: true })
+const materializeWellKnownEntry = async (
+  entry: Record<string, unknown>,
+  indexDir: string,
+  staging: string
+): Promise<void> => {
+  const name = typeof entry["name"] === "string" ? entry["name"] : undefined
+  if (name === undefined || name === "") return
+  const directory = join(staging, sanitizeName(name))
+  try {
+    if (Array.isArray(entry["files"])) {
+      // Legacy format: fetch each listed file from <indexDir>/<name>/.
+      await materializeLegacyFiles(entry, name, indexDir, directory)
+      return
     }
+    const artifactUrl = typeof entry["url"] === "string" ? entry["url"] : undefined
+    if (artifactUrl === undefined) return
+    await materializeSkillArtifact(entry, artifactUrl, indexDir, directory)
+  } catch {
+    // A broken entry never poisons the rest of the index; the skill is
+    // simply absent from discovery.
+    await rm(directory, { force: true, recursive: true })
   }
+}
+
+const materializeLegacyFiles = async (
+  entry: Record<string, unknown>,
+  name: string,
+  indexDir: string,
+  directory: string
+): Promise<void> => {
+  await mkdir(directory, { recursive: true })
+  for (const file of entry["files"] as ReadonlyArray<unknown>) {
+    if (typeof file !== "string") continue
+    await downloadLegacyFile(file, name, indexDir, directory)
+  }
+}
+
+const downloadLegacyFile = async (
+  file: string,
+  name: string,
+  indexDir: string,
+  directory: string
+): Promise<void> => {
+  const destination = join(directory, file)
+  if (!isPathSafe(directory, destination)) return
+  const response = await fetch(`${indexDir}/${encodeURIComponent(name)}/${file}`)
+  if (!response.ok) throw new Error(`Failed to fetch ${file}`)
+  await mkdir(dirname(destination), { recursive: true })
+  await writeFile(destination, Buffer.from(await response.arrayBuffer()))
+}
+
+const downloadSkillArtifact = async (
+  entry: Record<string, unknown>,
+  artifactUrl: string,
+  indexDir: string
+): Promise<Buffer> => {
+  const response = await fetch(new URL(artifactUrl, `${indexDir}/`))
+  if (!response.ok) throw new Error(`Failed to fetch ${artifactUrl}`)
+  const bytes = Buffer.from(await response.arrayBuffer())
+  const digest = entry["digest"]
+  if (typeof digest === "string" && digest.startsWith("sha256:")) {
+    const actual = `sha256:${createHash("sha256").update(bytes).digest("hex")}`
+    if (actual !== digest) throw new Error("Artifact digest mismatch")
+  }
+  return bytes
+}
+
+const materializeSkillArtifact = async (
+  entry: Record<string, unknown>,
+  artifactUrl: string,
+  indexDir: string,
+  directory: string
+): Promise<void> => {
+  const bytes = await downloadSkillArtifact(entry, artifactUrl, indexDir)
+  await mkdir(directory, { recursive: true })
+  if (entry["type"] === "skill-md") {
+    await writeFile(join(directory, "SKILL.md"), bytes)
+    return
+  }
+  await extractArchive(bytes, directory)
 }
 
 /// Extract a zip or tar.gz artifact (detected by magic bytes) with the
