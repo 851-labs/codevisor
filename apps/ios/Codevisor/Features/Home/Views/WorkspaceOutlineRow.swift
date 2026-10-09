@@ -3,9 +3,9 @@ import CodevisorCore
 import SwiftUI
 
 /// A workspace in an outline, as Notes lists a folder: its state, its name
-/// and how many tabs it has. A workspace with workspaces nested under it
-/// discloses them inline, one level per tap of its chevron, each nesting the
-/// same way; tapping the row itself opens the workspace's page.
+/// and how many tabs it has. A workspace with workspaces nested under it has
+/// a chevron that discloses them inline, one level per tap; tapping the row
+/// itself opens the workspace's page.
 struct WorkspaceOutlineRow: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.workspaceRowActions) private var actions
@@ -27,18 +27,12 @@ struct WorkspaceOutlineRow: View {
 
   private var isExpanded: Bool { expanded.contains(row.id) }
 
-  /// The row, then the rows nested under it while it is expanded. The
-  /// outline is drawn here rather than by `DisclosureGroup`, whose chevron
-  /// can't be restyled: a softer chevron than the label's, still stronger
-  /// than a link's, so it reads as something to tap.
+  /// The outline is drawn by `WorkspaceOutline` rather than
+  /// `DisclosureGroup`, whose chevron can't be restyled: a softer chevron
+  /// than the label's, still stronger than a link's, so it reads as
+  /// something to tap.
   var body: some View {
     label
-    if isExpanded {
-      ForEach(row.children) { child in
-        WorkspaceOutlineRow(
-          row: child, owner: row, expanded: $expanded, isSelectable: isSelectable, depth: depth + 1)
-      }
-    }
   }
 
   @ViewBuilder

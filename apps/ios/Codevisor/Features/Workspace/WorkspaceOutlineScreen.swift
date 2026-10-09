@@ -53,13 +53,12 @@ struct WorkspaceOutlineScreen: View {
   private func sections(row: AgentSidebarRow?, children: [AgentSidebarRow], tabs: [HomeSidebarTabRow]) -> some View {
     if !children.isEmpty {
       Section("Workspaces", isExpanded: $showsWorkspaces) {
-        ForEach(children) { child in
-          WorkspaceOutlineRow(row: child, owner: row, expanded: $expanded, isSelectable: selectedTab != nil)
-        }
+        WorkspaceOutline(rows: children, owner: row, expanded: $expanded, isSelectable: selectedTab != nil)
       }
     }
     Section("Tabs", isExpanded: $showsTabs) {
       ForEach(tabs) { tab in tabRow(tab) }
+        .onMove { source, destination in moveTab(in: tabs, from: source, to: destination) }
     }
   }
 
@@ -135,6 +134,25 @@ struct WorkspaceOutlineScreen: View {
     WorkspaceNewTabRequests.shared.request(choice, in: workspaceId)
     actions.openTab(
       .workspace(serverId: serverId, workspaceId: workspaceId, anchorSessionId: nil, preferredChatSessionId: nil))
+  }
+
+  /// Moves a dragged tab on every device. Rows of a split belong to one
+  /// tab, so moving any of them moves the tab, in front of the tab it was
+  /// dropped above. Agents nested in the tab bar keep their places.
+  private func moveTab(in tabs: [HomeSidebarTabRow], from source: IndexSet, to destination: Int) {
+    guard let row = source.first, let tabId = tabs[row].tabId,
+      let workspace = environment.workspaces.workspace(id: workspaceId)
+    else { return }
+    let successor = SharedTabOrder.successor(
+      of: tabId, droppedAt: destination, rowTabIds: tabs.map { $0.tabId ?? $0.id })
+    environment.workspaceSync.moveTab(tabId, before: successor, inWorkspace: workspaceId)
+    guard let updated = environment.workspaces.workspace(id: workspace.id) else { return }
+    var reordered = updated.centerTabs[...]
+    let entries = navigation.tabStrip(for: updated).map { entry -> TabStripEntry in
+      guard case .tab = entry, let next = reordered.popFirst() else { return entry }
+      return .tab(next)
+    }
+    navigation.publishTabStripOrder(of: updated, entries: entries)
   }
 
   /// Closes a tab without opening it: a chat is closed like any chat; other
