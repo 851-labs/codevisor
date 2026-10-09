@@ -4,8 +4,10 @@ import SwiftUI
 
 /// The sidebar: one row per agent the user manages -- the chat row it always
 /// had, without workspace headers -- grouped the way the user chose: folders
-/// and loose agents, or projects. Grouping, folders and order are shared by
-/// every device. Subagents live in their agent's tab bar, not here.
+/// and loose agents, or projects. Agents an agent owns (subagents with
+/// workspaces of their own) nest under it, indented, as deep as they go;
+/// dragging one out of its owner makes it independent. Grouping, folders,
+/// order and ownership are shared by every device.
 extension SidebarView {
   var agentNodes: [AgentSidebarNode] {
     // The projection isn't observed directly; the revision is what changes.
@@ -23,6 +25,7 @@ extension SidebarView {
     .padding(.horizontal, 8)
     .padding(.bottom, 8)
     .animation(Motion.listReflow(reduceMotion: reduceMotion), value: nodes.map(\.id))
+    .overlay { GeometryReader { agentDragOverlay(in: $0) } }
     .alert("Rename Folder", isPresented: folderRenamePresented) {
       TextField("Name", text: $folderRenameTitle)
       Button("Rename") { commitFolderRename() }
@@ -71,7 +74,7 @@ extension SidebarView {
   private func nodeView(_ node: AgentSidebarNode) -> some View {
     switch node {
     case let .agent(row):
-      agentBlock(row)
+      agentTree(row)
     case let .folder(folder, rows):
       VStack(alignment: .leading, spacing: 1) {
         AgentSidebarSectionHeader(
@@ -84,12 +87,14 @@ extension SidebarView {
             if let id = UUID(uuidString: folder.id) { environment.navigationStore.deleteFolder(id: id) }
           }
         }
-        .dropDestination(for: String.self) { items, _ in
-          dropAgents(items, intoFolder: UUID(uuidString: folder.id))
+        .onGeometryChange(for: CGRect.self) {
+          $0.frame(in: .global)
+        } action: { frame in
+          if let id = UUID(uuidString: folder.id) { agentFrames.folders[id] = frame }
         }
         if !folder.collapsed {
           ForEach(rows) { row in
-            agentBlock(row).padding(.leading, 10)
+            agentTree(row).padding(.leading, 10)
           }
         }
       }
@@ -112,30 +117,49 @@ extension SidebarView {
           dropProjects(items, before: project)
         }
         if !collapsedProjects.contains(key) {
-          ForEach(rows) { row in agentBlock(row) }
+          ForEach(rows) { row in agentTree(row) }
         }
+      }
+    }
+  }
+
+  /// An agent and, indented under it, the agents it owns.
+  private func agentTree(_ row: AgentSidebarRow) -> some View {
+    VStack(alignment: .leading, spacing: 1) {
+      ForEach(AgentSidebarEntry.flattening(row)) { entry in
+        agentBlock(entry.row, owner: entry.owner)
+          .padding(.leading, CGFloat(entry.depth) * 16)
       }
     }
   }
 
   /// The agent's row, drawn from its own chat: the chat's live status or
   /// harness icon, its title, and a close button that archives it.
-  private func agentBlock(_ row: AgentSidebarRow) -> some View {
+  private func agentBlock(_ row: AgentSidebarRow, owner: AgentSidebarRow?) -> some View {
     let workspace = environment.workspaces.workspace(id: row.id)
     let home = workspace.flatMap { environment.navigationStore.homeChatId(of: $0) }
       .flatMap { list.session($0, serverId: row.serverId) }
     return SidebarWorkspaceTabRow(
       title: row.title, kind: .chat, isAgentOwned: false, chatSession: home, store: store,
-      isSelected: selectedAgentId() == row.id, isReordering: false, titleFont: itemTitleFont,
+      isSelected: selectedWorkspaceId() == row.id, isReordering: false, titleFont: itemTitleFont,
       onActivate: { openWorkspace(row.id) },
       onClose: { archive(row.id) },
       onRename: { beginRename(row.id) }
     )
-    .draggable(row.id.uuidString)
-    .dropDestination(for: String.self) { items, _ in
-      dropAgents(items, before: row)
+    .onGeometryChange(for: CGRect.self) {
+      $0.frame(in: .global)
+    } action: {
+      agentFrames.rows[row.id] = $0
     }
-    .contextMenu { agentMenu(row) }
+    .opacity(agentDrag?.id == row.id ? 0.4 : 1)
+    .simultaneousGesture(agentDragGesture(row))
+    .contextMenu {
+      if let owner {
+        Button("Move Out of “\(owner.title)”") { setOwner(of: row.id, to: nil) }
+        Divider()
+      }
+      agentMenu(row)
+    }
   }
 
   private func beginRename(_ workspaceId: UUID) {
@@ -169,17 +193,6 @@ extension SidebarView {
 
   // MARK: - Selection
 
-  /// The agent whose row shows the selection: the shown workspace's
-  /// top-level owner, since subagents have no rows of their own.
-  private func selectedAgentId() -> UUID? {
-    guard var id = selectedWorkspaceId() else { return nil }
-    var seen: Set<UUID> = [id]
-    while let parent = environment.workspaces.workspace(id: id)?.parentWorkspaceId, seen.insert(parent).inserted {
-      id = parent
-    }
-    return id
-  }
-
   private func selectedWorkspaceId() -> UUID? {
     switch selection {
     case let .session(_, sessionId): environment.workspaces.workspaceId(forSession: sessionId)
@@ -210,19 +223,38 @@ extension SidebarView {
       case let .agent(row): [row]
       case let .folder(_, rows), let .project(_, rows): rows
       }
-    }
+    }.flatMap { AgentSidebarEntry.flattening($0).map(\.row) }
     guard !rows.isEmpty else { return }
-    let current = rows.firstIndex { $0.id == selectedAgentId() }
+    let current = rows.firstIndex { $0.id == selectedWorkspaceId() }
     let next = current.map { ($0 + offset + rows.count) % rows.count } ?? (offset > 0 ? 0 : rows.count - 1)
     openWorkspace(rows[next].id)
   }
 
   // MARK: - Organizing
 
-  private func file(_ workspaceId: UUID, into folder: UUID?) {
+  func file(_ workspaceId: UUID, into folder: UUID?) {
     guard let workspace = environment.workspaces.workspace(id: workspaceId) else { return }
     environment.navigationStore.enqueue(
       .updateWorkspaceHierarchy(workspaceId: workspaceId, change: .folder(folder)), machineId: workspace.serverId)
+  }
+
+  /// Nests an agent under `owner`, or makes it independent when nil.
+  func setOwner(of workspaceId: UUID, to owner: UUID?) {
+    guard let workspace = environment.workspaces.workspace(id: workspaceId), workspace.parentWorkspaceId != owner
+    else { return }
+    environment.navigationStore.enqueue(
+      .updateWorkspaceHierarchy(workspaceId: workspaceId, change: .owner(owner)), machineId: workspace.serverId)
+  }
+
+  /// Whether `workspaceId` is `ancestor` or nested somewhere under it.
+  func isWithin(_ workspaceId: UUID, _ ancestor: UUID) -> Bool {
+    var current: UUID? = workspaceId
+    var seen: Set<UUID> = []
+    while let id = current, seen.insert(id).inserted {
+      if id == ancestor { return true }
+      current = environment.workspaces.workspace(id: id)?.parentWorkspaceId
+    }
+    return false
   }
 
   private func archive(_ workspaceId: UUID) {
@@ -276,7 +308,7 @@ extension SidebarView {
 
   /// Drops agents (or a folder) in front of `target`, joining its folder.
   @discardableResult
-  private func dropAgents(_ items: [String], before target: AgentSidebarRow) -> Bool {
+  func dropAgents(_ items: [String], before target: AgentSidebarRow) -> Bool {
     let targetFolder = environment.workspaces.workspace(id: target.id)?.folderId
     let siblings = siblingPositions(inFolder: targetFolder)
     guard let index = siblings.firstIndex(where: { $0.id == target.id.uuidString }) else { return false }
@@ -286,6 +318,8 @@ extension SidebarView {
       guard let id = UUID(uuidString: item), id != target.id else { continue }
       guard let position = WorkspacePosition.between(lower, target.position, id: id) else { continue }
       if let workspace = environment.workspaces.workspace(id: id) {
+        // Dropped among top-level agents: no longer nested under its owner.
+        setOwner(of: id, to: nil)
         environment.navigationStore.enqueue(
           .reorderWorkspace(workspaceId: id, position: position, expectedRevision: workspace.sidebarOrderRevision),
           machineId: workspace.serverId)
@@ -303,15 +337,40 @@ extension SidebarView {
   }
 
   @discardableResult
-  private func dropAgents(_ items: [String], intoFolder folder: UUID?) -> Bool {
+  func dropAgents(_ items: [String], intoFolder folder: UUID?) -> Bool {
     let ids = items.compactMap(UUID.init(uuidString:)).filter { environment.workspaces.workspace(id: $0) != nil }
-    for id in ids { file(id, into: folder) }
+    for id in ids {
+      setOwner(of: id, to: nil)
+      file(id, into: folder)
+    }
     return !ids.isEmpty
+  }
+
+  /// Drops agents in front of `target`, nested under its owner: they join
+  /// that owner's agents there. An agent can't go under itself.
+  @discardableResult
+  func dropAgents(_ items: [String], before target: AgentSidebarRow, under owner: AgentSidebarRow) -> Bool {
+    let positions = owner.children.map { environment.workspaces.workspace(id: $0.id)?.parentTabPosition }
+    guard let index = owner.children.firstIndex(where: { $0.id == target.id }), let upper = positions[index]
+    else { return false }
+    let lower = index > 0 ? positions[index - 1] : nil
+    var moved = false
+    for item in items {
+      guard let id = UUID(uuidString: item), id != target.id, !isWithin(owner.id, id),
+        let workspace = environment.workspaces.workspace(id: id), workspace.serverId == owner.serverId,
+        let position = WorkspacePosition.between(lower, upper, id: id)
+      else { continue }
+      setOwner(of: id, to: owner.id)
+      environment.navigationStore.enqueue(
+        .updateWorkspaceHierarchy(workspaceId: id, change: .groupPosition(position)), machineId: workspace.serverId)
+      moved = true
+    }
+    return moved
   }
 
   /// The ids and positions of the entries sharing a level with an agent in
   /// `folder` (the top level when nil), in order.
-  private func siblingPositions(inFolder folder: UUID?) -> [(id: String, position: String)] {
+  func siblingPositions(inFolder folder: UUID?) -> [(id: String, position: String)] {
     let nodes = agentNodes
     if let folder {
       for case let .folder(record, rows) in nodes where UUID(uuidString: record.id) == folder {
@@ -353,5 +412,21 @@ extension SidebarView {
         value: String(format: "%08d", (index + 1) * 1024))
     }
     return true
+  }
+}
+
+/// One sidebar row with its place in the nesting: the agent that owns it,
+/// and how deep it sits.
+struct AgentSidebarEntry: Identifiable {
+  let row: AgentSidebarRow
+  let owner: AgentSidebarRow?
+  let depth: Int
+
+  var id: UUID { row.id }
+
+  /// An agent, then every agent nested under it, depth first.
+  static func flattening(_ row: AgentSidebarRow, owner: AgentSidebarRow? = nil, depth: Int = 0) -> [Self] {
+    [Self(row: row, owner: owner, depth: depth)]
+      + row.children.flatMap { flattening($0, owner: row, depth: depth + 1) }
   }
 }

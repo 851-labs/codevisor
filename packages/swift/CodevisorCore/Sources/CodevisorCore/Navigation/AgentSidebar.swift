@@ -75,11 +75,14 @@ public struct AgentSidebarRow: Identifiable, Equatable, Sendable {
   public let harnessId: String?
   public let status: AgentStatus
   public let subagents: [AgentSidebarSubagent]
+  /// The agents it owns that have workspaces of their own, nested under it
+  /// in the sidebar, each with its own.
+  public let children: [AgentSidebarRow]
   public let position: String
 
   public init(
     id: UUID, title: String, serverId: String, projectId: UUID, branch: String?, harnessId: String? = nil,
-    status: AgentStatus, subagents: [AgentSidebarSubagent], position: String
+    status: AgentStatus, subagents: [AgentSidebarSubagent], children: [AgentSidebarRow] = [], position: String
   ) {
     self.id = id
     self.title = title
@@ -89,6 +92,7 @@ public struct AgentSidebarRow: Identifiable, Equatable, Sendable {
     self.branch = branch
     self.status = status
     self.subagents = subagents
+    self.children = children
     self.position = position
   }
 
@@ -130,20 +134,27 @@ public enum AgentSidebar {
     let ownedBy = Dictionary(grouping: live.filter { $0.parentWorkspaceId.map(liveIds.contains) ?? false }) {
       $0.parentWorkspaceId!
     }
-    func row(_ workspace: Workspace) -> AgentSidebarRow {
+    func row(_ workspace: Workspace, ancestors: Set<UUID> = []) -> AgentSidebarRow {
       let chats = chatsByWorkspace[workspace.id] ?? []
       let roots = rootChats(chats)
+      let lineage = ancestors.union([workspace.id])
+      let children = (ownedBy[workspace.id] ?? [])
+        .filter { !lineage.contains($0.id) }
+        .sorted { lhs, rhs in
+          (lhs.parentTabPosition ?? "", lhs.id.uuidString) < (rhs.parentTabPosition ?? "", rhs.id.uuidString)
+        }
+        .map { row($0, ancestors: lineage) }
       return AgentSidebarRow(
         id: workspace.id, title: title(of: workspace, chats: chatsByWorkspace), serverId: workspace.serverId,
         projectId: workspace.projectId,
         branch: workspace.worktreeName, harnessId: homeChat(of: chats)?.harnessId,
         status: roots.map(AgentStatus.init).max() ?? .idle,
         subagents: subagents(of: workspace, chatsByWorkspace: chatsByWorkspace, ownedBy: ownedBy),
-        position: workspace.effectiveSidebarPosition)
+        children: children, position: workspace.effectiveSidebarPosition)
     }
     // An owned workspace whose owner is gone (or archived) stands alone.
     let topLevel = live.filter { !($0.parentWorkspaceId.map(liveIds.contains) ?? false) }
-      .sorted(by: WorkspaceSidebarOrder.precedes).map(row)
+      .sorted(by: WorkspaceSidebarOrder.precedes).map { row($0) }
     switch grouping {
     case .none:
       return manual(topLevel, workspaces: live, folders: records.folders.filter { !$0.deleted })

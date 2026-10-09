@@ -23,6 +23,8 @@ struct SidebarView: View {
   @State var collapsedProjects: Set<String> = []
   @State var renamingFolder: ServerNavigationFolder?
   @State var folderRenameTitle = ""
+  @State var agentDrag: AgentSidebarDrag?
+  @State var agentFrames = AgentSidebarFrames()
   /// Collapsed by default: the archive is a place you go looking for
   /// something, not something that should crowd the live list.
   /// Page state is deliberately NOT persisted: reopening the archive should

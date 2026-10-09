@@ -53,8 +53,10 @@ struct SidebarWorkspaceTabRow: View {
         .padding(.vertical, 5)
         .contentShape(Rectangle())
         // Only the label activates on pointer-down. The close button is
-        // a sibling, so pressing it cannot select the row first.
-        .gesture(
+        // a sibling, so pressing it cannot select the row first. Alongside,
+        // not instead of, the row's drag: pressing selects, and moving on
+        // drags the row to reorder or re-nest it.
+        .simultaneousGesture(
           DragGesture(minimumDistance: 0)
             .updating($isPressed) { _, isPressed, _ in
               // Activate on pointer-down only, not on every drag delta.

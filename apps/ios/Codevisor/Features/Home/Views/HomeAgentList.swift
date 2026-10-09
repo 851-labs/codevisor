@@ -13,8 +13,9 @@ struct HomeAgentListActions {
 }
 
 /// The agents the user manages, the way every client lists them: folders
-/// and loose agents (or one section per project). Subagents and tabs are
-/// not here; they live in each agent's tab overview.
+/// and loose agents (or one section per project), with the agents each one
+/// owns indented under it. Tabs are not here; they live in each agent's tab
+/// overview.
 struct HomeAgentList: View {
   @Environment(AppEnvironment.self) private var environment
   let actions: HomeAgentListActions
@@ -55,7 +56,7 @@ struct HomeAgentList: View {
       Section {
         ForEach(nodes) { node in
           switch node {
-          case let .agent(row): agent(row)
+          case let .agent(row): agentTree(row)
           case let .folder(folder, rows): folderGroup(folder, rows: rows)
           case .project: EmptyView()
           }
@@ -65,7 +66,7 @@ struct HomeAgentList: View {
       ForEach(nodes) { node in
         if case let .project(project, rows) = node {
           Section(project.name) {
-            ForEach(rows) { agent($0) }
+            ForEach(rows) { agentTree($0) }
           }
         }
       }
@@ -81,7 +82,7 @@ struct HomeAgentList: View {
           navigation.saveFolder(id: id, name: folder.name, position: folder.position, collapsed: !expanded)
         })
     ) {
-      ForEach(rows) { agent($0) }
+      ForEach(rows) { agentTree($0) }
     } label: {
       Label(folder.name, systemImage: "folder")
     }
@@ -96,20 +97,34 @@ struct HomeAgentList: View {
     }
   }
 
+  /// An agent, then the agents it owns, indented under it as deep as they
+  /// go.
+  private func agentTree(_ row: AgentSidebarRow) -> some View {
+    ForEach(HomeAgentEntry.flattening(row)) { entry in
+      agent(entry.row, owner: entry.owner, depth: entry.depth)
+    }
+  }
+
   /// The agent's row, as its chat's row always looked: status or harness
   /// icon, then its title.
-  private func agent(_ row: AgentSidebarRow) -> some View {
+  private func agent(_ row: AgentSidebarRow, owner: AgentSidebarRow?, depth: Int) -> some View {
     rowButton(tag: row.id, open: { actions.open(row.id, nil) }) {
       HStack(spacing: 10) {
         mark(row.status, harnessId: row.harnessId, size: 18)
         Text(row.title).lineLimit(1)
         Spacer(minLength: 0)
       }
+      .padding(.leading, CGFloat(depth) * 20)
     }
     .swipeActions(edge: .trailing) {
       Button("Archive", systemImage: "archivebox", role: .destructive) { actions.archive(row.id) }
     }
-    .contextMenu { agentMenu(row) }
+    .contextMenu {
+      if let owner {
+        Button("Move Out of “\(owner.title)”", systemImage: "arrow.up.left") { setOwner(of: row.id, to: nil) }
+      }
+      agentMenu(row)
+    }
   }
 
   /// The agent's state, or its harness's icon at rest, as chat rows show
@@ -170,6 +185,12 @@ struct HomeAgentList: View {
     guard let workspace = environment.workspaces.workspace(id: workspaceId) else { return }
     navigation.enqueue(
       .updateWorkspaceHierarchy(workspaceId: workspaceId, change: .folder(folder)), machineId: workspace.serverId)
+  }
+
+  private func setOwner(of workspaceId: UUID, to owner: UUID?) {
+    guard let workspace = environment.workspaces.workspace(id: workspaceId) else { return }
+    navigation.enqueue(
+      .updateWorkspaceHierarchy(workspaceId: workspaceId, change: .owner(owner)), machineId: workspace.serverId)
   }
 
   private func newFolder(filing workspaceId: UUID?) {
@@ -247,5 +268,20 @@ extension HomeSessionStatus {
     case .waiting: self = .actionRequired
     case .errored: self = .error
     }
+  }
+}
+
+/// One row of the agent list with its place in the nesting.
+struct HomeAgentEntry: Identifiable {
+  let row: AgentSidebarRow
+  let owner: AgentSidebarRow?
+  let depth: Int
+
+  var id: UUID { row.id }
+
+  /// An agent, then every agent nested under it, depth first.
+  static func flattening(_ row: AgentSidebarRow, owner: AgentSidebarRow? = nil, depth: Int = 0) -> [Self] {
+    [Self(row: row, owner: owner, depth: depth)]
+      + row.children.flatMap { flattening($0, owner: row, depth: depth + 1) }
   }
 }

@@ -204,7 +204,6 @@ struct HomeView: View {
       }
     )
     .environment(\.homeLayoutMode, layoutMode)
-    .environment(\.showWorkspaceRoute, ShowWorkspaceRouteAction { navigation.replaceTop(with: $0) })
     .environment(\.homeSidebarIsTiled, layoutMode == .split && detailLeadingInset > 1)
     .focusedSceneValue(\.homeCommandActions, homeCommandActions)
     .background(HostWindowReader { hostWindow.window = $0 })

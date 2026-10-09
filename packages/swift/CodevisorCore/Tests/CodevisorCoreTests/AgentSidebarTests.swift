@@ -63,6 +63,10 @@ struct AgentSidebarTests {
     #expect(row.subagents.map(\.kind) == [.chat, .chat, .workspace, .workspace])
     #expect(row.subagents.map(\.via) == [nil, "review", nil, "write tests"])
     #expect(row.rollup == AgentRollup(finished: 0, total: 4, status: .errored))
+    // Agents with workspaces of their own nest under their owner, recursively.
+    #expect(row.children.map(\.title) == ["write tests"])
+    #expect(row.children.first?.children.map(\.title) == ["migrate schema"])
+    #expect(row.children.first?.children.first?.children.isEmpty == true)
   }
 
   @Test("Folders and loose agents share one order; a folder that is gone leaves its agents loose")

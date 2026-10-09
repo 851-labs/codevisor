@@ -3,101 +3,24 @@ import SwiftUI
 
 /// The toolbar row is the sidebar toggle, the workspace's tabs, and `+`.
 extension SessionContainerView {
-  /// The agent whose tab bar this window shows: the selected workspace's
-  /// top-level owner, so a subagent's tabs appear as a group in the bar of
-  /// the agent that owns it.
-  var tabStripRoot: Workspace {
-    var workspace = selectedWorkspace
-    var seen: Set<UUID> = [workspace.id]
-    while let parentId = workspace.parentWorkspaceId, seen.insert(parentId).inserted,
-      let parent = environment.workspaces.workspace(id: parentId), !parent.isArchived
-    {
-      workspace = parent
-    }
-    return workspace
-  }
-
+  /// The open workspace's tabs, in the order every device shows them.
+  /// Agents it owns aren't here: they nest under it in the sidebar.
   var tabStripItems: [WorkspaceTabStripItem] {
-    let root = tabStripRoot
-    let current = selectedWorkspace
-    let navigation = environment.navigationStore
-    return navigation.tabStrip(for: root).flatMap { entry -> [WorkspaceTabStripItem] in
-      switch entry {
-      case let .tab(tab):
-        return [tabItem(tab, in: root, current: current)]
-      case let .group(group):
-        // The label is the subagent's own chat tab, which leads the group.
-        let child = environment.workspaces.workspace(id: group.workspaceId)
-        let home = child.flatMap { child in group.tabs.first.map { tabItem($0, in: child, current: current) } }
-        let label = WorkspaceTabStripItem(
-          id: group.workspaceId, title: group.title, icon: home?.icon ?? .symbol("text.bubble"),
-          isSelected: home?.isSelected ?? false, isClosable: false,
-          kind: .group(
-            status: group.status, collapsed: group.collapsed, otherTabs: max(0, group.tabs.count - 1),
-            homeTabId: home?.id),
-          workspaceId: group.workspaceId)
-        guard !group.collapsed, let child else { return [label] }
-        return [label]
-          + group.tabs.dropFirst().map { tab in
-            var item = tabItem(tab, in: child, current: current)
-            item.isMovable = false
-            return item
-          }
-      }
-    }
-  }
-
-  private func tabItem(_ tab: WorkspaceTab, in workspace: Workspace, current: Workspace) -> WorkspaceTabStripItem {
-    let isCurrent = workspace.id == current.id
-    let pane = liveDescriptor(of: tab, in: workspace)
+    let workspace = selectedWorkspace
     let home = environment.navigationStore.homeChatId(of: workspace)
-    return WorkspaceTabStripItem(
-      id: tab.id, title: tab.customTitle ?? tabTitle(pane, serverId: workspace.serverId),
-      icon: tabIcon(pane, serverId: workspace.serverId),
-      isSelected: isCurrent && workspace.selectedCenterTabId == tab.id,
-      // Tabs of a workspace this window isn't showing close from there.
-      isClosable: isCurrent && TabStrip.isClosable(tab, homeChatId: home),
-      workspaceId: workspace.id)
-  }
-
-  /// Selects a tab of the bar, showing its workspace when it is another
-  /// one (a subagent's group, or the owner from inside a subagent).
-  func selectStripTab(_ tabId: UUID) {
-    // A group's own chat tab is drawn as its label.
-    let items = tabStripItems
-    let label = items.first { item in
-      if case let .group(_, _, _, homeTabId) = item.kind { return homeTabId == tabId }
-      return false
+    return environment.navigationStore.tabStrip(for: workspace).compactMap { entry in
+      guard case let .tab(tab) = entry else { return nil }
+      let pane = liveDescriptor(of: tab, in: workspace)
+      return WorkspaceTabStripItem(
+        id: tab.id, title: tab.customTitle ?? tabTitle(pane, serverId: workspace.serverId),
+        icon: tabIcon(pane, serverId: workspace.serverId),
+        isSelected: workspace.selectedCenterTabId == tab.id,
+        isClosable: TabStrip.isClosable(tab, homeChatId: home))
     }
-    guard let item = label ?? items.first(where: { $0.id == tabId }), let workspaceId = item.workspaceId
-    else { return }
-    if label == nil, case .group = item.kind { return }
-    guard store.selectDestination(.tab(tabId), in: workspaceId), workspaceId != selectedWorkspace.id,
-      let workspace = environment.workspaces.workspace(id: workspaceId),
-      let tab = workspace.centerTabs.first(where: { $0.id == tabId })
-    else { return }
-    let chat = tab.root.allGroups.compactMap { $0.state.selectedPane?.chatSessionId }.first
-    store.routeRequest =
-      chat.map { .session(serverId: workspace.serverId, id: $0) }
-      ?? .workspace(serverId: workspace.serverId, id: workspace.id)
   }
 
-  func toggleStripGroup(_ workspaceId: UUID) {
-    guard let workspace = environment.workspaces.workspace(id: workspaceId) else { return }
-    environment.navigationStore.enqueue(
-      .updateWorkspaceHierarchy(workspaceId: workspaceId, change: .groupCollapsed(!workspace.groupCollapsed)),
-      machineId: workspace.serverId)
-  }
-
-  func promoteStripGroup(_ workspaceId: UUID) {
-    guard let workspace = environment.workspaces.workspace(id: workspaceId) else { return }
-    environment.navigationStore.enqueue(
-      .updateWorkspaceHierarchy(workspaceId: workspaceId, change: .owner(nil)), machineId: workspace.serverId)
-  }
-
-  func archiveStripGroup(_ workspaceId: UUID) {
-    guard let workspace = environment.workspaces.workspace(id: workspaceId) else { return }
-    environment.archiveWorkspace(workspace)
+  func selectStripTab(_ tabId: UUID) {
+    store.selectDestination(.tab(tabId), in: selectedWorkspace.id)
   }
 
   @ToolbarContentBuilder
@@ -108,10 +31,7 @@ extension SessionContainerView {
         select: selectStripTab,
         close: closeCenterTab,
         closeOthers: closeOtherCenterTabs,
-        move: moveCenterTab,
-        toggleGroup: toggleStripGroup,
-        promoteGroup: promoteStripGroup,
-        archiveGroup: archiveStripGroup
+        move: moveCenterTab
       ) {
         NewTabMenu(isPresented: $newTabMenuPresented, machineId: selectedWorkspace.serverId, open: openNewTab)
       }
@@ -123,30 +43,22 @@ extension SessionContainerView {
     .sharedBackgroundVisibility(.hidden)
   }
 
-  /// Puts a tab or group at `index` of the bar, on every device. A tab moves
-  /// in this device's layout at once, then the bar's shared keys follow so
-  /// subagent groups keep their places around it.
+  /// Puts a tab at `index` of the bar, on every device: in this device's
+  /// layout at once, then in the shared order. Owned agents' places in the
+  /// shared order (between the tabs) are kept.
   func moveCenterTab(_ id: UUID, toIndex index: Int) {
-    let root = tabStripRoot
+    let workspace = selectedWorkspace
+    var order = tabStripItems.map(\.id).filter { $0 != id }
+    order.insert(id, at: min(max(0, index), order.count))
+    environment.workspaceSync.moveTab(id, toIndex: order.firstIndex(of: id) ?? index, inWorkspace: workspace.id)
     let navigation = environment.navigationStore
-    // Items include an expanded group's tabs; entries count only the bar's
-    // own tabs and the groups.
-    let items = tabStripItems.filter { $0.id != id }
-    let entryIndex = items.prefix(index).filter(\.isMovable).count
-    var entries = navigation.tabStrip(for: root)
-    guard let from = entries.firstIndex(where: { $0.id == id }) else { return }
-    let entry = entries.remove(at: from)
-    entries.insert(entry, at: min(max(0, entryIndex), entries.count))
-    if case .tab = entry {
-      let tabs = entries.compactMap { entry -> UUID? in
-        if case let .tab(tab) = entry { return tab.id }
-        return nil
-      }
-      if let target = tabs.firstIndex(of: id) {
-        environment.workspaceSync.moveTab(id, toIndex: target, inWorkspace: root.id)
-      }
+    guard let updated = environment.workspaces.workspace(id: workspace.id) else { return }
+    let tabsById = Dictionary(updated.centerTabs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    var reordered = order.compactMap { tabsById[$0] }[...]
+    let entries = navigation.tabStrip(for: updated).map { entry -> TabStripEntry in
+      guard case .tab = entry, let next = reordered.popFirst() else { return entry }
+      return .tab(next)
     }
-    guard let updated = environment.workspaces.workspace(id: root.id) else { return }
     navigation.publishTabStripOrder(of: updated, entries: entries)
   }
 

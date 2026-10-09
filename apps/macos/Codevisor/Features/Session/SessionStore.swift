@@ -124,10 +124,6 @@ final class SessionStore {
   @ObservationIgnored var navigationRevision = 0
   /// A structural sidebar command consumed by the owning container.
   var centerTabRequest: CenterTabRequest?
-  /// A request from inside the detail column to show another workspace,
-  /// such as a tab of a subagent's group in the tab bar. The window's root
-  /// view applies it to its selection and clears it.
-  var routeRequest: SidebarSelection?
   /// ⇧⌘[ / ⇧⌘] step through the sidebar's flat pane list, across
   /// workspaces. Installed by the docked sidebar (which owns that order
   /// and the route change); returns false when it cannot answer, and the

@@ -280,7 +280,7 @@ export const codevisorServerApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   ),
   apiTool(
     "workspaces.update",
-    "Rename, re-home, relabel, or archive a workspace identity. labels replaces the workspace's labels; an empty object clears them. parentWorkspaceId makes it owned by another workspace (a tab group in that workspace's tab bar that archives with it); null promotes it to an independent top-level workspace. groupCollapsed collapses its tab group on every client. folderId files a top-level workspace into a sidebar folder (see navigation.records_list); null unfiles it. Archiving a workspace also archives the workspaces it owns.",
+    "Rename, re-home, relabel, or archive a workspace identity. labels replaces the workspace's labels; an empty object clears them. parentWorkspaceId makes it owned by another workspace (nested under that workspace in the sidebar, and archived with it); null promotes it to an independent top-level workspace. folderId files a top-level workspace into a sidebar folder (see navigation.records_list); null unfiles it. Archiving a workspace also archives the workspaces it owns.",
     "PATCH",
     "/v1/workspaces/:id",
     {
@@ -289,7 +289,7 @@ export const codevisorServerApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   ),
   apiTool(
     "workspaces.panes_reorder",
-    "Reorder a workspace's tabs on every client. paneIds lists pane ids, and the ids of workspaces it owns (their tab groups), in the order they should appear (see workspaces.panes_list and workspaces.list); entries left out keep their relative order after them. Splits stay device-local; a split's panes move together as one tab.",
+    "Reorder a workspace's tabs on every client. paneIds lists pane ids in the order they should appear (see workspaces.panes_list); entries left out keep their relative order after them. Splits stay device-local; a split's panes move together as one tab.",
     "POST",
     "/v1/workspaces/:workspaceId/panes/reorder",
     { body: ReorderWorkspacePanesRequest }

@@ -27,10 +27,11 @@ export const Workspace = Schema.Struct({
   /// with its own worktree. Owned workspaces list under their parent instead
   /// of the top level and archive with it; absent means independent.
   parentWorkspaceId: Schema.optional(Schema.String),
-  /// Where the owned workspace's tab group sits in the parent's tab bar, in
-  /// the same key space as the parent's pane positions.
+  /// Where the owned workspace sits among the agents nested under its
+  /// parent in the sidebar.
   parentTabPosition: Schema.optional(WorkspacePosition),
-  /// Whether the owned workspace's tab group is collapsed to its chip.
+  /// Whether the owned workspace is shown collapsed under its parent.
+  /// Current clients always show it expanded.
   groupCollapsed: Schema.optional(Schema.Boolean),
   /// The sidebar folder a top-level workspace is filed in. A folder id that
   /// no longer names a live folder reads as unfiled.
@@ -61,13 +62,14 @@ export const UpdateWorkspaceRequest = Schema.Struct({
   /// Replaces the workspace's labels; an empty object clears them.
   labels: Schema.optional(Labels),
   /// Makes this workspace owned by another one; `null` promotes it to an
-  /// independent, top-level workspace. Setting a new parent appends the
-  /// workspace's tab group at the end of the parent's tab bar.
+  /// independent, top-level workspace. Setting a new parent places the
+  /// workspace last among the agents nested under it.
   parentWorkspaceId: Schema.optional(Schema.NullOr(Schema.String)),
-  /// Moves the owned workspace's tab group in its owner's tab bar; the latest
-  /// move wins, like a tab move. Ignored for a workspace without an owner.
+  /// Moves the owned workspace among the agents nested under its owner; the
+  /// latest move wins. Ignored for a workspace without an owner.
   parentTabPosition: Schema.optional(WorkspacePosition),
-  /// Collapses or expands the owned workspace's tab group on every client.
+  /// Collapses or expands the owned workspace under its owner on every
+  /// client. Current clients always show it expanded.
   groupCollapsed: Schema.optional(Schema.Boolean),
   /// Files the workspace into a sidebar folder; `null` unfiles it.
   folderId: Schema.optional(Schema.NullOr(Schema.String))
