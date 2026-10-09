@@ -226,29 +226,8 @@ public final class ComposerDraftStore {
       projectServerId: persisted.projectServerId,
       composerText: persisted.composerText,
       attachments: persisted.attachments.compactMap { attachment in
-        let fileURL: URL
-        if let stagedPath = attachment.stagedPath {
-          guard let url = files.fileURL(forRelativePath: stagedPath),
-            FileManager.default.fileExists(atPath: url.path)
-          else { return nil }
-          fileURL = url
-        } else {
-          // A draft from before staging: move its blob into a staged file
-          // once, then persist the reference instead.
-          let blobKey = Self.attachmentKey(attachment.id)
-          guard let data = store.loadData(forKey: blobKey),
-            let url = try? files.stage(data: data, id: attachment.id, name: attachment.name)
-          else { return nil }
-          migratedBlobKeys.append(blobKey)
-          fileURL = url
-        }
-        return DraftAttachment(
-          id: attachment.id,
-          name: attachment.name,
-          mimeType: attachment.mimeType,
-          kind: attachment.kind,
-          fileURL: fileURL
-        )
+        Self.restoreDraftAttachment(
+          attachment, store: store, files: files, migratedBlobKeys: &migratedBlobKeys)
       },
       selectedHarnessId: persisted.selectedHarnessId,
       configByHarness: persisted.configByHarness,
@@ -261,6 +240,50 @@ public final class ComposerDraftStore {
       usesImmediateDefaultsPersistence: persisted.usesImmediateDefaultsPersistence ?? false,
       selectionWasAutomaticallyCarried: persisted.selectionWasAutomaticallyCarried ?? false
     )
+  }
+
+  private static func restoreDraftAttachment(
+    _ attachment: PersistedAttachment,
+    store: any PersistenceStore,
+    files: ComposerAttachmentFileStore,
+    migratedBlobKeys: inout [String]
+  ) -> DraftAttachment? {
+    let fileURL: URL
+    if let stagedPath = attachment.stagedPath {
+      guard let url = files.fileURL(forRelativePath: stagedPath),
+        FileManager.default.fileExists(atPath: url.path)
+      else { return nil }
+      fileURL = url
+    } else {
+      guard
+        let url = Self.stageLegacyDraftAttachment(
+          attachment, store: store, files: files, migratedBlobKeys: &migratedBlobKeys)
+      else { return nil }
+      fileURL = url
+    }
+    return DraftAttachment(
+      id: attachment.id,
+      name: attachment.name,
+      mimeType: attachment.mimeType,
+      kind: attachment.kind,
+      fileURL: fileURL
+    )
+  }
+
+  private static func stageLegacyDraftAttachment(
+    _ attachment: PersistedAttachment,
+    store: any PersistenceStore,
+    files: ComposerAttachmentFileStore,
+    migratedBlobKeys: inout [String]
+  ) -> URL? {
+    // A draft from before staging: move its blob into a staged file
+    // once, then persist the reference instead.
+    let blobKey = Self.attachmentKey(attachment.id)
+    guard let data = store.loadData(forKey: blobKey),
+      let url = try? files.stage(data: data, id: attachment.id, name: attachment.name)
+    else { return nil }
+    migratedBlobKeys.append(blobKey)
+    return url
   }
 
   private static func persisted(from draft: Draft, files: ComposerAttachmentFileStore) -> PersistedDraft {
