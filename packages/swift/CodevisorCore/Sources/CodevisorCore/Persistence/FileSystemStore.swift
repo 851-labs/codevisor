@@ -39,8 +39,28 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
   ) {
     self.fileManager = fileManager
     self.onWriteFailure = onWriteFailure
+    self.directory = Self.resolveDirectory(
+      directory: directory, fileManager: fileManager, appFolderName: appFolderName
+    )
+    do {
+      try fileManager.createDirectory(at: self.directory, withIntermediateDirectories: true)
+    } catch {
+      Log.persistence.error(
+        "Failed to create data directory \(self.directory.path, privacy: .public): \(String(describing: error), privacy: .public)"
+      )
+    }
+
+    registerTerminationObserver()
+    #if !os(macOS)
+      registerBackgroundObserver()
+    #endif
+  }
+
+  private static func resolveDirectory(
+    directory: URL?, fileManager: FileManager, appFolderName: String
+  ) -> URL {
     if let directory {
-      self.directory = directory
+      return directory
     } else {
       let base: URL
       do {
@@ -63,16 +83,11 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
           )
         }
       }
-      self.directory = base.appendingPathComponent(appFolderName, isDirectory: true)
+      return base.appendingPathComponent(appFolderName, isDirectory: true)
     }
-    do {
-      try fileManager.createDirectory(at: self.directory, withIntermediateDirectories: true)
-    } catch {
-      Log.persistence.error(
-        "Failed to create data directory \(self.directory.path, privacy: .public): \(String(describing: error), privacy: .public)"
-      )
-    }
+  }
 
+  private func registerTerminationObserver() {
     // Drain queued writes before the process exits so a state change
     // made just before quitting isn't lost. Name-based so this Foundation
     // package needs no AppKit/UIKit import; the store lives for the app's
@@ -94,7 +109,10 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
       ) { [weak self] _ in
         self?.flushPendingWrites()
       })
-    #if !os(macOS)
+  }
+
+  #if !os(macOS)
+    private func registerBackgroundObserver() {
       // iOS apps are usually jetsammed from the background without ever
       // seeing a terminate notification, so pending writes also land on
       // backgrounding — but off the main thread, which must keep animating
@@ -108,8 +126,8 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
         ) { [weak self] _ in
           self?.flushPendingWritesInBackground()
         })
-    #endif
-  }
+    }
+  #endif
 
   deinit {
     for terminationObserver in terminationObservers {
