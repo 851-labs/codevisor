@@ -172,6 +172,12 @@ public enum ProjectRecommender {
   static func linkedWorktreeRoot(at path: String) -> String? {
     let fileManager = FileManager.default
     let checkoutURL = URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL
+    guard let gitDirURL = linkedGitDirectory(fileManager, checkoutURL: checkoutURL) else { return nil }
+    guard let commonDirURL = commonGitDirectory(gitDirURL) else { return nil }
+    return primaryCheckoutPath(fileManager, commonDirURL: commonDirURL)
+  }
+
+  private static func linkedGitDirectory(_ fileManager: FileManager, checkoutURL: URL) -> URL? {
     let dotGitURL = checkoutURL.appendingPathComponent(".git", isDirectory: false)
 
     var isDirectory: ObjCBool = false
@@ -181,7 +187,10 @@ public enum ProjectRecommender {
       let gitDirValue = metadataPath(in: dotGit, key: "gitdir")
     else { return nil }
 
-    let gitDirURL = resolvedURL(gitDirValue, relativeTo: checkoutURL)
+    return resolvedURL(gitDirValue, relativeTo: checkoutURL)
+  }
+
+  private static func commonGitDirectory(_ gitDirURL: URL) -> URL? {
     let commonDirFileURL = gitDirURL.appendingPathComponent("commondir", isDirectory: false)
     guard let commonDir = try? String(contentsOf: commonDirFileURL, encoding: .utf8),
       let commonDirValue =
@@ -192,7 +201,10 @@ public enum ProjectRecommender {
       !commonDirValue.isEmpty
     else { return nil }
 
-    let commonDirURL = resolvedURL(commonDirValue, relativeTo: gitDirURL)
+    return resolvedURL(commonDirValue, relativeTo: gitDirURL)
+  }
+
+  private static func primaryCheckoutPath(_ fileManager: FileManager, commonDirURL: URL) -> String? {
     // Standard non-bare primary checkouts keep their common Git directory
     // at `<root>/.git`. Other layouts do not provide a safe root mapping.
     guard commonDirURL.lastPathComponent == ".git" else { return nil }
