@@ -4,7 +4,8 @@ import SwiftUI
 
 /// A workspace's page, as Notes shows a folder: the workspaces nested under
 /// it, which disclose and open the same way the root's do, then its tabs.
-/// Tapping a tab opens it; New Tab at the bottom opens a new one.
+/// Tapping a tab opens it; New Tab at the bottom opens a new one from its
+/// autocomplete.
 struct WorkspaceOutlineScreen: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.workspaceRowActions) private var actions
@@ -17,7 +18,7 @@ struct WorkspaceOutlineScreen: View {
   @State private var expanded: Set<UUID> = []
   @State private var showsWorkspaces = true
   @State private var showsTabs = true
-  @State private var showsNewTabSheet = false
+  @State private var showsNewTabMenu = false
 
   private var navigation: NavigationStore { environment.navigationStore }
 
@@ -38,14 +39,6 @@ struct WorkspaceOutlineScreen: View {
     .listStyle(.sidebar)
     .navigationTitle(row?.title ?? workspace?.name ?? "")
     .toolbar { toolbar(row: row) }
-    .sheet(isPresented: $showsNewTabSheet) {
-      NewTabSheet(
-        supportsSimulator: environment.machines.statusByMachineId[serverId]?.supportsSimulator == true,
-        client: environment.machines.client(for: serverId),
-        iconCacheNamespace: serverId,
-        onChoose: { openNewTab($0) }
-      )
-    }
   }
 
   @ViewBuilder
@@ -101,7 +94,16 @@ struct WorkspaceOutlineScreen: View {
     }
     ToolbarSpacer(placement: .bottomBar)
     ToolbarItem(placement: .bottomBar) {
-      Button("New Tab", systemImage: "plus") { showsNewTabSheet = true }
+      Button("New Tab", systemImage: "plus") { showsNewTabMenu = true }
+        .popover(isPresented: $showsNewTabMenu) {
+          NewTabMenu(
+            isPresented: $showsNewTabMenu,
+            supportsSimulator: environment.machines.statusByMachineId[serverId]?.supportsSimulator == true,
+            client: environment.machines.client(for: serverId),
+            iconCacheNamespace: serverId,
+            onChoose: { openNewTab($0) }
+          )
+        }
     }
   }
 

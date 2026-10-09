@@ -29,6 +29,30 @@ enum NewTabChoice: Equatable {
   }
 }
 
+/// One built-in thing a new tab can open as.
+struct NewTabEntry: Identifiable {
+  let title: String
+  let systemImage: String
+  let choice: NewTabChoice
+  var id: String { title }
+
+  /// The same entries as the Mac's New Tab menu.
+  static func builtIns(supportsSimulator: Bool) -> [NewTabEntry] {
+    [
+      NewTabEntry(title: "New Chat", systemImage: "bubble.left.and.bubble.right", choice: .chat),
+      NewTabEntry(title: "New Terminal", systemImage: "terminal", choice: .terminal),
+      NewTabEntry(title: "New Browser", systemImage: "globe", choice: .browser(url: nil)),
+      NewTabEntry(title: "Open File", systemImage: "doc.text.magnifyingglass", choice: .files),
+      NewTabEntry(title: "Review Changes", systemImage: "plusminus", choice: .review),
+    ] + (supportsSimulator ? [NewTabEntry(title: "Open Simulator", systemImage: "iphone", choice: .simulator)] : [])
+  }
+
+  static func matches(_ title: String, query: String) -> Bool {
+    let query = query.trimmingCharacters(in: .whitespaces)
+    return query.isEmpty || title.localizedStandardContains(query)
+  }
+}
+
 /// The New Tab sheet: what the tab should be, searchable, with an address
 /// typed into the search field opening straight into a browser. The same
 /// entries as the Mac's New Tab menu.
@@ -42,26 +66,9 @@ struct NewTabSheet: View {
   @State private var query = ""
   @State private var plugins: [PluginNewTabOption] = []
 
-  private struct Entry: Identifiable {
-    let title: String
-    let systemImage: String
-    let choice: NewTabChoice
-    var id: String { title }
-  }
+  private var builtIns: [NewTabEntry] { NewTabEntry.builtIns(supportsSimulator: supportsSimulator) }
 
-  private var builtIns: [Entry] {
-    [
-      Entry(title: "New Chat", systemImage: "bubble.left.and.bubble.right", choice: .chat),
-      Entry(title: "New Terminal", systemImage: "terminal", choice: .terminal),
-      Entry(title: "New Browser", systemImage: "globe", choice: .browser(url: nil)),
-      Entry(title: "Open File", systemImage: "doc.text.magnifyingglass", choice: .files),
-      Entry(title: "Review Changes", systemImage: "plusminus", choice: .review),
-    ] + (supportsSimulator ? [Entry(title: "Open Simulator", systemImage: "iphone", choice: .simulator)] : [])
-  }
-
-  private func matches(_ title: String) -> Bool {
-    query.isEmpty || title.localizedStandardContains(query.trimmingCharacters(in: .whitespaces))
-  }
+  private func matches(_ title: String) -> Bool { NewTabEntry.matches(title, query: query) }
 
   var body: some View {
     let address = NewTabChoice.address(from: query)
