@@ -83,8 +83,13 @@ struct NavigationHierarchyTests {
     #expect(pending("b").count == 2)
     store.deleteFolder(id: ops)
     #expect(store.folders.map(\.name) == ["Payments"])
+    #expect(store.sidebarGrouping == .none)
+    #expect(store.showsSubagents)
     store.setSetting(NavigationStore.sidebarGroupingKey, value: "project")
-    #expect(store.setting(NavigationStore.sidebarGroupingKey) == "project")
+    store.setSetting(NavigationStore.sidebarSubagentsKey, value: "hidden")
+    #expect(store.sidebarGrouping == .project)
+    #expect(!store.showsSubagents)
+    #expect(store.agentSidebar.isEmpty)
   }
 
   @Test("A newer record arriving from one machine is copied to the others")
