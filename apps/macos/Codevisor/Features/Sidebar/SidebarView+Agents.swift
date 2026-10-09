@@ -235,18 +235,26 @@ extension SidebarView {
     }
   }
 
-  /// Steps the selection through the agents in sidebar order (the menu's
-  /// tab-stepping commands when no workspace is in front).
+  /// Opens the agent above or below the selected one, in the sidebar's
+  /// order as it shows -- nested agents included, ones in a collapsed folder
+  /// or project skipped -- stopping at either end. With none selected, it
+  /// starts at the first (or last).
   func stepAgent(_ offset: Int) {
     let rows = agentNodes.flatMap { node -> [AgentSidebarRow] in
       switch node {
-      case let .agent(row): [row]
-      case let .folder(_, rows), let .project(_, rows): rows
+      case let .agent(row): return [row]
+      case let .folder(folder, rows): return folder.collapsed ? [] : rows
+      case let .project(project, rows):
+        return collapsedProjects.contains("\(project.serverId):\(project.id)") ? [] : rows
       }
     }.flatMap { AgentSidebarEntry.flattening($0).map(\.row) }
     guard !rows.isEmpty else { return }
-    let current = rows.firstIndex { $0.id == selectedWorkspaceId() }
-    let next = current.map { ($0 + offset + rows.count) % rows.count } ?? (offset > 0 ? 0 : rows.count - 1)
+    guard let current = rows.firstIndex(where: { $0.id == selectedWorkspaceId() }) else {
+      openWorkspace(offset > 0 ? rows[0].id : rows[rows.count - 1].id)
+      return
+    }
+    let next = current + offset
+    guard rows.indices.contains(next) else { return }
     openWorkspace(rows[next].id)
   }
 

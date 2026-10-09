@@ -7,6 +7,8 @@ enum ShortcutID: String, CaseIterable, Identifiable, Sendable {
   // Chats
   case newChat
   case newProject
+  case previousAgent
+  case nextAgent
 
   // Tabs & splits
   case newTab
@@ -118,6 +120,14 @@ enum ShortcutCatalog {
       ShortcutDefinition(.newChat, "New Chat", ShortcutCombo("n", .command), category: .chats)
     case .newProject:
       ShortcutDefinition(.newProject, "New Project…", ShortcutCombo("n", [.command, .shift]), category: .chats)
+    case .previousAgent:
+      ShortcutDefinition(
+        .previousAgent, "Previous Agent", ShortcutCombo(.upArrow, [.command, .control]), category: .chats,
+        context: "The agent above in the sidebar")
+    case .nextAgent:
+      ShortcutDefinition(
+        .nextAgent, "Next Agent", ShortcutCombo(.downArrow, [.command, .control]), category: .chats,
+        context: "The agent below in the sidebar")
 
     case .newTab:
       ShortcutDefinition(.newTab, "New Tab", ShortcutCombo("t", .command), category: .tabsAndSplits)

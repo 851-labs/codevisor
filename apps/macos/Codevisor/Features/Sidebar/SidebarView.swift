@@ -126,7 +126,7 @@ struct SidebarView: View {
           ? SidebarActions(
             newChat: { selection = .newChat(nil) },
             newProject: { startAddProject() },
-            stepTab: { stepAgent($0) }
+            stepAgent: { stepAgent($0) }
           )
           : nil
       )

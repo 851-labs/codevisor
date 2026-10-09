@@ -14,7 +14,8 @@ private struct FilePaneKey: FocusedValueKey {
 struct SidebarActions: Equatable {
   let newChat: @MainActor () -> Void
   let newProject: @MainActor () -> Void
-  let stepTab: @MainActor (Int) -> Void
+  /// Opens the agent above (-1) or below (1) the selected one.
+  let stepAgent: @MainActor (Int) -> Void
 
   /// The closures capture stable references (bindings and the app
   /// environment), so any published instance is interchangeable.

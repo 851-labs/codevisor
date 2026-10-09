@@ -51,6 +51,7 @@ struct CodevisorApp: App {
         AppUpdateCommands(environment: environment)
         FileCommands()
         WorkspaceLayoutCommands()
+        AgentNavigationCommands()
         BrowserCommands()
         DebugOverlayCommands()
       }
