@@ -18,6 +18,13 @@ extension SidebarView {
   func agentList(_ nodes: [AgentSidebarNode]) -> some View {
     VStack(alignment: .leading, spacing: 1) {
       agentListHeader
+        // A folder is made once it has a name; cancelling makes none.
+        .alert("New Folder", isPresented: folderNamePresented) {
+          TextField("Name", text: $folderRenameTitle)
+          Button("Create") { commitNewFolder() }
+            .disabled(folderRenameTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+          Button("Cancel", role: .cancel) { namingFolder = nil }
+        }
       ForEach(nodes) { node in
         nodeView(node).transition(.opacity)
       }
@@ -290,17 +297,27 @@ extension SidebarView {
     archiveWorkspace(workspace)
   }
 
-  /// A new folder at the top of the sidebar, optionally holding an agent,
-  /// named right away.
+  /// Asks for a new folder's name; the folder, at the top of the sidebar
+  /// and optionally holding an agent, is made once it has one.
   func createFolder(filing workspaceId: UUID?) {
+    folderRenameTitle = ""
+    namingFolder = NewFolderRequest(filing: workspaceId)
+  }
+
+  private var folderNamePresented: Binding<Bool> {
+    Binding(get: { namingFolder != nil }, set: { if !$0 { namingFolder = nil } })
+  }
+
+  private func commitNewFolder() {
+    guard let request = namingFolder else { return }
+    namingFolder = nil
+    let name = folderRenameTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !name.isEmpty else { return }
     let id = UUID()
     let first = agentNodes.first.map(nodePosition)
     let position = WorkspacePosition.between(nil, first, id: id) ?? "000000000000" + "8"
-    environment.navigationStore.saveFolder(id: id, name: "New Folder", position: position)
-    if let workspaceId { file(workspaceId, into: id) }
-    if let folder = environment.navigationStore.folders.first(where: { UUID(uuidString: $0.id) == id }) {
-      beginFolderRename(folder)
-    }
+    environment.navigationStore.saveFolder(id: id, name: name, position: position)
+    if let workspaceId = request.filing { file(workspaceId, into: id) }
   }
 
   /// The agents filed in a folder (not the ones nested under them).
@@ -477,4 +494,10 @@ struct AgentSidebarEntry: Identifiable {
     [Self(row: row, owner: owner, depth: depth)]
       + row.children.flatMap { flattening($0, owner: row, depth: depth + 1) }
   }
+}
+
+/// A folder waiting for its name before it's made.
+struct NewFolderRequest: Equatable {
+  /// The agent it will hold, if any.
+  let filing: UUID?
 }

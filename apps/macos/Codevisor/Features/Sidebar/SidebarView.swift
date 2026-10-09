@@ -24,6 +24,9 @@ struct SidebarView: View {
   @State var renamingFolder: ServerNavigationFolder?
   @State var deletingFolder: ServerNavigationFolder?
   @State var folderRenameTitle = ""
+  /// A folder about to be made, waiting for its name: the agent it will
+  /// hold, if any.
+  @State var namingFolder: NewFolderRequest?
   @State var agentDrag: AgentSidebarDrag?
   @State var agentFrames = AgentSidebarFrames()
   /// Collapsed by default: the archive is a place you go looking for
