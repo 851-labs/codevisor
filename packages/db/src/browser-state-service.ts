@@ -1,6 +1,8 @@
 import {
   browserCookieKey,
   shareableBrowserURL,
+  type BrowserCookieEntry,
+  type BrowserCookieMutation,
   type BrowserCookieSnapshot,
   type BrowserNavigation
 } from "@codevisor/api"
@@ -8,6 +10,45 @@ import {
 import { attempt } from "./errors.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
+
+const expireBrowserCookieEntries = (
+  entries: Map<string, BrowserCookieEntry>,
+  revision: number,
+  now: number
+): number => {
+  for (const entry of entries.values()) {
+    if (entry.cookie?.expires !== undefined && entry.cookie.expires <= now) {
+      entries.set(entry.key, { key: entry.key, revision: ++revision, cookie: null })
+    }
+  }
+  return revision
+}
+
+const mergeBrowserCookieMutation = (
+  entries: Map<string, BrowserCookieEntry>,
+  mutation: BrowserCookieMutation,
+  revision: number
+): number => {
+  const { cookie, key, expectedRevision } = mutation
+  if (key.length > 8192 || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0)
+    throw new Error("Invalid cookie revision or key")
+  if (
+    cookie &&
+    (browserCookieKey(cookie) !== key ||
+      !cookie.domain ||
+      !cookie.path.startsWith("/") ||
+      cookie.name.length + cookie.value.length > 16_384 ||
+      // oxlint-disable-next-line no-control-regex -- rejecting NUL and line breaks in cookie domains is deliberate
+      /[\r\n\0]/.test(cookie.domain))
+  )
+    throw new Error("Invalid cookie")
+  const previous = entries.get(key)
+  // A stale client must not resurrect a logout or overwrite a newer login.
+  if ((previous?.revision ?? 0) !== expectedRevision) return revision
+  if (previous && JSON.stringify(previous.cookie) === JSON.stringify(cookie)) return revision
+  entries.set(key, { key, revision: ++revision, cookie })
+  return revision
+}
 
 export const makeBrowserStateService = ({
   sqlite
@@ -39,34 +80,9 @@ export const makeBrowserStateService = ({
           const entries = new Map(current.entries.map((entry) => [entry.key, entry]))
           let revision = current.revision
           const now = Date.now() / 1000
-          for (const entry of entries.values()) {
-            if (entry.cookie?.expires !== undefined && entry.cookie.expires <= now) {
-              entries.set(entry.key, { key: entry.key, revision: ++revision, cookie: null })
-            }
-          }
+          revision = expireBrowserCookieEntries(entries, revision, now)
           for (const mutation of mutations) {
-            const { cookie, key, expectedRevision } = mutation
-            if (
-              key.length > 8192 ||
-              !Number.isSafeInteger(expectedRevision) ||
-              expectedRevision < 0
-            )
-              throw new Error("Invalid cookie revision or key")
-            if (
-              cookie &&
-              (browserCookieKey(cookie) !== key ||
-                !cookie.domain ||
-                !cookie.path.startsWith("/") ||
-                cookie.name.length + cookie.value.length > 16_384 ||
-                // oxlint-disable-next-line no-control-regex -- rejecting NUL and line breaks in cookie domains is deliberate
-                /[\r\n\0]/.test(cookie.domain))
-            )
-              throw new Error("Invalid cookie")
-            const previous = entries.get(key)
-            // A stale client must not resurrect a logout or overwrite a newer login.
-            if ((previous?.revision ?? 0) !== expectedRevision) continue
-            if (previous && JSON.stringify(previous.cookie) === JSON.stringify(cookie)) continue
-            entries.set(key, { key, revision: ++revision, cookie })
+            revision = mergeBrowserCookieMutation(entries, mutation, revision)
           }
           const snapshot = { revision, entries: [...entries.values()] }
           if (revision !== current.revision) write("browser-cookies-v1", snapshot)
