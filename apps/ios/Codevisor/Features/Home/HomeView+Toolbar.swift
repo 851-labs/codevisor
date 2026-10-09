@@ -17,6 +17,7 @@ extension HomeView {
   @ToolbarContentBuilder
   var homeSidebarToolbar: some ToolbarContent {
     ToolbarItem(placement: settingsPlacement) { settingsButton }
+    ToolbarItem(placement: .topBarTrailing) { HomeAgentListOptions() }
     if !failedSyncMachines.isEmpty {
       ToolbarItem(placement: settingsPlacement) {
         machineConnectionWarningButton
