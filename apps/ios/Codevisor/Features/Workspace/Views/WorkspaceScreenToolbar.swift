@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The live sheet's controls become the conversation controls during send.
-struct WorkspaceScreenToolbar<TabsButton: View>: ToolbarContent {
+struct WorkspaceScreenToolbar: ToolbarContent {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var showsConversationControls = false
   @Namespace private var glassNamespace
@@ -10,8 +10,6 @@ struct WorkspaceScreenToolbar<TabsButton: View>: ToolbarContent {
   let blocksServerContent: Bool
   let isDraft: Bool
   let onDismissNewChat: () -> Void
-  /// Opens the workspace's tab overview.
-  let tabsButton: TabsButton
   /// The decorative back chevron materializes at the top-left as the
   /// sheet's chrome becomes the conversation's. With iPhone Duo's vertical
   /// strip the real back button lives on the side, so the morph would
@@ -57,16 +55,11 @@ struct WorkspaceScreenToolbar<TabsButton: View>: ToolbarContent {
   private var primaryAction: some ToolbarContent {
     ToolbarItem(id: "workspace-primary-action", placement: .topBarTrailing) {
       if isNewChatPresentation {
-        Button {
+        // The chat it becomes has no button here; Cancel fades as it goes.
+        Button("Cancel", systemImage: "xmark") {
           onDismissNewChat()
-        } label: {
-          Label {
-            Text(showsConversationControls ? "Tabs" : "Cancel")
-          } icon: {
-            Image(systemName: showsConversationControls ? "square.on.square" : "xmark")
-              .contentTransition(.symbolEffect(.replace.magic(fallback: .offUp)))
-          }
         }
+        .opacity(showsConversationControls ? 0 : 1)
         .allowsHitTesting(!isPromotingNewChat)
         .onChange(of: isPromotingNewChat, initial: true) { _, isPromoting in
           // Animate only the toolbar's state. Animating the workspace's
@@ -75,9 +68,6 @@ struct WorkspaceScreenToolbar<TabsButton: View>: ToolbarContent {
             showsConversationControls = isPromoting
           }
         }
-        // Tabs belong to a workspace; an unsent draft has none yet.
-      } else if !blocksServerContent, !isDraft {
-        tabsButton
       }
     }
   }

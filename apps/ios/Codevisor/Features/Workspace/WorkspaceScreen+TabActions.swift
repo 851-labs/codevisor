@@ -19,8 +19,8 @@ struct WorkspacePaneSelection: Equatable {
 
 // MARK: - Tab actions
 
-/// The workspace's few tab operations. Switching tabs happens in the tab
-/// overview.
+/// The workspace's few tab operations. Switching tabs happens on the
+/// workspace's page, which lists them.
 extension WorkspaceScreen {
   var preferredRoute: WorkspacePreferredRoute {
     WorkspacePreferredRoute(chatSessionId: preferredChatSessionId, paneId: preferredPaneId)
@@ -91,7 +91,6 @@ extension WorkspaceScreen {
     withAnimation(Motion.listReflow(reduceMotion: accessibilityReduceMotion)) {
       paneBinding.wrappedValue = state
     }
-    PaneSnapshotCache.shared.remove(paneId: pane.id)
     if pane.kind == .plugin {
       // Closing the tab drops this client's webview and web-content
       // process. The machine-side plugin remains available to other
@@ -129,9 +128,8 @@ extension WorkspaceScreen {
     showsNewTabSheet = true
   }
 
-  /// Opens a new tab as `choice`, appended to the tabs, and shows it — by
-  /// zooming into its tile when the tab overview is up. Its placeholder is
-  /// never published: other devices see only the real tab.
+  /// Opens a new tab as `choice`, appended to the tabs, and shows it. Its
+  /// placeholder is never published: other devices see only the real tab.
   func openNewTab(_ choice: NewTabChoice) {
     var state = panes
     let placeholder = state.addNewTabPane()
@@ -146,7 +144,6 @@ extension WorkspaceScreen {
     case .simulator: convertToSimulator(placeholder)
     case let .plugin(option): convertToPlugin(placeholder, option: option)
     }
-    if tabOverview == .open, let id = panes.selectedPaneId { openFromOverview(id) }
   }
 
   /// Opens the New Tab its workspace's page asked for, once this screen's

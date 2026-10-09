@@ -9,7 +9,6 @@ extension WorkspaceScreen {
       workspaceId: resolvedWorkspace?.id,
       paneCount: panes.panes.count,
       newTab: { presentNewTab() },
-      showTabs: { toggleTabOverview() },
       selectTabAt: { index in
         if panes.panes.indices.contains(index) { select(panes.panes[index]) }
       },

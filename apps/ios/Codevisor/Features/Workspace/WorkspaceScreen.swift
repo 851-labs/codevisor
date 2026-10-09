@@ -6,10 +6,10 @@ import UIKit
 // MARK: - Workspace screen
 
 /// A workspace: one full-screen pane (tab) at a time — chats, terminals, and
-/// the new-tab page. Tabs are switched in the tab overview, which the nav
-/// bar's tabs button zooms out to; the nav bar shows the active pane's title
-/// between the system back button and that button. Chats also show their
-/// workspace and machine in the native navigation subtitle.
+/// the new-tab page. It is pushed from its workspace's page, which lists the
+/// tabs; Back returns there. The nav bar shows the active pane's title, and
+/// chats also show their workspace and machine in the native navigation
+/// subtitle.
 struct WorkspaceScreen: View {
   @Environment(AppEnvironment.self) var environment
   @Environment(\.dismiss) var dismiss
@@ -113,9 +113,7 @@ struct WorkspaceScreen: View {
   /// One-shot keyboard focus for a chat just created from the New Tab
   /// page, keyed by that chat's session id so only its composer takes it.
   @State var convertedChatFocusRequest: (chatSessionId: UUID, request: UUID)?
-  /// The Safari-style tab overview over the pane, and where the pane sits.
-  @State var tabOverview: WorkspaceTabOverview?
-  @State var paneFrame = WorkspacePaneFrame()
+  /// The New Tab sheet, from ⌘T or a file pane's menu.
   @State var showsNewTabSheet = false
 
   /// This workspace's chat: the routed one, or the one a draft's first send
@@ -275,12 +273,6 @@ struct WorkspaceScreen: View {
         .ignoresSafeArea()
       workspaceContent
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onGeometryChange(for: CGRect.self) {
-          $0.frame(in: .global)
-        } action: {
-          paneFrame.frame = $0
-        }
-      tabOverviewLayer
     }
     .navigationDestination(item: $presentedSubagent) { SubagentScreen(route: $0) }
     .sheet(isPresented: $showsNewTabSheet) { newTabSheet }
@@ -354,10 +346,8 @@ struct WorkspaceScreen: View {
     .toolbar {
       if !blocksServerContent, let model = activeFileModel {
         FilePaneToolbar(model: model, onNewTab: { presentNewTab() })
-        ToolbarItem(placement: .topBarTrailing) { tabsButton }
       } else {
-        // A Review pane adds its title and options menu; the workspace's own
-        // New Tab button stays, just right of the menu.
+        // A Review pane adds its title and options menu.
         if !blocksServerContent, let model = activeReviewModel {
           ReviewPaneToolbar(model: model, title: activePane.map(title(for:)) ?? "Review Changes")
         }
@@ -368,7 +358,6 @@ struct WorkspaceScreen: View {
           blocksServerContent: blocksServerContent,
           isDraft: isDraft,
           onDismissNewChat: { dismissNewChatPresentation() },
-          tabsButton: tabsButton,
           showsBackMorph: !barsAreVertical
         )
       }

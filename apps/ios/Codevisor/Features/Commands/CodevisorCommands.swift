@@ -21,8 +21,6 @@ struct WorkspaceCommandActions: Equatable {
   var workspaceId: UUID?
   var paneCount: Int
   let newTab: @MainActor () -> Void
-  /// Opens the tab overview, or zooms back into the current tab.
-  let showTabs: @MainActor () -> Void
   let selectTabAt: @MainActor (_ index: Int) -> Void
   let closeTab: @MainActor () -> Void
   let selectTab: @MainActor (_ offset: Int) -> Void
@@ -75,10 +73,6 @@ struct CodevisorCommands: Commands {
     }
 
     CommandMenu("Tabs") {
-      Button("Show All Tabs") { workspace?.showTabs() }
-        .keyboardShortcut("\\", modifiers: [.command, .shift])
-        .disabled(workspace == nil)
-      Divider()
       Button("Previous Tab") { workspace?.selectTab(-1) }
         .keyboardShortcut("[", modifiers: [.command, .shift])
         .disabled((workspace?.paneCount ?? 0) < 2)
