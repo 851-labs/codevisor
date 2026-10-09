@@ -117,35 +117,12 @@ export const makeSessionsService = (
       attempt("markSessionRead", () => {
         const id = canonicalUuid(rawId)
         getSession(id)
-        const latest = (
-          sqlite
-            .prepare(
-              "select coalesce((select attention_revision from session_attention where session_id = ?), 0) as revision"
-            )
-            .get(id) as { readonly revision: number }
-        ).revision
+        const latest = readLatestAttentionRevision(sqlite, id)
         const requested = Math.max(0, Math.min(latest, Math.trunc(throughSequence)))
         const changedAt = isoTimestamp()
         sqlite.transaction(() => {
-          sqlite
-            .prepare(
-              `insert into session_read_state (
-                 session_id, reader_id, last_seen_sequence, manually_unread, updated_at
-               ) values (?, 'owner', ?, 0, ?)
-               on conflict(session_id, reader_id) do update set
-                 last_seen_sequence = max(last_seen_sequence, excluded.last_seen_sequence),
-                 manually_unread = 0,
-                 updated_at = excluded.updated_at`
-            )
-            .run(id, requested, changedAt)
-          // Reading through the newest revision acknowledges an error too:
-          // errored is the urgent flavor of unread, not a lock. A read that
-          // was in flight when a *newer* errored turn landed keeps the flag.
-          sqlite
-            .prepare(
-              "update session_attention set errored = 0 where session_id = ? and attention_revision <= ?"
-            )
-            .run(id, requested)
+          advanceSessionReadCursor(sqlite, id, requested, changedAt)
+          acknowledgeReadAttentionError(sqlite, id, requested)
           projectSessionSidebarState(sqlite, id, changedAt)
         })()
         return getSession(id)
@@ -311,4 +288,48 @@ export const makeSessionsService = (
         })()
       })
   }
+}
+
+const readLatestAttentionRevision = (sqlite: ServiceContext["sqlite"], id: string): number => {
+  return (
+    sqlite
+      .prepare(
+        "select coalesce((select attention_revision from session_attention where session_id = ?), 0) as revision"
+      )
+      .get(id) as { readonly revision: number }
+  ).revision
+}
+
+const advanceSessionReadCursor = (
+  sqlite: ServiceContext["sqlite"],
+  id: string,
+  requested: number,
+  changedAt: string
+): void => {
+  sqlite
+    .prepare(
+      `insert into session_read_state (
+                 session_id, reader_id, last_seen_sequence, manually_unread, updated_at
+               ) values (?, 'owner', ?, 0, ?)
+               on conflict(session_id, reader_id) do update set
+                 last_seen_sequence = max(last_seen_sequence, excluded.last_seen_sequence),
+                 manually_unread = 0,
+                 updated_at = excluded.updated_at`
+    )
+    .run(id, requested, changedAt)
+}
+
+const acknowledgeReadAttentionError = (
+  sqlite: ServiceContext["sqlite"],
+  id: string,
+  requested: number
+): void => {
+  // Reading through the newest revision acknowledges an error too:
+  // errored is the urgent flavor of unread, not a lock. A read that
+  // was in flight when a *newer* errored turn landed keeps the flag.
+  sqlite
+    .prepare(
+      "update session_attention set errored = 0 where session_id = ? and attention_revision <= ?"
+    )
+    .run(id, requested)
 }
