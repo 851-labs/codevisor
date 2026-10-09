@@ -31,6 +31,7 @@ import {
 import { resolveSessionAccount, startSessionAgent } from "./session-creation.js"
 import { sessionEventSink } from "./session-events.js"
 import { withSessionMutation } from "./session-operations.js"
+import { publishSessionSkills } from "./session-skills.js"
 
 const createServerSession = async (
   services: CodevisorServerServices,
@@ -361,6 +362,7 @@ export const loadAgentSessionFor = async (
       await run(services.agents.closeAgentSession(agentSessionId))
       throw new HttpFailure(409, "Workspace was archived while starting its agent")
     }
+    await publishSessionSkills(services, fanout, serverId, sessionId, metadata)
     return restoreSessionConfigSelections(services, sessionId, session.harnessId, metadata)
   }
   const agentSessionId = session.agentSessionId ?? sessionId
@@ -381,6 +383,7 @@ export const loadAgentSessionFor = async (
     await run(services.agents.closeAgentSession(agentSessionId))
     throw new HttpFailure(409, "Workspace was archived while starting its agent")
   }
+  await publishSessionSkills(services, fanout, serverId, sessionId, metadata)
   return restoreSessionConfigSelections(services, sessionId, session.harnessId, metadata)
 }
 

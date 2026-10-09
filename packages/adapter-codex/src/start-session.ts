@@ -17,22 +17,12 @@ import { handleNotification } from "./notifications.js"
 import { killCodexCommandProcesses, type CodexCommandKiller } from "./process-kill.js"
 import { cancelPendingQuestions, serverRequestResponse } from "./questions.js"
 import type { CodexSession } from "./session.js"
+import {
+  DISABLED_CODEX_PLUGIN,
+  NATIVE_CODEX_PLUGIN_SKILL_NAMES,
+  refreshCodexSkills
+} from "./skills.js"
 import { CodexTitleGenerator } from "./title-generation.js"
-
-const NATIVE_CODEX_PLUGIN_SKILL_NAMES = [
-  "browser:control-in-app-browser",
-  "chrome:control-chrome",
-  "computer-use:computer-use",
-  "documents:documents",
-  "pdf:pdf",
-  "presentations:Presentations",
-  "sites:sites-building",
-  "sites:sites-hosting",
-  "spreadsheets:Spreadsheets",
-  "spreadsheets:excel-live-control",
-  "template-creator:template-creator",
-  "visualize:visualize"
-] as const
 
 export interface CodexStartSessionDeps {
   readonly config: {
@@ -87,7 +77,7 @@ export const makeStartSession = ({
     // skills and cua_repl transport, independently of system bundled skills.
     const threadConfig = {
       plugins: {
-        "unified-computer-use@openai-bundled": { enabled: false }
+        [DISABLED_CODEX_PLUGIN]: { enabled: false }
       },
       skills: {
         bundled: { enabled: false },
@@ -157,6 +147,7 @@ export const makeStartSession = ({
       lastGoalEmitAtMs: 0,
       messagePhases: new Map(),
       models: [],
+      skills: undefined,
       pendingGoalSnapshot: undefined,
       pendingPrompt: undefined,
       pendingTurnError: undefined,
@@ -207,6 +198,7 @@ export const makeStartSession = ({
     } catch {
       session.models = []
     }
+    await refreshCodexSkills(session, false)
     client.onNotification((method, params) => {
       handleNotification(session, method, params)
     })

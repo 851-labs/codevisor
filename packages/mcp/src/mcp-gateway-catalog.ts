@@ -95,7 +95,12 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
     executeSkill,
     ...automationSkills(),
     ...(config.packagedSkills ?? []).map((skill) =>
-      packagedSkill({ name: skill.name, path: () => skill.path, summary: skill.summary })
+      packagedSkill({
+        name: skill.name,
+        path: () => skill.path,
+        summary: skill.summary,
+        composer: skill.composer
+      })
     )
   ]
 

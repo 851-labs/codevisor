@@ -75,7 +75,7 @@ export const handleFor = (session: CodexSession): AgentSessionHandle => ({
             }
           : {}
       await session.client.request("turn/start", {
-        input: codexInput(normalizePromptInput(input)),
+        input: codexInput(normalizePromptInput(input), session.skills),
         threadId: session.threadId,
         ...(session.currentModel.length === 0 ? {} : { model: session.currentModel }),
         ...(session.currentEffort === undefined ? {} : { effort: session.currentEffort }),

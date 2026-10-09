@@ -20,6 +20,7 @@ import {
 import type { AcpAgentConnection } from "./connection.js"
 import { isGenericConnectionClose } from "./internal.js"
 import { acpPrompt, type AcpPromptCapabilities } from "./prompt.js"
+import type { AcpSkillTracker } from "./skills.js"
 
 export interface AcpQuestionControls {
   readonly answerQuestion: (
@@ -75,6 +76,8 @@ export interface AcpSdkConnectionOptions {
   readonly terminate?: () => void | Promise<void>
   readonly promptCapabilities?: AcpPromptCapabilities
   readonly questions?: AcpQuestionControls
+  /// The connection's skills, from its `available_commands_update`s.
+  readonly skills?: AcpSkillTracker
   readonly auth?: AcpAuthControls
   readonly customization?: AcpSdkConnectionCustomization
 }
@@ -112,6 +115,15 @@ export const sdkConnection = (
   const promptCapabilities = options.promptCapabilities ?? {}
   const questions = options.questions
   const auth = options.auth ?? { methods: [], canLogout: false }
+
+  const withSkills = async (
+    sessionId: string,
+    metadata: AgentSessionMetadata,
+    timeoutMs: number | undefined
+  ): Promise<AgentSessionMetadata> => {
+    const skills = await options.skills?.current(sessionId, timeoutMs ?? 0)
+    return skills === undefined ? metadata : { ...metadata, skills }
+  }
 
   const base: AcpAgentConnection = {
     probeAuth: (cwd) =>
@@ -191,7 +203,7 @@ export const sdkConnection = (
       } while (cursor !== undefined)
       return sessions
     }),
-    createSession: (cwd, toolGateway) =>
+    createSession: (cwd, toolGateway, skillListTimeoutMs) =>
       adapterPromise("createSession", async () => {
         const params = { cwd, mcpServers: mcpServers(toolGateway) }
         let response: NewSessionResponse
@@ -213,7 +225,11 @@ export const sdkConnection = (
             params
           )) as NewSessionResponse
         }
-        const metadata = sessionMetadata(response.sessionId, response)
+        const metadata = await withSkills(
+          response.sessionId,
+          sessionMetadata(response.sessionId, response),
+          skillListTimeoutMs
+        )
         return (
           options.customization?.customizeSessionMetadata?.(
             response.sessionId,
@@ -222,14 +238,18 @@ export const sdkConnection = (
           ) ?? metadata
         )
       }),
-    loadSession: (sessionId, cwd, toolGateway) =>
+    loadSession: (sessionId, cwd, toolGateway, skillListTimeoutMs) =>
       adapterPromise("loadSession", async () => {
         const response = (await connection.agent.request(acp.methods.agent.session.load, {
           cwd,
           mcpServers: mcpServers(toolGateway),
           sessionId
         })) as AcpSessionMetadataResponse
-        const metadata = sessionMetadata(sessionId, response)
+        const metadata = await withSkills(
+          sessionId,
+          sessionMetadata(sessionId, response),
+          skillListTimeoutMs
+        )
         return (
           options.customization?.customizeSessionMetadata?.(sessionId, response, metadata) ??
           metadata

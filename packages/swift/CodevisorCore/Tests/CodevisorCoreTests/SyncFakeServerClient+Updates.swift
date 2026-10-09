@@ -453,6 +453,11 @@ extension SyncFakeServerClient {
   func issuePairingToken() async throws -> ServerPairingToken {
     ServerPairingToken(token: "hm_test", createdAt: "2026-06-30T00:00:00.000Z")
   }
+  func listSkills() async throws -> ServerSkillsList { skillsList }
+  func composerSkills(projectId: UUID?, sessionId: UUID?) async throws -> [ServerComposerSkill] {
+    guard let composerSkillsHandler else { throw CodevisorServerClientError.httpStatus(404, "") }
+    return try await composerSkillsHandler(projectId, sessionId)
+  }
   func capabilities(cwd: String) async throws -> ServerCapabilities {
     if let capabilitiesHandler { return try await capabilitiesHandler(cwd) }
     return ServerCapabilities(harnesses: [])

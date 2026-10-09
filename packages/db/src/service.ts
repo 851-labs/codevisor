@@ -55,6 +55,7 @@ import type {
   SaveNativeMcpRemovalRequest,
   UpdateHarnessAccountAuthRequest
 } from "./rows.js"
+import type { SessionStateService } from "./session-state-types.js"
 import type { ReconcileQuietStreamingSession } from "./streaming-reconciliation-service.js"
 import type { SyncBatch } from "./sync-journal.js"
 import type { CreateWorkspaceWithSession, DeleteWorkspacePane } from "./workspace-service-types.js"
@@ -68,12 +69,7 @@ export interface CodevisorDatabaseConfig {
   readonly onDataUpgradeProgress?: (progress: DataUpgradeProgress) => void
 }
 
-export interface CodevisorDatabaseService {
-  readonly getSessionRuntimeState: (sessionId: string) => Effect.Effect<unknown, DatabaseError>
-  readonly saveSessionRuntimeState: (
-    sessionId: string,
-    metadata: unknown
-  ) => Effect.Effect<void, DatabaseError>
+export interface CodevisorDatabaseService extends SessionStateService {
   readonly getNavigationSnapshot: Effect.Effect<NavigationSnapshot, DatabaseError>
   readonly migrate: Effect.Effect<ReadonlyArray<string>, DatabaseError>
   readonly close: Effect.Effect<void>

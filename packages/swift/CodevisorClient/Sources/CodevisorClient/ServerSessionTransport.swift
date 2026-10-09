@@ -66,6 +66,7 @@ extension ServerSessionTransport {
       pendingPlanApproval: page.pendingPlanApproval,
       backgroundTasks: page.backgroundTasks,
       goal: page.goal,
+      skills: page.skills,
       sessionPlan: page.sessionPlan,
       usage: page.usage?.sessionUsage,
       updateGateHarnessName: page.updateGate?.harnessName

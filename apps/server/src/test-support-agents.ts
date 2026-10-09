@@ -144,6 +144,16 @@ export const makeAgents = (): AgentRuntimeService & {
             configOptions: []
           }
         }
+        if (cwd.includes("native-skills")) {
+          return {
+            sessionId: `inspect-${harnessId}`,
+            configOptions: [],
+            skills: {
+              invocationPrefix: "/",
+              skills: [{ invocation: "/review", name: "review", source: "builtin" as const }]
+            }
+          }
+        }
         // A requested model the harness does not offer is reported back,
         // not substituted.
         const unapplied = configSelections?.model === "gpt-gone"
@@ -195,6 +205,18 @@ export const makeAgents = (): AgentRuntimeService & {
         if (cwd.includes("no-config-options")) {
           configOptionsBySession.set(agentSessionId, [])
           return { configOptions: [], sessionId: agentSessionId }
+        }
+        // A harness that lists the skills it found while starting.
+        if (cwd.includes("native-skills")) {
+          configOptionsBySession.set(agentSessionId, [])
+          return {
+            configOptions: [],
+            sessionId: agentSessionId,
+            skills: {
+              invocationPrefix: "/",
+              skills: [{ invocation: "/review", name: "review", source: "builtin" as const }]
+            }
+          }
         }
         if (cwd.includes("session-config")) {
           dependencyConfigSessions.add(agentSessionId)

@@ -25,6 +25,7 @@ import {
   reportSkillRead
 } from "./mcp-gateway-execution.js"
 import {
+  composerSkills,
   DESCRIPTION_GUIDANCE,
   skillsToolDescription,
   skillsToolResult
@@ -435,6 +436,8 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
 
   return {
     allTools,
+    composerSkillsFor: async (projectId?: string, sessionId?: string) =>
+      composerSkills(await sessionSkills(projectId, sessionId)),
     createGatewayConnection,
     finishRemoteBrowserTurn,
     gatewayRuntime,

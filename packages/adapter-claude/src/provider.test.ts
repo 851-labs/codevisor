@@ -109,7 +109,7 @@ describe("ClaudeProvider", () => {
     ).rejects.toThrow("older than the required")
   })
 
-  it("turns off Claude in Chrome whenever Codevisor's browser is attached", async () => {
+  it("turns off Claude's own browser and desktop tools whenever Codevisor's are attached", async () => {
     vi.useFakeTimers()
     const gateway = { bearerToken: "secret", name: "codevisor", url: "http://127.0.0.1:1/mcp" }
     const fresh = new FakeQuery()
@@ -124,6 +124,12 @@ describe("ClaudeProvider", () => {
       "no-chrome": null,
       "session-id": created.metadata.sessionId
     })
+    const skillsOff = {
+      "built-in-browser": "off",
+      "chrome-browser": "off",
+      "computer-use": "off"
+    }
+    expect(fresh.options?.settings).toEqual({ skillOverrides: skillsOff })
 
     // A recovered stream keeps the flag but drops the fresh-session id.
     const prompt = run(created.handle.prompt("do work"))
@@ -132,6 +138,7 @@ describe("ClaudeProvider", () => {
     await vi.advanceTimersByTimeAsync(STREAM_RECOVERY_BACKOFF_MS)
     await recovered.nextPrompt()
     expect(recovered.options?.extraArgs).toEqual({ "no-chrome": null })
+    expect(recovered.options?.settings).toMatchObject({ skillOverrides: skillsOff })
     expect(recovered.options?.systemPrompt).toEqual({ type: "preset", preset: "claude_code" })
     recovered.push(resultMessage())
     await prompt
@@ -150,7 +157,8 @@ describe("ClaudeProvider", () => {
     await resuming
     expect(resumed.options).toMatchObject({
       extraArgs: { "no-chrome": null },
-      resume: "previous-session"
+      resume: "previous-session",
+      settings: { skillOverrides: skillsOff }
     })
   })
 

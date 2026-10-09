@@ -22,12 +22,14 @@ const AUTOMATION_SKILLS = [
   {
     gate: "browser",
     name: "browser-use",
-    summary: "drive a real web browser: open sites, sign in, click, type, read live pages"
+    summary: "drive a real web browser: open sites, sign in, click, type, read live pages",
+    composer: "Browse the web with Codevisor's browser"
   },
   {
     gate: "computer",
     name: "computer-use",
-    summary: "see and operate desktop apps, and record the screen"
+    summary: "see and operate desktop apps, and record the screen",
+    composer: "Operate desktop apps and record the screen"
   },
   {
     gate: "codevisor",
@@ -37,7 +39,8 @@ const AUTOMATION_SKILLS = [
   {
     gate: "codevisor",
     name: "codevisor-agents",
-    summary: "start and coordinate other agents as visible Codevisor chats"
+    summary: "start and coordinate other agents as visible Codevisor chats",
+    composer: "Start and coordinate other agents in Codevisor"
   },
   {
     gate: "codevisor",
@@ -49,7 +52,12 @@ const AUTOMATION_SKILLS = [
     name: "codevisor-clients",
     summary: "see and drive the user's open Codevisor windows"
   }
-] as const satisfies ReadonlyArray<{ gate: BuiltinMcpId; name: string; summary: string }>
+] as const satisfies ReadonlyArray<{
+  gate: BuiltinMcpId
+  name: string
+  summary: string
+  composer?: string
+}>
 
 export type AutomationSkillName = (typeof AUTOMATION_SKILLS)[number]["name"]
 
@@ -74,7 +82,8 @@ export const automationSkills = (
       {
         name: skill.name,
         path: () => managedSkillPath(skill.name, options),
-        summary: skill.summary
+        summary: skill.summary,
+        ...("composer" in skill ? { composer: skill.composer } : {})
       },
       skill.gate
     )

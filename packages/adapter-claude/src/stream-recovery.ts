@@ -59,10 +59,11 @@ export const resumeSessionAfterStreamDeath = async (
   // name the same id through `resume` instead, never both.
   // The process restarts on what the session is running now — the model,
   // effort, and speed the chat applied since start — not the start options.
+  // Skills turned off at start stay off.
   const {
     extraArgs: startArgs,
     model: _startModel,
-    settings: _startSettings,
+    settings: startSettings,
     ...resumeOptions
   } = deps.options
   const { "session-id": _fresh, ...keptArgs } = startArgs ?? {}
@@ -78,7 +79,10 @@ export const resumeSessionAfterStreamDeath = async (
       ...claudeStartOptions({
         effort: session.currentEffort,
         model: session.currentModel,
-        speed: session.currentSpeed
+        speed: session.currentSpeed,
+        ...(typeof startSettings === "object" && startSettings.skillOverrides !== undefined
+          ? { skillOverrides: startSettings.skillOverrides }
+          : {})
       }),
       resume: session.sdkSessionId
     }

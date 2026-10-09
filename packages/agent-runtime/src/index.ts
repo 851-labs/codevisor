@@ -17,6 +17,7 @@ export * from "./shell-env.js"
 export * from "./agent-sessions.js"
 export * from "./stdio-transport.js"
 export * from "./model-selection.js"
+export * from "./session-skills.js"
 export * from "./agent-runtime-types.js"
 export { harnessCatalog, OPENCODE_INSTALL_PATH } from "./harness-catalog.js"
 export { locateExecutableOnPath } from "./executable-locator.js"
@@ -176,6 +177,7 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
             // the outer timeout instead of the snappy interactive default.
             {
               modelListTimeoutMs: Math.max(3_000, timeoutMs - 3_000),
+              skillListTimeoutMs: 2_000,
               ...(configSelections === undefined ? {} : { configSelections })
             }
           )

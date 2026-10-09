@@ -10,10 +10,13 @@ import type {
 } from "@codevisor/agent-runtime"
 
 import { makeGrokBuildExtension } from "./extension.js"
+import { readGrokConfigFile, withGrokSkillsDisabled } from "./skills.js"
 
 export interface GrokBuildProviderConfig {
   readonly connector?: AcpConnector
   readonly backgroundTerminals?: BackgroundTerminalIntegration
+  /// Reads Grok's config files; exposed for tests.
+  readonly readConfigFile?: (path: string) => string | undefined
 }
 
 export const makeGrokBuildProvider = (
@@ -29,8 +32,10 @@ export const makeGrokBuildProvider = (
         ? {}
         : { backgroundTerminals: config.backgroundTerminals })
     })
+  const readConfigFile = config.readConfigFile ?? readGrokConfigFile
   return makeAcpProvider(environment, {
     connector,
-    providerId: "grok-build"
+    providerId: "grok-build",
+    launchEnv: (env, launch) => withGrokSkillsDisabled(env, launch, readConfigFile)
   })
 }

@@ -33,14 +33,18 @@ export interface AcpHarnessLaunchRequest {
 /// work from being dropped.
 export interface AcpAgentConnection {
   readonly listSessions?: Effect.Effect<ReadonlyArray<AgentSessionSummary>, AgentRuntimeError>
+  /// `skillListTimeoutMs` bounds the wait for the skills the agent pushes
+  /// right after setup, so the metadata can carry them.
   readonly createSession: (
     cwd: string,
-    toolGateway?: ToolGatewayConfig
+    toolGateway?: ToolGatewayConfig,
+    skillListTimeoutMs?: number
   ) => Effect.Effect<AgentSessionMetadata, AgentRuntimeError>
   readonly loadSession: (
     sessionId: string,
     cwd: string,
-    toolGateway?: ToolGatewayConfig
+    toolGateway?: ToolGatewayConfig,
+    skillListTimeoutMs?: number
   ) => Effect.Effect<AgentSessionMetadata, AgentRuntimeError>
   readonly prompt: (
     sessionId: string,

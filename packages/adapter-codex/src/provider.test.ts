@@ -46,7 +46,8 @@ describe("CodexProvider", () => {
     expect(client.requests.map((request) => request.method)).toEqual([
       "initialize",
       "thread/start",
-      "model/list"
+      "model/list",
+      "skills/list"
     ])
     expect(client.notifications).toEqual([{ method: "initialized", params: undefined }])
     expect(created?.metadata.sessionId).toBe("thread-new")

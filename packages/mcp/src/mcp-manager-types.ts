@@ -4,6 +4,7 @@ import type { QuestionAnswer, RuntimeEventSink } from "@codevisor/agent-runtime"
 import type {
   BrowserPreference,
   BrowserUseConfiguration,
+  ComposerSkill,
   CreateMcpServerRequest,
   McpAuthDetection,
   McpServer,
@@ -115,6 +116,12 @@ export interface McpManager {
   readonly finishOAuth: (state: string, code: string) => Promise<McpServer>
   readonly disconnectOAuth: (id: string) => Promise<McpServer>
   readonly resolved: (projectId?: string, sessionId?: string) => Promise<ReadonlyArray<McpServer>>
+  /// The Codevisor skills the composer offers a chat: built-in guides whose
+  /// MCP server is enabled for it, and the user's saved skills.
+  readonly composerSkills: (
+    projectId?: string,
+    sessionId?: string
+  ) => Promise<ReadonlyArray<ComposerSkill>>
   readonly setProjectEnabled: (
     projectId: string,
     serverId: string,

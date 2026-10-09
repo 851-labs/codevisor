@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { automationSkills } from "./mcp-automation-builtins.js"
 import {
+  composerSkills,
   executeSkill,
   packagedSkill,
   skillEntries,
@@ -54,6 +55,38 @@ describe("skill catalog", () => {
     ])
     expect(entries.find((entry) => entry.name === "plain")?.summary).toBe("Plain")
     expect(await skillEntries([], allEnabled, undefined)).toEqual([])
+  })
+
+  it("offers the composer only the guides users invoke, then the user's skills", async () => {
+    const attaching = packagedSkill({
+      composer: "Send you files",
+      name: "attaching-files",
+      path: () => "/missing/SKILL.md",
+      summary: "send files to the user"
+    })
+    const entries = await skillEntries(
+      [executeSkill, ...automationSkills(), attaching],
+      { enabledIds: new Set(["browser", "codevisor"]), pluginTools: [] },
+      source([
+        { description: "Ships it", directoryName: "deploy", name: "Deploy" },
+        { directoryName: "plain", name: "Plain" }
+      ])
+    )
+    expect(composerSkills(entries)).toEqual([
+      {
+        builtin: true,
+        description: "Browse the web with Codevisor's browser",
+        name: "browser-use"
+      },
+      {
+        builtin: true,
+        description: "Start and coordinate other agents in Codevisor",
+        name: "codevisor-agents"
+      },
+      { builtin: true, description: "Send you files", name: "attaching-files" },
+      { builtin: false, description: "Ships it", name: "deploy" },
+      { builtin: false, name: "plain" }
+    ])
   })
 
   it("reads built-in skills without frontmatter, tolerating malformed files", async () => {

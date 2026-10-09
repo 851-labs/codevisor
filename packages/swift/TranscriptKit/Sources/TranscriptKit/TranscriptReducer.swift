@@ -64,8 +64,8 @@ public enum TranscriptReducer {
     case let .questionResolved(resolution):
       TranscriptToolReduction.applyQuestion(resolution, to: &turn)
 
-    case .question, .availableCommandsUpdate, .currentModeUpdate, .configOptionUpdate,
-      .usageUpdate, .goalUpdate, .goalCleared:
+    case .question, .availableCommandsUpdate, .availableSkillsUpdate, .currentModeUpdate,
+      .configOptionUpdate, .usageUpdate, .goalUpdate, .goalCleared:
       // Session-level state; handled by SessionModel, not the transcript.
       break
     }

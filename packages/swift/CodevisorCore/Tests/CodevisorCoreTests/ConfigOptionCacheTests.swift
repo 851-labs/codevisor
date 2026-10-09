@@ -251,6 +251,74 @@ struct ConfigOptionCacheTests {
     #expect(!cache.needsCapabilityRevalidation(forServer: "local", cwd: "/project-b"))
   }
 
+  @Test("Inspected skills are kept per directory, never in the server-wide snapshot")
+  func skillsPerDirectory() async throws {
+    let cache = ConfigOptionCache(store: InMemoryStore())
+    let skillsA = SessionSkills(skills: [SessionSkill(name: "a", invocation: "$a")], invocationPrefix: "$")
+    let skillsB = SessionSkills(skills: [SessionSkill(name: "b", invocation: "$b")], invocationPrefix: "$")
+    var inProjectA = capability(model: "fresh")
+    inProjectA.skills = skillsA
+    var inProjectB = capability(model: "fresh")
+    inProjectB.skills = skillsB
+    let responseA = [inProjectA]
+    let responseB = [inProjectB]
+
+    _ = try await cache.revalidateCapabilities(forServer: "local", cwd: "/project-a", fetch: { responseA })
+    _ = try await cache.revalidateCapabilities(forServer: "local", cwd: "/project-b", fetch: { responseB })
+
+    #expect(cache.skills(forHarness: "codex", onServer: "local", cwd: "/project-a") == skillsA)
+    #expect(cache.skills(forHarness: "codex", onServer: "local", cwd: "/project-b") == skillsB)
+    #expect(cache.skills(forHarness: "codex", onServer: "remote", cwd: "/project-a") == nil)
+    #expect(cache.capabilities(forServer: "local").allSatisfy { $0.skills == nil })
+
+    // An inspection that reports no list keeps the directory's last one.
+    let unlisted = [capability(model: "fresh")]
+    _ = try await cache.revalidateCapabilities(
+      forServer: "local", cwd: "/project-a", force: true, fetch: { unlisted })
+    #expect(cache.skills(forHarness: "codex", onServer: "local", cwd: "/project-a") == skillsA)
+  }
+
+  @Test("Codevisor skill refreshes share one request per scope; a failure keeps that scope's list")
+  func codevisorSkillRefresh() async {
+    let cache = ConfigOptionCache(store: InMemoryStore())
+    let counter = CapabilityRefreshCounter()
+    let draft = ConfigOptionCache.CodevisorSkillsScope(serverId: "local", projectId: UUID(), sessionId: nil)
+    let chat = ConfigOptionCache.CodevisorSkillsScope(
+      serverId: "local", projectId: draft.projectId, sessionId: UUID())
+    let draftSkills = [ServerComposerSkill(name: "deploy")]
+    let chatSkills = [ServerComposerSkill(name: "browser-use", builtin: true), ServerComposerSkill(name: "deploy")]
+
+    // All calls run before the main actor can start the first request.
+    let first = cache.refreshCodevisorSkills(for: draft) {
+      await counter.increment()
+      return draftSkills
+    }
+    let joined = cache.refreshCodevisorSkills(for: draft) {
+      await counter.increment()
+      return draftSkills
+    }
+    let session = cache.refreshCodevisorSkills(for: chat) {
+      await counter.increment()
+      return chatSkills
+    }
+    await first.value
+    await joined.value
+    await session.value
+    #expect(await counter.value == 2)
+    #expect(cache.codevisorSkills(for: draft) == draftSkills)
+    #expect(cache.codevisorSkills(for: chat) == chatSkills)
+    let otherMachine = ConfigOptionCache.CodevisorSkillsScope(
+      serverId: "remote", projectId: draft.projectId, sessionId: nil)
+    #expect(cache.codevisorSkills(for: otherMachine).isEmpty)
+    // A chat its draft just became borrows the project's list until its own loads.
+    let justSent = ConfigOptionCache.CodevisorSkillsScope(
+      serverId: "local", projectId: draft.projectId, sessionId: UUID())
+    #expect(cache.codevisorSkills(for: justSent) == draftSkills)
+
+    await cache.refreshCodevisorSkills(for: draft) { throw CancellationError() }.value
+    #expect(cache.codevisorSkills(for: draft) == draftSkills)
+  }
+
   private func capability(model: String) -> ServerHarnessCapability {
     ServerHarnessCapability(
       harness: ServerHarness(

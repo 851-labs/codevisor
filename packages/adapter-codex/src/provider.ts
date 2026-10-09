@@ -29,6 +29,7 @@ import { codexThreadTitle } from "./notifications.js"
 import type { CodexCommandKiller } from "./process-kill.js"
 import { handleFor } from "./session-handle.js"
 import { connectSharedCodexAccount } from "./shared-oauth.js"
+import { codexSessionSkills } from "./skills.js"
 import { makeStartSession } from "./start-session.js"
 import { codexUsageLimitsFrom } from "./usage.js"
 import { isCodexVersionNewer, readCodexVersion } from "./version.js"
@@ -204,6 +205,7 @@ export const makeCodexProvider = (
             configOptions: configOptionsFor(session),
             modes: modesFor(session),
             sessionId: session.key,
+            ...(session.skills === undefined ? {} : { skills: codexSessionSkills(session.skills) }),
             supportsGoals: true
           }
         }
@@ -232,6 +234,7 @@ export const makeCodexProvider = (
             configOptions: configOptionsFor(session),
             modes: modesFor(session),
             sessionId: session.key,
+            ...(session.skills === undefined ? {} : { skills: codexSessionSkills(session.skills) }),
             supportsGoals: true
           },
           sessionId: session.key

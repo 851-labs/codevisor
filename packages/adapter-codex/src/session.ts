@@ -8,6 +8,7 @@ import type { QuestionSpec, SessionGoal } from "@codevisor/api"
 
 import type { CodexClient } from "./client.js"
 import type { CodexCommandKiller } from "./process-kill.js"
+import type { CodexSkill } from "./skills.js"
 import type { CodexTitleGenerator } from "./title-generation.js"
 
 export interface CodexModel {
@@ -71,6 +72,8 @@ export interface CodexSession {
   /// it — otherwise the model stays in Plan mode after the toggle flips off.
   collaborationEngaged: boolean
   models: ReadonlyArray<CodexModel>
+  /// The thread directory's skills, once `skills/list` has answered.
+  skills: ReadonlyArray<CodexSkill> | undefined
   /// item id → tool-call kind, so completions map back without re-parsing.
   readonly itemKinds: Map<string, string>
   /// agentMessage item id → wire phase ("commentary" | "final"), captured from

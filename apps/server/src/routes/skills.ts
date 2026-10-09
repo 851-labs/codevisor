@@ -21,6 +21,18 @@ export const routeSkills = async (
   response: ServerResponse,
   url: URL
 ): Promise<boolean> => {
+  // The composer's Codevisor skills follow the chat's enabled MCP servers,
+  // so the gateway answers; without one, no Codevisor skill can load.
+  if (url.pathname === "/v1/composer-skills" && request.method === "GET") {
+    const param = (name: string) => url.searchParams.get(name)?.trim() || undefined
+    writeJson(response, 200, {
+      skills:
+        services.mcp === undefined
+          ? []
+          : await services.mcp.composerSkills(param("projectId"), param("sessionId"))
+    })
+    return true
+  }
   const manager = services.skills
   if (!url.pathname.startsWith("/v1/skills")) return false
   if (manager === undefined) throw new HttpFailure(501, "Skills management unavailable")

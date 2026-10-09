@@ -37,6 +37,9 @@ export class FakeCodexClient implements CodexClient {
   failResume = false
   startModel = "gpt-5.2-codex"
   listedThreads: Array<Record<string, unknown>> = []
+  /// What `skills/list` reports for the thread directory; undefined models a
+  /// Codex without the method.
+  listedSkills: Array<Record<string, unknown>> | undefined
   threadName: string | null = null
   threadPreview = ""
   goal:
@@ -102,6 +105,9 @@ export class FakeCodexClient implements CodexClient {
         this.goal = undefined
         return { cleared } as T
       }
+      case "skills/list":
+        if (this.listedSkills === undefined) throw new Error(`Unexpected request: ${method}`)
+        return { data: [{ cwd: "/tmp/project", errors: [], skills: this.listedSkills }] } as T
       case "model/list":
         return {
           data: [
@@ -194,6 +200,7 @@ export const setup = async (
     failResume?: boolean
     resume?: string
     startModel?: string
+    listedSkills?: Array<Record<string, unknown>>
     toolGateway?: ToolGatewayConfig
     /// `null` models a machine with no codex config.toml at all.
     codexConfigToml?: string | null
@@ -202,6 +209,7 @@ export const setup = async (
   const client = new FakeCodexClient()
   client.failResume = options.failResume ?? false
   client.startModel = options.startModel ?? "gpt-5.2-codex"
+  client.listedSkills = options.listedSkills
   const spawns: Array<CodexSpawnRequest> = []
   const provider = makeCodexProvider(environment, {
     connector: async (request) => {
@@ -214,9 +222,21 @@ export const setup = async (
         : (options.codexConfigToml ?? DEFAULT_CODEX_CONFIG_TOML)
   })
   const events: Array<RuntimeEvent> = []
+  const waiters: Array<{
+    readonly matches: (event: RuntimeEvent) => boolean
+    readonly resolve: (event: RuntimeEvent) => void
+  }> = []
   const emit = async (event: RuntimeEvent): Promise<void> => {
     events.push(event)
+    const waiter = waiters.find((candidate) => candidate.matches(event))
+    if (waiter !== undefined) {
+      waiters.splice(waiters.indexOf(waiter), 1)
+      waiter.resolve(event)
+    }
   }
+  /// The next event matching `matches`; register before triggering it.
+  const nextEvent = (matches: (event: RuntimeEvent) => boolean): Promise<RuntimeEvent> =>
+    new Promise((resolve) => waiters.push({ matches, resolve }))
   const created =
     options.resume === undefined
       ? await run(
@@ -236,7 +256,7 @@ export const setup = async (
             options.toolGateway
           )
         )
-  return { client, created, events, loaded, provider, spawns }
+  return { client, created, events, loaded, nextEvent, provider, spawns }
 }
 
 export const UNIFIED_DIFF = [

@@ -106,11 +106,50 @@ export const SessionGoal = Schema.Struct({
 })
 export type SessionGoal = typeof SessionGoal.Type
 
+/// Where a composer skill comes from: shipped with the harness (`builtin`),
+/// the workspace's or the user's skill folders (`project`, `user`), a harness
+/// plugin (`plugin`), or Codevisor's own skill store (`codevisor`).
+export const SessionSkillSource = Schema.Literals([
+  "builtin",
+  "project",
+  "user",
+  "plugin",
+  "codevisor"
+])
+export type SessionSkillSource = typeof SessionSkillSource.Type
+
+/// One skill the user can invoke from the composer. Harness commands that
+/// are not skills (`/compact`, `/model`, …) are never listed.
+export const SessionSkill = Schema.Struct({
+  name: Schema.String,
+  description: Schema.optional(Schema.String),
+  /// The exact text that invokes the skill in this harness's prompt:
+  /// "/review" (Claude, OpenCode, Cursor, Grok), "$review" (Codex), or
+  /// "/skill:review" (Pi).
+  invocation: Schema.String,
+  source: Schema.optional(SessionSkillSource)
+})
+export type SessionSkill = typeof SessionSkill.Type
+
+/// The skills a harness session can invoke, as one replaceable snapshot. It
+/// rides on harness capabilities (for chats that have not started their
+/// harness yet) and as the `available_skills_update` session update.
+export const SessionSkills = Schema.Struct({
+  skills: Schema.Array(SessionSkill),
+  /// The prefix that invokes a skill the harness does not know natively
+  /// (Codevisor store skills): "$" for Codex, "/" elsewhere.
+  invocationPrefix: Schema.String
+})
+export type SessionSkills = typeof SessionSkills.Type
+
 export const HarnessCapability = Schema.Struct({
   harness: Harness,
   modes: Schema.optional(SessionModeState),
   configOptions: Schema.Array(SessionConfigOption),
   supportsGoals: Schema.optional(Schema.Boolean),
+  /// Skills a fresh session in the inspected directory can invoke. Absent
+  /// when the harness cannot list them.
+  skills: Schema.optional(SessionSkills),
   /// Requested selections (config id → requested value) the inspection could
   /// not apply: the harness does not offer the value (even after reconciling
   /// a drifted id onto its current entry) or rejected it. A value that was

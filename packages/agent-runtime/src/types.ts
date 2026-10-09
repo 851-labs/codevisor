@@ -6,7 +6,8 @@ import type {
   QuestionAnswerEntry,
   SessionConfigOption,
   SessionGoal,
-  SessionModeState
+  SessionModeState,
+  SessionSkills
 } from "@codevisor/api"
 import { Effect, Schema } from "effect"
 
@@ -75,6 +76,9 @@ export interface AgentSessionMetadata {
   readonly configOptions: ReadonlyArray<SessionConfigOption>
   /// Whether the harness supports persistent session goals (codex goal mode).
   readonly supportsGoals?: boolean
+  /// Skills the session can invoke, when the harness can list them. Live
+  /// sessions also stream changes as `available_skills_update` output.
+  readonly skills?: SessionSkills
   /// Requested selections (config id → requested value) that could not be
   /// applied to this snapshot. Only inspection reports it.
   readonly unappliedConfigSelections?: Readonly<Record<string, string>>
@@ -385,6 +389,11 @@ export interface CreateSessionOptions {
   /// grants most of its own timeout — a cold CLI spawn on a slow machine
   /// (a containerized Linux server) routinely needs more than the default.
   readonly modelListTimeoutMs?: number
+  /// How long to wait for a skill list the harness pushes asynchronously
+  /// (ACP's `available_commands_update`) before returning metadata without
+  /// one. Live sessions receive the list as session output regardless, so
+  /// only capability inspection asks to wait.
+  readonly skillListTimeoutMs?: number
   /// The chat's saved picker selections (config id → value). Harnesses that
   /// can take them as process start options (Claude's model, effort, and
   /// speed) start with them, so a fresh or resumed process never runs on

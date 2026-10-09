@@ -6,6 +6,7 @@ import { backgroundTerminalKey } from "@codevisor/agent-runtime"
 import { finishForkedCommand, forkedCommandRowId } from "./forked-commands.js"
 import { isRecord } from "./internal.js"
 import type { BackgroundTaskEntry, ClaudeSession } from "./session.js"
+import { updateClaudeCommands } from "./skills.js"
 import { toolKind } from "./tool-presentation.js"
 
 /// Tracks the SDK's background-task lifecycle (`task_*` system messages) so
@@ -16,6 +17,11 @@ export const handleSystemMessage = (
   message: Extract<SDKMessage, { type: "system" }>
 ): void => {
   switch (message.subtype) {
+    case "commands_changed":
+      // The full list after a mid-session change (skills discovered in a
+      // subdirectory, a plugin reload): it replaces the old one.
+      updateClaudeCommands(session, message.commands)
+      break
     case "api_retry": {
       // Claude Code retries transient API failures internally before it emits
       // the assistant/result pair that drives Codevisor's bounded outer

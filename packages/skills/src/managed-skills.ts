@@ -9,6 +9,9 @@ export interface PackagedSkill {
   /// One line for the `skills` tool description.
   readonly summary: string
   readonly path: string
+  /// One line for the composer's skill palette, for skills users invoke
+  /// themselves. Absent keeps the skill out of the palette.
+  readonly composer?: string
 }
 
 export const attachingFilesSkill = (
@@ -21,5 +24,10 @@ export const attachingFilesSkill = (
     join(workingDirectory, "packages", "skills", "resources", name, "SKILL.md")
   ].find((candidate) => existsSync(candidate))
   if (path === undefined) throw new Error("Missing packaged attaching-files skill")
-  return { name, path, summary: "send screenshots, recordings, and files to the user" }
+  return {
+    composer: "Send you screenshots, recordings, and files",
+    name,
+    path,
+    summary: "send screenshots, recordings, and files to the user"
+  }
 }

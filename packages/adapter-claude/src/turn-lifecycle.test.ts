@@ -8,7 +8,8 @@ import {
   makeProvider,
   resultMessage,
   run,
-  streamEvent
+  streamEvent,
+  turnPayloads
 } from "./test-support.js"
 
 describe("ClaudeProvider", () => {
@@ -70,10 +71,7 @@ describe("ClaudeProvider", () => {
     fake.push(resultMessage())
     await fake.drain()
 
-    // The session-start background-task snapshot precedes turn output.
-    const payloads = events
-      .map((event) => event.payload as Record<string, unknown>)
-      .filter((payload) => payload.backgroundTasks === undefined)
+    const payloads = turnPayloads(events)
     expect(payloads[0]).toMatchObject({ initiatedBy: "agent", turnState: "started" })
     expect(payloads[1]).toMatchObject({
       sessionUpdate: "agent_message_chunk",

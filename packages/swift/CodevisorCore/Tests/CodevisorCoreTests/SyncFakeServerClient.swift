@@ -22,6 +22,11 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   /// Tests that need capability responses (or to delay them) install one.
   var capabilitiesHandler: (@Sendable (String) async throws -> ServerCapabilities)?
   var resolvedCapabilitiesHandler: (@Sendable (String, String, [String: String]) async throws -> ServerCapabilities)?
+  /// The Codevisor store skills `listSkills` answers with.
+  var skillsList = ServerSkillsList()
+  /// Answers `composerSkills` with the requested project and session; nil
+  /// answers 404 like a server that predates the endpoint.
+  var composerSkillsHandler: (@Sendable (UUID?, UUID?) async throws -> [ServerComposerSkill])?
   /// Tests exercising composer attachments install one; the protocol
   /// default rejects uploads.
   var uploadFileHandler: (@Sendable (String, String, Data) async throws -> ServerFileMetadata)?

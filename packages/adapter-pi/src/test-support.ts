@@ -43,6 +43,7 @@ export class FakePiClient implements PiClient {
     get_state: { sessionId: "pi-1", model: codex, thinkingLevel: "medium" },
     get_available_models: { models: [codex] },
     get_available_thinking_levels: { levels: ["low", "medium", "high"] },
+    get_commands: { commands: [] },
     prompt: { disposition: "started" },
     abort: null,
     set_thinking_level: null,

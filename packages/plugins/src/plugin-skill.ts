@@ -14,6 +14,8 @@ export interface PluginSkill {
   readonly summary: string
   /// The skill's SKILL.md.
   readonly path: string
+  /// One line for the composer's skill palette.
+  readonly composer?: string
 }
 
 export interface PluginSkillOptions {
@@ -48,5 +50,6 @@ const skillSourcePath = (options: PluginSkillOptions): string => {
 export const pluginAuthoringSkill = (options: PluginSkillOptions = {}): PluginSkill => ({
   name: PLUGIN_AUTHORING_SKILL_DIRECTORY,
   path: join(skillSourcePath(options), "SKILL.md"),
-  summary: "build a Codevisor plugin: a pane, tools, and settings inside Codevisor"
+  summary: "build a Codevisor plugin: a pane, tools, and settings inside Codevisor",
+  composer: "Build a Codevisor plugin: a pane, tools, or settings"
 })

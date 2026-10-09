@@ -168,11 +168,16 @@ struct ComposerCard: View {
     .onChange(of: controller.activeQuestion?.questionId) { _, _ in
       didStartResolvingQuestion = false
     }
-    .onChange(of: slashQuery) { _, _ in
+    .onChange(of: slashToken) { oldToken, newToken in
       // A new query invalidates both the keyboard selection and any
       // Escape-dismissal of the previous menu.
       slashSelection = 0
       isSlashMenuDismissed = false
+      // Opening the palette refreshes the store skills in the background;
+      // it shows the last fetched list meanwhile.
+      if oldToken == nil, newToken != nil {
+        controller.refreshCodevisorSkills()
+      }
     }
   }
 }
@@ -430,17 +435,8 @@ private extension ComposerCard {
     }
   }
 
-  private var slashTokenRange: NSRange? {
-    Self.slashTokenRange(in: controller.composerText, selection: selection)
-  }
-
-  private var slashQuery: String? {
-    guard let range = slashTokenRange else { return nil }
-    let text = controller.composerText as NSString
-    return
-      text
-      .substring(with: NSRange(location: range.location + 1, length: range.length - 1))
-      .lowercased()
+  private var slashToken: ComposerSlashToken? {
+    ComposerSlashToken(in: controller.composerText, selection: selection)
   }
 
   /// Local commands run in the app itself instead of being sent to the
@@ -464,25 +460,23 @@ private extension ComposerCard {
     return items
   }
 
-  /// Keep the composer palette intentionally small. ACP agents can advertise
-  /// large catalogs of global, builtin, and user skills as slash commands;
-  /// those remain protocol metadata but are not surfaced here.
-  private var slashCommands: [ComposerSlashItem] {
-    localSlashCommands
-  }
-
+  /// The palette offers skills only: the harness's own (built-in, project,
+  /// user, plugin) and the user's Codevisor store skills. Harness commands
+  /// such as /compact or /model stay protocol metadata and never appear.
+  /// Matching local commands lead, but only for "/"; "$" (Codex's skill
+  /// syntax) triggers skills alone.
   private var slashMatches: [ComposerSlashItem] {
-    guard let query = slashQuery else { return [] }
-    let commands = slashCommands
-    guard !commands.isEmpty else { return [] }
-    if query.isEmpty {
-      return commands
-    }
+    guard let token = slashToken else { return [] }
+    let skills = ComposerSkillCatalog.matches(controller.composerSkills, query: token.query)
+      .map(ComposerSlashItem.init(skill:))
+    guard token.trigger == .slash else { return skills }
+    let commands = localSlashCommands
+    let query = token.query
     let exact = commands.filter { $0.name.lowercased() == query }
     let prefixed = commands.filter { command in
       command.name.lowercased().hasPrefix(query) && !exact.contains(where: { $0.id == command.id })
     }
-    return exact + prefixed
+    return exact + prefixed + skills
   }
 
   /// The matches actually shown: empty while the menu is dismissed with Escape.
@@ -491,7 +485,7 @@ private extension ComposerCard {
   }
 
   private var isLoadingSlashCommands: Bool {
-    slashQuery != nil && controller.isConnectingToHarness && !isSlashMenuDismissed
+    slashToken != nil && controller.isConnectingToHarness && !isSlashMenuDismissed
   }
 
   private var showsSlashCommandPopup: Bool {
@@ -546,24 +540,24 @@ private extension ComposerCard {
     return matches[min(slashSelection, matches.count - 1)]
   }
 
-  /// Accepts in place: the token at the caret is rewritten (harness
-  /// commands) or excised (local commands), preserving the rest of the
-  /// draft around it.
+  /// Accepts in place: the token at the caret is rewritten (skills, to
+  /// their exact invocation) or excised (local commands), preserving the
+  /// rest of the draft around it.
   private func acceptSlashCommand(_ command: ComposerSlashItem) {
-    guard let tokenRange = slashTokenRange else { return }
-    let text = controller.composerText as NSString
-    if let action = command.action {
-      controller.composerText = text.replacingCharacters(in: tokenRange, with: "")
-      selection = NSRange(location: tokenRange.location, length: 0)
-      action()
+    guard let tokenRange = slashToken?.range else { return }
+    let replacement = command.action == nil ? "\(command.title) " : ""
+    // Through the text view, so ⌘Z puts the typed token back.
+    if let textView = sendSource.textView {
+      textView.replaceAsUndoableEdit(tokenRange, with: replacement)
     } else {
-      let insertion = "/\(command.name) "
-      controller.composerText = text.replacingCharacters(in: tokenRange, with: insertion)
-      selection = NSRange(
-        location: tokenRange.location + (insertion as NSString).length,
-        length: 0
-      )
+      controller.composerText = (controller.composerText as NSString)
+        .replacingCharacters(in: tokenRange, with: replacement)
     }
+    selection = NSRange(
+      location: tokenRange.location + (replacement as NSString).length,
+      length: 0
+    )
+    command.action?()
     slashSelection = 0
   }
 

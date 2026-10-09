@@ -1,3 +1,4 @@
+import ACPKit
 import Foundation
 import Testing
 @testable import CodevisorClient
@@ -45,6 +46,34 @@ struct ServerHarnessSemanticsTests {
     #expect(ServerHarnessReadinessState(rawValue: "future") == .unknown("future"))
     #expect(ServerHarnessAuthenticationState(rawValue: "future") == .unknown("future"))
     #expect(ServerHarnessLifecyclePhase(rawValue: "future") == .unknown("future"))
+  }
+
+  @Test("Capabilities carry the inspected directory's skills, absent on older servers")
+  func capabilitySkills() throws {
+    let harness =
+      #"{"id":"codex","name":"Codex","symbolName":"terminal","source":"builtin","#
+      + #""launchKind":"acp","enabled":true,"readiness":{"state":"ready"}}"#
+    let current = try JSONDecoder().decode(
+      ServerHarnessCapability.self,
+      from: Data(
+        #"""
+        {"harness":\#(harness),"configOptions":[],
+         "skills":{"invocationPrefix":"$","skills":[{"name":"review","invocation":"$review","source":"user"}]}}
+        """#.utf8
+      )
+    )
+    #expect(
+      current.skills
+        == SessionSkills(
+          skills: [SessionSkill(name: "review", invocation: "$review", source: .user)],
+          invocationPrefix: "$"
+        ))
+
+    let legacy = try JSONDecoder().decode(
+      ServerHarnessCapability.self,
+      from: Data(#"{"harness":\#(harness),"configOptions":[]}"#.utf8)
+    )
+    #expect(legacy.skills == nil)
   }
 
   private func harness(

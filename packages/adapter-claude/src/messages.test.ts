@@ -8,7 +8,8 @@ import {
   makeProvider,
   resultMessage,
   run,
-  streamEvent
+  streamEvent,
+  turnPayloads
 } from "./test-support.js"
 
 describe("ClaudeProvider", () => {
@@ -98,10 +99,7 @@ describe("ClaudeProvider", () => {
     const result = await promptPromise
     expect(result.stopReason).toBe("end_turn")
 
-    // The session-start background-task snapshot precedes turn output.
-    const payloads = events
-      .map((event) => event.payload as Record<string, unknown>)
-      .filter((payload) => payload.backgroundTasks === undefined)
+    const payloads = turnPayloads(events)
     expect(payloads[0]).toMatchObject({ initiatedBy: "user", turnState: "started" })
     expect(payloads[1]).toMatchObject({
       sessionUpdate: "tool_call",

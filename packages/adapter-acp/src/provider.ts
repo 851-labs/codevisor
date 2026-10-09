@@ -9,6 +9,7 @@ import {
   type AgentRuntimeError,
   type AgentSessionHandle,
   type CreatedAgentSession,
+  type CreateSessionOptions,
   type HarnessDefinition,
   type HarnessAccountContext,
   withoutEnv,
@@ -17,7 +18,8 @@ import {
   type ProviderId,
   type QuestionAnswer,
   type RuntimeEmit,
-  type SetGoalUpdate
+  type SetGoalUpdate,
+  type ToolGatewayConfig
 } from "@codevisor/agent-runtime"
 import type { Harness, SessionConfigOption } from "@codevisor/api"
 import { Effect } from "effect"
@@ -109,6 +111,12 @@ const unavailableReadiness = (
   return { detail: `${command} not found on PATH`, state: "unavailable" }
 }
 
+/// What a launch is for: a chat session gets the tool gateway; auth probes
+/// and session listing don't.
+export interface AcpLaunchContext {
+  readonly toolGateway?: ToolGatewayConfig
+}
+
 export interface AcpProviderConfig {
   /// Provider identity for an ACP-backed native adapter. The generic provider
   /// keeps `acp`; packages that compose its transport register their own id.
@@ -119,8 +127,17 @@ export interface AcpProviderConfig {
   /// they outlive the promotion delay).
   readonly backgroundTerminals?: BackgroundTerminalIntegration
   /// Adjusts the agent's environment at launch, after the account's.
-  readonly launchEnv?: (env: NodeJS.ProcessEnv) => NodeJS.ProcessEnv
+  readonly launchEnv?: (env: NodeJS.ProcessEnv, launch: AcpLaunchContext) => NodeJS.ProcessEnv
 }
+
+/// How long session setup waits for the skills an agent pushes right after
+/// it (most send them on the next tick). Events emitted while setup is still
+/// running never reach the runtime, so the metadata has to carry them; a
+/// later list still arrives as session output.
+const skillGraceMs = 250
+
+const skillListTimeoutMs = (sessionOptions: CreateSessionOptions | undefined): number =>
+  sessionOptions?.skillListTimeoutMs ?? skillGraceMs
 
 /// Bounds the authentication-only ACP session used during discovery. Some
 /// agents accept initialize but never answer session/new; discovery must
@@ -138,7 +155,8 @@ export const makeAcpProvider = (
     definition: HarnessDefinition,
     cwd: string,
     emit: RuntimeEmit,
-    account?: HarnessAccountContext
+    account?: HarnessAccountContext,
+    toolGateway?: ToolGatewayConfig
   ): Effect.Effect<AcpAgentConnection, AgentRuntimeError> =>
     Effect.gen(function* () {
       const launch = yield* runtimeEffect("resolveHarness", () => {
@@ -153,11 +171,14 @@ export const makeAcpProvider = (
           args: launch.args,
           command: launch.command,
           cwd,
-          env: launchEnv({
-            ...withoutEnv(environment.env, account?.unsetEnv),
-            ...(definition.launch?.kind === "executable" ? definition.launch.env : undefined),
-            ...account?.env
-          }),
+          env: launchEnv(
+            {
+              ...withoutEnv(environment.env, account?.unsetEnv),
+              ...(definition.launch?.kind === "executable" ? definition.launch.env : undefined),
+              ...account?.env
+            },
+            toolGateway === undefined ? {} : { toolGateway }
+          ),
           harnessId: definition.id
         },
         emit
@@ -254,19 +275,22 @@ export const makeAcpProvider = (
       cwd,
       emit,
       account,
-      toolGateway
+      toolGateway,
+      sessionOptions
     ): Effect.Effect<CreatedAgentSession, AgentRuntimeError> =>
       Effect.gen(function* () {
-        const connection = yield* connect(definition, cwd, emit, account)
-        return yield* connection.createSession(cwd, toolGateway).pipe(
-          Effect.map((metadata) => ({
-            handle: handleFor(connection, metadata.sessionId, emit, account),
-            metadata
-          })),
-          // A failed or interrupted setup never enters the runtime's managed
-          // session map, so the provider owns cleaning up its process.
-          Effect.onError(() => connection.close.pipe(Effect.ignoreCause))
-        )
+        const connection = yield* connect(definition, cwd, emit, account, toolGateway)
+        return yield* connection
+          .createSession(cwd, toolGateway, skillListTimeoutMs(sessionOptions))
+          .pipe(
+            Effect.map((metadata) => ({
+              handle: handleFor(connection, metadata.sessionId, emit, account),
+              metadata
+            })),
+            // A failed or interrupted setup never enters the runtime's managed
+            // session map, so the provider owns cleaning up its process.
+            Effect.onError(() => connection.close.pipe(Effect.ignoreCause))
+          )
       }),
     loadSession: (
       definition,
@@ -274,20 +298,23 @@ export const makeAcpProvider = (
       cwd,
       emit,
       account,
-      toolGateway
+      toolGateway,
+      sessionOptions
     ): Effect.Effect<LoadedAgentSession, AgentRuntimeError> =>
       Effect.gen(function* () {
-        const connection = yield* connect(definition, cwd, emit, account)
-        return yield* connection.loadSession(agentSessionId, cwd, toolGateway).pipe(
-          Effect.map((metadata) => ({
-            handle: handleFor(connection, metadata.sessionId, emit, account),
-            metadata,
-            sessionId: metadata.sessionId
-          })),
-          // Like createSession: a session that never loads is never managed,
-          // so its agent process is ours to close.
-          Effect.onError(() => connection.close.pipe(Effect.ignoreCause))
-        )
+        const connection = yield* connect(definition, cwd, emit, account, toolGateway)
+        return yield* connection
+          .loadSession(agentSessionId, cwd, toolGateway, skillListTimeoutMs(sessionOptions))
+          .pipe(
+            Effect.map((metadata) => ({
+              handle: handleFor(connection, metadata.sessionId, emit, account),
+              metadata,
+              sessionId: metadata.sessionId
+            })),
+            // Like createSession: a session that never loads is never managed,
+            // so its agent process is ours to close.
+            Effect.onError(() => connection.close.pipe(Effect.ignoreCause))
+          )
       }),
     listAgentSessions: async (definition, account) => {
       try {

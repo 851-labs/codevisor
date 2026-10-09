@@ -430,6 +430,10 @@ public struct ServerHarnessCapability: Codable, Equatable, Sendable {
   public var configOptions: [SessionConfigOption]
   /// Whether the harness supports persistent session goals (codex goal mode).
   public var supportsGoals: Bool?
+  /// Skills a fresh session in the inspected directory can invoke. Specific
+  /// to the request's `cwd` (project skills differ per folder); nil when
+  /// the harness cannot list them and for servers predating the field.
+  public var skills: SessionSkills?
   /// Requested `configId -> value` pairs the server could not apply when
   /// this inspection was made with `configSelections` (for example, a
   /// remembered model the harness no longer offers). Nil for inspections
@@ -441,12 +445,14 @@ public struct ServerHarnessCapability: Codable, Equatable, Sendable {
     modes: SessionModeState? = nil,
     configOptions: [SessionConfigOption],
     supportsGoals: Bool? = nil,
+    skills: SessionSkills? = nil,
     unappliedConfigSelections: [String: String]? = nil
   ) {
     self.harness = harness
     self.modes = modes
     self.configOptions = configOptions
     self.supportsGoals = supportsGoals
+    self.skills = skills
     self.unappliedConfigSelections = unappliedConfigSelections
   }
 }

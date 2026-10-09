@@ -119,6 +119,9 @@ public final class SessionModel {
   }
   public var composerText: String = ""
   public internal(set) var availableCommands: [AvailableCommand] = []
+  /// The session's latest skill snapshot; nil until the harness reports
+  /// one, so the composer can fall back to the capability inspection.
+  public internal(set) var availableSkills: SessionSkills?
   public internal(set) var modeState: SessionModeState?
   public internal(set) var configOptions: [SessionConfigOption]
   /// Monotonic per-picker revisions keep a failed, slower request from

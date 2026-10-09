@@ -10,6 +10,7 @@ import { canonicalUuid } from "./ids.js"
 import { transcriptFromChatRow } from "./row-mappers.js"
 import type { ChatItemRow } from "./rows.js"
 import type { ServiceContext } from "./service-context.js"
+import { readSessionSkills } from "./session-skills.js"
 import { sessionSetupState } from "./setup-state.js"
 import { transcriptTextResource } from "./transcript-bodies.js"
 
@@ -210,6 +211,9 @@ const makeTranscriptPage = (
   const backgroundTasks = backgroundTasksFromRaw(state.background_tasks)
   const sessionPlan = sessionPlanFromRaw(state.session_plan)
   const goal = sessionGoalSnapshot(sqlite, sessionId)
+  // Not a state update: clients that predate skills fail to decode a page
+  // whose `stateUpdates` carries a kind they don't know.
+  const skills = readSessionSkills(sqlite, sessionId)
   return {
     items,
     setupActivities: sessionSetupState(sqlite, sessionId),
@@ -223,6 +227,7 @@ const makeTranscriptPage = (
     pendingPlanApproval: session.pendingPlanApproval === true,
     backgroundTasks,
     ...(goal === undefined ? {} : { goal }),
+    ...(skills === undefined ? {} : { skills }),
     ...(sessionPlan === undefined ? {} : { sessionPlan }),
     usage: session.usage
   }

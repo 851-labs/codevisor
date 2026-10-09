@@ -62,6 +62,7 @@ extension SessionController {
   public var isLoadingOlderHistory: Bool { model?.isLoadingOlderHistory ?? false }
   public var queuedPrompts: [ServerPromptQueueItem] { model?.queuedPrompts ?? [] }
   public var availableCommands: [AvailableCommand] { model?.availableCommands ?? [] }
+  public var availableSkills: SessionSkills? { model?.availableSkills }
   public var isConnected: Bool { model != nil }
   /// Whether the harness can still be chosen: only a draft that hasn't sent
   /// anything yet. An empty conversation alone isn't enough — during the

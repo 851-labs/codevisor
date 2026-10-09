@@ -89,6 +89,10 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
   case toolCallUpdate(ToolCallUpdate)
   case plan(Plan)
   case availableCommandsUpdate([AvailableCommand])
+  /// The skills the composer palette offers for this session. Each update
+  /// replaces the previous snapshot; fields are inline beside the
+  /// discriminator.
+  case availableSkillsUpdate(SessionSkills)
   case currentModeUpdate(currentModeId: String)
   case configOptionUpdate([SessionConfigOption])
   case usageUpdate(SessionUsage)
@@ -147,6 +151,8 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
       self = .availableCommandsUpdate(
         try container.decode([AvailableCommand].self, forKey: .availableCommands)
       )
+    case "available_skills_update":
+      self = .availableSkillsUpdate(try SessionSkills(from: decoder))
     case "current_mode_update":
       self = .currentModeUpdate(
         currentModeId: try container.decode(String.self, forKey: .currentModeId)
@@ -260,6 +266,9 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
     case let .availableCommandsUpdate(commands):
       try container.encode("available_commands_update", forKey: .sessionUpdate)
       try container.encode(commands, forKey: .availableCommands)
+    case let .availableSkillsUpdate(skills):
+      try container.encode("available_skills_update", forKey: .sessionUpdate)
+      try skills.encode(to: encoder)
     case let .currentModeUpdate(currentModeId):
       try container.encode("current_mode_update", forKey: .sessionUpdate)
       try container.encode(currentModeId, forKey: .currentModeId)

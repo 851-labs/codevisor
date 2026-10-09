@@ -73,9 +73,10 @@ extension SessionController {
     let harnessId = serverSession?.harnessId ?? selectedHarnessId ?? ""
     guard hasExistingAgentSession, let serverClient, !harnessId.isEmpty else { return }
     let startedAt = ProcessInfo.processInfo.systemUptime
+    let target = CapabilityFetchTarget(serverId: project.serverId, cwd: sessionCwdURL.path)
     do {
       let response = try await serverClient.capabilities(
-        cwd: sessionCwdURL.path,
+        cwd: target.cwd,
         harnessId: harnessId
       )
       guard let capability = response.harnesses.first(where: { $0.harness.id == harnessId }) else {
@@ -90,6 +91,8 @@ extension SessionController {
       // is safe to share as catalog data. Only the chat's saved record and
       // its runtime can answer "is this still available".
       configCache.store(capability, forServer: project.serverId)
+      // The palette's fallback until the live session reports its own.
+      configCache.storeSkills(from: [capability], forServer: target.serverId, cwd: target.cwd)
       applyHarnessCapabilities([capability])
       didLoadExistingHarnessCapabilities = true
       existingConfigurationError = nil

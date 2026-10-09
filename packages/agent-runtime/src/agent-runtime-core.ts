@@ -4,6 +4,7 @@ import type { AgentRuntimeConfig, ProviderFactoryContext } from "./agent-runtime
 import { locateExecutableOnPath } from "./executable-locator.js"
 import { harnessCatalog } from "./harness-catalog.js"
 import { makeMessagePhases, type MessagePhases } from "./message-phases.js"
+import { SKILLS_UPDATE } from "./session-skills.js"
 import {
   runtimeEffect,
   type AgentProvider,
@@ -151,6 +152,20 @@ export const makeAgentRuntimeCore = (config: AgentRuntimeConfig) => {
         session.metadata = {
           ...session.metadata,
           modes: { ...session.metadata.modes, currentModeId: modeId }
+        }
+      }
+      if (
+        event.kind === "session.output" &&
+        payload.sessionUpdate === SKILLS_UPDATE &&
+        Array.isArray(payload.skills) &&
+        typeof payload.invocationPrefix === "string"
+      ) {
+        session.metadata = {
+          ...session.metadata,
+          skills: {
+            invocationPrefix: payload.invocationPrefix,
+            skills: payload.skills as NonNullable<AgentSessionMetadata["skills"]>["skills"]
+          }
         }
       }
     }

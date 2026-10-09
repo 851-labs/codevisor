@@ -55,6 +55,34 @@ struct ProtocolCodableTests {
     #expect(lenientPhase == nil)
   }
 
+  @Test("Skills update decodes the server's inline snapshot, tolerating unknown sources")
+  func availableSkillsUpdate() throws {
+    let data = Data(
+      #"""
+      {"sessionUpdate":"available_skills_update","invocationPrefix":"$","skills":[
+        {"name":"code-review","description":"Review the diff","invocation":"$code-review","source":"project"},
+        {"name":"deploy","invocation":"$deploy","source":"marketplace"}
+      ]}
+      """#.utf8
+    )
+    let update = try JSONDecoder().decode(SessionUpdate.self, from: data)
+    #expect(
+      update
+        == .availableSkillsUpdate(
+          SessionSkills(
+            skills: [
+              SessionSkill(
+                name: "code-review",
+                description: "Review the diff",
+                invocation: "$code-review",
+                source: .project
+              ),
+              SessionSkill(name: "deploy", invocation: "$deploy", source: nil),
+            ],
+            invocationPrefix: "$"
+          )))
+  }
+
   @Test("Unknown content block type throws")
   func unknownContentBlock() {
     #expect(throws: (any Error).self) {
@@ -81,6 +109,9 @@ struct ProtocolCodableTests {
     try roundTrip(
       SessionUpdate.plan(Plan(entries: [PlanEntry(content: "step", priority: .high, status: .pending)])))
     try roundTrip(SessionUpdate.availableCommandsUpdate([AvailableCommand(name: "test", description: "run")]))
+    try roundTrip(
+      SessionUpdate.availableSkillsUpdate(
+        SessionSkills(skills: [SessionSkill(name: "review", invocation: "/review", source: .builtin)])))
     try roundTrip(SessionUpdate.currentModeUpdate(currentModeId: "fast"))
     try roundTrip(
       SessionUpdate.goalUpdate(

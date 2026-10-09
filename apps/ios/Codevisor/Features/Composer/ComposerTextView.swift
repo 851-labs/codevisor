@@ -2,9 +2,21 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
+/// A replacement the editor applies as one undo step of its own, so undo
+/// restores exactly what was replaced. A plain `text` write bypasses undo and
+/// strands the typing steps already on the stack against text that no longer
+/// matches them.
+struct ComposerTextEdit: Equatable {
+  let id = UUID()
+  let range: NSRange
+  let replacement: String
+}
+
 struct ComposerTextView: UIViewRepresentable {
   @Binding var text: String
   @Binding var selection: NSRange
+  /// Applied once; `text` and `selection` already describe its result.
+  var pendingEdit: ComposerTextEdit? = nil
   let handoffID: UUID?
   let handoffRole: ComposerTextEditorHandoffRole
   var isEditable: Bool
@@ -133,6 +145,10 @@ struct ComposerTextView: UIViewRepresentable {
       }
     }
     view.onPasteAttachmentEvent = onPasteAttachmentEvent
+    if let edit = pendingEdit, coordinator.appliedEditID != edit.id {
+      coordinator.appliedEditID = edit.id
+      applyUndoably(edit, to: view)
+    }
     // Only push text the view doesn't already have (a restored draft, a
     // send clearing the field) — and never while the keyboard holds an
     // active composition, which a programmatic set would tear down.
@@ -170,6 +186,18 @@ struct ComposerTextView: UIViewRepresentable {
     view.onHardwareReturn = onHardwareReturn
   }
 
+  private func applyUndoably(_ edit: ComposerTextEdit, to view: UITextView) {
+    guard view.markedTextRange == nil,
+      let start = view.position(from: view.beginningOfDocument, offset: edit.range.location),
+      let end = view.position(from: start, offset: edit.range.length),
+      let range = view.textRange(from: start, to: end)
+    else { return }
+    // Its own undo group, apart from the typing that led up to it.
+    view.undoManager?.beginUndoGrouping()
+    view.replace(range, withText: edit.replacement)
+    view.undoManager?.endUndoGrouping()
+  }
+
   func makeCoordinator() -> Coordinator {
     Coordinator(
       text: $text,
@@ -184,6 +212,7 @@ struct ComposerTextView: UIViewRepresentable {
     var onPasteAttachmentEvent: (ComposerPasteEvent) -> Void
     var isApplyingSwiftUIUpdate = false
     var reportedFocus: Bool?
+    var appliedEditID: UUID?
 
     init(
       text: Binding<String>,
@@ -196,6 +225,8 @@ struct ComposerTextView: UIViewRepresentable {
     }
 
     func textViewDidChange(_ textView: UITextView) {
+      // A pending edit's result is already in the bindings.
+      guard !isApplyingSwiftUIUpdate else { return }
       text.wrappedValue = textView.text
       selection.wrappedValue = textView.selectedRange
       (textView as? HeightReportingTextView)?.reportContentHeight()

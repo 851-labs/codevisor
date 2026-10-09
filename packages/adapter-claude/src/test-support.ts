@@ -9,6 +9,7 @@ import type { HarnessDefinition, ProviderEnvironment, RuntimeEvent } from "@code
 import { Effect } from "effect"
 
 import { makeClaudeProvider, type ClaudeProviderConfig } from "./claude.js"
+import type { ClaudeSlashCommand } from "./skills.js"
 import type { SubagentTranscripts } from "./subagent-transcripts.js"
 
 export const run = <A>(effect: Effect.Effect<A, unknown>): Promise<A> => Effect.runPromise(effect)
@@ -128,6 +129,13 @@ export class FakeQuery {
 
   async applyFlagSettings(settings: Record<string, unknown>): Promise<void> {
     this.flagSettings.push(settings)
+  }
+
+  /// What `supportedCommands()` answers: skills and built-in commands mixed.
+  commands: Array<ClaudeSlashCommand> = []
+
+  async supportedCommands(): Promise<Array<ClaudeSlashCommand>> {
+    return this.commands
   }
 
   async supportedModels(): Promise<
@@ -346,3 +354,13 @@ export const configUpdates = (
     .filter((event) => event.kind === "session.updated")
     .map((event) => event.payload as Record<string, unknown>)
     .filter((payload) => Array.isArray(payload.configOptions))
+
+/// Emitted payloads minus the session-start snapshots (background tasks,
+/// skills), which precede turn output.
+export const turnPayloads = (events: ReadonlyArray<RuntimeEvent>) =>
+  events
+    .map((event) => event.payload as Record<string, unknown>)
+    .filter(
+      (payload) =>
+        payload.backgroundTasks === undefined && payload.sessionUpdate !== "available_skills_update"
+    )

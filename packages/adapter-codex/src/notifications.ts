@@ -8,6 +8,7 @@ import { isRecord } from "./internal.js"
 import { emitItemLifecycle } from "./items.js"
 import { cancelPendingQuestions } from "./questions.js"
 import type { CodexSession } from "./session.js"
+import { refreshCodexSkills } from "./skills.js"
 
 // MARK: notification mapping
 
@@ -289,6 +290,11 @@ export const handleNotification = (
   }
   const parentField = parentToolCallId === undefined ? {} : { parentToolCallId }
   switch (method) {
+    case "skills/changed": {
+      // An invalidation signal only: the new list has to be asked for.
+      void refreshCodexSkills(session, true)
+      break
+    }
     case "thread/tokenUsage/updated": {
       emitTokenUsageUpdate(session, payload)
       break

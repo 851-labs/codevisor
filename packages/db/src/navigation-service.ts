@@ -17,6 +17,7 @@ import type {
   WorkspacePaneRow
 } from "./rows.js"
 import type { ServiceContext } from "./service-context.js"
+import { readSessionSkills } from "./session-skills.js"
 
 /** A single SQLite read transaction binds all navigation records to one cursor.
  * No filesystem, agent startup, Git process, or historical event replay runs here. */
@@ -71,6 +72,8 @@ export const makeNavigationService = (context: ServiceContext) => ({
         )
         .run(canonicalUuid(rawId), JSON.stringify(metadata))
     }),
+  getSessionSkills: (rawId: string) =>
+    attempt("getSessionSkills", () => readSessionSkills(context.sqlite, canonicalUuid(rawId))),
   getNavigationSnapshot: attempt("getNavigationSnapshot", (): NavigationSnapshot => {
     const { sqlite, config, sessionSummarySelect } = context
     return sqlite.transaction(() => {

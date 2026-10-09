@@ -115,6 +115,9 @@ extension SessionModel {
         usage = persistedUsage
       }
       persistedSetupPhases = page.setupPhases
+      if let skills = page.skills {
+        availableSkills = skills
+      }
       for update in page.stateUpdates {
         if case let .configOptionUpdate(saved) = update, !configOptions.isEmpty {
           configOptions = configOptions.map { current in

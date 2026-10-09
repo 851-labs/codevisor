@@ -6,6 +6,7 @@ import { Readable, Writable } from "node:stream"
 import * as acp from "@agentclientprotocol/sdk"
 import {
   adapterPromise,
+  skillsUpdateEvent,
   summarizeProcessFailure,
   type AgentSessionMetadata,
   type BackgroundTerminalIntegration,
@@ -28,6 +29,7 @@ import {
   type PendingAcpQuestion
 } from "./questions.js"
 import { sdkConnection, type AcpSdkConnectionCustomization } from "./sdk-connection.js"
+import { discoverSkillFolders, makeAcpSkillTracker } from "./skills.js"
 
 export interface AcpStdioExtensionContext {
   readonly emit: (event: RuntimeEvent) => void
@@ -143,10 +145,20 @@ export const makeStdioAcpConnectorWithOptions = (
         })
       }
       const extension = options.extension?.({ emit: safeEmit, enqueueQuestion })
+      const skills = makeAcpSkillTracker(() => discoverSkillFolders(request.cwd, request.env.HOME))
       const connection = createClientApp(
         (notification) => {
           if (notification.update.sessionUpdate === "current_mode_update") {
             permissions.modeChanged(notification.sessionId, notification.update.currentModeId)
+          }
+          if (notification.update.sessionUpdate === "available_commands_update") {
+            const sessionId = notification.sessionId
+            skills.update(sessionId, notification.update.availableCommands).then(
+              (changed) => {
+                if (changed !== undefined) safeEmit(skillsUpdateEvent(sessionId, changed))
+              },
+              () => undefined
+            )
           }
           const events = extension?.mapSessionNotification?.(notification) ?? [
             runtimeEventFromNotification(notification)
@@ -263,6 +275,7 @@ export const makeStdioAcpConnectorWithOptions = (
         },
         promptCapabilities: initialized?.agentCapabilities?.promptCapabilities ?? {},
         questions: { answerQuestion, cancelQuestions },
+        skills,
         auth: {
           methods: (initialized?.authMethods ?? []).map((method) => ({
             id: method.id,
@@ -289,10 +302,10 @@ export const makeStdioAcpConnectorWithOptions = (
       })
       return {
         ...established,
-        createSession: (cwd, toolGateway) =>
-          established.createSession(cwd, toolGateway).pipe(withModes),
-        loadSession: (sessionId, cwd, toolGateway) =>
-          established.loadSession(sessionId, cwd, toolGateway).pipe(withModes),
+        createSession: (cwd, toolGateway, skillListTimeoutMs) =>
+          established.createSession(cwd, toolGateway, skillListTimeoutMs).pipe(withModes),
+        loadSession: (sessionId, cwd, toolGateway, skillListTimeoutMs) =>
+          established.loadSession(sessionId, cwd, toolGateway, skillListTimeoutMs).pipe(withModes),
         setMode: (sessionId, modeId) =>
           established
             .setMode(sessionId, modeId)

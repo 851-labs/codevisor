@@ -97,7 +97,11 @@ export const makePiProvider = (
 
   const created = (session: PiSession) => ({
     handle: handleFor(session),
-    metadata: { sessionId: session.key, configOptions: session.configOptions() }
+    metadata: {
+      sessionId: session.key,
+      configOptions: session.configOptions(),
+      ...(session.skills === undefined ? {} : { skills: session.skills })
+    }
   })
 
   return {

@@ -269,6 +269,7 @@ export const discoverCapabilities = async (
             ...(metadata.supportsGoals === undefined
               ? {}
               : { supportsGoals: metadata.supportsGoals }),
+            ...(metadata.skills === undefined ? {} : { skills: metadata.skills }),
             ...(metadata.unappliedConfigSelections === undefined
               ? {}
               : { unappliedConfigSelections: metadata.unappliedConfigSelections })

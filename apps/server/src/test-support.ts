@@ -8,7 +8,7 @@ import { dirname, join } from "node:path"
 import type { EventEnvelope } from "@codevisor/api"
 import { canonicalUuid, makeAttachmentStore, makeDatabase } from "@codevisor/db"
 import type { CodevisorDatabaseService, EventRow, SessionEventRow } from "@codevisor/db"
-import { makeMcpManager } from "@codevisor/mcp"
+import { makeMcpManager, type McpManagerConfig } from "@codevisor/mcp"
 import type {
   TerminalHandlers,
   TerminalProcess,
@@ -121,7 +121,10 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 
-export const makeServices = async (serverId = "test") => {
+export const makeServices = async (
+  serverId = "test",
+  mcpConfig: Partial<Pick<McpManagerConfig, "packagedSkills" | "skillSource">> = {}
+) => {
   const dir = mkdtempSync(join(tmpdir(), "codevisor-server-"))
   tempDirs.push(dir)
   const db = await run(makeDatabase({ filename: join(dir, "codevisor.sqlite"), serverId }))
@@ -129,7 +132,7 @@ export const makeServices = async (serverId = "test") => {
   observeDatabase(db)
   const spawner = makeSpawner()
   const agents = makeAgents()
-  const mcp = makeMcpManager({ db, dataDir: dir, serverId })
+  const mcp = makeMcpManager({ db, dataDir: dir, serverId, ...mcpConfig })
   mcpManagers.push(mcp)
   onTestFinished(mcp.subscribeServersChanged(fixtureChanged))
   onTestFinished(mcp.subscribeCredentialsRotated(fixtureChanged))

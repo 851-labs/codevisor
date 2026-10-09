@@ -15,6 +15,7 @@ import {
   type EventFanout,
   type RouteState
 } from "../server-context.js"
+import { withCodevisorSkills } from "./prompt-skills.js"
 import { beginPromptTurn, recordTurnStart } from "./prompt-turn.js"
 import { materializeRuntimeEvent } from "./session-events.js"
 import { ensureAgentSessionFor } from "./session-workspace.js"
@@ -329,12 +330,13 @@ const runPromptInBackground = async (
       : services.mcp?.beginTurn(sessionId, { clientId }))
     await recordTurnStart(services, sessionId).catch(swallowError)
     const agentSession = await ensureAgentSessionFor(services, fanout, serverId, sessionId)
+    const promptText = await withCodevisorSkills(services, sessionId, text, agentSession.skills)
     // Session output, turn lifecycle, and the final stopReason all flow
     // through the standing sink registered at session create/load time.
     const input =
       refs.length === 0
-        ? text
-        : { attachments: await resolvePromptAttachments(services, refs), text }
+        ? promptText
+        : { attachments: await resolvePromptAttachments(services, refs), text: promptText }
     await run(services.agents.prompt(agentSession.sessionId, input))
   } catch (cause) {
     if (isAuthenticationFailure(cause)) {

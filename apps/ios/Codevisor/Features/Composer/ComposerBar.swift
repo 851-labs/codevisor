@@ -74,6 +74,7 @@ struct ComposerBar: View {
   /// The UIKit editor reports its UTF-16 selection so slash commands can
   /// replace the token at the caret without disturbing the rest of a draft.
   @State var selection = NSRange(location: 0, length: 0)
+  @State var pendingTextEdit: ComposerTextEdit?
   /// The command palette floats above the composer, so its rendered height
   /// drives the same explicit upward offset used by the macOS composer.
   @State var slashMenuContentHeight: CGFloat = 0
@@ -356,6 +357,11 @@ struct ComposerBar: View {
         goalEditFocusRequest = nil
       }
     }
+    .onChange(of: slashToken == nil) { _, isClosed in
+      // Opening the palette refreshes the store skills in the background;
+      // it shows the last fetched list meanwhile.
+      if !isClosed { controller.refreshCodevisorSkills() }
+    }
     .onChange(of: showsSlashCommandPopup) { _, isVisible in
       // A dismissed menu must not retain the previous query's measured
       // height. Its next glass emergence starts from the correct
@@ -484,6 +490,7 @@ extension ComposerBar {
         ComposerTextView(
           text: $text,
           selection: $selection,
+          pendingEdit: pendingTextEdit,
           handoffID: textEditorHandoffID,
           handoffRole: textEditorHandoffRole,
           // Never disable the editor for a send in flight: turning

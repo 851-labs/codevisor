@@ -1,3 +1,6 @@
+import type { AcpLaunchContext } from "@codevisor/adapter-acp"
+import { SUPERSEDED_NATIVE_SKILLS } from "@codevisor/agent-runtime"
+
 /// OpenCode allows every tool by default but asks before touching paths
 /// outside the chat's folder, repeating an identical tool call, or reading
 /// `.env` files. Codevisor runs harnesses with full access, so chats launch
@@ -27,15 +30,34 @@ const parsed = (content: string | undefined): Record<string, unknown> => {
   }
 }
 
+/// OpenCode reads Claude's skill folders, including the claude.ai skills for
+/// Claude's own browser and desktop tools. With Codevisor's gateway attached
+/// those are denied: OpenCode then leaves them out of what the model sees.
+const supersededSkillRules = (current: unknown): Record<string, unknown> => ({
+  // A bare action ("ask") is OpenCode's shorthand for every skill.
+  ...(typeof current === "string" ? { "*": current } : record(current)),
+  ...Object.fromEntries(SUPERSEDED_NATIVE_SKILLS.map((name) => [name, "deny"]))
+})
+
 /// `env` with the full-access rules added to the config OpenCode reads from
 /// the environment, keeping whatever else that config already holds.
-export const withOpenCodePermissions = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv => {
+export const withOpenCodePermissions = (
+  env: NodeJS.ProcessEnv,
+  launch: AcpLaunchContext = {}
+): NodeJS.ProcessEnv => {
   const config = parsed(env.OPENCODE_CONFIG_CONTENT)
+  const permission = record(config.permission)
   return {
     ...env,
     OPENCODE_CONFIG_CONTENT: JSON.stringify({
       ...config,
-      permission: { ...record(config.permission), ...OPENCODE_FULL_ACCESS_PERMISSIONS }
+      permission: {
+        ...permission,
+        ...OPENCODE_FULL_ACCESS_PERMISSIONS,
+        ...(launch.toolGateway === undefined
+          ? {}
+          : { skill: supersededSkillRules(permission?.skill) })
+      }
     })
   }
 }

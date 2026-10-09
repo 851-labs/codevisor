@@ -207,6 +207,8 @@ export interface ClaudeStartSelections {
   readonly model?: string | undefined
   readonly effort?: string | undefined
   readonly speed?: string | undefined
+  /// Skills turned off for the model and the slash menu alike.
+  readonly skillOverrides?: Settings["skillOverrides"]
 }
 
 /// Query options that start a CLI process on the chat's selections instead
@@ -224,6 +226,7 @@ export const claudeStartOptions = (
   if (selections.speed === "fast" || selections.speed === "standard") {
     settings.fastMode = selections.speed === "fast"
   }
+  if (selections.skillOverrides !== undefined) settings.skillOverrides = selections.skillOverrides
   return {
     ...(model.length === 0 || model === "default" ? {} : { model }),
     ...(Object.keys(settings).length === 0 ? {} : { settings: settings as Settings })
@@ -272,4 +275,25 @@ export const emitModelFallback = (
     },
     subjectId: session.key
   })
+}
+
+type SupportedModel = Awaited<ReturnType<ClaudeSession["q"]["supportedModels"]>>[number]
+
+/// The CLI's "default" pseudo-model is an alias, not a model — the picker
+/// shows real models only.
+export const adoptModelList = (
+  session: ClaudeSession,
+  models: ReadonlyArray<SupportedModel>
+): void => {
+  session.models = models
+    .filter((model) => model.value !== "default")
+    .map((model) => ({
+      name: model.displayName,
+      supportedEffortLevels: (model.supportsEffort === true
+        ? (model.supportedEffortLevels ?? [])
+        : []
+      ).filter((level) => SETTABLE_EFFORT_LEVELS.has(level)),
+      supportsFastMode: model.supportsFastMode === true,
+      value: model.value
+    }))
 }

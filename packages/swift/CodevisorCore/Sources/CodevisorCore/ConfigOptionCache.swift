@@ -9,6 +9,10 @@ import ACPKit
 /// sign-in-pending list) straight from this cache, so any store on any
 /// machine re-renders every mounted consumer — no per-view revision
 /// watchers, no controller-held copies to go stale.
+///
+/// It also holds the composer palette's in-memory skill catalogs: the
+/// harness skills each capability inspection reports for its directory, and
+/// the Codevisor skills each machine offers per project and chat.
 @MainActor
 @Observable
 public final class ConfigOptionCache {
@@ -16,6 +20,29 @@ public final class ConfigOptionCache {
     let serverId: String
     let cwd: String
   }
+
+  private struct HarnessSkillsKey: Hashable {
+    let serverId: String
+    let cwd: String
+    let harnessId: String
+  }
+
+  /// Which built-in guides a chat may use depends on the MCP servers its
+  /// project (and, once it exists on the server, the chat itself) enables.
+  /// A "No project" draft has neither yet: the machine's defaults apply.
+  public struct CodevisorSkillsScope: Hashable, Sendable {
+    public let serverId: String
+    public let projectId: UUID?
+    public let sessionId: UUID?
+
+    public init(serverId: String, projectId: UUID?, sessionId: UUID?) {
+      self.serverId = serverId
+      self.projectId = projectId
+      self.sessionId = sessionId
+    }
+  }
+
+  private typealias CodevisorSkillsRefresh = (id: UUID, task: Task<Void, Never>)
 
   private struct CapabilityRefresh {
     let id: UUID
@@ -47,6 +74,13 @@ public final class ConfigOptionCache {
   /// immediately. They are intentionally not persisted and may be replaced
   /// by the speculative onboarding warm.
   @ObservationIgnored private var provisionalCapabilityServers: Set<String> = []
+  /// Harness skills by machine, directory, and harness. Project skills
+  /// differ per folder while the persisted snapshot above is server-wide,
+  /// so these never ride on it; a relaunch re-inspects before first use.
+  private var harnessSkillsCache: [HarnessSkillsKey: SessionSkills] = [:]
+  /// The Codevisor skills each machine offers per project and chat.
+  private var codevisorSkillsCache: [CodevisorSkillsScope: [ServerComposerSkill]] = [:]
+  @ObservationIgnored private var codevisorSkillRefreshes: [CodevisorSkillsScope: CodevisorSkillsRefresh] = [:]
 
   /// The persisted catalogs, decoded. Built off the main actor at launch
   /// (see `ClientLaunchSnapshot`).
@@ -176,6 +210,7 @@ public final class ConfigOptionCache {
         return nil
       }
       let merged = storeCapabilityResponse(response, forServer: serverId)
+      storeSkills(from: response, forServer: serverId, cwd: cwd)
       recordCapabilityValidation(for: key, serverId: serverId)
       removeCapabilityRefresh(refresh, for: key)
       return merged
@@ -261,7 +296,7 @@ public final class ConfigOptionCache {
 
   public func store(_ capabilities: [ServerHarnessCapability], forServer serverId: String) {
     provisionalCapabilityServers.remove(serverId)
-    capabilitiesCache[serverId] = capabilities
+    capabilitiesCache[serverId] = capabilities.map(Self.withoutSkills)
     for capability in capabilities {
       cache[serverId, default: [:]][capability.harness.id] = capability.configOptions
     }
@@ -273,6 +308,7 @@ public final class ConfigOptionCache {
   public func store(_ capability: ServerHarnessCapability, forServer serverId: String) {
     provisionalCapabilityServers.remove(serverId)
     var capabilities = capabilitiesCache[serverId] ?? []
+    let capability = Self.withoutSkills(capability)
     if let index = capabilities.firstIndex(where: { $0.harness.id == capability.harness.id }) {
       capabilities[index] = capability
     } else {
@@ -333,7 +369,77 @@ public final class ConfigOptionCache {
     capabilitiesCache = [:]
     signInRequiredCache = [:]
     provisionalCapabilityServers = []
+    harnessSkillsCache = [:]
+    codevisorSkillsCache = [:]
+    for refresh in codevisorSkillRefreshes.values { refresh.task.cancel() }
+    codevisorSkillRefreshes = [:]
     persist()
+  }
+
+  // MARK: - Composer skills
+
+  /// The skills a fresh session of this harness reported for `cwd` at its
+  /// latest capability inspection; nil until one arrives or when the
+  /// harness (or an older server) cannot list them.
+  public func skills(forHarness harnessId: String, onServer serverId: String, cwd: String) -> SessionSkills? {
+    harnessSkillsCache[HarnessSkillsKey(serverId: serverId, cwd: cwd, harnessId: harnessId)]
+  }
+
+  /// Records the skill lists a capability response carried for `cwd`. A
+  /// harness without a list keeps its previous one, matching how empty
+  /// option inspections keep stale picker data.
+  func storeSkills(from capabilities: [ServerHarnessCapability], forServer serverId: String, cwd: String) {
+    for capability in capabilities {
+      guard let skills = capability.skills else { continue }
+      harnessSkillsCache[HarnessSkillsKey(serverId: serverId, cwd: cwd, harnessId: capability.harness.id)] = skills
+    }
+  }
+
+  /// The Codevisor skills offered in `scope` as of the last successful
+  /// fetch for exactly that scope.
+  /// A chat's list once fetched; until then its project's, which a draft
+  /// fetched before its first send turned it into a chat.
+  public func codevisorSkills(for scope: CodevisorSkillsScope) -> [ServerComposerSkill] {
+    codevisorSkillsCache[scope]
+      ?? codevisorSkillsCache[
+        CodevisorSkillsScope(serverId: scope.serverId, projectId: scope.projectId, sessionId: nil)
+      ] ?? []
+  }
+
+  /// Refetches `scope`'s Codevisor skills in the background, sharing one
+  /// request among concurrent callers. A failure keeps the last list (or
+  /// none): the palette simply omits what it cannot load.
+  @discardableResult
+  func refreshCodevisorSkills(
+    for scope: CodevisorSkillsScope,
+    fetch: @escaping @Sendable () async throws -> [ServerComposerSkill]
+  ) -> Task<Void, Never> {
+    if let existing = codevisorSkillRefreshes[scope] { return existing.task }
+    let id = UUID()
+    let task = Task {
+      defer {
+        if codevisorSkillRefreshes[scope]?.id == id { codevisorSkillRefreshes[scope] = nil }
+      }
+      do {
+        let skills = try await fetch()
+        guard !Task.isCancelled else { return }
+        codevisorSkillsCache[scope] = skills
+      } catch {
+        Log.session.debug(
+          "codevisor skills fetch failed: \(String(describing: error), privacy: .public)"
+        )
+      }
+    }
+    codevisorSkillRefreshes[scope] = (id, task)
+    return task
+  }
+
+  /// Skills describe one inspected directory, so they stay out of the
+  /// server-wide snapshot (see `harnessSkillsCache`).
+  private static func withoutSkills(_ capability: ServerHarnessCapability) -> ServerHarnessCapability {
+    var stripped = capability
+    stripped.skills = nil
+    return stripped
   }
 
   private func removeCapabilityRefresh(

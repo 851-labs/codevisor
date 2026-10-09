@@ -19,6 +19,7 @@ import { emitBackgroundTasks, wrapBackgroundBash } from "./background-tasks.js"
 import { emitAuthoritativeDiff } from "./diff-stats.js"
 import { handleMessage } from "./messages.js"
 import {
+  adoptModelList,
   alignStartModel,
   applyClaudeModelFromProvider,
   claudeStartOptions,
@@ -30,6 +31,12 @@ import {
 } from "./models.js"
 import { holdClaudeApproval, holdClaudePlanApproval, holdClaudeQuestion } from "./questions.js"
 import { InputQueue, type ClaudeModel, type ClaudeQueryFn, type ClaudeSession } from "./session.js"
+import {
+  learnClaudeSkills,
+  makeClaudeCommandCatalog,
+  supersededSkillsOff,
+  trackClaudeSkills
+} from "./skills.js"
 import { resumeSessionAfterStreamDeath } from "./stream-recovery.js"
 import { claudeConfigDir, type SubagentTranscripts } from "./subagent-transcripts.js"
 import { applyTaskCreate, emitTaskPlanUpdate } from "./tasks.js"
@@ -74,6 +81,7 @@ export const makeStartSession = (deps: StartSessionDeps) => {
   /// row can name is left for restore to report as unavailable instead of
   /// being started blind.
   let knownModels: ReadonlyArray<ClaudeModel> = []
+  const commandCatalog = makeClaudeCommandCatalog()
 
   const startSession = async (
     definition: HarnessDefinition,
@@ -111,13 +119,15 @@ export const makeStartSession = (deps: StartSessionDeps) => {
       saved.model === undefined || knownModels.length === 0
         ? saved.model
         : resolveClaudeModel(knownModels, saved.model)?.value
+    // With Codevisor's gateway attached, its browser and desktop tools are the
+    // agent's: turn off Claude in Chrome and the claude.ai skills for Claude's
+    // own, so the agent doesn't get two competing ones.
     const startOptions = claudeStartOptions({
       effort: saved.effort,
       model: savedModel,
-      speed: saved.speed
+      speed: saved.speed,
+      ...(toolGateway === undefined ? {} : { skillOverrides: supersededSkillsOff })
     })
-    // With Codevisor's gateway attached, its browser is the agent's browser:
-    // turn off Claude in Chrome so the agent doesn't get two competing ones.
     const nativeToolArgs: Record<string, string | null> =
       toolGateway === undefined ? {} : { "no-chrome": null }
     // Filled in below; the hook and pump close over it.
@@ -294,6 +304,7 @@ export const makeStartSession = (deps: StartSessionDeps) => {
       key: sessionKey,
       lastHarnessTitle: undefined,
       models: [],
+      skills: { catalog: commandCatalog, claudePath, commands: undefined, snapshot: undefined },
       openToolCalls: new Set(),
       taskToolUses: new Map(),
       tasks: new Map(),
@@ -334,6 +345,7 @@ export const makeStartSession = (deps: StartSessionDeps) => {
       try {
         for await (const message of query) {
           if (message.type === "system" && message.subtype === "init") {
+            learnClaudeSkills(created, message)
             const expectedModel = created.currentModel
             applyClaudeModelFromProvider(created, message.model)
             if (message.fast_mode_state !== undefined) {
@@ -426,6 +438,7 @@ export const makeStartSession = (deps: StartSessionDeps) => {
     }
     pump(q).catch(() => undefined)
 
+    trackClaudeSkills(created)
     // Best-effort model list: the control channel usually answers before the
     // first turn, but session creation must not hang on it.
     try {
@@ -479,22 +492,4 @@ export const makeStartSession = (deps: StartSessionDeps) => {
     return created
   }
   return startSession
-}
-
-type SupportedModel = Awaited<ReturnType<ClaudeSession["q"]["supportedModels"]>>[number]
-
-/// The CLI's "default" pseudo-model is an alias, not a model — the picker
-/// shows real models only.
-const adoptModelList = (session: ClaudeSession, models: ReadonlyArray<SupportedModel>): void => {
-  session.models = models
-    .filter((model) => model.value !== "default")
-    .map((model) => ({
-      name: model.displayName,
-      supportedEffortLevels: (model.supportsEffort === true
-        ? (model.supportedEffortLevels ?? [])
-        : []
-      ).filter((level) => SETTABLE_EFFORT_LEVELS.has(level)),
-      supportsFastMode: model.supportsFastMode === true,
-      value: model.value
-    }))
 }

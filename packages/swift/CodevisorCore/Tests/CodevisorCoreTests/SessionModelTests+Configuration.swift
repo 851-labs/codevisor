@@ -154,3 +154,24 @@ extension SessionModelTests {
     #expect(client.configUpdates.isEmpty)
   }
 }
+
+extension SessionModelTests {
+  @Test("A transcript page restores the session's skills")
+  func transcriptPageSkills() async {
+    let sessionId = UUID()
+    let client = FakeSessionServerClient(sessionId: sessionId)
+    let latest = SessionSkills(skills: [SessionSkill(name: "deploy", invocation: "/deploy", source: .user)])
+    var page = ServerTranscriptPage(items: [], hasMore: false, eventCursor: 1)
+    page.skills = latest
+    client.initialTranscriptPage = page
+    let model = SessionModel(
+      serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+      sessionId: sessionId.uuidString
+    )
+    #expect(model.availableSkills == nil)
+
+    await model.loadHistoryForInitialDisplay()
+
+    #expect(model.availableSkills == latest)
+  }
+}

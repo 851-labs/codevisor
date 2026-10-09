@@ -2,12 +2,13 @@ import { randomUUID } from "node:crypto"
 
 import {
   normalizePromptInput,
+  sessionSkills,
   withAttachmentNotes,
   type PromptInput,
   type QuestionAnswer,
   type RuntimeEmit
 } from "@codevisor/agent-runtime"
-import type { EventKind, SessionConfigOption } from "@codevisor/api"
+import type { EventKind, SessionConfigOption, SessionSkill, SessionSkills } from "@codevisor/api"
 
 import type { PiClient } from "./client.js"
 import { makePiEventMapper } from "./events.js"
@@ -40,6 +41,8 @@ interface Turn {
 export interface PiSession {
   readonly key: string
   readonly configOptions: () => Array<SessionConfigOption>
+  /// The skills `get_commands` listed when the session started.
+  readonly skills: SessionSkills | undefined
   readonly prompt: (input: string | PromptInput) => Promise<{ stopReason: string }>
   readonly cancel: () => Promise<void>
   readonly setConfigOption: (configId: string, value: string) => Promise<Array<SessionConfigOption>>
@@ -55,6 +58,33 @@ const piModel = (value: unknown): PiModel | undefined => {
   return typeof model.id === "string" && typeof model.provider === "string"
     ? (model as unknown as PiModel)
     : undefined
+}
+
+const SKILL_PREFIX = "skill:"
+
+/// The skills among Pi's commands (prompt templates and extension commands
+/// are not skills). Pi names each `skill:<name>` and runs it as `/skill:<name>`.
+export const piSkills = (response: unknown): SessionSkills => {
+  const commands = record(response).commands
+  return sessionSkills(
+    (Array.isArray(commands) ? commands : []).flatMap((entry): Array<SessionSkill> => {
+      const command = record(entry)
+      if (command.source !== "skill" || typeof command.name !== "string") return []
+      if (!command.name.startsWith(SKILL_PREFIX)) return []
+      const description = typeof command.description === "string" ? command.description.trim() : ""
+      const source =
+        command.location === "user" || command.location === "project" ? command.location : undefined
+      return [
+        {
+          invocation: `/${command.name}`,
+          name: command.name.slice(SKILL_PREFIX.length),
+          ...(description === "" ? {} : { description }),
+          ...(source === undefined ? {} : { source })
+        }
+      ]
+    }),
+    "/"
+  )
 }
 
 /// Pi's prompt: images inline, other attachments as path notes.
@@ -199,9 +229,17 @@ export const startPiSession = async (client: PiClient, emit: RuntimeEmit): Promi
     )
   }
 
+  let skills: SessionSkills | undefined
+  try {
+    skills = piSkills(await client.command("get_commands"))
+  } catch {
+    skills = undefined
+  }
+
   return {
     key,
     configOptions: options,
+    skills,
     prompt: async (input) => {
       const started = startTurn("user")
       const finished = new Promise<{ stopReason: string }>((resolve) => {

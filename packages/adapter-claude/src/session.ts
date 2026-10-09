@@ -14,6 +14,7 @@ import type {
 import type { QuestionSpec, SessionGoal } from "@codevisor/api"
 
 import type { Deferred } from "./internal.js"
+import type { ClaudeSkills } from "./skills.js"
 import type { SubagentTranscripts } from "./subagent-transcripts.js"
 
 /// A prompt accepted while another turn was still active. It is NOT bound to
@@ -249,6 +250,8 @@ export interface ClaudeSession {
   currentEffort: string
   currentSpeed: "standard" | "fast"
   models: ReadonlyArray<ClaudeModel>
+  /// The session's slash commands and the skills among them.
+  readonly skills: ClaudeSkills
   readonly accumulators: Map<string, ToolInputAccumulator>
   readonly openToolCalls: Set<string>
   /// Authoritative Task* inputs keyed by tool_use id, retained until the

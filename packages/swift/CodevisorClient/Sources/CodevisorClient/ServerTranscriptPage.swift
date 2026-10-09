@@ -15,6 +15,9 @@ public struct ServerTranscriptPage: Decodable, Equatable, Sendable {
   public var pendingPlanApproval: Bool
   public var backgroundTasks: [BackgroundTaskInfo]?
   public var goal: SessionGoal?
+  /// The session's latest skills snapshot. Its own field rather than a state
+  /// update: clients that predate skills reject unknown state updates.
+  public var skills: SessionSkills?
   public var sessionPlan: Plan?
   public var usage: ServerSessionUsage?
   /// The gate holding this session's prompts at this page's cursor; nil when
@@ -60,6 +63,7 @@ public struct ServerTranscriptPage: Decodable, Equatable, Sendable {
     case pendingPlanApproval
     case backgroundTasks
     case goal
+    case skills
     case sessionPlan
     case usage
     case updateGate
@@ -81,6 +85,7 @@ public struct ServerTranscriptPage: Decodable, Equatable, Sendable {
     backgroundTasks =
       try container.decodeIfPresent([BackgroundTaskInfo].self, forKey: .backgroundTasks)
     goal = try container.decodeIfPresent(SessionGoal.self, forKey: .goal)
+    skills = try container.decodeIfPresent(SessionSkills.self, forKey: .skills)
     sessionPlan = try container.decodeIfPresent(Plan.self, forKey: .sessionPlan)
     usage = try container.decodeIfPresent(ServerSessionUsage.self, forKey: .usage)
     updateGate = try container.decodeIfPresent(ServerSessionUpdateGate.self, forKey: .updateGate)

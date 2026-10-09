@@ -39,15 +39,24 @@ describe("OpenCode provider", () => {
     })
     await Effect.runPromise(
       Effect.flip(
-        provider.createSession(definition, "/project", async () => undefined, {
-          id: "opencode-default",
-          profileKind: "default",
-          env: { OPENCODE_CONFIG_CONTENT: JSON.stringify({ model: "x/y" }) }
-        })
+        provider.createSession(
+          definition,
+          "/project",
+          async () => undefined,
+          {
+            id: "opencode-default",
+            profileKind: "default",
+            env: { OPENCODE_CONFIG_CONTENT: JSON.stringify({ model: "x/y" }) }
+          },
+          { bearerToken: "t", name: "codevisor", url: "http://127.0.0.1:1/mcp" }
+        )
       )
     )
     const config = JSON.parse(launched[0]!.OPENCODE_CONFIG_CONTENT!)
-    expect(config).toMatchObject({ model: "x/y", permission: { external_directory: "allow" } })
+    expect(config).toMatchObject({
+      model: "x/y",
+      permission: { external_directory: "allow", skill: { "computer-use": "deny" } }
+    })
     expect(launched[0]!.PATH).toBe("/bin")
   })
 

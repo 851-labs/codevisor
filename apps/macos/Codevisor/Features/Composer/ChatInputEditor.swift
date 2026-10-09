@@ -281,6 +281,21 @@ private final class GrowingTextClipView: NSClipView {
 /// Menu navigation (arrows, Tab, Escape) is handled by the coordinator's
 /// `textView(_:doCommandBy:)`; only Return needs special-casing here because the
 /// Shift modifier isn't visible at the command-selector level.
+extension NSTextView {
+  /// Replaces `range` as one undo step of its own, apart from the typing
+  /// around it: ⌘Z then restores exactly what was replaced, caret included.
+  /// Writing `string` instead bypasses undo and strands the typing steps
+  /// already on the stack against text that no longer matches them.
+  func replaceAsUndoableEdit(_ range: NSRange, with replacement: String) {
+    breakUndoCoalescing()
+    guard shouldChangeText(in: range, replacementString: replacement) else { return }
+    textStorage?.replaceCharacters(in: range, with: replacement)
+    didChangeText()
+    breakUndoCoalescing()
+    setSelectedRange(NSRange(location: range.location + (replacement as NSString).length, length: 0))
+  }
+}
+
 final class SubmittingTextView: NSTextView {
   var onWindowChanged: (() -> Void)?
 

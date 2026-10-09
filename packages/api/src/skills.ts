@@ -13,6 +13,23 @@ export const Skill = Schema.Struct({
 })
 export type Skill = typeof Skill.Type
 
+/// A Codevisor skill the composer offers: one of Codevisor's own guides a
+/// user invokes directly (`builtin`), or a saved skill. `name` is what the
+/// gateway's `skills` tool takes.
+export const ComposerSkill = Schema.Struct({
+  name: Schema.String,
+  description: Schema.optional(Schema.String),
+  builtin: Schema.Boolean
+})
+export type ComposerSkill = typeof ComposerSkill.Type
+
+/// The Codevisor skills a chat can use, given the MCP servers enabled for its
+/// project or session.
+export const ComposerSkills = Schema.Struct({
+  skills: Schema.Array(ComposerSkill)
+})
+export type ComposerSkills = typeof ComposerSkills.Type
+
 export const SkillsList = Schema.Struct({
   /// The store directory on the server's machine.
   dir: Schema.String,

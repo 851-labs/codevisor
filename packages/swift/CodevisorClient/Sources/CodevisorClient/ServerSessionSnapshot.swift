@@ -28,6 +28,7 @@ public struct TranscriptHistoryPage: Equatable, Sendable {
   public var pendingPlanApproval: Bool = false
   public var backgroundTasks: [BackgroundTaskInfo]? = nil
   public var goal: SessionGoal? = nil
+  public var skills: SessionSkills? = nil
   public var sessionPlan: Plan? = nil
   public var usage: SessionUsage? = nil
   /// See `ServerSessionSnapshot.updateGateHarnessName`.

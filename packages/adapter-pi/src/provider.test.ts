@@ -70,15 +70,57 @@ describe("Pi provider", () => {
       configOptions: [
         expect.objectContaining({ id: "model", currentValue: "openai-codex/gpt-6" }),
         expect.objectContaining({ id: "thought_level", currentValue: "medium" })
-      ]
+      ],
+      skills: { invocationPrefix: "/", skills: [] }
     })
     expect(client.commands.map((command) => command.type)).toEqual([
       "get_state",
       "get_available_models",
-      "get_available_thinking_levels"
+      "get_available_thinking_levels",
+      "get_commands"
     ])
     await run(created.handle.close)
     expect(client.closed).toBe(true)
+  })
+
+  it("lists only skills among Pi's commands", async () => {
+    const { client, provider } = setup()
+    client.replies.get_commands = {
+      commands: [
+        {
+          name: "skill:brave-search",
+          description: "Web search",
+          source: "skill",
+          location: "user"
+        },
+        { name: "skill:release", source: "skill", location: "project" },
+        { name: "skill:scripts", description: 3, source: "skill", location: "path" },
+        { name: "fix-tests", description: "Fix failing tests", source: "prompt" },
+        { name: "session-name", source: "extension" },
+        { name: "unprefixed", source: "skill" }
+      ]
+    }
+    const created = await run(provider.createSession(definition, "/p", async () => undefined))
+    expect(created.metadata.skills).toEqual({
+      invocationPrefix: "/",
+      skills: [
+        {
+          description: "Web search",
+          invocation: "/skill:brave-search",
+          name: "brave-search",
+          source: "user"
+        },
+        { invocation: "/skill:release", name: "release", source: "project" },
+        { invocation: "/skill:scripts", name: "scripts" }
+      ]
+    })
+  })
+
+  it("starts without skills when Pi can't list its commands", async () => {
+    const { client, provider } = setup()
+    client.replies.get_commands = new Error("Unknown command")
+    const created = await run(provider.createSession(definition, "/p", async () => undefined))
+    expect(created.metadata.skills).toBeUndefined()
   })
 
   it("reopens a chat's own Pi session, and runs without a gateway", async () => {
@@ -294,8 +336,13 @@ describe("Pi provider", () => {
     expect(client.closed).toBe(true)
     client.replies.get_available_thinking_levels = { levels: "none" }
     client.replies.get_available_models = {}
+    client.replies.get_commands = {}
     const { metadata } = await run(provider.createSession(definition, "/p", async () => undefined))
-    expect(metadata).toEqual({ sessionId: "7", configOptions: [] })
+    expect(metadata).toEqual({
+      sessionId: "7",
+      configOptions: [],
+      skills: { invocationPrefix: "/", skills: [] }
+    })
   })
 
   it("is ready only where Pi is installed, and lists the account's sessions", async () => {

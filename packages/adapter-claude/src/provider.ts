@@ -124,7 +124,11 @@ export const makeClaudeProvider = (
         )
         return {
           handle: handleFor(session),
-          metadata: { sessionId: session.key, ...metadataFor(session) }
+          metadata: {
+            sessionId: session.key,
+            ...metadataFor(session),
+            ...(session.skills.snapshot === undefined ? {} : { skills: session.skills.snapshot })
+          }
         }
       }),
     id: "claude",
@@ -167,7 +171,11 @@ export const makeClaudeProvider = (
         )
         return {
           handle: handleFor(session),
-          metadata: { sessionId: session.key, ...metadataFor(session) },
+          metadata: {
+            sessionId: session.key,
+            ...metadataFor(session),
+            ...(session.skills.snapshot === undefined ? {} : { skills: session.skills.snapshot })
+          },
           sessionId: session.key
         }
       }),

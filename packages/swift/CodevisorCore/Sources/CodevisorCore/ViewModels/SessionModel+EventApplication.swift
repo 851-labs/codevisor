@@ -19,6 +19,8 @@ extension SessionModel {
       appendRemoteUserIfNeeded(text: block.textValue ?? "")
     case let .availableCommandsUpdate(commands):
       availableCommands = commands
+    case let .availableSkillsUpdate(skills):
+      availableSkills = skills
     case let .currentModeUpdate(modeId):
       if var state = modeState {
         state.currentModeId = modeId
@@ -413,7 +415,7 @@ extension SessionModel {
       case .agentMessagePatch, .agentMessageChunk, .agentThoughtChunk, .plan, .planDocument,
         .toolCall, .toolCallUpdate, .question, .questionResolved, .contextCompaction:
         return true
-      case .userMessageChunk, .availableCommandsUpdate, .currentModeUpdate,
+      case .userMessageChunk, .availableCommandsUpdate, .availableSkillsUpdate, .currentModeUpdate,
         .configOptionUpdate, .usageUpdate, .goalUpdate, .goalCleared:
         return false
       }

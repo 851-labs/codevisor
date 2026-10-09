@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises"
 
+import type { ComposerSkill } from "@codevisor/api"
 import { codevisorSandboxSignatures } from "@codevisor/automation"
 import { parseFrontmatter, RESERVED_SKILL_NAMES } from "@codevisor/skills"
 import type { Tool } from "@modelcontextprotocol/sdk/types.js"
@@ -30,6 +31,7 @@ export interface PackagedSkill {
   readonly name: string
   readonly summary: string
   readonly path: string
+  readonly composer?: string
 }
 
 export interface SkillContext {
@@ -42,6 +44,9 @@ export interface BuiltinSkill {
   readonly name: string
   /// One line for the `skills` tool description.
   readonly summary: string
+  /// One line for the composer's skill palette. Only guides users invoke
+  /// themselves (`/browser-use …`) have one; the rest stay agent-facing.
+  readonly composer?: string
   /// The built-in MCP server this skill documents; hidden while it's off.
   readonly gate?: string
   readonly load: (context: SkillContext) => Promise<string>
@@ -51,6 +56,9 @@ export interface SkillEntry {
   readonly name: string
   readonly summary: string
   readonly builtin: boolean
+  /// The composer palette's line: a built-in's (only built-ins the composer
+  /// offers have one), or a saved skill's description.
+  readonly composer?: string
   /// The skill's instructions, or undefined when it vanished since listing.
   readonly read: () => Promise<string | undefined>
 }
@@ -72,11 +80,17 @@ const stripFrontmatter = (raw: string): string => {
 /// A packaged SKILL.md, read on demand. `path` is resolved lazily so a
 /// missing resource only fails the read, never gateway startup.
 export const packagedSkill = (
-  skill: { readonly name: string; readonly summary: string; readonly path: () => string },
+  skill: {
+    readonly name: string
+    readonly summary: string
+    readonly path: () => string
+    readonly composer?: string | undefined
+  },
   gate?: string
 ): BuiltinSkill => ({
   name: skill.name,
   summary: skill.summary,
+  ...(skill.composer === undefined ? {} : { composer: skill.composer }),
   ...(gate === undefined ? {} : { gate }),
   load: async () => stripFrontmatter(await readFile(skill.path(), "utf8"))
 })
@@ -151,7 +165,8 @@ export const skillEntries = async (
       builtin: true,
       name: skill.name,
       read: () => skill.load(context),
-      summary: skill.summary
+      summary: skill.summary,
+      ...(skill.composer === undefined ? {} : { composer: skill.composer })
     })),
     ...saved
       .filter((skill) => !RESERVED_SKILL_NAMES.has(skill.directoryName))
@@ -169,10 +184,25 @@ export const skillEntries = async (
             `Supporting files (relative to the skill folder; open them with your file tools): ${document.files.join(", ")}`
           ].join("\n\n")
         },
-        summary: skill.description ?? skill.name
+        summary: skill.description ?? skill.name,
+        ...(skill.description === undefined ? {} : { composer: skill.description })
       }))
   ]
 }
+
+/// The skills a user can invoke from the composer: the built-ins that offer
+/// themselves there, then the user's saved skills.
+export const composerSkills = (entries: ReadonlyArray<SkillEntry>): ReadonlyArray<ComposerSkill> =>
+  entries.flatMap((entry): ReadonlyArray<ComposerSkill> => {
+    if (entry.builtin && entry.composer === undefined) return []
+    return [
+      {
+        builtin: entry.builtin,
+        name: entry.name,
+        ...(entry.composer === undefined ? {} : { description: entry.composer })
+      }
+    ]
+  })
 
 /// Claude Code cuts MCP tool descriptions at 2,048 characters.
 const DESCRIPTION_BUDGET = 1_900

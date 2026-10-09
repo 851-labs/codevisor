@@ -23,6 +23,7 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
 
   const {
     allTools,
+    composerSkillsFor,
     createGatewayConnection,
     finishRemoteBrowserTurn,
     gatewayRuntime,
@@ -80,6 +81,7 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
     refreshGatewayInventories
   })
   const manager: McpManager = {
+    composerSkills: composerSkillsFor,
     detectAuth: detectMcpAuth,
     ...serverOperations,
     ...makeMcpReplicationOperations(core, { scheduleRefresh, connect: serverOperations.connect }),

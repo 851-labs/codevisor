@@ -2,7 +2,7 @@ import { Schema } from "effect"
 
 import { Labels } from "./labels.js"
 import { CreateProjectRequest } from "./projects.js"
-import { GoalStatus, SessionGoal, SessionOrigin } from "./session-config.js"
+import { GoalStatus, SessionGoal, SessionOrigin, SessionSkills } from "./session-config.js"
 import {
   BackgroundTask,
   MessagePhase,
@@ -273,6 +273,7 @@ export const TranscriptPage = Schema.Struct({
   backgroundTasks: Schema.optional(Schema.Array(BackgroundTask)),
   /** Latest durable goal snapshot at the same revision as `eventCursor`. */
   goal: Schema.optional(SessionGoal),
+  skills: Schema.optional(SessionSkills),
   /** Latest full todo/checklist snapshot at the same revision as
    * `eventCursor`. Completed plans remain durable; clients decide whether the
    * pinned checklist is useful enough to show. */

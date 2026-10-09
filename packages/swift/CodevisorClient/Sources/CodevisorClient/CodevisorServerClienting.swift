@@ -162,6 +162,10 @@ public protocol CodevisorServerClienting: BrowserStateClienting, SimulatorClient
   func setNativeMcpEnabled(harnessId: String, serverName: String, enabled: Bool) async throws -> ServerNativeMcpScan
   /// Codevisor's skill store on this machine.
   func listSkills() async throws -> ServerSkillsList
+  /// The Codevisor skills the composer palette offers a chat: built-in
+  /// guides its enabled MCP servers allow plus the user's store skills.
+  /// Older servers answer 404 (`httpStatus(404, _)`).
+  func composerSkills(projectId: UUID?, sessionId: UUID?) async throws -> [ServerComposerSkill]
   /// Read or replace SKILL.md on this machine, preserving supporting files.
   func skillContent(directoryName: String) async throws -> String
   func updateSkill(directoryName: String, content: String) async throws -> ServerSkillsList

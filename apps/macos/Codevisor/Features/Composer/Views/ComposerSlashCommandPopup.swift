@@ -1,3 +1,4 @@
+import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
@@ -74,9 +75,9 @@ struct ComposerSlashCommandPopup: View {
     .background(theme.windowBackground, in: cardStyle.shape)
     .composerGlassSurface(shape: cardStyle.shape)
     .accessibilityElement(children: .contain)
-    .accessibilityLabel("Slash commands")
+    .accessibilityLabel("Commands and skills")
     .accessibilityHint(
-      "Use the up and down arrows to choose a command, Return to accept, Escape to close"
+      "Use the up and down arrows to choose an item, Return to accept, Escape to close"
     )
   }
 
@@ -85,8 +86,12 @@ struct ComposerSlashCommandPopup: View {
       onSelect(command)
     } label: {
       HStack(spacing: 10) {
-        Text("/\(command.name)")
+        Text(command.title)
           .fontWeight(.medium)
+          .lineLimit(1)
+          // Long descriptions truncate first; the title and its source
+          // label stay whole.
+          .layoutPriority(1)
         Text(command.description)
           .lineLimit(1)
           .foregroundStyle(
@@ -95,9 +100,10 @@ struct ComposerSlashCommandPopup: View {
               : AnyShapeStyle(.secondary)
           )
         Spacer(minLength: 0)
-        if let hint = command.hint {
-          Text(hint)
+        if let source = command.source {
+          Text(source.paletteLabel)
             .lineLimit(1)
+            .layoutPriority(1)
             .foregroundStyle(
               isSelected
                 ? AnyShapeStyle(.white.opacity(0.7))
@@ -115,7 +121,11 @@ struct ComposerSlashCommandPopup: View {
       .contentShape(selectionShape)
     }
     .buttonStyle(.plain)
-    .accessibilityLabel("/\(command.name), \(command.description)")
+    .accessibilityLabel(
+      [command.title, command.description, command.source?.paletteLabel ?? ""]
+        .filter { !$0.isEmpty }
+        .joined(separator: ", ")
+    )
     .accessibilityAddTraits(isSelected ? .isSelected : [])
   }
 }

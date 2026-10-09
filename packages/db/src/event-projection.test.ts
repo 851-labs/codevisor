@@ -4,6 +4,12 @@ import { describe, expect, it } from "vitest"
 import { makeDatabase } from "./index.js"
 import { listEvents, listSubjectEvents, run, tempDatabase } from "./test-support.js"
 
+const skillsSnapshot = (names: ReadonlyArray<string>) => ({
+  invocationPrefix: "/",
+  sessionUpdate: "available_skills_update",
+  skills: names.map((name) => ({ invocation: `/${name}`, name }))
+})
+
 describe("@codevisor/db", () => {
   it("uses monotonic per-session revisions independent of the global event log", async () => {
     const filename = tempDatabase()
@@ -460,6 +466,28 @@ describe("@codevisor/db", () => {
       { role: "user", text: "hello" },
       { role: "assistant", text: "Hello! How can I help?" }
     ])
+    await run(db.close)
+  })
+
+  it("keeps the latest skills snapshot as session state", async () => {
+    const filename = tempDatabase()
+    const db = await run(makeDatabase({ filename, serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/skills-state" }))
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "claude" }))
+    await run(db.appendEvent("session.output", session.id, skillsSnapshot(["review", "ship"])))
+    await run(db.appendEvent("session.output", session.id, skillsSnapshot(["review"])))
+
+    const page = await run(db.getTranscriptPage(session.id, undefined, 32))
+    expect(page.items).toEqual([])
+    expect(page.stateUpdates).toEqual([])
+    expect(page.skills).toEqual({
+      invocationPrefix: "/",
+      skills: [{ invocation: "/review", name: "review" }]
+    })
+    expect(await run(db.getSessionSkills(session.id))).toEqual({
+      invocationPrefix: "/",
+      skills: [{ invocation: "/review", name: "review" }]
+    })
     await run(db.close)
   })
 })
