@@ -54,7 +54,15 @@ public struct HarnessRowState: Equatable, Sendable {
     let source = HarnessSharedCredentials(rawValue: harnessId)
     _ = sync.revisionsByNamespace["harness-shared-accounts"]
     _ = sync.revisionsByNamespace[HarnessSharedCredentials.namespace]
-    let hasOAuthAccounts = sync.entries(namespace: "harness-shared-accounts").contains { entry in
+    if hasSavedSharedAccounts(harnessId: harnessId, sync: sync) { return true }
+    if hasSavedOpenCodeProfiles(harnessId: harnessId, sync: sync) { return true }
+    guard let source else { return false }
+    return hasSharedCredentialDocuments(harnessId: harnessId, source: source, sync: sync)
+  }
+
+  @MainActor
+  private static func hasSavedSharedAccounts(harnessId: String, sync: ConfigSync) -> Bool {
+    return sync.entries(namespace: "harness-shared-accounts").contains { entry in
       guard entry.deleted != true, entry.key.hasPrefix("shared-") || entry.key.hasPrefix("provider:"),
         case .object(let fields) = entry.value,
         fields["harnessId"] == .string(harnessId)
@@ -70,7 +78,10 @@ public struct HarnessRowState: Equatable, Sendable {
       else { return false }
       return true
     }
-    if hasOAuthAccounts { return true }
+  }
+
+  @MainActor
+  private static func hasSavedOpenCodeProfiles(harnessId: String, sync: ConfigSync) -> Bool {
     if harnessId == "opencode",
       case .string(let content) = sync.value(namespace: HarnessSharedCredentials.namespace, key: "profiles:opencode"),
       let profiles = try? JSONDecoder().decode(HarnessAccountsStore.Profiles.self, from: Data(content.utf8)),
@@ -78,7 +89,13 @@ public struct HarnessRowState: Equatable, Sendable {
     {
       return true
     }
-    guard let source else { return false }
+    return false
+  }
+
+  @MainActor
+  private static func hasSharedCredentialDocuments(
+    harnessId: String, source: HarnessSharedCredentials, sync: ConfigSync
+  ) -> Bool {
     // OpenCode can have credentials in any shared profile, including a
     // profile other than Default. An empty default profile is a discovery slot.
     let contents = sync.entries(namespace: HarnessSharedCredentials.namespace).compactMap { entry -> String? in
