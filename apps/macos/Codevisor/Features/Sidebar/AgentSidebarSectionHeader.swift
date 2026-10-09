@@ -1,9 +1,10 @@
 import SwiftUI
 
 /// A folder (manual grouping) or a project (project grouping): a section
-/// title that collapses its agents. Laid out exactly like an agent row --
-/// the same insets, an 18pt icon column, and the same gap to the title -- so
-/// its icon and title line up with the rows under and around it.
+/// title that collapses its agents. Laid out and set exactly like an agent
+/// row -- the same insets, an 18pt icon column, the same gap and font for
+/// the title -- so it reads as one of the list's rows; its icon and chevron
+/// say it's a folder.
 struct AgentSidebarSectionHeader: View {
   let title: String
   let systemImage: String
@@ -21,7 +22,7 @@ struct AgentSidebarSectionHeader: View {
           .font(.system(size: 13))
           .foregroundStyle(.secondary)
           .frame(width: 18)
-        Text(title).fontWeight(.semibold).lineLimit(1)
+        Text(title).lineLimit(1)
         Spacer(minLength: 0)
         Image(systemName: "chevron.right")
           .font(.system(size: 10, weight: .semibold))
