@@ -6,6 +6,69 @@ import { nextPanePositionIn } from "./pane-position.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
 
+function writeSessionMembership(
+  sqlite: ServiceContext["sqlite"],
+  id: string,
+  targetWorkspaceId: string | null,
+  sessionId: string
+): void {
+  const result = sqlite
+    .prepare("update sessions set workspace_id = ? where id = ?")
+    .run(targetWorkspaceId, id)
+  if (result.changes === 0) {
+    throw new Error(`Session not found: ${sessionId}`)
+  }
+}
+
+function removeSessionPane(sqlite: ServiceContext["sqlite"], id: string): void {
+  sqlite
+    .prepare("delete from workspace_panes where resource_kind = 'session' and resource_id = ?")
+    .run(id)
+}
+
+function moveSessionPane(
+  sqlite: ServiceContext["sqlite"],
+  targetWorkspaceId: string,
+  existing: { readonly id: string; readonly workspace_id: string }
+): void {
+  sqlite
+    .prepare(
+      "update workspace_panes set workspace_id = ?, position = ?, revision = revision + 1, updated_at = ? where id = ?"
+    )
+    .run(
+      targetWorkspaceId,
+      nextPanePositionIn(sqlite, targetWorkspaceId, existing.id),
+      isoTimestamp(),
+      existing.id
+    )
+}
+
+function createSessionPane(
+  sqlite: ServiceContext["sqlite"],
+  id: string,
+  targetWorkspaceId: string
+): void {
+  const session = sqlite.prepare("select title, created_at from sessions where id = ?").get(id) as {
+    readonly title: string
+    readonly created_at: string
+  }
+  sqlite
+    .prepare(
+      `insert into workspace_panes (
+                 id, workspace_id, provider_id, pane_type, title,
+                 resource_kind, resource_id, created_at, position
+               ) values (?, ?, 'codevisor', 'chat', ?, 'session', ?, ?, ?)`
+    )
+    .run(
+      id,
+      targetWorkspaceId,
+      session.title || "Chat",
+      id,
+      session.created_at,
+      nextPanePositionIn(sqlite, targetWorkspaceId, id)
+    )
+}
+
 export const makeSessionWorkspacesService = (
   context: ServiceContext
 ): Pick<CodevisorDatabaseService, "setSessionWorkspace"> => {
@@ -17,21 +80,12 @@ export const makeSessionWorkspacesService = (
         const id = canonicalUuid(sessionId)
         const targetWorkspaceId = workspaceId == null ? null : canonicalUuid(workspaceId)
         sqlite.transaction(() => {
-          const result = sqlite
-            .prepare("update sessions set workspace_id = ? where id = ?")
-            .run(targetWorkspaceId, id)
-          if (result.changes === 0) {
-            throw new Error(`Session not found: ${sessionId}`)
-          }
+          writeSessionMembership(sqlite, id, targetWorkspaceId, sessionId)
           // Membership and the chat's pane move together. Detaching deletes
           // the pane; a workspace left without panes is a valid state that
           // clients render with their own local empty page.
           if (targetWorkspaceId === null) {
-            sqlite
-              .prepare(
-                "delete from workspace_panes where resource_kind = 'session' and resource_id = ?"
-              )
-              .run(id)
+            removeSessionPane(sqlite, id)
             return
           }
           const existing = sqlite
@@ -43,39 +97,10 @@ export const makeSessionWorkspacesService = (
           // its tab slot instead of moving to the end.
           if (existing?.workspace_id === targetWorkspaceId) return
           if (existing !== undefined) {
-            sqlite
-              .prepare(
-                "update workspace_panes set workspace_id = ?, position = ?, revision = revision + 1, updated_at = ? where id = ?"
-              )
-              .run(
-                targetWorkspaceId,
-                nextPanePositionIn(sqlite, targetWorkspaceId, existing.id),
-                isoTimestamp(),
-                existing.id
-              )
+            moveSessionPane(sqlite, targetWorkspaceId, existing)
             return
           }
-          const session = sqlite
-            .prepare("select title, created_at from sessions where id = ?")
-            .get(id) as {
-            readonly title: string
-            readonly created_at: string
-          }
-          sqlite
-            .prepare(
-              `insert into workspace_panes (
-                 id, workspace_id, provider_id, pane_type, title,
-                 resource_kind, resource_id, created_at, position
-               ) values (?, ?, 'codevisor', 'chat', ?, 'session', ?, ?, ?)`
-            )
-            .run(
-              id,
-              targetWorkspaceId,
-              session.title || "Chat",
-              id,
-              session.created_at,
-              nextPanePositionIn(sqlite, targetWorkspaceId, id)
-            )
+          createSessionPane(sqlite, id, targetWorkspaceId)
         })()
       })
   }
