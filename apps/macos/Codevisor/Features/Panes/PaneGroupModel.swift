@@ -214,6 +214,9 @@ final class PaneGroupModel: Identifiable {
         self.persist()
         self.onPaneChanged?(self.state.panes[index])
       }
+      simulator.canFocusChooser = { [weak self] in
+        self?.canFocusSelectedPane == true && self?.state.selectedPaneId == descriptor.id
+      }
       pane = simulator
     case .review:
       let review = ReviewPane(context: makeContext(descriptor), descriptor: descriptor)

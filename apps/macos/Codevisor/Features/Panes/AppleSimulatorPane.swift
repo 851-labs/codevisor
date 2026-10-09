@@ -17,6 +17,10 @@ final class AppleSimulatorPane: Pane {
   var onPreferencesChanged: ((SimulatorPanePreferences) -> Void)? {
     didSet { model?.onPreferencesChanged = onPreferencesChanged }
   }
+  /// Whether the pane is still the focused group's selected tab, for a chooser that mounts late.
+  var canFocusChooser: () -> Bool = { true } {
+    didSet { model?.canFocusChooser = canFocusChooser }
+  }
   private var mounts = Set<UUID>()
 
   init(context: PaneContext, descriptor: PaneDescriptorState) {
@@ -32,7 +36,7 @@ final class AppleSimulatorPane: Pane {
   }
 
   func makeView() -> AnyView { AnyView(AppleSimulatorPaneView(pane: self)) }
-  func focus() {}
+  func focus() { model?.focusChooser() }
   func visibilityChanged(_ visible: Bool) { visible ? model?.appeared() : model?.disappeared() }
   func applyPreferences(_ preferences: SimulatorPanePreferences) { model?.applyPreferences(preferences) }
   func willDelete() async { model?.closed() }
@@ -90,6 +94,11 @@ private struct AppleSimulatorPaneView: View {
     .background(theme.paneBackground)
     .onAppear { pane.mounted(mount) }
     .onDisappear { pane.unmounted(mount) }
-    .simultaneousGesture(TapGesture().onEnded { pane.onFocusChanged?(true) })
+    .simultaneousGesture(
+      TapGesture().onEnded {
+        pane.onFocusChanged?(true)
+        // The chooser has no editor to take a click, so whitespace clicks focus its search field.
+        if pane.model?.device == nil { pane.focus() }
+      })
   }
 }

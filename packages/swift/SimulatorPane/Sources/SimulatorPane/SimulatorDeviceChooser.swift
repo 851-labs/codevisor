@@ -52,6 +52,12 @@ struct SimulatorDeviceChooser: View {
         }
       }
       .background(theme.paneBackground)
+      // Initially too: a pane opened before its simulators load mounts the chooser after the
+      // host's focus request.
+      .onChange(of: model.chooserFocusRequests, initial: true) { _, requests in
+        guard requests > 0 else { return }
+        focus.focus(ifCurrent: model.canFocusChooser)
+      }
     }
 
     private static let style: Autocomplete.Style = {

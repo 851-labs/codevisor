@@ -37,6 +37,12 @@ public final class SimulatorPaneModel {
   public var managingSimulators = false
   /// Simulators being deleted, shown as such until the list no longer has them.
   public private(set) var deleting: Set<String> = []
+  /// Bumped when the host focuses the pane; the device chooser moves keyboard focus to its search
+  /// field, as the New Tab page it was opened from does.
+  public private(set) var chooserFocusRequests = 0
+  /// Whether the pane is still where the user is working, so a chooser that mounts after the
+  /// request (the list was still loading) doesn't take focus from somewhere else.
+  @ObservationIgnored public var canFocusChooser: () -> Bool = { true }
 
   public var onPreferencesChanged: ((SimulatorPanePreferences) -> Void)?
 
@@ -95,6 +101,10 @@ public final class SimulatorPaneModel {
   }
 
   // MARK: Lifecycle
+
+  public func focusChooser() {
+    chooserFocusRequests += 1
+  }
 
   public func appeared() {
     guard !visible else { return }
