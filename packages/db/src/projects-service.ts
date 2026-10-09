@@ -58,29 +58,8 @@ export const makeProjectsService = (
         }
         const claimedProject = getProject(claimed.project_id)
         const merge = sqlite.transaction(() => {
-          sqlite
-            .prepare(
-              `insert into projects (
-                id, name, origin, created_at, repo_url,
-                worktree_base_remote, worktree_base_branch, default_run_location
-              ) values (?, ?, ?, ?, ?, ?, ?, ?)`
-            )
-            .run(
-              projectId,
-              request.name ?? basename(request.folderPath),
-              request.origin ?? "codevisor",
-              createdAt,
-              request.repoUrl ?? null,
-              claimedProject.worktreeBase?.remote ?? null,
-              claimedProject.worktreeBase?.branch ?? null,
-              claimedProject.defaultRunLocation ?? null
-            )
-          for (const table of ["project_locations", "sessions", "worktrees"]) {
-            sqlite
-              .prepare(`update ${table} set project_id = ? where project_id = ?`)
-              .run(projectId, claimed.project_id)
-          }
-          sqlite.prepare("delete from projects where id = ?").run(claimed.project_id)
+          insertReplacementProject(sqlite, request, projectId, createdAt, claimedProject)
+          rehomeProjectChildren(sqlite, projectId, claimed)
         })
         merge()
         return getProject(projectId)
@@ -102,36 +81,8 @@ export const makeProjectsService = (
         ...(request.repoUrl === undefined ? {} : { repoUrl: request.repoUrl })
       }
       const transaction = sqlite.transaction(() => {
-        sqlite
-          .prepare(
-            `insert into projects (
-              id, name, origin, created_at, repo_url,
-              worktree_base_remote, worktree_base_branch
-            ) values (?, ?, ?, ?, ?, ?, ?)`
-          )
-          .run(
-            project.id,
-            project.name,
-            project.origin,
-            project.createdAt,
-            project.repoUrl ?? null,
-            null,
-            null
-          )
-        sqlite
-          .prepare(
-            `insert into project_locations (
-              id, project_id, server_id, folder_path, created_at, is_git_repository
-            ) values (?, ?, ?, ?, ?, ?)`
-          )
-          .run(
-            location.id,
-            location.projectId,
-            location.serverId,
-            location.folderPath,
-            location.createdAt,
-            Number(location.isGitRepository)
-          )
+        insertNewProjectRow(sqlite, project)
+        insertProjectLocationRow(sqlite, location)
       })
       transaction()
       return project
@@ -199,6 +150,84 @@ export const makeProjectsService = (
         }
       })
   }
+}
+
+const insertReplacementProject = (
+  sqlite: ServiceContext["sqlite"],
+  request: CreateProjectRequest,
+  projectId: string,
+  createdAt: string,
+  claimedProject: Project
+): void => {
+  sqlite
+    .prepare(
+      `insert into projects (
+                id, name, origin, created_at, repo_url,
+                worktree_base_remote, worktree_base_branch, default_run_location
+              ) values (?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      projectId,
+      request.name ?? basename(request.folderPath),
+      request.origin ?? "codevisor",
+      createdAt,
+      request.repoUrl ?? null,
+      claimedProject.worktreeBase?.remote ?? null,
+      claimedProject.worktreeBase?.branch ?? null,
+      claimedProject.defaultRunLocation ?? null
+    )
+}
+
+const rehomeProjectChildren = (
+  sqlite: ServiceContext["sqlite"],
+  projectId: string,
+  claimed: { project_id: string }
+): void => {
+  for (const table of ["project_locations", "sessions", "worktrees"]) {
+    sqlite
+      .prepare(`update ${table} set project_id = ? where project_id = ?`)
+      .run(projectId, claimed.project_id)
+  }
+  sqlite.prepare("delete from projects where id = ?").run(claimed.project_id)
+}
+
+const insertNewProjectRow = (sqlite: ServiceContext["sqlite"], project: Project): void => {
+  sqlite
+    .prepare(
+      `insert into projects (
+              id, name, origin, created_at, repo_url,
+              worktree_base_remote, worktree_base_branch
+            ) values (?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      project.id,
+      project.name,
+      project.origin,
+      project.createdAt,
+      project.repoUrl ?? null,
+      null,
+      null
+    )
+}
+
+const insertProjectLocationRow = (
+  sqlite: ServiceContext["sqlite"],
+  location: ProjectLocation
+): void => {
+  sqlite
+    .prepare(
+      `insert into project_locations (
+              id, project_id, server_id, folder_path, created_at, is_git_repository
+            ) values (?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      location.id,
+      location.projectId,
+      location.serverId,
+      location.folderPath,
+      location.createdAt,
+      Number(location.isGitRepository)
+    )
 }
 
 const basename = (path: string): string => path.split("/").findLast(Boolean) ?? path
