@@ -37,24 +37,34 @@ export const mergeTranscriptFields = (
       `insert into transcript_body_fields (item_id, entry_key, field, revision, encoding, size_bytes)
       values (?, ?, ?, ?, ?, ?)`
     ).run(itemId, key, field, revision, typeof value === "string" ? "text" : "json", bytes)
-    const insert = db.prepare(
-      "insert into transcript_body_chunks (item_id, entry_key, field, position, text) values (?, ?, ?, ?, ?)"
-    )
-    let offset = 0
-    let position = 0
-    while (offset < encoded.length) {
-      let end = Math.min(encoded.length, offset + blockSize)
-      const last = encoded.charCodeAt(end - 1)
-      if (end < encoded.length && last >= 0xd800 && last <= 0xdbff) end -= 1
-      insert.run(itemId, key, field, position++, encoded.slice(offset, end))
-      offset = end
-    }
+    writeTranscriptFieldChunks(db, itemId, key, field, encoded)
     payload[field] = {
       transcriptBodyField: field,
       ...(typeof value === "string" ? { preview: value.slice(0, 512) } : {})
     }
   }
   return payload
+}
+
+const writeTranscriptFieldChunks = (
+  db: Database.Database,
+  itemId: string,
+  key: string,
+  field: string,
+  encoded: string
+): void => {
+  const insert = db.prepare(
+    "insert into transcript_body_chunks (item_id, entry_key, field, position, text) values (?, ?, ?, ?, ?)"
+  )
+  let offset = 0
+  let position = 0
+  while (offset < encoded.length) {
+    let end = Math.min(encoded.length, offset + blockSize)
+    const last = encoded.charCodeAt(end - 1)
+    if (end < encoded.length && last >= 0xd800 && last <= 0xdbff) end -= 1
+    insert.run(itemId, key, field, position++, encoded.slice(offset, end))
+    offset = end
+  }
 }
 
 export const transcriptBodyResource = (
