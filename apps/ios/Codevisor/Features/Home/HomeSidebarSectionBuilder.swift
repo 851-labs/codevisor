@@ -28,7 +28,7 @@ struct HomeSidebarSectionBuilder {
       // The first routing chat that still exists anchors the workspace; a
       // terminal-only workspace routes through a closed chat Core retained.
       let anchor = item.routingChatIds.first { session($0, serverId: item.serverId) != nil }
-      let rows = rows(for: workspace, visibility: visibility)
+      let rows = tabRows(for: workspace, visibility: visibility)
       return HomeSidebarSection(
         id: workspace.id,
         serverId: workspace.serverId,
@@ -46,7 +46,9 @@ struct HomeSidebarSectionBuilder {
   }
 
   /// Navigable panes in the same order as the workspace's tab grid.
-  private func rows(for workspace: Workspace, visibility: PaneNavigationVisibility) -> [HomeSidebarTabRow] {
+  func tabRows(
+    for workspace: Workspace, visibility: PaneNavigationVisibility = PaneNavigationVisibility()
+  ) -> [HomeSidebarTabRow] {
     var seen: Set<UUID> = []
     var rows: [HomeSidebarTabRow] = []
     func append(_ pane: PaneDescriptorState, in tab: WorkspaceTab?, owner: WorkspaceTab) {

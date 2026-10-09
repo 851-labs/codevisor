@@ -6,10 +6,10 @@ import UIKit
 // MARK: - Workspace screen
 
 /// A workspace: one full-screen pane (tab) at a time — chats, terminals, and
-/// the new-tab page. Tabs are switched from the sidebar, which lists every
-/// pane; the nav bar shows the active pane's title between the system back
-/// button and a new-tab button. Chats also show their workspace and machine
-/// in the native navigation subtitle.
+/// the new-tab page. Tabs are switched in the tab overview, which the nav
+/// bar's tabs button zooms out to; the nav bar shows the active pane's title
+/// between the system back button and that button. Chats also show their
+/// workspace and machine in the native navigation subtitle.
 struct WorkspaceScreen: View {
   @Environment(AppEnvironment.self) var environment
   @Environment(\.dismiss) var dismiss
@@ -113,6 +113,9 @@ struct WorkspaceScreen: View {
   /// One-shot keyboard focus for a chat just created from the New Tab
   /// page, keyed by that chat's session id so only its composer takes it.
   @State var convertedChatFocusRequest: (chatSessionId: UUID, request: UUID)?
+  /// The Safari-style tab overview over the pane, and where the pane sits.
+  @State var tabOverview: WorkspaceTabOverview?
+  @State var paneFrame = WorkspacePaneFrame()
 
   /// This workspace's chat: the routed one, or the one a draft's first send
   /// created. Nil only while an unsent draft.
@@ -271,6 +274,12 @@ struct WorkspaceScreen: View {
         .ignoresSafeArea()
       workspaceContent
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onGeometryChange(for: CGRect.self) {
+          $0.frame(in: .global)
+        } action: {
+          paneFrame.frame = $0
+        }
+      tabOverviewLayer
     }
     .navigationDestination(item: $presentedSubagent) { SubagentScreen(route: $0) }
     // An agent belongs to the pane it was opened from.
@@ -343,6 +352,7 @@ struct WorkspaceScreen: View {
     .toolbar {
       if !blocksServerContent, let model = activeFileModel {
         FilePaneToolbar(model: model, onNewTab: { addTab() })
+        ToolbarItem(placement: .topBarTrailing) { tabsButton }
       } else {
         // A Review pane adds its title and options menu; the workspace's own
         // New Tab button stays, just right of the menu.
@@ -356,7 +366,7 @@ struct WorkspaceScreen: View {
           blocksServerContent: blocksServerContent,
           isDraft: isDraft,
           onDismissNewChat: { dismissNewChatPresentation() },
-          onAddTab: { addTab() },
+          tabsButton: tabsButton,
           showsBackMorph: !barsAreVertical
         )
       }

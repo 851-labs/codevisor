@@ -27,7 +27,8 @@
                     .toolbar {
                       WorkspaceScreenToolbar(
                         isNewChatPresentation: false, isPromotingNewChat: false, blocksServerContent: false,
-                        isDraft: false, onDismissNewChat: {}, onAddTab: {}
+                        isDraft: false, onDismissNewChat: {},
+                        tabsButton: Button("Tabs", systemImage: "square.on.square") {}
                       )
                     }
                 } else {

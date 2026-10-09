@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The live sheet's controls become the conversation controls during send.
-struct WorkspaceScreenToolbar: ToolbarContent {
+struct WorkspaceScreenToolbar<TabsButton: View>: ToolbarContent {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var showsConversationControls = false
   @Namespace private var glassNamespace
@@ -10,7 +10,8 @@ struct WorkspaceScreenToolbar: ToolbarContent {
   let blocksServerContent: Bool
   let isDraft: Bool
   let onDismissNewChat: () -> Void
-  let onAddTab: () -> Void
+  /// Opens the workspace's tab overview.
+  let tabsButton: TabsButton
   /// The decorative back chevron materializes at the top-left as the
   /// sheet's chrome becomes the conversation's. With iPhone Duo's vertical
   /// strip the real back button lives on the side, so the morph would
@@ -60,9 +61,9 @@ struct WorkspaceScreenToolbar: ToolbarContent {
           onDismissNewChat()
         } label: {
           Label {
-            Text(showsConversationControls ? "New tab" : "Cancel")
+            Text(showsConversationControls ? "Tabs" : "Cancel")
           } icon: {
-            Image(systemName: showsConversationControls ? "plus.square.on.square" : "xmark")
+            Image(systemName: showsConversationControls ? "square.on.square" : "xmark")
               .contentTransition(.symbolEffect(.replace.magic(fallback: .offUp)))
           }
         }
@@ -76,11 +77,7 @@ struct WorkspaceScreenToolbar: ToolbarContent {
         }
         // Tabs belong to a workspace; an unsent draft has none yet.
       } else if !blocksServerContent, !isDraft {
-        Button {
-          onAddTab()
-        } label: {
-          Label("New tab", systemImage: "plus.square.on.square")
-        }
+        tabsButton
       }
     }
   }

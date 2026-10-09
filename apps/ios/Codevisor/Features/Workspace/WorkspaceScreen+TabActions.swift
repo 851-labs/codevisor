@@ -19,8 +19,8 @@ struct WorkspacePaneSelection: Equatable {
 
 // MARK: - Tab actions
 
-/// The workspace's few tab operations. Switching tabs happens from the
-/// sidebar, which pushes the workspace on the chosen pane.
+/// The workspace's few tab operations. Switching tabs happens in the tab
+/// overview.
 extension WorkspaceScreen {
   var preferredRoute: WorkspacePreferredRoute {
     WorkspacePreferredRoute(chatSessionId: preferredChatSessionId, paneId: preferredPaneId)
@@ -91,6 +91,7 @@ extension WorkspaceScreen {
     withAnimation(Motion.listReflow(reduceMotion: accessibilityReduceMotion)) {
       paneBinding.wrappedValue = state
     }
+    PaneSnapshotCache.shared.remove(paneId: pane.id)
     if pane.kind == .plugin {
       // Closing the tab drops this client's webview and web-content
       // process. The machine-side plugin remains available to other
