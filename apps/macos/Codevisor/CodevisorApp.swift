@@ -304,6 +304,11 @@ struct RootView: View {
       }
       .themedToolbarBackground(theme)
     }
+    .onChange(of: store?.routeRequest) { _, route in
+      guard let route else { return }
+      store?.routeRequest = nil
+      selection = route
+    }
     .overlay {
       AdaptiveDrawerLayer(
         isPresented: !panelLayout.docksSidebar && panelLayout.activeDrawer == .leading,
