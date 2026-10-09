@@ -38,7 +38,6 @@ struct WorkspaceOutlineScreen: View {
     .listStyle(.sidebar)
     .navigationTitle(row?.title ?? workspace?.name ?? "")
     .navigationSubtitle(summary(tabs: tabs.count, workspaces: children.count))
-    .navigationBarTitleDisplayMode(.large)
     .toolbar { toolbar(row: row) }
     .sheet(isPresented: $showsNewTabSheet) {
       NewTabSheet(
@@ -55,7 +54,7 @@ struct WorkspaceOutlineScreen: View {
     if !children.isEmpty {
       Section("Workspaces", isExpanded: $showsWorkspaces) {
         ForEach(children) { child in
-          WorkspaceOutlineRow(row: child, owner: row, expanded: $expanded)
+          WorkspaceOutlineRow(row: child, owner: row, expanded: $expanded, isSelectable: selectedTab != nil)
         }
       }
     }

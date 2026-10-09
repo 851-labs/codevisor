@@ -19,7 +19,7 @@ extension HomeView {
     guard layoutMode == .split else { return }
     sidebarAutoCollapsed = false
     withAnimation(.smooth(duration: 0.3)) {
-      sidebarColumnVisibility = sidebarColumnVisibility == .detailOnly ? .doubleColumn : .detailOnly
+      sidebarColumnVisibility = sidebarColumnVisibility == .detailOnly ? Self.splitColumnsShown : .detailOnly
     }
   }
 }

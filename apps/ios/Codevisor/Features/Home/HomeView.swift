@@ -51,7 +51,7 @@ struct HomeView: View {
   @State var barsAreVertical = false
   /// The split view's column visibility. `.doubleColumn` is the two-column
   /// default; driving it lets a selection dismiss an overlay sidebar.
-  @State var sidebarColumnVisibility: NavigationSplitViewVisibility = .doubleColumn
+  @State var sidebarColumnVisibility = HomeView.splitColumnsShown
   /// Where the detail column starts: a tiled sidebar pushes it in, an
   /// overlay sidebar (portrait, laptop pose) floats above it at zero.
   @State var detailLeadingInset: CGFloat = 0

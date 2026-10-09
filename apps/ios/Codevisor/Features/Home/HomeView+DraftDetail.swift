@@ -55,7 +55,13 @@ extension HomeView {
     var transaction = Transaction()
     transaction.disablesAnimations = true
     withTransaction(transaction) {
-      navigation.replaceTop(withTab: route)
+      // A split's draft becomes its tab in place; the page beneath it
+      // would remount it on the iPhone Duo, whose detail starts at a page.
+      if layoutMode == .split {
+        navigation.replaceTop(with: route)
+      } else {
+        navigation.replaceTop(withTab: route)
+      }
     }
     IOSNavigationDiagnostics.record(
       "home.draftDetail.promoted", "reason=\(reason) path=\(navigationPathSummary(navigation.path))")

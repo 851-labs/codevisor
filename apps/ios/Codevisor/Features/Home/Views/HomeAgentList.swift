@@ -47,6 +47,7 @@ struct HomeAgentList: View {
     }
     .listStyle(.sidebar)
     .refreshable { await actions.refresh() }
+    .onChange(of: selection?.wrappedValue, initial: true) { _, id in revealAncestors(of: id) }
     .alert("Rename Folder", isPresented: renamePresented) {
       TextField("Name", text: $folderTitle)
       Button("Rename") { commitFolderRename() }
@@ -67,6 +68,16 @@ struct HomeAgentList: View {
         }
         Button("Cancel", role: .cancel) {}
       }
+    }
+  }
+
+  /// A workspace selected from elsewhere (a page's nested workspace) shows
+  /// in place: the workspaces it nests under disclose down to it.
+  private func revealAncestors(of id: UUID?) {
+    var parent = id.flatMap { environment.workspaces.workspace(id: $0)?.parentWorkspaceId }
+    while let next = parent {
+      expanded.insert(next)
+      parent = environment.workspaces.workspace(id: next)?.parentWorkspaceId
     }
   }
 

@@ -86,29 +86,15 @@ extension HomeView {
       mode: layoutMode)
   }
 
-  /// The split selection: the subagent chat in front, else the shown
-  /// workspace. Choosing a row opens it like a phone tap.
+  /// The split selection: the workspace whose page or tab is shown.
+  /// Choosing one shows its page, as Notes selects a folder.
   private var agentSelection: Binding<UUID?> {
     Binding(
-      get: {
-        guard let presented = navigation.presentedWorkspace else { return nil }
-        if let workspace = environment.workspaces.workspace(id: presented.workspaceId),
-          let tab = workspace.selectedCenterTab,
-          let chat = tab.root.group(id: tab.activeLeafId)?.selectedPane?.chatSessionId,
-          chat != environment.navigationStore.homeChatId(of: workspace)
-        {
-          return chat
-        }
-        return presented.workspaceId
-      },
+      get: { navigation.selectedWorkspace?.workspaceId },
       set: { id in
-        guard let id else { return }
-        if environment.workspaces.workspace(id: id) != nil {
-          openAgent(id, chat: nil)
-        } else if let workspaceId = environment.workspaces.workspaceId(forSession: id) {
-          openAgent(workspaceId, chat: id)
-        }
-        dismissOverlaySidebarAfterSelection()
+        guard let id, let workspace = environment.workspaces.workspace(id: id) else { return }
+        openRoute(.agent(serverId: workspace.serverId, workspaceId: workspace.id))
+        if !Self.splitHasContentColumn { dismissOverlaySidebarAfterSelection() }
       })
   }
 

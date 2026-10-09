@@ -9,6 +9,7 @@ import SwiftUI
 struct WorkspaceOutlineRow: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.workspaceRowActions) private var actions
+  @Environment(\.homeLayoutMode) private var layoutMode
 
   let row: AgentSidebarRow
   /// The workspace it is nested under, if any.
@@ -16,6 +17,8 @@ struct WorkspaceOutlineRow: View {
   /// Rows disclosed on this device. Disclosure isn't synced, as in Notes.
   @Binding var expanded: Set<UUID>
   /// Beside a sidebar the row is a selection tag; on a phone, a link.
+  /// On a page beside a sidebar it selects its workspace there, as Notes
+  /// does a subfolder.
   var isSelectable = false
 
   var body: some View {
@@ -49,6 +52,13 @@ struct WorkspaceOutlineRow: View {
     Group {
       if isSelectable {
         content.tag(row.id)
+      } else if layoutMode == .split {
+        Button {
+          actions.openPage(row.serverId, row.id)
+        } label: {
+          content
+        }
+        .foregroundStyle(.primary)
       } else {
         NavigationLink(value: HomeRoute.agent(serverId: row.serverId, workspaceId: row.id)) { content }
       }
