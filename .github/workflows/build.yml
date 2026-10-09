@@ -121,9 +121,75 @@ jobs:
       # packages/net test:coverage runs `net-artifact ensure-node`.
       - uses: ./.github/actions/setup-rust
       - run: bun install --frozen-lockfile
+      - name: Resolve net Cargo target cache key
+        id: net-cargo-key
+        if: github.ref == 'refs/heads/main'
+        run: |
+          set -uo pipefail
+          cd "$GITHUB_WORKSPACE"
+          echo 'key=' >> "$GITHUB_OUTPUT"
+          (
+            set -e
+            export LC_ALL=C PATH="$HOME/.cargo/bin:$PATH"
+            rust="$(node -p 'require("./scripts/net-build.lock.json").rust')"
+            export RUSTUP_TOOLCHAIN="$rust"
+            [[ -x "$HOME/.cargo/bin/rustup" && -x "$HOME/.cargo/bin/cargo" ]]
+            directory="$GITHUB_WORKSPACE/packages/net"
+            while :; do
+              for config in "$directory/.cargo/config" "$directory/.cargo/config.toml"; do
+                [[ ! -e "$config" && ! -L "$config" ]] || exit 0
+              done
+              [[ "$directory" != / ]] || break
+              directory="$(dirname "$directory")"
+            done
+            for config in "${CARGO_HOME:-$HOME/.cargo}/config" "${CARGO_HOME:-$HOME/.cargo}/config.toml"; do
+              [[ ! -e "$config" && ! -L "$config" ]] || exit 0
+            done
+            if compgen -e | grep -E '^(CARGO_(TARGET_|BUILD_(TARGET|BUILD_DIR|RUSTC|RUSTDOC)|ZIGBUILD_)|RUSTC|RUSTDOC|((HOST|TARGET)_)?(CC|CXX|AR|LD|RANLIB|cc|cxx|ar)(_|$)|ZIG|CODEVISOR_NET_ARTIFACTS_ROOT$)' >/dev/null; then exit 0; fi
+            [[ -n "${ImageOS:-}" && -n "${ImageVersion:-}" ]]
+            rust_identity="$(rustc -vV)"; cargo_identity="$(cargo --version --verbose)"
+            zigbuild_identity="$(cargo zigbuild --version)"; zig_identity="$(python3 -m ziglang version)"
+            [[ "$rust_identity" == *"release: $rust"$'\n'* && "$cargo_identity" == "cargo $rust "* ]]
+            [[ "$zigbuild_identity" == "cargo-zigbuild $(node -p 'require("./scripts/net-build.lock.json").cargoZigbuild')" ]]
+            [[ "$zig_identity" == "$(node -p 'require("./scripts/net-build.lock.json").zig')" ]]
+            context="$({
+              set -e
+              printf '%s\0' "$ImageOS" "$ImageVersion" "$GITHUB_WORKSPACE" "$HOME" "$PATH" "${CARGO_HOME:-$HOME/.cargo}" "${RUSTUP_HOME:-$HOME/.rustup}" "$rust_identity" "$cargo_identity" "$zigbuild_identity" "$zig_identity"
+              command -v rustup rustc cargo cargo-zigbuild python3 node
+              rustup which rustc
+              rustup which cargo
+              python3 -c 'import pathlib, ziglang; print(pathlib.Path(ziglang.__file__).parent / "zig")'
+              node -p 'JSON.stringify({version:process.version,abi:process.versions.modules,arch:process.arch,platform:process.platform})'
+              for variable in RUSTFLAGS CARGO_ENCODED_RUSTFLAGS CARGO_BUILD_RUSTFLAGS CFLAGS CXXFLAGS CPPFLAGS LDFLAGS CARGO_BUILD_JOBS CARGO_INCREMENTAL CARGO_BUILD_INCREMENTAL $(compgen -e | grep '^CARGO_PROFILE_' | sort); do
+                printf '%s\0%s\0' "$variable" "${!variable-}"
+              done
+            } | sha256sum | cut -d ' ' -f 1)"
+            native="$({
+              set -e
+              git ls-files -z -- packages/net scripts/net-build.lock.json scripts/net-artifact.mjs scripts/artifact-lock.mjs scripts/build-net-swift.sh .github/actions/setup-rust .node-version package.json bun.lock turbo.json | sort -z | while IFS= read -r -d '' file; do
+                [[ -f "$file" && ! -L "$file" ]] || exit 1
+                printf '%s\0' "$file"; sha256sum "$file"
+              done
+            } | sha256sum | cut -d ' ' -f 1)"
+            echo "key=net-test-js-cargo-v2-${{ runner.os }}-${{ runner.arch }}-$context-$native" >> "$GITHUB_OUTPUT"
+          ) 2>/dev/null
+          exit 0
+      - name: Restore net Cargo target cache
+        id: net-cargo-cache
+        if: github.ref == 'refs/heads/main' && steps.net-cargo-key.outputs.key != ''
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: packages/net/target
+          key: ${{ steps.net-cargo-key.outputs.key }}
       - run: bun run test:coverage
       - run: bun run dev:scripts:test
       - run: bun run release:scripts:test
+      - name: Save net Cargo target cache
+        if: success() && github.ref == 'refs/heads/main' && steps.net-cargo-key.outputs.key != '' && steps.net-cargo-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: packages/net/target
+          key: ${{ steps.net-cargo-key.outputs.key }}
 
   # The tunnel (docs/plans/codevisor-tunnel.md): Rust unit + integration tests.
   net-test:
