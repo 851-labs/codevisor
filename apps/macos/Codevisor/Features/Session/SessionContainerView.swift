@@ -106,6 +106,8 @@ struct SessionContainerView: View {
   /// The width the toolbar row gives the tab strip: the detail column less
   /// the `+` button and the toolbar's margins.
   @State var tabStripWidth: CGFloat = 400
+  /// The `+` popover; ⌘T opens it too.
+  @State var newTabMenuPresented = false
 
   var body: some View {
     mounted(in: selectedWorkspace)

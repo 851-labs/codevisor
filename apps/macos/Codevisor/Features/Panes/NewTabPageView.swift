@@ -12,8 +12,9 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// One thing the New Tab page can open.
-private struct NewTabOption: Identifiable, Equatable {
+/// One thing a new tab can open: from the toolbar's `+` popover, or a New
+/// Tab page left by an older layout.
+struct NewTabOption: Identifiable, Equatable {
   enum Kind: Equatable {
     case chat
     case terminal
@@ -72,16 +73,7 @@ struct NewTabPageView: View {
   }
 
   private var options: [NewTabOption] {
-    [
-      NewTabOption(id: "chat", title: "New Chat", kind: .chat),
-      NewTabOption(id: "browser", title: "New Browser", kind: .browser),
-      NewTabOption(id: "terminal", title: "New Terminal", kind: .terminal),
-      NewTabOption(id: "files", title: "Open File", kind: .files),
-      NewTabOption(id: "review", title: "Review Changes", kind: .review),
-    ]
-      + (supportsScreenSharing
-        ? [NewTabOption(id: "screen-sharing", title: "Open Desktop", kind: .screenSharing)] : [])
-      + (supportsSimulator ? [NewTabOption(id: "simulator", title: "Open Simulator", kind: .simulator)] : [])
+    NewTabOption.builtIns(supportsScreenSharing: supportsScreenSharing, supportsSimulator: supportsSimulator)
       + pluginOptions
   }
 
@@ -165,7 +157,68 @@ struct NewTabPageView: View {
   }
 
   private func open(_ option: NewTabOption) {
-    switch option.kind {
+    option.open(paneId: paneId, in: group, onNewChat: onNewChat)
+  }
+
+  private var pluginStateRevision: UInt64 {
+    environment.pluginStateRevision(for: iconCacheNamespace)
+  }
+
+  private func loadPluginOptions() async {
+    guard let client else { return }
+    pluginOptions = await NewTabOption.plugins(client: client)
+  }
+}
+
+extension NewTabOption {
+  /// The built-in options, with machine capabilities deciding the rest.
+  static func builtIns(supportsScreenSharing: Bool, supportsSimulator: Bool) -> [NewTabOption] {
+    [
+      NewTabOption(id: "chat", title: "New Chat", kind: .chat),
+      NewTabOption(id: "browser", title: "New Browser", kind: .browser),
+      NewTabOption(id: "terminal", title: "New Terminal", kind: .terminal),
+      NewTabOption(id: "files", title: "Open File", kind: .files),
+      NewTabOption(id: "review", title: "Review Changes", kind: .review),
+    ]
+      + (supportsScreenSharing
+        ? [NewTabOption(id: "screen-sharing", title: "Open Desktop", kind: .screenSharing)] : [])
+      + (supportsSimulator ? [NewTabOption(id: "simulator", title: "Open Simulator", kind: .simulator)] : [])
+  }
+
+  /// Machine-scoped plugin pane rows. Errors (older servers without the
+  /// plugins feature, unreachable machines) just leave the rows out -- the
+  /// built-in options never depend on the request.
+  static func plugins(client: any CodevisorServerClienting) async -> [NewTabOption] {
+    guard let plugins = try? await client.listPlugins() else { return [] }
+    return plugins.flatMap { plugin in
+      plugin.panes.map { pane in
+        NewTabOption(
+          id: "plugin:\(plugin.id)|\(pane.type)",
+          title: pane.title,
+          kind: .plugin(pluginId: plugin.id, paneType: pane.type, iconPath: pane.iconPath ?? plugin.iconPath)
+        )
+      }
+    }
+  }
+
+  var systemImage: String {
+    switch kind {
+    case .chat: "text.bubble"
+    case .browser: "globe"
+    case .screenSharing: "display"
+    case .simulator: "iphone"
+    case .terminal: "terminal"
+    case .files: "doc.text.magnifyingglass"
+    case .review: "plusminus"
+    case .plugin: "puzzlepiece.extension"
+    }
+  }
+
+  /// Turns the placeholder pane `paneId` of `group` into what this option
+  /// opens, keeping its tab slot and selection.
+  @MainActor
+  func open(paneId: UUID, in group: PaneGroupModel?, onNewChat: (() -> Void)?) {
+    switch kind {
     case .files:
       group?.openFiles(id: paneId)
     case .chat:
@@ -186,33 +239,7 @@ struct NewTabPageView: View {
       group?.convertNewTabPane(id: paneId, to: .terminal)
     case let .plugin(pluginId, paneType, _):
       group?.convertNewTabPane(
-        id: paneId,
-        to: .plugin,
-        name: option.title,
-        pluginId: pluginId,
-        pluginPaneType: paneType
-      )
-    }
-  }
-
-  private var pluginStateRevision: UInt64 {
-    environment.pluginStateRevision(for: iconCacheNamespace)
-  }
-
-  /// Machine-scoped plugin pane rows. Errors (older servers without the
-  /// plugins feature, unreachable machines) just leave the rows out — the
-  /// page's built-in options never depend on the request.
-  private func loadPluginOptions() async {
-    guard let client else { return }
-    guard let plugins = try? await client.listPlugins() else { return }
-    pluginOptions = plugins.flatMap { plugin in
-      plugin.panes.map { pane in
-        NewTabOption(
-          id: "plugin:\(plugin.id)|\(pane.type)",
-          title: pane.title,
-          kind: .plugin(pluginId: plugin.id, paneType: pane.type, iconPath: pane.iconPath ?? plugin.iconPath)
-        )
-      }
+        id: paneId, to: .plugin, name: title, pluginId: pluginId, pluginPaneType: paneType)
     }
   }
 }

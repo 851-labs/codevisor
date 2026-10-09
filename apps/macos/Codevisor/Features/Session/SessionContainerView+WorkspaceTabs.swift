@@ -38,7 +38,14 @@ extension SessionContainerView {
     model.requestSelectedPaneFocus()
   }
 
+  /// ⌘T and `+` ask what to open; the choice opens straight into a tab.
   func addCenterTab() {
+    newTabMenuPresented = true
+  }
+
+  /// Appends a tab holding one placeholder pane and selects it, returning
+  /// the tab's leaf and the pane, which the caller converts in place.
+  func appendNewTabPlaceholder() -> (leafId: UUID, paneId: UUID) {
     var workspace = selectedWorkspace
     var state = PaneGroupState()
     let pane = state.addNewTabPane()
@@ -47,9 +54,7 @@ extension SessionContainerView {
     environment.workspaces.save(workspace)
     store.selectDestination(.tab(tab.id), in: workspace.id)
     publishPane(pane, workspaceId: workspace.id)
-    // The New Tab page mounts a tick later; the group replays this focus
-    // request into its picker once the page registers.
-    focusSelectedCenterPane()
+    return (tab.activeLeafId, pane.id)
   }
 
   func renameCenterTab(_ tabId: UUID, to customTitle: String?) {

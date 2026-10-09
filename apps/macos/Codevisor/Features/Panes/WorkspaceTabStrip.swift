@@ -1,36 +1,48 @@
 import CodevisorCore
 import SwiftUI
 
+/// One tab of the strip.
+struct WorkspaceTabStripItem: Identifiable, Equatable {
+  enum Icon: Equatable {
+    case symbol(String)
+    case image(NSImage)
+  }
+
+  let id: UUID
+  let title: String
+  let icon: Icon
+  let isSelected: Bool
+  let isClosable: Bool
+}
+
 /// The workspace's tab bar in the window's toolbar row: plain text tabs, a
 /// subtle fill on the selected one, a close button on hover (never on the
 /// agent's own chat), horizontal scrolling with edge fades once the tabs no
-/// longer fit, and the selected tab kept in view.
-struct WorkspaceTabStrip: View {
-  struct Item: Identifiable, Equatable {
-    enum Icon: Equatable {
-      case symbol(String)
-      case image(NSImage)
-    }
-
-    let id: UUID
-    let title: String
-    let icon: Icon
-    let isSelected: Bool
-    let isClosable: Bool
-  }
+/// longer fit, and the selected tab kept in view. Tabs drag to reorder; the
+/// order is committed once, on release.
+struct WorkspaceTabStrip<NewTab: View>: View {
+  typealias Item = WorkspaceTabStripItem
 
   let items: [Item]
   let select: (UUID) -> Void
   let close: (UUID) -> Void
-  let newTab: () -> Void
+  /// Closes every closable tab except this one.
+  let closeOthers: (UUID) -> Void
+  /// Moves a tab so it lands at this index of `items`.
+  let move: (UUID, Int) -> Void
+  /// The `+` after the last tab.
+  @ViewBuilder let newTab: NewTab
 
   @State private var hovered: UUID?
   @State private var leadingHidden = false
   @State private var trailingHidden = false
+  @State private var frames: [UUID: CGRect] = [:]
+  @State private var dragging: UUID?
+  @State private var dragOffset: CGFloat = 0
 
   /// Tabs size to their titles, up to this, like Safari's compact tabs.
-  private static let titleWidth: CGFloat = 180
-  private static let fadeWidth: CGFloat = 24
+  private var titleWidth: CGFloat { 180 }
+  private var fadeWidth: CGFloat { 24 }
 
   /// The tabs take their natural width while they fit, so `+` sits right
   /// after the last tab; once they don't, they scroll and `+` stays put at
@@ -41,15 +53,7 @@ struct WorkspaceTabStrip: View {
         tabRow
         scrollingTabs
       }
-      Button(action: newTab) {
-        Image(systemName: "plus")
-          .font(.system(size: 12, weight: .medium))
-          .frame(width: 26, height: 26)
-          .contentShape(Rectangle())
-      }
-      .buttonStyle(.borderless)
-      .help("New Tab (⌘T)")
-      .accessibilityLabel("New Tab")
+      newTab
     }
     .frame(height: 28)
   }
@@ -57,7 +61,16 @@ struct WorkspaceTabStrip: View {
   private var tabRow: some View {
     HStack(spacing: 2) {
       ForEach(items) { item in
-        tab(item).id(item.id)
+        tab(item)
+          .id(item.id)
+          .onGeometryChange(for: CGRect.self) {
+            $0.frame(in: .global)
+          } action: {
+            frames[item.id] = $0
+          }
+          .offset(x: dragging == item.id ? dragOffset : 0)
+          .zIndex(dragging == item.id ? 1 : 0)
+          .gesture(reorder(item))
       }
     }
     .padding(.horizontal, 2)
@@ -99,11 +112,39 @@ struct WorkspaceTabStrip: View {
   private var fadeMask: some View {
     HStack(spacing: 0) {
       LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing)
-        .frame(width: leadingHidden ? Self.fadeWidth : 0)
+        .frame(width: leadingHidden ? fadeWidth : 0)
       Rectangle()
       LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
-        .frame(width: trailingHidden ? Self.fadeWidth : 0)
+        .frame(width: trailingHidden ? fadeWidth : 0)
     }
+  }
+
+  /// A press selects at once; past a small threshold it becomes a drag, so
+  /// a click never moves a tab and the tab never fights the window drag.
+  private func reorder(_ item: Item) -> some Gesture {
+    // Window coordinates: the strip may scroll under the pointer mid-drag,
+    // and each tab's live frame follows it there.
+    DragGesture(minimumDistance: 4, coordinateSpace: .global)
+      .onChanged { value in
+        if dragging != item.id {
+          dragging = item.id
+          select(item.id)
+        }
+        dragOffset = value.translation.width
+      }
+      .onEnded { value in
+        defer {
+          dragging = nil
+          dragOffset = 0
+        }
+        let others = items.filter { $0.id != item.id }
+        let index =
+          others.firstIndex { other in
+            frames[other.id].map { value.location.x < $0.midX } ?? false
+          } ?? others.count
+        guard index != items.firstIndex(where: { $0.id == item.id }) else { return }
+        move(item.id, index)
+      }
   }
 
   private func tab(_ item: Item) -> some View {
@@ -114,7 +155,7 @@ struct WorkspaceTabStrip: View {
         .lineLimit(1)
         .truncationMode(.tail)
         .foregroundStyle(item.isSelected ? .primary : .secondary)
-        .frame(maxWidth: Self.titleWidth, alignment: .leading)
+        .frame(maxWidth: titleWidth, alignment: .leading)
       if item.isClosable {
         Button {
           close(item.id)
@@ -137,11 +178,18 @@ struct WorkspaceTabStrip: View {
     .fixedSize(horizontal: true, vertical: false)
     .background {
       RoundedRectangle(cornerRadius: 7, style: .continuous)
-        .fill(.primary.opacity(item.isSelected ? 0.1 : hovered == item.id ? 0.05 : 0))
+        .fill(.primary.opacity(item.isSelected || dragging == item.id ? 0.1 : hovered == item.id ? 0.05 : 0))
     }
     .contentShape(Rectangle())
     .onHover { hovered = $0 ? item.id : (hovered == item.id ? nil : hovered) }
     .onTapGesture { select(item.id) }
+    .contextMenu {
+      if item.isClosable {
+        Button("Close Tab") { close(item.id) }
+      }
+      Button("Close Other Tabs") { closeOthers(item.id) }
+        .disabled(!items.contains { $0.id != item.id && $0.isClosable })
+    }
     .accessibilityElement(children: .combine)
     .accessibilityAddTraits(item.isSelected ? [.isButton, .isSelected] : .isButton)
     .accessibilityAction { select(item.id) }
