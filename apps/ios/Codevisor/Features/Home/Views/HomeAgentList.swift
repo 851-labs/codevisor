@@ -19,9 +19,10 @@ struct HomeAgentListActions {
 /// tapping a workspace opens its page, where its tabs are.
 ///
 /// Workspaces reorder with the system's long-press drag. Folders and
-/// projects reorder from their headers the same way: a long press shows a
-/// folder's menu, and moving the finger lifts the group, collapsed to its
-/// header, past the others (see `HomeAgentList+GroupDrag`).
+/// projects reorder from their headers: a long press lifts the group and
+/// collapses it to its header, the drag moves it past the others, and the
+/// drop commits the order. Let go without moving and a folder's menu opens
+/// (see `HomeAgentList+GroupDrag`).
 struct HomeAgentList: View {
   @Environment(AppEnvironment.self) var environment
   @Environment(\.accessibilityReduceMotion) var reduceMotion
@@ -37,6 +38,11 @@ struct HomeAgentList: View {
   /// The folder being deleted, with the agents filed in it.
   @State private var deleting: (folder: ServerNavigationFolder, agents: [UUID])?
   @State var groupDrag: GroupDrag?
+  /// The group whose header menu should open, and a count that changes
+  /// each time it's asked for.
+  @State var menuRequest: (id: String, token: Int)?
+  @State var listFrame: CGRect = .zero
+  @State var liftFeedback = 0
   @State var headerFrames = HomeGroupHeaderFrames()
 
   var navigation: NavigationStore { environment.navigationStore }
@@ -63,7 +69,7 @@ struct HomeAgentList: View {
         List { content(nodes, groups: groups) }
       }
     }
-    groupDragChrome(list.listStyle(.sidebar).contentMargins(.top, 12, for: .scrollContent))
+    groupDragChrome(list.listStyle(.sidebar).contentMargins(.top, 12, for: .scrollContent), groups: groups)
       .refreshable { await actions.refresh() }
       .onChange(of: selection?.wrappedValue, initial: true) { _, id in revealAncestors(of: id) }
       .alert("Rename Folder", isPresented: renamePresented) {
@@ -156,8 +162,8 @@ struct HomeAgentList: View {
     }
   }
 
-  /// A folder's actions are in a menu on a long press of its header;
-  /// moving the finger from there lifts it to reorder.
+  /// A folder's actions open from its header when it's held and let go
+  /// without moving; moving it reorders it.
   private func groupHeader(_ group: SidebarGroup, in groups: [SidebarGroup]) -> some View {
     draggableHeader(group, in: groups, menu: menu(for: group)) {
       HomeAgentSectionHeader(title: group.title, isExpanded: isExpanded(group)) { toggle(group) }
