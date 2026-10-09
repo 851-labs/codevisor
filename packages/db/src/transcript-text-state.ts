@@ -11,6 +11,47 @@ const prefix = (text: string, count: number): string => {
   return text.slice(0, end < text.length && last >= 0xd800 && last <= 0xdbff ? end - 1 : end)
 }
 
+const readLastTranscriptChunk = (db: Database.Database, itemId: string, key: string) => {
+  return db
+    .prepare(
+      "select position, text, char_offset from transcript_text_chunks where item_id = ? and entry_key = ? order by position desc limit 1"
+    )
+    .get(itemId, key) as { position: number; text: string; char_offset: number } | undefined
+}
+
+const extendTranscriptTail = (
+  db: Database.Database,
+  itemId: string,
+  key: string,
+  text: string,
+  last: { position: number; text: string; char_offset: number }
+): number => {
+  const take = prefix(text, transcriptTextBlockSize - last.text.length)
+  db.prepare(
+    "update transcript_text_chunks set text = text || ? where item_id = ? and entry_key = ? and position = ?"
+  ).run(take, itemId, key, last.position)
+  return take.length
+}
+
+const appendRemainingTranscriptBlocks = (
+  db: Database.Database,
+  itemId: string,
+  key: string,
+  text: string,
+  position: number,
+  baseOffset: number,
+  offset: number
+): void => {
+  const insert = db.prepare(
+    "insert into transcript_text_chunks (item_id, entry_key, position, char_offset, text) values (?, ?, ?, ?, ?)"
+  )
+  while (offset < text.length) {
+    const block = prefix(text.slice(offset), transcriptTextBlockSize)
+    insert.run(itemId, key, position++, baseOffset + offset, block)
+    offset += block.length
+  }
+}
+
 export const appendTranscriptText = (
   db: Database.Database,
   itemId: string,
@@ -23,30 +64,15 @@ export const appendTranscriptText = (
       itemId,
       key
     )
-  const last = db
-    .prepare(
-      "select position, text, char_offset from transcript_text_chunks where item_id = ? and entry_key = ? order by position desc limit 1"
-    )
-    .get(itemId, key) as { position: number; text: string; char_offset: number } | undefined
+  const last = readLastTranscriptChunk(db, itemId, key)
   let position = last?.position ?? 0
   const baseOffset = last === undefined ? 0 : last.char_offset + last.text.length
   let offset = 0
   if (last !== undefined && last.text.length < transcriptTextBlockSize) {
-    const take = prefix(text, transcriptTextBlockSize - last.text.length)
-    db.prepare(
-      "update transcript_text_chunks set text = text || ? where item_id = ? and entry_key = ? and position = ?"
-    ).run(take, itemId, key, position)
-    offset = take.length
+    offset = extendTranscriptTail(db, itemId, key, text, last)
   }
   if (last !== undefined) position += 1
-  const insert = db.prepare(
-    "insert into transcript_text_chunks (item_id, entry_key, position, char_offset, text) values (?, ?, ?, ?, ?)"
-  )
-  while (offset < text.length) {
-    const block = prefix(text.slice(offset), transcriptTextBlockSize)
-    insert.run(itemId, key, position++, baseOffset + offset, block)
-    offset += block.length
-  }
+  appendRemainingTranscriptBlocks(db, itemId, key, text, position, baseOffset, offset)
   db.prepare(
     `update transcript_entries set text_length = ${replace ? "?" : "text_length + ?"} where item_id = ? and entry_key = ?`
   ).run(text.length, itemId, key)
@@ -73,20 +99,13 @@ export const readTranscriptText = (
   return blocks.join("")
 }
 
-export const textPatchForEvent = (
+const readTranscriptPatchHead = (
   db: Database.Database,
   itemId: string,
-  revision: number,
-  payload: JsonRecord
-): JsonRecord | undefined => {
-  if (
-    payload.sessionUpdate !== "agent_message_chunk" &&
-    payload.sessionUpdate !== "assistant_message_finalized" &&
-    payload.role !== "assistant"
-  )
-    return undefined
-  const parent = typeof payload.parentToolCallId === "string" ? payload.parentToolCallId : ""
-  const row = db
+  parent: string,
+  revision: number
+) => {
+  return db
     .prepare(
       `select e.entry_key, e.payload, e.text_length, e.position from transcript_heads h
     join transcript_entries e on e.item_id = h.item_id and e.entry_key = h.entry_key
@@ -95,7 +114,15 @@ export const textPatchForEvent = (
     .get(itemId, parent, revision) as
     | { entry_key: string; payload: string; text_length: number; position: number }
     | undefined
-  if (row === undefined) return undefined
+}
+
+const makeTranscriptEventPatch = (
+  db: Database.Database,
+  itemId: string,
+  revision: number,
+  payload: JsonRecord,
+  row: { entry_key: string; payload: string; text_length: number; position: number }
+): JsonRecord => {
   const metadata = JSON.parse(row.payload) as JsonRecord
   const final = payload.sessionUpdate === "assistant_message_finalized"
   const rawText = final ? String(payload.markdown ?? "") : (payloadText(payload) ?? "")
@@ -117,4 +144,22 @@ export const textPatchForEvent = (
     isFinalized: final,
     chatItemId: itemId
   }
+}
+
+export const textPatchForEvent = (
+  db: Database.Database,
+  itemId: string,
+  revision: number,
+  payload: JsonRecord
+): JsonRecord | undefined => {
+  if (
+    payload.sessionUpdate !== "agent_message_chunk" &&
+    payload.sessionUpdate !== "assistant_message_finalized" &&
+    payload.role !== "assistant"
+  )
+    return undefined
+  const parent = typeof payload.parentToolCallId === "string" ? payload.parentToolCallId : ""
+  const row = readTranscriptPatchHead(db, itemId, parent, revision)
+  if (row === undefined) return undefined
+  return makeTranscriptEventPatch(db, itemId, revision, payload, row)
 }
