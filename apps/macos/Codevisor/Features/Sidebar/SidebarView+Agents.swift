@@ -94,7 +94,7 @@ extension SidebarView {
         }
         if !folder.collapsed {
           ForEach(rows) { row in
-            agentTree(row).padding(.leading, 10)
+            agentTree(row).padding(.leading, AgentSidebarSectionHeader.indent)
           }
         }
       }
@@ -128,7 +128,7 @@ extension SidebarView {
     VStack(alignment: .leading, spacing: 1) {
       ForEach(AgentSidebarEntry.flattening(row)) { entry in
         agentBlock(entry.row, owner: entry.owner)
-          .padding(.leading, CGFloat(entry.depth) * 16)
+          .padding(.leading, CGFloat(entry.depth) * AgentSidebarSectionHeader.indent)
       }
     }
   }

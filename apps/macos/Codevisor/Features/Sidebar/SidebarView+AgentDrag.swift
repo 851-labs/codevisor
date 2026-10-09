@@ -99,7 +99,9 @@ extension SidebarView {
 
   private func dropTarget(at y: CGFloat, dragging id: UUID) -> AgentSidebarDropTarget? {
     for (folder, frame) in agentFrames.folders where frame.minY <= y && y < frame.maxY {
-      return AgentSidebarDropTarget(before: nil, owner: nil, folder: folder, lineX: frame.minX + 10, lineY: frame.maxY)
+      return AgentSidebarDropTarget(
+        before: nil, owner: nil, folder: folder, lineX: frame.minX + AgentSidebarSectionHeader.indent, lineY: frame.maxY
+      )
     }
     // Not into itself or anything nested under it.
     let candidates = placements.filter { !isWithin($0.entry.row.id, id) }
