@@ -5,32 +5,28 @@ import ComposableArchitecture
 import ScreenSharing
 import SwiftUI
 
-/// Window toolbar controls borrow the selected pane's store; the pane owns
-/// the connection and control state across toolbar and menu updates.
-/// Controls that need a capability the connected backend lacks are not shown.
-struct ScreenSharingToolbar: ToolbarContent {
+/// The Screen Sharing pane's controls, in the row under the window's tab
+/// bar. They borrow the selected pane's store; the pane owns the connection
+/// and control state across row and menu updates. Controls that need a
+/// capability the connected backend lacks are not shown.
+struct ScreenSharingControls: View {
   @Bindable var store: StoreOf<ScreenSharingViewer>
   /// The machine settings sheet behind the gear (851-2367).
   let settings: () -> ScreenSharingMachineSettings
   let applySettings: (ScreenSharingMachineSettingsChanges) -> Void
 
-  var body: some ToolbarContent {
-    ToolbarItem(id: "screenSharing.mode", placement: .principal) {
+  var body: some View {
+    HStack(spacing: 8) {
       // Dynamic Resolution lives in the machine settings sheet.
       if store.endpoint?.supportsControl != false { controlActions }
-    }
-    // Only where the buttons do something (a native Mac host), so no empty pill otherwise.
-    if store.endpoint?.supportsSystemKeys == true {
-      ForEach(ScreenSharingSystemKey.allCases, id: \.self) { key in
-        ToolbarItem(id: "screenSharing.macControls.\(key.rawValue)", placement: .principal) {
+      // Only where the buttons do something (a native Mac host).
+      if store.endpoint?.supportsSystemKeys == true {
+        ForEach(ScreenSharingSystemKey.allCases, id: \.self) { key in
           ScreenSharingSystemKeyButton(store: store, key: key)
         }
       }
-    }
-    ToolbarItem(id: "screenSharing.display", placement: .primaryAction) {
+      Spacer(minLength: 8)
       if store.displays.count > 1 { displayMenu }
-    }
-    ToolbarItem(id: "screenSharing.clipboard", placement: .primaryAction) {
       if store.endpoint?.supportsClipboard != false {
         let clipboard = store.endpoint?.clipboard
         Menu {
@@ -48,14 +44,12 @@ struct ScreenSharingToolbar: ToolbarContent {
         } label: {
           Image(systemName: "doc.on.clipboard")
         }
+        .menuIndicator(.hidden)
+        .fixedSize()
         .accessibilityLabel("Clipboard")
         .help("Share plain text between clipboards")
       }
-    }
-    ToolbarItem(id: "screenSharing.details", placement: .primaryAction) {
       ScreenSharingDetailsButton(store: store).id(ObjectIdentifier(store))
-    }
-    ToolbarItem(id: "screenSharing.settings", placement: .primaryAction) {
       ScreenSharingMachineSettingsButton(settings: settings, apply: applySettings).id(ObjectIdentifier(store))
     }
   }

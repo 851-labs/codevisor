@@ -50,6 +50,38 @@ public struct ReviewPaneToolbar: ToolbarContent {
   }
 }
 
+#if canImport(AppKit)
+  /// The active Review pane's controls on a Mac, in the row under the
+  /// window's tab bar: the title with its totals, then what to compare.
+  public struct ReviewPaneControls: View {
+    private let model: ReviewPaneModel
+    private let title: String
+
+    public init(model: ReviewPaneModel, title: String) {
+      self.model = model
+      self.title = title
+    }
+
+    public var body: some View {
+      HStack(spacing: 8) {
+        ReviewToolbarTitle(model: model, title: title)
+        Spacer(minLength: 8)
+        Menu {
+          ReviewModePicker(model: model)
+        } label: {
+          Text(model.mode.title)
+        }
+        .fixedSize()
+        .accessibilityLabel("Compare, \(model.mode.title)")
+        .help("Choose Which Changes to Review")
+        if model.mode == .branch {
+          ReviewBaseAutocomplete(model: model)
+        }
+      }
+    }
+  }
+#endif
+
 /// The pane's title and the whole review's line totals.
 struct ReviewToolbarTitle: View {
   let model: ReviewPaneModel

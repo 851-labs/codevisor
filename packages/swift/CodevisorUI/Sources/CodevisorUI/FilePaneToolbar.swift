@@ -52,6 +52,43 @@ public struct FilePaneToolbar: ToolbarContent {
   }
 }
 
+#if canImport(AppKit)
+  /// The active file pane's controls on a Mac, in the row under the window's
+  /// tab bar: the document title (the Open File trigger), then its actions.
+  public struct FilePaneControls: View {
+    private let model: FilePaneModel
+    private let onNewTab: () -> Void
+
+    public init(model: FilePaneModel, onNewTab: @escaping () -> Void) {
+      self.model = model
+      self.onNewTab = onNewTab
+    }
+
+    public var body: some View {
+      HStack(spacing: 8) {
+        if model.isBrowsing {
+          Text(model.title).font(.headline)
+        } else {
+          FilePaneTitleButton(model: model)
+        }
+        Spacer(minLength: 8)
+        if !model.isBrowsing {
+          if model.document.isMarkdown {
+            Button {
+              model.editor.preview.toggle()
+            } label: {
+              Label(model.editor.preview ? "Edit" : "Preview", systemImage: model.editor.preview ? "pencil" : "eye")
+            }
+            .accessibilityLabel(model.editor.preview ? "Show Editor" : "Show Preview")
+            .help(model.editor.preview ? "Show Editor" : "Show Preview")
+          }
+          FilePaneActions(model: model, onNewTab: onNewTab)
+        }
+      }
+    }
+  }
+#endif
+
 /// The document title doubles as the Open File trigger. On Mac the picker
 /// is a popover anchored here; on iPhone it is a sheet the pane presents.
 private struct FilePaneTitleButton: View {

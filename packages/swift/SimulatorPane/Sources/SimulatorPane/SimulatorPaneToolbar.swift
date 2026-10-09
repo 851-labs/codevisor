@@ -59,6 +59,29 @@ public struct SimulatorPaneToolbar: ToolbarContent {
   }
 }
 
+#if os(macOS)
+  /// The Simulator pane's controls on a Mac, in the row under the window's
+  /// tab bar: which device leads, its settings and actions trail.
+  public struct SimulatorPaneControls: View {
+    let model: SimulatorPaneModel
+
+    public init(model: SimulatorPaneModel) {
+      self.model = model
+    }
+
+    public var body: some View {
+      HStack(spacing: 8) {
+        if let device = model.device {
+          SimulatorDevicePicker(model: model, device: device)
+          Spacer(minLength: 8)
+          if device.isBooted { SimulatorSettingsButton(model: model) }
+          SimulatorActionsMenu(model: model, device: device)
+        }
+      }
+    }
+  }
+#endif
+
 /// The Mac's simulators to switch to, iPhones first with the running ones marked, then Manage
 /// Simulators: an iPhone or iPad's title menu.
 public struct SimulatorDeviceMenuItems: View {

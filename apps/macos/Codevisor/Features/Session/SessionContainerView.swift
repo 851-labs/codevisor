@@ -103,6 +103,9 @@ struct SessionContainerView: View {
   /// Identifies this mounted container independently of its cached chat.
   @State var focusSourceId = UUID()
   @State var isVisible = false
+  /// The width the toolbar row gives the tab strip: the detail column less
+  /// the `+` button and the toolbar's margins.
+  @State var tabStripWidth: CGFloat = 400
 
   var body: some View {
     mounted(in: selectedWorkspace)
@@ -111,25 +114,13 @@ struct SessionContainerView: View {
   /// The container around one read of the workspace.
   private func mounted(in workspace: Workspace) -> some View {
     titledContentColumn
-      .navigationSubtitle(activePaneSubtitle)
-      .toolbar(removing: paneControlsReplaceTitle ? .title : nil)
-      .toolbar {
-        if let browser = activeBrowserModel {
-          ChromiumBrowserNavigationControls(model: browser)
-          ChromiumBrowserAddressToolbarItem(model: browser)
-        } else if let pane = activeScreenSharingPane, let store = pane.store {
-          ScreenSharingToolbar(
-            store: store, settings: { pane.machineSettings() }, applySettings: { pane.applyMachineSettings($0) })
-        } else if let model = activeFileModel {
-          FilePaneToolbar(model: model, onNewTab: addCenterTab)
-        } else if let model = activeReviewModel {
-          ReviewPaneToolbar(model: model, title: activePaneTitle.wrappedValue)
-        } else if let model = activeSimulatorModel {
-          SimulatorPaneToolbar(model: model) { data, name in
-            AppleSimulatorPane.saveScreenshot(data, deviceName: name)
-          }
-        }
+      .onGeometryChange(for: CGFloat.self) {
+        $0.size.width
+      } action: {
+        tabStripWidth = $0 - 96
       }
+      .toolbar(removing: .title)
+      .toolbar { tabStripToolbar }
       .focusedSceneValue(\.browserPage, activeBrowserModel)
       .focusedSceneValue(\.filePane, activeFileModel)
       .focusedSceneValue(

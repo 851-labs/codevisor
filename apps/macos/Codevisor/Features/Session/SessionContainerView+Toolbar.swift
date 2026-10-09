@@ -6,13 +6,56 @@ import SimulatorPane
 import SwiftUI
 
 extension SessionContainerView {
+  /// The window title (Mission Control, the Window menu) names the active
+  /// pane; the toolbar row shows the tabs instead of it.
   @ViewBuilder
   var titledContentColumn: some View {
     if let model = activeFileModel {
-      // Keep the window's document title while the toolbar supplies a browse button.
-      contentColumn.navigationTitle(model.title)
+      paneColumn.navigationTitle(model.title)
     } else {
-      contentColumn.navigationTitle(activePaneTitle)
+      paneColumn.navigationTitle(activePaneTitle)
+    }
+  }
+
+  /// The pane under its own controls, when it has any: a slim second row
+  /// below the tab bar, so the tab bar stays the toolbar's only content and
+  /// a chat (which has no controls) looks exactly like it did without tabs.
+  private var paneColumn: some View {
+    contentColumn.safeAreaInset(edge: .top, spacing: 0) {
+      if hasPaneControls {
+        VStack(spacing: 0) {
+          paneControls
+            .controlSize(.small)
+            .buttonStyle(.accessoryBar)
+            .padding(.horizontal, 10)
+            .frame(height: 36)
+          Divider()
+        }
+      }
+    }
+  }
+
+  private var hasPaneControls: Bool {
+    activeBrowserModel != nil || activeScreenSharingPane != nil || activeFileModel != nil
+      || activeReviewModel != nil || activeSimulatorModel?.device != nil
+  }
+
+  @ViewBuilder
+  private var paneControls: some View {
+    if let browser = activeBrowserModel {
+      HStack(spacing: 8) {
+        ChromiumBrowserNavigationButtons(model: browser)
+        ChromiumBrowserToolbar(model: browser).id(browser.paneId).frame(maxWidth: .infinity)
+      }
+    } else if let pane = activeScreenSharingPane, let store = pane.store {
+      ScreenSharingControls(
+        store: store, settings: { pane.machineSettings() }, applySettings: { pane.applyMachineSettings($0) })
+    } else if let model = activeFileModel {
+      FilePaneControls(model: model, onNewTab: addCenterTab)
+    } else if let model = activeReviewModel {
+      ReviewPaneControls(model: model, title: activePaneTitle.wrappedValue)
+    } else if let model = activeSimulatorModel {
+      SimulatorPaneControls(model: model)
     }
   }
 
@@ -56,12 +99,6 @@ extension SessionContainerView {
     return pane
   }
 
-  var paneControlsReplaceTitle: Bool {
-    activePaneDescriptor?.kind == .browser || activeFileModel != nil || activeReviewModel != nil
-      // A chosen simulator's device picker takes the title's place.
-      || activeSimulatorModel?.device != nil
-  }
-
   /// Chats retain the editable title and context previously used in Nous.
   /// Connected screen sharing names the remote Mac; browser and file controls replace the title.
   var activePaneTitle: Binding<String> {
@@ -76,8 +113,8 @@ extension SessionContainerView {
         return workspace.selectedCenterTab?.customTitle ?? paneTitle(descriptor)
       },
       set: { title in
-        guard !paneControlsReplaceTitle, activeScreenSharingPane == nil, activeFileModel == nil,
-          activeSimulatorModel?.device == nil
+        guard activePaneDescriptor?.kind != .browser, activeReviewModel == nil,
+          activeScreenSharingPane == nil, activeFileModel == nil, activeSimulatorModel?.device == nil
         else { return }
         let workspace = selectedWorkspace
         renameCenterTab(workspace.selectedCenterTabId, to: title)
