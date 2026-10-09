@@ -8,6 +8,8 @@ func navigationPathSummary(_ routes: [HomeRoute]) -> String {
       switch route {
       case let .newChat(serverId):
         return "newChat(\(serverId ?? "-"))"
+      case let .agent(serverId, workspaceId):
+        return "page(\(serverId)/\(navigationShortID(workspaceId)))"
       case let .workspace(
         serverId,
         workspaceId,

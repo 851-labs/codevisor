@@ -149,6 +149,14 @@ extension WorkspaceScreen {
     if tabOverview == .open, let id = panes.selectedPaneId { openFromOverview(id) }
   }
 
+  /// Opens the New Tab its workspace's page asked for, once this screen's
+  /// panes are mounted.
+  func takeNewTabRequest() {
+    guard paneState != nil, let workspaceId, let choice = WorkspaceNewTabRequests.shared.take(for: workspaceId)
+    else { return }
+    openNewTab(choice)
+  }
+
   /// The sheet `presentNewTab()` shows.
   var newTabSheet: some View {
     NewTabSheet(

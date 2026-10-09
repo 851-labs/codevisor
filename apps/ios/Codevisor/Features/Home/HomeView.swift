@@ -204,6 +204,7 @@ struct HomeView: View {
       }
     )
     .environment(\.homeLayoutMode, layoutMode)
+    .environment(\.workspaceRowActions, workspaceRowActions)
     .environment(\.homeSidebarIsTiled, layoutMode == .split && detailLeadingInset > 1)
     .focusedSceneValue(\.homeCommandActions, homeCommandActions)
     .background(HostWindowReader { hostWindow.window = $0 })

@@ -382,6 +382,12 @@ struct WorkspaceScreen: View {
       )
       guard isDraft || screenAvailability == .ready else { return }
       await prepare()
+      takeNewTabRequest()
+    }
+    // A New Tab its workspace's page asked for, whether this screen is
+    // just mounting or already on screen beside the page.
+    .onChange(of: workspaceId.flatMap { WorkspaceNewTabRequests.shared.pending[$0] }) { _, _ in
+      takeNewTabRequest()
     }
     .onChange(of: activePane?.id) { old, new in
       IOSNavigationDiagnostics.record(

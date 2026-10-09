@@ -87,6 +87,8 @@ extension HomeView {
       // Reached only by folding while the New Chat page was the split
       // detail: the draft continues as a pushed page with the system back.
       draftDestination(serverId: serverId)
+    case let .agent(serverId, workspaceId):
+      WorkspaceOutlineScreen(serverId: serverId, workspaceId: workspaceId)
     }
   }
 }

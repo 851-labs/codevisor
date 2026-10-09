@@ -55,7 +55,7 @@ extension HomeView {
     var transaction = Transaction()
     transaction.disablesAnimations = true
     withTransaction(transaction) {
-      navigation.replaceTop(with: route)
+      navigation.replaceTop(withTab: route)
     }
     IOSNavigationDiagnostics.record(
       "home.draftDetail.promoted", "reason=\(reason) path=\(navigationPathSummary(navigation.path))")

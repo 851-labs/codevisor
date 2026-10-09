@@ -54,19 +54,36 @@ extension HomeView {
     )
   }
 
-  /// Opens an agent on its own chat (or the given one): the agent itself,
-  /// never whichever tab happened to be in front last time.
+  /// What workspace and tab rows ask of Home, wherever they are listed.
+  var workspaceRowActions: WorkspaceRowActions {
+    let list = agentListActions
+    return WorkspaceRowActions(
+      openPage: { serverId, workspaceId in openRoute(.agent(serverId: serverId, workspaceId: workspaceId)) },
+      openTab: { route in navigation.openTab(route, mode: layoutMode) },
+      rename: list.rename,
+      archive: list.archive
+    )
+  }
+
+  /// Opens a workspace: its page on a phone, as Notes opens a folder. Beside
+  /// a sidebar, and when a chat is named, it opens on that chat (the
+  /// workspace's own when none is) through its page.
   func openAgent(_ workspaceId: UUID, chat chatId: UUID?) {
     guard let workspace = environment.workspaces.workspace(id: workspaceId) else { return }
+    if chatId == nil, layoutMode == .stack {
+      openRoute(.agent(serverId: workspace.serverId, workspaceId: workspace.id))
+      return
+    }
     let chat = chatId ?? environment.navigationStore.homeChatId(of: workspace)
     if let chat, let session = projectList.session(chat, serverId: workspace.serverId) {
       openChat(session)
       return
     }
-    openRoute(
+    navigation.openTab(
       .workspace(
         serverId: workspace.serverId, workspaceId: workspace.id, anchorSessionId: nil,
-        preferredChatSessionId: nil))
+        preferredChatSessionId: nil),
+      mode: layoutMode)
   }
 
   /// The split selection: the subagent chat in front, else the shown

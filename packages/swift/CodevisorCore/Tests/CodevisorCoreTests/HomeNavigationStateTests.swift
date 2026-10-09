@@ -7,6 +7,7 @@ struct HomeNavigationStateTests {
   private let sessionId = UUID()
   private let paneId = UUID()
   private let generation = UUID()
+  private var page: HomeRoute { .agent(serverId: "machine", workspaceId: workspaceId) }
 
   private func workspaceRoute(
     anchor: UUID? = nil, chat: UUID? = nil, pane: UUID? = nil
@@ -37,8 +38,55 @@ struct HomeNavigationStateTests {
 
     var split = HomeNavigationState(path: [.newChat(serverId: nil)])
     split.open(workspaceRoute(), mode: .split)
-    #expect(split.path == [workspaceRoute()])
+    #expect(split.path == [page, workspaceRoute()])
     #expect(!split.isNewChatSelected)
+    #expect(split.splitPage == page)
+    #expect(split.splitTab == workspaceRoute())
+
+    split.open(page, mode: .split)
+    #expect(split.path == [page])
+    #expect(split.splitTab == nil)
+    #expect(split.clientPage == "workspace")
+    #expect(split.selectedWorkspace?.workspaceId == workspaceId)
+    #expect(split.detailIdentity(promotedDraftSessionId: nil, draftGeneration: generation) == .page(workspaceId))
+  }
+
+  @Test("A tab opens through its workspace's page, so Back lands on the page")
+  func openTabThroughPage() {
+    var fromRoot = HomeNavigationState()
+    fromRoot.openTab(workspaceRoute(chat: sessionId), mode: .stack)
+    #expect(fromRoot.path == [page, workspaceRoute(chat: sessionId)])
+
+    var fromPage = HomeNavigationState(path: [page])
+    fromPage.openTab(workspaceRoute(pane: paneId), mode: .stack)
+    #expect(fromPage.path == [page, workspaceRoute(pane: paneId)])
+
+    // Another tab of the same workspace replaces the one on screen.
+    fromPage.openTab(workspaceRoute(chat: sessionId), mode: .stack)
+    #expect(fromPage.path == [page, workspaceRoute(chat: sessionId)])
+
+    // A tab of another workspace stacks its own page.
+    let other = UUID()
+    let otherTab = HomeRoute.workspace(
+      serverId: "machine", workspaceId: other, anchorSessionId: nil, preferredChatSessionId: nil)
+    fromPage.openTab(otherTab, mode: .stack)
+    #expect(Array(fromPage.path.suffix(2)) == [.agent(serverId: "machine", workspaceId: other), otherTab])
+
+    var split = HomeNavigationState(path: [page])
+    split.openTab(workspaceRoute(pane: paneId), mode: .split)
+    #expect(split.path == [page, workspaceRoute(pane: paneId)])
+  }
+
+  @Test("A draft's first send lands on its tab with the page beneath")
+  func replaceTopWithTab() {
+    var split = HomeNavigationState(path: [.newChat(serverId: nil)])
+    split.replaceTop(withTab: workspaceRoute(anchor: sessionId))
+    #expect(split.path == [page, workspaceRoute(anchor: sessionId)])
+
+    // Already beneath it: nothing more is inserted.
+    split.replaceTop(withTab: workspaceRoute(anchor: sessionId, pane: paneId))
+    #expect(split.path == [page, workspaceRoute(anchor: sessionId, pane: paneId)])
+    #expect(HomeRoute.newChat(serverId: nil).page == nil)
   }
 
   @Test("Select, replaceTop, and popToRoot keep a single-entry model")
@@ -167,15 +215,23 @@ struct HomeNavigationStateTests {
     #expect(transition.requestsComposerFocus)
   }
 
-  @Test("Unfolding without a sheet keeps only the top of the stack")
+  @Test("Unfolding keeps the innermost page and the tab open on it")
   func stackToSplitWithoutSheet() {
     let top = workspaceRoute(anchor: sessionId)
+    let outer = HomeRoute.agent(serverId: "machine", workspaceId: UUID())
     let transition = HomeNavigationState.layoutTransition(
-      from: .stack, to: .split, path: [.newChat(serverId: nil), top], composingSheet: false
+      from: .stack, to: .split, path: [outer, page, top], composingSheet: false
     )
-    #expect(transition.path == [top])
+    #expect(transition.path == [page, top])
     #expect(!transition.dismissesNewChatSheet)
     #expect(!transition.requestsComposerFocus)
+
+    let onPage = HomeNavigationState.layoutTransition(
+      from: .stack, to: .split, path: [outer, page], composingSheet: false)
+    #expect(onPage.path == [page])
+
+    let atRoot = HomeNavigationState.layoutTransition(from: .stack, to: .split, path: [], composingSheet: false)
+    #expect(atRoot.path.isEmpty)
   }
 
   @Test("Folding keeps the path and refocuses only a draft")
@@ -188,9 +244,9 @@ struct HomeNavigationStateTests {
     #expect(draft.requestsComposerFocus)
 
     let workspace = HomeNavigationState.layoutTransition(
-      from: .split, to: .stack, path: [workspaceRoute()], composingSheet: false
+      from: .split, to: .stack, path: [page, workspaceRoute()], composingSheet: false
     )
-    #expect(workspace.path == [workspaceRoute()])
+    #expect(workspace.path == [page, workspaceRoute()])
     #expect(!workspace.requestsComposerFocus)
   }
 

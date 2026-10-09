@@ -67,6 +67,10 @@ struct AgentSidebarTests {
     #expect(row.children.map(\.title) == ["write tests"])
     #expect(row.children.first?.children.map(\.title) == ["migrate schema"])
     #expect(row.children.first?.children.first?.children.isEmpty == true)
+    // Any of them can be found by id, however deep.
+    #expect(nodes.row(id: nested.id)?.title == "migrate schema")
+    #expect(nodes.row(id: orchestrator.id)?.title == "Refactor sync")
+    #expect(nodes.row(id: UUID()) == nil)
   }
 
   @Test("Folders and loose agents share one order; a folder that is gone leaves its agents loose")

@@ -158,6 +158,11 @@ struct HomeDetailParameters {
     case let .newChat(serverId):
       self.serverId = serverId
       isDraft = true
+    case let .agent(serverId, workspaceId):
+      // A page on its own shows the workspace's last tab beside it.
+      self.serverId = serverId
+      self.workspaceId = workspaceId
+      isDraft = false
     case let .workspace(
       serverId, workspaceId, anchorSessionId, preferredChatSessionId, preferredPaneId, preferredLeafId):
       sessionId = anchorSessionId

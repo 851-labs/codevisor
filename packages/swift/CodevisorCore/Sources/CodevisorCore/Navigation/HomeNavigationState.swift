@@ -17,6 +17,8 @@ public enum HomeDetailIdentity: Hashable, Sendable {
   /// Chat afresh, so a new draft after a promotion still remounts.
   case draft(UUID)
   case workspace(UUID)
+  /// A workspace's page, as the root of an iPhone Duo's detail column.
+  case page(UUID)
 }
 
 /// What Home must do when the size class changes containers.
@@ -36,9 +38,10 @@ public struct HomeLayoutTransition: Equatable, Sendable {
 }
 
 /// Home's single navigation truth for both containers. `path` binds to the
-/// compact `NavigationStack`; on a split layout `path.last` is the detail
-/// selection. Keeping one value means folding and unfolding never has to
-/// translate between two models.
+/// compact `NavigationStack`: workspace pages, as deep as they nest, then a
+/// tab. On a split layout it is at most the selected workspace's page and
+/// its open tab -- `[.agent(W)]` or `[.agent(W), .workspace(W, …)]` -- or
+/// New Chat. Keeping one value means folding and unfolding only slices it.
 public struct HomeNavigationState: Equatable, Sendable {
   public var path: [HomeRoute]
 
@@ -54,7 +57,7 @@ public struct HomeNavigationState: Equatable, Sendable {
   public var isNewChatSelected: Bool {
     switch selection {
     case .newChat, .none: true
-    case .workspace: false
+    case .agent, .workspace: false
     }
   }
 
@@ -63,7 +66,7 @@ public struct HomeNavigationState: Equatable, Sendable {
     switch selection {
     case .none: "home"
     case .newChat: "new_chat"
-    case .workspace: "workspace"
+    case .agent, .workspace: "workspace"
     }
   }
 
@@ -75,19 +78,64 @@ public struct HomeNavigationState: Equatable, Sendable {
     return (serverId, workspaceId, anchorSessionId)
   }
 
+  /// The workspace whose page or tab is on screen: the sidebar's selection
+  /// on a split.
+  public var selectedWorkspace: (serverId: String, workspaceId: UUID)? {
+    selection?.workspace
+  }
+
+  /// A split's workspace page: the first entry, when it is one.
+  public var splitPage: HomeRoute? {
+    guard case .agent = path.first else { return nil }
+    return path.first
+  }
+
+  /// A split's open tab: the last entry, when it is one.
+  public var splitTab: HomeRoute? {
+    guard case .workspace = selection else { return nil }
+    return selection
+  }
+
   // MARK: Mutations
 
-  /// Opening a route pushes on a stack and replaces the detail on a split.
+  /// Opening a route pushes on a stack. On a split it becomes the
+  /// selection: a page alone, or a tab with its workspace's page.
   public mutating func open(_ route: HomeRoute, mode: HomeLayoutMode) {
     switch mode {
     case .stack: path.append(route)
-    case .split: path = [route]
+    case .split: select(route)
     }
   }
 
-  /// Sets the split selection outright. Nil clears to New Chat.
+  /// Opens a tab through its workspace's page, so Back from the tab lands
+  /// on the page: on a stack the page is pushed beneath it unless it is
+  /// already on top, and a tab of the same workspace is swapped in place.
+  public mutating func openTab(_ route: HomeRoute, mode: HomeLayoutMode) {
+    guard mode == .stack, let page = route.page else {
+      open(route, mode: mode)
+      return
+    }
+    if path.last == page {
+      path.append(route)
+    } else if case .workspace = path.last, path.last?.page == page {
+      path[path.count - 1] = route
+    } else {
+      path.append(contentsOf: [page, route])
+    }
+  }
+
+  /// Sets the split selection outright: a page alone, a tab with its
+  /// workspace's page beneath, or New Chat. Nil clears to New Chat.
   public mutating func select(_ route: HomeRoute?) {
-    path = route.map { [$0] } ?? []
+    guard let route else {
+      path = []
+      return
+    }
+    if case .workspace = route, let page = route.page {
+      path = [page, route]
+    } else {
+      path = [route]
+    }
   }
 
   /// Swaps the route on screen without changing depth. Used when a draft's
@@ -99,6 +147,15 @@ public struct HomeNavigationState: Equatable, Sendable {
     } else {
       path[path.count - 1] = route
     }
+  }
+
+  /// Swaps a tab onto the screen in place of the top route, with its
+  /// workspace's page beneath it, so Back from it lands on that page. Used
+  /// when a draft's first send turns New Chat into its workspace's chat.
+  public mutating func replaceTop(withTab route: HomeRoute) {
+    replaceTop(with: route)
+    guard let page = route.page, path.count < 2 || path[path.count - 2] != page else { return }
+    path.insert(page, at: path.count - 1)
   }
 
   public mutating func popToRoot() {
@@ -149,6 +206,8 @@ public struct HomeNavigationState: Equatable, Sendable {
     switch selection {
     case .none, .newChat:
       return .draft(draftGeneration)
+    case let .agent(_, workspaceId):
+      return .page(workspaceId)
     case let .workspace(_, workspaceId, anchorSessionId, _, _, _):
       if let promotedDraftSessionId, anchorSessionId == promotedDraftSessionId {
         return .draft(draftGeneration)
@@ -170,9 +229,9 @@ public struct HomeNavigationState: Equatable, Sendable {
   // MARK: Layout transitions
 
   /// What changes when the container swaps. A composing sheet on compact
-  /// becomes the draft page on split; a split detail becomes the pushed
-  /// route on compact. A stack deeper than one entry keeps only its top on
-  /// split, since a split has no depth.
+  /// becomes the draft page on split; a split's page and tab become the
+  /// pushed page and tab on compact. Unfolding keeps the innermost page and
+  /// the tab open on it, the split's whole depth.
   public static func layoutTransition(
     from: HomeLayoutMode,
     to: HomeLayoutMode,
@@ -193,7 +252,7 @@ public struct HomeNavigationState: Equatable, Sendable {
         )
       }
       return HomeLayoutTransition(
-        path: Array(path.suffix(1)), dismissesNewChatSheet: false, requestsComposerFocus: false
+        path: splitPath(from: path), dismissesNewChatSheet: false, requestsComposerFocus: false
       )
     case .stack:
       return HomeLayoutTransition(
@@ -202,5 +261,14 @@ public struct HomeNavigationState: Equatable, Sendable {
         requestsComposerFocus: path.last?.isNewChat ?? false
       )
     }
+  }
+
+  /// A stack's place as a split selection: its innermost page with the tab
+  /// open on it, or just its top when that is New Chat.
+  private static func splitPath(from path: [HomeRoute]) -> [HomeRoute] {
+    guard let top = path.last else { return [] }
+    var split = HomeNavigationState()
+    split.select(top)
+    return split.path
   }
 }

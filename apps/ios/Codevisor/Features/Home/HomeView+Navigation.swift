@@ -36,13 +36,15 @@ extension HomeView {
     )
     // Push first. Workspace pane selection, controller creation, history,
     // and transcript projection all begin from the destination's tasks.
-    openRoute(
+    // The chat opens through its workspace's page, so Back lands there.
+    navigation.openTab(
       .workspace(
         serverId: session.serverId,
         workspaceId: workspaceId,
         anchorSessionId: session.id,
         preferredChatSessionId: session.id
-      )
+      ),
+      mode: layoutMode
     )
   }
 

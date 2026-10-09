@@ -104,6 +104,35 @@ public struct AgentSidebarRow: Identifiable, Equatable, Sendable {
   }
 }
 
+extension AgentSidebarRow {
+  /// This agent, or one nested anywhere under it.
+  public func row(id: UUID) -> AgentSidebarRow? {
+    if self.id == id { return self }
+    for child in children {
+      if let found = child.row(id: id) { return found }
+    }
+    return nil
+  }
+}
+
+extension [AgentSidebarNode] {
+  /// The row for a workspace anywhere in the sidebar: top level, in a
+  /// folder or project, or nested under another agent.
+  public func row(id: UUID) -> AgentSidebarRow? {
+    for node in self {
+      let rows: [AgentSidebarRow] =
+        switch node {
+        case let .agent(row): [row]
+        case let .folder(_, rows), let .project(_, rows): rows
+        }
+      for row in rows {
+        if let found = row.row(id: id) { return found }
+      }
+    }
+    return nil
+  }
+}
+
 /// One entry of the sidebar's top level.
 public enum AgentSidebarNode: Identifiable, Equatable, Sendable {
   case agent(AgentSidebarRow)

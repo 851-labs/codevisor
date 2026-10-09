@@ -127,17 +127,19 @@ extension HomeView {
     // The live sheet has already performed the visible transition. An
     // ordinary NavigationStack push keeps moving after the destination's
     // onAppear, so it would briefly slide the chat when the sheet is removed.
+    // The workspace's page goes beneath it, so Back lands there.
     var transaction = Transaction()
     transaction.disablesAnimations = true
     withTransaction(transaction) {
-      path.append(
+      path.append(contentsOf: [
+        .agent(serverId: serverId, workspaceId: workspaceId),
         .workspace(
           serverId: serverId,
           workspaceId: workspaceId,
           anchorSessionId: sessionId,
           preferredChatSessionId: sessionId
-        )
-      )
+        ),
+      ])
     }
     IOSNavigationDiagnostics.record(
       "home.newChatPromotion.routePushed",

@@ -12,17 +12,21 @@ struct HomeAgentListActions {
   var refresh: () async -> Void = {}
 }
 
-/// The agents the user manages, the way every client lists them: folders
-/// and loose agents (or one section per project), with the agents each one
-/// owns indented under it. Tabs are not here; they live in each agent's tab
-/// overview.
+/// The workspaces the user manages, as Notes lists folders: loose ones in a
+/// section of their own, then a section per folder (or per project when
+/// grouped that way), each section collapsing from its header. A workspace
+/// with workspaces nested under it discloses them inline from its chevron;
+/// tapping a workspace opens its page, where its tabs are.
 struct HomeAgentList: View {
   @Environment(AppEnvironment.self) private var environment
   let actions: HomeAgentListActions
-  /// The split layout's selected workspace or chat. Present, the list is a
-  /// native sidebar selection list; absent, it is the phone's grouped list.
+  /// The split layout's selected workspace. Present, the rows are a native
+  /// sidebar selection; absent, each row pushes its page.
   var selection: Binding<UUID?>? = nil
 
+  @State private var expanded: Set<UUID> = []
+  @State private var showsLoose = true
+  @State private var collapsedProjects: Set<String> = []
   @State private var renamingFolder: ServerNavigationFolder?
   @State private var folderTitle = ""
   /// The folder being deleted, with the agents filed in it.
@@ -37,12 +41,11 @@ struct HomeAgentList: View {
     Group {
       if let selection {
         List(selection: selection) { content(nodes) }
-          .listStyle(.sidebar)
       } else {
         List { content(nodes) }
-          .listStyle(.insetGrouped)
       }
     }
+    .listStyle(.sidebar)
     .refreshable { await actions.refresh() }
     .alert("Rename Folder", isPresented: renamePresented) {
       TextField("Name", text: $folderTitle)
@@ -76,28 +79,42 @@ struct HomeAgentList: View {
   private func content(_ nodes: [AgentSidebarNode]) -> some View {
     switch navigation.sidebarGrouping {
     case .none:
-      Section {
-        ForEach(nodes) { node in
-          switch node {
-          case let .agent(row): agentTree(row)
-          case let .folder(folder, rows): folderGroup(folder, rows: rows)
-          case .project: EmptyView()
-          }
-        }
+      let loose = nodes.compactMap { node -> AgentSidebarRow? in
+        if case let .agent(row) = node { row } else { nil }
+      }
+      if !loose.isEmpty {
+        Section("Workspaces", isExpanded: $showsLoose) { rows(loose) }
+      }
+      ForEach(nodes) { node in
+        if case let .folder(folder, rows) = node { folderSection(folder, rows: rows) }
       }
     case .project:
       ForEach(nodes) { node in
         if case let .project(project, rows) = node {
-          Section(project.name) {
-            ForEach(rows) { agentTree($0) }
+          let key = "\(project.serverId):\(project.id)"
+          Section(
+            project.name,
+            isExpanded: Binding(
+              get: { !collapsedProjects.contains(key) },
+              set: { if $0 { collapsedProjects.remove(key) } else { collapsedProjects.insert(key) } })
+          ) {
+            self.rows(rows)
           }
         }
       }
     }
   }
 
-  private func folderGroup(_ folder: ServerNavigationFolder, rows: [AgentSidebarRow]) -> some View {
-    DisclosureGroup(
+  private func rows(_ rows: [AgentSidebarRow]) -> some View {
+    ForEach(rows) { row in
+      WorkspaceOutlineRow(row: row, owner: nil, expanded: $expanded, isSelectable: selection != nil)
+    }
+  }
+
+  /// A folder is a section of its own, collapsing from its header like a
+  /// Notes account; collapsed or not syncs to every device.
+  private func folderSection(_ folder: ServerNavigationFolder, rows: [AgentSidebarRow]) -> some View {
+    Section(
       isExpanded: Binding(
         get: { !folder.collapsed },
         set: { expanded in
@@ -105,123 +122,18 @@ struct HomeAgentList: View {
           navigation.saveFolder(id: id, name: folder.name, position: folder.position, collapsed: !expanded)
         })
     ) {
-      ForEach(rows) { agentTree($0) }
-    } label: {
-      Label(folder.name, systemImage: "folder")
-    }
-    .contextMenu {
-      Button("Rename", systemImage: "pencil") {
-        folderTitle = folder.name
-        renamingFolder = folder
-      }
-      Button("Delete Folder…", systemImage: "trash", role: .destructive) {
-        deleting = (folder, rows.map(\.id))
-      }
-    }
-  }
-
-  /// An agent, then the agents it owns, indented under it as deep as they
-  /// go.
-  private func agentTree(_ row: AgentSidebarRow) -> some View {
-    ForEach(HomeAgentEntry.flattening(row)) { entry in
-      agent(entry.row, owner: entry.owner, depth: entry.depth)
-    }
-  }
-
-  /// The agent's row, as its chat's row always looked: status or harness
-  /// icon, then its title.
-  private func agent(_ row: AgentSidebarRow, owner: AgentSidebarRow?, depth: Int) -> some View {
-    rowButton(tag: row.id, open: { actions.open(row.id, nil) }) {
-      HStack(spacing: 10) {
-        mark(row.status, harnessId: row.harnessId, size: 18)
-        Text(row.title).lineLimit(1)
-        Spacer(minLength: 0)
-      }
-      .padding(.leading, CGFloat(depth) * 20)
-    }
-    .swipeActions(edge: .trailing) {
-      Button("Archive", systemImage: "archivebox", role: .destructive) { actions.archive(row.id) }
-    }
-    .contextMenu {
-      if let owner {
-        Button("Move Out of “\(owner.title)”", systemImage: "arrow.up.left") { setOwner(of: row.id, to: nil) }
-      }
-      agentMenu(row)
-    }
-  }
-
-  /// The agent's state, or its harness's icon at rest, as chat rows show
-  /// them everywhere.
-  @ViewBuilder
-  private func mark(_ status: AgentStatus, harnessId: String?, size: CGFloat) -> some View {
-    Group {
-      if status == .idle {
-        HarnessIconView(harnessId: harnessId ?? "", fallbackSymbolName: "text.bubble", size: size)
-          .foregroundStyle(.secondary)
-      } else {
-        HomeStatusIndicator(status: HomeSessionStatus(status))
-      }
-    }
-    .frame(width: 20)
-  }
-
-  /// A split row is tagged for the native selection; a phone row is a
-  /// button that pushes.
-  @ViewBuilder
-  private func rowButton<Label: View>(
-    tag: UUID, open: @escaping () -> Void, @ViewBuilder label: () -> Label
-  )
-    -> some View
-  {
-    if selection != nil {
-      label().tag(tag)
-    } else {
-      Button(action: open) { label().contentShape(Rectangle()) }
-        .buttonStyle(.plain)
-    }
-  }
-
-  @ViewBuilder
-  private func agentMenu(_ row: AgentSidebarRow) -> some View {
-    Button("Rename", systemImage: "pencil") { actions.rename(row.id) }
-    if navigation.sidebarGrouping == .none {
-      Menu("Move to Folder", systemImage: "folder") {
-        ForEach(navigation.folders, id: \.id) { folder in
-          Button(folder.name) { file(row.id, into: UUID(uuidString: folder.id)) }
+      self.rows(rows)
+    } header: {
+      Text(folder.name)
+        .contextMenu {
+          Button("Rename", systemImage: "pencil") {
+            folderTitle = folder.name
+            renamingFolder = folder
+          }
+          Button("Delete Folder…", systemImage: "trash", role: .destructive) {
+            deleting = (folder, rows.map(\.id))
+          }
         }
-        Button("New Folder", systemImage: "folder.badge.plus") { newFolder(filing: row.id) }
-        if environment.workspaces.workspace(id: row.id)?.folderId != nil {
-          Button("Remove from Folder") { file(row.id, into: nil) }
-        }
-      }
-    }
-    let owned = row.subagents.filter { $0.kind == .workspace }.count
-    Button(
-      owned == 0 ? "Archive" : "Archive with \(owned) Subagent\(owned == 1 ? "" : "s")",
-      systemImage: "archivebox", role: .destructive
-    ) {
-      actions.archive(row.id)
-    }
-  }
-
-  private func file(_ workspaceId: UUID, into folder: UUID?) {
-    guard let workspace = environment.workspaces.workspace(id: workspaceId) else { return }
-    navigation.enqueue(
-      .updateWorkspaceHierarchy(workspaceId: workspaceId, change: .folder(folder)), machineId: workspace.serverId)
-  }
-
-  private func setOwner(of workspaceId: UUID, to owner: UUID?) {
-    guard let workspace = environment.workspaces.workspace(id: workspaceId) else { return }
-    navigation.enqueue(
-      .updateWorkspaceHierarchy(workspaceId: workspaceId, change: .owner(owner)), machineId: workspace.serverId)
-  }
-
-  private func newFolder(filing workspaceId: UUID?) {
-    let id = HomeAgentListOptions.createFolder(in: navigation)
-    if let workspaceId { file(workspaceId, into: id) }
-    if let folder = navigation.folders.first(where: { UUID(uuidString: $0.id) == id }) {
-      folderTitle = folder.name
-      renamingFolder = folder
     }
   }
 
@@ -291,20 +203,5 @@ extension HomeSessionStatus {
     case .waiting: self = .actionRequired
     case .errored: self = .error
     }
-  }
-}
-
-/// One row of the agent list with its place in the nesting.
-struct HomeAgentEntry: Identifiable {
-  let row: AgentSidebarRow
-  let owner: AgentSidebarRow?
-  let depth: Int
-
-  var id: UUID { row.id }
-
-  /// An agent, then every agent nested under it, depth first.
-  static func flattening(_ row: AgentSidebarRow, owner: AgentSidebarRow? = nil, depth: Int = 0) -> [Self] {
-    [Self(row: row, owner: owner, depth: depth)]
-      + row.children.flatMap { flattening($0, owner: row, depth: depth + 1) }
   }
 }
