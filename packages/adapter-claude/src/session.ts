@@ -14,6 +14,7 @@ import type {
 import type { QuestionSpec, SessionGoal } from "@codevisor/api"
 
 import type { Deferred } from "./internal.js"
+import type { SubagentTranscripts } from "./subagent-transcripts.js"
 
 /// A prompt accepted while another turn was still active. It is NOT bound to
 /// `pendingPrompt` (the active turn's terminal event would resolve it before
@@ -122,6 +123,29 @@ export interface BackgroundTaskEntry {
   /// Set when the task's process streams through a server-owned terminal
   /// (background Bash rewritten by the PreToolUse hook).
   readonly terminalKey?: string
+}
+
+/// A forked slash command's subagent (see `forked-commands.ts`), described
+/// by its `task_started` when one was seen.
+export interface ForkedCommand {
+  readonly description: string
+  readonly prompt: string | undefined
+  readonly subagentType: string | undefined
+  readonly taskId: string | undefined
+  failed: boolean
+  /// Live mirroring of the fork's transcript, when its start was seen.
+  mirror: ForkedCommandMirror | undefined
+}
+
+export interface ForkedCommandMirror {
+  readonly show: (message: SDKMessage) => void
+  path: string | undefined
+  offset: number
+  /// At least one transcript message was shown, so the CLI's end-of-run copy
+  /// of the thread is redundant.
+  shown: boolean
+  /// Set while the transcript is still being read.
+  timer: ReturnType<typeof setInterval> | undefined
 }
 
 export type ClaudeToolDecision =
@@ -239,6 +263,13 @@ export interface ClaudeSession {
   /// The prose of each subagent's latest message that had any, keyed by its
   /// parent tool_use id: its hand-back is shown only when it isn't this.
   readonly subagentLastTexts: Map<string, string>
+  /// Open forked commands, keyed by the parent id their thread names.
+  readonly forkedCommands: Map<string, ForkedCommand>
+  /// A forked command reported back this turn; Claude answers with its report
+  /// before the turn ends.
+  forkedCommandReplyPending: boolean
+  /// The account's subagent transcripts, which mirror a running fork.
+  readonly subagentTranscripts: SubagentTranscripts
   /// Cross-turn: background tasks legitimately outlive the turn that spawned
   /// them, so this is never cleared at turn end.
   readonly backgroundTasks: Map<string, BackgroundTaskEntry>

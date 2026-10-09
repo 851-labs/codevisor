@@ -64,6 +64,9 @@ export const finishActiveTurn = (
   session.taskToolUses.clear()
   session.subagentMessageIds.clear()
   session.subagentLastTexts.clear()
+  // A fork still being mirrored stops reading on its next poll.
+  session.forkedCommands.clear()
+  session.forkedCommandReplyPending = false
 
   const ended: RuntimeEvent = {
     kind: "session.updated",

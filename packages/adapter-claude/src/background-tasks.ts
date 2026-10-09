@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto"
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import { backgroundTerminalKey } from "@codevisor/agent-runtime"
 
+import { finishForkedCommand, forkedCommandRowId } from "./forked-commands.js"
 import { isRecord } from "./internal.js"
 import type { BackgroundTaskEntry, ClaudeSession } from "./session.js"
 import { toolKind } from "./tool-presentation.js"
@@ -66,12 +67,14 @@ export const handleSystemMessage = (
         message.tool_use_id === undefined
           ? undefined
           : session.backgroundShellKeys.get(message.tool_use_id)
+      // A forked command has no spawning tool call; its row stands in for one.
+      const toolUseId = message.tool_use_id ?? forkedCommandRowId(session, message.task_id)
       session.backgroundTasks.set(message.task_id, {
         description: message.description,
         id: message.task_id,
         status: "running",
         taskType: message.subagent_type !== undefined ? "subagent" : (message.task_type ?? "task"),
-        ...(message.tool_use_id === undefined ? {} : { toolUseId: message.tool_use_id }),
+        ...(toolUseId === undefined ? {} : { toolUseId }),
         ...(terminalKey === undefined ? {} : { terminalKey })
       })
       emitBackgroundTasks(session)
@@ -118,6 +121,7 @@ export const handleSystemMessage = (
     case "task_updated": {
       const status = message.patch.status
       if (status === "completed" || status === "failed" || status === "killed") {
+        finishForkedCommand(session, message.task_id, status)
         session.hiddenBackgroundTaskIds.delete(message.task_id)
       }
       const entry = session.backgroundTasks.get(message.task_id)
@@ -132,6 +136,7 @@ export const handleSystemMessage = (
       break
     }
     case "task_notification": {
+      finishForkedCommand(session, message.task_id, message.status)
       session.hiddenBackgroundTaskIds.delete(message.task_id)
       if (removeBackgroundTask(session, message.task_id)) {
         emitBackgroundTasks(session)

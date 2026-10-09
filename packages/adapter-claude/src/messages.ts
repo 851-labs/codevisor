@@ -2,6 +2,11 @@ import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 
 import { handleSystemMessage } from "./background-tasks.js"
 import { authoritativeStatsFromInput, maybeEmitStreamStats } from "./diff-stats.js"
+import {
+  acceptForkedCommandMessage,
+  settleForkedCommands,
+  startForkedCommand
+} from "./forked-commands.js"
 import { isRecord } from "./internal.js"
 import type { ClaudeSession } from "./session.js"
 import {
@@ -48,12 +53,20 @@ export const handleMessage = (
   message: SDKMessage,
   readFile: (path: string) => string | undefined
 ): void => {
+  if (
+    (message.type === "assistant" || message.type === "stream_event" || message.type === "user") &&
+    !acceptForkedCommandMessage(session, message)
+  ) {
+    return
+  }
   switch (message.type) {
     case "stream_event":
       handleStreamEvent(session, message, readFile)
       break
     case "assistant": {
       const parentId = message.parent_tool_use_id ?? undefined
+      // Error replies surface through turn recovery, never as answer text.
+      let isErrorReply = false
       if (parentId === undefined) {
         const contextUsage = claudeContextUsageFromAssistant(message.message)
         if (contextUsage !== undefined) session.latestContextUsage = contextUsage
@@ -63,6 +76,7 @@ export const handleMessage = (
         const assistantError = (message as { error?: unknown }).error
         const usageLimitText = detectUsageLimitMessage(message)
         if (typeof assistantError === "string") {
+          isErrorReply = true
           session.lastAssistantError = assistantError
           if (
             usageLimitText !== undefined &&
@@ -72,6 +86,7 @@ export const handleMessage = (
           }
         } else {
           if (usageLimitText !== undefined) {
+            isErrorReply = true
             session.lastAssistantError = "rate_limit"
             session.lastUsageLimitText = usageLimitText
           }
@@ -82,6 +97,7 @@ export const handleMessage = (
           // were the answer.
           const apiError = usageLimitText === undefined ? detectApiErrorMessage(message) : undefined
           if (apiError !== undefined) {
+            isErrorReply = true
             session.lastAssistantError = "overloaded"
             session.lastErrorText = apiError
           }
@@ -153,6 +169,32 @@ export const handleMessage = (
           })
         }
       }
+      // The CLI writes some replies itself (model "<synthetic>"), such as a
+      // forked command's report. They never stream, so a top-level message no
+      // `message_start` announced is shown from here. A completed forked
+      // command's report stays in its agent's thread: Claude answers with it
+      // once the command's turn ends (see `handleResult`).
+      if (
+        parentId === undefined &&
+        messageId !== undefined &&
+        messageId !== session.currentMessageId &&
+        !isErrorReply
+      ) {
+        const prose = messageProse(content)
+        if (settleForkedCommands(session, prose)) {
+          session.forkedCommandReplyPending = true
+        } else if (prose !== undefined) {
+          void session.emit({
+            kind: "session.output",
+            payload: {
+              content: { text: prose, type: "text" },
+              messageId,
+              sessionUpdate: "agent_message_chunk"
+            },
+            subjectId: session.key
+          })
+        }
+      }
       break
     }
     case "user": {
@@ -219,6 +261,13 @@ export const handleMessage = (
       handleResult(session, message)
       break
     case "system":
+      // A forked command's row opens before its task is recorded, so the
+      // task can name it.
+      if (message.subtype === "task_started") {
+        startForkedCommand(session, message, (mirrored) =>
+          handleMessage(session, mirrored, readFile)
+        )
+      }
       handleSystemMessage(session, message)
       break
     default:

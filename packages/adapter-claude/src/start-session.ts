@@ -31,6 +31,7 @@ import {
 import { holdClaudeApproval, holdClaudePlanApproval, holdClaudeQuestion } from "./questions.js"
 import { InputQueue, type ClaudeModel, type ClaudeQueryFn, type ClaudeSession } from "./session.js"
 import { resumeSessionAfterStreamDeath } from "./stream-recovery.js"
+import { claudeConfigDir, type SubagentTranscripts } from "./subagent-transcripts.js"
 import { applyTaskCreate, emitTaskPlanUpdate } from "./tasks.js"
 import { failDeferredPrompts, finishActiveTurn } from "./turn-lifecycle.js"
 
@@ -49,6 +50,8 @@ export interface StartSessionDeps {
   readonly locateClaude: (definition: HarnessDefinition) => string
   readonly queryFn: ClaudeQueryFn
   readonly readFile: (path: string) => string | undefined
+  /// The subagent transcripts in a Claude config directory.
+  readonly subagentTranscripts: (configDir: string) => SubagentTranscripts
   readonly wrapCommand: ((key: string, command: string) => string) | undefined
 }
 
@@ -63,6 +66,7 @@ export const makeStartSession = (deps: StartSessionDeps) => {
     locateClaude,
     queryFn,
     readFile,
+    subagentTranscripts,
     wrapCommand
   } = deps
   /// The model list the last process reported. A saved model is checked
@@ -306,6 +310,9 @@ export const makeStartSession = (deps: StartSessionDeps) => {
       sdkSessionId: sessionKey,
       subagentMessageIds: new Map(),
       subagentLastTexts: new Map(),
+      forkedCommands: new Map(),
+      forkedCommandReplyPending: false,
+      subagentTranscripts: subagentTranscripts(claudeConfigDir(accountEnv)),
       turnActive: false,
       turnId: randomUUID()
     }

@@ -9,6 +9,7 @@ import type { HarnessDefinition, ProviderEnvironment, RuntimeEvent } from "@code
 import { Effect } from "effect"
 
 import { makeClaudeProvider, type ClaudeProviderConfig } from "./claude.js"
+import type { SubagentTranscripts } from "./subagent-transcripts.js"
 
 export const run = <A>(effect: Effect.Effect<A, unknown>): Promise<A> => Effect.runPromise(effect)
 
@@ -279,6 +280,12 @@ export const systemMessage = (subtype: string, fields: Record<string, unknown>):
     ...fields
   }) as never
 
+/// No subagent transcript is ever found: tests never read a real Claude config.
+const NO_SUBAGENT_TRANSCRIPTS: SubagentTranscripts = {
+  locate: () => undefined,
+  readLines: (_path, offset) => ({ offset, text: "" })
+}
+
 export const makeProvider = (
   fake: FakeQuery,
   checkVersion = async () => "2.1.0",
@@ -286,6 +293,7 @@ export const makeProvider = (
   extra: Partial<ClaudeProviderConfig> = {}
 ) =>
   makeClaudeProvider(environment, {
+    subagentTranscripts: () => NO_SUBAGENT_TRANSCRIPTS,
     ...extra,
     checkVersion,
     ...(getSessionInfo === undefined ? {} : { getSessionInfo }),

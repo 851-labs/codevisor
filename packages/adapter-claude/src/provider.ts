@@ -26,6 +26,7 @@ import { metadataFor, resolveClaudeModel } from "./models.js"
 import { makeClaudeSessionHandle } from "./session-handle.js"
 import type { ClaudeQueryFn } from "./session.js"
 import { makeStartSession } from "./start-session.js"
+import { nodeSubagentTranscripts, type SubagentTranscripts } from "./subagent-transcripts.js"
 import { claudeUsageLimitsFrom } from "./usage.js"
 
 /// Claude Code versions older than this predate the control-protocol features
@@ -39,6 +40,7 @@ export interface ClaudeProviderConfig {
   readonly listSdkSessions?: typeof sdkListSessions
   readonly scanAgentSessions?: () => Promise<ReadonlyArray<AgentSessionSummary>>
   readonly readFile?: (path: string) => string | undefined
+  readonly subagentTranscripts?: (configDir: string) => SubagentTranscripts
   readonly checkVersion?: (claudePath: string) => Promise<string>
   /// When set (and `wrapCommand` is present), background Bash commands are
   /// rewritten to tee their output through a server-owned terminal so clients
@@ -96,6 +98,7 @@ export const makeClaudeProvider = (
     locateClaude,
     queryFn,
     readFile,
+    subagentTranscripts: config.subagentTranscripts ?? nodeSubagentTranscripts,
     wrapCommand
   })
   const handleFor = makeClaudeSessionHandle()

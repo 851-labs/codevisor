@@ -1,5 +1,6 @@
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 
+import { settleForkedCommands } from "./forked-commands.js"
 import { settleGoalOnTurnEnd } from "./goals.js"
 import { isRecord } from "./internal.js"
 import { cancelClaudePendingQuestions } from "./questions.js"
@@ -70,6 +71,17 @@ const CONTINUE_PROMPT = "Please continue."
 /// not have happened: an in-flight tool call was cut off and any background
 /// commands died with the process. Say so, so it re-runs what it needs
 /// instead of waiting for results that will never arrive.
+/// The nudge after a forked command (a `context: fork` skill such as
+/// `/code-review`) reports back. The interactive CLI runs the fork in the
+/// background and its completion notification wakes Claude to answer; in SDK
+/// mode the fork blocks and the turn ends on its report, so Claude is asked
+/// for that answer instead. The report is in Claude's context as the
+/// command's output.
+const FORKED_COMMAND_REPLY_PROMPT =
+  "The skill the user ran has finished in a subagent, and its report is the command output " +
+  "above. Answer the user with its results now, as you would after a subagent reports back. " +
+  "Don't run the skill again."
+
 const RESUME_AFTER_INTERRUPTION_PROMPT =
   "Your previous process was interrupted and restarted. Any tool call that was in flight " +
   "did not complete and any background commands it started are gone. Continue the task " +
@@ -377,6 +389,15 @@ export const handleResult = (
     scheduleRecovery(session, resolution.delayMs)
     return
   }
+  // A forked command reported to its agent's row this turn: Claude answers
+  // with the report before the turn ends, unless the turn ended abnormally.
+  if (session.forkedCommandReplyPending) {
+    session.forkedCommandReplyPending = false
+    if (resolution.stopReason === "end_turn" && resolution.stopDetail === undefined) {
+      pushHiddenUserMessage(session, FORKED_COMMAND_REPLY_PROMPT)
+      return
+    }
+  }
 
   // Terminal. A turn that ends with questions still open (interrupt, failure)
   // invalidates them — clients must not keep showing the picker.
@@ -391,6 +412,7 @@ export const handleResult = (
     })
   }
   cancelClaudePendingQuestions(session)
+  settleForkedCommands(session)
   if (!isTaskNotification) settleGoalOnTurnEnd(session, message)
   void refreshClaudeSessionTitle(session)
   void finishActiveTurn(
