@@ -64,14 +64,6 @@ struct HomeAgentList: View {
         }
         Button("Cancel", role: .cancel) {}
       }
-    } message: {
-      if let count = deleting?.agents.count, count > 0 {
-        Text(
-          count == 1
-            ? "Deleting just the folder moves its workspace out of it. Deleting it too archives it, with its subagents."
-            : "Deleting just the folder moves its \(count) workspaces out of it. "
-              + "Deleting them too archives them, with their subagents.")
-      }
     }
   }
 

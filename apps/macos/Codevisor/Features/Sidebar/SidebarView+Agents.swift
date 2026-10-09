@@ -44,15 +44,6 @@ extension SidebarView {
         }
       }
       Button("Cancel", role: .cancel) {}
-    } message: { folder in
-      let count = agents(in: folder).count
-      Text(
-        count == 0
-          ? "The folder is empty."
-          : count == 1
-            ? "Deleting just the folder moves its workspace out of it. Deleting it too archives it, with its subagents."
-            : "Deleting just the folder moves its \(count) workspaces out of it. "
-              + "Deleting them too archives them, with their subagents.")
     }
   }
 
