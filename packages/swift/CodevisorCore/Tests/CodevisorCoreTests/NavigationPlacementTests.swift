@@ -58,6 +58,30 @@ struct NavigationPlacementTests {
     #expect(Self.topLevelIds(store) == [order[2], order[0], order[1]])
   }
 
+  @Test("A workspace dropped into a folder is filed there, between its new neighbors")
+  func filesAgent() async {
+    let store = NavigationFixture().store
+    let ids = [UUID(), UUID(), UUID()]
+    let positions = Self.positions(4)
+    await store.replace(
+      Self.snapshot(zip(ids, positions).map { Self.workspace($0, position: $1) }), machineId: "local",
+      requestedAt: Date())
+    let folder = UUID()
+    store.saveFolder(id: folder, name: "Ops", position: positions[3])
+    let order = Self.topLevelIds(store)
+    let position = { (id: UUID) in store.agentSidebar.row(id: id)!.position }
+    store.fileAgent(order[0], intoFolder: folder, after: nil, before: nil)
+    store.fileAgent(order[2], intoFolder: folder, after: nil, before: position(order[0]))
+    let filed = store.agentSidebar.compactMap { node -> [UUID]? in
+      if case let .folder(_, rows) = node { rows.map(\.id) } else { nil }
+    }
+    #expect(filed == [[order[2], order[0]]])
+    #expect(Self.topLevelIds(store) == [order[1]])
+
+    store.fileAgent(order[0], intoFolder: nil, after: nil, before: position(order[1]))
+    #expect(Self.topLevelIds(store) == [order[0], order[1]])
+  }
+
   @Test("Nested workspaces sharing a place are spread out, then the moved one lands where it was dropped")
   func movesNestedAgent() async {
     let store = NavigationFixture().store
@@ -73,7 +97,7 @@ struct NavigationPlacementTests {
     #expect(nested() == [order[2], order[0], order[1]])
   }
 
-  @Test("Folders and projects reorder among their own kind")
+  @Test("Folders move between their neighbors, and projects reorder among themselves")
   func movesFoldersAndProjects() async {
     let store = NavigationFixture().store
     await store.replace(Self.snapshot([]), machineId: "local", requestedAt: Date())
@@ -81,7 +105,7 @@ struct NavigationPlacementTests {
     for (index, (id, position)) in zip(folders, Self.positions(3)).enumerated() {
       store.saveFolder(id: id, name: "F\(index)", position: position)
     }
-    store.moveFolder(folders[0], to: 2)
+    store.moveFolder(folders[0], after: store.folders[2].position, before: nil)
     #expect(store.folders.map(\.name) == ["F1", "F2", "F0"])
 
     let projects = [UUID(), UUID(), UUID()]

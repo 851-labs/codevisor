@@ -2,9 +2,9 @@ import CodevisorClient
 import Foundation
 
 /// Moving agents, folders and projects within the sidebar, as a list's
-/// reorder asks: an item lands at an index among the items sharing its
-/// level, and gets a position between its new neighbors' so every device
-/// sorts it the same.
+/// reorder asks: an item lands among the items sharing its level and gets
+/// a position between its new neighbors', so every device sorts it the
+/// same.
 extension NavigationStore {
   /// Puts a top-level agent at `index` among `siblings`, the agents it is
   /// listed with, in order, itself excluded. Its folder doesn't change.
@@ -14,6 +14,24 @@ extension NavigationStore {
     guard let (lower, upper) = Self.neighbors(at: index, in: positions),
       let position = WorkspacePosition.between(lower, upper, id: id)
     else { return }
+    enqueue(
+      .reorderWorkspace(workspaceId: id, position: position, expectedRevision: workspace.sidebarOrderRevision),
+      machineId: workspace.serverId)
+  }
+
+  /// Files an agent into `folder` (the top level when nil), between the
+  /// positions of its new neighbors there (nil at either end). One nested
+  /// under another agent comes out to stand on its own.
+  public func fileAgent(_ id: UUID, intoFolder folder: UUID?, after lower: String?, before upper: String?) {
+    guard let workspace = projection.workspacesById[id],
+      let position = WorkspacePosition.between(lower, upper, id: id)
+    else { return }
+    if workspace.parentWorkspaceId != nil {
+      enqueue(.updateWorkspaceHierarchy(workspaceId: id, change: .owner(nil)), machineId: workspace.serverId)
+    }
+    if workspace.folderId != folder {
+      enqueue(.updateWorkspaceHierarchy(workspaceId: id, change: .folder(folder)), machineId: workspace.serverId)
+    }
     enqueue(
       .reorderWorkspace(workspaceId: id, position: position, expectedRevision: workspace.sidebarOrderRevision),
       machineId: workspace.serverId)
@@ -45,11 +63,10 @@ extension NavigationStore {
     setGroupPosition(position, of: workspace.id)
   }
 
-  /// Puts a folder at `index` among the other folders.
-  public func moveFolder(_ id: UUID, to index: Int) {
-    let others = folders.filter { UUID(uuidString: $0.id) != id }
+  /// Moves a folder between the positions of its new neighbors at the top
+  /// level, agents or folders (nil at either end).
+  public func moveFolder(_ id: UUID, after lower: String?, before upper: String?) {
     guard let folder = folders.first(where: { UUID(uuidString: $0.id) == id }),
-      let (lower, upper) = Self.neighbors(at: index, in: others.map(\.position)),
       let position = WorkspacePosition.between(lower, upper, id: id)
     else { return }
     saveFolder(id: id, name: folder.name, position: position, collapsed: folder.collapsed)
