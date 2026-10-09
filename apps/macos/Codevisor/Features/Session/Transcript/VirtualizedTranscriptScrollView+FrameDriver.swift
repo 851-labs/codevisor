@@ -97,8 +97,17 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
   }
 
   func reinstallPresentationFrameDriver() {
+    let hadRequestedFrame = displayFrameRequested
+    let hadRequestedModelPresentation = modelPresentationFrameRequested
+    let hadRequestedMounts = mountedRowsUpdateRequested
     uninstallPresentationFrameDriver()
     installPresentationFrameDriver()
+    // Changing screens replaces the callback source, not its queued work.
+    // With no measurement or model event pending, the replacement would
+    // otherwise stay paused and strand the virtual window until a scroll.
+    if hadRequestedModelPresentation { requestModelPresentationFrame() }
+    if hadRequestedMounts { requestMountedRowsUpdate() }
+    if hadRequestedFrame { requestDisplayFrame() }
   }
 
   func uninstallPresentationFrameDriver() {

@@ -10,6 +10,39 @@ import TranscriptKit
 @Suite("Initial transcript mounting", .serialized)
 @MainActor
 struct TranscriptInitialMountBudgetTests {
+  @Test("Replacing the display link preserves an unfinished virtualizer frame")
+  func replacementDisplayLinkResumesMounting() throws {
+    let view = surface()
+    let window = NSWindow(contentRect: view.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+    let controller = SessionController(
+      project: .fromFolder(URL(fileURLWithPath: "/tmp/transcript-frame-handoff")),
+      configCache: ConfigOptionCache(store: InMemoryStore()))
+    view.sessionController = controller
+    window.contentView = view
+    defer {
+      view.prepareForDismantle()
+      window.contentView = nil
+      _ = controller
+    }
+    view.remainingMountsThisFrame = 0
+    view.rebuildDocumentGeometry()
+    try #require(view.mountedRowsUpdateRequested)
+    try #require(view.displayFrameRequested)
+    try #require(view.mountedHosts.isEmpty)
+    try #require(view.pendingMeasuredHeights.isEmpty)
+
+    // Screen changes replace the clock while its next callback is pending.
+    // No model event, measurement report, or scroll follows this handoff.
+    view.reinstallPresentationFrameDriver()
+
+    #expect(view.mountedRowsUpdateRequested)
+    #expect(view.displayFrameRequested)
+    let link = try #require(view.presentationDisplayLink)
+    #expect(!link.isPaused)
+    view.presentationDisplayLinkDidFire(link)
+    #expect(!view.mountedHosts.isEmpty)
+  }
+
   private func surface() -> VirtualizedTranscriptScrollView {
     _ = NSApplication.shared
     let view = VirtualizedTranscriptScrollView(frame: NSRect(x: 0, y: 0, width: 900, height: 600))
