@@ -85,57 +85,8 @@ public final class ComposerDefaultsStore {
       return
     }
 
-    // V4 and V5 share the machine shape; V5 added the standalone page's
-    // machine. Both also carried workspace-scoped "last focused chat"
-    // profiles, which V6 retires: new tabs and splits now start from the
-    // machine's New Chat defaults.
-    if let scoped = try? decoder.decode(DefaultsV4V5.self, from: data),
-      let version = scoped.version, version == 4 || version == 5
-    {
-      defaults = Defaults(
-        lastNewWorkspaceServerId: scoped.lastNewWorkspaceServerId,
-        machines: scoped.machines
-      )
-      backupAndPersistMigratedPayload(data)
-      return
-    }
-
-    if let version3 = try? decoder.decode(DefaultsV3.self, from: data),
-      version3.version == 3
-    {
-      defaults = Defaults(
-        machines: version3.machines.mapValues { machine in
-          MachineDefaults(
-            lastHarnessId: machine.lastHarnessId,
-            newWorkspaceInWorktree: machine.newWorkspaceInWorktree,
-            configSelections: machine.configSelections ?? [:]
-          )
-        }
-      )
-      backupAndPersistMigratedPayload(data)
-      return
-    }
-
-    if let scoped = try? decoder.decode(ScopedDefaultsV2.self, from: data) {
-      defaults = Defaults(
-        machines: scoped.machines.mapValues { machine in
-          MachineDefaults(
-            lastHarnessId: machine.lastHarnessId,
-            configSelections: machine.configSelections ?? [:]
-          )
-        }
-      )
-      backupAndPersistMigratedPayload(data)
-      return
-    }
-
-    if let flat = try? decoder.decode(FlatDefaultsV1.self, from: data), flat.isRecognized {
-      defaults = Defaults(machines: [
-        Self.legacyServerId: MachineDefaults(
-          lastHarnessId: flat.lastHarnessId,
-          configSelections: flat.configSelections ?? [:]
-        )
-      ])
+    if let legacy = Self.decodeLegacyDefaults(data, using: decoder) {
+      defaults = legacy
       backupAndPersistMigratedPayload(data)
       return
     }
@@ -346,35 +297,114 @@ public final class ComposerDefaultsStore {
       }
     }
   }
-}
 
-private extension ComposerDefaultsStore {
+  private static func decodeLegacyDefaults(
+    _ data: Data,
+    using decoder: JSONDecoder
+  ) -> Defaults? {
+    decodeV4V5Defaults(data, using: decoder)
+      ?? decodeV3Defaults(data, using: decoder)
+      ?? decodeV2Defaults(data, using: decoder)
+      ?? decodeV1Defaults(data, using: decoder)
+  }
+
+  // V4 and V5 share the machine shape; V5 added the standalone page's
+  // machine. Both also carried workspace-scoped "last focused chat"
+  // profiles, which V6 retires: new tabs and splits now start from the
+  // machine's New Chat defaults.
+  private static func decodeV4V5Defaults(
+    _ data: Data,
+    using decoder: JSONDecoder
+  ) -> Defaults? {
+    if let scoped = try? decoder.decode(DefaultsV4V5.self, from: data),
+      let version = scoped.version, version == 4 || version == 5
+    {
+      return Defaults(
+        lastNewWorkspaceServerId: scoped.lastNewWorkspaceServerId,
+        machines: scoped.machines
+      )
+    }
+    return nil
+  }
+
+  private static func decodeV3Defaults(
+    _ data: Data,
+    using decoder: JSONDecoder
+  ) -> Defaults? {
+    if let version3 = try? decoder.decode(DefaultsV3.self, from: data),
+      version3.version == 3
+    {
+      return Defaults(
+        machines: version3.machines.mapValues { machine in
+          MachineDefaults(
+            lastHarnessId: machine.lastHarnessId,
+            newWorkspaceInWorktree: machine.newWorkspaceInWorktree,
+            configSelections: machine.configSelections ?? [:]
+          )
+        }
+      )
+    }
+    return nil
+  }
+
+  private static func decodeV2Defaults(
+    _ data: Data,
+    using decoder: JSONDecoder
+  ) -> Defaults? {
+    if let scoped = try? decoder.decode(ScopedDefaultsV2.self, from: data) {
+      return Defaults(
+        machines: scoped.machines.mapValues { machine in
+          MachineDefaults(
+            lastHarnessId: machine.lastHarnessId,
+            configSelections: machine.configSelections ?? [:]
+          )
+        }
+      )
+    }
+    return nil
+  }
+
+  private static func decodeV1Defaults(
+    _ data: Data,
+    using decoder: JSONDecoder
+  ) -> Defaults? {
+    if let flat = try? decoder.decode(FlatDefaultsV1.self, from: data), flat.isRecognized {
+      return Defaults(machines: [
+        Self.legacyServerId: MachineDefaults(
+          lastHarnessId: flat.lastHarnessId,
+          configSelections: flat.configSelections ?? [:]
+        )
+      ])
+    }
+    return nil
+  }
+
   /// V4 introduced project/worktree memory and workspace-scoped profiles;
   /// V5 added the standalone page's machine. Workspace profiles are dropped.
-  struct DefaultsV4V5: Decodable {
+  private struct DefaultsV4V5: Decodable {
     var version: Int?
     var lastNewWorkspaceServerId: String?
     fileprivate var machines: [String: MachineDefaults]
   }
 
   /// The format shipped immediately before workspace-scoped inheritance.
-  struct DefaultsV3: Decodable {
+  private struct DefaultsV3: Decodable {
     var version: Int?
     var machines: [String: MachineDefaultsV3]
   }
 
-  struct MachineDefaultsV3: Decodable {
+  private struct MachineDefaultsV3: Decodable {
     var lastHarnessId: String?
     var newWorkspaceInWorktree: Bool?
     var configSelections: [String: [String: String]]?
   }
 
   /// V2 also carried workspace snapshots, which are no longer used.
-  struct ScopedDefaultsV2: Decodable {
+  private struct ScopedDefaultsV2: Decodable {
     var machines: [String: MachineDefaultsV2]
   }
 
-  struct MachineDefaultsV2: Decodable {
+  private struct MachineDefaultsV2: Decodable {
     var lastHarnessId: String?
     /// Legacy field, decode-only: run location is no longer remembered.
     var runInWorktree: Bool?
@@ -383,7 +413,7 @@ private extension ComposerDefaultsStore {
 
   /// The flat pre-machine-scoping payload. All fields remain optional so a
   /// partial legacy file still migrates rather than being quarantined.
-  struct FlatDefaultsV1: Decodable {
+  private struct FlatDefaultsV1: Decodable {
     var lastHarnessId: String?
     var runInWorktree: Bool?
     var configSelections: [String: [String: String]]?
