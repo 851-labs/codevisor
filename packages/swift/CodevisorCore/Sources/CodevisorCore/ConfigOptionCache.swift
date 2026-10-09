@@ -167,18 +167,7 @@ public final class ConfigOptionCache {
       return capabilities(forServer: serverId)
     }
 
-    let refresh: CapabilityRefresh
-    if let existing = capabilityRefreshes[key] {
-      refresh = existing
-    } else {
-      let created = CapabilityRefresh(
-        id: UUID(),
-        revision: capabilityRevision(forServer: serverId),
-        task: Task { try await fetch() }
-      )
-      capabilityRefreshes[key] = created
-      refresh = created
-    }
+    let refresh = capabilityRefresh(for: key, serverId: serverId, fetch: fetch)
 
     do {
       let response = try await refresh.task.value
@@ -186,31 +175,61 @@ public final class ConfigOptionCache {
         removeCapabilityRefresh(refresh, for: key)
         return nil
       }
-      // The response carries BOTH the usable catalog and the
-      // fleet-enabled-but-unauthenticated harnesses (optionless
-      // entries); the split lives here so every consumer sees one
-      // truth.
-      let fetched = response.filter { $0.harness.enabled && $0.harness.isReady }
-      signInRequiredCache[serverId] =
-        response
-        .filter { !$0.harness.enabled && $0.harness.isReady }
-        .map(\.harness)
-      let merged = preservingUsablePickerData(in: fetched, forServer: serverId)
-      store(merged, forServer: serverId)
-      // The persisted snapshot is server-wide. A project-specific
-      // refresh therefore makes other directories stale rather than
-      // pretending their previous validation still describes the newly
-      // stored snapshot.
-      capabilityValidatedAt = capabilityValidatedAt.filter {
-        $0.key.serverId != serverId || $0.key == key
-      }
-      capabilityValidatedAt[key] = Date()
+      let merged = storeCapabilityResponse(response, forServer: serverId)
+      recordCapabilityValidation(for: key, serverId: serverId)
       removeCapabilityRefresh(refresh, for: key)
       return merged
     } catch {
       removeCapabilityRefresh(refresh, for: key)
       throw error
     }
+  }
+
+  private func capabilityRefresh(
+    for key: CapabilityRefreshKey,
+    serverId: String,
+    fetch: @escaping @Sendable () async throws -> [ServerHarnessCapability]
+  ) -> CapabilityRefresh {
+    if let existing = capabilityRefreshes[key] {
+      return existing
+    } else {
+      let created = CapabilityRefresh(
+        id: UUID(),
+        revision: capabilityRevision(forServer: serverId),
+        task: Task { try await fetch() }
+      )
+      capabilityRefreshes[key] = created
+      return created
+    }
+  }
+
+  private func storeCapabilityResponse(
+    _ response: [ServerHarnessCapability],
+    forServer serverId: String
+  ) -> [ServerHarnessCapability] {
+    // The response carries BOTH the usable catalog and the
+    // fleet-enabled-but-unauthenticated harnesses (optionless
+    // entries); the split lives here so every consumer sees one
+    // truth.
+    let fetched = response.filter { $0.harness.enabled && $0.harness.isReady }
+    signInRequiredCache[serverId] =
+      response
+      .filter { !$0.harness.enabled && $0.harness.isReady }
+      .map(\.harness)
+    let merged = preservingUsablePickerData(in: fetched, forServer: serverId)
+    store(merged, forServer: serverId)
+    return merged
+  }
+
+  private func recordCapabilityValidation(for key: CapabilityRefreshKey, serverId: String) {
+    // The persisted snapshot is server-wide. A project-specific
+    // refresh therefore makes other directories stale rather than
+    // pretending their previous validation still describes the newly
+    // stored snapshot.
+    capabilityValidatedAt = capabilityValidatedAt.filter {
+      $0.key.serverId != serverId || $0.key == key
+    }
+    capabilityValidatedAt[key] = Date()
   }
 
   /// Seeds the picker from a harness catalog that is already on screen. The
