@@ -108,10 +108,12 @@ struct TabStripTests {
     child.parentTabPosition = "ffffffffffff8"
     child.groupCollapsed = true
     let chat = ChatSession(id: session, projectId: project.id)
+    let childChat = ChatSession(id: child.chatSessionIds[0], projectId: project.id)
     for workspace in [parent, child] {
       fixture.store.layouts.setLayout(DeviceLayout(workspace), for: workspace.id)
     }
-    var snapshot = ServerNavigationSnapshot.fixture(projects: [project], sessions: [chat], workspaces: [parent, child])
+    var snapshot = ServerNavigationSnapshot.fixture(
+      projects: [project], sessions: [chat, childChat], workspaces: [parent, child])
     for index in snapshot.panes.indices {
       snapshot.panes[index].position = UUID(uuidString: snapshot.panes[index].id).flatMap { positions[$0] }
     }
@@ -121,6 +123,11 @@ struct TabStripTests {
     #expect(strip.last?.id == child.id)
     if case let .group(group) = strip.last { #expect(group.collapsed && group.title == "tests") }
     #expect(fixture.store.homeChatId(of: installed) == session)
+    // Chats in an owned workspace are subagents; the orchestrator's own isn't.
+    #expect(fixture.store.isSubagent(sessionId: childChat.id, serverId: "local"))
+    #expect(!fixture.store.isSubagent(sessionId: childChat.id, serverId: "elsewhere"))
+    #expect(!fixture.store.isSubagent(sessionId: session, serverId: "local"))
+    #expect(!fixture.store.isSubagent(sessionId: UUID(), serverId: "local"))
 
     var desired = strip
     desired.insert(desired.removeLast(), at: 0)

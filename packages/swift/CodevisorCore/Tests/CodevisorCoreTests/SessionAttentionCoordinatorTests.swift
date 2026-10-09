@@ -82,6 +82,24 @@ struct SessionAttentionCoordinatorTests {
     #expect(delivery.delivered.count == 1)
   }
 
+  @Test("A subagent's finish or question never notifies the user")
+  func subagentsStaySilent() async throws {
+    let (model, _, _) = try await makeModel()
+    let coordinator = SessionAttentionCoordinator(projectList: model)
+    let delivery = FakeNotificationDelivery()
+    coordinator.notificationDelivery = delivery
+    let subagent = UUID()
+    coordinator.isSubagent = { $0.sessionId == subagent }
+    for sessionId in [subagent, UUID()] {
+      model.onAttentionTransition?(
+        SessionAttentionTransition(
+          sessionId: sessionId, serverId: "local", old: summary(), new: summary(latest: 1, unread: 1),
+          origin: .liveEvent))
+    }
+    #expect(delivery.delivered.count == 1)
+    #expect(delivery.delivered.first?.sessionId != subagent)
+  }
+
   @Test("A background machine's live edge delivers, carrying its serverId")
   func backgroundMachineDelivers() async throws {
     let (model, _, _) = try await makeModel()

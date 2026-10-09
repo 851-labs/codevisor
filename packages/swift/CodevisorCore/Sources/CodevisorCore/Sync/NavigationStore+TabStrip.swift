@@ -40,6 +40,17 @@ extension NavigationStore {
     executor.resume(machineId: workspace.serverId)
   }
 
+  /// Whether a chat is some agent's subagent: created by another chat in its
+  /// workspace, or living in a workspace another one owns.
+  public func isSubagent(sessionId: UUID, serverId: String) -> Bool {
+    guard let workspaceId = projection.sessionIndex[sessionId],
+      let workspace = projection.workspacesById[workspaceId], workspace.serverId == serverId
+    else { return false }
+    if workspace.parentWorkspaceId != nil { return true }
+    guard let parent = projection.sessions.first(where: { $0.id == sessionId })?.parentSessionId else { return false }
+    return projection.sessionIndex[parent] == workspaceId
+  }
+
   /// The chat that is the workspace's own (its tab has no close button).
   public func homeChatId(of workspace: Workspace) -> UUID? {
     TabStrip.homeChatId(of: workspace, sessions: projection.sessions)

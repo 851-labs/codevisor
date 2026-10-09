@@ -124,6 +124,9 @@ public final class AppEnvironment {
     self.projectList = ProjectListModel()
     projectList.navigationStore = navigationStore
     self.attentionCoordinator = SessionAttentionCoordinator(projectList: projectList)
+    attentionCoordinator.isSubagent = { [navigationStore] focus in
+      navigationStore.isSubagent(sessionId: focus.sessionId, serverId: focus.serverId)
+    }
     self.workspaceSync = WorkspaceSyncModel(
       repository: workspaces,
       projectList: projectList

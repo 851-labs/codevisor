@@ -35,6 +35,10 @@ public final class SessionAttentionCoordinator {
   /// Platform delivery (macOS: `ChatNotificationManager`). Nil on iOS,
   /// which has no notification delivery — focus-read still works.
   @ObservationIgnored public var notificationDelivery: (any ChatNotificationDelivering)?
+  /// Whether a chat is an agent's subagent. Subagents report to the agent
+  /// that owns them, never to the user, so they never notify; their state
+  /// shows on their root agent's sidebar row instead.
+  @ObservationIgnored public var isSubagent: (SessionAttentionFocus) -> Bool = { _ in false }
 
   private let projectList: ProjectListModel
   /// One entry per publishing surface (a macOS window's `SessionStore`, the
@@ -126,6 +130,7 @@ public final class SessionAttentionCoordinator {
       return
     }
     guard transition.origin == .liveEvent,
+      !isSubagent(SessionAttentionFocus(serverId: transition.serverId, sessionId: transition.sessionId)),
       let kind = SessionAttentionTransition.notificationEdge(
         old: transition.old,
         new: transition.new
