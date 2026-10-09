@@ -198,6 +198,20 @@ export const projectSessionAttention = (
   if (payload === undefined) return
   ensureSessionAttentionState(sqlite, event.session_id)
 
+  projectAttentionMode(sqlite, event, payload)
+  projectAttentionRuntime(sqlite, event, payload)
+  projectAttentionTurnStart(sqlite, event, payload)
+  projectUserConversationAttention(sqlite, event, payload)
+  projectTerminalAttention(sqlite, event, payload)
+
+  reevaluatePendingFinish(sqlite, event.session_id, event.created_at)
+}
+
+const projectAttentionMode = (
+  sqlite: Database.Database,
+  event: SessionEventRow,
+  payload: JsonRecord
+): void => {
   if (event.kind === "session.updated" && typeof payload.modeId === "string") {
     sqlite
       .prepare(
@@ -207,6 +221,13 @@ export const projectSessionAttention = (
       )
       .run(payload.modeId, payload.modeId, event.session_id)
   }
+}
+
+const projectAttentionRuntime = (
+  sqlite: Database.Database,
+  event: SessionEventRow,
+  payload: JsonRecord
+): void => {
   if (event.kind === "session.updated" && typeof payload.runtimeState === "string") {
     const state =
       payload.runtimeState === "running" ||
@@ -221,6 +242,13 @@ export const projectSessionAttention = (
       )
       .run(state, event.session_id)
   }
+}
+
+const projectAttentionTurnStart = (
+  sqlite: Database.Database,
+  event: SessionEventRow,
+  payload: JsonRecord
+): void => {
   if (event.kind === "session.updated" && payload.turnState === "started") {
     // A new turn cancels any armed grace deadline but keeps `pending_finish`:
     // a chain of agent continuations settles once, at the end of the chain.
@@ -234,7 +262,13 @@ export const projectSessionAttention = (
       )
       .run(payload.initiatedBy === "agent" ? "agent" : "user", event.session_id)
   }
+}
 
+const projectUserConversationAttention = (
+  sqlite: Database.Database,
+  event: SessionEventRow,
+  payload: JsonRecord
+): void => {
   const conversation =
     event.kind === "session.output" ? conversationEventPayload(payload) : undefined
   if (conversation?.role === "user") {
@@ -251,7 +285,49 @@ export const projectSessionAttention = (
         event.session_id
       )
   }
+}
 
+const completedTurnNeedsPlanApproval = (
+  sqlite: Database.Database,
+  event: SessionEventRow,
+  initiatedBy: "agent" | "user"
+): boolean => {
+  const state = sqlite
+    .prepare(
+      `select sa.current_mode_id, s.harness_id
+         from session_attention sa join sessions s on s.id = sa.session_id
+         where sa.session_id = ?`
+    )
+    .get(event.session_id) as {
+    readonly current_mode_id: string | null
+    readonly harness_id: string
+  }
+  // The terminal event is routed to the assistant item it completed by the
+  // chat projection immediately above. Only a plan produced by that turn
+  // should raise approval; an older plan elsewhere in the transcript must
+  // not make every later plan-mode turn actionable.
+  const completedTurnPlan = sqlite
+    .prepare(
+      `select 1 from session_events se
+         join chat_parts cp on cp.item_id = se.chat_item_id and cp.kind = 'plan'
+         where se.session_id = ? and se.revision = ?
+           and cp.text is not null and length(cp.text) > 0
+         limit 1`
+    )
+    .get(event.session_id, event.revision)
+  return (
+    initiatedBy === "user" &&
+    state.harness_id === "codex" &&
+    state.current_mode_id === "plan" &&
+    completedTurnPlan !== undefined
+  )
+}
+
+const projectTerminalAttention = (
+  sqlite: Database.Database,
+  event: SessionEventRow,
+  payload: JsonRecord
+): void => {
   const terminal =
     event.kind === "session.error" ||
     (event.kind === "session.updated" &&
@@ -263,34 +339,7 @@ export const projectSessionAttention = (
       .prepare("update session_attention set turn_active = 0 where session_id = ?")
       .run(event.session_id)
 
-    const state = sqlite
-      .prepare(
-        `select sa.current_mode_id, s.harness_id
-         from session_attention sa join sessions s on s.id = sa.session_id
-         where sa.session_id = ?`
-      )
-      .get(event.session_id) as {
-      readonly current_mode_id: string | null
-      readonly harness_id: string
-    }
-    // The terminal event is routed to the assistant item it completed by the
-    // chat projection immediately above. Only a plan produced by that turn
-    // should raise approval; an older plan elsewhere in the transcript must
-    // not make every later plan-mode turn actionable.
-    const completedTurnPlan = sqlite
-      .prepare(
-        `select 1 from session_events se
-         join chat_parts cp on cp.item_id = se.chat_item_id and cp.kind = 'plan'
-         where se.session_id = ? and se.revision = ?
-           and cp.text is not null and length(cp.text) > 0
-         limit 1`
-      )
-      .get(event.session_id, event.revision)
-    const needsPlanApproval =
-      initiatedBy === "user" &&
-      state.harness_id === "codex" &&
-      state.current_mode_id === "plan" &&
-      completedTurnPlan !== undefined
+    const needsPlanApproval = completedTurnNeedsPlanApproval(sqlite, event, initiatedBy)
 
     if (failed) {
       // Errors are the urgent flavor of unread: they rank in the
@@ -330,8 +379,6 @@ export const projectSessionAttention = (
       bumpAttentionRevision(sqlite, event.session_id)
     }
   }
-
-  reevaluatePendingFinish(sqlite, event.session_id, event.created_at)
 }
 
 /** Computes the one mutually exclusive state rendered by native sidebars.
