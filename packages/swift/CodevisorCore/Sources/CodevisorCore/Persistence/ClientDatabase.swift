@@ -55,6 +55,13 @@ public final class ClientDatabase: @unchecked Sendable {
       withIntermediateDirectories: true
     )
 
+    let opened = try Self.openConnection(at: url)
+    handle = opened
+
+    try configureConnection(opened)
+  }
+
+  private static func openConnection(at url: URL) throws -> OpaquePointer {
     var opened: OpaquePointer?
     let result = sqlite3_open_v2(
       url.path,
@@ -69,8 +76,10 @@ public final class ClientDatabase: @unchecked Sendable {
       if let opened { sqlite3_close(opened) }
       throw ClientDatabaseError(operation: "open", detail: detail)
     }
-    handle = opened
+    return opened
+  }
 
+  private func configureConnection(_ opened: OpaquePointer) throws {
     do {
       try execute("PRAGMA journal_mode = WAL;")
       try execute("PRAGMA foreign_keys = ON;")
