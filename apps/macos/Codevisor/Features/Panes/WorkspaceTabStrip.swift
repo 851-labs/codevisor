@@ -12,8 +12,9 @@ struct WorkspaceTabStripItem: Identifiable, Equatable {
 
   enum Kind: Equatable {
     case tab
-    /// A subagent's tab group, as its chip: click to collapse or expand.
-    case group(status: AgentStatus, collapsed: Bool)
+    /// A subagent's tab group, as its label: the subagent's own chat tab,
+    /// which leads its other tabs and collapses them.
+    case group(status: AgentStatus, collapsed: Bool, otherTabs: Int, homeTabId: UUID?)
   }
 
   let id: UUID
@@ -24,9 +25,7 @@ struct WorkspaceTabStripItem: Identifiable, Equatable {
   var kind: Kind = .tab
   /// The workspace the tab belongs to (its group's, inside a group).
   var workspaceId: UUID?
-  /// The group's color: on its chip, and under each of its tabs.
-  var groupColor: Color?
-  /// Whether it can be dragged within the bar: top-level tabs and chips.
+  /// Whether it can be dragged within the bar: top-level tabs and labels.
   var isMovable = true
 }
 
@@ -35,6 +34,11 @@ struct WorkspaceTabStripItem: Identifiable, Equatable {
 /// agent's own chat), horizontal scrolling with edge fades once the tabs no
 /// longer fit, and the selected tab kept in view. Tabs drag to reorder; the
 /// order is committed once, on release.
+///
+/// A subagent's tabs sit together in one quiet container led by its own
+/// chat's tab, which shows the subagent's status (its harness at rest) and
+/// a chevron that collapses the rest. Collapsed, the container is just that
+/// tab and how many it hides.
 struct WorkspaceTabStrip<NewTab: View>: View {
   typealias Item = WorkspaceTabStripItem
 
@@ -45,7 +49,7 @@ struct WorkspaceTabStrip<NewTab: View>: View {
   let closeOthers: (UUID) -> Void
   /// Moves a tab so it lands at this index of `items`.
   let move: (UUID, Int) -> Void
-  /// A group chip was clicked: collapse or expand it.
+  /// A group's label was clicked: collapse or expand it.
   let toggleGroup: (UUID) -> Void
   /// Makes a subagent's group an independent, top-level agent.
   let promoteGroup: (UUID) -> Void
@@ -64,6 +68,43 @@ struct WorkspaceTabStrip<NewTab: View>: View {
   private var titleWidth: CGFloat { 180 }
   private var fadeWidth: CGFloat { 24 }
 
+  /// A run of the bar: a tab of its own, or a group's label and its tabs.
+  private enum Segment: Identifiable {
+    case tab(Item)
+    case group(label: Item, tabs: [Item])
+
+    var id: UUID {
+      switch self {
+      case let .tab(item): item.id
+      case let .group(label, _): label.id
+      }
+    }
+  }
+
+  /// The items as the bar draws them: each label gathers the tabs of its
+  /// workspace that follow it.
+  private var segments: [Segment] {
+    var result: [Segment] = []
+    var index = 0
+    while index < items.count {
+      let item = items[index]
+      guard case .group = item.kind else {
+        result.append(.tab(item))
+        index += 1
+        continue
+      }
+      var tabs: [Item] = []
+      var next = index + 1
+      while next < items.count, case .tab = items[next].kind, items[next].workspaceId == item.workspaceId {
+        tabs.append(items[next])
+        next += 1
+      }
+      result.append(.group(label: item, tabs: tabs))
+      index = next
+    }
+    return result
+  }
+
   /// The tabs take their natural width while they fit, so `+` sits right
   /// after the last tab; once they don't, they scroll and `+` stays put at
   /// the strip's end.
@@ -80,17 +121,19 @@ struct WorkspaceTabStrip<NewTab: View>: View {
 
   private var tabRow: some View {
     HStack(spacing: 2) {
-      ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-        entry(item, endsGroup: endsGroup(at: index))
-          .id(item.id)
-          .onGeometryChange(for: CGRect.self) {
-            $0.frame(in: .global)
-          } action: {
-            frames[item.id] = $0
+      ForEach(segments) { segment in
+        Group {
+          switch segment {
+          case let .tab(item):
+            tab(item)
+              .modifier(TrackedFrame(id: item.id, frames: $frames))
+              .gesture(reorder(item), isEnabled: item.isMovable)
+          case let .group(label, tabs):
+            group(label, tabs: tabs)
           }
-          .offset(x: dragging == item.id ? dragOffset : 0)
-          .zIndex(dragging == item.id ? 1 : 0)
-          .gesture(reorder(item), isEnabled: item.isMovable)
+        }
+        .offset(x: dragging == segment.id ? dragOffset : 0)
+        .zIndex(dragging == segment.id ? 1 : 0)
       }
     }
     .padding(.horizontal, 2)
@@ -167,80 +210,110 @@ struct WorkspaceTabStrip<NewTab: View>: View {
       }
   }
 
-  @ViewBuilder
-  private func entry(_ item: Item, endsGroup: Bool) -> some View {
-    switch item.kind {
-    case .tab: tab(item, endsGroup: endsGroup)
-    case let .group(status, collapsed): chip(item, status: status, collapsed: collapsed)
-    }
-  }
+  // MARK: - Groups
 
-  /// Whether the item at `index` is its group's last tab, where the
-  /// group's line ends.
-  private func endsGroup(at index: Int) -> Bool {
-    let item = items[index]
-    guard item.groupColor != nil else { return false }
-    let next = items.indices.contains(index + 1) ? items[index + 1] : nil
-    guard let next, next.groupColor != nil, next.workspaceId == item.workspaceId else { return true }
-    if case .group = next.kind { return true }
-    return false
-  }
-
-  /// The line that ties a group's chip to its tabs, as Chrome draws it: it
-  /// starts under the chip, runs under each tab and across the gaps between
-  /// them, and ends under the last.
-  private func groupLine(_ color: Color, starts: Bool, ends: Bool) -> some View {
-    Capsule()
-      .fill(color)
-      .frame(height: 2)
-      .padding(.leading, starts ? 6 : -1)
-      .padding(.trailing, ends ? 6 : -1)
-  }
-
-  /// A subagent's group: its name on a label of its color, as a Chrome tab
-  /// group's. Collapsed, it stands in for the group's tabs; a working or
-  /// blocked subagent shows on the label.
-  private func chip(_ item: Item, status: AgentStatus, collapsed: Bool) -> some View {
-    let color = item.groupColor ?? .accentColor
-    return HStack(spacing: 4) {
-      if status == .working {
-        AgentActivityIndicator(color: .white).frame(width: 12, height: 12)
-      } else if status.isBlocked {
-        Circle().fill(.white).frame(width: 6, height: 6)
+  /// A subagent's group: its label, then its tabs, in one container.
+  private func group(_ label: Item, tabs: [Item]) -> some View {
+    let collapsed = if case let .group(_, collapsed, _, _) = label.kind { collapsed } else { false }
+    return HStack(spacing: 2) {
+      groupLabel(label)
+        .modifier(TrackedFrame(id: label.id, frames: $frames))
+        .gesture(reorder(label), isEnabled: label.isMovable)
+      if !collapsed, !tabs.isEmpty {
+        Rectangle()
+          .fill(.primary.opacity(0.12))
+          .frame(width: 1, height: 14)
+          .padding(.horizontal, 2)
+        ForEach(tabs) { item in
+          tab(item).modifier(TrackedFrame(id: item.id, frames: $frames))
+        }
       }
-      Text(item.title)
-        .lineLimit(1)
-        .frame(maxWidth: 140, alignment: .leading)
     }
-    .font(.system(size: 11, weight: .semibold))
-    .foregroundStyle(.white)
-    .padding(.horizontal, 7)
-    .frame(height: 20)
-    .background(
-      RoundedRectangle(cornerRadius: 6, style: .continuous)
-        .fill(color.opacity(dragging == item.id ? 0.75 : 1))
-    )
-    .frame(height: 26)
-    .overlay(alignment: .bottom) {
-      if !collapsed { groupLine(color, starts: true, ends: false) }
+    .padding(1)
+    .background {
+      RoundedRectangle(cornerRadius: 8, style: .continuous)
+        .fill(.primary.opacity(dragging == label.id ? 0.09 : 0.045))
     }
-    .fixedSize(horizontal: true, vertical: false)
-    .contentShape(Rectangle())
-    .onTapGesture { toggleGroup(item.id) }
-    .contextMenu {
-      Button(collapsed ? "Expand Group" : "Collapse Group") { toggleGroup(item.id) }
-      Divider()
-      Button("Move to Sidebar") { promoteGroup(item.id) }
-      Button("Archive") { archiveGroup(item.id) }
+    .overlay {
+      RoundedRectangle(cornerRadius: 8, style: .continuous)
+        .strokeBorder(.primary.opacity(0.1), lineWidth: 0.5)
     }
-    .help(collapsed ? "Show \(item.title)'s tabs" : "Hide \(item.title)'s tabs")
-    .accessibilityElement(children: .combine)
-    .accessibilityLabel("\(item.title) subagent, \(collapsed ? "collapsed" : "expanded")")
-    .accessibilityAddTraits(.isButton)
-    .accessibilityAction { toggleGroup(item.id) }
   }
 
-  private func tab(_ item: Item, endsGroup: Bool) -> some View {
+  /// The subagent's chat tab: its status (its harness at rest), its name,
+  /// and the chevron that shows or hides its other tabs -- with their count
+  /// while hidden.
+  @ViewBuilder
+  private func groupLabel(_ item: Item) -> some View {
+    if case let .group(status, collapsed, otherTabs, homeTabId) = item.kind {
+      HStack(spacing: 6) {
+        groupStatus(status, icon: item.icon)
+        Text(item.title)
+          .lineLimit(1)
+          .foregroundStyle(item.isSelected ? .primary : .secondary)
+          .frame(maxWidth: titleWidth, alignment: .leading)
+        if otherTabs > 0 {
+          Button {
+            toggleGroup(item.id)
+          } label: {
+            HStack(spacing: 3) {
+              if collapsed { Text("\(otherTabs)").monospacedDigit() }
+              Image(systemName: "chevron.right")
+                .font(.system(size: 10, weight: .semibold))
+                .rotationEffect(.degrees(collapsed ? 0 : 180))
+            }
+            .foregroundStyle(.tertiary)
+            .frame(minWidth: 16, minHeight: 16)
+            .contentShape(Rectangle())
+          }
+          .buttonStyle(.borderless)
+          .help(collapsed ? "Show \(otherTabs) More Tab\(otherTabs == 1 ? "" : "s")" : "Hide Tabs")
+          .accessibilityLabel(collapsed ? "Show \(item.title)'s tabs" : "Hide \(item.title)'s tabs")
+        }
+      }
+      .font(.system(size: 12))
+      .padding(.leading, 8)
+      .padding(.trailing, otherTabs > 0 ? 4 : 8)
+      .frame(height: 26)
+      .fixedSize(horizontal: true, vertical: false)
+      .background {
+        RoundedRectangle(cornerRadius: 7, style: .continuous)
+          .fill(.primary.opacity(item.isSelected ? 0.1 : hovered == item.id ? 0.05 : 0))
+      }
+      .contentShape(Rectangle())
+      .onHover { hovered = $0 ? item.id : (hovered == item.id ? nil : hovered) }
+      .onTapGesture { if let homeTabId { select(homeTabId) } }
+      .contextMenu {
+        if otherTabs > 0 {
+          Button(collapsed ? "Show Tabs" : "Hide Tabs") { toggleGroup(item.id) }
+          Divider()
+        }
+        Button("Move to Sidebar") { promoteGroup(item.id) }
+        Button("Archive") { archiveGroup(item.id) }
+      }
+      .accessibilityElement(children: .contain)
+      .accessibilityLabel("\(item.title), subagent")
+      .accessibilityAddTraits(item.isSelected ? [.isButton, .isSelected] : .isButton)
+      .accessibilityAction { if let homeTabId { select(homeTabId) } }
+    }
+  }
+
+  /// The same marks the sidebar gives a chat: working, waiting, error and
+  /// unread replace the harness icon.
+  @ViewBuilder
+  private func groupStatus(_ status: AgentStatus, icon: Item.Icon) -> some View {
+    switch status {
+    case .working: AgentActivityIndicator().frame(width: 14, height: 14)
+    case .waiting: ActionRequiredIndicator(color: .red).frame(width: 14, height: 14)
+    case .errored: ErrorUnreadBadge(color: .red).frame(width: 14, height: 14)
+    case .unread: UnreadBadge(color: .accentColor).frame(width: 14, height: 14)
+    case .idle: self.icon(icon)
+    }
+  }
+
+  // MARK: - Tabs
+
+  private func tab(_ item: Item) -> some View {
     let showsClose = item.isClosable && (hovered == item.id || item.isSelected)
     return HStack(spacing: 6) {
       icon(item.icon)
@@ -273,10 +346,6 @@ struct WorkspaceTabStrip<NewTab: View>: View {
       RoundedRectangle(cornerRadius: 7, style: .continuous)
         .fill(.primary.opacity(item.isSelected || dragging == item.id ? 0.1 : hovered == item.id ? 0.05 : 0))
     }
-    // A group's tabs share its line underneath, like Chrome's tab groups.
-    .overlay(alignment: .bottom) {
-      if let color = item.groupColor { groupLine(color, starts: false, ends: endsGroup) }
-    }
     .contentShape(Rectangle())
     .onHover { hovered = $0 ? item.id : (hovered == item.id ? nil : hovered) }
     .onTapGesture { select(item.id) }
@@ -304,5 +373,22 @@ struct WorkspaceTabStrip<NewTab: View>: View {
         .foregroundStyle(.secondary)
         .frame(width: 14)
     }
+  }
+}
+
+/// Records a tab's frame in window coordinates, where a drag measures where
+/// it lands, and names it for scrolling into view.
+private struct TrackedFrame: ViewModifier {
+  let id: UUID
+  @Binding var frames: [UUID: CGRect]
+
+  func body(content: Content) -> some View {
+    content
+      .id(id)
+      .onGeometryChange(for: CGRect.self) {
+        $0.frame(in: .global)
+      } action: {
+        frames[id] = $0
+      }
   }
 }

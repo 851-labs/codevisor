@@ -26,18 +26,20 @@ extension SessionContainerView {
       case let .tab(tab):
         return [tabItem(tab, in: root, current: current)]
       case let .group(group):
-        let color = Self.groupColor(group.workspaceId)
-        let chip = WorkspaceTabStripItem(
-          id: group.workspaceId, title: group.title, icon: .symbol("person.2"), isSelected: false,
-          isClosable: false, kind: .group(status: group.status, collapsed: group.collapsed),
-          workspaceId: group.workspaceId, groupColor: color)
-        guard !group.collapsed, let child = environment.workspaces.workspace(id: group.workspaceId) else {
-          return [chip]
-        }
-        return [chip]
-          + group.tabs.map { tab in
+        // The label is the subagent's own chat tab, which leads the group.
+        let child = environment.workspaces.workspace(id: group.workspaceId)
+        let home = child.flatMap { child in group.tabs.first.map { tabItem($0, in: child, current: current) } }
+        let label = WorkspaceTabStripItem(
+          id: group.workspaceId, title: group.title, icon: home?.icon ?? .symbol("text.bubble"),
+          isSelected: home?.isSelected ?? false, isClosable: false,
+          kind: .group(
+            status: group.status, collapsed: group.collapsed, otherTabs: max(0, group.tabs.count - 1),
+            homeTabId: home?.id),
+          workspaceId: group.workspaceId)
+        guard !group.collapsed, let child else { return [label] }
+        return [label]
+          + group.tabs.dropFirst().map { tab in
             var item = tabItem(tab, in: child, current: current)
-            item.groupColor = color
             item.isMovable = false
             return item
           }
@@ -58,21 +60,18 @@ extension SessionContainerView {
       workspaceId: workspace.id)
   }
 
-  /// A group's color, stable for the workspace on every device.
-  static func groupColor(_ id: UUID) -> Color {
-    // Deep enough for the chip's white title in light and dark mode.
-    let palette: [Color] = [.blue, .purple, .pink, .orange, .green, .indigo, .red, .brown]
-    let sum = withUnsafeBytes(of: id.uuid) { $0.reduce(0) { $0 &+ Int($1) } }
-    return palette[sum % palette.count]
-  }
-
   /// Selects a tab of the bar, showing its workspace when it is another
   /// one (a subagent's group, or the owner from inside a subagent).
   func selectStripTab(_ tabId: UUID) {
-    guard let item = tabStripItems.first(where: { $0.id == tabId }),
-      let workspaceId = item.workspaceId
+    // A group's own chat tab is drawn as its label.
+    let items = tabStripItems
+    let label = items.first { item in
+      if case let .group(_, _, _, homeTabId) = item.kind { return homeTabId == tabId }
+      return false
+    }
+    guard let item = label ?? items.first(where: { $0.id == tabId }), let workspaceId = item.workspaceId
     else { return }
-    if case .group = item.kind { return }
+    if label == nil, case .group = item.kind { return }
     guard store.selectDestination(.tab(tabId), in: workspaceId), workspaceId != selectedWorkspace.id,
       let workspace = environment.workspaces.workspace(id: workspaceId),
       let tab = workspace.centerTabs.first(where: { $0.id == tabId })

@@ -126,7 +126,7 @@ extension SidebarView {
       .flatMap { list.session($0, serverId: row.serverId) }
     return SidebarWorkspaceTabRow(
       title: row.title, kind: .chat, isAgentOwned: false, chatSession: home, store: store,
-      isSelected: selectedWorkspaceId() == row.id, isReordering: false, titleFont: itemTitleFont,
+      isSelected: selectedAgentId() == row.id, isReordering: false, titleFont: itemTitleFont,
       onActivate: { openWorkspace(row.id) },
       onClose: { archive(row.id) },
       onRename: { beginRename(row.id) }
@@ -169,6 +169,17 @@ extension SidebarView {
 
   // MARK: - Selection
 
+  /// The agent whose row shows the selection: the shown workspace's
+  /// top-level owner, since subagents have no rows of their own.
+  private func selectedAgentId() -> UUID? {
+    guard var id = selectedWorkspaceId() else { return nil }
+    var seen: Set<UUID> = [id]
+    while let parent = environment.workspaces.workspace(id: id)?.parentWorkspaceId, seen.insert(parent).inserted {
+      id = parent
+    }
+    return id
+  }
+
   private func selectedWorkspaceId() -> UUID? {
     switch selection {
     case let .session(_, sessionId): environment.workspaces.workspaceId(forSession: sessionId)
@@ -201,7 +212,7 @@ extension SidebarView {
       }
     }
     guard !rows.isEmpty else { return }
-    let current = rows.firstIndex { $0.id == selectedWorkspaceId() }
+    let current = rows.firstIndex { $0.id == selectedAgentId() }
     let next = current.map { ($0 + offset + rows.count) % rows.count } ?? (offset > 0 ? 0 : rows.count - 1)
     openWorkspace(rows[next].id)
   }
