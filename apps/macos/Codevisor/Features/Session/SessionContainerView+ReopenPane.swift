@@ -11,8 +11,8 @@ extension SessionContainerView {
   func rememberClosedPane(_ descriptor: PaneDescriptorState, leafId: UUID) {
     guard descriptor.kind != .newTab, !descriptor.attachOnly else { return }
     if descriptor.kind == .chat, descriptor.chatSessionId == nil { return }
-    // The hook fires before the tab is pruned, so its position is still
-    // readable here.
+    // Runs from `onPaneWillClose`, before the close is applied anywhere,
+    // so the tab's position is still readable here.
     let workspace = selectedWorkspace
     guard
       let tabIndex = workspace.centerTabs.firstIndex(where: { $0.root.group(id: leafId) != nil })

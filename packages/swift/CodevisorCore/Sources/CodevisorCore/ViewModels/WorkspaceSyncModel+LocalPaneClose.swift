@@ -38,10 +38,12 @@ extension Workspace {
       guard replacePane(id: id, with: replacement) else { return nil }
       return LocalPaneCloseResult(replacement: replacement)
     }
+    let previousTabs = centerTabs
     guard removePane(id: id) else { return nil }
     // A closed chat takes its subagent views with it.
     pruneOrphanedSubagentPanes()
     pruneEmptyCenterTabs()
+    selectReplacementForClosedTab(selectedCenterTabId, previousTabs: previousTabs)
     ensureUsableLayout()
     return LocalPaneCloseResult(replacement: nil)
   }

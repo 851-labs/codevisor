@@ -26,6 +26,23 @@ extension Workspace {
     }
   }
 
+  /// Re-selects after a rebuild dropped the selected tab — a close applied
+  /// through sync prunes the tab before `pruneClosedCenterTab` can see it —
+  /// with the same neighbor that rule picks. `previousTabs` is the order
+  /// before the rebuild, which locates where the closed tab sat.
+  mutating func selectReplacementForClosedTab(_ closedTabId: UUID, previousTabs: [WorkspaceTab]) {
+    guard !centerTabs.isEmpty, !centerTabs.contains(where: { $0.id == closedTabId }),
+      let oldIndex = previousTabs.firstIndex(where: { $0.id == closedTabId })
+    else { return }
+    // The closed tab's slot: just before the first survivor that followed it.
+    let tabs = centerTabs
+    let index =
+      previousTabs[(oldIndex + 1)...].lazy
+      .compactMap { next in tabs.firstIndex(where: { $0.id == next.id }) }
+      .first ?? tabs.count
+    selectedCenterTabId = Self.replacementTab(afterRemovingAt: index, from: tabs).id
+  }
+
   /// The tab that takes over when the selected tab at `index` closes: the
   /// nearest tab the sidebar lists — the one above first, then below — so
   /// closing never lands on a tab holding only hidden agent terminals.

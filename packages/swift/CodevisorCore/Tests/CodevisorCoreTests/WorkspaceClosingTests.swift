@@ -63,6 +63,25 @@ struct WorkspaceClosingTests {
     #expect(leading.selectedCenterTab == next)
   }
 
+  @Test("A selected tab closed through sync hands selection to the tab above, not the first")
+  func syncClosedSelectedTabChoosesNeighbor() {
+    let tabs = (0..<3).map { _ in
+      var group = PaneGroupState()
+      group.addTerminalPane(sessionId: UUID())
+      return WorkspaceTab(root: .leaf(group))
+    }
+    var workspace = makeWorkspace(tabs: tabs, selected: tabs[2].id)
+    // The outbox's optimistic close drops the last tab's pane record.
+    let records = tabs[..<2].flatMap { $0.root.allGroups.flatMap(\.state.panes) }.map {
+      WorkspaceSyncModel.serverPane(from: $0, workspaceId: workspace.id, createdAt: Date(timeIntervalSince1970: 0))
+    }
+
+    WorkspaceSyncModel.reconcilePanes(in: &workspace, records: records, protectedLocalPaneIds: [])
+
+    #expect(workspace.centerTabs.map(\.id) == [tabs[0].id, tabs[1].id])
+    #expect(workspace.selectedCenterTabId == tabs[1].id)
+  }
+
   @Test("A final pane converted to New Tab keeps its tab identity")
   func replacementKeepsTab() {
     var state = PaneGroupState()

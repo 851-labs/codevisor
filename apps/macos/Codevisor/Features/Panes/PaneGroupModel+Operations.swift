@@ -140,6 +140,7 @@ extension PaneGroupModel {
     guard let descriptor = state.panes.first(where: { $0.id == id }),
       canClose(id: id)
     else { return }
+    onPaneWillClose?(descriptor)
     // Instantiate if needed: a never-shown pane may still own a server
     // shell from a previous app run that willDelete must clean up.
     let closing = pane(for: descriptor)

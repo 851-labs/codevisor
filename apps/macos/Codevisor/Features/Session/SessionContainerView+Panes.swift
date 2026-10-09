@@ -62,8 +62,10 @@ extension SessionContainerView {
       }
     }
     model.requestBackgroundFocus = { sessionFocus.focusPaneBackground() }
-    model.onPaneClosed = { descriptor in
+    model.onPaneWillClose = { descriptor in
       rememberClosedPane(descriptor, leafId: leafId)
+    }
+    model.onPaneClosed = { descriptor in
       if descriptor.kind == .chat {
         if let closedSessionId = descriptor.chatSessionId {
           // Closing an established chat's tab ARCHIVES its

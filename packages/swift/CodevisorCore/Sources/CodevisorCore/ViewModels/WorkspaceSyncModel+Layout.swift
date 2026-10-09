@@ -16,6 +16,7 @@ extension WorkspaceSyncModel {
     protectedLocalPaneIds: Set<UUID>
   ) {
     let hadRealPanes = workspace.hasRealPanes
+    let previousTabs = workspace.centerTabs
     let selectedTab = workspace.selectedCenterTabId
     let remote = records.compactMap { record -> (ServerWorkspacePane, PaneDescriptorState)? in
       descriptor(from: record).map { (record, $0) }
@@ -65,7 +66,11 @@ extension WorkspaceSyncModel {
     // Tab order is shared across devices (splits stay local).
     workspace.centerTabs = SharedTabOrder.sorted(
       workspace.centerTabs, positions: SharedTabOrder.positions(of: records, workspaceId: nil))
-    if workspace.centerTabs.contains(where: { $0.id == selectedTab }) { workspace.selectedCenterTabId = selectedTab }
+    if workspace.centerTabs.contains(where: { $0.id == selectedTab }) {
+      workspace.selectedCenterTabId = selectedTab
+    } else {
+      workspace.selectReplacementForClosedTab(selectedTab, previousTabs: previousTabs)
+    }
     ensureUsableLayout(&workspace)
   }
 

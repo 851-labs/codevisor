@@ -61,9 +61,12 @@ extension SessionStore {
       let model = centerGroup(
         leafId: leafId, workspace: workspace, session: session, project: project
       )
+      let previousWillClose = model.onPaneWillClose
       let previousClose = model.onPaneClosed
       let previousCanDissolve = model.canDissolve
       model.canDissolve = { true }
+      // This close records its own reopen entry from the tab captured above.
+      model.onPaneWillClose = nil
       model.onPaneClosed = { [weak self] descriptor in
         guard let self else { return }
         if descriptor.kind != .newTab, !descriptor.attachOnly,
@@ -85,6 +88,7 @@ extension SessionStore {
         }
       }
       defer {
+        model.onPaneWillClose = previousWillClose
         model.onPaneClosed = previousClose
         model.canDissolve = previousCanDissolve
       }

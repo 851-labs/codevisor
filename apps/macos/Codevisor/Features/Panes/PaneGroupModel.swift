@@ -70,6 +70,10 @@ final class PaneGroupModel: Identifiable {
   func unregisterNewTabFocus(paneId: UUID) {
     newTabFocusHandlers[paneId] = nil
   }
+  /// Fired as a tab starts closing, before anything is mutated: the
+  /// optimistic server delete prunes the tab from the workspace before
+  /// `onPaneClosed` runs, so where the pane sat is only readable here.
+  @ObservationIgnored var onPaneWillClose: ((PaneDescriptorState) -> Void)?
   /// Fired after a tab closes (the descriptor already removed) — the app
   /// layer cleans up per-pane resources (draft controllers) and archives
   /// closed established chats' sessions.
