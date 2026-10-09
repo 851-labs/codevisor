@@ -35,26 +35,28 @@ extension WorkspaceScreen {
   var tabOverviewLayer: some View {
     if let phase = tabOverview, let workspace = resolvedWorkspace {
       let frame = paneFrame.frame.size
-      WorkspaceTabGrid(
+      WorkspaceTabOverviewView(
+        workspace: workspace,
         tabs: overviewTabs,
-        serverId: workspace.serverId,
         selectedId: panes.selectedPaneId,
-        homeChatId: environment.navigationStore.homeChatId(of: workspace),
         aspectRatio: frame.height > 0 ? frame.width / frame.height : 0.6,
         phase: phase,
         zoom: overviewZoom,
         onSettled: {
           if case .closing = tabOverview { tabOverview = nil } else { tabOverview = .open }
         },
-        onSelect: { openFromOverview($0) },
-        onClose: { id in panes.panes.first { $0.id == id }.map { closeFromOverview($0) } },
-        onCloseOthers: { closeOthers(keeping: $0, in: workspace) },
-        onReorder: { reorderTabs($0, in: workspace) },
-        onNewTab: {
-          addTab()
-          if let id = panes.selectedPaneId { openFromOverview(id) }
-        },
-        onDone: { panes.selectedPaneId.map { openFromOverview($0) } }
+        actions: WorkspaceTabOverviewActions(
+          select: { openFromOverview($0) },
+          close: { id in panes.panes.first { $0.id == id }.map { closeFromOverview($0) } },
+          closeOthers: { closeOthers(keeping: $0, in: workspace) },
+          reorder: { reorderTabs($0, in: workspace) },
+          newTab: {
+            addTab()
+            if let id = panes.selectedPaneId { openFromOverview(id) }
+          },
+          done: { panes.selectedPaneId.map { openFromOverview($0) } },
+          dismiss: { tabOverview = nil }
+        )
       )
     }
   }

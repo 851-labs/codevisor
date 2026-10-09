@@ -2,10 +2,11 @@ import CodevisorCore
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// An agent's tab overview, Safari's on iPhone: a two-column grid of tab
-/// pictures over the workspace. Tap a tab to zoom into it; close one with
-/// its button or context menu; hold and drag to reorder. The tab being
-/// zoomed is drawn full-size above the grid and settles into its tile.
+/// One page of the tab overview: a two-column grid of a workspace's tab
+/// pictures, Safari's on iPhone. Tap a tab to open it; close one with its
+/// button or context menu; hold and drag to reorder. On the agent's own
+/// page the tab being zoomed is drawn above the grid, between full size and
+/// its tile.
 struct WorkspaceTabGrid: View {
   let tabs: [HomeSidebarTabRow]
   let serverId: String
@@ -19,17 +20,16 @@ struct WorkspaceTabGrid: View {
   let onSelect: (UUID) -> Void
   let onClose: (UUID) -> Void
   let onCloseOthers: (UUID) -> Void
-  /// The tabs in the order the user dropped them.
-  let onReorder: ([UUID]) -> Void
-  let onNewTab: () -> Void
-  let onDone: () -> Void
+  /// The tabs in the order the user dropped them; nil where they can't be
+  /// reordered from here.
+  let onReorder: (([UUID]) -> Void)?
+  /// Whether the zooming picture is at full size rather than on its tile.
+  /// The agent's own page mounts zoomed in, over the pane it pictures.
+  @Binding var isZoomedIn: Bool
 
   /// The order while a drag is live; the shared order otherwise.
   @State private var dragOrder: [UUID]?
   @State private var dragging: UUID?
-  /// Whether the zooming picture is at full size rather than on its tile.
-  /// The overview always mounts zoomed in, over the pane it pictures.
-  @State private var isZoomedIn = true
   @State private var pictureFrames = WorkspaceTabPictureFrames()
 
   static let coordinateSpace = "workspace-tab-grid"
@@ -58,6 +58,8 @@ struct WorkspaceTabGrid: View {
         }
         .padding(16)
       }
+      // Clear of the overview's bottom bar, which floats over the pages.
+      .contentMargins(.bottom, 64, for: .scrollContent)
       .onAppear {
         if let selectedId { proxy.scrollTo(selectedId, anchor: .center) }
       }
@@ -69,7 +71,6 @@ struct WorkspaceTabGrid: View {
       commitDrag()
       return true
     }
-    .safeAreaInset(edge: .bottom) { bottomBar }
     .overlay { GeometryReader { zoomLayer(in: $0.frame(in: .local)) } }
     .task(id: tabs.map(\.id)) { await PaneSnapshotCache.shared.loadPersisted(tabs.map(\.id)) }
     .task(id: phase) { await settle(phase) }
@@ -97,17 +98,13 @@ struct WorkspaceTabGrid: View {
         Button("Close Other Tabs", systemImage: "xmark.square") { onCloseOthers(tab.id) }
       }
     }
-    .onDrag {
-      dragging = tab.id
-      dragOrder = tabs.map(\.id)
-      return NSItemProvider(object: tab.id.uuidString as NSString)
-    }
-    .onDrop(
-      of: [.text],
-      delegate: WorkspaceTabDropDelegate(target: tab.id, order: $dragOrder, dragging: $dragging, commit: commitDrag)
-    )
-    .accessibilityAction(named: "Move Earlier") { move(tab.id, by: -1) }
-    .accessibilityAction(named: "Move Later") { move(tab.id, by: 1) }
+    .modifier(reorderable(tab))
+  }
+
+  private func reorderable(_ tab: HomeSidebarTabRow) -> WorkspaceTabReordering {
+    WorkspaceTabReordering(
+      tab: tab, isEnabled: onReorder != nil, tabIds: tabs.map(\.id), dragOrder: $dragOrder, dragging: $dragging,
+      commit: commitDrag, move: { move(tab.id, by: $0) })
   }
 
   /// The zooming tab's picture, between full size and its tile.
@@ -145,27 +142,6 @@ struct WorkspaceTabGrid: View {
     }
   }
 
-  private var bottomBar: some View {
-    HStack {
-      Button("New Tab", systemImage: "plus", action: onNewTab)
-        .labelStyle(.iconOnly)
-        .buttonStyle(.glass)
-        .buttonBorderShape(.circle)
-        .controlSize(.large)
-      Spacer()
-      Text(tabs.count == 1 ? "1 Tab" : "\(tabs.count) Tabs")
-        .font(.headline)
-      Spacer()
-      Button("Done", action: onDone)
-        .buttonStyle(.glass)
-        .controlSize(.large)
-        .keyboardShortcut(.cancelAction)
-    }
-    .padding(.horizontal, 20)
-    .padding(.bottom, 4)
-    .opacity(isZoomedIn ? 0 : 1)
-  }
-
   private func isClosable(_ tab: HomeSidebarTabRow) -> Bool {
     tab.chatSessionId == nil || tab.chatSessionId != homeChatId
   }
@@ -173,14 +149,44 @@ struct WorkspaceTabGrid: View {
   private func commitDrag() {
     guard dragging != nil else { return }
     dragging = nil
-    if let dragOrder, dragOrder != tabs.map(\.id) { onReorder(dragOrder) }
+    if let dragOrder, dragOrder != tabs.map(\.id) { onReorder?(dragOrder) }
   }
 
   private func move(_ id: UUID, by offset: Int) {
     var order = tabs.map(\.id)
     guard let index = order.firstIndex(of: id), order.indices.contains(index + offset) else { return }
     order.swapAt(index, index + offset)
-    onReorder(order)
+    onReorder?(order)
+  }
+}
+
+/// Hold-and-drag reordering of a tile, and its accessibility equivalent.
+private struct WorkspaceTabReordering: ViewModifier {
+  let tab: HomeSidebarTabRow
+  let isEnabled: Bool
+  let tabIds: [UUID]
+  @Binding var dragOrder: [UUID]?
+  @Binding var dragging: UUID?
+  let commit: () -> Void
+  let move: (Int) -> Void
+
+  func body(content: Content) -> some View {
+    if isEnabled {
+      content
+        .onDrag {
+          dragging = tab.id
+          dragOrder = tabIds
+          return NSItemProvider(object: tab.id.uuidString as NSString)
+        }
+        .onDrop(
+          of: [.text],
+          delegate: WorkspaceTabDropDelegate(target: tab.id, order: $dragOrder, dragging: $dragging, commit: commit)
+        )
+        .accessibilityAction(named: "Move Earlier") { move(-1) }
+        .accessibilityAction(named: "Move Later") { move(1) }
+    } else {
+      content
+    }
   }
 }
 
