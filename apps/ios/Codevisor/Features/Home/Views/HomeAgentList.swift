@@ -13,9 +13,8 @@ struct HomeAgentListActions {
 }
 
 /// The agents the user manages, the way every client lists them: folders
-/// and loose agents (or one section per project), each agent with its
-/// subagents in a disclosure group. Tabs are not here; they live in each
-/// agent's tab overview.
+/// and loose agents (or one section per project). Subagents and tabs are
+/// not here; they live in each agent's tab overview.
 struct HomeAgentList: View {
   @Environment(AppEnvironment.self) private var environment
   let actions: HomeAgentListActions
@@ -23,7 +22,6 @@ struct HomeAgentList: View {
   /// native sidebar selection list; absent, it is the phone's grouped list.
   var selection: Binding<UUID?>? = nil
 
-  @State private var expanded: Set<UUID> = []
   @State private var renamingFolder: ServerNavigationFolder?
   @State private var folderTitle = ""
 
@@ -98,71 +96,20 @@ struct HomeAgentList: View {
     }
   }
 
-  @ViewBuilder
+  /// The agent's row, as its chat's row always looked: status or harness
+  /// icon, then its title.
   private func agent(_ row: AgentSidebarRow) -> some View {
-    if navigation.showsSubagents, !row.subagents.isEmpty {
-      DisclosureGroup(
-        isExpanded: Binding(
-          get: { expanded.contains(row.id) },
-          set: { if $0 { expanded.insert(row.id) } else { expanded.remove(row.id) } })
-      ) {
-        ForEach(row.subagents) { subagent($0) }
-      } label: {
-        agentLabel(row)
-      }
-    } else {
-      agentLabel(row)
-    }
-  }
-
-  private func agentLabel(_ row: AgentSidebarRow) -> some View {
     rowButton(tag: row.id, open: { actions.open(row.id, nil) }) {
       HStack(spacing: 10) {
         mark(row.status, harnessId: row.harnessId, size: 18)
-        VStack(alignment: .leading, spacing: 2) {
-          Text(row.title).lineLimit(1)
-          if let detail = detail(row) {
-            Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-          }
-        }
+        Text(row.title).lineLimit(1)
         Spacer(minLength: 0)
-        if navigation.showsSubagents, let rollup = row.rollup {
-          Text("\(rollup.finished)/\(rollup.total)")
-            .font(.caption.monospacedDigit())
-            .foregroundStyle(rollup.status.isBlocked ? .orange : .secondary)
-            .accessibilityLabel("\(rollup.finished) of \(rollup.total) subagents finished")
-        }
       }
     }
     .swipeActions(edge: .trailing) {
       Button("Archive", systemImage: "archivebox", role: .destructive) { actions.archive(row.id) }
     }
     .contextMenu { agentMenu(row) }
-  }
-
-  private func subagent(_ subagent: AgentSidebarSubagent) -> some View {
-    rowButton(
-      tag: subagent.id,
-      open: {
-        actions.open(subagent.workspaceId, subagent.kind == .chat ? subagent.id : nil)
-      }
-    ) {
-      HStack(spacing: 10) {
-        mark(subagent.status, harnessId: subagent.harnessId, size: 15)
-        VStack(alignment: .leading, spacing: 2) {
-          Text(subagent.title).font(.subheadline).lineLimit(1)
-          if let via = subagent.via {
-            Text("via \(via)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
-          }
-        }
-      }
-    }
-    .contextMenu {
-      if subagent.kind == .workspace {
-        Button("Move to Sidebar", systemImage: "sidebar.left") { promote(subagent.workspaceId) }
-        Button("Archive", systemImage: "archivebox", role: .destructive) { actions.archive(subagent.workspaceId) }
-      }
-    }
   }
 
   /// The agent's state, or its harness's icon at rest, as chat rows show
@@ -219,22 +166,10 @@ struct HomeAgentList: View {
     }
   }
 
-  private func detail(_ row: AgentSidebarRow) -> String? {
-    let machine = environment.machines.machine(for: row.serverId).flatMap { $0.isLocal ? nil : $0.name }
-    let parts = [row.branch, machine].compactMap { $0 }
-    return parts.isEmpty ? nil : parts.joined(separator: " · ")
-  }
-
   private func file(_ workspaceId: UUID, into folder: UUID?) {
     guard let workspace = environment.workspaces.workspace(id: workspaceId) else { return }
     navigation.enqueue(
       .updateWorkspaceHierarchy(workspaceId: workspaceId, change: .folder(folder)), machineId: workspace.serverId)
-  }
-
-  private func promote(_ workspaceId: UUID) {
-    guard let workspace = environment.workspaces.workspace(id: workspaceId) else { return }
-    navigation.enqueue(
-      .updateWorkspaceHierarchy(workspaceId: workspaceId, change: .owner(nil)), machineId: workspace.serverId)
   }
 
   private func newFolder(filing workspaceId: UUID?) {
@@ -259,8 +194,8 @@ struct HomeAgentList: View {
   }
 }
 
-/// The list's view options, for the navigation bar: grouping, whether
-/// subagents show, and a new folder. All of it syncs to every device.
+/// The list's view options, for the navigation bar: grouping and a new
+/// folder. Both sync to every device.
 struct HomeAgentListOptions: View {
   @Environment(AppEnvironment.self) private var environment
 
@@ -278,11 +213,6 @@ struct HomeAgentListOptions: View {
           Text("Project").tag(AgentSidebarGrouping.project)
         }
       }
-      Toggle(
-        "Show Subagents",
-        isOn: Binding(
-          get: { navigation.showsSubagents },
-          set: { navigation.setSetting(NavigationStore.sidebarSubagentsKey, value: $0 ? "nested" : "hidden") }))
       if navigation.sidebarGrouping == .none {
         Button("New Folder", systemImage: "folder.badge.plus") { _ = Self.createFolder(in: navigation) }
       }

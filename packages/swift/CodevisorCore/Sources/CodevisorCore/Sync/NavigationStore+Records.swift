@@ -12,15 +12,9 @@ extension NavigationStore {
   /// The prefix of each project's place in the sidebar's project order.
   nonisolated public static let projectOrderKeyPrefix = "project.order."
 
-  /// Whether agents' subagents nest under them (`nested`) or stay out of
-  /// the sidebar (`hidden`).
-  nonisolated public static let sidebarSubagentsKey = "sidebar.subagents"
-
   public var sidebarGrouping: AgentSidebarGrouping {
     setting(Self.sidebarGroupingKey).flatMap(AgentSidebarGrouping.init(rawValue:)) ?? .none
   }
-
-  public var showsSubagents: Bool { setting(Self.sidebarSubagentsKey) != "hidden" }
 
   /// The agent-first sidebar, as every client renders it.
   public var agentSidebar: [AgentSidebarNode] {

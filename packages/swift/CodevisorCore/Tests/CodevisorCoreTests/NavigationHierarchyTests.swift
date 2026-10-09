@@ -84,11 +84,8 @@ struct NavigationHierarchyTests {
     store.deleteFolder(id: ops)
     #expect(store.folders.map(\.name) == ["Payments"])
     #expect(store.sidebarGrouping == .none)
-    #expect(store.showsSubagents)
     store.setSetting(NavigationStore.sidebarGroupingKey, value: "project")
-    store.setSetting(NavigationStore.sidebarSubagentsKey, value: "hidden")
     #expect(store.sidebarGrouping == .project)
-    #expect(!store.showsSubagents)
     #expect(store.agentSidebar.isEmpty)
   }
 

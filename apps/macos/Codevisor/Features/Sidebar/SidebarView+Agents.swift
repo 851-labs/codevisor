@@ -2,11 +2,10 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// The agent-first sidebar: one row per agent the user manages, with that
-/// agent's subagents one level in (collapsed by default), grouped the way
-/// the user chose -- folders and loose agents, or projects. Grouping,
-/// folders and order are shared by every device; which agents are expanded
-/// is this device's own.
+/// The sidebar: one row per agent the user manages -- the chat row it always
+/// had, without workspace headers -- grouped the way the user chose: folders
+/// and loose agents, or projects. Grouping, folders and order are shared by
+/// every device. Subagents live in their agent's tab bar, not here.
 extension SidebarView {
   var agentNodes: [AgentSidebarNode] {
     // The projection isn't observed directly; the revision is what changes.
@@ -50,11 +49,6 @@ extension SidebarView {
           Text("None").tag(AgentSidebarGrouping.none)
           Text("Project").tag(AgentSidebarGrouping.project)
         }
-        Toggle(
-          "Show Subagents",
-          isOn: Binding(
-            get: { navigation.showsSubagents },
-            set: { navigation.setSetting(NavigationStore.sidebarSubagentsKey, value: $0 ? "nested" : "hidden") }))
         Divider()
         Button("New Folder", action: { createFolder(filing: nil) })
           .disabled(navigation.sidebarGrouping != .none)
@@ -124,52 +118,36 @@ extension SidebarView {
     }
   }
 
+  /// The agent's row, drawn from its own chat: the chat's live status or
+  /// harness icon, its title, and a close button that archives it.
   private func agentBlock(_ row: AgentSidebarRow) -> some View {
-    let navigation = environment.navigationStore
-    let isExpanded = expandedAgents.contains(row.id)
-    return VStack(alignment: .leading, spacing: 1) {
-      AgentRowView(
-        row: row, detail: agentDetail(row), isSelected: isAgentSelected(row),
-        isExpanded: isExpanded, showsSubagents: navigation.showsSubagents,
-        onActivate: { openWorkspace(row.id) },
-        onToggle: {
-          if isExpanded {
-            expandedAgents.remove(row.id)
-          } else {
-            expandedAgents.insert(row.id)
-          }
-        }
-      )
-      .draggable(row.id.uuidString)
-      .dropDestination(for: String.self) { items, _ in
-        dropAgents(items, before: row)
-      }
-      .contextMenu { agentMenu(row) }
-      if isExpanded, navigation.showsSubagents {
-        ForEach(row.subagents) { subagent in
-          SubagentRowView(
-            subagent: subagent, isSelected: isSubagentSelected(subagent),
-            onActivate: { openSubagent(subagent) }
-          )
-          .contextMenu {
-            if subagent.kind == .workspace {
-              Button("Move to Sidebar") { promote(subagent.workspaceId) }
-              Button("Archive") { archive(subagent.workspaceId) }
-            }
-          }
-        }
-      }
+    let workspace = environment.workspaces.workspace(id: row.id)
+    let home = workspace.flatMap { environment.navigationStore.homeChatId(of: $0) }
+      .flatMap { list.session($0, serverId: row.serverId) }
+    return SidebarWorkspaceTabRow(
+      title: row.title, kind: .chat, isAgentOwned: false, chatSession: home, store: store,
+      isSelected: selectedWorkspaceId() == row.id, isReordering: false, titleFont: itemTitleFont,
+      onActivate: { openWorkspace(row.id) },
+      onClose: { archive(row.id) },
+      onRename: { beginRename(row.id) }
+    )
+    .draggable(row.id.uuidString)
+    .dropDestination(for: String.self) { items, _ in
+      dropAgents(items, before: row)
     }
+    .contextMenu { agentMenu(row) }
+  }
+
+  private func beginRename(_ workspaceId: UUID) {
+    guard let workspace = environment.workspaces.workspace(id: workspaceId) else { return }
+    workspaceRenameTitle = workspace.name
+    renamingWorkspace = workspace
   }
 
   @ViewBuilder
   private func agentMenu(_ row: AgentSidebarRow) -> some View {
     let navigation = environment.navigationStore
-    Button("Rename…") {
-      guard let workspace = environment.workspaces.workspace(id: row.id) else { return }
-      workspaceRenameTitle = workspace.name
-      renamingWorkspace = workspace
-    }
+    Button("Rename…") { beginRename(row.id) }
     if navigation.sidebarGrouping == .none {
       Menu("Move to Folder") {
         ForEach(navigation.folders, id: \.id) { folder in
@@ -189,13 +167,6 @@ extension SidebarView {
     }
   }
 
-  /// The branch it runs on, and the machine when it isn't this one.
-  private func agentDetail(_ row: AgentSidebarRow) -> String? {
-    let machine = environment.machines.machine(for: row.serverId).flatMap { $0.isLocal ? nil : $0.name }
-    let parts = [row.branch, machine].compactMap { $0 }
-    return parts.isEmpty ? nil : parts.joined(separator: " · ")
-  }
-
   // MARK: - Selection
 
   private func selectedWorkspaceId() -> UUID? {
@@ -203,25 +174,6 @@ extension SidebarView {
     case let .session(_, sessionId): environment.workspaces.workspaceId(forSession: sessionId)
     case let .workspace(_, id): id
     case .newChat, .none: nil
-    }
-  }
-
-  private func isAgentSelected(_ row: AgentSidebarRow) -> Bool {
-    guard let selected = selectedWorkspaceId() else { return false }
-    if selected != row.id { return false }
-    if case let .session(_, sessionId) = selection {
-      return !row.subagents.contains { $0.kind == .chat && $0.id == sessionId }
-    }
-    return true
-  }
-
-  private func isSubagentSelected(_ subagent: AgentSidebarSubagent) -> Bool {
-    switch subagent.kind {
-    case .chat:
-      if case let .session(_, sessionId) = selection { return sessionId == subagent.id }
-      return false
-    case .workspace:
-      return selectedWorkspaceId() == subagent.workspaceId
     }
   }
 
@@ -236,19 +188,6 @@ extension SidebarView {
       selection = .session(serverId: workspace.serverId, id: home)
     } else {
       selection = .workspace(serverId: workspace.serverId, id: workspace.id)
-    }
-  }
-
-  private func openSubagent(_ subagent: AgentSidebarSubagent) {
-    switch subagent.kind {
-    case .workspace:
-      openWorkspace(subagent.workspaceId)
-    case .chat:
-      guard let workspace = environment.workspaces.workspace(id: subagent.workspaceId) else { return }
-      if let tabId = workspace.tabId(containingChat: subagent.id) {
-        store?.selectDestination(.tab(tabId), in: workspace.id)
-      }
-      selection = .session(serverId: workspace.serverId, id: subagent.id)
     }
   }
 
@@ -273,12 +212,6 @@ extension SidebarView {
     guard let workspace = environment.workspaces.workspace(id: workspaceId) else { return }
     environment.navigationStore.enqueue(
       .updateWorkspaceHierarchy(workspaceId: workspaceId, change: .folder(folder)), machineId: workspace.serverId)
-  }
-
-  private func promote(_ workspaceId: UUID) {
-    guard let workspace = environment.workspaces.workspace(id: workspaceId) else { return }
-    environment.navigationStore.enqueue(
-      .updateWorkspaceHierarchy(workspaceId: workspaceId, change: .owner(nil)), machineId: workspace.serverId)
   }
 
   private func archive(_ workspaceId: UUID) {

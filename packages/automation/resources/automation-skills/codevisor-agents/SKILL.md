@@ -5,7 +5,7 @@ description: Create and coordinate other Codevisor coding agents as visible chat
 
 # Codevisor agents
 
-Every Codevisor chat is a **session**: a coding agent (Claude Code, Codex, …) running in a **workspace** of a **project**. You can create sessions, talk to them, and watch them. Each one is visible to the user: your subagents nest under you, independent agents get their own sidebar row.
+Every Codevisor chat is a **session**: a coding agent (Claude Code, Codex, …) running in a **workspace** of a **project**. You can create sessions, talk to them, and watch them. Each one is visible to the user: your subagents appear in your tab bar, independent agents get their own sidebar row.
 
 Paths below are under `tools.codevisor.*`. Ids are passed by name: `sessionId`, `workspaceId`, `projectId` (never a bare `id`). Check exact inputs with `tools.describe.tool({ path: "codevisor.sessions.create" })`.
 
@@ -20,11 +20,11 @@ Paths below are under `tools.codevisor.*`. Ids are passed by name: `sessionId`, 
 
 Every agent you create is either **your subagent** (you own it, you supervise it, and the user mostly ignores it) or an **independent agent** (a line of work the user manages themselves). `sessions.create` takes `workspacePlacement`:
 
-| Placement          | Use it for                                                                                                                   | What the user sees                                                                |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `shared` (default) | Research, review, a second opinion, a scoped piece of the same change: anything that won't fight your edits in one checkout. | A tab beside your chat, and a row nested under you in the sidebar.                |
-| `owned`            | Parallel code changes that would collide in one checkout (pass `worktreeName` for its own worktree).                         | A tab group in your tab bar, and a row nested under you. It is archived with you. |
-| `independent`      | Only when the user asks for a separate line of work they will manage themselves.                                             | A top-level sidebar row of its own, like any chat the user started.               |
+| Placement          | Use it for                                                                                                                   | What the user sees                                                  |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `shared` (default) | Research, review, a second opinion, a scoped piece of the same change: anything that won't fight your edits in one checkout. | A tab beside your chat.                                             |
+| `owned`            | Parallel code changes that would collide in one checkout (pass `worktreeName` for its own worktree).                         | A tab group in your tab bar. It is archived with you.               |
+| `independent`      | Only when the user asks for a separate line of work they will manage themselves.                                             | A top-level sidebar row of its own, like any chat the user started. |
 
 When unsure, use `shared`. Never pick `independent` just to keep things tidy: subagents already stay out of the user's way.
 
@@ -95,7 +95,7 @@ Only when the user asked for it ("start an agent for each of these issues that I
 
 ### Promoting a subagent
 
-If a subagent's work turns into something the user should manage directly, promote its workspace with `workspaces.update({ workspaceId, parentWorkspaceId: null })`. It becomes a top-level sidebar row and no longer archives with you. The user can do the same by dragging its tab group into the sidebar.
+If a subagent's work turns into something the user should manage directly, promote its workspace with `workspaces.update({ workspaceId, parentWorkspaceId: null })`. It becomes a top-level sidebar row and no longer archives with you. The user can do the same from its tab group's menu.
 
 ## Wait instead of polling
 

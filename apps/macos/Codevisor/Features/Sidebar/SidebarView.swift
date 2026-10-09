@@ -4,8 +4,8 @@ import CodevisorTheming
 import CodevisorUI
 import os
 
-/// The sidebar: a New Chat action and the agents the user manages, with
-/// their subagents one level in.
+/// The sidebar: a New Chat action and the agents the user manages, in
+/// folders.
 ///
 /// Built on `ScrollView` + `VStack` (not `List`), because the sidebar-styled
 /// `List` outline coordinator crashes on the current macOS SDK.
@@ -20,9 +20,6 @@ struct SidebarView: View {
   @State private var pendingImport: PendingSessionImport?
   @State var renamingWorkspace: Workspace?
   @State var workspaceRenameTitle = ""
-  /// Agents whose subagents are showing. This device's own: expanding an
-  /// agent here doesn't expand it elsewhere.
-  @State var expandedAgents: Set<UUID> = []
   @State var collapsedProjects: Set<String> = []
   @State var renamingFolder: ServerNavigationFolder?
   @State var folderRenameTitle = ""

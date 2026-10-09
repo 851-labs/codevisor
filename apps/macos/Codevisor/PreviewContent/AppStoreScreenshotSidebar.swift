@@ -3,7 +3,7 @@
   import CodevisorUI
   import SwiftUI
 
-  /// The production sidebar rows, populated from the same records as iOS.
+  /// The production sidebar rows: one per agent, drawn from its own chat.
   struct AppStoreScreenshotSidebar: View {
     let scene: String
     let store: SessionStore
@@ -17,15 +17,13 @@
         ScrollView {
           VStack(alignment: .leading, spacing: 1) {
             ForEach(AppStoreScreenshotData.sections) { section in
-              AgentRowView(
-                row: AgentSidebarRow(
-                  id: section.id, title: section.name, serverId: AppStoreScreenshotData.machineID,
-                  projectId: AppStoreScreenshotData.projectID, branch: nil,
-                  status: section.status == .inProgress ? .working : .idle,
-                  subagents: [], position: ""),
-                detail: section.machineName,
+              SidebarWorkspaceTabRow(
+                title: section.rows.first?.title ?? section.name, kind: .chat, isAgentOwned: false,
+                chatSession: store.environment.projectList.session(
+                  section.anchorSessionId, serverId: section.serverId),
+                store: store,
                 isSelected: scene == "conversation" && section.id == AppStoreScreenshotData.sections.first?.id,
-                isExpanded: false, showsSubagents: false, onActivate: {}, onToggle: {}
+                isReordering: false, titleFont: .body, onActivate: {}, onClose: {}
               )
             }
           }
