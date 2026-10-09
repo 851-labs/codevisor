@@ -44,7 +44,7 @@ extension SidebarView {
       Spacer()
       Menu {
         Picker(
-          "Grouping",
+          "Group By",
           selection: Binding(
             get: { navigation.sidebarGrouping },
             set: { navigation.setSetting(NavigationStore.sidebarGroupingKey, value: $0.rawValue) })
@@ -102,7 +102,7 @@ extension SidebarView {
       let key = "\(project.serverId):\(project.id)"
       VStack(alignment: .leading, spacing: 1) {
         AgentSidebarSectionHeader(
-          title: project.name, systemImage: "folder.badge.gearshape",
+          title: project.name, systemImage: "folder",
           isCollapsed: collapsedProjects.contains(key),
           onToggle: {
             if collapsedProjects.contains(key) {
@@ -117,7 +117,7 @@ extension SidebarView {
           dropProjects(items, before: project)
         }
         if !collapsedProjects.contains(key) {
-          ForEach(rows) { row in agentTree(row) }
+          ForEach(rows) { row in agentTree(row).padding(.leading, AgentSidebarSectionHeader.indent) }
         }
       }
     }
