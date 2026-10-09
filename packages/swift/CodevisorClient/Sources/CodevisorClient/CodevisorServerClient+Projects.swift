@@ -144,6 +144,15 @@ public struct ServerWorkspace: Codable, Equatable, Sendable {
   public var archivedAt: String?
   public var createdAt: String
   public var updatedAt: String?
+  /// The workspace that owns this one (an orchestrator's subagent with its
+  /// own worktree); nil for independent workspaces and older servers.
+  public var parentWorkspaceId: String?
+  /// Where this owned workspace's tab group sits in its owner's tab bar.
+  public var parentTabPosition: String?
+  /// Whether its tab group is collapsed on every client.
+  public var groupCollapsed: Bool?
+  /// The sidebar folder a top-level workspace is filed in.
+  public var folderId: String?
 
   public init(
     id: String,

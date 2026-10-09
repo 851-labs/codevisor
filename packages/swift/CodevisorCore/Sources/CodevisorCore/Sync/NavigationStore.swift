@@ -34,6 +34,10 @@ public final class NavigationStore {
   @ObservationIgnored private weak var projectList: ProjectListModel?
   @ObservationIgnored private weak var repository: ProjectedWorkspaceRepository?
   @ObservationIgnored private var cacheGenerations: [String: UInt64] = [:]
+  @ObservationIgnored let recordClock: NavigationClock
+  /// Record copies already sent to a machine this session (see
+  /// `replicateNavigationRecords`).
+  @ObservationIgnored var replicated = Set<String>()
 
   /// `launchSnapshot`, when given, must have been read from `store`: its
   /// machine caches were decoded off the main actor, so opening the store
@@ -47,6 +51,7 @@ public final class NavigationStore {
     caches = NavigationCacheStore(store: store, preloaded: launchSnapshot?.navigationCaches)
     outbox = NavigationOutbox(store: store)
     layouts = DeviceLayoutStore(store: store)
+    recordClock = NavigationClock(store: store, now: now)
     executor = NavigationOutboxExecutor(outbox: outbox, clock: clock, now: now)
     executor.isDraftWorkspace = { [layouts] in layouts.draft(id: $0) != nil }
     executor.cachedCursor = { [weak self] in self?.caches.caches[$0]?.eventCursor ?? 0 }
@@ -107,6 +112,7 @@ public final class NavigationStore {
     layouts.prune(serverId: machineId, keeping: Set(snapshot.workspaces.compactMap { UUID(uuidString: $0.id) }))
     retire(machineId: machineId, snapshotRequestedAt: requestedAt)
     rebuild(origin: .snapshot)
+    replicateNavigationRecords()
     return true
   }
 
@@ -140,6 +146,7 @@ public final class NavigationStore {
       caches.set(next)
       retire(machineId: machineId, snapshotRequestedAt: nil)
       rebuild(origin: .liveEvent)
+      if next.snapshot.records != current.snapshot.records { replicateNavigationRecords() }
       return true
     }
     return false
@@ -164,6 +171,12 @@ public final class NavigationStore {
     outbox.enqueue(intent, machineId: machineId)
     rebuild(origin: origin)
     executor.resume(machineId: machineId)
+  }
+
+  /// Queues a request without rebuilding or sending, for callers that queue
+  /// several and then rebuild once.
+  func enqueueWithoutRebuild(_ intent: NavigationIntent, machineId: String) {
+    outbox.enqueue(intent, machineId: machineId)
   }
 
   public var pendingIntents: [NavigationOutboxEntry] { outbox.entries }

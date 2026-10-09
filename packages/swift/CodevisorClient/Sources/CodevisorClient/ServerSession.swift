@@ -191,6 +191,8 @@ public struct ServerSession: Codable, Equatable, Sendable {
   public var actionRequired: Bool? = nil
   public var actionRequiredKind: String? = nil
   public var pendingPlanApproval: Bool? = nil
+  /// The chat that created this one (an agent's subagent); nil otherwise.
+  public var parentSessionId: String? = nil
 
   /// Maps a server-owned record into the client's machine namespace.
   ///
@@ -206,7 +208,7 @@ public struct ServerSession: Codable, Equatable, Sendable {
     guard let projectUUID = UUID(uuidString: projectId) else {
       throw CodevisorServerClientError.invalidUUID(projectId)
     }
-    return ChatSession(
+    var session = ChatSession(
       id: uuid,
       projectId: projectUUID,
       serverId: scopedServerId,
@@ -241,6 +243,8 @@ public struct ServerSession: Codable, Equatable, Sendable {
       actionRequiredKind: actionRequiredKind,
       pendingPlanApproval: pendingPlanApproval ?? false
     )
+    session.parentSessionId = parentSessionId.flatMap(UUID.init(uuidString:))
+    return session
   }
 
   public init(

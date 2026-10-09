@@ -43,6 +43,13 @@ public enum NavigationIntent: Codable, Equatable, Sendable {
   case closePane(paneId: UUID, workspaceId: UUID)
   /// Turns a pane the server already lists into a chat, keeping its id.
   case promotePane(PaneDescriptorState, workspaceId: UUID, session: ChatSession)
+  /// Changes a workspace's owner (promotion), its tab group, or its folder.
+  case updateWorkspaceHierarchy(workspaceId: UUID, change: WorkspaceHierarchyChange)
+  /// Writes one replicated sidebar folder. The same write goes to every
+  /// machine; each keeps it only when its revision is newer.
+  case putNavigationFolder(ServerNavigationFolder)
+  /// Writes one replicated navigation setting, like a folder.
+  case putNavigationSetting(ServerNavigationSetting)
 
   /// A newer request with the same key replaces an older one that has not
   /// been sent yet: only the latest name, order, or pane state matters.
@@ -64,6 +71,15 @@ public enum NavigationIntent: Codable, Equatable, Sendable {
     case let .upsertPane(pane, _): "pane:\(pane.id)"
     case let .closePane(paneId, _): "pane:\(paneId)"
     case let .promotePane(pane, _, _): "pane:\(pane.id)"
+    case let .updateWorkspaceHierarchy(workspaceId, change):
+      switch change {
+      case .owner: "ws:\(workspaceId):owner"
+      case .groupPosition: "ws:\(workspaceId):group-position"
+      case .groupCollapsed: "ws:\(workspaceId):group-collapsed"
+      case .folder: "ws:\(workspaceId):folder"
+      }
+    case let .putNavigationFolder(folder): "nav-folder:\(folder.id.lowercased())"
+    case let .putNavigationSetting(setting): "nav-setting:\(setting.key)"
     }
   }
 
@@ -78,7 +94,8 @@ public enum NavigationIntent: Codable, Equatable, Sendable {
       workspaceId
     case .upsertProject, .deleteProject, .setProjectWorktreeBase, .setProjectDefaultRunLocation,
       .expectSession, .renameSession, .deleteSession, .markSessionRead, .markSessionUnread,
-      .renameWorkspace, .setWorkspaceArchived, .reorderWorkspace:
+      .renameWorkspace, .setWorkspaceArchived, .reorderWorkspace, .updateWorkspaceHierarchy,
+      .putNavigationFolder, .putNavigationSetting:
       nil
     }
   }
@@ -170,6 +187,12 @@ public enum NavigationIntent: Codable, Equatable, Sendable {
         _ = try await client.upsertWorkspacePane(record)
         _ = try await client.upsertSession(session, workspaceId: workspaceId)
       }
+    case let .updateWorkspaceHierarchy(workspaceId, change):
+      try await client.updateWorkspaceHierarchy(id: workspaceId, change)
+    case let .putNavigationFolder(folder):
+      _ = try await client.putNavigationRecords(ServerNavigationRecords(folders: [folder]))
+    case let .putNavigationSetting(setting):
+      _ = try await client.putNavigationRecords(ServerNavigationRecords(settings: [setting]))
     }
   }
 

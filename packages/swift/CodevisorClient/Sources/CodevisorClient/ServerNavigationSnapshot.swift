@@ -7,16 +7,48 @@ public struct ServerNavigationSnapshot: Codable, Equatable, Sendable {
   public var sessions: [ServerSession]
   public var workspaces: [ServerWorkspace]
   public var panes: [ServerWorkspacePane]
+  /// Replicated sidebar records (folders and settings) this machine holds.
+  public var records: ServerNavigationRecords
 
   public init(
     eventCursor: Int, projects: [ServerProject], sessions: [ServerSession],
-    workspaces: [ServerWorkspace], panes: [ServerWorkspacePane]
+    workspaces: [ServerWorkspace], panes: [ServerWorkspacePane],
+    records: ServerNavigationRecords = ServerNavigationRecords()
   ) {
     self.eventCursor = eventCursor
     self.projects = projects
     self.sessions = sessions
     self.workspaces = workspaces
     self.panes = panes
+    self.records = records
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case eventCursor, projects, sessions, workspaces, panes, folders, settings
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    eventCursor = try container.decode(Int.self, forKey: .eventCursor)
+    projects = try container.decode([ServerProject].self, forKey: .projects)
+    sessions = try container.decode([ServerSession].self, forKey: .sessions)
+    workspaces = try container.decode([ServerWorkspace].self, forKey: .workspaces)
+    panes = try container.decode([ServerWorkspacePane].self, forKey: .panes)
+    // Servers omit records while they hold none, and older servers have none.
+    records = ServerNavigationRecords(
+      folders: try container.decodeIfPresent([ServerNavigationFolder].self, forKey: .folders) ?? [],
+      settings: try container.decodeIfPresent([ServerNavigationSetting].self, forKey: .settings) ?? [])
+  }
+
+  public func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(eventCursor, forKey: .eventCursor)
+    try container.encode(projects, forKey: .projects)
+    try container.encode(sessions, forKey: .sessions)
+    try container.encode(workspaces, forKey: .workspaces)
+    try container.encode(panes, forKey: .panes)
+    try container.encode(records.folders, forKey: .folders)
+    try container.encode(records.settings, forKey: .settings)
   }
 }
 
@@ -31,6 +63,50 @@ public struct ServerNavigationDelta: Codable, Equatable, Sendable {
   public var workspaces: [ServerWorkspace]
   public var panes: [ServerWorkspacePane]
   public var deleted: [Deletion]
+  public var records: ServerNavigationRecords
+
+  private enum CodingKeys: String, CodingKey {
+    case eventCursor, projects, sessions, workspaces, panes, deleted, folders, settings
+  }
+
+  public init(
+    eventCursor: Int, projects: [ServerProject] = [], sessions: [ServerSession] = [],
+    workspaces: [ServerWorkspace] = [], panes: [ServerWorkspacePane] = [], deleted: [Deletion] = [],
+    records: ServerNavigationRecords = ServerNavigationRecords()
+  ) {
+    self.eventCursor = eventCursor
+    self.projects = projects
+    self.sessions = sessions
+    self.workspaces = workspaces
+    self.panes = panes
+    self.deleted = deleted
+    self.records = records
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    eventCursor = try container.decode(Int.self, forKey: .eventCursor)
+    projects = try container.decode([ServerProject].self, forKey: .projects)
+    sessions = try container.decode([ServerSession].self, forKey: .sessions)
+    workspaces = try container.decode([ServerWorkspace].self, forKey: .workspaces)
+    panes = try container.decode([ServerWorkspacePane].self, forKey: .panes)
+    deleted = try container.decode([Deletion].self, forKey: .deleted)
+    records = ServerNavigationRecords(
+      folders: try container.decodeIfPresent([ServerNavigationFolder].self, forKey: .folders) ?? [],
+      settings: try container.decodeIfPresent([ServerNavigationSetting].self, forKey: .settings) ?? [])
+  }
+
+  public func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(eventCursor, forKey: .eventCursor)
+    try container.encode(projects, forKey: .projects)
+    try container.encode(sessions, forKey: .sessions)
+    try container.encode(workspaces, forKey: .workspaces)
+    try container.encode(panes, forKey: .panes)
+    try container.encode(deleted, forKey: .deleted)
+    try container.encode(records.folders, forKey: .folders)
+    try container.encode(records.settings, forKey: .settings)
+  }
 
   public func applying(to snapshot: ServerNavigationSnapshot) -> ServerNavigationSnapshot {
     guard eventCursor > snapshot.eventCursor else { return snapshot }
@@ -46,7 +122,8 @@ public struct ServerNavigationDelta: Codable, Equatable, Sendable {
       projects: merge(snapshot.projects, projects, table: "projects", id: { $0.id }),
       sessions: merge(snapshot.sessions, sessions, table: "sessions", id: { $0.id }),
       workspaces: merge(snapshot.workspaces, workspaces, table: "workspaces", id: { $0.id }),
-      panes: merge(snapshot.panes, panes, table: "workspace_panes", id: { $0.id }))
+      panes: merge(snapshot.panes, panes, table: "workspace_panes", id: { $0.id }),
+      records: snapshot.records.merging(records))
   }
 }
 

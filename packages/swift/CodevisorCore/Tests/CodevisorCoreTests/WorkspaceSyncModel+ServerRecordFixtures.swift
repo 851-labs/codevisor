@@ -5,7 +5,7 @@ extension WorkspaceSyncModel {
   /// The record a machine holds for this workspace, as its navigation
   /// snapshot and deltas carry it.
   nonisolated static func serverWorkspace(from workspace: Workspace) -> ServerWorkspace {
-    ServerWorkspace(
+    var record = ServerWorkspace(
       id: workspace.id.uuidString,
       serverId: workspace.serverId,
       projectId: workspace.projectId.uuidString,
@@ -17,5 +17,10 @@ extension WorkspaceSyncModel {
       sidebarPosition: workspace.sidebarPosition,
       sidebarOrderRevision: workspace.sidebarOrderRevision > 0 ? workspace.sidebarOrderRevision : nil
     )
+    record.parentWorkspaceId = workspace.parentWorkspaceId?.uuidString.lowercased()
+    record.parentTabPosition = workspace.parentTabPosition
+    record.groupCollapsed = workspace.groupCollapsed ? true : nil
+    record.folderId = workspace.folderId?.uuidString.lowercased()
+    return record
   }
 }

@@ -89,6 +89,9 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
   public var actionRequired: Bool
   public var actionRequiredKind: String?
   public var pendingPlanApproval: Bool
+  /// The chat that created this one, when an agent did: the parent it
+  /// reports to. Nil for chats the user started.
+  public var parentSessionId: UUID?
 
   /// Whether the harness has created a resumable agent-side session.
   /// Deferred server records use an empty string on the wire, while local
@@ -153,7 +156,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     case worktreeName, cwd, configSelections, unavailableConfigSelections, createdAt, updatedAt
     case sidebarState, sidebarStateChangedAt
     case latestAttentionSequence, lastSeenAttentionSequence, unreadCount, hasUnreadError
-    case actionRequired, actionRequiredKind, pendingPlanApproval
+    case actionRequired, actionRequiredKind, pendingPlanApproval, parentSessionId
     /// Pre-rename persisted sessions used this key for `projectId`.
     case workspaceId
   }
@@ -194,6 +197,7 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     actionRequired = try container.decodeIfPresent(Bool.self, forKey: .actionRequired) ?? false
     actionRequiredKind = try container.decodeIfPresent(String.self, forKey: .actionRequiredKind)
     pendingPlanApproval = try container.decodeIfPresent(Bool.self, forKey: .pendingPlanApproval) ?? false
+    parentSessionId = try container.decodeIfPresent(UUID.self, forKey: .parentSessionId)
   }
 
   public func encode(to encoder: any Encoder) throws {
@@ -221,5 +225,6 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     try container.encode(actionRequired, forKey: .actionRequired)
     try container.encodeIfPresent(actionRequiredKind, forKey: .actionRequiredKind)
     try container.encode(pendingPlanApproval, forKey: .pendingPlanApproval)
+    try container.encodeIfPresent(parentSessionId, forKey: .parentSessionId)
   }
 }

@@ -97,6 +97,18 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
   /// Whether the server has this workspace. False for a draft: a workspace
   /// started on this device that its first chat will create on the server.
   public var isServerSynced: Bool
+  /// The workspace that owns this one: an orchestrating agent's subagent
+  /// with its own worktree. Owned workspaces nest under their owner instead
+  /// of listing at the top level, show as a tab group in its tab bar, and
+  /// archive with it.
+  public var parentWorkspaceId: UUID?
+  /// Where this owned workspace's tab group sits in its owner's tab bar, in
+  /// the key space of the owner's pane positions.
+  public var parentTabPosition: String?
+  /// Whether this owned workspace's tab group is collapsed to its chip.
+  public var groupCollapsed = false
+  /// The sidebar folder a top-level workspace is filed in.
+  public var folderId: UUID?
 
   public var isDraft: Bool { !isServerSynced }
 
@@ -104,6 +116,7 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     case id, name, hasCustomName, rootDirectory, worktreeName, serverId
     case projectId, centerTabs, selectedCenterTabId, createdAt, isArchived
     case isServerSynced, sidebarPosition, sidebarOrderRevision
+    case parentWorkspaceId, parentTabPosition, groupCollapsed, folderId
   }
 
   public init(from decoder: Decoder) throws {
@@ -132,6 +145,10 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     createdAt = try container.decode(Date.self, forKey: .createdAt)
     isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
     isServerSynced = try container.decodeIfPresent(Bool.self, forKey: .isServerSynced) ?? false
+    parentWorkspaceId = try container.decodeIfPresent(UUID.self, forKey: .parentWorkspaceId)
+    parentTabPosition = try container.decodeIfPresent(String.self, forKey: .parentTabPosition)
+    groupCollapsed = try container.decodeIfPresent(Bool.self, forKey: .groupCollapsed) ?? false
+    folderId = try container.decodeIfPresent(UUID.self, forKey: .folderId)
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -150,6 +167,10 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     try container.encode(isServerSynced, forKey: .isServerSynced)
     try container.encodeIfPresent(sidebarPosition, forKey: .sidebarPosition)
     try container.encode(sidebarOrderRevision, forKey: .sidebarOrderRevision)
+    try container.encodeIfPresent(parentWorkspaceId, forKey: .parentWorkspaceId)
+    try container.encodeIfPresent(parentTabPosition, forKey: .parentTabPosition)
+    try container.encode(groupCollapsed, forKey: .groupCollapsed)
+    try container.encodeIfPresent(folderId, forKey: .folderId)
   }
 
   public init(

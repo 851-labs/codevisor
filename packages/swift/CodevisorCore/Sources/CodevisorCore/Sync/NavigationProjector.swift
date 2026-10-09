@@ -34,6 +34,7 @@ final class NavigationProjector {
     /// Sorted by creation, then id -- the order the whole projection keeps.
     var workspaces: [Workspace] = []
     var sessionIndex: [UUID: UUID] = [:]
+    var records = ServerNavigationRecords()
   }
 
   private struct WorkspaceKey: Equatable {
@@ -84,6 +85,8 @@ final class NavigationProjector {
       projection.sessions += machine.sessions
       projection.workspaces += machine.workspaces
       projection.sessionIndex.merge(machine.sessionIndex) { _, new in new }
+      projection.machineRecords[machineId] = machine.records
+      projection.navigationRecords = projection.navigationRecords.merging(machine.records)
     }
     machines = current
     var changed = Set<UUID>()
@@ -106,7 +109,8 @@ final class NavigationProjector {
   ) -> MachineProjection {
     var records = NavigationRecords(cache)
     NavigationOverlay.apply(entries, to: &records)
-    var machine = MachineProjection(projects: records.projects, sessions: records.sessions)
+    var machine = MachineProjection(
+      projects: records.projects, sessions: records.sessions, records: records.navigation)
     let panesByWorkspace = Dictionary(grouping: records.panes) { $0.workspaceId.lowercased() }
     // Chats in a worktree workspace all run in the same worktree, so the first
     // one that names it names it for the workspace. One pass, not one per

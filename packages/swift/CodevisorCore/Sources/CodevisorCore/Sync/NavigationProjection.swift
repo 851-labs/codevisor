@@ -11,6 +11,12 @@ public struct NavigationProjection: Sendable {
   /// The workspace each chat belongs to: the server's assignment, or for a
   /// chat the server hasn't placed, the workspace whose layout shows it.
   public var sessionIndex: [UUID: UUID] = [:]
+  /// The account's replicated sidebar records (folders and settings): each
+  /// machine's copy, waiting writes included, merged by newest revision.
+  public var navigationRecords = ServerNavigationRecords()
+  /// Each machine's own copy of those records, to find the machines that are
+  /// missing a newer one.
+  var machineRecords: [String: ServerNavigationRecords] = [:]
 
   public static let empty = NavigationProjection()
 }
@@ -34,6 +40,10 @@ enum NavigationProjectionBuilder {
       createdAt: createdAt, isArchived: record.isArchived, isServerSynced: true)
     workspace.sidebarPosition = record.sidebarPosition
     workspace.sidebarOrderRevision = record.sidebarOrderRevision ?? 0
+    workspace.parentWorkspaceId = record.parentWorkspaceId.flatMap(UUID.init(uuidString:))
+    workspace.parentTabPosition = record.parentTabPosition
+    workspace.groupCollapsed = record.groupCollapsed ?? false
+    workspace.folderId = record.folderId.flatMap(UUID.init(uuidString:))
     return workspace
   }
 

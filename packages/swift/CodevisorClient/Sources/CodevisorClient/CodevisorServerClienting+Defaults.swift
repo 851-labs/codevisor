@@ -549,6 +549,12 @@ public extension CodevisorServerClienting {
   func moveWorkspacePane(workspaceId: UUID, paneId: UUID, position: String) async throws {
     throw CodevisorServerClientError.httpStatus(405, "Tab ordering is unavailable on this server.")
   }
+  func updateWorkspaceHierarchy(id: UUID, _ change: WorkspaceHierarchyChange) async throws {
+    throw CodevisorServerClientError.httpStatus(405, "Subagent workspaces are unavailable on this server.")
+  }
+  func putNavigationRecords(_ records: ServerNavigationRecords) async throws -> ServerNavigationRecords {
+    throw CodevisorServerClientError.httpStatus(405, "Sidebar folders are unavailable on this server.")
+  }
 
   func createWorktree(projectId: UUID, name: String?) async throws -> ServerWorktree {
     throw CodevisorServerClientError.invalidResponse

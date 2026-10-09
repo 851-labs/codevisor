@@ -258,6 +258,10 @@ public protocol CodevisorServerClienting: BrowserStateClienting, SimulatorClient
   func setWorkspaceArchived(id: UUID, isArchived: Bool) async throws
   func reorderWorkspace(id: UUID, position: String, expectedRevision: Int) async throws -> ServerWorkspace
   func moveWorkspacePane(workspaceId: UUID, paneId: UUID, position: String) async throws
+  /// Changes a workspace's owner, tab group, or sidebar folder.
+  func updateWorkspaceHierarchy(id: UUID, _ change: WorkspaceHierarchyChange) async throws
+  /// Writes replicated sidebar records; the machine keeps the newer ones.
+  func putNavigationRecords(_ records: ServerNavigationRecords) async throws -> ServerNavigationRecords
   func renameWorkspace(id: UUID, name: String, hasCustomName: Bool) async throws
   func createWorktree(projectId: UUID, name: String?) async throws -> ServerWorktree
   /// Creates a worktree with a client-supplied id so the caller can follow

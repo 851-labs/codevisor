@@ -8,6 +8,8 @@ struct NavigationRecords: Sendable {
   var assignments: [UUID: UUID]
   var workspaces: [ServerWorkspace]
   var panes: [ServerWorkspacePane]
+  /// Replicated sidebar records (folders and settings).
+  var navigation: ServerNavigationRecords
 
   init(_ cache: MachineNavigationCache?) {
     projects = cache?.projects ?? []
@@ -15,6 +17,7 @@ struct NavigationRecords: Sendable {
     assignments = cache?.assignments ?? [:]
     workspaces = cache?.snapshot.workspaces ?? []
     panes = cache?.snapshot.panes ?? []
+    navigation = cache?.snapshot.records ?? ServerNavigationRecords()
   }
 }
 
@@ -88,6 +91,31 @@ enum NavigationOverlay {
       upsertSession(session, into: &records)
       records.assignments[session.id] = workspaceId
       upsertPane(pane, workspaceId: workspaceId, into: &records)
+    case let .updateWorkspaceHierarchy(workspaceId, change):
+      updateWorkspace(workspaceId, in: &records) { apply(change, to: &$0) }
+    case let .putNavigationFolder(folder):
+      records.navigation = records.navigation.merging(ServerNavigationRecords(folders: [folder]))
+    case let .putNavigationSetting(setting):
+      records.navigation = records.navigation.merging(ServerNavigationRecords(settings: [setting]))
+    }
+  }
+
+  /// The workspace record a hierarchy change leaves on the server.
+  static func apply(_ change: WorkspaceHierarchyChange, to workspace: inout ServerWorkspace) {
+    switch change {
+    case let .owner(owner):
+      let ownerId = owner?.uuidString.lowercased()
+      guard workspace.parentWorkspaceId?.lowercased() != ownerId else { return }
+      workspace.parentWorkspaceId = ownerId
+      // The server appends a newly owned group at the end of the owner's tab
+      // bar; until it says where, sort it after everything there.
+      workspace.parentTabPosition = owner == nil ? nil : "ffffffffffff8"
+    case let .groupPosition(position):
+      if workspace.parentWorkspaceId != nil { workspace.parentTabPosition = position }
+    case let .groupCollapsed(collapsed):
+      workspace.groupCollapsed = collapsed
+    case let .folder(folder):
+      workspace.folderId = folder?.uuidString.lowercased()
     }
   }
 
