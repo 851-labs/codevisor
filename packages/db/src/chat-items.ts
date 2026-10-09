@@ -72,6 +72,24 @@ export const createChatItem = (
   const state = chatState(sqlite, sessionId)
   const id = options.id ?? randomUUID()
   const position = options.position ?? state.next_position
+  insertChatItemRow(sqlite, sessionId, role, createdAt, options, id, position)
+  seedChatItemText(sqlite, id, options)
+  seedChatItemPlan(sqlite, id, options)
+  advanceChatItemState(sqlite, sessionId, role, position, id, options)
+  return id
+}
+
+type CreateChatItemOptions = Parameters<typeof createChatItem>[4]
+
+const insertChatItemRow = (
+  sqlite: Database.Database,
+  sessionId: string,
+  role: Parameters<typeof createChatItem>[2],
+  createdAt: string,
+  options: CreateChatItemOptions,
+  id: string,
+  position: number
+): void => {
   sqlite
     .prepare(
       `insert into chat_items (
@@ -99,6 +117,13 @@ export const createChatItem = (
       options.hasDetails === true ? 1 : 0,
       options.revision ?? 1
     )
+}
+
+const seedChatItemText = (
+  sqlite: Database.Database,
+  id: string,
+  options: CreateChatItemOptions
+): void => {
   if (options.text !== undefined) {
     const migrated =
       sqlite
@@ -109,6 +134,13 @@ export const createChatItem = (
     upsertChatPart(sqlite, id, "text", migrated ? options.text.slice(0, 24_000) : options.text)
     seedStandaloneText(sqlite, id, options.text, options.messageId)
   }
+}
+
+const seedChatItemPlan = (
+  sqlite: Database.Database,
+  id: string,
+  options: CreateChatItemOptions
+): void => {
   if (options.planDocument !== undefined) {
     const migrated =
       sqlite
@@ -130,6 +162,16 @@ export const createChatItem = (
       .run(id)
     appendTranscriptText(sqlite, id, "plan", options.planDocument, true)
   }
+}
+
+const advanceChatItemState = (
+  sqlite: Database.Database,
+  sessionId: string,
+  role: Parameters<typeof createChatItem>[2],
+  position: number,
+  id: string,
+  options: CreateChatItemOptions
+): void => {
   sqlite
     .prepare(
       `update session_chat_state set
@@ -138,7 +180,6 @@ export const createChatItem = (
        where session_id = ?`
     )
     .run(position + 1, role, options.status, id, sessionId)
-  return id
 }
 
 export const setChatRoute = (
