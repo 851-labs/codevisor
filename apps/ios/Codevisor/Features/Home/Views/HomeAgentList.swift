@@ -19,9 +19,9 @@ struct HomeAgentListActions {
 /// tapping a workspace opens its page, where its tabs are.
 ///
 /// Workspaces reorder with the system's long-press drag. Folders and
-/// projects reorder from their headers: a long press lifts the group and
-/// collapses it to its header, the drag moves it past the others, and the
-/// drop commits the order (see `HomeAgentList+GroupDrag`).
+/// projects reorder from their headers the same way: a long press shows a
+/// folder's menu, and moving the finger lifts the group, collapsed to its
+/// header, past the others (see `HomeAgentList+GroupDrag`).
 struct HomeAgentList: View {
   @Environment(AppEnvironment.self) var environment
   @Environment(\.accessibilityReduceMotion) var reduceMotion
@@ -38,8 +38,6 @@ struct HomeAgentList: View {
   @State private var deleting: (folder: ServerNavigationFolder, agents: [UUID])?
   @State var groupDrag: GroupDrag?
   @State var headerFrames = HomeGroupHeaderFrames()
-  @State var listFrame: CGRect = .zero
-  @State var liftFeedback = 0
 
   var navigation: NavigationStore { environment.navigationStore }
 
@@ -65,7 +63,7 @@ struct HomeAgentList: View {
         List { content(nodes, groups: groups) }
       }
     }
-    groupDragChrome(list.listStyle(.sidebar).contentMargins(.top, 12, for: .scrollContent), groups: groups)
+    groupDragChrome(list.listStyle(.sidebar).contentMargins(.top, 12, for: .scrollContent))
       .refreshable { await actions.refresh() }
       .onChange(of: selection?.wrappedValue, initial: true) { _, id in revealAncestors(of: id) }
       .alert("Rename Folder", isPresented: renamePresented) {
@@ -158,26 +156,25 @@ struct HomeAgentList: View {
     }
   }
 
-  /// A folder's actions are in a menu on its header: a long press there
-  /// lifts the folder to reorder it.
+  /// A folder's actions are in a menu on a long press of its header;
+  /// moving the finger from there lifts it to reorder.
   private func groupHeader(_ group: SidebarGroup, in groups: [SidebarGroup]) -> some View {
-    draggableHeader(group, in: groups) {
-      if let folder = group.folder {
-        HomeAgentSectionHeader(title: group.title, isExpanded: isExpanded(group)) {
-          toggle(group)
-        } menu: {
-          Button("Rename", systemImage: "pencil") {
-            folderTitle = folder.name
-            renamingFolder = folder
-          }
-          Button("Delete Folder…", systemImage: "trash", role: .destructive) {
-            deleting = (folder, group.rows.map(\.id))
-          }
-        }
-      } else {
-        HomeAgentSectionHeader(title: group.title, isExpanded: isExpanded(group)) { toggle(group) }
-      }
+    draggableHeader(group, in: groups, menu: menu(for: group)) {
+      HomeAgentSectionHeader(title: group.title, isExpanded: isExpanded(group)) { toggle(group) }
     }
+  }
+
+  private func menu(for group: SidebarGroup) -> [HomeGroupHeaderAction] {
+    guard let folder = group.folder else { return [] }
+    return [
+      HomeGroupHeaderAction(title: "Rename", systemImage: "pencil") {
+        folderTitle = folder.name
+        renamingFolder = folder
+      },
+      HomeGroupHeaderAction(title: "Delete Folder…", systemImage: "trash", isDestructive: true) {
+        deleting = (folder, group.rows.map(\.id))
+      },
+    ]
   }
 
   private var renamePresented: Binding<Bool> {
@@ -193,13 +190,11 @@ struct HomeAgentList: View {
   }
 }
 
-/// A section's header: its title, a menu of its actions if it has any,
-/// and a chevron that collapses it.
-struct HomeAgentSectionHeader<MenuContent: View>: View {
+/// A section's header: its title and a chevron that collapses it.
+struct HomeAgentSectionHeader: View {
   let title: String
   let isExpanded: Bool
   let toggle: () -> Void
-  @ViewBuilder let menu: MenuContent
 
   var body: some View {
     HStack(spacing: 4) {
@@ -207,42 +202,23 @@ struct HomeAgentSectionHeader<MenuContent: View>: View {
         .font(.headline)
         .foregroundStyle(.primary)
         .lineLimit(1)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
-        .onTapGesture(perform: toggle)
-      if MenuContent.self != EmptyView.self {
-        Menu {
-          menu
-        } label: {
-          Image(systemName: "ellipsis")
-            .font(.body.weight(.semibold))
-            .foregroundStyle(.secondary)
-            .frame(width: 28, height: 20)
-            .contentShape(Rectangle().inset(by: -8))
-        }
-        .accessibilityLabel("\(title) Actions")
-      }
+      Spacer(minLength: 8)
       Image(systemName: "chevron.right")
         .font(.footnote.weight(.semibold))
         .foregroundStyle(.primary)
         .rotationEffect(.degrees(isExpanded ? 90 : 0))
         .frame(width: 20, height: 20)
-        .contentShape(Rectangle().inset(by: -8))
-        .onTapGesture(perform: toggle)
         // Where the system draws a collapsible section's chevron, in line
         // with the rows' chevrons, past the header's own inset.
         .padding(.trailing, -13)
-        .accessibilityHidden(true)
     }
     .textCase(nil)
-    .accessibilityElement(children: .contain)
-    .accessibilityAction(named: isExpanded ? "Collapse" : "Expand") { toggle() }
-  }
-}
-
-extension HomeAgentSectionHeader where MenuContent == EmptyView {
-  init(title: String, isExpanded: Bool, toggle: @escaping () -> Void) {
-    self.init(title: title, isExpanded: isExpanded, toggle: toggle) { EmptyView() }
+    .contentShape(Rectangle())
+    .onTapGesture(perform: toggle)
+    .accessibilityElement(children: .combine)
+    .accessibilityAddTraits(.isButton)
+    .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+    .accessibilityAction { toggle() }
   }
 }
 
@@ -250,6 +226,8 @@ extension HomeAgentSectionHeader where MenuContent == EmptyView {
 /// folder. Both sync to every device.
 struct HomeAgentListOptions: View {
   @Environment(AppEnvironment.self) private var environment
+  @State private var namingFolder = false
+  @State private var folderName = ""
 
   var body: some View {
     let navigation = environment.navigationStore
@@ -266,16 +244,29 @@ struct HomeAgentListOptions: View {
         }
       }
       if navigation.sidebarGrouping == .none {
-        Button("New Folder", systemImage: "folder.badge.plus") { _ = Self.createFolder(in: navigation) }
+        Button("New Folder", systemImage: "folder.badge.plus") {
+          folderName = ""
+          namingFolder = true
+        }
       }
     } label: {
       Label("View Options", systemImage: "line.3.horizontal.decrease")
+    }
+    // A folder is made once it has a name; cancelling makes none.
+    .alert("New Folder", isPresented: $namingFolder) {
+      TextField("Name", text: $folderName)
+      Button("Create") {
+        let name = folderName.trimmingCharacters(in: .whitespacesAndNewlines)
+        _ = Self.createFolder(named: name, in: navigation)
+      }
+      .disabled(folderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+      Button("Cancel", role: .cancel) {}
     }
   }
 
   /// A new folder at the top of the list.
   @MainActor
-  static func createFolder(in navigation: NavigationStore) -> UUID {
+  static func createFolder(named name: String, in navigation: NavigationStore) -> UUID {
     let id = UUID()
     let first = navigation.agentSidebar.first.map { node -> String in
       switch node {
@@ -285,7 +276,7 @@ struct HomeAgentListOptions: View {
       }
     }
     let position = WorkspacePosition.between(nil, first, id: id) ?? "0000000000008"
-    navigation.saveFolder(id: id, name: "New Folder", position: position)
+    navigation.saveFolder(id: id, name: name, position: position)
     return id
   }
 }

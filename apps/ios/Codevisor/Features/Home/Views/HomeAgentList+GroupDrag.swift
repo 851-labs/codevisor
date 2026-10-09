@@ -2,30 +2,17 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// Reordering folders (or projects) from their headers, in the one `List`:
-/// a long press lifts the header and collapses just that group, the drag
-/// moves it live past the others (which keep their workspaces showing), and
-/// the drop commits the order and expands it again.
-///
-/// The lifted header is drawn as an overlay on the list, positioned only by
-/// the finger; its own section keeps an invisible placeholder. That keeps it
-/// out of the reflow animation: only the other groups animate past, and the
-/// hole slides under the finger.
+/// Reordering folders (or projects) from their headers, as list rows do: a
+/// long press shows the group's menu, and moving the finger lifts it out of
+/// the menu into a drag. The lifted group collapses to its header, the
+/// others slide past as the drag moves, and letting go commits the order.
 extension HomeAgentList {
   struct GroupDrag: Equatable {
     let id: String
     var order: [String]
-    /// Where the header's center was when it lifted. Until the first drag
-    /// sample this is where the finger is, so the floating header stays put
-    /// while its own group collapses under it.
-    let liftedMidY: CGFloat
+    /// Where the drag is, in global space. The header is a line tall, so
+    /// its middle is taken to be under the finger.
     var fingerY: CGFloat?
-    /// Where on the header the finger landed, relative to its center, so
-    /// the header lifts in place instead of snapping under the finger.
-    var grabOffset: CGFloat?
-    /// Released: the floating header is gliding into its slot before its
-    /// group expands.
-    var isSettling = false
   }
 
   /// The groups in the order the drag has them in, while one is lifted.
@@ -37,120 +24,70 @@ extension HomeAgentList {
     return shown.count == groups.count ? shown : groups
   }
 
+  /// A group's header, with its menu on a long press (folders only) and a
+  /// drag out of that press to reorder it. Section headers don't take
+  /// SwiftUI's context menus or drags, so UIKit's interactions carry them.
   func draggableHeader<Header: View>(
-    _ group: SidebarGroup, in groups: [SidebarGroup], @ViewBuilder header: () -> Header
+    _ group: SidebarGroup, in groups: [SidebarGroup], menu: [HomeGroupHeaderAction],
+    @ViewBuilder header: () -> Header
   ) -> some View {
     ZStack {
-      // The measured slot: stays put while the header itself is lifted.
+      // The measured slot.
       Color.clear
         .onGeometryChange(for: CGRect.self) { proxy in
           proxy.frame(in: .global)
         } action: { frame in
           headerFrames.frames[group.id] = frame
-          // The collapse moves every slot; keep the hole under the finger
-          // as they settle, not only when the finger moves.
+          // The collapse moves every slot; keep the hole under the drag as
+          // they settle, not only when the drag moves.
           if groupDrag != nil { reconcileGroupOrder() }
         }
-      header()
-        // The floating copy is what the user sees moving.
-        .opacity(groupDrag?.id == group.id ? 0 : 1)
+      HomeGroupHeaderHost(
+        title: group.title, content: header(), menu: menu,
+        onBegin: { beginGroupDrag(group, in: groups) },
+        onMove: { updateGroupDrag(fingerY: $0) },
+        onEnd: { endGroupDrag(in: groups) }
+      )
+      // The drag preview is what the user sees moving; the slot stays a
+      // hole until the drop.
+      .opacity(groupDrag?.id == group.id ? 0 : 1)
     }
-    .gesture(
-      WorkspaceReorderGesture(
-        onBegan: { point in
-          beginGroupDrag(group, in: groups)
-          updateGroupDrag(fingerY: point.y)
-        },
-        onChanged: { point in updateGroupDrag(fingerY: point.y) },
-        onEnded: { endGroupDrag(in: groups) }
-      ))
   }
 
-  /// The list's part in a group drag: scrolling held still, the others
-  /// reflowing, and the lifted header floating over it all.
-  func groupDragChrome<Content: View>(_ content: Content, groups: [SidebarGroup]) -> some View {
+  /// The list's part in a group drag: scrolling held still while the
+  /// other groups reflow around the lifted one.
+  func groupDragChrome<Content: View>(_ content: Content) -> some View {
     content
       .scrollDisabled(groupDrag != nil)
       .animation(Motion.listReflow(reduceMotion: reduceMotion), value: groupDrag?.order)
-      .onGeometryChange(for: CGRect.self) { proxy in
-        proxy.frame(in: .global)
-      } action: { frame in
-        listFrame = frame
-      }
-      // Outside the reflow animation: the header answers the finger at once.
-      .overlay(alignment: .topLeading) { floatingHeader(groups) }
-      .sensoryFeedback(.impact(weight: .medium), trigger: liftFeedback)
       .sensoryFeedback(.selection, trigger: groupDrag?.order)
   }
 
-  /// The lifted header in the list's space: where it lifted until the
-  /// finger moves, then under the finger, gliding onto its slot on release.
-  @ViewBuilder
-  private func floatingHeader(_ groups: [SidebarGroup]) -> some View {
-    if let drag = groupDrag, let group = groups.first(where: { $0.id == drag.id }),
-      let slot = headerFrames.frames[drag.id]
-    {
-      let centerY = drag.isSettling ? slot.midY : liftedCenterY(drag)
-      floatingHeaderLabel(group)
-        .frame(width: slot.width, height: slot.height)
-        .scaleEffect(drag.isSettling ? 1 : 1.03)
-        .offset(x: slot.minX - listFrame.minX, y: centerY - slot.height / 2 - listFrame.minY)
-        .allowsHitTesting(false)
-        .transition(.identity)
-    }
-  }
-
-  /// The header as its slot draws it, its menu button included.
-  @ViewBuilder
-  private func floatingHeaderLabel(_ group: SidebarGroup) -> some View {
-    if group.folder != nil {
-      HomeAgentSectionHeader(title: group.title, isExpanded: false) {
-      } menu: {
-        Group {}
-      }
-    } else {
-      HomeAgentSectionHeader(title: group.title, isExpanded: false) {}
-    }
-  }
-
   private func beginGroupDrag(_ group: SidebarGroup, in groups: [SidebarGroup]) {
-    liftFeedback += 1
     withAnimation(.snappy(duration: 0.28)) {
-      groupDrag = GroupDrag(
-        id: group.id, order: groups.map(\.id), liftedMidY: headerFrames.frames[group.id]?.midY ?? 0)
+      groupDrag = GroupDrag(id: group.id, order: groups.map(\.id))
     }
   }
 
-  private func liftedCenterY(_ drag: GroupDrag) -> CGFloat {
-    guard let fingerY = drag.fingerY else { return drag.liftedMidY }
-    return fingerY - (drag.grabOffset ?? 0)
-  }
-
-  private func updateGroupDrag(fingerY: CGFloat) {
-    guard var current = groupDrag, !current.isSettling else { return }
-    if current.grabOffset == nil {
-      // Against the frozen lift point: the slot has already started moving
-      // with the collapse, the finger has not.
-      current.grabOffset = fingerY - current.liftedMidY
-    }
+  func updateGroupDrag(fingerY: CGFloat) {
+    guard var current = groupDrag, current.fingerY != fingerY else { return }
     current.fingerY = fingerY
     groupDrag = current
     reconcileGroupOrder()
   }
 
-  /// Slot the lifted group after every other group whose middle its header
+  /// Slot the lifted group after every other group whose middle the drag
   /// has passed. A group spans its header and workspaces, down to the next
   /// header, so a tall one is crossed halfway down its workspaces.
   private func reconcileGroupOrder() {
-    guard var current = groupDrag, !current.isSettling else { return }
-    let liftedMidY = liftedCenterY(current)
+    guard var current = groupDrag, let fingerY = current.fingerY else { return }
     let others = current.order.filter { $0 != current.id }
     let frames = headerFrames.frames
     let passed = others.indices.filter { index in
       guard let header = frames[others[index]] else { return false }
       let next = others.indices.contains(index + 1) ? frames[others[index + 1]]?.minY : nil
       let bottom = max(header.maxY, next ?? header.maxY)
-      return (header.minY + bottom) / 2 < liftedMidY
+      return (header.minY + bottom) / 2 < fingerY
     }.count
     var order = others
     order.insert(current.id, at: min(passed, others.count))
@@ -159,10 +96,9 @@ extension HomeAgentList {
     groupDrag = current
   }
 
-  /// Commit the order, glide the floating header onto its slot, then let
-  /// its group expand again.
-  private func endGroupDrag(in groups: [SidebarGroup]) {
-    guard var current = groupDrag, !current.isSettling else { return }
+  /// Commit the order; the list then shows it from the store.
+  func endGroupDrag(in groups: [SidebarGroup]) {
+    guard let current = groupDrag else { return }
     if current.order != groups.map(\.id), let index = current.order.firstIndex(of: current.id),
       let group = groups.first(where: { $0.id == current.id })
     {
@@ -172,19 +108,7 @@ extension HomeAgentList {
         navigation.moveProject(projectId, to: index, among: groups.compactMap(\.projectId))
       }
     }
-    current.isSettling = true
-    current.fingerY = nil
-    let settle = reduceMotion ? 0.0 : 0.22
-    withAnimation(.snappy(duration: settle)) {
-      groupDrag = current
-    }
-    Task { @MainActor in
-      try? await Task.sleep(for: .seconds(settle))
-      guard groupDrag?.id == current.id, groupDrag?.isSettling == true else { return }
-      withAnimation(.snappy(duration: 0.28)) {
-        groupDrag = nil
-      }
-    }
+    withAnimation(.snappy(duration: 0.28)) { groupDrag = nil }
   }
 }
 
