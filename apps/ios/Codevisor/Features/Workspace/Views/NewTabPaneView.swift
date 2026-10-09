@@ -12,10 +12,24 @@ struct PluginNewTabOption: Identifiable, Equatable {
   var iconPath: String?
 
   var id: String { "\(pluginId)|\(paneType)" }
+
+  /// The machine's plugin pane rows. Errors (older servers without the
+  /// plugins feature, unreachable machines) just leave them out; the
+  /// built-in options never depend on the request.
+  static func load(from client: (any CodevisorServerClienting)?) async -> [PluginNewTabOption] {
+    guard let client, let plugins = try? await client.listPlugins() else { return [] }
+    return plugins.flatMap { plugin in
+      plugin.panes.map { pane in
+        PluginNewTabOption(
+          pluginId: plugin.id, paneType: pane.type, title: pane.title, iconPath: pane.iconPath ?? plugin.iconPath)
+      }
+    }
+  }
 }
 
-/// The iOS take on macOS's new-tab page: pick what this tab becomes. The
-/// placeholder converts in place, so the tab keeps its slot in the grid.
+/// A New Tab page another client left open: pick what this tab becomes. The
+/// placeholder converts in place, so the tab keeps its slot. iOS itself
+/// opens new tabs from `NewTabSheet` and never leaves one of these.
 struct NewTabPaneView: View {
   let onNewChat: () -> Void
   let onNewTerminal: () -> Void
@@ -92,25 +106,7 @@ struct NewTabPaneView: View {
     }
     .background(Color(.systemGroupedBackground))
     .task {
-      await loadPluginOptions()
-    }
-  }
-
-  /// Machine-scoped plugin pane rows. Errors (older servers without the
-  /// plugins feature, unreachable machines) just leave the rows hidden —
-  /// the page's built-in options never depend on the request.
-  private func loadPluginOptions() async {
-    guard let client else { return }
-    guard let plugins = try? await client.listPlugins() else { return }
-    pluginOptions = plugins.flatMap { plugin in
-      plugin.panes.map { pane in
-        PluginNewTabOption(
-          pluginId: plugin.id,
-          paneType: pane.type,
-          title: pane.title,
-          iconPath: pane.iconPath ?? plugin.iconPath
-        )
-      }
+      pluginOptions = await PluginNewTabOption.load(from: client)
     }
   }
 

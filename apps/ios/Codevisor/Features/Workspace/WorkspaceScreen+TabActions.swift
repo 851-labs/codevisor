@@ -124,12 +124,38 @@ extension WorkspaceScreen {
     }
   }
 
-  /// Adds a New Tab page and shows it; its page offers what to create.
-  func addTab() {
+  /// Asks what the new tab should be.
+  func presentNewTab() {
+    showsNewTabSheet = true
+  }
+
+  /// Opens a new tab as `choice`, appended to the tabs, and shows it — by
+  /// zooming into its tile when the tab overview is up. Its placeholder is
+  /// never published: other devices see only the real tab.
+  func openNewTab(_ choice: NewTabChoice) {
     var state = panes
-    let newPane = state.addNewTabPane()
-    state.selectPane(id: newPane.id)
-    paneBinding.wrappedValue = state
-    publishPane(newPane)
+    let placeholder = state.addNewTabPane()
+    state.selectPane(id: placeholder.id)
+    paneState = state
+    switch choice {
+    case .chat: convertToChat(placeholder)
+    case .terminal: convertToTerminal(placeholder)
+    case let .browser(url): convertToBrowser(placeholder, url: url)
+    case .files: openFiles(placeholder)
+    case .review: convertToReview(placeholder)
+    case .simulator: convertToSimulator(placeholder)
+    case let .plugin(option): convertToPlugin(placeholder, option: option)
+    }
+    if tabOverview == .open, let id = panes.selectedPaneId { openFromOverview(id) }
+  }
+
+  /// The sheet `presentNewTab()` shows.
+  var newTabSheet: some View {
+    NewTabSheet(
+      supportsSimulator: environment.machines.statusByMachineId[resolvedServerId]?.supportsSimulator == true,
+      client: environment.machines.client(for: resolvedServerId),
+      iconCacheNamespace: resolvedServerId,
+      onChoose: { openNewTab($0) }
+    )
   }
 }

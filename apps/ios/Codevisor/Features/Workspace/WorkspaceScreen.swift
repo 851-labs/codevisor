@@ -116,6 +116,7 @@ struct WorkspaceScreen: View {
   /// The Safari-style tab overview over the pane, and where the pane sits.
   @State var tabOverview: WorkspaceTabOverview?
   @State var paneFrame = WorkspacePaneFrame()
+  @State var showsNewTabSheet = false
 
   /// This workspace's chat: the routed one, or the one a draft's first send
   /// created. Nil only while an unsent draft.
@@ -282,6 +283,7 @@ struct WorkspaceScreen: View {
       tabOverviewLayer
     }
     .navigationDestination(item: $presentedSubagent) { SubagentScreen(route: $0) }
+    .sheet(isPresented: $showsNewTabSheet) { newTabSheet }
     // An agent belongs to the pane it was opened from.
     .onChange(of: paneState?.selectedPaneId) { presentedSubagent = nil }
   }
@@ -351,7 +353,7 @@ struct WorkspaceScreen: View {
     )
     .toolbar {
       if !blocksServerContent, let model = activeFileModel {
-        FilePaneToolbar(model: model, onNewTab: { addTab() })
+        FilePaneToolbar(model: model, onNewTab: { presentNewTab() })
         ToolbarItem(placement: .topBarTrailing) { tabsButton }
       } else {
         // A Review pane adds its title and options menu; the workspace's own

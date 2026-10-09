@@ -31,10 +31,15 @@ extension WorkspaceScreen {
     }
   }
 
-  func convertToBrowser(_ pane: PaneDescriptorState) {
+  /// A nil `url` opens the browser's default page.
+  func convertToBrowser(_ pane: PaneDescriptorState, url: String? = nil) {
     guard let workspaceSessionId = paneStorageId else { return }
     var state = panes
-    let converted = state.convertNewTabPane(id: pane.id, to: .browser, sessionId: workspaceSessionId)
+    var converted = state.convertNewTabPane(id: pane.id, to: .browser, sessionId: workspaceSessionId)
+    if let url, let index = state.panes.firstIndex(where: { $0.id == converted?.id }) {
+      state.panes[index].browserURL = url
+      converted = state.panes[index]
+    }
     paneBinding.wrappedValue = state
     if let converted { publishPane(converted) }
   }

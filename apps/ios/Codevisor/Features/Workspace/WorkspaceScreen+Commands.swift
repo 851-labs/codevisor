@@ -8,7 +8,11 @@ extension WorkspaceScreen {
     return WorkspaceCommandActions(
       workspaceId: resolvedWorkspace?.id,
       paneCount: panes.panes.count,
-      newTab: { addTab() },
+      newTab: { presentNewTab() },
+      showTabs: { toggleTabOverview() },
+      selectTabAt: { index in
+        if panes.panes.indices.contains(index) { select(panes.panes[index]) }
+      },
       closeTab: {
         if let pane = activePane { close(pane) }
       },

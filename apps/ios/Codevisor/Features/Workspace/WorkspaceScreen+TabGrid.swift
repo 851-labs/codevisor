@@ -50,10 +50,7 @@ extension WorkspaceScreen {
           close: { id in panes.panes.first { $0.id == id }.map { closeFromOverview($0) } },
           closeOthers: { closeOthers(keeping: $0, in: workspace) },
           reorder: { reorderTabs($0, in: workspace) },
-          newTab: {
-            addTab()
-            if let id = panes.selectedPaneId { openFromOverview(id) }
-          },
+          newTab: { presentNewTab() },
           done: { panes.selectedPaneId.map { openFromOverview($0) } },
           dismiss: { tabOverview = nil }
         )
