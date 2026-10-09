@@ -37,7 +37,6 @@ struct WorkspaceOutlineScreen: View {
     }
     .listStyle(.sidebar)
     .navigationTitle(row?.title ?? workspace?.name ?? "")
-    .navigationSubtitle(summary(tabs: tabs.count, workspaces: children.count))
     .toolbar { toolbar(row: row) }
     .sheet(isPresented: $showsNewTabSheet) {
       NewTabSheet(
@@ -112,13 +111,6 @@ struct WorkspaceOutlineScreen: View {
 
   private func owner(of row: AgentSidebarRow) -> AgentSidebarRow? {
     environment.workspaces.workspace(id: row.id)?.parentWorkspaceId.flatMap { navigation.agentSidebar.row(id: $0) }
-  }
-
-  /// "3 Tabs · 2 Workspaces", as Notes counts a folder's notes and folders.
-  private func summary(tabs: Int, workspaces: Int) -> String {
-    var parts = [tabs == 1 ? "1 Tab" : "\(tabs) Tabs"]
-    if workspaces > 0 { parts.append(workspaces == 1 ? "1 Workspace" : "\(workspaces) Workspaces") }
-    return parts.joined(separator: " · ")
   }
 
   /// A chat opens by its session, so its chat always wins; other tabs open
