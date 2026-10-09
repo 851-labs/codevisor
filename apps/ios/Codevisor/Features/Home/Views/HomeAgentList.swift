@@ -25,6 +25,8 @@ struct HomeAgentList: View {
 
   @State private var renamingFolder: ServerNavigationFolder?
   @State private var folderTitle = ""
+  /// The folder being deleted, with the agents filed in it.
+  @State private var deleting: (folder: ServerNavigationFolder, agents: [UUID])?
 
   private var navigation: NavigationStore { environment.navigationStore }
 
@@ -47,6 +49,35 @@ struct HomeAgentList: View {
       Button("Rename") { commitFolderRename() }
       Button("Cancel", role: .cancel) { renamingFolder = nil }
     }
+    .confirmationDialog(
+      deleting.map { "Delete “\($0.folder.name)”?" } ?? "",
+      isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+      titleVisibility: .visible
+    ) {
+      if let deleting {
+        let count = deleting.agents.count
+        Button("Delete Folder") { delete(deleting.folder, archiving: []) }
+        if count > 0 {
+          Button("Delete Folder and \(count) Workspace\(count == 1 ? "" : "s")", role: .destructive) {
+            delete(deleting.folder, archiving: deleting.agents)
+          }
+        }
+        Button("Cancel", role: .cancel) {}
+      }
+    } message: {
+      if let count = deleting?.agents.count, count > 0 {
+        Text(
+          count == 1
+            ? "Deleting just the folder moves its workspace out of it. Deleting it too archives it, with its subagents."
+            : "Deleting just the folder moves its \(count) workspaces out of it. "
+              + "Deleting them too archives them, with their subagents.")
+      }
+    }
+  }
+
+  private func delete(_ folder: ServerNavigationFolder, archiving agents: [UUID]) {
+    for id in agents { actions.archive(id) }
+    if let id = UUID(uuidString: folder.id) { navigation.deleteFolder(id: id) }
   }
 
   @ViewBuilder
@@ -91,8 +122,8 @@ struct HomeAgentList: View {
         folderTitle = folder.name
         renamingFolder = folder
       }
-      Button("Delete Folder", systemImage: "trash", role: .destructive) {
-        if let id = UUID(uuidString: folder.id) { navigation.deleteFolder(id: id) }
+      Button("Delete Folder…", systemImage: "trash", role: .destructive) {
+        deleting = (folder, rows.map(\.id))
       }
     }
   }

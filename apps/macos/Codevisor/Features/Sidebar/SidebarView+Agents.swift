@@ -31,6 +31,29 @@ extension SidebarView {
       Button("Rename") { commitFolderRename() }
       Button("Cancel", role: .cancel) { renamingFolder = nil }
     }
+    .confirmationDialog(
+      deletingFolder.map { "Delete “\($0.name)”?" } ?? "",
+      isPresented: Binding(get: { deletingFolder != nil }, set: { if !$0 { deletingFolder = nil } }),
+      presenting: deletingFolder
+    ) { folder in
+      let count = agents(in: folder).count
+      Button("Delete Folder") { delete(folder, archivingAgents: false) }
+      if count > 0 {
+        Button("Delete Folder and \(count) Workspace\(count == 1 ? "" : "s")", role: .destructive) {
+          delete(folder, archivingAgents: true)
+        }
+      }
+      Button("Cancel", role: .cancel) {}
+    } message: { folder in
+      let count = agents(in: folder).count
+      Text(
+        count == 0
+          ? "The folder is empty."
+          : count == 1
+            ? "Deleting just the folder moves its workspace out of it. Deleting it too archives it, with its subagents."
+            : "Deleting just the folder moves its \(count) workspaces out of it. "
+              + "Deleting them too archives them, with their subagents.")
+    }
   }
 
   /// "Agents" and the view options, like Finder's sidebar section titles.
@@ -91,9 +114,7 @@ extension SidebarView {
           Button("New Folder") { createFolder(filing: nil) }
           Divider()
           Button("Rename…") { beginFolderRename(folder) }
-          Button("Delete Folder", role: .destructive) {
-            if let id = UUID(uuidString: folder.id) { environment.navigationStore.deleteFolder(id: id) }
-          }
+          Button("Delete Folder…", role: .destructive) { deletingFolder = folder }
         }
         .onGeometryChange(for: CGRect.self) {
           $0.frame(in: .global)
@@ -281,10 +302,30 @@ extension SidebarView {
     }
   }
 
+  /// The agents filed in a folder (not the ones nested under them).
+  private func agents(in folder: ServerNavigationFolder) -> [AgentSidebarRow] {
+    for case let .folder(record, rows) in agentNodes where record.id == folder.id { return rows }
+    return []
+  }
+
+  /// Deletes a folder on every device. Its agents move out of it, or are
+  /// archived along with it.
+  private func delete(_ folder: ServerNavigationFolder, archivingAgents: Bool) {
+    guard let id = UUID(uuidString: folder.id) else { return }
+    if archivingAgents {
+      for row in agents(in: folder) { archive(row.id) }
+    }
+    withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) {
+      environment.navigationStore.deleteFolder(id: id)
+    }
+  }
+
   private func toggleFolder(_ folder: ServerNavigationFolder) {
     guard let id = UUID(uuidString: folder.id) else { return }
-    environment.navigationStore.saveFolder(
-      id: id, name: folder.name, position: folder.position, collapsed: !folder.collapsed)
+    withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) {
+      environment.navigationStore.saveFolder(
+        id: id, name: folder.name, position: folder.position, collapsed: !folder.collapsed)
+    }
   }
 
   private var folderRenamePresented: Binding<Bool> {

@@ -22,6 +22,7 @@ struct SidebarView: View {
   @State var workspaceRenameTitle = ""
   @State var collapsedProjects: Set<String> = []
   @State var renamingFolder: ServerNavigationFolder?
+  @State var deletingFolder: ServerNavigationFolder?
   @State var folderRenameTitle = ""
   @State var agentDrag: AgentSidebarDrag?
   @State var agentFrames = AgentSidebarFrames()
