@@ -214,19 +214,23 @@ public final class FileSystemStore: PersistenceStore, @unchecked Sendable {
       }
       guard let operation else { return }
       do {
-        switch operation {
-        case let .save(data):
-          try data.write(to: self.url(forKey: key), options: .atomic)
-        case .remove:
-          let url = self.url(forKey: key)
-          if self.fileManager.fileExists(atPath: url.path) {
-            try self.fileManager.removeItem(at: url)
-          }
-        }
+        try self.applyPendingOperation(operation, forKey: key)
       } catch {
         Log.persistence.error(
           "Failed to write \(key, privacy: .public): \(String(describing: error), privacy: .public)")
         self.notifyWriteFailure(key: key, error: error)
+      }
+    }
+  }
+
+  private func applyPendingOperation(_ operation: PendingOperation, forKey key: String) throws {
+    switch operation {
+    case let .save(data):
+      try data.write(to: self.url(forKey: key), options: .atomic)
+    case .remove:
+      let url = self.url(forKey: key)
+      if self.fileManager.fileExists(atPath: url.path) {
+        try self.fileManager.removeItem(at: url)
       }
     }
   }
