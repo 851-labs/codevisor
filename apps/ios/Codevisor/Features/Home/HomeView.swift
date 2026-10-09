@@ -82,9 +82,6 @@ struct HomeView: View {
   @State var workspaceRenameTitle = ""
   @State var renamingTab: HomeTabRenameRequest?
   @State var tabRenameTitle = ""
-  /// The sidebar's actions behind one stable reference, so sidebar rows
-  /// skip re-rendering when only Home's closures were rebuilt.
-  @State var sidebarActionHandler = HomeSidebarActionHandler(HomeSidebarActions())
   /// The launch state and sync indicator, precomputed off Home's body by
   /// `HomeNavigationPresentationObserver`. Nil until its first value.
   @State var navigationPresentation: HomeNavigationPresentation?

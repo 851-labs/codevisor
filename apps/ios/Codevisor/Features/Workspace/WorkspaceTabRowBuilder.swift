@@ -2,44 +2,13 @@ import CodevisorCore
 import CodevisorUI
 import Foundation
 
-/// Turns Core's precomputed sidebar -- workspaces in display order, with
-/// superseded automatic workspaces removed and routing chats resolved -- into
-/// the sidebar's plain section values.
+/// A workspace's tabs as rows: title, kind icon, and a chat's live status,
+/// in tab order. The tab overview's tiles are built from these.
 ///
-/// Every lookup is O(1): the order and routing come from
-/// `NavigationWorkspaces.sidebar`, each workspace from its own entry, and each
-/// chat from `ProjectListModel.session(_:serverId:)`. Reading an entry
-/// observes only that workspace.
+/// Every chat lookup is O(1), through `ProjectListModel.session(_:serverId:)`.
 @MainActor
-struct HomeSidebarSectionBuilder {
+struct WorkspaceTabRowBuilder {
   let environment: AppEnvironment
-
-  func sections() -> [HomeSidebarSection] {
-    let entries = environment.navigationStore.workspaceEntries
-    let machines = environment.machines
-    // Machines this device knows about. Their cached workspaces show at
-    // launch; records from a machine that has since been removed do not.
-    let knownMachineIDs = Set(machines.allMachines.map(\.id))
-    let visibility = PaneNavigationVisibility()
-    return entries.sidebar.compactMap { item -> HomeSidebarSection? in
-      guard knownMachineIDs.contains(item.serverId),
-        let workspace = entries.entry(item.id).workspace, !workspace.isArchived
-      else { return nil }
-      // The first routing chat that still exists anchors the workspace; a
-      // terminal-only workspace routes through a closed chat Core retained.
-      let anchor = item.routingChatIds.first { session($0, serverId: item.serverId) != nil }
-      let rows = tabRows(for: workspace, visibility: visibility)
-      return HomeSidebarSection(
-        id: workspace.id,
-        serverId: workspace.serverId,
-        name: workspace.name,
-        machineName: machines.fleetMachineName(for: workspace.serverId),
-        anchorSessionId: anchor,
-        status: rows.map(\.status).min() ?? .idle,
-        rows: rows
-      )
-    }
-  }
 
   private func session(_ id: UUID, serverId: String) -> ChatSession? {
     environment.projectList.session(id, serverId: serverId)

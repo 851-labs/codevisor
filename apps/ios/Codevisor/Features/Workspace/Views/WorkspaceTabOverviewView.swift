@@ -78,7 +78,7 @@ struct WorkspaceTabOverviewView: View {
 
   private func childGrid(_ child: Workspace) -> some View {
     let home = navigation.homeChatId(of: child)
-    let tabs = HomeSidebarSectionBuilder(environment: environment).tabRows(for: child)
+    let tabs = WorkspaceTabRowBuilder(environment: environment).tabRows(for: child)
     return WorkspaceTabGrid(
       tabs: tabs, serverId: child.serverId, selectedId: nil, homeChatId: home, aspectRatio: aspectRatio,
       phase: .open, zoom: nil, onSettled: {},

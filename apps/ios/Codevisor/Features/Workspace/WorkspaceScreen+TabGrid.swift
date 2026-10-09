@@ -23,7 +23,7 @@ final class WorkspacePaneFrame {
 extension WorkspaceScreen {
   /// The workspace's tabs as the overview lists them, in the shared order.
   var overviewTabs: [HomeSidebarTabRow] {
-    resolvedWorkspace.map { HomeSidebarSectionBuilder(environment: environment).tabRows(for: $0) } ?? []
+    resolvedWorkspace.map { WorkspaceTabRowBuilder(environment: environment).tabRows(for: $0) } ?? []
   }
 
   private var overviewZoom: Animation? {
