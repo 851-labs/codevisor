@@ -127,6 +127,120 @@ const transcriptPageItem = (
   }
 }
 
+const readTranscriptPageRows = (
+  sqlite: ServiceContext["sqlite"],
+  sessionId: string,
+  before: number | undefined,
+  bounded: number,
+  forward: boolean
+) => {
+  return sqlite
+    .prepare(
+      `select chat_items.*,
+               coalesce((select substr(text, 1, 24000) from chat_parts
+                 where item_id = chat_items.id and kind = 'text' order by position limit 1), '') as text,
+               (select substr(text, 1, 24000) from chat_parts
+                 where item_id = chat_items.id and kind = 'plan' order by position limit 1) as plan_document
+             from chat_items
+             where session_id = ? and role in ('user', 'assistant')
+               and ${renderableChatItemPredicate}
+               and (? is null or position ${forward ? ">" : "<"} ?)
+             order by position ${forward ? "asc" : "desc"} limit ?`
+    )
+    .all(sessionId, before ?? null, before ?? null, bounded + 1) as ReadonlyArray<ChatItemRow>
+}
+
+const hasOlderRenderableTranscriptItem = (
+  sqlite: ServiceContext["sqlite"],
+  sessionId: string,
+  first: number | undefined
+) => {
+  return (
+    first !== undefined &&
+    sqlite
+      .prepare(
+        `select 1 from chat_items where session_id = ?
+          and ${renderableChatItemPredicate} and position < ? limit 1`
+      )
+      .get(sessionId, first) !== undefined
+  )
+}
+
+const hasNewerRenderableTranscriptItem = (
+  sqlite: ServiceContext["sqlite"],
+  sessionId: string,
+  last: number | undefined
+) => {
+  return (
+    last !== undefined &&
+    sqlite
+      .prepare(
+        `select 1 from chat_items where session_id = ?
+          and ${renderableChatItemPredicate} and position > ? limit 1`
+      )
+      .get(sessionId, last) !== undefined
+  )
+}
+
+const readTranscriptPageState = (sqlite: ServiceContext["sqlite"], sessionId: string) => {
+  return sqlite
+    .prepare(
+      `select revision as cursor, pending_question, background_tasks, session_plan
+             from sessions where id = ?`
+    )
+    .get(sessionId) as {
+    readonly cursor: number
+    readonly pending_question: string | null
+    readonly background_tasks: string
+    readonly session_plan: string | null
+  }
+}
+
+const readTranscriptStateUpdates = (sqlite: ServiceContext["sqlite"], sessionId: string) => {
+  return (
+    sqlite
+      .prepare(
+        `select payload from session_state where session_id = ?
+            and state_key in ('available_commands_update', 'config_option_update', 'current_mode_update')`
+      )
+      .all(sessionId) as Array<{ payload: string }>
+  ).map((row) => JSON.parse(row.payload) as unknown)
+}
+
+const makeTranscriptPage = (
+  sqlite: ServiceContext["sqlite"],
+  sessionId: string,
+  session: ReturnType<ServiceContext["getSession"]>,
+  ordered: ReadonlyArray<ChatItemRow>
+) => {
+  const items = ordered.map((row) => transcriptPageItem(sqlite, sessionId, row))
+  const first = ordered[0]?.position
+  const last = ordered.at(-1)?.position
+  const hasMore = hasOlderRenderableTranscriptItem(sqlite, sessionId, first)
+  const hasNewer = hasNewerRenderableTranscriptItem(sqlite, sessionId, last)
+  const state = readTranscriptPageState(sqlite, sessionId)
+  const pendingQuestion = pendingQuestionFromRaw(state.pending_question)
+  const backgroundTasks = backgroundTasksFromRaw(state.background_tasks)
+  const sessionPlan = sessionPlanFromRaw(state.session_plan)
+  const goal = sessionGoalSnapshot(sqlite, sessionId)
+  return {
+    items,
+    setupActivities: sessionSetupState(sqlite, sessionId),
+    ...(hasMore ? { nextBefore: String(first!) } : {}),
+    ...(last === undefined ? {} : { nextAfter: `after:${last}` }),
+    hasNewer,
+    hasMore,
+    eventCursor: Number(state.cursor),
+    stateUpdates: readTranscriptStateUpdates(sqlite, sessionId),
+    ...(pendingQuestion === undefined ? {} : { pendingQuestion }),
+    pendingPlanApproval: session.pendingPlanApproval === true,
+    backgroundTasks,
+    ...(goal === undefined ? {} : { goal }),
+    ...(sessionPlan === undefined ? {} : { sessionPlan }),
+    usage: session.usage
+  }
+}
+
 export const makeTranscriptService = (
   context: ServiceContext
 ): Pick<
@@ -181,85 +295,11 @@ export const makeTranscriptService = (
           const session = getSession(sessionId)
           const before = resolveTranscriptPosition(sqlite, sessionId, rawBefore)
           const bounded = Math.max(1, Math.min(64, Math.trunc(limit)))
-          const rows = sqlite
-            .prepare(
-              `select chat_items.*,
-               coalesce((select substr(text, 1, 24000) from chat_parts
-                 where item_id = chat_items.id and kind = 'text' order by position limit 1), '') as text,
-               (select substr(text, 1, 24000) from chat_parts
-                 where item_id = chat_items.id and kind = 'plan' order by position limit 1) as plan_document
-             from chat_items
-             where session_id = ? and role in ('user', 'assistant')
-               and ${renderableChatItemPredicate}
-               and (? is null or position ${forward ? ">" : "<"} ?)
-             order by position ${forward ? "asc" : "desc"} limit ?`
-            )
-            .all(
-              sessionId,
-              before ?? null,
-              before ?? null,
-              bounded + 1
-            ) as ReadonlyArray<ChatItemRow>
+          const rows = readTranscriptPageRows(sqlite, sessionId, before, bounded, forward)
           const candidates = rows.slice(0, bounded)
           const pageRows = transcriptRowsWithinBudget(candidates, bounded)
           const ordered = forward ? pageRows : pageRows.toReversed()
-          const items = ordered.map((row) => transcriptPageItem(sqlite, sessionId, row))
-          const first = ordered[0]?.position
-          const last = ordered.at(-1)?.position
-          const hasMore =
-            first !== undefined &&
-            sqlite
-              .prepare(
-                `select 1 from chat_items where session_id = ?
-          and ${renderableChatItemPredicate} and position < ? limit 1`
-              )
-              .get(sessionId, first) !== undefined
-          const hasNewer =
-            last !== undefined &&
-            sqlite
-              .prepare(
-                `select 1 from chat_items where session_id = ?
-          and ${renderableChatItemPredicate} and position > ? limit 1`
-              )
-              .get(sessionId, last) !== undefined
-          const state = sqlite
-            .prepare(
-              `select revision as cursor, pending_question, background_tasks, session_plan
-             from sessions where id = ?`
-            )
-            .get(sessionId) as {
-            readonly cursor: number
-            readonly pending_question: string | null
-            readonly background_tasks: string
-            readonly session_plan: string | null
-          }
-          const pendingQuestion = pendingQuestionFromRaw(state.pending_question)
-          const backgroundTasks = backgroundTasksFromRaw(state.background_tasks)
-          const sessionPlan = sessionPlanFromRaw(state.session_plan)
-          const goal = sessionGoalSnapshot(sqlite, sessionId)
-          return {
-            items,
-            setupActivities: sessionSetupState(sqlite, sessionId),
-            ...(hasMore ? { nextBefore: String(first!) } : {}),
-            ...(last === undefined ? {} : { nextAfter: `after:${last}` }),
-            hasNewer,
-            hasMore,
-            eventCursor: Number(state.cursor),
-            stateUpdates: (
-              sqlite
-                .prepare(
-                  `select payload from session_state where session_id = ?
-            and state_key in ('available_commands_update', 'config_option_update', 'current_mode_update')`
-                )
-                .all(sessionId) as Array<{ payload: string }>
-            ).map((row) => JSON.parse(row.payload) as unknown),
-            ...(pendingQuestion === undefined ? {} : { pendingQuestion }),
-            pendingPlanApproval: session.pendingPlanApproval === true,
-            backgroundTasks,
-            ...(goal === undefined ? {} : { goal }),
-            ...(sessionPlan === undefined ? {} : { sessionPlan }),
-            usage: session.usage
-          }
+          return makeTranscriptPage(sqlite, sessionId, session, ordered)
         })()
       ),
     getTranscriptItemDetails: (rawSessionId, itemId, after) =>
