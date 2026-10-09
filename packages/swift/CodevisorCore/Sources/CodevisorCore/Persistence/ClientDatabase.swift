@@ -97,75 +97,102 @@ public final class ClientDatabase: @unchecked Sendable {
     backupURL: URL? = nil
   ) throws {
     try lock.withLock {
-      try execute(
-        """
-        CREATE TABLE IF NOT EXISTS client_schema_migrations (
-            id INTEGER PRIMARY KEY,
-            name TEXT NOT NULL,
-            checksum TEXT NOT NULL,
-            applied_at TEXT NOT NULL
-        );
-        """
-      )
+      try createSchemaMigrationMetadata()
 
       let applied = try appliedMigrations()
       let ordered = migrations.sorted { $0.id < $1.id }
-      guard ordered.map(\.id) == migrations.map(\.id),
-        Set(ordered.map(\.id)).count == ordered.count
-      else {
-        throw ClientDatabaseError(
-          operation: "migration validation",
-          detail: "Migration ids must be unique and declared in ascending order"
-        )
-      }
-
-      let declaredIDs = ordered.map(\.id)
-      let appliedIDs = applied.keys.sorted()
-      guard Array(declaredIDs.prefix(appliedIDs.count)) == appliedIDs else {
-        throw ClientDatabaseError(
-          operation: "migration validation",
-          detail: "Database schema is newer than this client or has a migration gap"
-        )
-      }
-
-      for migration in ordered {
-        if let existing = applied[migration.id] {
-          guard existing.name == migration.name,
-            existing.checksum == migration.checksum
-          else {
-            throw ClientDatabaseError(
-              operation: "migration validation",
-              detail: "Applied migration \(migration.id) was edited"
-            )
-          }
-        }
-      }
+      try validateDeclarationOrder(migrations: migrations, ordered: ordered)
+      try validateAppliedPrefix(ordered: ordered, applied: applied)
+      try validateAppliedMetadata(ordered: ordered, applied: applied)
 
       let pending = ordered.filter { applied[$0.id] == nil }
       if !applied.isEmpty, !pending.isEmpty, let backupURL {
         try backup(to: backupURL)
       }
 
-      for migration in pending {
-        try withTransaction {
-          try execute(migration.sql)
-          try executePrepared(
-            """
-            INSERT INTO client_schema_migrations
-                (id, name, checksum, applied_at)
-            VALUES (?, ?, ?, ?)
-            """,
-            bindings: [
-              .integer(Int64(migration.id)),
-              .text(migration.name),
-              .text(migration.checksum),
-              .text(Self.timestamp()),
-            ]
+      try applyPendingMigrations(pending)
+      try assertIntegrity()
+    }
+  }
+
+  private func createSchemaMigrationMetadata() throws {
+    try execute(
+      """
+      CREATE TABLE IF NOT EXISTS client_schema_migrations (
+          id INTEGER PRIMARY KEY,
+          name TEXT NOT NULL,
+          checksum TEXT NOT NULL,
+          applied_at TEXT NOT NULL
+      );
+      """
+    )
+  }
+
+  private func validateDeclarationOrder(
+    migrations: [ClientSchemaMigration],
+    ordered: [ClientSchemaMigration]
+  ) throws {
+    guard ordered.map(\.id) == migrations.map(\.id),
+      Set(ordered.map(\.id)).count == ordered.count
+    else {
+      throw ClientDatabaseError(
+        operation: "migration validation",
+        detail: "Migration ids must be unique and declared in ascending order"
+      )
+    }
+  }
+
+  private func validateAppliedPrefix(
+    ordered: [ClientSchemaMigration],
+    applied: [Int: (name: String, checksum: String)]
+  ) throws {
+    let declaredIDs = ordered.map(\.id)
+    let appliedIDs = applied.keys.sorted()
+    guard Array(declaredIDs.prefix(appliedIDs.count)) == appliedIDs else {
+      throw ClientDatabaseError(
+        operation: "migration validation",
+        detail: "Database schema is newer than this client or has a migration gap"
+      )
+    }
+  }
+
+  private func validateAppliedMetadata(
+    ordered: [ClientSchemaMigration],
+    applied: [Int: (name: String, checksum: String)]
+  ) throws {
+    for migration in ordered {
+      if let existing = applied[migration.id] {
+        guard existing.name == migration.name,
+          existing.checksum == migration.checksum
+        else {
+          throw ClientDatabaseError(
+            operation: "migration validation",
+            detail: "Applied migration \(migration.id) was edited"
           )
-          try assertForeignKeys()
         }
       }
-      try assertIntegrity()
+    }
+  }
+
+  private func applyPendingMigrations(_ pending: [ClientSchemaMigration]) throws {
+    for migration in pending {
+      try withTransaction {
+        try execute(migration.sql)
+        try executePrepared(
+          """
+          INSERT INTO client_schema_migrations
+              (id, name, checksum, applied_at)
+          VALUES (?, ?, ?, ?)
+          """,
+          bindings: [
+            .integer(Int64(migration.id)),
+            .text(migration.name),
+            .text(migration.checksum),
+            .text(Self.timestamp()),
+          ]
+        )
+        try assertForeignKeys()
+      }
     }
   }
 
@@ -395,77 +422,4 @@ public final class ClientDatabase: @unchecked Sendable {
   static func timestamp() -> String {
     Date().ISO8601Format(.iso8601(timeZone: .gmt))
   }
-}
-
-public enum ClientDatabaseMigrations {
-  public static let all: [ClientSchemaMigration] = [
-    ClientSchemaMigration(
-      id: 1,
-      name: "initial client persistence",
-      sql:
-        """
-        CREATE TABLE client_values (
-            key TEXT PRIMARY KEY,
-            value BLOB NOT NULL,
-            updated_at TEXT NOT NULL
-        );
-
-        CREATE TABLE client_preferences (
-            key TEXT PRIMARY KEY,
-            value BLOB NOT NULL,
-            updated_at TEXT NOT NULL
-        );
-
-        CREATE TABLE client_quarantine (
-            id TEXT PRIMARY KEY,
-            original_key TEXT NOT NULL,
-            value BLOB NOT NULL,
-            quarantined_at TEXT NOT NULL
-        );
-
-        CREATE TABLE client_blob_assets (
-            key TEXT PRIMARY KEY,
-            relative_path TEXT NOT NULL,
-            digest TEXT NOT NULL,
-            byte_count INTEGER NOT NULL,
-            updated_at TEXT NOT NULL
-        );
-
-        CREATE TABLE client_data_migrations (
-            id INTEGER PRIMARY KEY,
-            name TEXT NOT NULL,
-            state TEXT NOT NULL CHECK(state IN ('running', 'completed', 'failed')),
-            cursor TEXT,
-            started_at TEXT NOT NULL,
-            completed_at TEXT,
-            last_error TEXT
-        );
-
-        CREATE TABLE client_cleanup_migrations (
-            id INTEGER PRIMARY KEY,
-            name TEXT NOT NULL,
-            state TEXT NOT NULL CHECK(state IN ('running', 'completed', 'failed')),
-            cursor TEXT,
-            started_at TEXT NOT NULL,
-            completed_at TEXT,
-            last_error TEXT
-        );
-
-        CREATE TABLE client_migration_artifacts (
-            migration_id INTEGER NOT NULL,
-            source TEXT NOT NULL,
-            digest TEXT NOT NULL,
-            imported INTEGER NOT NULL DEFAULT 0 CHECK(imported IN (0, 1)),
-            cleaned INTEGER NOT NULL DEFAULT 0 CHECK(cleaned IN (0, 1)),
-            updated_at TEXT NOT NULL,
-            PRIMARY KEY (migration_id, source)
-        );
-
-        CREATE TABLE client_metadata (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        );
-        """
-    )
-  ]
 }
