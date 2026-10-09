@@ -12,8 +12,8 @@ struct HomeAgentListActions {
   var refresh: () async -> Void = {}
 }
 
-/// The workspaces the user manages, as Notes lists folders: loose ones in a
-/// section of their own, then a section per folder (or per project when
+/// The workspaces the user manages, as Notes lists folders: loose ones as
+/// the page's own list, then a section per folder (or per project when
 /// grouped that way), each section collapsing from its header. A workspace
 /// with workspaces nested under it discloses them inline from its chevron;
 /// tapping a workspace opens its page, where its tabs are.
@@ -31,7 +31,6 @@ struct HomeAgentList: View {
   var selection: Binding<UUID?>? = nil
 
   @State private var expanded: Set<UUID> = []
-  @State private var showsLoose = true
   @State private var collapsedProjects: Set<String> = []
   @State private var renamingFolder: ServerNavigationFolder?
   @State private var folderTitle = ""
@@ -66,7 +65,7 @@ struct HomeAgentList: View {
         List { content(nodes, groups: groups) }
       }
     }
-    groupDragChrome(list.listStyle(.sidebar), groups: groups)
+    groupDragChrome(list.listStyle(.sidebar).contentMargins(.top, 12, for: .scrollContent), groups: groups)
       .refreshable { await actions.refresh() }
       .onChange(of: selection?.wrappedValue, initial: true) { _, id in revealAncestors(of: id) }
       .alert("Rename Folder", isPresented: renamePresented) {
@@ -123,14 +122,9 @@ struct HomeAgentList: View {
     let loose = nodes.compactMap { node -> AgentSidebarRow? in
       if case let .agent(row) = node { row } else { nil }
     }
+    // Loose workspaces are the page's own list, without a header.
     if !loose.isEmpty {
-      Section {
-        if showsLoose { outline(loose) }
-      } header: {
-        HomeAgentSectionHeader(title: "Workspaces", isExpanded: showsLoose) {
-          withAnimation { showsLoose.toggle() }
-        }
-      }
+      Section { outline(loose) }
     }
     ForEach(displayed(groups)) { group in
       Section {
