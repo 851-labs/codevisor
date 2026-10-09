@@ -28,11 +28,13 @@ public final class WorkspaceEntry: Identifiable {
   }
 }
 
-/// A workspace as the sidebar lists it: which one, on which machine, and the
-/// chats that route into it (the first one anchors the workspace's route).
+/// A workspace as the sidebar lists it: which one, on which machine and in
+/// which project, and the chats that route into it (the first one anchors the
+/// workspace's route).
 public struct WorkspaceSidebarItem: Equatable, Identifiable, Sendable {
   public let id: UUID
   public let serverId: String
+  public let projectId: UUID
   public let routingChatIds: [UUID]
 }
 
@@ -83,7 +85,7 @@ public final class NavigationWorkspaces {
     guard let index = sidebar.firstIndex(where: { $0.id == workspace.id }) else { return }
     let routed = workspace.chatSessionIds.filter { sessionWorkspace($0) == workspace.id }
     let item = WorkspaceSidebarItem(
-      id: workspace.id, serverId: workspace.serverId,
+      id: workspace.id, serverId: workspace.serverId, projectId: workspace.projectId,
       routingChatIds: routed.isEmpty ? sidebar[index].routingChatIds : routed)
     if sidebar[index] != item { sidebar[index] = item }
   }
@@ -112,7 +114,8 @@ public final class NavigationWorkspaces {
       guard chats.isEmpty || !routed.isEmpty else { return nil }
       let fallback = indexedChats[workspace.id].map { [$0] } ?? []
       return WorkspaceSidebarItem(
-        id: workspace.id, serverId: workspace.serverId, routingChatIds: routed.isEmpty ? fallback : routed)
+        id: workspace.id, serverId: workspace.serverId, projectId: workspace.projectId,
+        routingChatIds: routed.isEmpty ? fallback : routed)
     }
   }
 

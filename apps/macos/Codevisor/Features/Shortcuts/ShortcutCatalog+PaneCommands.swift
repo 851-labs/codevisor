@@ -33,12 +33,10 @@ extension ShortcutCatalog {
   /// and is preserved deliberately — changing it is a product decision, not a
   /// refactor.
   private static let paneCommandBindings: [(ShortcutID, PaneGroupCommand)] = [
-    (.focusSplitLeft, .focusSplit(.leading)),
-    (.focusSplitRight, .focusSplit(.trailing)),
-    (.focusSplitAbove, .focusSplit(.top)),
-    (.focusSplitBelow, .focusSplit(.bottom)),
     (.previousTab, .previousTab),
     (.nextTab, .nextTab),
+    (.previousWorkspace, .previousWorkspace),
+    (.nextWorkspace, .nextWorkspace),
     (.splitDown, .split(.bottom)),
     (.previousSplit, .previousSplit),
     (.nextSplit, .nextSplit),
@@ -56,7 +54,9 @@ extension ShortcutCatalog {
   ///
   static func paneCommand(for event: NSEvent) -> PaneGroupCommand? {
     for (id, command) in paneCommandBindings {
-      if let combo = combo(for: id), combo.matches(event) { return command }
+      let definition = definition(for: id)
+      let combos = definition.combo.map { [$0] + definition.alternateCombos } ?? []
+      if combos.contains(where: { $0.matches(event) }) { return command }
     }
     return selectTabCommand(for: event)
   }

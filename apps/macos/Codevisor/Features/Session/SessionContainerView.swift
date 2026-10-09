@@ -37,7 +37,7 @@ struct SessionContainerView: View {
   }
   /// Fired when the user's focus lands in a DIFFERENT chat of this
   /// workspace (composer/transcript click, chat tab) — the sidebar
-  /// selection follows, keeping its tab rows in sync with focus.
+  /// selection follows the focused chat.
   /// Non-chat focus (terminals) fires nothing: the last chat stays.
   var onFocusedChatChanged: ((UUID) -> Void)? = nil
   @Environment(AppEnvironment.self) var environment
@@ -252,14 +252,27 @@ struct SessionContainerView: View {
       }
   }
 
-  /// The selected sidebar tab's split layout.
+  /// The workspace content: a browser-style tab strip above the selected
+  /// tab's split layout.
   /// System themes reveal the native window backdrop. Custom themes paint
   /// one explicit page color behind every workspace pane.
   var contentColumn: some View {
     // Observes this workspace's entry, so a tab created on another device
     // materializes in the mounted workspace immediately.
     let workspace = selectedWorkspace
+    let showsTabBar = showsCenterTabBar(in: workspace)
     return VStack(spacing: 0) {
+      if showsTabBar {
+        WorkspaceTabBar(
+          items: centerTabItems(in: workspace),
+          selectedTabId: workspace.selectedCenterTabId,
+          onSelect: selectCenterTab,
+          onClose: closeCenterTab,
+          onMove: moveCenterTab,
+          onRename: renameCenterTab,
+          onNew: addCenterTab
+        )
+      }
       SessionScreen(
         controller: controller,
         centerGroup: activeCenterModel(in: workspace),
@@ -285,11 +298,15 @@ struct SessionContainerView: View {
       )
     }
     .background(theme.contentBackground)
-    // The sidebar stays seamless under the toolbar; the content has a hairline.
+    // The sidebar stays seamless under the toolbar; the content has a
+    // hairline. The tab strip draws its own bottom divider, and two rules
+    // 40pt apart box the tabs in, so the hairline steps aside for it.
     .overlay(alignment: .top) {
-      theme.separator
-        .frame(height: 1)
-        .frame(maxWidth: .infinity)
+      if !showsTabBar {
+        theme.separator
+          .frame(height: 1)
+          .frame(maxWidth: .infinity)
+      }
     }
   }
 }
