@@ -3,6 +3,7 @@ import { isoTimestamp } from "@codevisor/api"
 import { Effect } from "effect"
 
 import { attempt } from "./errors.js"
+import type { JsonRecord } from "./event-payloads.js"
 import { isSessionShellEvent, withChatItemId, jsonRecord } from "./event-payloads.js"
 import { insertSessionEvent, projectChatEvent } from "./event-projection.js"
 import { canonicalUuid } from "./ids.js"
@@ -14,6 +15,63 @@ import { projectSetupState } from "./setup-state.js"
 import { readSyncBatch, trimSyncJournal } from "./sync-journal.js"
 import { readToolSnapshot, transcriptTextResource } from "./transcript-bodies.js"
 import { textPatchForEvent } from "./transcript-state.js"
+
+const questionResolutionDelivery = (
+  sqlite: ServiceContext["sqlite"],
+  chatItemId: string,
+  update: JsonRecord
+): JsonRecord => {
+  // projectChatEvent just saved this entry, so the row exists.
+  const row = sqlite
+    .prepare("select position from transcript_entries where item_id = ? and entry_key = ?")
+    .get(chatItemId, `question_resolved:${update.questionId}`) as { position: number }
+  return { ...update, statePosition: row.position }
+}
+
+const planDocumentDelivery = (
+  sqlite: ServiceContext["sqlite"],
+  chatItemId: string,
+  subjectRevision: number,
+  update: JsonRecord
+): JsonRecord => {
+  return {
+    ...update,
+    markdown: String(update.markdown ?? "").slice(0, 24_000),
+    stateRevision: subjectRevision,
+    detailResource: transcriptTextResource(sqlite, chatItemId, "plan")
+  }
+}
+
+const materializeSessionDelivery = (
+  sqlite: ServiceContext["sqlite"],
+  chatItemId: string | undefined,
+  subjectRevision: number,
+  payload: unknown
+): unknown => {
+  let deliveredPayload = payload
+  const update = jsonRecord(payload)
+  if (chatItemId !== undefined && update !== undefined) {
+    deliveredPayload = textPatchForEvent(sqlite, chatItemId, subjectRevision, update) ?? payload
+  }
+  if (
+    chatItemId !== undefined &&
+    typeof update?.toolCallId === "string" &&
+    (update.sessionUpdate === "tool_call" || update.sessionUpdate === "tool_call_update")
+  ) {
+    deliveredPayload = readToolSnapshot(sqlite, chatItemId, update.toolCallId)!
+  }
+  if (
+    chatItemId !== undefined &&
+    update?.sessionUpdate === "question_resolved" &&
+    typeof update.questionId === "string"
+  ) {
+    deliveredPayload = questionResolutionDelivery(sqlite, chatItemId, update)
+  }
+  if (chatItemId !== undefined && update?.sessionUpdate === "plan_document") {
+    deliveredPayload = planDocumentDelivery(sqlite, chatItemId, subjectRevision, update)
+  }
+  return deliveredPayload
+}
 
 export const makeEventsService = (
   context: ServiceContext
@@ -60,39 +118,12 @@ export const makeEventsService = (
           })
           subjectRevision = sessionEvent.revision
           chatItemId = projectChatEvent(sqlite, sessionEvent)
-          const update = jsonRecord(payload)
-          if (chatItemId !== undefined && update !== undefined) {
-            deliveredPayload =
-              textPatchForEvent(sqlite, chatItemId, subjectRevision, update) ?? payload
-          }
-          if (
-            chatItemId !== undefined &&
-            typeof update?.toolCallId === "string" &&
-            (update.sessionUpdate === "tool_call" || update.sessionUpdate === "tool_call_update")
-          ) {
-            deliveredPayload = readToolSnapshot(sqlite, chatItemId, update.toolCallId)!
-          }
-          if (
-            chatItemId !== undefined &&
-            update?.sessionUpdate === "question_resolved" &&
-            typeof update.questionId === "string"
-          ) {
-            // projectChatEvent just saved this entry, so the row exists.
-            const row = sqlite
-              .prepare(
-                "select position from transcript_entries where item_id = ? and entry_key = ?"
-              )
-              .get(chatItemId, `question_resolved:${update.questionId}`) as { position: number }
-            deliveredPayload = { ...update, statePosition: row.position }
-          }
-          if (chatItemId !== undefined && update?.sessionUpdate === "plan_document") {
-            deliveredPayload = {
-              ...update,
-              markdown: String(update.markdown ?? "").slice(0, 24_000),
-              stateRevision: subjectRevision,
-              detailResource: transcriptTextResource(sqlite, chatItemId, "plan")
-            }
-          }
+          deliveredPayload = materializeSessionDelivery(
+            sqlite,
+            chatItemId,
+            subjectRevision,
+            payload
+          )
           if (deliveredPayload !== payload) {
             const state = JSON.stringify(deliveredPayload)
             sqlite
