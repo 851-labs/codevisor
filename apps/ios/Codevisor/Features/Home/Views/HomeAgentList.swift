@@ -1,6 +1,7 @@
 import CodevisorCore
 import CodevisorUI
 import SwiftUI
+import UIKit
 
 /// What the agent list asks its owner to do.
 struct HomeAgentListActions {
@@ -12,17 +13,15 @@ struct HomeAgentListActions {
   var refresh: () async -> Void = {}
 }
 
-/// The workspaces the user manages, in one list as the Mac's sidebar has
-/// them: loose workspaces and folders (or projects, when grouped that way)
-/// in their order, a folder disclosing the workspaces filed in it. A
-/// workspace with workspaces nested under it discloses them inline from
-/// its chevron; tapping a workspace opens its page, where its tabs are.
-///
-/// Every row reorders with the system's long-press drag, and since they're
-/// one list a workspace can be dragged into a folder, between folders or
-/// out of them (see `HomeSidebarDrop`).
+/// The workspaces the user manages, as Notes lists folders and notes: a
+/// Folders list (projects, when grouped that way), each folder disclosing
+/// its workspaces, then the workspaces in no folder. A workspace with
+/// workspaces nested under it discloses them; tapping one opens its page.
+/// Dragging a workspace onto a folder files it there, and rows reorder by
+/// dragging within their list (see `HomeAgentCollection`).
 struct HomeAgentList: View {
   @Environment(AppEnvironment.self) private var environment
+  @Environment(\.workspaceRowActions) private var rowActions
   let actions: HomeAgentListActions
   /// The split layout's selected workspace. Present, the rows are a native
   /// sidebar selection; absent, each row pushes its page.
@@ -40,18 +39,16 @@ struct HomeAgentList: View {
   var body: some View {
     // The projection isn't observed directly; the revision is what changes.
     let _ = navigation.revision
-    let entries = HomeSidebarEntry.entries(
-      navigation.agentSidebar, expandedWorkspaces: expanded, isExpanded: isExpanded)
-    Group {
-      if let selection {
-        List(selection: selection) { content(entries) }
-      } else {
-        List { content(entries) }
-      }
-    }
-    .listStyle(.sidebar)
-    .contentMargins(.top, 12, for: .scrollContent)
-    .refreshable { await actions.refresh() }
+    HomeAgentCollection(
+      environment: environment,
+      model: { [navigation] in HomeListModel(nodes: navigation.agentSidebar, grouping: navigation.sidebarGrouping) },
+      expandedWorkspaces: expanded,
+      isExpanded: isExpanded,
+      selection: selection?.wrappedValue,
+      isSelectionList: selection != nil,
+      actions: collectionActions
+    )
+    .ignoresSafeArea(.container, edges: .vertical)
     .onChange(of: selection?.wrappedValue, initial: true) { _, id in revealAncestors(of: id) }
     .alert("Rename Folder", isPresented: renamePresented) {
       TextField("Name", text: $folderTitle)
@@ -76,79 +73,99 @@ struct HomeAgentList: View {
     }
   }
 
-  @ViewBuilder
-  private func content(_ entries: [HomeSidebarEntry]) -> some View {
-    if !entries.isEmpty {
-      Section {
-        ForEach(entries) { entry in
-          switch entry.kind {
-          case let .group(group):
-            HomeFolderRow(group: group, isExpanded: isExpanded(group)) { toggle(group) }
-              .contextMenu { folderMenu(group) }
-          case let .agent(row, owner):
-            WorkspaceOutlineRow(
-              row: row, owner: owner, expanded: $expanded, isSelectable: selection != nil, depth: entry.depth)
-          }
-        }
-        .onMove { source, destination in move(entries, from: source, to: destination) }
-      }
-    }
-  }
-
-  @ViewBuilder
-  private func folderMenu(_ group: HomeSidebarGroup) -> some View {
-    if let folder = group.folder {
-      Button("Rename", systemImage: "pencil") {
-        folderTitle = folder.name
-        renamingFolder = folder
-      }
-      Button("Delete Folder…", systemImage: "trash", role: .destructive) {
-        deleting = (folder, group.rows.map(\.id))
-      }
-    }
+  private var collectionActions: HomeAgentCollectionActions {
+    HomeAgentCollectionActions(
+      open: { row in rowActions.openPage(row.serverId, row.id) },
+      select: { id in selection?.wrappedValue = id },
+      setWorkspaceExpanded: { id, isExpanded in
+        if isExpanded { expanded.insert(id) } else { expanded.remove(id) }
+      },
+      setGroupExpanded: { group, isExpanded in setExpanded(group, isExpanded) },
+      drop: { item, drop in perform(drop, moving: item) },
+      workspaceMenu: { row, owner in workspaceMenu(row, owner: owner) },
+      groupMenu: { group in folderMenu(group) },
+      archive: actions.archive,
+      refresh: actions.refresh
+    )
   }
 
   // MARK: - Moving
 
-  /// A row dropped somewhere new. A folder moves among the top-level rows,
-  /// a project among the projects. A workspace nested under another stays
-  /// among its siblings when dropped beside one; otherwise a workspace is
-  /// filed where it lands: into a folder, between folders, or out of them.
-  /// It can't change projects, so a drop in another project puts it back.
-  private func move(_ entries: [HomeSidebarEntry], from source: IndexSet, to destination: Int) {
-    guard let from = source.first, entries.indices.contains(from) else { return }
-    let moved = entries[from]
-    let openGroups = Set(entries.compactMap { $0.group.flatMap { isExpanded($0) ? $0.id : nil } })
-    let drop = HomeSidebarDrop(entries, from: from, to: destination, openGroups: openGroups)
-    switch moved.kind {
-    case let .group(group):
-      if let folder = group.folder, let id = UUID(uuidString: folder.id) {
-        let (lower, upper) = drop.neighbors(in: nil)
-        navigation.moveFolder(id, after: lower, before: upper)
-      } else if let projectId = group.projectId {
-        let projects = drop.rest.compactMap { $0.group?.projectId }
-        navigation.moveProject(projectId, to: drop.count { $0.group != nil }, among: projects)
+  /// A row dropped somewhere new, filed or placed there in the store.
+  private func perform(_ drop: HomeListDrop, moving item: HomeListItem) {
+    let model = HomeListModel(nodes: navigation.agentSidebar, grouping: navigation.sidebarGrouping)
+    switch (item, drop) {
+    case let (.workspace(id), .intoGroup(groupId)):
+      let last = model.group(groupId)?.rows.last { $0.id != id }?.position
+      navigation.fileAgent(id, intoFolder: UUID(uuidString: groupId), after: last, before: nil)
+    case let (.workspace(id), .inGroup(groupId, lower, upper)):
+      // Grouped by project, its folder stays as it was.
+      let folder =
+        model.grouping == .none ? UUID(uuidString: groupId) : environment.workspaces.workspace(id: id)?.folderId
+      navigation.fileAgent(id, intoFolder: folder, after: lower, before: upper)
+    case let (.workspace(id), .loose(lower, upper)):
+      navigation.fileAgent(id, intoFolder: nil, after: lower, before: upper)
+    case let (.workspace(id), .nested(_, index, siblings)):
+      navigation.moveNestedAgent(id, to: index, among: siblings)
+    case let (.group(groupId), .folder(lower, upper)):
+      if let id = UUID(uuidString: groupId) { navigation.moveFolder(id, after: lower, before: upper) }
+    case let (.group(groupId), .project(index, projects)):
+      if let projectId = model.group(groupId)?.projectId {
+        navigation.moveProject(projectId, to: index, among: projects)
       }
-    case let .agent(row, owner):
-      if let owner, drop.touches(where: { $0.owner?.id == owner.id }) {
-        let isSibling = { (entry: HomeSidebarEntry) in entry.owner?.id == owner.id }
-        navigation.moveNestedAgent(
-          row.id, to: drop.count(where: isSibling), among: drop.rest.filter(isSibling).compactMap(\.agent?.id))
-        return
-      }
-      let groupId = drop.groupId(movingFrom: moved.groupId)
-      let folder: UUID?
-      switch navigation.sidebarGrouping {
-      case .none:
-        folder = groupId.flatMap(UUID.init(uuidString:))
-      case .project:
-        // Grouped by project, its folder stays as it was.
-        guard let groupId, groupId == moved.groupId else { return }
-        folder = environment.workspaces.workspace(id: row.id)?.folderId
-      }
-      let (lower, upper) = drop.neighbors(in: groupId)
-      navigation.fileAgent(row.id, intoFolder: folder, after: lower, before: upper)
+    default:
+      break
     }
+  }
+
+  // MARK: - Menus
+
+  private func workspaceMenu(_ row: AgentSidebarRow, owner: AgentSidebarRow?) -> UIMenu {
+    var items: [UIMenuElement] = [
+      UIAction(title: "Rename", image: UIImage(systemName: "pencil")) { _ in actions.rename(row.id) }
+    ]
+    if let owner {
+      items.append(
+        UIAction(title: "Move Out of “\(owner.title)”", image: UIImage(systemName: "arrow.up.left")) { _ in
+          change(row.id, .owner(nil))
+        })
+    } else if navigation.sidebarGrouping == .none, !navigation.folders.isEmpty {
+      var folders: [UIMenuElement] = navigation.folders.map { folder in
+        UIAction(title: folder.name) { _ in change(row.id, .folder(UUID(uuidString: folder.id))) }
+      }
+      if environment.workspaces.workspace(id: row.id)?.folderId != nil {
+        folders.append(
+          UIMenu(
+            options: .displayInline,
+            children: [UIAction(title: "Remove from Folder") { _ in change(row.id, .folder(nil)) }]))
+      }
+      items.append(UIMenu(title: "Move to Folder", image: UIImage(systemName: "folder"), children: folders))
+    }
+    let owned = row.children.count
+    items.append(
+      UIAction(
+        title: owned == 0 ? "Archive" : "Archive with \(owned) Workspace\(owned == 1 ? "" : "s")",
+        image: UIImage(systemName: "archivebox"), attributes: .destructive
+      ) { _ in actions.archive(row.id) })
+    return UIMenu(children: items)
+  }
+
+  private func folderMenu(_ group: HomeSidebarGroup) -> UIMenu? {
+    guard let folder = group.folder else { return nil }
+    return UIMenu(children: [
+      UIAction(title: "Rename", image: UIImage(systemName: "pencil")) { _ in
+        folderTitle = folder.name
+        renamingFolder = folder
+      },
+      UIAction(title: "Delete Folder…", image: UIImage(systemName: "trash"), attributes: .destructive) { _ in
+        deleting = (folder, group.rows.map(\.id))
+      },
+    ])
+  }
+
+  private func change(_ id: UUID, _ change: WorkspaceHierarchyChange) {
+    guard let workspace = environment.workspaces.workspace(id: id) else { return }
+    navigation.enqueue(.updateWorkspaceHierarchy(workspaceId: id, change: change), machineId: workspace.serverId)
   }
 
   // MARK: - Groups
@@ -173,17 +190,15 @@ struct HomeAgentList: View {
     return !collapsedProjects.contains(group.id)
   }
 
-  /// A folder's collapse syncs to every device; a project's is this
+  /// A folder's disclosure syncs to every device; a project's is this
   /// device's own.
-  private func toggle(_ group: HomeSidebarGroup) {
-    withAnimation {
-      if let folder = group.folder, let id = UUID(uuidString: folder.id) {
-        navigation.saveFolder(id: id, name: folder.name, position: folder.position, collapsed: !folder.collapsed)
-      } else if collapsedProjects.contains(group.id) {
-        collapsedProjects.remove(group.id)
-      } else {
-        collapsedProjects.insert(group.id)
-      }
+  private func setExpanded(_ group: HomeSidebarGroup, _ isExpanded: Bool) {
+    if let folder = group.folder, let id = UUID(uuidString: folder.id) {
+      navigation.saveFolder(id: id, name: folder.name, position: folder.position, collapsed: !isExpanded)
+    } else if isExpanded {
+      collapsedProjects.remove(group.id)
+    } else {
+      collapsedProjects.insert(group.id)
     }
   }
 

@@ -3,11 +3,10 @@ import CodevisorCore
 import SwiftUI
 
 /// A workspace in an outline, as Notes lists a folder: its state, its name
-/// and how many tabs it has. A workspace with workspaces nested under it has
+/// and how many workspaces are nested right under it. A workspace with workspaces nested under it has
 /// a chevron that discloses them inline, one level per tap; tapping the row
 /// itself opens the workspace's page.
 struct WorkspaceOutlineRow: View {
-  @Environment(AppEnvironment.self) private var environment
   @Environment(\.workspaceRowActions) private var actions
   @Environment(\.homeLayoutMode) private var layoutMode
 
@@ -43,8 +42,10 @@ struct WorkspaceOutlineRow: View {
       Text(row.title).lineLimit(1)
       Spacer(minLength: 0)
       HStack(spacing: 0) {
-        if let count = environment.workspaces.workspace(id: row.id)?.centerTabs.count, count > 1 {
-          Text("\(count)").foregroundStyle(.secondary).monospacedDigit()
+        // As Notes counts a folder's subfolders: the workspaces nested
+        // right under this one, when it has any.
+        if !row.children.isEmpty {
+          Text("\(row.children.count)").foregroundStyle(.secondary).monospacedDigit()
         }
         if hasChildren { disclosure }
       }
