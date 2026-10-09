@@ -20,39 +20,47 @@ struct WorkspaceOutlineRow: View {
   /// On a page beside a sidebar it selects its workspace there, as Notes
   /// does a subfolder.
   var isSelectable = false
+  /// How many workspaces it is nested under in this outline.
+  var depth = 0
 
+  private static let indent: CGFloat = 20
+
+  private var isExpanded: Bool { expanded.contains(row.id) }
+
+  /// The row, then the rows nested under it while it is expanded. The
+  /// outline is drawn here rather than by `DisclosureGroup`, whose chevron
+  /// can't be restyled: a softer chevron than the label's, still stronger
+  /// than a link's, so it reads as something to tap.
   var body: some View {
-    if row.children.isEmpty {
-      label
-    } else {
-      DisclosureGroup(
-        isExpanded: Binding(
-          get: { expanded.contains(row.id) },
-          set: { if $0 { expanded.insert(row.id) } else { expanded.remove(row.id) } })
-      ) {
-        ForEach(row.children) { child in
-          WorkspaceOutlineRow(row: child, owner: row, expanded: $expanded, isSelectable: isSelectable)
-        }
-      } label: {
-        label
+    label
+    if isExpanded {
+      ForEach(row.children) { child in
+        WorkspaceOutlineRow(
+          row: child, owner: row, expanded: $expanded, isSelectable: isSelectable, depth: depth + 1)
       }
     }
   }
 
   @ViewBuilder
   private var label: some View {
+    let hasChildren = !row.children.isEmpty
     let content = HStack(spacing: 10) {
       HomeAgentMark(status: row.status, harnessId: row.harnessId)
       Text(row.title).lineLimit(1)
       Spacer(minLength: 0)
-      if let count = environment.workspaces.workspace(id: row.id)?.centerTabs.count, count > 0 {
-        Text("\(count)").foregroundStyle(.secondary).monospacedDigit()
+      HStack(spacing: 0) {
+        if let count = environment.workspaces.workspace(id: row.id)?.centerTabs.count, count > 1 {
+          Text("\(count)").foregroundStyle(.secondary).monospacedDigit()
+        }
+        if hasChildren { disclosure }
       }
     }
+    .padding(.leading, CGFloat(depth) * Self.indent)
     Group {
       if isSelectable {
         content.tag(row.id)
-      } else if layoutMode == .split {
+      } else if hasChildren || layoutMode == .split {
+        // A link would add its own chevron beside the disclosure one.
         Button {
           actions.openPage(row.serverId, row.id)
         } label: {
@@ -63,10 +71,36 @@ struct WorkspaceOutlineRow: View {
         NavigationLink(value: HomeRoute.agent(serverId: row.serverId, workspaceId: row.id)) { content }
       }
     }
+    .accessibilityActions {
+      if hasChildren {
+        Button(isExpanded ? "Collapse" : "Expand", action: toggle)
+      }
+    }
     .swipeActions(edge: .trailing) {
       Button("Archive", systemImage: "archivebox", role: .destructive) { actions.archive(row.id) }
     }
     .contextMenu { WorkspaceRowMenu(row: row, owner: owner) }
+  }
+
+  private var disclosure: some View {
+    Button(action: toggle) {
+      Image(systemName: "chevron.right")
+        .font(.footnote.weight(.semibold))
+        .foregroundStyle(.secondary)
+        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+        // Where a link's chevron sits, as far from the count.
+        .padding(.trailing, 2)
+        .frame(width: 23, height: 24, alignment: .trailing)
+        .contentShape(Rectangle())
+    }
+    .buttonStyle(.borderless)
+    .accessibilityLabel(isExpanded ? "Collapse" : "Expand")
+  }
+
+  private func toggle() {
+    withAnimation {
+      if isExpanded { expanded.remove(row.id) } else { expanded.insert(row.id) }
+    }
   }
 }
 
