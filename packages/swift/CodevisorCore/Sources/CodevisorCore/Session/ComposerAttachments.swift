@@ -98,32 +98,49 @@ public final class ComposerAttachments {
         files.remove(id: id)
         return
       }
-      switch result {
-      case let .staged(stagedURL):
-        self.resolveLoadingAttachmentReportingFailure(
-          id: id,
-          name: metadata.name,
-          mimeType: metadata.mimeType,
-          kind: metadata.kind,
-          stagedFileURL: stagedURL
-        )
-      case .tooLarge:
-        guard self.discardLoadingAttachment(id: id) else { return }
-        self.reportFailure(AttachmentFileStager.tooLargeMessage(name: metadata.name, limitBytes: limit))
-      case let .unreadable(readError):
-        Log.attachments.error(
-          "attachment read failed for \(metadata.name, privacy: .public): \(readError, privacy: .public)"
-        )
-        self.failLoadingAttachment(
-          id: id,
-          name: metadata.name,
-          mimeType: metadata.mimeType,
-          kind: metadata.kind,
-          message:
-            "Couldn't read “\(metadata.name)”. Check that you have permission to open it, then try again."
-        )
-      }
+      self.completeFileStaging(result, id: id, metadata: metadata, limit: limit)
     }
+  }
+
+  private func completeFileStaging(
+    _ result: AttachmentFileStager.Result,
+    id: UUID,
+    metadata: (name: String, mimeType: String, kind: Attachment.Kind),
+    limit: Int
+  ) {
+    switch result {
+    case let .staged(stagedURL):
+      self.resolveLoadingAttachmentReportingFailure(
+        id: id,
+        name: metadata.name,
+        mimeType: metadata.mimeType,
+        kind: metadata.kind,
+        stagedFileURL: stagedURL
+      )
+    case .tooLarge:
+      guard self.discardLoadingAttachment(id: id) else { return }
+      self.reportFailure(AttachmentFileStager.tooLargeMessage(name: metadata.name, limitBytes: limit))
+    case let .unreadable(readError):
+      self.reportUnreadableAttachment(id: id, metadata: metadata, readError: readError)
+    }
+  }
+
+  private func reportUnreadableAttachment(
+    id: UUID,
+    metadata: (name: String, mimeType: String, kind: Attachment.Kind),
+    readError: String
+  ) {
+    Log.attachments.error(
+      "attachment read failed for \(metadata.name, privacy: .public): \(readError, privacy: .public)"
+    )
+    self.failLoadingAttachment(
+      id: id,
+      name: metadata.name,
+      mimeType: metadata.mimeType,
+      kind: metadata.kind,
+      message:
+        "Couldn't read “\(metadata.name)”. Check that you have permission to open it, then try again."
+    )
   }
 
   public func attachImageData(
