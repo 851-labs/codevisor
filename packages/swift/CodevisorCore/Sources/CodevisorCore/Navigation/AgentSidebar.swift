@@ -48,6 +48,8 @@ public struct AgentSidebarSubagent: Identifiable, Equatable, Sendable {
   /// The workspace that shows it: its owner's for a chat, its own otherwise.
   public let workspaceId: UUID
   public let title: String
+  /// The harness its chat runs, for its icon at rest.
+  public let harnessId: String?
   public let status: AgentStatus
   /// The subagent that created it, when that is not the row's own agent.
   public let via: String?
@@ -69,16 +71,19 @@ public struct AgentSidebarRow: Identifiable, Equatable, Sendable {
   public let projectId: UUID
   /// The worktree it runs in; nil at the project folder.
   public let branch: String?
+  /// The harness its own chat runs, for its icon at rest.
+  public let harnessId: String?
   public let status: AgentStatus
   public let subagents: [AgentSidebarSubagent]
   public let position: String
 
   public init(
-    id: UUID, title: String, serverId: String, projectId: UUID, branch: String?, status: AgentStatus,
-    subagents: [AgentSidebarSubagent], position: String
+    id: UUID, title: String, serverId: String, projectId: UUID, branch: String?, harnessId: String? = nil,
+    status: AgentStatus, subagents: [AgentSidebarSubagent], position: String
   ) {
     self.id = id
     self.title = title
+    self.harnessId = harnessId
     self.serverId = serverId
     self.projectId = projectId
     self.branch = branch
@@ -131,7 +136,8 @@ public enum AgentSidebar {
       return AgentSidebarRow(
         id: workspace.id, title: title(of: workspace, chats: chatsByWorkspace), serverId: workspace.serverId,
         projectId: workspace.projectId,
-        branch: workspace.worktreeName, status: roots.map(AgentStatus.init).max() ?? .idle,
+        branch: workspace.worktreeName, harnessId: homeChat(of: chats)?.harnessId,
+        status: roots.map(AgentStatus.init).max() ?? .idle,
         subagents: subagents(of: workspace, chatsByWorkspace: chatsByWorkspace, ownedBy: ownedBy),
         position: workspace.effectiveSidebarPosition)
     }
@@ -150,10 +156,12 @@ public enum AgentSidebar {
   /// its own chat's title (a new workspace is only named after its project).
   static func title(of workspace: Workspace, chats: [UUID: [ChatSession]]) -> String {
     guard !workspace.hasCustomName else { return workspace.name }
-    let home = rootChats(chats[workspace.id] ?? []).min {
-      ($0.createdAt, $0.id.uuidString) < ($1.createdAt, $1.id.uuidString)
-    }
-    return home?.title ?? workspace.name
+    return homeChat(of: chats[workspace.id] ?? [])?.title ?? workspace.name
+  }
+
+  /// A workspace's first own chat: the agent itself.
+  static func homeChat(of chats: [ChatSession]) -> ChatSession? {
+    rootChats(chats).min { ($0.createdAt, $0.id.uuidString) < ($1.createdAt, $1.id.uuidString) }
   }
 
   /// A workspace's own chats: the ones no other chat in it created.
@@ -178,7 +186,7 @@ public enum AgentSidebar {
         let parent = chat.parentSessionId.flatMap { ids.contains($0) ? $0 : nil }
         result.append(
           AgentSidebarSubagent(
-            id: chat.id, kind: .chat, workspaceId: workspace.id, title: chat.title,
+            id: chat.id, kind: .chat, workspaceId: workspace.id, title: chat.title, harnessId: chat.harnessId,
             status: AgentStatus(chat),
             via: parent.flatMap { roots.contains($0) ? via : titles[$0] }))
       }
@@ -191,6 +199,7 @@ public enum AgentSidebar {
         result.append(
           AgentSidebarSubagent(
             id: child.id, kind: .workspace, workspaceId: child.id, title: name,
+            harnessId: homeChat(of: chatsByWorkspace[child.id] ?? [])?.harnessId,
             status: childRoots.map(AgentStatus.init).max() ?? .idle, via: via))
         visit(child, via: name)
       }

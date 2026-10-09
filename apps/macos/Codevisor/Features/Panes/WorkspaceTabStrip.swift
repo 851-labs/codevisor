@@ -6,6 +6,8 @@ struct WorkspaceTabStripItem: Identifiable, Equatable {
   enum Icon: Equatable {
     case symbol(String)
     case image(NSImage)
+    /// A chat's harness, as the sidebar shows it.
+    case harness(String)
   }
 
   enum Kind: Equatable {
@@ -78,8 +80,8 @@ struct WorkspaceTabStrip<NewTab: View>: View {
 
   private var tabRow: some View {
     HStack(spacing: 2) {
-      ForEach(items) { item in
-        entry(item)
+      ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+        entry(item, endsGroup: endsGroup(at: index))
           .id(item.id)
           .onGeometryChange(for: CGRect.self) {
             $0.frame(in: .global)
@@ -166,37 +168,64 @@ struct WorkspaceTabStrip<NewTab: View>: View {
   }
 
   @ViewBuilder
-  private func entry(_ item: Item) -> some View {
+  private func entry(_ item: Item, endsGroup: Bool) -> some View {
     switch item.kind {
-    case .tab: tab(item)
+    case .tab: tab(item, endsGroup: endsGroup)
     case let .group(status, collapsed): chip(item, status: status, collapsed: collapsed)
     }
   }
 
-  /// A subagent's group: its color, a status dot, and its name. Collapsed,
-  /// it stands in for the group's tabs.
+  /// Whether the item at `index` is its group's last tab, where the
+  /// group's line ends.
+  private func endsGroup(at index: Int) -> Bool {
+    let item = items[index]
+    guard item.groupColor != nil else { return false }
+    let next = items.indices.contains(index + 1) ? items[index + 1] : nil
+    guard let next, next.groupColor != nil, next.workspaceId == item.workspaceId else { return true }
+    if case .group = next.kind { return true }
+    return false
+  }
+
+  /// The line that ties a group's chip to its tabs, as Chrome draws it: it
+  /// starts under the chip, runs under each tab and across the gaps between
+  /// them, and ends under the last.
+  private func groupLine(_ color: Color, starts: Bool, ends: Bool) -> some View {
+    Capsule()
+      .fill(color)
+      .frame(height: 2)
+      .padding(.leading, starts ? 6 : -1)
+      .padding(.trailing, ends ? 6 : -1)
+  }
+
+  /// A subagent's group: its name on a label of its color, as a Chrome tab
+  /// group's. Collapsed, it stands in for the group's tabs; a working or
+  /// blocked subagent shows on the label.
   private func chip(_ item: Item, status: AgentStatus, collapsed: Bool) -> some View {
     let color = item.groupColor ?? .accentColor
-    return HStack(spacing: 5) {
-      Circle()
-        .fill(status.isBlocked ? Color.orange : status == .working ? color : color.opacity(0.5))
-        .frame(width: 6, height: 6)
+    return HStack(spacing: 4) {
+      if status == .working {
+        AgentActivityIndicator(color: .white).frame(width: 12, height: 12)
+      } else if status.isBlocked {
+        Circle().fill(.white).frame(width: 6, height: 6)
+      }
       Text(item.title)
         .lineLimit(1)
         .frame(maxWidth: 140, alignment: .leading)
-      if collapsed {
-        Image(systemName: "chevron.right")
-          .font(.system(size: 10, weight: .semibold))
-          .foregroundStyle(.secondary)
-      }
     }
     .font(.system(size: 11, weight: .semibold))
-    .foregroundStyle(.primary)
-    .padding(.horizontal, 8)
-    .frame(height: 22)
+    .foregroundStyle(.white)
+    .padding(.horizontal, 7)
+    .frame(height: 20)
+    .background(
+      RoundedRectangle(cornerRadius: 6, style: .continuous)
+        .fill(color.opacity(dragging == item.id ? 0.75 : 1))
+    )
+    .frame(height: 26)
+    .overlay(alignment: .bottom) {
+      if !collapsed { groupLine(color, starts: true, ends: false) }
+    }
     .fixedSize(horizontal: true, vertical: false)
-    .background(Capsule().fill(color.opacity(dragging == item.id ? 0.35 : 0.22)))
-    .contentShape(Capsule())
+    .contentShape(Rectangle())
     .onTapGesture { toggleGroup(item.id) }
     .contextMenu {
       Button(collapsed ? "Expand Group" : "Collapse Group") { toggleGroup(item.id) }
@@ -211,7 +240,7 @@ struct WorkspaceTabStrip<NewTab: View>: View {
     .accessibilityAction { toggleGroup(item.id) }
   }
 
-  private func tab(_ item: Item) -> some View {
+  private func tab(_ item: Item, endsGroup: Bool) -> some View {
     let showsClose = item.isClosable && (hovered == item.id || item.isSelected)
     return HStack(spacing: 6) {
       icon(item.icon)
@@ -244,11 +273,9 @@ struct WorkspaceTabStrip<NewTab: View>: View {
       RoundedRectangle(cornerRadius: 7, style: .continuous)
         .fill(.primary.opacity(item.isSelected || dragging == item.id ? 0.1 : hovered == item.id ? 0.05 : 0))
     }
-    // A group's tabs share its color underneath, like Chrome's tab groups.
+    // A group's tabs share its line underneath, like Chrome's tab groups.
     .overlay(alignment: .bottom) {
-      if let color = item.groupColor {
-        Capsule().fill(color).frame(height: 2).padding(.horizontal, 6)
-      }
+      if let color = item.groupColor { groupLine(color, starts: false, ends: endsGroup) }
     }
     .contentShape(Rectangle())
     .onHover { hovered = $0 ? item.id : (hovered == item.id ? nil : hovered) }
@@ -272,6 +299,10 @@ struct WorkspaceTabStrip<NewTab: View>: View {
       Image(systemName: name).foregroundStyle(.secondary).frame(width: 14)
     case let .image(image):
       Image(nsImage: image).resizable().scaledToFit().frame(width: 14, height: 14)
+    case let .harness(harnessId):
+      HarnessIcon(harnessId: harnessId, fallbackSymbolName: "text.bubble", size: 12)
+        .foregroundStyle(.secondary)
+        .frame(width: 14)
     }
   }
 }

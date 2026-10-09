@@ -118,8 +118,7 @@ struct HomeAgentList: View {
   private func agentLabel(_ row: AgentSidebarRow) -> some View {
     rowButton(tag: row.id, open: { actions.open(row.id, nil) }) {
       HStack(spacing: 10) {
-        HomeStatusIndicator(status: HomeSessionStatus(row.status))
-          .frame(width: 14)
+        mark(row.status, harnessId: row.harnessId, size: 18)
         VStack(alignment: .leading, spacing: 2) {
           Text(row.title).lineLimit(1)
           if let detail = detail(row) {
@@ -149,8 +148,7 @@ struct HomeAgentList: View {
       }
     ) {
       HStack(spacing: 10) {
-        HomeStatusIndicator(status: HomeSessionStatus(subagent.status))
-          .frame(width: 14)
+        mark(subagent.status, harnessId: subagent.harnessId, size: 15)
         VStack(alignment: .leading, spacing: 2) {
           Text(subagent.title).font(.subheadline).lineLimit(1)
           if let via = subagent.via {
@@ -165,6 +163,21 @@ struct HomeAgentList: View {
         Button("Archive", systemImage: "archivebox", role: .destructive) { actions.archive(subagent.workspaceId) }
       }
     }
+  }
+
+  /// The agent's state, or its harness's icon at rest, as chat rows show
+  /// them everywhere.
+  @ViewBuilder
+  private func mark(_ status: AgentStatus, harnessId: String?, size: CGFloat) -> some View {
+    Group {
+      if status == .idle {
+        HarnessIconView(harnessId: harnessId ?? "", fallbackSymbolName: "text.bubble", size: size)
+          .foregroundStyle(.secondary)
+      } else {
+        HomeStatusIndicator(status: HomeSessionStatus(status))
+      }
+    }
+    .frame(width: 20)
   }
 
   /// A split row is tagged for the native selection; a phone row is a

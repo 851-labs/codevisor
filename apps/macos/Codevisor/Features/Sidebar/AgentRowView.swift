@@ -3,9 +3,11 @@ import CodevisorUI
 import SwiftUI
 
 /// An agent's state as its row's leading mark: the working spinner, the
-/// question ring, an unread or error dot, or nothing at rest.
+/// question ring, an unread or error dot, or its harness's icon at rest —
+/// the same precedence a chat's leading icon has everywhere else.
 struct AgentStatusMark: View {
   let status: AgentStatus
+  let harnessId: String?
 
   var body: some View {
     Group {
@@ -14,7 +16,7 @@ struct AgentStatusMark: View {
       case .waiting: ActionRequiredIndicator(color: .accentColor)
       case .errored: ErrorUnreadBadge(color: .red)
       case .unread: UnreadBadge(color: .accentColor)
-      case .idle: Image(systemName: "bubble.left").foregroundStyle(.secondary).imageScale(.small)
+      case .idle: HarnessIcon(harnessId: harnessId ?? "", fallbackSymbolName: "bubble.and.pencil")
       }
     }
     .frame(width: 16, height: 16)
@@ -36,7 +38,7 @@ struct AgentRowView: View {
   var body: some View {
     HoverableRow(isSelected: isSelected) { _ in
       HStack(spacing: 7) {
-        AgentStatusMark(status: row.status)
+        AgentStatusMark(status: row.status, harnessId: row.harnessId)
         VStack(alignment: .leading, spacing: 1) {
           Text(row.title).lineLimit(1)
           if let detail {
@@ -92,18 +94,12 @@ struct SubagentRowView: View {
   var body: some View {
     HoverableRow(isSelected: isSelected) { _ in
       HStack(spacing: 7) {
-        AgentStatusMark(status: subagent.status).scaleEffect(0.85)
+        AgentStatusMark(status: subagent.status, harnessId: subagent.harnessId).scaleEffect(0.85)
         Text(subagent.title).font(.callout).lineLimit(1)
         if let via = subagent.via {
           Text("via \(via)").font(.caption).foregroundStyle(.tertiary).lineLimit(1)
         }
         Spacer(minLength: 0)
-        if subagent.kind == .workspace {
-          Image(systemName: "square.on.square")
-            .imageScale(.small)
-            .foregroundStyle(.tertiary)
-            .help("Runs in its own workspace")
-        }
       }
       .padding(.vertical, 3)
       .padding(.leading, 26)

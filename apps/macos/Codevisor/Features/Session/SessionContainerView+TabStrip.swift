@@ -51,7 +51,8 @@ extension SessionContainerView {
     let home = environment.navigationStore.homeChatId(of: workspace)
     return WorkspaceTabStripItem(
       id: tab.id, title: tab.customTitle ?? tabTitle(pane, serverId: workspace.serverId),
-      icon: tabIcon(pane), isSelected: isCurrent && workspace.selectedCenterTabId == tab.id,
+      icon: tabIcon(pane, serverId: workspace.serverId),
+      isSelected: isCurrent && workspace.selectedCenterTabId == tab.id,
       // Tabs of a workspace this window isn't showing close from there.
       isClosable: isCurrent && TabStrip.isClosable(tab, homeChatId: home),
       workspaceId: workspace.id)
@@ -59,7 +60,8 @@ extension SessionContainerView {
 
   /// A group's color, stable for the workspace on every device.
   static func groupColor(_ id: UUID) -> Color {
-    let palette: [Color] = [.blue, .purple, .pink, .orange, .teal, .green, .indigo, .mint]
+    // Deep enough for the chip's white title in light and dark mode.
+    let palette: [Color] = [.blue, .purple, .pink, .orange, .green, .indigo, .red, .brown]
     let sum = withUnsafeBytes(of: id.uuid) { $0.reduce(0) { $0 &+ Int($1) } }
     return palette[sum % palette.count]
   }
@@ -187,10 +189,15 @@ extension SessionContainerView {
     return pane.displayName
   }
 
-  private func tabIcon(_ pane: PaneDescriptorState?) -> WorkspaceTabStripItem.Icon {
+  private func tabIcon(_ pane: PaneDescriptorState?, serverId: String) -> WorkspaceTabStripItem.Icon {
     guard let pane else { return .symbol("square.dashed") }
     if pane.kind == .browser, let favicon = store.localBrowserModel(paneId: pane.id)?.favicon {
       return .image(favicon)
+    }
+    if pane.kind == .chat, let chat = pane.chatSessionId,
+      let session = environment.projectList.session(chat, serverId: serverId)
+    {
+      return .harness(session.harnessId)
     }
     return switch pane.kind {
     case .chat: .symbol("text.bubble")
