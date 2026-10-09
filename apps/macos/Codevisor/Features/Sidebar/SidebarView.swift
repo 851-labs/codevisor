@@ -66,11 +66,20 @@ struct SidebarView: View {
       .padding(.horizontal, 8)
       .padding(.top, 8)
 
-      ScrollView {
-        agentList(agentNodes)
+      GeometryReader { viewport in
+        ScrollView {
+          agentList(agentNodes)
+            // The list fills the sidebar, and the sidebar's menu sits behind
+            // the rows: a right-click that misses them (between them, or
+            // below the last) gets it; a row keeps its own.
+            .frame(minHeight: viewport.size.height, alignment: .top)
+            .background {
+              Rectangle().fill(.clear).contentShape(Rectangle()).contextMenu { sidebarMenu }
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .scrollBounceBehavior(.basedOnSize)
       }
-      .scrollContentBackground(.hidden)
-      .scrollBounceBehavior(.basedOnSize)
 
       SidebarSyncFooter(indicator: environment.navigationSyncIndicator)
       SidebarUpdateFooter(center: environment.updateCenter)

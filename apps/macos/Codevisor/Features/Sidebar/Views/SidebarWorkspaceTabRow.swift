@@ -32,6 +32,9 @@ struct SidebarWorkspaceTabRow: View {
   let onClose: () -> Void
   /// Nil for non-chat pane rows, which have no title of their own to pin.
   var onRename: (() -> Void)? = nil
+  /// What the row's owner adds to its menu, in place of Close: an agent
+  /// row's filing, nesting and archive items.
+  var menuItems: AnyView? = nil
   /// Latches one activation per press; resets when the gesture ends or is
   /// cancelled.
   @GestureState private var isPressed = false
@@ -98,11 +101,16 @@ struct SidebarWorkspaceTabRow: View {
         ChatSessionUnreadMenuItem(session: chatSession, store: store)
       }
 
-      Button {
-        onClose()
-      } label: {
-        Label("Close", systemImage: "xmark")
-          .labelStyle(.titleAndIcon)
+      if let menuItems {
+        Divider()
+        menuItems
+      } else {
+        Button {
+          onClose()
+        } label: {
+          Label("Close", systemImage: "xmark")
+            .labelStyle(.titleAndIcon)
+        }
       }
     }
   }

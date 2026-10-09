@@ -52,9 +52,6 @@ extension SidebarView {
           Text("None").tag(AgentSidebarGrouping.none)
           Text("Project").tag(AgentSidebarGrouping.project)
         }
-        Divider()
-        Button("New Folder", action: { createFolder(filing: nil) })
-          .disabled(navigation.sidebarGrouping != .none)
       } label: {
         Image(systemName: "line.3.horizontal.decrease")
       }
@@ -70,6 +67,15 @@ extension SidebarView {
     .padding(.bottom, 2)
   }
 
+  /// The sidebar's own menu, for a right-click anywhere that isn't a row:
+  /// folders exist only while agents aren't grouped by project.
+  @ViewBuilder
+  var sidebarMenu: some View {
+    if environment.navigationStore.sidebarGrouping == .none {
+      Button("New Folder") { createFolder(filing: nil) }
+    }
+  }
+
   @ViewBuilder
   private func nodeView(_ node: AgentSidebarNode) -> some View {
     switch node {
@@ -82,6 +88,8 @@ extension SidebarView {
           onToggle: { toggleFolder(folder) }
         )
         .contextMenu {
+          Button("New Folder") { createFolder(filing: nil) }
+          Divider()
           Button("Rename…") { beginFolderRename(folder) }
           Button("Delete Folder", role: .destructive) {
             if let id = UUID(uuidString: folder.id) { environment.navigationStore.deleteFolder(id: id) }
@@ -144,7 +152,8 @@ extension SidebarView {
       isSelected: selectedWorkspaceId() == row.id, isReordering: false, titleFont: itemTitleFont,
       onActivate: { openWorkspace(row.id) },
       onClose: { archive(row.id) },
-      onRename: { beginRename(row.id) }
+      onRename: { beginRename(row.id) },
+      menuItems: AnyView(agentMenu(row, owner: owner))
     )
     .onGeometryChange(for: CGRect.self) {
       $0.frame(in: .global)
@@ -153,13 +162,6 @@ extension SidebarView {
     }
     .opacity(agentDrag?.id == row.id ? 0.4 : 1)
     .simultaneousGesture(agentDragGesture(row))
-    .contextMenu {
-      if let owner {
-        Button("Move Out of “\(owner.title)”") { setOwner(of: row.id, to: nil) }
-        Divider()
-      }
-      agentMenu(row)
-    }
   }
 
   private func beginRename(_ workspaceId: UUID) {
@@ -168,10 +170,14 @@ extension SidebarView {
     renamingWorkspace = workspace
   }
 
+  /// The agent's own items in its row's menu, after Rename and Mark as
+  /// Unread.
   @ViewBuilder
-  private func agentMenu(_ row: AgentSidebarRow) -> some View {
+  private func agentMenu(_ row: AgentSidebarRow, owner: AgentSidebarRow?) -> some View {
     let navigation = environment.navigationStore
-    Button("Rename…") { beginRename(row.id) }
+    if let owner {
+      Button("Move Out of “\(owner.title)”") { setOwner(of: row.id, to: nil) }
+    }
     if navigation.sidebarGrouping == .none {
       Menu("Move to Folder") {
         ForEach(navigation.folders, id: \.id) { folder in
@@ -264,7 +270,7 @@ extension SidebarView {
 
   /// A new folder at the top of the sidebar, optionally holding an agent,
   /// named right away.
-  private func createFolder(filing workspaceId: UUID?) {
+  func createFolder(filing workspaceId: UUID?) {
     let id = UUID()
     let first = agentNodes.first.map(nodePosition)
     let position = WorkspacePosition.between(nil, first, id: id) ?? "000000000000" + "8"
