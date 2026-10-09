@@ -93,37 +93,22 @@ struct HomeGroupHeaderHost<Content: View>: UIViewRepresentable {
       menuPreview(interaction)
     }
 
-    /// The header on a platter with room around it, as a row's preview
-    /// has. A snapshot of the header itself would have no background and
-    /// clip its title and chevron, which sit flush with (and past) its
-    /// edges to line up with the rows.
+    /// The header itself, as it sits in the list, with room around it: no
+    /// platter or shadow, since a header has no background of its own to
+    /// lift (a row's preview is its card). The outline reaches past the
+    /// header's edges so its title, flush with the leading edge, and its
+    /// chevron, past the trailing one to line up with the rows, aren't
+    /// clipped.
     private func menuPreview(_ interaction: UIContextMenuInteraction) -> UITargetedPreview? {
       guard let view = interaction.view else { return nil }
-      let padding = UIEdgeInsets(top: 10, left: 16, bottom: 10, right: 16)
       // The chevron draws this far past the header's trailing edge.
       let overhang: CGFloat = 13
-      let size = view.bounds.size
-      let platter = UIView(
-        frame: CGRect(
-          x: 0, y: 0, width: padding.left + size.width + overhang + padding.right,
-          height: padding.top + size.height + padding.bottom))
-      platter.backgroundColor = .secondarySystemGroupedBackground
-      // The live header, drawn with the chevron past its edge.
-      let image = UIGraphicsImageRenderer(size: CGSize(width: size.width + overhang, height: size.height)).image {
-        context in
-        view.layer.render(in: context.cgContext)
-      }
-      let header = UIImageView(image: image)
-      header.frame = CGRect(origin: CGPoint(x: padding.left, y: padding.top), size: image.size)
-      platter.addSubview(header)
+      let outline = view.bounds.inset(by: UIEdgeInsets(top: -10, left: -16, bottom: -10, right: -16 - overhang))
       let parameters = UIPreviewParameters()
-      parameters.visiblePath = UIBezierPath(roundedRect: platter.bounds, cornerRadius: platter.bounds.height / 2)
-      parameters.backgroundColor = .secondarySystemGroupedBackground
-      // Over the header, its title where the header's title is.
-      let center = CGPoint(
-        x: platter.bounds.midX - padding.left, y: size.height / 2)
-      return UITargetedPreview(
-        view: platter, parameters: parameters, target: UIPreviewTarget(container: view, center: center))
+      parameters.visiblePath = UIBezierPath(roundedRect: outline, cornerRadius: outline.height / 2)
+      parameters.backgroundColor = .clear
+      parameters.shadowPath = UIBezierPath()
+      return UITargetedPreview(view: view, parameters: parameters)
     }
 
     func dragInteraction(_ interaction: UIDragInteraction, itemsForBeginning session: UIDragSession) -> [UIDragItem] {
