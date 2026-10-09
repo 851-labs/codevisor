@@ -161,64 +161,13 @@ public enum ClientStorageBootstrap {
       name: legacyDataMigrationName
     )
     do {
-      let files = try LegacyClientArtifacts.legacyFiles(in: directories, fileManager: fileManager)
-      let preferences = try LegacyClientArtifacts.legacyPreferences(from: defaults)
-
-      var importedValues: [(key: String, data: Data, source: String, digest: String)] = []
-      for file in files {
-        var data = file.data
-        // The legacy machine list embedded bearer tokens for the retired
-        // directly paired machines: queue those machines for the cloud
-        // account and keep only the selection, so no token is imported or
-        // copied into migration recovery.
-        if file.key == "machines" {
-          data = try queueRetiredMachines(from: data, store: store)
-        }
-        importedValues.append((file.key, data, file.url.lastPathComponent, file.digest))
-      }
-
-      try database.withTransaction {
-        for value in importedValues {
-          try store.saveData(value.data, forKey: value.key)
-          try database.recordMigrationArtifact(
-            migrationID: legacyDataMigrationID,
-            source: value.source,
-            digest: value.digest,
-            imported: true,
-            cleaned: false
-          )
-        }
-        for preference in preferences {
-          try database.setPreference(preference.data, forKey: preference.key)
-          try database.recordMigrationArtifact(
-            migrationID: legacyDataMigrationID,
-            source: "defaults:\(preference.key)",
-            digest: LegacyClientArtifacts.digest(preference.data),
-            imported: true,
-            cleaned: false
-          )
-        }
-      }
-
-      store.flushBlobWrites()
-      for value in importedValues {
-        guard store.loadData(forKey: value.key) == value.data else {
-          throw ClientDatabaseError(
-            operation: "legacy import validation",
-            detail: "Value \(value.key) did not round-trip"
-          )
-        }
-      }
-      for preference in preferences {
-        guard try database.preference(forKey: preference.key) == preference.data else {
-          throw ClientDatabaseError(
-            operation: "legacy preference validation",
-            detail: "Preference \(preference.key) did not round-trip"
-          )
-        }
-      }
-      try database.assertHealthy()
-      try database.completeDataMigration(id: legacyDataMigrationID)
+      try importLegacyContents(
+        directories: directories,
+        defaults: defaults,
+        database: database,
+        store: store,
+        fileManager: fileManager
+      )
     } catch {
       try? database.failDataMigration(
         id: legacyDataMigrationID,
@@ -226,6 +175,43 @@ public enum ClientStorageBootstrap {
       )
       throw error
     }
+  }
+
+  private static func importLegacyContents(
+    directories: [URL],
+    defaults: UserDefaults,
+    database: ClientDatabase,
+    store: ClientPersistenceStore,
+    fileManager: FileManager
+  ) throws {
+    let files = try LegacyClientArtifacts.legacyFiles(in: directories, fileManager: fileManager)
+    let preferences = try LegacyClientArtifacts.legacyPreferences(from: defaults)
+    let importedValues = try prepareImportedValues(files: files, store: store)
+    try LegacyClientImport.run(
+      importedValues: importedValues,
+      preferences: preferences,
+      database: database,
+      store: store
+    )
+  }
+
+  private static func prepareImportedValues(
+    files: [LegacyClientArtifacts.LegacyFile],
+    store: ClientPersistenceStore
+  ) throws -> [(key: String, data: Data, source: String, digest: String)] {
+    var importedValues: [(key: String, data: Data, source: String, digest: String)] = []
+    for file in files {
+      var data = file.data
+      // The legacy machine list embedded bearer tokens for the retired
+      // directly paired machines: queue those machines for the cloud
+      // account and keep only the selection, so no token is imported or
+      // copied into migration recovery.
+      if file.key == "machines" {
+        data = try queueRetiredMachines(from: data, store: store)
+      }
+      importedValues.append((file.key, data, file.url.lastPathComponent, file.digest))
+    }
+    return importedValues
   }
 
   /// The persisted shape of a retired directly paired machine. Very old
