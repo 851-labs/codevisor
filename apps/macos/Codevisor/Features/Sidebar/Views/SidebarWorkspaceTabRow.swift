@@ -35,6 +35,10 @@ struct SidebarWorkspaceTabRow: View {
   /// What the row's owner adds to its menu, in place of Close: an agent
   /// row's filing, nesting and archive items.
   var menuItems: AnyView? = nil
+  /// What the hover button does, as its tooltip and glyph: an agent row
+  /// archives rather than closes.
+  var closeTitle = "Close"
+  var closeSymbol = "xmark"
   /// Latches one activation per press; resets when the gesture ends or is
   /// cancelled.
   @GestureState private var isPressed = false
@@ -70,13 +74,13 @@ struct SidebarWorkspaceTabRow: View {
         )
         if isHovered {
           Button(action: onClose) {
-            Image(systemName: "xmark")
-              .font(.caption2.weight(.semibold))
+            Image(systemName: closeSymbol)
+              .font(closeSymbol == "xmark" ? .caption2.weight(.semibold) : .caption)
           }
           .buttonStyle(.plain)
           .foregroundStyle(.secondary)
-          .help("Close")
-          .accessibilityLabel("Close \(title)")
+          .help(closeTitle)
+          .accessibilityLabel("\(closeTitle) \(title)")
           .frame(width: 24, height: 14, alignment: .trailing)
         }
       }

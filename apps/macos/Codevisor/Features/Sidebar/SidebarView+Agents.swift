@@ -165,7 +165,9 @@ extension SidebarView {
       onActivate: { openWorkspace(row.id) },
       onClose: { archive(row.id) },
       onRename: { beginRename(row.id) },
-      menuItems: AnyView(agentMenu(row, owner: owner))
+      menuItems: AnyView(agentMenu(row, owner: owner)),
+      closeTitle: "Archive",
+      closeSymbol: "archivebox"
     )
     .onGeometryChange(for: CGRect.self) {
       $0.frame(in: .global)
