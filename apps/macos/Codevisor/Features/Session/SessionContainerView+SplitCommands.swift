@@ -61,7 +61,6 @@ extension SessionContainerView {
   }
 
   func selectRelativeCenterTab(offset: Int) {
-    if store.sidebarTabStepHandler?(offset) == true { return }
     let workspace = navigationWorkspace
     guard workspace.centerTabs.count > 1,
       let index = workspace.selectedCenterTabIndex

@@ -57,7 +57,8 @@ struct AgentSidebarTests {
 
     #expect(nodes.count == 1)
     guard case let .agent(row) = try #require(nodes.first) else { Issue.record("expected an agent"); return }
-    #expect(row.title == "orchestrator")
+    // Named after its own chat: the workspace was never renamed.
+    #expect(row.title == "Refactor sync")
     #expect(row.subagents.map(\.title) == ["review", "lint", "write tests", "migrate schema"])
     #expect(row.subagents.map(\.kind) == [.chat, .chat, .workspace, .workspace])
     #expect(row.subagents.map(\.via) == [nil, "review", nil, "write tests"])

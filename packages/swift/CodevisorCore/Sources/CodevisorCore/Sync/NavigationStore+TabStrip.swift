@@ -61,10 +61,12 @@ extension NavigationStore {
     let tabs = workspace.centerTabs
     let homeTab = tabs.first { !TabStrip.isClosable($0, homeChatId: home) }
     let ordered = homeTab.map { [$0] + tabs.filter { $0.id != homeTab?.id } } ?? tabs
-    let chats = Set(workspace.chatSessionIds)
-    let status = projection.sessions.filter { chats.contains($0.id) && $0.id == home }.map(AgentStatus.init).max()
+    let chatIds = Set(workspace.chatSessionIds)
+    let chats = projection.sessions.filter { chatIds.contains($0.id) }
+    let status = chats.filter { $0.id == home }.map(AgentStatus.init).max()
     return TabStripGroup(
-      workspaceId: workspace.id, title: workspace.name, status: status ?? .idle,
+      workspaceId: workspace.id, title: AgentSidebar.title(of: workspace, chats: [workspace.id: chats]),
+      status: status ?? .idle,
       collapsed: workspace.groupCollapsed, tabs: ordered)
   }
 }

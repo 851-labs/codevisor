@@ -73,6 +73,20 @@ public struct AgentSidebarRow: Identifiable, Equatable, Sendable {
   public let subagents: [AgentSidebarSubagent]
   public let position: String
 
+  public init(
+    id: UUID, title: String, serverId: String, projectId: UUID, branch: String?, status: AgentStatus,
+    subagents: [AgentSidebarSubagent], position: String
+  ) {
+    self.id = id
+    self.title = title
+    self.serverId = serverId
+    self.projectId = projectId
+    self.branch = branch
+    self.status = status
+    self.subagents = subagents
+    self.position = position
+  }
+
   public var rollup: AgentRollup? {
     guard !subagents.isEmpty else { return nil }
     let finished = subagents.filter { $0.status == .idle || $0.status == .unread }.count
@@ -115,7 +129,8 @@ public enum AgentSidebar {
       let chats = chatsByWorkspace[workspace.id] ?? []
       let roots = rootChats(chats)
       return AgentSidebarRow(
-        id: workspace.id, title: workspace.name, serverId: workspace.serverId, projectId: workspace.projectId,
+        id: workspace.id, title: title(of: workspace, chats: chatsByWorkspace), serverId: workspace.serverId,
+        projectId: workspace.projectId,
         branch: workspace.worktreeName, status: roots.map(AgentStatus.init).max() ?? .idle,
         subagents: subagents(of: workspace, chatsByWorkspace: chatsByWorkspace, ownedBy: ownedBy),
         position: workspace.effectiveSidebarPosition)
@@ -131,8 +146,18 @@ public enum AgentSidebar {
     }
   }
 
+  /// What an agent is called: the name the user gave its workspace, else
+  /// its own chat's title (a new workspace is only named after its project).
+  static func title(of workspace: Workspace, chats: [UUID: [ChatSession]]) -> String {
+    guard !workspace.hasCustomName else { return workspace.name }
+    let home = rootChats(chats[workspace.id] ?? []).min {
+      ($0.createdAt, $0.id.uuidString) < ($1.createdAt, $1.id.uuidString)
+    }
+    return home?.title ?? workspace.name
+  }
+
   /// A workspace's own chats: the ones no other chat in it created.
-  private static func rootChats(_ chats: [ChatSession]) -> [ChatSession] {
+  static func rootChats(_ chats: [ChatSession]) -> [ChatSession] {
     let ids = Set(chats.map(\.id))
     return chats.filter { !($0.parentSessionId.map(ids.contains) ?? false) }
   }
@@ -162,11 +187,12 @@ public enum AgentSidebar {
       }
       for child in owned {
         let childRoots = rootChats(chatsByWorkspace[child.id] ?? [])
+        let name = title(of: child, chats: chatsByWorkspace)
         result.append(
           AgentSidebarSubagent(
-            id: child.id, kind: .workspace, workspaceId: child.id, title: child.name,
+            id: child.id, kind: .workspace, workspaceId: child.id, title: name,
             status: childRoots.map(AgentStatus.init).max() ?? .idle, via: via))
-        visit(child, via: child.name)
+        visit(child, via: name)
       }
     }
     visit(root, via: nil)

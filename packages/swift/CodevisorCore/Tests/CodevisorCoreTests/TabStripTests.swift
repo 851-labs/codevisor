@@ -108,7 +108,7 @@ struct TabStripTests {
     child.parentTabPosition = "ffffffffffff8"
     child.groupCollapsed = true
     let chat = ChatSession(id: session, projectId: project.id)
-    let childChat = ChatSession(id: child.chatSessionIds[0], projectId: project.id)
+    let childChat = ChatSession(id: child.chatSessionIds[0], projectId: project.id, title: "Write tests")
     for workspace in [parent, child] {
       fixture.store.layouts.setLayout(DeviceLayout(workspace), for: workspace.id)
     }
@@ -121,7 +121,8 @@ struct TabStripTests {
     let installed = fixture.store.projection.workspacesById[parent.id]!
     let strip = fixture.store.tabStrip(for: installed)
     #expect(strip.last?.id == child.id)
-    if case let .group(group) = strip.last { #expect(group.collapsed && group.title == "tests") }
+    // Named like the sidebar names the agent: after its own chat.
+    if case let .group(group) = strip.last { #expect(group.collapsed && group.title == "Write tests") }
     #expect(fixture.store.homeChatId(of: installed) == session)
     // Chats in an owned workspace are subagents; the orchestrator's own isn't.
     #expect(fixture.store.isSubagent(sessionId: childChat.id, serverId: "local"))
