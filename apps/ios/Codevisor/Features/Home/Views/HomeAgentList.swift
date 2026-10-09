@@ -254,14 +254,16 @@ struct HomeAgentListOptions: View {
   var body: some View {
     let navigation = environment.navigationStore
     Menu {
-      Picker(
-        "Group By",
-        selection: Binding(
-          get: { navigation.sidebarGrouping },
-          set: { navigation.setSetting(NavigationStore.sidebarGroupingKey, value: $0.rawValue) })
-      ) {
-        Text("None").tag(AgentSidebarGrouping.none)
-        Text("Project").tag(AgentSidebarGrouping.project)
+      Section("Group By") {
+        Picker(
+          "Group By",
+          selection: Binding(
+            get: { navigation.sidebarGrouping },
+            set: { navigation.setSetting(NavigationStore.sidebarGroupingKey, value: $0.rawValue) })
+        ) {
+          Text("None").tag(AgentSidebarGrouping.none)
+          Text("Project").tag(AgentSidebarGrouping.project)
+        }
       }
       Toggle(
         "Show Subagents",
