@@ -107,56 +107,73 @@ export const readTranscriptBodyPage = (
 ): TranscriptBodyPage | undefined =>
   db.transaction(() => {
     if (itemId.startsWith("setup:")) return readSetupBodyPage(db, sessionId, itemId, key, position)
-    if (field === "text") {
-      const metadata = db
-        .prepare(
-          `select e.revision, e.payload from transcript_entries e join chat_items i on i.id = e.item_id
+    if (field === "text") return readTranscriptTextBodyPage(db, sessionId, itemId, key, position)
+    return readTranscriptFieldBodyPage(db, sessionId, itemId, key, field, position)
+  })()
+
+const readTranscriptTextBodyPage = (
+  db: Database.Database,
+  sessionId: string,
+  itemId: string,
+  key: string,
+  position: number
+): TranscriptBodyPage | undefined => {
+  const metadata = db
+    .prepare(
+      `select e.revision, e.payload from transcript_entries e join chat_items i on i.id = e.item_id
       where e.item_id = ? and i.session_id = ? and e.entry_key = ? and e.category in ('text', 'plan')`
-        )
-        .get(itemId, sessionId, key) as { revision: number; payload: string } | undefined
-      if (metadata === undefined) return undefined
-      const chunks = db
-        .prepare(
-          `select text, position from transcript_text_chunks where item_id = ? and entry_key = ? and position >= ?
+    )
+    .get(itemId, sessionId, key) as { revision: number; payload: string } | undefined
+  if (metadata === undefined) return undefined
+  const chunks = db
+    .prepare(
+      `select text, position from transcript_text_chunks where item_id = ? and entry_key = ? and position >= ?
       order by position limit 2`
-        )
-        .all(itemId, key, position) as Array<{ text: string; position: number }>
-      if (chunks[0] === undefined) return undefined
-      return {
-        revision: Number(
-          (JSON.parse(metadata.payload) as JsonRecord).generation ?? metadata.revision
-        ),
-        encoding: "text" as const,
-        text: chunks[0].text,
-        position: chunks[0].position,
-        ...(chunks[1] === undefined ? {} : { nextPosition: chunks[1].position })
-      }
-    }
-    const metadata = db
-      .prepare(
-        `select body.revision, body.encoding from transcript_body_fields body
+    )
+    .all(itemId, key, position) as Array<{ text: string; position: number }>
+  if (chunks[0] === undefined) return undefined
+  return {
+    revision: Number((JSON.parse(metadata.payload) as JsonRecord).generation ?? metadata.revision),
+    encoding: "text" as const,
+    text: chunks[0].text,
+    position: chunks[0].position,
+    ...(chunks[1] === undefined ? {} : { nextPosition: chunks[1].position })
+  }
+}
+
+const readTranscriptFieldBodyPage = (
+  db: Database.Database,
+  sessionId: string,
+  itemId: string,
+  key: string,
+  field: string,
+  position: number
+): TranscriptBodyPage | undefined => {
+  const metadata = db
+    .prepare(
+      `select body.revision, body.encoding from transcript_body_fields body
     join chat_items item on item.id = body.item_id
     where body.item_id = ? and item.session_id = ? and body.entry_key = ? and body.field = ?`
-      )
-      .get(itemId, sessionId, key, field) as
-      | { revision: number; encoding: "text" | "json" }
-      | undefined
-    if (metadata === undefined) return undefined
-    const chunks = db
-      .prepare(
-        `select text, position from transcript_body_chunks
+    )
+    .get(itemId, sessionId, key, field) as
+    | { revision: number; encoding: "text" | "json" }
+    | undefined
+  if (metadata === undefined) return undefined
+  const chunks = db
+    .prepare(
+      `select text, position from transcript_body_chunks
     where item_id = ? and entry_key = ? and field = ? and position >= ? order by position limit 2`
-      )
-      .all(itemId, key, field, position) as Array<{ text: string; position: number }>
-    const first = chunks[0]
-    if (first === undefined) return undefined
-    return {
-      ...metadata,
-      text: first.text,
-      position: first.position,
-      ...(chunks[1] === undefined ? {} : { nextPosition: chunks[1].position })
-    }
-  })()
+    )
+    .all(itemId, key, field, position) as Array<{ text: string; position: number }>
+  const first = chunks[0]
+  if (first === undefined) return undefined
+  return {
+    ...metadata,
+    text: first.text,
+    position: first.position,
+    ...(chunks[1] === undefined ? {} : { nextPosition: chunks[1].position })
+  }
+}
 
 export const transcriptTextResource = (
   db: Database.Database,
