@@ -225,32 +225,42 @@ public final class ClientDatabase: @unchecked Sendable {
       )
       try? FileManager.default.removeItem(at: destination)
 
-      var destinationHandle: OpaquePointer?
-      guard sqlite3_open(destination.path, &destinationHandle) == SQLITE_OK,
-        let destinationHandle
-      else {
-        if let destinationHandle { sqlite3_close(destinationHandle) }
-        throw ClientDatabaseError(
-          operation: "backup",
-          detail: "Could not open \(destination.path)"
-        )
-      }
+      let destinationHandle = try openBackupDestination(destination)
       defer { sqlite3_close(destinationHandle) }
 
-      guard let handle,
-        let backup = sqlite3_backup_init(destinationHandle, "main", handle, "main")
-      else {
-        throw makeError(operation: "backup initialization")
-      }
-      defer { sqlite3_backup_finish(backup) }
+      try copyBackupPages(to: destinationHandle)
+    }
+  }
 
-      let result = sqlite3_backup_step(backup, -1)
-      guard result == SQLITE_DONE else {
-        throw ClientDatabaseError(
-          operation: "backup",
-          detail: String(cString: sqlite3_errmsg(destinationHandle))
-        )
-      }
+  private func openBackupDestination(_ destination: URL) throws -> OpaquePointer {
+    var destinationHandle: OpaquePointer?
+    guard sqlite3_open(destination.path, &destinationHandle) == SQLITE_OK,
+      let destinationHandle
+    else {
+      if let destinationHandle { sqlite3_close(destinationHandle) }
+      throw ClientDatabaseError(
+        operation: "backup",
+        detail: "Could not open \(destination.path)"
+      )
+    }
+
+    return destinationHandle
+  }
+
+  private func copyBackupPages(to destinationHandle: OpaquePointer) throws {
+    guard let handle,
+      let backup = sqlite3_backup_init(destinationHandle, "main", handle, "main")
+    else {
+      throw makeError(operation: "backup initialization")
+    }
+    defer { sqlite3_backup_finish(backup) }
+
+    let result = sqlite3_backup_step(backup, -1)
+    guard result == SQLITE_DONE else {
+      throw ClientDatabaseError(
+        operation: "backup",
+        detail: String(cString: sqlite3_errmsg(destinationHandle))
+      )
     }
   }
 
