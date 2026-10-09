@@ -125,6 +125,7 @@ jobs:
         id: net-cargo-key
         if: github.ref == 'refs/heads/main'
         run: |
+          set +e
           set -uo pipefail
           cd "$GITHUB_WORKSPACE"
           echo 'key=' >> "$GITHUB_OUTPUT"
@@ -148,7 +149,7 @@ jobs:
             if compgen -e | grep -E '^(CARGO_(TARGET_|BUILD_(TARGET|BUILD_DIR|RUSTC|RUSTDOC)|ZIGBUILD_)|RUSTC|RUSTDOC|((HOST|TARGET)_)?(CC|CXX|AR|LD|RANLIB|cc|cxx|ar)(_|$)|ZIG|CODEVISOR_NET_ARTIFACTS_ROOT$)' >/dev/null; then exit 0; fi
             [[ -n "${ImageOS:-}" && -n "${ImageVersion:-}" ]]
             rust_identity="$(rustc -vV)"; cargo_identity="$(cargo --version --verbose)"
-            zigbuild_identity="$(cargo zigbuild --version)"; zig_identity="$(python3 -m ziglang version)"
+            zigbuild_identity="$(cargo-zigbuild --version)"; zig_identity="$(python3 -m ziglang version)"
             [[ "$rust_identity" == *"release: $rust"$'\n'* && "$cargo_identity" == "cargo $rust "* ]]
             [[ "$zigbuild_identity" == "cargo-zigbuild $(node -p 'require("./scripts/net-build.lock.json").cargoZigbuild')" ]]
             [[ "$zig_identity" == "$(node -p 'require("./scripts/net-build.lock.json").zig')" ]]
@@ -172,7 +173,7 @@ jobs:
               done
             } | sha256sum | cut -d ' ' -f 1)"
             echo "key=net-test-js-cargo-v2-${{ runner.os }}-${{ runner.arch }}-$context-$native" >> "$GITHUB_OUTPUT"
-          ) 2>/dev/null
+          )
           exit 0
       - name: Restore net Cargo target cache
         id: net-cargo-cache
