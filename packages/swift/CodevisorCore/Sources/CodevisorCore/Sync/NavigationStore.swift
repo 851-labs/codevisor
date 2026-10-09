@@ -185,8 +185,7 @@ public final class NavigationStore {
   /// every device sorts to. Tabs already in order keep their keys.
   func publishTabOrder(of workspace: Workspace) {
     guard workspace.isServerSynced else { return }
-    var records = NavigationRecords(caches.caches[workspace.serverId])
-    NavigationOverlay.apply(outbox.entries(for: workspace.serverId), to: &records)
+    let records = overlaidRecords(workspace.serverId)
     let positions = SharedTabOrder.positions(of: records.panes, workspaceId: workspace.id)
     let moves = SharedTabOrder.moves(for: workspace.centerTabs, positions: positions)
     guard !moves.isEmpty else { return }
@@ -197,6 +196,13 @@ public final class NavigationStore {
     }
     rebuild()
     executor.resume(machineId: workspace.serverId)
+  }
+
+  /// A machine's cached records with its waiting requests laid over them.
+  func overlaidRecords(_ machineId: String) -> NavigationRecords {
+    var records = NavigationRecords(caches.caches[machineId])
+    NavigationOverlay.apply(outbox.entries(for: machineId), to: &records)
+    return records
   }
 
   func addDraft(_ draft: WorkspaceDraft, layout: DeviceLayout) {
