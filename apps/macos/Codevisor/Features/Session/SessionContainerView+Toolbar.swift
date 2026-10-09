@@ -22,7 +22,15 @@ extension SessionContainerView {
   /// a chat (which has no controls) looks exactly like it did without tabs.
   private var paneColumn: some View {
     contentColumn.safeAreaInset(edge: .top, spacing: 0) {
-      if hasPaneControls {
+      if let browser = activeBrowserModel {
+        // The browser's controls carry their own glass at full size.
+        VStack(spacing: 0) {
+          ChromiumBrowserPaneControls(model: browser)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+          Divider()
+        }
+      } else if hasPaneControls {
         VStack(spacing: 0) {
           paneControls
             .controlSize(.small)
@@ -42,12 +50,7 @@ extension SessionContainerView {
 
   @ViewBuilder
   private var paneControls: some View {
-    if let browser = activeBrowserModel {
-      HStack(spacing: 8) {
-        ChromiumBrowserNavigationButtons(model: browser)
-        ChromiumBrowserToolbar(model: browser).id(browser.paneId).frame(maxWidth: .infinity)
-      }
-    } else if let pane = activeScreenSharingPane, let store = pane.store {
+    if let pane = activeScreenSharingPane, let store = pane.store {
       ScreenSharingControls(
         store: store, settings: { pane.machineSettings() }, applySettings: { pane.applyMachineSettings($0) })
     } else if let model = activeFileModel {

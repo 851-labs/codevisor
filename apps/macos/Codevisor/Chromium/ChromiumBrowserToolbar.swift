@@ -117,7 +117,7 @@ struct ChromiumBrowserToolbarContent: View {
           ChromiumBrowserZoomPopover(
             model: model, request: model.zoomPresentationRequest, editing: editing, loading: model.isLoading)
         }
-        browserButton("Responsive viewport", symbol: "iphone.and.ipad") {
+        browserButton("Responsive Viewport", symbol: "ipad.and.iphone", width: 32) {
           Task {
             if model.viewport == nil {
               try? await model.setViewport(ChromiumViewport().parameters)
@@ -126,6 +126,8 @@ struct ChromiumBrowserToolbarContent: View {
             }
           }
         }
+        .foregroundStyle(model.viewport == nil ? Color.primary : Color.accentColor)
+        .glassEffect(.regular.interactive(), in: .circle)
       }
       .frame(maxWidth: .infinity)
     }
@@ -147,11 +149,14 @@ struct ChromiumBrowserToolbarContent: View {
 
   private func updateAddress() { address = model.url.map(BrowserLocation.display) ?? "" }
   private func browserButton(
-    _ title: String, symbol: String, action: @escaping () -> Void
+    _ title: String, symbol: String, width: CGFloat = 34, action: @escaping () -> Void
   ) -> some View {
-    Button(action: action) { Image(systemName: symbol).frame(width: 34, height: 32) }
-      .buttonStyle(.plain)
-      .help(title)
-      .accessibilityLabel(title)
+    Button(action: action) {
+      Image(systemName: symbol).font(.system(size: 13, weight: .medium)).frame(width: width, height: 32)
+        .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .help(title)
+    .accessibilityLabel(title)
   }
 }
