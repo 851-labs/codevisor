@@ -35,6 +35,7 @@ import {
   type AcpModelState
 } from "./model-selection.js"
 import { GrokStreamNormalizer } from "./stream.js"
+import { GrokSubagents } from "./subagents.js"
 
 const withGrokMetadata = (
   metadata: AgentSessionMetadata,
@@ -214,6 +215,7 @@ export const makeGrokBuildExtension: AcpStdioExtensionFactory = ({ emit, enqueue
   const modelStates = new Map<string, AcpModelState>()
   const nativeConfigIds = new Map<string, ReadonlySet<string>>()
   const normalizer = new GrokStreamNormalizer()
+  const subagents = new GrokSubagents()
 
   return {
     configureClientApp: (app) => {
@@ -244,7 +246,12 @@ export const makeGrokBuildExtension: AcpStdioExtensionFactory = ({ emit, enqueue
           method,
           (params) => params,
           ({ params }) => {
-            emitAll(emit, normalizer.mapExtensionNotification(params))
+            emitAll(emit, subagents.notification(params))
+            const events = normalizer.mapExtensionNotification(params)
+            const sessionId = subagents.sessionOf(params)
+            // A subagent's turn boundaries are its own, not the chat's.
+            if (sessionId !== undefined && subagents.isChildSession(sessionId)) return
+            emitAll(emit, events)
             const mapped = grokGoalNotification(params, (sessionId) => goals.get(sessionId))
             if (mapped === undefined) return
             if (mapped.goal === undefined) goals.delete(mapped.sessionId)
@@ -253,9 +260,35 @@ export const makeGrokBuildExtension: AcpStdioExtensionFactory = ({ emit, enqueue
           }
         )
       }
+      // A loaded session replays its subagents' lifecycle under this name.
+      for (const method of ["_x.ai/session/update", "x.ai/session/update"]) {
+        app.onNotification<unknown>(
+          method,
+          (params) => params,
+          ({ params }) => emitAll(emit, subagents.notification(params))
+        )
+      }
       return app
     },
-    mapSessionNotification: (notification) => normalizer.mapSessionNotification(notification),
+    mapSessionNotification: (rawNotification) => {
+      const notification = {
+        ...rawNotification,
+        update: subagents.mapToolUpdate(
+          rawNotification.sessionId,
+          rawNotification.update as unknown as Record<string, unknown>
+        ) as unknown as typeof rawNotification.update
+      }
+      // A subagent's own session streams into its agent's thread.
+      if (subagents.isChildSession(notification.sessionId)) {
+        return subagents.isThreadUpdate(notification.update as unknown as Record<string, unknown>)
+          ? subagents.childEvents(
+              notification.sessionId,
+              normalizer.mapSessionNotification(notification)
+            )
+          : []
+      }
+      return normalizer.mapSessionNotification(notification)
+    },
     sdkConnectionCustomization: {
       customizeSessionMetadata: (sessionId, response, metadata) => {
         nativeConfigIds.set(sessionId, acpConfigOptionIds(response))

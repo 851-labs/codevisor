@@ -2,6 +2,19 @@ import { describe, expect, it } from "vitest"
 
 import { run, setup } from "./test-support.js"
 
+/// A multi-agent v2 activity item for the child agent at `/root/map_server_storage`.
+const activity = (kind: string, id: string, turnId = "turn-1") => ({
+  item: {
+    agentPath: "/root/map_server_storage",
+    agentThreadId: "thread-child",
+    id,
+    kind,
+    type: "subAgentActivity"
+  },
+  threadId: "thread-new",
+  turnId
+})
+
 describe("CodexProvider", () => {
   it("nests collab subagent threads under the spawn call and isolates their turn lifecycle", async () => {
     const { client, created, events } = await setup()
@@ -150,6 +163,100 @@ describe("CodexProvider", () => {
       .map((event) => event.payload as Record<string, unknown>)
       .find((payload) => payload.toolCallId === "collab-long")
     expect(spawn?.title).toBe("Agent: You are one of a couple sub-agents being…")
+  })
+
+  it("shows multi-agent v2 subagents, named by task, with their thread nested and finish settling them", async () => {
+    const { client, events } = await setup()
+    // Each activity arrives as a started/completed pair.
+    client.emit("item/started", activity("started", "call-spawn"))
+    client.emit("item/completed", activity("started", "call-spawn"))
+    client.emit("item/started", {
+      item: { command: "ls", id: "child-cmd", status: "inProgress", type: "commandExecution" },
+      threadId: "thread-child",
+      turnId: "turn-child"
+    })
+    client.emit("item/completed", activity("completed", "subagent-completed-turn-child"))
+    // Messaged again in the same turn: the same chip runs again.
+    client.emit("item/started", activity("interacted", "call-message"))
+    client.emit("item/completed", activity("interacted", "call-message"))
+    await Promise.resolve()
+
+    const payloads = events.map((event) => event.payload as Record<string, unknown>)
+    const chips = payloads.filter(
+      (payload) => payload.sessionUpdate === "tool_call" && payload.kind === "agent"
+    )
+    expect(chips).toEqual([
+      expect.objectContaining({
+        _meta: { codevisorSubagent: { taskId: "thread-child" } },
+        rawInput: { agentPath: "/root/map_server_storage", description: "Map server storage" },
+        status: "in_progress",
+        title: "Agent: Map server storage",
+        toolCallId: "call-spawn"
+      })
+    ])
+    expect(payloads).toContainEqual(
+      expect.objectContaining({
+        parentToolCallId: "call-spawn",
+        sessionUpdate: "tool_call",
+        toolCallId: "child-cmd"
+      })
+    )
+    expect(
+      payloads
+        .filter(
+          (payload) =>
+            payload.sessionUpdate === "tool_call_update" && payload.toolCallId === "call-spawn"
+        )
+        .map((payload) => payload.status)
+    ).toEqual(["completed", "in_progress"])
+  })
+
+  it("gives a multi-agent v2 subagent messaged in a later turn a chip there that continues its history", async () => {
+    const { client, events } = await setup()
+    client.emit("item/started", activity("started", "call-spawn"))
+    client.emit("item/completed", activity("completed", "subagent-completed-turn-child"))
+    client.emit("item/started", activity("interacted", "call-followup", "turn-2"))
+    client.emit("item/completed", activity("interacted", "call-followup", "turn-2"))
+    client.emit("item/started", {
+      item: { command: "rg", id: "child-cmd-2", status: "inProgress", type: "commandExecution" },
+      threadId: "thread-child",
+      turnId: "turn-child-2"
+    })
+    client.emit(
+      "item/completed",
+      activity("completed", "subagent-completed-turn-child-2", "turn-2")
+    )
+    await Promise.resolve()
+
+    const payloads = events.map((event) => event.payload as Record<string, unknown>)
+    expect(
+      payloads.filter(
+        (payload) => payload.sessionUpdate === "tool_call" && payload.kind === "agent"
+      )
+    ).toEqual([
+      expect.objectContaining({
+        _meta: { codevisorSubagent: { taskId: "thread-child" } },
+        toolCallId: "call-spawn"
+      }),
+      expect.objectContaining({
+        _meta: { codevisorSubagent: { continues: true, taskId: "thread-child" } },
+        status: "in_progress",
+        title: "Agent: Map server storage",
+        toolCallId: "call-followup"
+      })
+    ])
+    // The new run nests under, and settles, the later chip.
+    expect(payloads).toContainEqual(
+      expect.objectContaining({ parentToolCallId: "call-followup", toolCallId: "child-cmd-2" })
+    )
+    expect(
+      payloads
+        .filter((payload) => payload.sessionUpdate === "tool_call_update")
+        .map((payload) => [payload.toolCallId, payload.status])
+    ).toEqual([
+      ["call-spawn", "completed"],
+      ["call-followup", "completed"]
+    ])
   })
 
   it("cancels a spawned agent's row when its thread is interrupted", async () => {

@@ -112,6 +112,13 @@ extension ToolCall {
     meta?["codevisorSubagent"]?["taskId"]?.stringValue
   }
 
+  /// A later run of an agent spawned earlier, under a chip of its own (a
+  /// Codex agent messaged in a later turn), marked
+  /// `_meta.codevisorSubagent.continues`.
+  public var continuesSubagent: Bool {
+    meta?["codevisorSubagent"]?["continues"]?.boolValue == true
+  }
+
   /// Live gateway state the server attaches to an `execute` row.
   public var codevisorExecution: CodevisorExecution? {
     guard codevisorGatewayOperation == .execute else { return nil }

@@ -43,6 +43,31 @@ struct AssistantTurnActivityTests {
     }
   }
 
+  @Test("An agent call being written reads as starting an agent until its input arrives, even beside running work")
+  func startingAgent() {
+    func activity(_ turn: AssistantTurn) -> String? {
+      AssistantTurnActivity.resolve(
+        turn: turn, isWaitingOnUser: false,
+        sessionActivity: nil, backgroundTask: nil, goalActivity: nil)?.message
+    }
+    var turn = AssistantTurn(isGenerating: true)
+    TranscriptReducer.apply(
+      .toolCall(
+        ToolCall(
+          toolCallId: "running", title: "Agent", kind: .agent, status: .inProgress,
+          rawInput: .object(["prompt": .string("Map the chat UI.")]))), to: &turn)
+    #expect(activity(turn) == nil)
+
+    TranscriptReducer.apply(
+      .toolCall(ToolCall(toolCallId: "writing", title: "Agent", kind: .agent, status: .inProgress)), to: &turn)
+    #expect(activity(turn) == "Starting agent…")
+
+    TranscriptReducer.apply(
+      .toolCallUpdate(ToolCallUpdate(toolCallId: "writing", rawInput: .object(["prompt": .string("Map the mirror.")]))),
+      to: &turn)
+    #expect(activity(turn) == nil)
+  }
+
   @Test("A quiet turn has one waiting label and a retry replaces it")
   func retryWins() {
     var turn = AssistantTurn(isGenerating: true, isThinking: false)

@@ -40,6 +40,21 @@ public enum WorkedItem: Identifiable, Sendable, Equatable {
 }
 
 extension AssistantTurn {
+  /// An agent call with no agent behind it yet: the model is still writing
+  /// its input (Claude streams a call before its arguments), or stopped
+  /// before finishing. It isn't shown — there's no thread to open until the
+  /// input arrives, and meanwhile the turn's activity reads "Starting
+  /// agent…". A placeholder standing in for a follow-up's work has no input
+  /// either, but always arrives with that work in its thread.
+  public func isUnstartedSubagent(_ call: ToolCall) -> Bool {
+    call.kind == .agent && call.rawInput == nil && subagents[call.toolCallId]?.entries.isEmpty != false
+  }
+
+  /// The model is writing an agent call (see `isUnstartedSubagent`).
+  public var isStartingSubagent: Bool {
+    isGenerating && toolCalls.contains { !$0.isSettled && isUnstartedSubagent($0) }
+  }
+
   /// The worked-for entries grouped for display: consecutive tool calls are
   /// collapsed into a single `toolGroup`, with reasoning text in between.
   /// Excludes the final text answer — the finished-turn presentation.
@@ -117,6 +132,8 @@ extension AssistantTurn {
         guard !entry.isBlankText else { continue }
         flush()
         items.append(.text(id: id, markdown: markdown))
+      case let .tool(call) where isUnstartedSubagent(call):
+        continue
       case let .tool(call) where call.kind == .agent || subagents[call.toolCallId] != nil:
         flushGroup()
         agents.append(call)

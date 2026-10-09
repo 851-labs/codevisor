@@ -17,6 +17,7 @@ import { trackProcessTree } from "@codevisor/processes"
 import { Effect } from "effect"
 
 import { makeAcpTerminalHost } from "./acp-terminals.js"
+import { rewriteAgentLines } from "./agent-lines.js"
 import { createClientApp, type ConfigureAcpClientApp } from "./client-app.js"
 import { acpClientCapabilities, type AcpConnector } from "./connection.js"
 import { isGenericConnectionClose } from "./internal.js"
@@ -47,6 +48,9 @@ export interface AcpStdioExtension {
     notification: acp.SessionNotification
   ) => ReadonlyArray<RuntimeEvent>
   readonly sdkConnectionCustomization?: AcpSdkConnectionCustomization
+  /// Rewrites each message line the agent writes before the ACP SDK parses
+  /// it, for extensions its schema would reject. Return the line to keep it.
+  readonly rewriteAgentLine?: (line: string) => string
 }
 
 export type AcpStdioExtensionFactory = (context: AcpStdioExtensionContext) => AcpStdioExtension
@@ -185,7 +189,12 @@ export const makeStdioAcpConnectorWithOptions = (
       ).connect(
         acp.ndJsonStream(
           Writable.toWeb(child.stdin) as WritableStream<Uint8Array>,
-          Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>
+          extension?.rewriteAgentLine === undefined
+            ? (Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>)
+            : rewriteAgentLines(
+                Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>,
+                extension.rewriteAgentLine
+              )
         )
       )
       const answerQuestion = async (

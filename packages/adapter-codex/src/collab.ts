@@ -78,20 +78,89 @@ const promptSnippet = (prompt: string): string => {
   return `${(boundary > 20 ? cut.slice(0, boundary) : cut).trimEnd()}…`
 }
 
-/// An interrupted subagent will never produce further output; settle its
-/// spawn call as cancelled so nested rows don't spin forever.
+/// Multi-agent v2 (Codex 0.161+) reports subagents as activity items on the
+/// parent thread instead of `spawnAgent` calls. `started` carries the
+/// `spawn_agent` call id and the new agent's thread: it becomes the visible
+/// "Agent" tool call that the thread's items nest under. Its instructions are
+/// encrypted, so the agent is named by its task.
+///
+/// `interacted` is a message sent to the agent. In the turn its chip is in,
+/// that just reopens the chip; in a later turn the agent's new run gets a
+/// chip of its own there (so does an agent this session never saw spawn).
+/// Every chip carries the agent's thread as its task id, so opening any of
+/// them shows the agent's whole history. `completed` settles the current
+/// chip when the agent finishes; an interrupted agent will never produce
+/// further output, so its chip is cancelled.
 export const handleSubAgentActivity = (
   session: CodexSession,
-  item: Record<string, unknown>
+  item: Record<string, unknown>,
+  started: boolean,
+  turnId: string | undefined
 ): void => {
-  if (item.kind !== "interrupted") return
   const agentThreadId = typeof item.agentThreadId === "string" ? item.agentThreadId : undefined
   if (agentThreadId === undefined) return
-  const spawnId = session.collabThreads.get(agentThreadId)
-  if (spawnId === undefined) return
+  const runId = session.collabThreads.get(agentThreadId)
+  if (item.kind === "started" || item.kind === "interacted") {
+    // Codex emits each activity as a started/completed pair; act on one edge.
+    if (!started || typeof item.id !== "string") return
+    if (
+      item.kind === "interacted" &&
+      runId !== undefined &&
+      session.collabRunTurns.get(agentThreadId) === turnId
+    ) {
+      emitRunStatus(session, runId, "in_progress")
+      return
+    }
+    session.collabThreads.set(agentThreadId, item.id)
+    if (turnId === undefined) session.collabRunTurns.delete(agentThreadId)
+    else session.collabRunTurns.set(agentThreadId, turnId)
+    const taskName = subAgentTaskName(item.agentPath)
+    const continuesAgent = item.kind === "interacted"
+    void session.emit({
+      kind: "session.output",
+      payload: {
+        _meta: {
+          codevisorSubagent: {
+            taskId: agentThreadId,
+            ...(continuesAgent ? { continues: true } : {})
+          }
+        },
+        kind: "agent",
+        rawInput: {
+          ...(taskName === undefined ? {} : { description: taskName }),
+          ...(typeof item.agentPath === "string" ? { agentPath: item.agentPath } : {})
+        },
+        sessionUpdate: "tool_call",
+        status: "in_progress",
+        title: taskName === undefined ? "Agent" : `Agent: ${taskName}`,
+        toolCallId: item.id
+      },
+      subjectId: session.key
+    })
+    return
+  }
+  const status = typeof item.kind === "string" ? subAgentActivityStatus[item.kind] : undefined
+  if (started || status === undefined || runId === undefined) return
+  emitRunStatus(session, runId, status)
+}
+
+const emitRunStatus = (session: CodexSession, runId: string, status: string): void => {
   void session.emit({
     kind: "session.output",
-    payload: { sessionUpdate: "tool_call_update", status: "cancelled", toolCallId: spawnId },
+    payload: { sessionUpdate: "tool_call_update", status, toolCallId: runId },
     subjectId: session.key
   })
+}
+
+const subAgentActivityStatus: Partial<Record<string, string>> = {
+  completed: "completed",
+  interrupted: "cancelled"
+}
+
+/// The agent's task from its path ("/root/map_server_storage" → "Map server
+/// storage").
+const subAgentTaskName = (agentPath: unknown): string | undefined => {
+  if (typeof agentPath !== "string") return undefined
+  const task = (agentPath.split("/").at(-1) ?? "").replace(/[_-]+/g, " ").trim()
+  return task.length === 0 ? undefined : task.charAt(0).toUpperCase() + task.slice(1)
 }

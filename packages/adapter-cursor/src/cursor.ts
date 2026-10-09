@@ -227,35 +227,6 @@ export class CursorTodoTracker {
   }
 }
 
-export const cursorTaskEvent = (params: unknown, sessionId: string): RuntimeEvent | undefined => {
-  const request = record(params)
-  if (request === undefined || typeof request.toolCallId !== "string") return undefined
-  const description =
-    typeof request.description === "string" && request.description.length > 0
-      ? request.description
-      : "Subagent task"
-  return {
-    kind: "session.output",
-    subjectId: sessionId,
-    payload: {
-      kind: "agent",
-      rawInput: {
-        ...(typeof request.prompt === "string" ? { prompt: request.prompt } : {}),
-        ...(request.subagentType === undefined ? {} : { subagentType: request.subagentType }),
-        ...(typeof request.model === "string" ? { model: request.model } : {})
-      },
-      rawOutput: {
-        ...(typeof request.agentId === "string" ? { agentId: request.agentId } : {}),
-        ...(typeof request.durationMs === "number" ? { durationMs: request.durationMs } : {})
-      },
-      sessionUpdate: "tool_call",
-      status: "completed",
-      title: description,
-      toolCallId: request.toolCallId
-    }
-  }
-}
-
 export const cursorGenerateImageEvent = (
   params: unknown,
   sessionId: string

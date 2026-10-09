@@ -196,9 +196,10 @@ public struct AssistantTurn: Sendable, Equatable {
   /// A top-level tool call that has started but not yet settled. Its card
   /// renders its own running shimmer, so the turn-level activity indicator
   /// defers to it (an in-progress Agent tool stays unsettled while its
-  /// subagent runs, which is what keeps this true for background work).
+  /// subagent runs, which is what keeps this true for background work). An
+  /// agent call still being written has no card yet, so it doesn't count.
   public var hasRunningToolCall: Bool {
-    toolCalls.contains { !$0.isSettled }
+    toolCalls.contains { !$0.isSettled && !isUnstartedSubagent($0) }
   }
 
   /// Whether the ephemeral "Thinking…" activity indicator should show for the

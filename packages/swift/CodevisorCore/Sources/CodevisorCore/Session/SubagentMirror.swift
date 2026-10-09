@@ -53,7 +53,7 @@ public final class SubagentMirror {
   @ObservationIgnored private var spawningMessageId: UUID?
   /// The thread as read from the parent's settled items, recomputed only when
   /// they change (not on every token the active item streams).
-  @ObservationIgnored private var settledThread: (model: ObjectIdentifier, revision: UInt64, thread: Thread)?
+  @ObservationIgnored private var settledThread: (key: SettledKey, agent: Agent, thread: Thread)?
   @ObservationIgnored private var requestedDetailItemIds: Set<String> = []
   @ObservationIgnored private weak var searchedParentModel: SessionModel?
   @ObservationIgnored private var isSearching = false
@@ -118,10 +118,12 @@ public final class SubagentMirror {
 
   /// One piece of the agent's conversation, as read from the parent.
   enum Piece: Equatable {
-    /// A message sent to the agent after its spawn (Claude's `SendMessage`).
-    case followUp(key: String, text: String, position: Int?)
-    /// One entry of the agent's own thread, in the parent item it streamed into.
-    case work(TranscriptEntry, position: Int?, messageId: UUID, turn: AssistantTurn)
+    /// A message sent to the agent after its spawn (Claude's `SendMessage`),
+    /// or a later run starting without one to show (Codex encrypts them).
+    case followUp(key: String, text: String?, position: Int?)
+    /// One entry of the agent's own thread, in the parent item it streamed
+    /// into under one of its runs' calls.
+    case work(TranscriptEntry, position: Int?, runId: String, turn: AssistantTurn)
 
     var position: Int? {
       switch self {
@@ -135,9 +137,18 @@ public final class SubagentMirror {
     var spawn: ToolCall?
     var spawnMessageId: UUID?
     var prompt: String?
+    /// The agent's runs found so far, in order: the spawn, then later runs.
+    var runIds: [String] = []
+    var latestRun: ToolCall?
+    /// The earliest run found continues an agent spawned in history not yet
+    /// loaded: keep searching for the rest of its history.
+    var isMissingEarlierRuns = false
     var pieces: [Piece] = []
     /// Its spawning (or continuing) call is open in a generating item.
     var isLive = false
+    /// The model is still writing its spawning call: the agent appears once
+    /// the call's input arrives, so there's nothing to search for.
+    var isStarting = false
     /// Parent items after the spawn still in summary form: their details may
     /// hold messages sent to the agent, or its later work.
     var summarizedItemIds: [String] = []
@@ -155,19 +166,33 @@ public final class SubagentMirror {
       requestedDetailItemIds.removeAll()
       olderHistoryPagesLoaded = 0
     }
-    var thread = settledThread(of: parentModel)
-    if case let .assistant(message)? = parent.activeItem {
-      Self.collect(toolCallId, from: message, isActive: true, into: &thread)
+    let activeMessage: AssistantMessage? =
+      if case let .assistant(message)? = parent.activeItem { message } else { nil }
+    let activeTaskId = activeMessage.flatMap { Self.spawningCall(toolCallId, in: $0.turn)?.subagentTaskId }
+    let fromSettled = settledThread(of: parentModel, activeTaskId: activeTaskId)
+    var thread = fromSettled.thread
+    if let activeMessage {
+      Self.collect(fromSettled.agent, from: activeMessage, isActive: true, into: &thread)
     }
     guard let spawn = thread.spawn else {
-      searchForSpawningCall()
+      if thread.isStarting {
+        if availability != .available { setAvailability(.loading) }
+      } else {
+        searchForSpawningCall()
+      }
       return
     }
     spawningMessageId = thread.spawnMessageId
     setAvailability(.available)
-    loadSummarizedItems(thread.summarizedItemIds)
+    if thread.isMissingEarlierRuns {
+      searchForSpawningCall()
+    } else {
+      loadSummarizedItems(thread.summarizedItemIds)
+    }
 
-    let isRunning = thread.isLive || parent.runningSubagentToolCallIds.contains(toolCallId)
+    let runningIds = parent.runningSubagentToolCallIds
+    let isRunning =
+      thread.isLive || runningIds.contains(toolCallId) || thread.runIds.contains(where: runningIds.contains)
     if isRunning {
       observedFinishAt = nil
     } else if observedFinishAt == nil {
@@ -180,57 +205,39 @@ public final class SubagentMirror {
       title: Self.title(of: spawn),
       agentType: spawn.rawInput?["subagent_type"]?.stringValue,
       isRunning: isRunning,
-      status: spawn.status
+      status: (thread.latestRun ?? spawn).status
     )
     if summary != next { summary = next }
   }
 
-  private func settledThread(of model: SessionModel) -> Thread {
-    let key = (ObjectIdentifier(model), model.transcriptProjectionRevision)
-    if let cached = settledThread, cached.model == key.0, cached.revision == key.1 { return cached.thread }
+  /// The thread as read from the settled items, with the agent it belongs
+  /// to. The opened call's task id names the agent's other runs; it's read
+  /// from the active item when the call is there, else from the settled
+  /// items, before gathering.
+  private func settledThread(
+    of model: SessionModel, activeTaskId: String?
+  ) -> (agent: Agent, thread: Thread) {
+    let key = SettledKey(
+      model: ObjectIdentifier(model), revision: model.transcriptProjectionRevision, activeTaskId: activeTaskId)
+    if let cached = settledThread, cached.key == key { return (cached.agent, cached.thread) }
+    let settledTaskId = model.settledConversation.lazy.compactMap { item -> String? in
+      guard case let .assistant(message) = item else { return nil }
+      return Self.spawningCall(self.toolCallId, in: message.turn)?.subagentTaskId
+    }.first
+    let agent = Agent(toolCallId: toolCallId, taskId: activeTaskId ?? settledTaskId)
     var thread = Thread()
     for item in model.settledConversation {
       guard case let .assistant(message) = item else { continue }
-      Self.collect(toolCallId, from: message, isActive: false, into: &thread)
+      Self.collect(agent, from: message, isActive: false, into: &thread)
     }
-    settledThread = (key.0, key.1, thread)
-    return thread
+    settledThread = (key, agent, thread)
+    return (agent, thread)
   }
 
-  /// Adds one parent item's part of the agent's conversation: its spawn,
-  /// messages sent to it, and the entries it streamed there.
-  static func collect(_ toolCallId: String, from message: AssistantMessage, isActive: Bool, into thread: inout Thread) {
-    let turn = message.turn
-    let call = spawningCall(toolCallId, in: turn)
-    // The spawn carries the agent's input; an item it only continues in holds
-    // a bare placeholder call for its thread.
-    if thread.spawn == nil, let call, call.rawInput != nil {
-      thread.spawn = call
-      thread.spawnMessageId = message.id
-      thread.prompt = call.rawInput?["prompt"]?.stringValue
-    }
-    guard thread.spawn != nil else { return }
-    if turn.hasDeferredWorkedDetails, !turn.hasHydratedWorkedDetails, let itemId = turn.deferredDetailItemId {
-      thread.summarizedItemIds.append(itemId)
-    }
-    // Messages sent to the agent name the same task as its spawn.
-    let taskId = thread.spawn?.subagentTaskId
-    for case let .tool(sent) in turn.entries
-    where taskId != nil && sent.subagentTaskId == taskId && sent.toolCallId != toolCallId {
-      guard let text = sent.rawInput?["message"]?.stringValue, !text.isEmpty else { continue }
-      thread.pieces.append(
-        .followUp(
-          key: sent.toolCallId, text: text,
-          position: turn.entryPositions["tool:\(sent.toolCallId)"] ?? sent.statePosition))
-    }
-    // An entry without its own position stays behind the one before it, as
-    // the parent's transcript orders entries.
-    var anchor: Int?
-    for entry in turn.subagents[toolCallId]?.entries ?? [] {
-      anchor = turn.entryPositions[entry.id] ?? anchor
-      thread.pieces.append(.work(entry, position: anchor, messageId: message.id, turn: turn))
-    }
-    if isActive, turn.isGenerating, let call, !call.isSettled { thread.isLive = true }
+  private struct SettledKey: Equatable {
+    var model: ObjectIdentifier
+    var revision: UInt64
+    var activeTaskId: String?
   }
 
   /// The agent's conversation as chat items: its instructions and each
@@ -257,9 +264,11 @@ public final class SubagentMirror {
       var entries: [TranscriptEntry] = []
       var first: AssistantTurn?
       var last: AssistantTurn?
+      var lastRunId: String?
     }
     enum Step {
-      case instruction(key: String, text: String)
+      /// A message to the agent; with no text to show, it only separates runs.
+      case instruction(key: String, text: String?)
       case run(Run)
     }
     var steps: [Step] = []
@@ -274,10 +283,11 @@ public final class SubagentMirror {
       case let .followUp(key, text, _):
         closeRun()
         steps.append(.instruction(key: "follow-up:\(key)", text: text))
-      case let .work(entry, _, _, turn):
+      case let .work(entry, _, runId, turn):
         current.entries.append(entry)
         current.first = current.first ?? turn
         current.last = turn
+        current.lastRunId = runId
       }
     }
     closeRun()
@@ -286,8 +296,10 @@ public final class SubagentMirror {
     var runIndex = 0
     for (index, step) in steps.enumerated() {
       switch step {
-      case let .instruction(key, text):
+      case let .instruction(key, text?):
         items.append(.user(UserMessage(id: rowId(key), text: text)))
+      case .instruction:
+        continue
       case let .run(run):
         let isLatest = index == steps.count - 1
         let live = isLatest && isRunning
@@ -304,13 +316,15 @@ public final class SubagentMirror {
               id: rowId("run:\(runIndex)"),
               turn: Self.mirrorTurn(
                 of: SubagentTranscript(
-                  entries: run.entries, isThinking: last.subagents[toolCallId]?.isThinking ?? false),
+                  entries: run.entries, isThinking: last.subagents[run.lastRunId ?? toolCallId]?.isThinking ?? false),
                 isRunning: live, startedAt: run.first?.startedAt, endedAt: endedAt, subagents: last.subagents))))
         runIndex += 1
       }
     }
-    // Messaged but not yet answering: the agent is working on it.
-    if isRunning, case .user? = items.last {
+    // Messaged but not yet answering, or started with nothing to show yet:
+    // the agent is working on it.
+    let awaitsRun = steps.last.map { if case .instruction = $0 { true } else { false } } ?? true
+    if isRunning, awaitsRun {
       items.append(
         .assistant(
           AssistantMessage(
@@ -478,6 +492,88 @@ public final class SubagentMirror {
     followedParentModel = parentModel
     controller.model = model
     return model
+  }
+}
+
+extension SubagentMirror {
+  /// Which calls are the agent's runs. Opening any of them shows them all:
+  /// the call itself, and every agent call sharing its task id (a Codex
+  /// agent messaged in a later turn gets a chip there for its new run).
+  struct Agent: Equatable {
+    var toolCallId: String
+    var taskId: String?
+
+    func isRun(_ call: ToolCall) -> Bool {
+      call.toolCallId == toolCallId || (call.kind == .agent && taskId != nil && call.subagentTaskId == taskId)
+    }
+  }
+
+  /// Adds one parent item's part of the agent's conversation: its spawn and
+  /// later runs, messages sent to it, and the entries it streamed there.
+  static func collect(_ agent: Agent, from message: AssistantMessage, isActive: Bool, into thread: inout Thread) {
+    let turn = message.turn
+    let opened = spawningCall(agent.toolCallId, in: turn)
+    // A run's call carries its input; an item a run only continues in holds
+    // a bare placeholder call for its thread.
+    var newRuns: [ToolCall] = []
+    for call in turn.allToolCalls
+    where call.rawInput != nil && agent.isRun(call) && !thread.runIds.contains(call.toolCallId) {
+      if thread.spawn == nil {
+        thread.spawn = call
+        thread.spawnMessageId = message.id
+        thread.prompt = call.rawInput?["prompt"]?.stringValue
+        thread.isMissingEarlierRuns = call.continuesSubagent
+      }
+      thread.runIds.append(call.toolCallId)
+      thread.latestRun = call
+      newRuns.append(call)
+    }
+    guard thread.spawn != nil else {
+      if isActive, turn.isGenerating, let opened, !opened.isSettled, turn.isUnstartedSubagent(opened) {
+        thread.isStarting = true
+      }
+      return
+    }
+    if turn.hasDeferredWorkedDetails, !turn.hasHydratedWorkedDetails, let itemId = turn.deferredDetailItemId {
+      thread.summarizedItemIds.append(itemId)
+    }
+    // Messages sent to the agent name the same task as its spawn.
+    let taskId = thread.spawn?.subagentTaskId
+    for case let .tool(sent) in turn.entries
+    where taskId != nil && sent.subagentTaskId == taskId && sent.kind != .agent && sent.toolCallId != agent.toolCallId {
+      guard let text = sent.rawInput?["message"]?.stringValue, !text.isEmpty else { continue }
+      thread.pieces.append(
+        .followUp(
+          key: sent.toolCallId, text: text,
+          position: turn.entryPositions["tool:\(sent.toolCallId)"] ?? sent.statePosition))
+    }
+    for runId in thread.runIds {
+      // A later run starts with the message that started it (Codex's are
+      // encrypted: then just a new run); the first found does too when it
+      // continues an agent spawned earlier.
+      if let run = newRuns.first(where: { $0.toolCallId == runId }),
+        run.toolCallId != thread.spawn?.toolCallId || run.continuesSubagent
+      {
+        thread.pieces.append(
+          .followUp(
+            key: runId, text: run.rawInput?["message"]?.stringValue,
+            position: turn.entryPositions["tool:\(runId)"] ?? run.statePosition))
+      }
+      // An entry without its own position stays behind the one before it,
+      // as the parent's transcript orders entries.
+      var anchor: Int?
+      for entry in turn.subagents[runId]?.entries ?? [] {
+        anchor = turn.entryPositions[entry.id] ?? anchor
+        thread.pieces.append(.work(entry, position: anchor, runId: runId, turn: turn))
+      }
+    }
+    if isActive, turn.isGenerating,
+      turn.allToolCalls.contains(where: {
+        !$0.isSettled && ($0.toolCallId == agent.toolCallId || thread.runIds.contains($0.toolCallId))
+      })
+    {
+      thread.isLive = true
+    }
   }
 }
 

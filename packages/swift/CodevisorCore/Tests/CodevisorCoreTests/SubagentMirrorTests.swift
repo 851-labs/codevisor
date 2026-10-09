@@ -272,6 +272,123 @@ struct SubagentMirrorTests {
     #expect(parent.runningSubagentToolCallIds == ["toolu_agent"])
   }
 
+  @Test("An agent the model is still writing waits for its input instead of reading as unavailable")
+  func agentStillBeingWritten() async throws {
+    // Claude streams the call before its input: just an id and the tool name.
+    let writing = AssistantTurn(
+      entries: [.tool(ToolCall(toolCallId: "toolu_agent", title: "Agent", kind: .agent, status: .inProgress))],
+      isGenerating: true, startedAt: start, subagents: ["toolu_agent": SubagentTranscript()])
+    let (parent, parentModel) = parent(conversation(writing))
+    let mirror = SubagentMirror(parent: parent, toolCallId: "toolu_agent")
+    mirror.start()
+
+    #expect(mirror.availability == .loading)
+
+    parentModel.applyPreviewState(
+      conversation: conversation(parentTurn(agentStatus: .inProgress, isGenerating: true, thread: [])),
+      isSending: true)
+    await awaitObserved { mirror.availability == .available }
+
+    guard case let .user(prompt)? = mirror.controller.settledConversation.first else {
+      Issue.record("expected the instructions as the user message")
+      return
+    }
+    #expect(prompt.text == "Map how the transcript mounts rows.")
+    #expect(try mirroredTurn(mirror).isGenerating)
+  }
+
+  @Test("A running agent with no instructions to show and no work yet reads as working")
+  func promptlessAgentWorking() throws {
+    // Codex encrypts its agents' instructions: the spawn names only the task.
+    let spawn = ToolCall(
+      toolCallId: "toolu_agent", title: "Agent: Map server storage", kind: .agent, status: .inProgress,
+      rawInput: .object(["description": .string("Map server storage")]))
+    let (parent, _) = parent(
+      conversation(
+        AssistantTurn(
+          entries: [.tool(spawn)], isGenerating: true, startedAt: start,
+          subagents: ["toolu_agent": SubagentTranscript()])))
+    let mirror = SubagentMirror(parent: parent, toolCallId: "toolu_agent")
+
+    mirror.update()
+
+    #expect(mirror.availability == .available)
+    #expect(mirror.controller.settledConversation.isEmpty)
+    let turn = try mirroredTurn(mirror)
+    #expect(turn.isGenerating)
+    #expect(turn.isThinking)
+    #expect(mirror.summary?.title == "Map server storage")
+  }
+
+  /// A Codex agent's chip: its task names it, its thread ties its runs.
+  private func codexRun(_ id: String, status: ToolCallStatus, continues: Bool = false) -> ToolCall {
+    var subagent: [String: JSONValue] = ["taskId": .string("thread-child")]
+    if continues { subagent["continues"] = .bool(true) }
+    return ToolCall(
+      toolCallId: id, title: "Agent: Map server storage", kind: .agent, status: status,
+      rawInput: .object(["description": .string("Map server storage")]),
+      meta: .object(["codevisorSubagent": .object(subagent)]))
+  }
+
+  @Test(
+    "An agent messaged in a later turn shows its whole history from either of its chips",
+    arguments: ["call-spawn", "call-followup"])
+  func laterRunsJoinTheHistory(opened: String) throws {
+    let firstRun: [TranscriptEntry] = [.text(id: "t0", markdown: "Storage is SQLite.")]
+    let secondRun: [TranscriptEntry] = [.text(id: "t1", markdown: "Paging uses a position cursor.")]
+    let (parent, _) = parent([
+      .user(UserMessage(text: "Map the server.")),
+      .assistant(
+        AssistantMessage(
+          turn: AssistantTurn(
+            entries: [.tool(codexRun("call-spawn", status: .completed))], startedAt: start,
+            subagents: ["call-spawn": SubagentTranscript(entries: firstRun)]))),
+      .user(UserMessage(text: "Ask it about paging.")),
+      .assistant(
+        AssistantMessage(
+          turn: AssistantTurn(
+            entries: [.tool(codexRun("call-followup", status: .inProgress, continues: true))],
+            isGenerating: true, startedAt: start,
+            subagents: ["call-followup": SubagentTranscript(entries: secondRun)]))),
+    ])
+    let mirror = SubagentMirror(parent: parent, toolCallId: opened)
+
+    mirror.update()
+
+    // Codex's messages to its agents are encrypted: the runs read as
+    // consecutive responses, with no message between them.
+    let settled = mirror.controller.settledConversation
+    guard settled.count == 1, case let .assistant(first) = settled[0] else {
+      Issue.record("expected the first run alone before the live one; got \(settled.count) items")
+      return
+    }
+    #expect(first.turn.entries == firstRun)
+    #expect(!first.turn.isGenerating)
+    let answering = try mirroredTurn(mirror)
+    #expect(answering.entries == secondRun)
+    #expect(answering.isGenerating)
+    #expect(mirror.summary?.isRunning == true)
+    #expect(mirror.summary?.status == .inProgress)
+  }
+
+  @Test("A later run whose agent's spawn isn't loaded yet shows what it has")
+  func laterRunWithoutItsSpawn() throws {
+    let secondRun: [TranscriptEntry] = [.text(id: "t1", markdown: "Paging uses a position cursor.")]
+    let (parent, _) = parent(
+      conversation(
+        AssistantTurn(
+          entries: [.tool(codexRun("call-followup", status: .inProgress, continues: true))],
+          isGenerating: true, startedAt: start,
+          subagents: ["call-followup": SubagentTranscript(entries: secondRun)])))
+    let mirror = SubagentMirror(parent: parent, toolCallId: "call-followup")
+
+    mirror.update()
+
+    #expect(mirror.availability == .available)
+    #expect(mirror.controller.settledConversation.isEmpty)
+    #expect(try mirroredTurn(mirror).entries == secondRun)
+  }
+
   @Test("An agent missing from the parent's complete history is unavailable")
   func missingAgent() {
     let (parent, _) = parent(

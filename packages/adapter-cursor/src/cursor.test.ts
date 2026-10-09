@@ -5,8 +5,7 @@ import {
   CursorTodoTracker,
   cursorAskQuestion,
   cursorCreatePlanQuestion,
-  cursorGenerateImageEvent,
-  cursorTaskEvent
+  cursorGenerateImageEvent
 } from "./cursor.js"
 
 const payload = (event: RuntimeEvent | undefined): Record<string, unknown> | undefined =>
@@ -145,27 +144,7 @@ describe("Cursor ACP extensions", () => {
     })
   })
 
-  it("enriches task and generated-image tool calls without creating a second stream", () => {
-    expect(
-      payload(
-        cursorTaskEvent(
-          {
-            toolCallId: "task-1",
-            description: "Explore auth",
-            prompt: "Find auth code",
-            subagentType: "explore",
-            agentId: "agent-1",
-            durationMs: 250
-          },
-          "session-1"
-        )
-      )
-    ).toMatchObject({
-      kind: "agent",
-      sessionUpdate: "tool_call",
-      status: "completed",
-      toolCallId: "task-1"
-    })
+  it("enriches generated-image tool calls without creating a second stream", () => {
     expect(
       payload(
         cursorGenerateImageEvent(

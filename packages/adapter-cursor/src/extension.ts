@@ -21,11 +21,15 @@ import {
   cursorAskQuestion,
   cursorCreatePlanQuestion,
   cursorGenerateImageEvent,
-  cursorTaskEvent,
   type CursorAskQuestionResponse,
   type CursorCreatePlanResponse
 } from "./cursor.js"
 import { CursorStreamNormalizer } from "./stream.js"
+import {
+  CURSOR_SUBAGENT_METHOD,
+  CursorSubagents,
+  rerouteCursorSubagentAnnouncement
+} from "./subagents.js"
 
 export const CURSOR_MAX_TRANSIENT_RETRIES = 3
 const CURSOR_RECOVERY_BACKOFF_BASE_MS = 1000
@@ -191,10 +195,22 @@ const extendCursorConnection = (
   }
 }
 
+const rerouteSubagentLine = (line: string): string => {
+  try {
+    const message: unknown = JSON.parse(line)
+    if (typeof message !== "object" || message === null || Array.isArray(message)) return line
+    const rerouted = rerouteCursorSubagentAnnouncement(message as Record<string, unknown>)
+    return rerouted === message ? line : JSON.stringify(rerouted)
+  } catch {
+    return line
+  }
+}
+
 export const makeCursorExtension: AcpStdioExtensionFactory = ({ emit, enqueueQuestion }) => {
   const normalizer = new CursorStreamNormalizer()
   const recovery = new CursorRecoveryController()
   const todos = new CursorTodoTracker()
+  const subagents = new CursorSubagents()
   let activeSessionId: string | undefined
 
   const withSession = <T>(map: (sessionId: string) => T | undefined): T | undefined =>
@@ -257,12 +273,36 @@ export const makeCursorExtension: AcpStdioExtensionFactory = ({ emit, enqueueQue
       extensionNotification("cursor/update_todos", (params, sessionId) =>
         todos.update(sessionId, params)
       )
-      extensionNotification("cursor/task", cursorTaskEvent)
+      extensionNotification("cursor/task", (params, sessionId) =>
+        subagents.taskEvent(params, sessionId)
+      )
+      app.onNotification<unknown>(
+        CURSOR_SUBAGENT_METHOD,
+        (params) => params,
+        ({ params }) => emitAll(emit, subagents.announcement(params))
+      )
       extensionNotification("cursor/generate_image", cursorGenerateImageEvent)
       return app
     },
-    mapSessionNotification: (notification) => {
+    rewriteAgentLine: (line) => (line.includes('"subagent_') ? rerouteSubagentLine(line) : line),
+    mapSessionNotification: (rawNotification) => {
+      const notification = {
+        ...rawNotification,
+        update: subagents.mapToolUpdate(
+          rawNotification.sessionId,
+          rawNotification.update as unknown as Record<string, unknown>
+        ) as unknown as acp.SessionNotification["update"]
+      }
       const update = notification.update as unknown as Record<string, unknown>
+      // A subagent's own session streams into its agent's thread.
+      if (subagents.isChildSession(notification.sessionId)) {
+        return subagents.isThreadUpdate(update)
+          ? subagents.childEvents(
+              notification.sessionId,
+              normalizer.mapSessionNotification(notification)
+            )
+          : []
+      }
       if (update.sessionUpdate !== "config_option_update" || !Array.isArray(update.configOptions)) {
         return normalizer.mapSessionNotification(notification)
       }

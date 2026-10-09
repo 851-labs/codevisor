@@ -1,4 +1,8 @@
-import { makeAcpProvider, type AcpConnector } from "@codevisor/adapter-acp"
+import {
+  makeAcpProvider,
+  makeStdioAcpConnectorWithOptions,
+  type AcpConnector
+} from "@codevisor/adapter-acp"
 import {
   OPENCODE_INSTALL_PATH,
   type AgentProvider,
@@ -7,6 +11,7 @@ import {
 } from "@codevisor/agent-runtime"
 
 import { makeOpenCodeLocator } from "./binary.js"
+import { makeOpenCodeExtension } from "./extension.js"
 import { withOpenCodePermissions } from "./permissions.js"
 
 /// What the catalog looks OpenCode up as: its name, and its installer's path.
@@ -28,6 +33,14 @@ export const makeOpenCodeProvider = (
   config: OpenCodeProviderConfig = {}
 ): AgentProvider => {
   const { locateOpenCode = makeOpenCodeLocator(), ...acp } = config
+  const connector =
+    acp.connector ??
+    makeStdioAcpConnectorWithOptions({
+      extension: makeOpenCodeExtension,
+      ...(acp.backgroundTerminals === undefined
+        ? {}
+        : { backgroundTerminals: acp.backgroundTerminals })
+    })
   // OpenCode is launched by name; answer it with the newest install. A
   // getter, so environment refreshes still reach the provider.
   const opencode: ProviderEnvironment = {
@@ -41,6 +54,7 @@ export const makeOpenCodeProvider = (
   }
   return makeAcpProvider(opencode, {
     ...acp,
+    connector,
     providerId: "opencode",
     launchEnv: withOpenCodePermissions
   })

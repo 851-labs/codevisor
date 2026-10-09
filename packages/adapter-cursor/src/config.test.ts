@@ -8,9 +8,9 @@ import {
 } from "./config.js"
 
 describe("Cursor ACP configuration", () => {
-  it("advertises Cursor's parameterized model picker without dropping generic capabilities", () => {
+  it("advertises Cursor's model picker and subagent sessions without dropping generic capabilities", () => {
     expect(cursorClientCapabilities({ plan: {}, terminal: true })).toEqual({
-      _meta: { parameterizedModelPicker: true },
+      _meta: { parameterizedModelPicker: true, subagents: true },
       plan: {},
       terminal: true
     })

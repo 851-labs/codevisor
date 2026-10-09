@@ -13,6 +13,11 @@ struct WorkedItemsTests {
     .tool(ToolCall(toolCallId: id, title: "Tool \(id)", kind: kind))
   }
 
+  /// An agent call whose input has arrived, so its agent has started.
+  private func spawnedAgent(_ id: String) -> TranscriptEntry {
+    .tool(ToolCall(toolCallId: id, title: "Agent \(id)", kind: .agent, rawInput: .object([:])))
+  }
+
   @Test("Consecutive tool calls collapse into one group")
   func grouping() {
     let result = turn([
@@ -122,7 +127,7 @@ struct WorkedItemsTests {
   func subagentBreaksGrouping() {
     let result = turn([
       tool("a", .read),
-      tool("task-1", .agent),
+      spawnedAgent("task-1"),
       tool("b", .execute),
     ]).workedItems
 
@@ -149,10 +154,10 @@ struct WorkedItemsTests {
   @Test("Agents spawned back to back share one item, which keeps the first spawn's identity")
   func consecutiveSubagentsShareAnItem() {
     let result = turn([
-      tool("task-1", .agent),
-      tool("task-2", .agent),
+      spawnedAgent("task-1"),
+      spawnedAgent("task-2"),
       tool("a", .read),
-      tool("task-3", .agent),
+      spawnedAgent("task-3"),
     ]).workedItems
 
     #expect(result.count == 3)
@@ -164,6 +169,24 @@ struct WorkedItemsTests {
     #expect(result[0].id == "wagent:task-1")
     #expect(calls.map(\.toolCallId) == ["task-1", "task-2"])
     #expect(later.map(\.toolCallId) == ["task-3"])
+  }
+
+  @Test("An agent call stays out of the transcript until its input arrives; a follow-up's placeholder shows")
+  func unstartedSubagents() {
+    var streaming = turn([tool("writing", .agent), tool("follow-up", .agent)])
+    streaming.subagents["follow-up"] = SubagentTranscript(entries: [.text(id: "t0", markdown: "On it.")])
+    guard case let .subagents(_, calls) = streaming.workedItems.first else {
+      Issue.record("expected subagent item")
+      return
+    }
+    #expect(calls.map(\.toolCallId) == ["follow-up"])
+
+    let spawned = turn([spawnedAgent("writing")])
+    guard case let .subagents(_, calls) = spawned.workedItems.first else {
+      Issue.record("expected subagent item")
+      return
+    }
+    #expect(calls.map(\.toolCallId) == ["writing"])
   }
 
   @Test("A call with a bucket becomes a subagent item even without the agent kind")

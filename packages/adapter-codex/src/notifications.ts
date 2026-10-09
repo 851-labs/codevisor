@@ -190,7 +190,8 @@ const handleNotificationItemLifecycle = (
     return
   }
   if (item.type === "subAgentActivity") {
-    handleSubAgentActivity(session, item)
+    const turnId = typeof payload.turnId === "string" ? payload.turnId : undefined
+    handleSubAgentActivity(session, item, method === "item/started", turnId)
     return
   }
   emitItemLifecycle(session, item, method === "item/started", parentToolCallId)

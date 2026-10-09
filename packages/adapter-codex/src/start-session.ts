@@ -128,6 +128,7 @@ export const makeStartSession = ({
       activeTurnId: undefined,
       backgroundTerminals: config.backgroundTerminals,
       client,
+      collabRunTurns: new Map(),
       collabThreads: new Map(),
       collaborationEngaged: false,
       commandTerminals: new Map(),

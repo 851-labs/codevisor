@@ -36,6 +36,11 @@ public struct AssistantTurnActivity: Equatable {
         return Self(message: "Waiting on \(backgroundTask)...", followsResponse: true)
       }
     }
+    // An agent call being written has no chip yet: this line stands in for
+    // it until its input arrives, even beside other running work.
+    if turn.isStartingSubagent {
+      return Self(message: "Starting agent…", followsResponse: false)
+    }
     guard turn.showsActivityIndicator else { return nil }
     return Self(message: turn.isThinking ? "Thinking…" : waitingOnHarnessMessage, followsResponse: false)
   }

@@ -86,6 +86,9 @@ export interface CodexSession {
   /// it. Items arriving on those threads are tagged with that parent so
   /// clients can nest them; the main thread's id is `threadId`.
   readonly collabThreads: Map<string, string>
+  /// Multi-agent v2 thread id → the turn whose chip its current run streams
+  /// under, so a message in a later turn starts a new chip there.
+  readonly collabRunTurns: Map<string, string>
   /// item id → human-readable title, so approval prompts can say WHAT is
   /// being approved (approval params carry only the item id).
   readonly itemTitles: Map<string, string>
