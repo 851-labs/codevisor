@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto"
 
 import type { QuestionAnswer } from "@codevisor/agent-runtime"
-import type { QuestionAnswerEntry, QuestionSpec } from "@codevisor/api"
+import type { QuestionSpec } from "@codevisor/api"
 
+import { elicitationFields } from "./elicitation-schema.js"
 import { isRecord } from "./internal.js"
 import type { CodexSession, PendingCodexQuestion } from "./session.js"
 
@@ -236,134 +237,6 @@ const holdElicitationRequest = (
     dismissQuestionOnAbort(session, questionId, signal)
   })
 }
-
-interface ElicitationField {
-  readonly spec: QuestionSpec
-  /// Coerces the wire answer entry back to the field's schema type; undefined
-  /// drops the field from the accepted content.
-  readonly coerce: (entry: QuestionAnswerEntry) => unknown
-}
-
-/// Lenient flat-object mapping of the MCP elicitation form schema
-/// (2025-11-25 `ElicitRequestFormParams`) onto question specs.
-const elicitationFields = (schema: Record<string, unknown>): Array<ElicitationField> => {
-  if (!isRecord(schema.properties)) return []
-  return Object.entries(schema.properties).flatMap(([key, raw]): Array<ElicitationField> => {
-    if (!isRecord(raw)) return []
-    const title = typeof raw.title === "string" ? raw.title : undefined
-    const description = typeof raw.description === "string" ? raw.description : undefined
-    const question = description ?? title ?? key
-    const base = { id: key, question }
-
-    // Single-select enums: `oneOf: [{const, title}]` or `enum` (+ enumNames).
-    const constOptions = Array.isArray(raw.oneOf) ? enumOptions(raw.oneOf) : undefined
-    const plainEnum = Array.isArray(raw.enum)
-      ? plainEnumOptions(raw.enum, raw.enumNames)
-      : undefined
-    if (constOptions !== undefined || plainEnum !== undefined) {
-      const options = constOptions ?? plainEnum ?? []
-      return [
-        {
-          coerce: (entry) => options.find((option) => option.label === entry.answers[0])?.value,
-          spec: { ...base, allowsOther: false, options: options.map(optionSpec) }
-        }
-      ]
-    }
-    // Multi-select enums: `type: "array"` with enum-shaped `items`.
-    if (raw.type === "array" && isRecord(raw.items)) {
-      const items = raw.items
-      const options =
-        (Array.isArray(items.anyOf) ? enumOptions(items.anyOf) : undefined) ??
-        (Array.isArray(items.oneOf) ? enumOptions(items.oneOf) : undefined) ??
-        (Array.isArray(items.enum) ? plainEnumOptions(items.enum, items.enumNames) : undefined) ??
-        []
-      if (options.length === 0) return []
-      return [
-        {
-          coerce: (entry) =>
-            entry.answers.flatMap((label) => {
-              const value = options.find((option) => option.label === label)?.value
-              return value === undefined ? [] : [value]
-            }),
-          spec: { ...base, allowsOther: false, multiSelect: true, options: options.map(optionSpec) }
-        }
-      ]
-    }
-    if (raw.type === "boolean") {
-      return [
-        {
-          coerce: (entry) =>
-            entry.answers[0] === "Yes" ? true : entry.answers[0] === "No" ? false : undefined,
-          spec: {
-            ...base,
-            allowsOther: false,
-            options: [{ label: "Yes" }, { label: "No" }]
-          }
-        }
-      ]
-    }
-    if (raw.type === "number" || raw.type === "integer") {
-      return [
-        {
-          coerce: (entry) => {
-            const text = entry.note ?? entry.answers[0] ?? ""
-            const parsed = Number(text)
-            return Number.isFinite(parsed) ? parsed : undefined
-          },
-          spec: { ...base, allowsOther: true, options: [] }
-        }
-      ]
-    }
-    // Strings (and anything unrecognized) become free-text questions.
-    return [
-      {
-        coerce: (entry) => {
-          const text = (entry.note ?? entry.answers[0] ?? "").trim()
-          return text.length > 0 ? text : undefined
-        },
-        spec: { ...base, allowsOther: true, options: [] }
-      }
-    ]
-  })
-}
-
-interface LabeledValue {
-  readonly label: string
-  readonly description?: string
-  readonly value: string
-}
-
-const enumOptions = (entries: ReadonlyArray<unknown>): Array<LabeledValue> | undefined => {
-  const options = entries.flatMap((entry) =>
-    isRecord(entry) && typeof entry.const === "string"
-      ? [
-          {
-            label: typeof entry.title === "string" ? entry.title : entry.const,
-            value: entry.const
-          }
-        ]
-      : []
-  )
-  return options.length > 0 ? options : undefined
-}
-
-const plainEnumOptions = (
-  values: ReadonlyArray<unknown>,
-  names: unknown
-): Array<LabeledValue> | undefined => {
-  const labels = Array.isArray(names) ? names : []
-  const options = values.flatMap((value, index) =>
-    typeof value === "string"
-      ? [{ label: typeof labels[index] === "string" ? (labels[index] as string) : value, value }]
-      : []
-  )
-  return options.length > 0 ? options : undefined
-}
-
-const optionSpec = (option: LabeledValue): { label: string; description?: string } => ({
-  label: option.label,
-  ...(option.description === undefined ? {} : { description: option.description })
-})
 
 /// Lenient mapping from codex question objects to the wire QuestionSpec.
 const questionSpecsFrom = (value: unknown): Array<QuestionSpec> => {
