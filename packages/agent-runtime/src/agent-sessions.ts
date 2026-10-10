@@ -245,6 +245,25 @@ const fileStem = (path: string): string => {
   return name.slice(0, -".jsonl".length)
 }
 
+const walkCodexSessionFiles = async (
+  directory: string,
+  depth: number,
+  fs: AgentSessionFileSystem,
+  candidates: SessionFileCandidate[]
+): Promise<void> => {
+  for (const entry of await fs.listDirectory(directory)) {
+    const path = join(directory, entry)
+    const stat = await fs.statFile(path)
+    if (stat === undefined) continue
+    if (stat.isDirectory) {
+      // sessions/YYYY/MM/DD — bounded in case of unexpected nesting.
+      if (depth < 4) await walkCodexSessionFiles(path, depth + 1, fs, candidates)
+    } else if (entry.startsWith("rollout-") && entry.endsWith(".jsonl")) {
+      candidates.push({ path, mtimeMs: stat.mtimeMs })
+    }
+  }
+}
+
 /// Codex: `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`, first line is a
 /// `session_meta` entry carrying the id and cwd; the title comes from the
 /// first `user_message` event.
@@ -254,20 +273,7 @@ export const listCodexAgentSessions = async (
   const { homedir, limit, fs } = resolved(options)
   const root = join(homedir, ".codex", "sessions")
   const candidates: SessionFileCandidate[] = []
-  const walk = async (directory: string, depth: number): Promise<void> => {
-    for (const entry of await fs.listDirectory(directory)) {
-      const path = join(directory, entry)
-      const stat = await fs.statFile(path)
-      if (stat === undefined) continue
-      if (stat.isDirectory) {
-        // sessions/YYYY/MM/DD — bounded in case of unexpected nesting.
-        if (depth < 4) await walk(path, depth + 1)
-      } else if (entry.startsWith("rollout-") && entry.endsWith(".jsonl")) {
-        candidates.push({ path, mtimeMs: stat.mtimeMs })
-      }
-    }
-  }
-  await walk(root, 0)
+  await walkCodexSessionFiles(root, 0, fs, candidates)
 
   const sessions: AgentSessionSummary[] = []
   const newest = newestFirst(candidates, limit)
@@ -316,6 +322,20 @@ const piUserText = (message: Record<string, unknown>): string | undefined => {
     .join("\n")
 }
 
+const piSessionTitle = (lines: ReadonlyArray<string>): string | undefined => {
+  let name: string | undefined
+  let prompt: string | undefined
+  for (const line of lines.slice(1)) {
+    const entry = parseJsonLine(line)
+    if (entry?.type === "session_info" && typeof entry.name === "string") name ??= entry.name
+    if (entry?.type === "message" && prompt === undefined) {
+      const text = piUserText((entry.message ?? {}) as Record<string, unknown>)
+      if (text !== undefined) prompt = truncatedTitle(text)
+    }
+  }
+  return name ?? prompt
+}
+
 /// Pi: `<agent dir>/sessions/--<encoded cwd>--/<timestamp>_<id>.jsonl`, the
 /// agent dir being `PI_CODING_AGENT_DIR` or `~/.pi/agent`. The header line
 /// carries the id and cwd; the title is the session's name, or else its
@@ -348,17 +368,7 @@ export const listPiAgentSessions = async (
     const header = parseJsonLine(lines[0] as string)
     if (header?.type !== "session" || typeof header.id !== "string") continue
     if (typeof header.cwd !== "string" || !(await fs.directoryExists(header.cwd))) continue
-    let name: string | undefined
-    let prompt: string | undefined
-    for (const line of lines.slice(1)) {
-      const entry = parseJsonLine(line)
-      if (entry?.type === "session_info" && typeof entry.name === "string") name ??= entry.name
-      if (entry?.type === "message" && prompt === undefined) {
-        const text = piUserText((entry.message ?? {}) as Record<string, unknown>)
-        if (text !== undefined) prompt = truncatedTitle(text)
-      }
-    }
-    const title = name ?? prompt
+    const title = piSessionTitle(lines)
     sessions.push({
       sessionId: header.id,
       cwd: header.cwd,
