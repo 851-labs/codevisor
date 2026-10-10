@@ -103,6 +103,26 @@ describe("@codevisor/terminal terminal manager snapshots", () => {
     expect(frames.filter((frame) => frame.type === "exit")).toHaveLength(0)
   })
 
+  it("skips external terminals from snapshots before version 3", async () => {
+    // Those files persisted agent command mirrors, which piled up across
+    // restarts with nothing left to reach or remove them.
+    const manager = makeTerminalManager({ spawner: makeSpawner() })
+    manager.registerExternalTerminal({ sessionId: "agent:bg:old" }, new FakeProcess()).exit(0)
+    const restored = makeTerminalManager({ spawner: makeSpawner() })
+    restored.restoreTerminals({ ...manager.snapshotTerminals(), version: 2 })
+    await expect(
+      run(
+        restored.createTerminal({
+          sessionId: "agent:bg:old",
+          cwd: "/",
+          cols: 1,
+          rows: 1,
+          attachOnly: true
+        })
+      )
+    ).rejects.toBeInstanceOf(TerminalError)
+  })
+
   it("restores version 1 snapshots, which carry raw frames", async () => {
     const restored = makeTerminalManager({ spawner: makeSpawner() })
     restored.restoreTerminals({
@@ -110,10 +130,10 @@ describe("@codevisor/terminal terminal manager snapshots", () => {
       terminals: [
         {
           terminalId: "legacy",
-          sessionId: "legacy:bg",
+          sessionId: "legacy",
           nextOutputSeq: 3,
           closed: true,
-          external: true,
+          external: false,
           frames: [
             { type: "output", seq: 1, data: "old format" },
             { type: "exit", seq: 2, exitCode: 1 }
@@ -121,11 +141,11 @@ describe("@codevisor/terminal terminal manager snapshots", () => {
         }
       ]
     })
+    expect(await run(restored.readScreen("legacy", "text"))).toBe("old format")
     expect(await run(replayedFrames(restored, "legacy"))).toEqual([
       { type: "output", seq: 1, data: "old format" },
       { type: "exit", seq: 2, exitCode: 1 }
     ])
-    expect(await run(restored.readScreen("legacy", "text"))).toBe("old format")
   })
 
   it("reads a terminal's screen as text or VT and tracks output revisions", async () => {

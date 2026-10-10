@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs"
 
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import { createVtTerminal, GHOSTTY_VT_WASM_PATH, loadGhosttyVt } from "./ghostty-vt.js"
 
@@ -100,5 +100,56 @@ describe("libghostty-vt terminal state", () => {
     terminal.free()
     terminal.free()
     expect(() => terminal.write("x")).toThrow(/freed/)
+  })
+
+  it("keeps working once its heap passes 2 GiB, and reports exhaustion", () => {
+    // Grab the raw exports of the instance loadGhosttyVt creates, to reserve
+    // heap directly; the reservation is untouched, so it stays virtual.
+    let heap: { ghostty_wasm_alloc: (len: number) => number } | undefined
+    const Instance = WebAssembly.Instance
+    vi.stubGlobal(
+      "WebAssembly",
+      Object.create(WebAssembly, {
+        Instance: {
+          value: function (module: WebAssembly.Module, imports: WebAssembly.Imports) {
+            const instance = new Instance(module, imports)
+            if ("ghostty_wasm_alloc" in instance.exports) heap ??= instance.exports as never
+            return instance
+          }
+        }
+      })
+    )
+    try {
+      loadGhosttyVt()
+      const chunk = 64 * 1024 * 1024
+      // Raw wasm32 pointers past 2 GiB come back negative.
+      let ptr: number
+      do ptr = heap!.ghostty_wasm_alloc(chunk)
+      while (ptr > 0)
+      expect(ptr).toBeLessThan(0)
+
+      const replies: Array<string> = []
+      const terminal = createVtTerminal({
+        cols: 20,
+        rows: 3,
+        onReply: (reply) => replies.push(decode(reply))
+      })
+      terminal.write("\u001b]2;high\u0007ab\u001b[6n")
+      expect(terminal.text()).toBe("ab")
+      expect(terminal.title()).toBe("high")
+      expect(replies).toEqual(["\u001b[1;3R"])
+      expect(decode(terminal.reconstruct())).toContain("ab")
+
+      for (let size = chunk; size >= 1; size = Math.floor(size / 2)) {
+        while (heap!.ghostty_wasm_alloc(size) !== 0) {
+          // Fill every remaining slot of this size.
+        }
+      }
+      expect(() => terminal.write("more")).toThrow(/out of memory/)
+      expect(() => createVtTerminal({ cols: 20, rows: 3 })).toThrow(/out of memory/)
+    } finally {
+      vi.unstubAllGlobals()
+      loadGhosttyVt()
+    }
   })
 })

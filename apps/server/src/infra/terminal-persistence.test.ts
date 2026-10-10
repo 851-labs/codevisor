@@ -166,7 +166,7 @@ describe("terminal persistence", () => {
     const snapshotPath = join(dataDir, "terminal-buffers.json")
     expect(existsSync(`${snapshotPath}.tmp`)).toBe(false)
     const parsed = JSON.parse(readFileSync(snapshotPath, "utf8")) as { version: number }
-    expect(parsed.version).toBe(2)
+    expect(parsed.version).toBe(3)
     expect(statSync(snapshotPath).mode & 0o777).toBe(0o600)
   })
 

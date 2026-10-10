@@ -17,8 +17,9 @@ export interface ExternalTerminalControls {
 }
 
 /// The caller-facing stream for one registered terminal: pump output and the
-/// final exit through it. `remove` deletes a terminal that was never surfaced
-/// to a client (short-lived command, nothing to keep scrollback for).
+/// final exit through it. The terminal ends with the process: the host removes
+/// it at exit (the transcript keeps the command's output). `remove` deletes
+/// one sooner, e.g. a short-lived command that was never surfaced.
 export interface ExternalTerminalStream {
   readonly output: (data: string) => void
   readonly exit: (exitCode?: number) => void

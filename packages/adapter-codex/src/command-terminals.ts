@@ -67,7 +67,7 @@ export const settleCommandTerminal = (
   }
   terminal.stream.exit(typeof item.exitCode === "number" ? item.exitCode : undefined)
   if (terminal.promoted) {
-    // The tab stays attachable for scrollback; the task itself is done.
+    // The task is done; the host removed its terminal at exit.
     emitCodexBackgroundTasks(session)
   } else {
     // Short-lived command: nothing was ever surfaced, leave nothing behind.
