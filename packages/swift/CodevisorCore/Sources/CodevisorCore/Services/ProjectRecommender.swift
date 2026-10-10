@@ -40,6 +40,25 @@ public enum ProjectRecommender {
     isLinkedWorktree: (String) -> Bool = Self.isLinkedWorktree(at:),
     linkedWorktreeRoot: (String) -> String? = Self.linkedWorktreeRoot(at:)
   ) -> [ProjectRecommendation] {
+    let grouped = groupEligibleSessions(
+      from: sessions,
+      managedWorktreesRoot: managedWorktreesRoot,
+      temporaryDirectory: temporaryDirectory,
+      directoryExists: directoryExists,
+      isLinkedWorktree: isLinkedWorktree,
+      linkedWorktreeRoot: linkedWorktreeRoot
+    )
+    return rankRecommendations(grouped, limit: limit)
+  }
+
+  private static func groupEligibleSessions(
+    from sessions: [ImportedSession],
+    managedWorktreesRoot: URL,
+    temporaryDirectory: URL,
+    directoryExists: (String) -> Bool,
+    isLinkedWorktree: (String) -> Bool,
+    linkedWorktreeRoot: (String) -> String?
+  ) -> [String: (count: Int, lastActivity: Date?)] {
     let worktreesRootPath = managedWorktreesRoot.standardizedFileURL.path
     var grouped: [String: (count: Int, lastActivity: Date?)] = [:]
     for session in sessions {
@@ -76,7 +95,13 @@ public enum ProjectRecommender {
         lastActivity: latest(existing?.lastActivity, activity)
       )
     }
+    return grouped
+  }
 
+  private static func rankRecommendations(
+    _ grouped: [String: (count: Int, lastActivity: Date?)],
+    limit: Int
+  ) -> [ProjectRecommendation] {
     return
       grouped
       .map { path, info in
