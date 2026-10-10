@@ -20,7 +20,6 @@ final class ComputerUseRecording: NSObject, SCStreamDelegate, @unchecked Sendabl
   private var stream: SCStream!
   private var output: ComputerUseVideoWriter?
   private var finalDuration: Double?
-  var onFinish: (@Sendable () -> Void)?
 
   init(sessionID: String, target: [String: Any], options: ComputerUseRecordingOptions, size: CGSize, directory: URL) {
     self.sessionID = sessionID
@@ -78,7 +77,6 @@ final class ComputerUseRecording: NSObject, SCStreamDelegate, @unchecked Sendabl
       stopReason = reason
       condition.broadcast()
       condition.unlock()
-      onFinish?()
       return
     }
     let shouldStop = state == "recording" || state == "starting"
@@ -162,7 +160,6 @@ final class ComputerUseRecording: NSObject, SCStreamDelegate, @unchecked Sendabl
     condition.unlock()
     stream?.stopCapture { _ in }
     output?.cancel()
-    onFinish?()
   }
 
   func captureStarted() {
@@ -180,7 +177,6 @@ final class ComputerUseRecording: NSObject, SCStreamDelegate, @unchecked Sendabl
     timer?.cancel()
     condition.broadcast()
     condition.unlock()
-    onFinish?()
   }
 
   private func elapsedDuration() -> Double {

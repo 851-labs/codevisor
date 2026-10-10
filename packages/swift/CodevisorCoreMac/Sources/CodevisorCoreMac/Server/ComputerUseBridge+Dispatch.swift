@@ -42,7 +42,7 @@ extension ComputerUseBridge {
     switch tool {
     case "list_recording_targets": return textResult(try json(recordings.targets()))
     case "start_recording":
-      return textResult(try json(recordings.start(sessionID: sessionID, agentLabel: agentLabel, arguments: arguments)))
+      return textResult(try json(recordings.start(sessionID: sessionID, arguments: arguments)))
     case "recording_status":
       return textResult(try json(recordings.status(sessionID: sessionID, id: arguments["recording_id"] as? String)))
     case "stop_recording":

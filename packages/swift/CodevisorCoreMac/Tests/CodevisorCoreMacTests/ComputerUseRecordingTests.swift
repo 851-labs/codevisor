@@ -81,7 +81,7 @@ struct ComputerUseRecordingTests {
     let manager = ComputerUseRecordings(directory: FileManager.default.temporaryDirectory)
     #expect((try manager.status(sessionID: "a", id: nil)["recordings"] as? [[String: Any]])?.isEmpty == true)
     #expect(throws: BridgeError.self) { try manager.stop(sessionID: "b", id: "a") }
-    #expect(throws: BridgeError.self) { try manager.start(sessionID: "", agentLabel: nil, arguments: ["window_id": 1]) }
+    #expect(throws: BridgeError.self) { try manager.start(sessionID: "", arguments: ["window_id": 1]) }
   }
 
   @Test("Callback completion is retained even before waiting and timeout never invents a result")

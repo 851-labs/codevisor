@@ -51,7 +51,7 @@ final class ComputerUseRecordings: @unchecked Sendable {
     ]
   }
 
-  func start(sessionID: String, agentLabel: String?, arguments: [String: Any]) throws -> [String: Any] {
+  func start(sessionID: String, arguments: [String: Any]) throws -> [String: Any] {
     guard !sessionID.isEmpty else { throw BridgeError("A session is required to record.") }
     let options = try ComputerUseRecordingOptions(arguments)
     let reservation = UUID()
@@ -102,9 +102,6 @@ final class ComputerUseRecordings: @unchecked Sendable {
       at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
     let recording = ComputerUseRecording(
       sessionID: sessionID, target: target, options: options, size: size, directory: directory)
-    recording.onFinish = { [id = recording.id] in
-      Task { @MainActor in ComputerUseRecordingStatusItem.shared.remove(id) }
-    }
     try lock.withLock {
       guard startingSessions[sessionID] == reservation else {
         throw BridgeError("Recording cancelled because the session closed.")
@@ -114,10 +111,6 @@ final class ComputerUseRecordings: @unchecked Sendable {
       entries[recording.id] = recording
     }
     do { try recording.start(filter: filter) } catch { recording.fail(error); throw error }
-    Task { @MainActor in
-      guard !recording.isFinished else { return }
-      ComputerUseRecordingStatusItem.shared.add(recording, title: title, agentLabel: agentLabel)
-    }
     return recording.metadata()
   }
 
