@@ -192,9 +192,29 @@ describe("Browser live preview", () => {
   it("lets each tab hold the screen briefly while the agent works several at once", async () => {
     const clock = timers()
     const chrome = browser()
+    const castRequested = Promise.withResolvers<void>()
+    const titlePublished = Promise.withResolvers<void>()
+    const send = chrome.connection.send
+    chrome.connection.send = (method, params, session) => {
+      const pending = send(method, params, session)
+      if (method === "Page.startScreencast" && session === "cdp:tab-2") {
+        castRequested.resolve()
+      }
+      return pending
+    }
     const previews = makeBrowserPreviews(clock.options)
     const watcher = viewer()
-    previews.subscribe("chat", watcher.value).watch(800)
+    previews
+      .subscribe("chat", {
+        ...watcher.value,
+        status: (status) => {
+          watcher.value.status(status)
+          if (status.state === "active" && status.url === "https://other.test/") {
+            titlePublished.resolve()
+          }
+        }
+      })
+      .watch(800)
     const casts = () =>
       chrome.methods().filter((method) => method.startsWith("Page.startScreencast"))
     await previews.activity("chat", chrome.runtime, "tab-1")
@@ -214,10 +234,9 @@ describe("Browser live preview", () => {
     expect(casts()).toEqual(["Page.startScreencast@cdp:tab-1"])
     await previews.activity("chat", chrome.runtime, "tab-2")
     clock.advance(1)
-    await new Promise((resolve) => setImmediate(resolve))
+    await Promise.all([castRequested.promise, titlePublished.promise])
     expect(casts()).toEqual(["Page.startScreencast@cdp:tab-1", "Page.startScreencast@cdp:tab-2"])
     // The new tab's title arrives with it, not a refresh window later.
-    await new Promise((resolve) => setImmediate(resolve))
     expect(watcher.statuses.at(-1)).toMatchObject({ title: "", url: "https://other.test/" })
 
     // Once a tab has had its hold, the next one shows at once; a move still
