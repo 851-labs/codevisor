@@ -94,8 +94,14 @@ describe("CodexProvider", () => {
   })
 
   it("retracts a held question when the codex connection dies (abort signal)", async () => {
-    const { client, created, events } = await setup()
+    const { client, created, events, nextEvent } = await setup()
     const controller = new AbortController()
+    const questionAsked = nextEvent(
+      (event) =>
+        event.kind === "session.output" &&
+        (event.payload as Record<string, unknown>).sessionUpdate === "question" &&
+        (event.payload as Record<string, unknown>).questionId === "item-q-dead"
+    )
     const request = client.serverRequest(
       "item/tool/requestUserInput",
       {
@@ -106,7 +112,7 @@ describe("CodexProvider", () => {
       },
       controller.signal
     )
-    await Promise.resolve()
+    await questionAsked
     // The process died with the question still on screen: the ask is
     // retracted so the picker dismisses instead of collecting an answer
     // no one will ever receive.
