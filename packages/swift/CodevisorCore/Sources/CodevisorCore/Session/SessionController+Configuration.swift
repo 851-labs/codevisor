@@ -52,30 +52,6 @@ extension SessionController {
     initialHistoryLoadStartedAt = ProcessInfo.processInfo.systemUptime
   }
 
-  private static func provisionalConfigOption(id: String, value: String) -> SessionConfigOption {
-    let normalized = id.lowercased()
-    let category: String? =
-      if normalized == "model" {
-        SessionConfigOption.Category.model
-      } else if normalized.contains("reason")
-        || normalized.contains("effort")
-        || normalized.contains("thinking")
-      {
-        SessionConfigOption.Category.thoughtLevel
-      } else if normalized.contains("speed") {
-        SessionConfigOption.Category.speed
-      } else {
-        SessionConfigOption.Category.modelConfig
-      }
-    return SessionConfigOption(
-      id: id,
-      name: id.replacingOccurrences(of: "_", with: " ").capitalized,
-      category: category,
-      currentValue: value,
-      options: [SessionConfigSelectOption(value: value, name: value)]
-    )
-  }
-
   var hasExistingAgentSession: Bool {
     resumeAgentSessionId?.isEmpty == false
       || serverSession?.agentSessionId?.isEmpty == false
@@ -169,31 +145,7 @@ extension SessionController {
       let definitions =
         configOptionsByHarness[harnessId].flatMap { $0.isEmpty ? nil : $0 }
         ?? configCache.options(forHarness: harnessId, onServer: project.serverId)
-      options = definitions.compactMap { definition in
-        var option = definition
-        if let value = saved[option.id] {
-          option.currentValue = value
-        } else if Self.isModelOption(option) {
-          option.currentValue = ""
-        } else {
-          return nil
-        }
-        return option
-      }
-      for (configId, value) in saved.sorted(by: { $0.key < $1.key })
-      where !options.contains(where: { $0.id == configId }) {
-        // The value snapshot is enough to paint a provisional picker
-        // even when this machine has no cached definitions yet.
-        options.append(Self.provisionalConfigOption(id: configId, value: value))
-      }
-      // Keep a saved value visible (by its raw id) when stale catalog
-      // lists do not carry it; the runtime decides its availability.
-      for index in options.indices {
-        let value = options[index].currentValue
-        if !value.isEmpty, !options[index].options.contains(where: { $0.value == value }) {
-          options[index].options.append(SessionConfigSelectOption(value: value, name: value))
-        }
-      }
+      options = SavedSessionConfigOptions.project(definitions: definitions, selections: saved)
     }
     if unavailableExistingModelValue != nil,
       let index = options.firstIndex(where: Self.isModelOption)
@@ -233,7 +185,7 @@ extension SessionController {
   }
 
   static func isModelOption(_ option: SessionConfigOption) -> Bool {
-    option.category == SessionConfigOption.Category.model || option.id == "model"
+    SavedSessionConfigOptions.isModelOption(option)
   }
 
   /// The model option id for a harness, from whichever definitions exist,
