@@ -75,6 +75,8 @@ public struct ServerHarnessReadiness: Codable, Equatable, Sendable {
     self.path = path
     self.version = version
   }
+
+  public var resolvedState: ServerHarnessReadinessState { .init(rawValue: state) }
 }
 
 /// One way the server can install a harness CLI on its machine, mirroring
@@ -166,6 +168,8 @@ public struct ServerHarnessLifecycleState: Codable, Equatable, Sendable {
     self.error = error
     self.startedAt = startedAt
   }
+
+  public var resolvedPhase: ServerHarnessLifecyclePhase { .init(rawValue: phase) }
 }
 
 /// Dual-install: a desktop app bundling a copy of the harness CLI, with its
@@ -267,6 +271,10 @@ public struct ServerHarness: Codable, Equatable, Sendable {
     self.updateInfo = updateInfo
     self.lifecycle = lifecycle
   }
+
+  /// The user's effective machine preference. Older servers only return the
+  /// effective value, so preserve that as a compatibility fallback.
+  public var isDesiredEnabled: Bool { desiredEnabled ?? enabled }
 }
 
 public struct ServerHarnessAuthMethod: Codable, Equatable, Identifiable, Sendable {
@@ -299,28 +307,12 @@ public struct ServerHarnessAuth: Codable, Equatable, Sendable {
   public var accounts: [ServerHarnessAccount]
   public var loginMethods: [ServerHarnessAuthMethod]
   public var supportsMultipleAccounts: Bool
-}
 
-public extension ServerHarnessReadiness {
-  var resolvedState: ServerHarnessReadinessState { .init(rawValue: state) }
-}
+  public var resolvedState: ServerHarnessAuthenticationState { .init(rawValue: state) }
 
-public extension ServerHarnessLifecycleState {
-  var resolvedPhase: ServerHarnessLifecyclePhase { .init(rawValue: phase) }
-}
-
-public extension ServerHarnessAuth {
-  var resolvedState: ServerHarnessAuthenticationState { .init(rawValue: state) }
-
-  var isSatisfied: Bool {
+  public var isSatisfied: Bool {
     resolvedState == .authenticated || resolvedState == .notRequired
   }
-}
-
-public extension ServerHarness {
-  /// The user's effective machine preference. Older servers only return the
-  /// effective value, so preserve that as a compatibility fallback.
-  var isDesiredEnabled: Bool { desiredEnabled ?? enabled }
 }
 
 public struct ServerHarnessAuthFlow: Codable, Equatable, Sendable {
