@@ -13,12 +13,46 @@ import { request as httpRequest } from "node:http"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 
+import { makeAttachmentStore } from "@codevisor/db"
 import Database from "better-sqlite3"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, onTestFinished } from "vitest"
 
 import { sweepAttachmentTempFiles } from "../server.js"
 import { jsonRequest, run, start, tempDirs, waitFor, listSubjectEvents } from "../test-support.js"
 import { limitedUploadBody } from "./files.js"
+
+const stagingEntries = (root: string): Array<string> =>
+  existsSync(join(root, "staging")) ? readdirSync(join(root, "staging")) : []
+
+const declaredOversizeUpload = async (url: URL): Promise<{ status: number; body: string }> => {
+  const outgoing = httpRequest(url, {
+    method: "POST",
+    headers: { "Content-Length": String(500 * 1024 * 1024 + 1) }
+  })
+  const closed = new Promise<void>((resolve) => outgoing.once("close", resolve))
+  onTestFinished(() => {
+    outgoing.destroy()
+    return closed
+  })
+  try {
+    const declared = new Promise<{ status: number; body: string }>((resolve, reject) => {
+      outgoing.once("response", (response) => {
+        let body = ""
+        response.on("data", (chunk: Buffer) => (body += chunk.toString()))
+        response.once("error", reject)
+        response.once("aborted", () => reject(new Error("Declared upload response aborted")))
+        response.once("end", () => resolve({ status: response.statusCode ?? 0, body }))
+      })
+      outgoing.once("error", reject)
+    })
+    outgoing.setTimeout(30_000, () => outgoing.destroy(new Error("Declared upload stalled")))
+    outgoing.write(Buffer.alloc(16))
+    return await declared
+  } finally {
+    outgoing.destroy()
+    await closed
+  }
+}
 
 describe("file routes", () => {
   it("stores files and threads prompt attachments end to end", async () => {
@@ -416,46 +450,27 @@ describe("file routes", () => {
     expect(existsSync(root)).toBe(false)
   })
 
-  it("rejects uploads over the limit without keeping staged bytes", async () => {
+  it("rejects a declared oversized upload before staging bytes", async () => {
     const { server, services } = await start()
-    const stagingEntries = (): Array<string> =>
-      existsSync(join(services.attachments.root, "staging"))
-        ? readdirSync(join(services.attachments.root, "staging"))
-        : []
-    const before = stagingEntries()
-
-    // A declared length over the limit is refused before any byte is read.
-    const declared = await new Promise<{ status: number; body: string }>((resolve, reject) => {
-      const url = new URL(`${server.url}/v1/files?name=huge.mp4`)
-      const outgoing = httpRequest(
-        {
-          hostname: url.hostname,
-          port: url.port,
-          path: `${url.pathname}${url.search}`,
-          method: "POST",
-          headers: { "Content-Length": String(500 * 1024 * 1024 + 1) }
-        },
-        (response) => {
-          let body = ""
-          response.on("data", (chunk: Buffer) => (body += chunk.toString()))
-          response.on("end", () => resolve({ status: response.statusCode ?? 0, body }))
-        }
-      )
-      outgoing.on("error", reject)
-      outgoing.write(Buffer.alloc(16))
-    })
+    const before = stagingEntries(services.attachments.root)
+    const declared = await declaredOversizeUpload(new URL(`${server.url}/v1/files?name=huge.mp4`))
     expect(declared.status).toBe(413)
     expect(JSON.parse(declared.body)).toMatchObject({ code: "file_too_large" })
+    expect(stagingEntries(services.attachments.root)).toEqual(before)
+  })
 
-    // Relayed uploads carry no Content-Length, so the bytes themselves are
-    // counted, and the store discards what it had staged.
+  it("discards staged bytes when streamed upload chunks exceed the limit", async () => {
+    const root = mkdtempSync(join(tmpdir(), "codevisor-upload-limit-"))
+    tempDirs.push(root)
+    const store = makeAttachmentStore(root)
+    const before = stagingEntries(store.root)
     const body = limitedUploadBody(
       (async function* () {
         for (const size of [6, 4, 1]) yield new Uint8Array(size)
       })(),
       10
     )
-    await expect(services.attachments.putStream(body)).rejects.toMatchObject({ status: 413 })
-    expect(stagingEntries()).toEqual(before)
+    await expect(store.putStream(body)).rejects.toMatchObject({ status: 413 })
+    expect(stagingEntries(store.root)).toEqual(before)
   })
 })
