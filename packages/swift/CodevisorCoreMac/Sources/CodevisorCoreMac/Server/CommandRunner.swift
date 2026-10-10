@@ -104,10 +104,9 @@ public struct ProcessCommandRunner: CommandRunner {
     arguments: [String],
     environment: [String: String]?
   ) async throws -> CommandResult {
-    let process = Process()
-    process.executableURL = executableURL
-    process.arguments = arguments
-    if let environment { process.environment = environment }
+    let process = makeProcess(
+      executableURL: executableURL, arguments: arguments, environment: environment
+    )
     let outPipe = Pipe()
     let errPipe = Pipe()
     process.standardOutput = outPipe
@@ -126,34 +125,8 @@ public struct ProcessCommandRunner: CommandRunner {
     defer { process.terminationHandler = nil }
     return try await withTaskCancellationHandler {
       try Task.checkCancellation()
-      do {
-        try process.run()
-      } catch {
-        try? outPipe.fileHandleForWriting.close()
-        try? errPipe.fileHandleForWriting.close()
-        throw error
-      }
-      cancellation.markStarted()
-      onStart()
-
-      // The child inherited duplicates of these descriptors. Closing
-      // the parent's writers guarantees readToEnd observes EOF even
-      // when Foundation retains the Pipe objects until this call ends.
-      try? outPipe.fileHandleForWriting.close()
-      try? errPipe.fileHandleForWriting.close()
-
-      // Drain both pipes concurrently. Keep the readers and exit callback alive
-      // through cancellation until the process has actually terminated.
-      let (out, err) = await withTaskGroup(of: (Bool, Data).self) { group in
-        group.addTask { (true, await readToEnd(outPipe.fileHandleForReading)) }
-        group.addTask { (false, await readToEnd(errPipe.fileHandleForReading)) }
-        var out = Data()
-        var err = Data()
-        for await (isStandardOutput, data) in group {
-          if isStandardOutput { out = data } else { err = data }
-        }
-        return (out, err)
-      }
+      try launch(process, outPipe: outPipe, errPipe: errPipe, cancellation: cancellation)
+      let (out, err) = await drainOutput(outPipe: outPipe, errPipe: errPipe)
       let exitCode = try await exit.value
       try Task.checkCancellation()
 
@@ -165,6 +138,53 @@ public struct ProcessCommandRunner: CommandRunner {
     } onCancel: {
       cancellation.cancel()
     }
+  }
+
+  private func makeProcess(
+    executableURL: URL, arguments: [String], environment: [String: String]?
+  ) -> Process {
+    let process = Process()
+    process.executableURL = executableURL
+    process.arguments = arguments
+    if let environment { process.environment = environment }
+    return process
+  }
+
+  private func launch(
+    _ process: Process, outPipe: Pipe, errPipe: Pipe,
+    cancellation: ProcessCancellationController
+  ) throws {
+    do {
+      try process.run()
+    } catch {
+      try? outPipe.fileHandleForWriting.close()
+      try? errPipe.fileHandleForWriting.close()
+      throw error
+    }
+    cancellation.markStarted()
+    onStart()
+
+    // The child inherited duplicates of these descriptors. Closing
+    // the parent's writers guarantees readToEnd observes EOF even
+    // when Foundation retains the Pipe objects until this call ends.
+    try? outPipe.fileHandleForWriting.close()
+    try? errPipe.fileHandleForWriting.close()
+  }
+
+  private func drainOutput(outPipe: Pipe, errPipe: Pipe) async -> (Data, Data) {
+    // Drain both pipes concurrently. Keep the readers and exit callback alive
+    // through cancellation until the process has actually terminated.
+    let (out, err) = await withTaskGroup(of: (Bool, Data).self) { group in
+      group.addTask { (true, await readToEnd(outPipe.fileHandleForReading)) }
+      group.addTask { (false, await readToEnd(errPipe.fileHandleForReading)) }
+      var out = Data()
+      var err = Data()
+      for await (isStandardOutput, data) in group {
+        if isStandardOutput { out = data } else { err = data }
+      }
+      return (out, err)
+    }
+    return (out, err)
   }
 
   private func readToEnd(_ handle: FileHandle) async -> Data {
