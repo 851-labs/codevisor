@@ -49,8 +49,9 @@ describe("Codex skills", () => {
 
   it("sends each mentioned skill as a skill item", async () => {
     const { client, created } = await setup({ listedSkills: [skill("triage"), skill("notes")] })
+    const started = client.nextRequest("turn/start")
     const prompt = run(created!.handle.prompt("$triage the CI failure, then $notes."))
-    await Promise.resolve()
+    await started
     client.emit("turn/completed", {
       threadId: "thread-new",
       turn: { id: "t", status: "completed" }

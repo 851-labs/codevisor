@@ -5,6 +5,7 @@ import { run, setup } from "./test-support.js"
 describe("CodexProvider", () => {
   it("maps attachments: images as localImage paths, files as path notes", async () => {
     const { client, created } = await setup()
+    const started = client.nextRequest("turn/start")
     const promptPromise = run(
       created!.handle.prompt({
         text: "check these",
@@ -26,7 +27,7 @@ describe("CodexProvider", () => {
         ]
       })
     )
-    await Promise.resolve()
+    await started
     client.emit("turn/completed", {
       threadId: "thread-new",
       turn: { id: "turn-att", status: "completed" }
@@ -46,6 +47,7 @@ describe("CodexProvider", () => {
 
   it("sends an image-only prompt without a text item", async () => {
     const { client, created } = await setup()
+    const started = client.nextRequest("turn/start")
     const promptPromise = run(
       created!.handle.prompt({
         text: "",
@@ -60,7 +62,7 @@ describe("CodexProvider", () => {
         ]
       })
     )
-    await Promise.resolve()
+    await started
     client.emit("turn/completed", {
       threadId: "thread-new",
       turn: { id: "turn-img", status: "completed" }
