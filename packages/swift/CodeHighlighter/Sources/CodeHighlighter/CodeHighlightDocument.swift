@@ -81,7 +81,7 @@ public actor CodeHighlightDocument {
     if forceFullHighlight { invalidated = fullRange }
     let range = invalidated.map { NSIntersectionRange($0, fullRange) } ?? NSRange(location: 0, length: 0)
     let syntax = range.length > 0 ? try document.spans(in: range) : []
-    let spans = resolve(syntax, in: range)
+    let spans = SyntaxSpanResolver.resolve(syntax, in: range, style: style)
     return Update(revision: revision, invalidatedRange: range, spans: spans)
   }
 
@@ -107,45 +107,4 @@ public actor CodeHighlightDocument {
     return result
   }
 
-  private func resolve(_ syntax: [SyntaxSpan], in range: NSRange) -> [Span] {
-    struct Event { let offset: Int; let index: Int; let start: Bool }
-    var events: [Event] = []
-    for (index, span) in syntax.enumerated() {
-      let clipped = NSIntersectionRange(range, span.range)
-      if clipped.length > 0 {
-        events.append(Event(offset: clipped.location, index: index, start: true))
-        events.append(Event(offset: NSMaxRange(clipped), index: index, start: false))
-      }
-    }
-    events.sort { $0.offset < $1.offset }
-    var active = Set<Int>()
-    var result: [Span] = []
-    var previous = range.location
-    for event in events {
-      if event.offset > previous,
-        let winner = active.max(by: { left, right in
-          if syntax[left].priority != syntax[right].priority { return syntax[left].priority < syntax[right].priority }
-          if syntax[left].range.length != syntax[right].range.length {
-            return syntax[left].range.length > syntax[right].range.length
-          }
-          let leftSpecificity = syntax[left].capture.split(separator: ".").count
-          let rightSpecificity = syntax[right].capture.split(separator: ".").count
-          if leftSpecificity != rightSpecificity { return leftSpecificity < rightSpecificity }
-          if syntax[left].order != syntax[right].order { return syntax[left].order < syntax[right].order }
-          return left < right
-        })
-      {
-        let resolved = style(for: syntax[winner])
-        if let last = result.last, last.style == resolved, NSMaxRange(last.range) == previous {
-          result[result.count - 1] = Span(
-            range: NSRange(location: last.range.location, length: event.offset - last.range.location), style: resolved)
-        } else {
-          result.append(Span(range: NSRange(location: previous, length: event.offset - previous), style: resolved))
-        }
-      }
-      if event.start { active.insert(event.index) } else { active.remove(event.index) }
-      previous = event.offset
-    }
-    return result
-  }
 }
