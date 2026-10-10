@@ -13,6 +13,7 @@ import {
   unlinkSync,
   writeFileSync
 } from "node:fs"
+import type { Dirent } from "node:fs"
 import { readdir } from "node:fs/promises"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { homedir } from "node:os"
@@ -152,79 +153,109 @@ export async function routeFileDocuments(
   if (!["/v1/fs/document", "/v1/fs/entries", "/v1/fs/search"].includes(url.pathname)) return false
   try {
     const path = requestedPath(url)
-    if (url.pathname === "/v1/fs/search" && request.method === "GET") {
-      const controller = new AbortController()
-      const cancel = () => controller.abort()
-      response.once("close", cancel)
-      try {
-        const result = await searchFileEntries(path, url.searchParams.get("query") ?? "", {
-          signal: controller.signal
-        })
-        response.setHeader("Cache-Control", "private, no-store")
-        writeJson(response, 200, result)
-      } finally {
-        response.off("close", cancel)
-      }
-      return true
-    }
-    if (url.pathname === "/v1/fs/entries" && request.method === "GET") {
-      const entries = await readdir(path, { withFileTypes: true })
-      const visible = entries.filter(
-        (entry) => url.searchParams.get("showHidden") === "true" || !entry.name.startsWith(".")
-      )
-      const rows = visible
-        .flatMap((entry) => {
-          try {
-            const target = join(path, entry.name)
-            const info = statSync(target)
-            if (!info.isDirectory() && !info.isFile()) return []
-            return [
-              {
-                name: entry.name,
-                path: target,
-                isDirectory: info.isDirectory(),
-                isSymbolicLink: entry.isSymbolicLink()
-              }
-            ]
-          } catch {
-            return []
-          }
-        })
-        .toSorted(
-          (a, b) =>
-            Number(b.isDirectory) - Number(a.isDirectory) ||
-            a.name.localeCompare(b.name, "en", { numeric: true })
-        )
-      writeJson(response, 200, { path, entries: rows })
-      return true
-    }
-    if (url.pathname === "/v1/fs/document" && request.method === "GET") {
-      const value = snapshot(path)
-      response.setHeader("Cache-Control", "private, no-store")
-      if (url.searchParams.get("version") === value.version)
-        writeJson(response, 200, { unchanged: true })
-      else writeJson(response, 200, value)
-      return true
-    }
-    if (url.pathname === "/v1/fs/document" && request.method === "PUT") {
-      const body = await readJson(request)
-      writeJson(response, 200, save(path, body))
-      return true
-    }
+    if (url.pathname === "/v1/fs/search" && request.method === "GET")
+      return await searchDocuments(response, url, path)
+    if (url.pathname === "/v1/fs/entries" && request.method === "GET")
+      return await listDocumentEntries(response, url, path)
+    if (url.pathname === "/v1/fs/document" && request.method === "GET")
+      return readDocument(response, url, path)
+    if (url.pathname === "/v1/fs/document" && request.method === "PUT")
+      return await writeDocument(request, response, path)
     throw new HttpFailure(405, "This file operation is not supported.", "method_not_allowed")
   } catch (error) {
-    if (error instanceof HttpFailure) throw error
-    const code = (error as NodeJS.ErrnoException).code
-    if (code === "ENOENT")
-      throw new HttpFailure(404, "This file has been moved or deleted.", "not_found")
-    if (code === "EACCES" || code === "EPERM")
-      throw new HttpFailure(
-        403,
-        "You don’t have permission to access this file.",
-        "permission_denied"
-      )
-    if (code === "ENOTDIR")
-      throw new HttpFailure(400, "This path is not a folder.", "not_a_directory")
-    throw error
+    throwDocumentFailure(error)
   }
+}
+
+async function searchDocuments(response: ServerResponse, url: URL, path: string): Promise<boolean> {
+  const controller = new AbortController()
+  const cancel = () => controller.abort()
+  response.once("close", cancel)
+  try {
+    const result = await searchFileEntries(path, url.searchParams.get("query") ?? "", {
+      signal: controller.signal
+    })
+    response.setHeader("Cache-Control", "private, no-store")
+    writeJson(response, 200, result)
+  } finally {
+    response.off("close", cancel)
+  }
+  return true
+}
+
+function documentEntry(path: string, entry: Dirent) {
+  try {
+    const target = join(path, entry.name)
+    const info = statSync(target)
+    if (!info.isDirectory() && !info.isFile()) return []
+    return [
+      {
+        name: entry.name,
+        path: target,
+        isDirectory: info.isDirectory(),
+        isSymbolicLink: entry.isSymbolicLink()
+      }
+    ]
+  } catch {
+    return []
+  }
+}
+
+function documentEntryRows(path: string, visible: ReadonlyArray<Dirent>) {
+  return visible
+    .flatMap((entry) => documentEntry(path, entry))
+    .toSorted(
+      (a, b) =>
+        Number(b.isDirectory) - Number(a.isDirectory) ||
+        a.name.localeCompare(b.name, "en", { numeric: true })
+    )
+}
+
+async function listDocumentEntries(
+  response: ServerResponse,
+  url: URL,
+  path: string
+): Promise<boolean> {
+  const entries = await readdir(path, { withFileTypes: true })
+  const visible = entries.filter(
+    (entry) => url.searchParams.get("showHidden") === "true" || !entry.name.startsWith(".")
+  )
+  const rows = documentEntryRows(path, visible)
+  writeJson(response, 200, { path, entries: rows })
+  return true
+}
+
+function readDocument(response: ServerResponse, url: URL, path: string): boolean {
+  const value = snapshot(path)
+  response.setHeader("Cache-Control", "private, no-store")
+  if (url.searchParams.get("version") === value.version)
+    writeJson(response, 200, { unchanged: true })
+  else writeJson(response, 200, value)
+  return true
+}
+
+async function writeDocument(
+  request: IncomingMessage,
+  response: ServerResponse,
+  path: string
+): Promise<boolean> {
+  const body = await readJson(request)
+  writeJson(response, 200, save(path, body))
+  return true
+}
+
+function throwDocumentFailure(error: unknown): never {
+  if (error instanceof HttpFailure) throw error
+  const code = (error as NodeJS.ErrnoException).code
+  if (code === "ENOENT")
+    throw new HttpFailure(404, "This file has been moved or deleted.", "not_found")
+  if (code === "EACCES" || code === "EPERM")
+    throw new HttpFailure(
+      403,
+      "You don’t have permission to access this file.",
+      "permission_denied"
+    )
+  if (code === "ENOTDIR")
+    throw new HttpFailure(400, "This path is not a folder.", "not_a_directory")
+  throw error
 }
