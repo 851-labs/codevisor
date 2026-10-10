@@ -3,6 +3,7 @@ import { join, relative, resolve } from "node:path"
 
 import type { Skill, SkillsList } from "@codevisor/api"
 
+import { newSkillFile, validateSkillFile } from "./skill-file.js"
 import { exists } from "./skill-import.js"
 import { makeRemoteSkillOperations } from "./skill-store-remote.js"
 import { cloneSkillSource } from "./skills-remote-source.js"
@@ -11,7 +12,6 @@ import {
   EXCLUDE_DIRS,
   hasSkillFile,
   isPathSafe,
-  parseFrontmatter,
   readSkillDocument,
   RESERVED_SKILL_NAMES,
   sanitizeName,
@@ -95,64 +95,6 @@ const supportingFiles = async (root: string): Promise<ReadonlyArray<string>> => 
   }
   await walk(root)
   return files
-}
-
-const SKILL_TEMPLATE_BODY = [
-  "## Instructions",
-  "",
-  "Describe the steps the agent should follow when this skill applies."
-]
-
-const newSkillFile = (request: {
-  readonly name: string
-  readonly description: string
-  readonly content?: string | undefined
-}): { readonly file: string; readonly namingSource: string } => {
-  const name = request.name.trim()
-  if (name === "") throw new SkillsError("Skill name is required", "invalid")
-  const description = request.description.trim() === "" ? name : request.description.trim()
-  const pasted = request.content?.trim() ?? ""
-  // Pasted content with frontmatter is written verbatim and its own name
-  // names the folder; otherwise the form fields become the frontmatter.
-  if (pasted.startsWith("---")) {
-    const file = `${pasted}\n`
-    let data: Record<string, unknown>
-    try {
-      data = parseFrontmatter(file).data
-    } catch {
-      throw new SkillsError("The pasted SKILL.md frontmatter is not valid YAML", "invalid")
-    }
-    const ownName = typeof data["name"] === "string" && data["name"] !== "" ? data["name"] : name
-    return { file, namingSource: ownName }
-  }
-  const body = pasted !== "" ? pasted : [description, "", ...SKILL_TEMPLATE_BODY].join("\n")
-  const file = [
-    "---",
-    `name: ${JSON.stringify(name)}`,
-    `description: ${JSON.stringify(description)}`,
-    "---",
-    "",
-    body,
-    ""
-  ].join("\n")
-  return { file, namingSource: name }
-}
-
-const validateSkillFile = (content: string): void => {
-  let data: Record<string, unknown>
-  try {
-    data = parseFrontmatter(content).data
-  } catch {
-    throw new SkillsError("The SKILL.md frontmatter is not valid YAML", "invalid")
-  }
-  if (
-    typeof data["name"] !== "string" ||
-    data["name"].trim() === "" ||
-    typeof data["description"] !== "string" ||
-    data["description"].trim() === ""
-  ) {
-    throw new SkillsError("Include a name and description in the SKILL.md frontmatter", "invalid")
-  }
 }
 
 export const makeSkillStore = (config: SkillStoreConfig): SkillStore => {
