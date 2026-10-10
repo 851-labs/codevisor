@@ -63,7 +63,7 @@ public struct EchoPredictor: Sendable {
 
   /// The user typed `text` (as sent to the server).
   public mutating func typed(_ text: String, at now: ContinuousClock.Instant) {
-    for token in Self.tokens(text) {
+    for token in TerminalEscapeTokenizer.tokens(text) {
       guard case let .character(character) = token else {
         // A key sent as an escape sequence (arrows, function keys): what it
         // does depends on the program.
@@ -94,7 +94,7 @@ public struct EchoPredictor: Sendable {
       guesses = []
       return
     }
-    for token in Self.tokens(output) {
+    for token in TerminalEscapeTokenizer.tokens(output) {
       guard let first = guesses.first else { return }
       // Escape sequences (cursor moves, colors, redraws) around an echo are
       // expected.
@@ -129,50 +129,6 @@ public struct EchoPredictor: Sendable {
   }
 
   public var isEnabled: Bool { enabled }
-
-  private enum Token {
-    case character(Character)
-    case escapeSequence
-  }
-
-  /// Splits text into characters and whole escape sequences (CSI, OSC, and
-  /// two-character escapes). An unfinished sequence at the end counts as one.
-  private static func tokens(_ text: String) -> [Token] {
-    var tokens: [Token] = []
-    var index = text.startIndex
-    while index < text.endIndex {
-      let character = text[index]
-      index = text.index(after: index)
-      guard character == "\u{1B}" else {
-        tokens.append(.character(character))
-        continue
-      }
-      tokens.append(.escapeSequence)
-      guard index < text.endIndex else { break }
-      let kind = text[index]
-      index = text.index(after: index)
-      if kind == "[" {
-        // CSI: parameters and intermediates, then a final byte @...~.
-        while index < text.endIndex {
-          let scalar = text[index].unicodeScalars.first!.value
-          index = text.index(after: index)
-          if (0x40...0x7E).contains(scalar) { break }
-        }
-      } else if kind == "]" || kind == "P" || kind == "_" {
-        // OSC / DCS / APC: until BEL or ST (ESC \).
-        while index < text.endIndex {
-          let next = text[index]
-          index = text.index(after: index)
-          if next == "\u{07}" { break }
-          if next == "\u{1B}", index < text.endIndex, text[index] == "\\" {
-            index = text.index(after: index)
-            break
-          }
-        }
-      }
-    }
-    return tokens
-  }
 
   private func isPrintable(_ character: Character) -> Bool {
     guard let scalar = character.unicodeScalars.first else { return false }
