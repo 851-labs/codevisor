@@ -150,8 +150,7 @@ final class TranscriptMarkdownRowHost: TranscriptMountedRowHost {
   ) -> (contentFrame: NSRect, topInset: CGFloat, bottomInset: CGFloat) {
     let fragmentIndent =
       chunk.fragment.map {
-        CGFloat($0.quoteDepth) * MarkdownFragmentMetrics.quoteIndent
-          + CGFloat($0.listDepth) * MarkdownFragmentMetrics.listIndent
+        CGFloat($0.quoteDepth) * MarkdownFragmentMetrics.quoteIndent + $0.listContentIndent
       } ?? 0
     let planInset =
       chunk.container == .planDocument

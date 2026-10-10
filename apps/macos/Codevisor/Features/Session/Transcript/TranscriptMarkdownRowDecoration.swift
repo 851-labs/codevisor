@@ -141,8 +141,7 @@ final class TranscriptMarkdownRowDecoration: NSView {
       let x =
         planInset
         + CGFloat(fragment.quoteDepth) * MarkdownFragmentMetrics.quoteIndent
-        + CGFloat(max(0, marker.depth - 1)) * MarkdownFragmentMetrics.listIndent
-        + MarkdownFragmentMetrics.listColumn(markers: [marker.text]).markerInset
+        + fragment.listMarkerX(depth: marker.depth)
       NSAttributedString(string: marker.text, attributes: markerAttributes).draw(
         in: NSRect(
           x: x,
