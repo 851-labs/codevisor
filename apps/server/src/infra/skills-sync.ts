@@ -182,7 +182,7 @@ export const reconcileSkills = async (deps: SkillsSyncDeps): Promise<SkillsSyncR
     // receiver) forever. Runs before the settled short-circuit, and the
     // process-lifetime cache keeps a verified content-addressed blob from
     // being unpacked again.
-    if (!verifiedBlobIds.has(localHash)) {
+    if (!verifiedBlobIds.has(localHash) || !deps.blobs.has(localHash)) {
       if (
         !deps.blobs.has(localHash) ||
         !(await verifySkillArchive(localHash, await deps.blobs.read(localHash)))

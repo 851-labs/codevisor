@@ -286,6 +286,12 @@ describe("skills sync", () => {
       serverId: "server-d"
     })
     expect(again.status.published).toEqual([])
+
+    // Verification cached earlier does not replace bytes missing from this store.
+    blobs.remove(hash)
+    expect(blobs.has(hash)).toBe(false)
+    await reconcileSkills({ db: services.db, store: skills, blobs, serverId: "server-d" })
+    expect(await verifySkillArchive(hash, await blobs.read(hash))).toBe(true)
   })
 
   it("adopts identical and renames conflicting first-contact skills", async () => {
