@@ -29,9 +29,7 @@ public struct ServerSessionTransport: Sendable {
     self.client = client
     self.sessionId = sessionId
   }
-}
 
-extension ServerSessionTransport {
   public func usageLimits() async throws -> ServerHarnessUsageLimits {
     try await client.sessionUsageLimits(id: sessionId)
   }
@@ -96,7 +94,7 @@ extension ServerSessionTransport {
 
   private func detailEvents(from details: ServerTranscriptItemDetails) -> [ServerSessionStreamEvent] {
     details.entries.flatMap { entry in
-      Self.sessionStreamEvents(
+      ServerSessionEventDecoder.decode(
         from: ServerEventEnvelope(
           id: entry.revision, serverId: "", kind: "session.output", subjectId: sessionId.uuidString,
           createdAt: "", payload: entry.payload))
@@ -132,7 +130,7 @@ extension ServerSessionTransport {
           for try await event in upstream {
             var complete = event
             complete.payload = try await content.payload(event.payload)
-            let updates = Self.sessionStreamEvents(from: complete)
+            let updates = ServerSessionEventDecoder.decode(from: complete)
             // Even events without visible content belong to the applied cursor.
             for update in updates.isEmpty ? [.synchronization(.cursor)] : updates {
               var envelope = ServerSessionStreamEnvelope(cursor: event.id, event: update)
@@ -175,7 +173,7 @@ extension ServerSessionTransport {
           where
             event.subjectId.caseInsensitiveCompare(sessionId.uuidString) == .orderedSame
           {
-            for update in Self.sessionStreamEvents(from: event) {
+            for update in ServerSessionEventDecoder.decode(from: event) {
               continuation.yield(ServerSessionStreamEnvelope(cursor: event.id, event: update))
             }
           }
@@ -265,270 +263,5 @@ extension ServerSessionTransport {
 
   private static func uuid(from id: String) -> UUID {
     UUID(uuidString: id) ?? UUID()
-  }
-
-  private static func sessionStreamEvents(from event: ServerEventEnvelope) -> [ServerSessionStreamEvent] {
-    if event.kind == "client.synchronization",
-      let state = event.payload["state"]?.stringValue.flatMap(SessionStreamSynchronization.init(rawValue:))
-    {
-      return [.synchronization(state)]
-    }
-    if event.payload["sessionUpdate"]?.stringValue == "assistant_message_finalized",
-      let markdown = event.payload["markdown"]?.stringValue
-    {
-      return [
-        .assistantFinalized(
-          markdown: markdown,
-          messageId: event.payload["messageId"]?.stringValue,
-          attachments: attachments(from: event.payload)
-        )
-      ]
-    }
-    if let rawUpdate = decodeRawSessionUpdate(event.payload) {
-      if event.payload["isFinalized"]?.boolValue == true, case let .agentMessagePatch(patch) = rawUpdate {
-        return [
-          .update(rawUpdate),
-          .assistantFinalized(
-            markdown: patch.text, messageId: patch.messageId, attachments: attachments(from: event.payload)),
-        ]
-      }
-      return [.update(rawUpdate)]
-    }
-
-    switch event.kind {
-    case "session.attention.updated":
-      return [
-        .planApprovalRequired(
-          event.payload["pendingPlanApproval"]?.boolValue == true
-        )
-      ]
-    case "session.queue.updated":
-      return [.queueUpdated(promptQueue(from: event.payload))]
-    case "session.updateGate.updated":
-      return [
-        .updateGate(
-          waiting: event.payload["state"]?.stringValue == "waiting",
-          harnessName: event.payload["harnessName"]?.stringValue
-            ?? event.payload["harnessId"]?.stringValue
-            ?? "the agent"
-        )
-      ]
-    case "session.output":
-      return outputEvents(from: event.payload)
-    case "session.updated":
-      var updates: [ServerSessionStreamEvent] = []
-      if event.payload["turnState"]?.stringValue == "started",
-        let rawItemId = event.payload["chatItemId"]?.stringValue,
-        let itemId = UUID(uuidString: rawItemId)
-      {
-        updates.append(.assistantItemStarted(itemId))
-      }
-      if let retry = retryStatus(from: event.payload) {
-        return updates + [.retrying(retry)]
-      }
-      if let stopReason = stopReason(from: event.payload) {
-        return updates + [
-          .finished(
-            stopReason,
-            stopDetail: event.payload["stopDetail"]?.stringValue,
-            stopKind: event.payload["stopKind"]?.stringValue,
-            retryable: event.payload["retryable"]?.boolValue == true,
-            chatItemId: event.payload["chatItemId"]?.stringValue
-              .flatMap(UUID.init(uuidString:))
-          )
-        ]
-      }
-      if let tasks = backgroundTasks(from: event.payload) {
-        return updates + [.backgroundTasks(tasks)]
-      }
-      if let fallback = modelFallback(from: event.payload) {
-        return updates + [.modelFallback(fallback)]
-      }
-      if let state = event.payload["runtimeState"]?.stringValue
-        .flatMap(SessionRuntimeState.init(rawValue:))
-      {
-        return updates + [.runtimeState(state)]
-      }
-      return updates
-        + metadataUpdates(from: event.payload).map(ServerSessionStreamEvent.update)
-    case "session.error":
-      return [
-        .failed(
-          errorMessage(from: event.payload),
-          retryable: event.payload["retryable"]?.boolValue == true,
-          chatItemId: event.payload["chatItemId"]?.stringValue
-            .flatMap(UUID.init(uuidString:))
-        )
-      ]
-    case "session.authRequired":
-      return [
-        .authenticationRequired(
-          event.payload["detail"]?.stringValue
-            ?? "Sign-in expired. Sign in again in Harness Settings to continue."
-        )
-      ]
-    default:
-      return []
-    }
-  }
-
-  /// Shared coders for the `JSONValue` → typed-model bridge below. These
-  /// run per streamed event — one per token chunk on the hot path — and a
-  /// fresh `JSONEncoder`/`JSONDecoder` allocation per call is measurable
-  /// under several concurrent streams. Sharing is safe: both types create
-  /// all mutable state per `encode`/`decode` call.
-  private static let bridgeEncoder = JSONEncoder()
-  private static let bridgeDecoder = JSONDecoder()
-
-  private static func promptQueue(from payload: JSONValue) -> [ServerPromptQueueItem] {
-    guard let queue = payload["queue"]?.arrayValue else { return [] }
-    do {
-      let data = try bridgeEncoder.encode(JSONValue.array(queue))
-      return try bridgeDecoder.decode([ServerPromptQueueItem].self, from: data)
-    } catch {
-      Log.session.error(
-        "Failed to decode prompt-queue payload: \(String(describing: error), privacy: .public)"
-      )
-      return []
-    }
-  }
-
-  private static func decodeRawSessionUpdate(_ payload: JSONValue) -> SessionUpdate? {
-    guard payload["sessionUpdate"] != nil else { return nil }
-    do {
-      let data = try bridgeEncoder.encode(payload)
-      return try bridgeDecoder.decode(SessionUpdate.self, from: data)
-    } catch {
-      Log.session.error(
-        "Failed to decode session-update payload: \(String(describing: error), privacy: .public)"
-      )
-      return nil
-    }
-  }
-
-  private static func outputEvents(from payload: JSONValue) -> [ServerSessionStreamEvent] {
-    guard let role = payload["role"]?.stringValue,
-      let text = payload["text"]?.stringValue
-    else {
-      return []
-    }
-    switch role {
-    case "assistant" where !text.isEmpty:
-      return [.update(.agentMessageChunk(.text(text), messageId: payload["messageId"]?.stringValue))]
-    case "user":
-      let attachments = attachments(from: payload)
-      guard !text.isEmpty || !attachments.isEmpty else { return [] }
-      return [
-        .userMessage(
-          id: payload["messageId"]?.stringValue,
-          text: text,
-          attachments: attachments
-        )
-      ]
-    default:
-      return []
-    }
-  }
-
-  private static func attachments(from payload: JSONValue) -> [Attachment] {
-    guard let raw = payload["attachments"]?.arrayValue else { return [] }
-    do {
-      let data = try bridgeEncoder.encode(JSONValue.array(raw))
-      return try bridgeDecoder.decode([ServerAttachmentRef].self, from: data).map(\.attachment)
-    } catch {
-      Log.session.error(
-        "Failed to decode attachments payload: \(String(describing: error), privacy: .public)"
-      )
-      return []
-    }
-  }
-
-  /// Both model ids are required: a notice that cannot name what was swapped
-  /// for what is not worth showing, so a malformed payload is skipped.
-  private static func modelFallback(from payload: JSONValue) -> SessionModelFallback? {
-    guard let value = payload["modelFallback"],
-      let originalModel = value["originalModel"]?.stringValue,
-      let fallbackModel = value["fallbackModel"]?.stringValue
-    else { return nil }
-    return SessionModelFallback(
-      originalModel: originalModel,
-      fallbackModel: fallbackModel,
-      category: value["category"]?.stringValue
-    )
-  }
-
-  private static func metadataUpdates(from payload: JSONValue) -> [SessionUpdate] {
-    if let configOptions = decodeConfigOptions(payload["configOptions"]) {
-      return [.configOptionUpdate(configOptions)]
-    }
-    if let modeId = payload["modeId"]?.stringValue {
-      return [.currentModeUpdate(currentModeId: modeId)]
-    }
-    if let goal = decodeGoal(payload["goal"]) {
-      return [.goalUpdate(goal)]
-    }
-    if payload["goalCleared"]?.boolValue == true {
-      return [.goalCleared]
-    }
-    return []
-  }
-
-  private static func decodeGoal(_ value: JSONValue?) -> SessionGoal? {
-    guard let value else { return nil }
-    do {
-      let data = try bridgeEncoder.encode(value)
-      return try bridgeDecoder.decode(SessionGoal.self, from: data)
-    } catch {
-      // Lenient like the other decoders: an unknown status or malformed
-      // snapshot degrades to skipping the update.
-      Log.session.error(
-        "Failed to decode goal payload: \(String(describing: error), privacy: .public)"
-      )
-      return nil
-    }
-  }
-
-  private static func stopReason(from payload: JSONValue) -> StopReason? {
-    guard let raw = payload["stopReason"]?.stringValue else { return nil }
-    return StopReason(rawValue: raw)
-  }
-
-  private static func retryStatus(from payload: JSONValue) -> RetryStatus? {
-    guard let retry = payload["retrying"] else { return nil }
-    return RetryStatus(
-      attempt: retry["attempt"]?.intValue,
-      of: retry["of"]?.intValue,
-      message: retry["message"]?.stringValue ?? "Server is busy, reconnecting"
-    )
-  }
-
-  private static func backgroundTasks(from payload: JSONValue) -> [BackgroundTaskInfo]? {
-    guard let raw = payload["backgroundTasks"]?.arrayValue else { return nil }
-    do {
-      let data = try bridgeEncoder.encode(JSONValue.array(raw))
-      return try bridgeDecoder.decode([BackgroundTaskInfo].self, from: data)
-    } catch {
-      Log.session.error(
-        "Failed to decode background-tasks payload: \(String(describing: error), privacy: .public)"
-      )
-      return []
-    }
-  }
-
-  private static func errorMessage(from payload: JSONValue) -> String {
-    payload["message"]?.stringValue ?? "The server reported an error."
-  }
-
-  private static func decodeConfigOptions(_ value: JSONValue?) -> [SessionConfigOption]? {
-    guard let value else { return nil }
-    do {
-      let data = try bridgeEncoder.encode(value)
-      return try bridgeDecoder.decode([SessionConfigOption].self, from: data)
-    } catch {
-      Log.session.error(
-        "Failed to decode config-options payload: \(String(describing: error), privacy: .public)"
-      )
-      return nil
-    }
   }
 }
