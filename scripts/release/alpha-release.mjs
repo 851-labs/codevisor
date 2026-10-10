@@ -46,6 +46,20 @@ export function alphaTag({ version, build }) {
 // Checks a Build run and the provenance it recorded, and returns the
 // build's identity. Everything downstream trusts only this identity.
 export function verifyAlphaProvenance(run, provenance, repository) {
+  assertSuccessfulBuildRun(run, repository)
+  const build = String(provenance.build_number ?? "")
+  assertMatchingAlphaProvenance(run, provenance, build)
+  const identity = {
+    version: provenance.version,
+    build,
+    source_sha: provenance.source_sha,
+    run_id: String(run.id),
+    ghostty_stamp: provenance.ghostty_stamp
+  }
+  return { ...identity, tag: alphaTag(identity) }
+}
+
+function assertSuccessfulBuildRun(run, repository) {
   if (
     run.repository?.full_name !== repository ||
     run.head_repository?.full_name !== repository ||
@@ -56,7 +70,9 @@ export function verifyAlphaProvenance(run, provenance, repository) {
     run.conclusion !== "success"
   )
     throw new Error(`Run ${run.id} is not a successful Build run on this repository's main.`)
-  const build = String(provenance.build_number ?? "")
+}
+
+function assertMatchingAlphaProvenance(run, provenance, build) {
   if (
     provenance.channel !== "alpha" ||
     !/^\d+\.\d+\.\d+$/.test(provenance.version ?? "") ||
@@ -68,14 +84,6 @@ export function verifyAlphaProvenance(run, provenance, repository) {
     !/^[0-9a-f]{40}-[0-9a-f]{16}$/.test(provenance.ghostty_stamp ?? "")
   )
     throw new Error(`The provenance of run ${run.id} does not match the run.`)
-  const identity = {
-    version: provenance.version,
-    build,
-    source_sha: provenance.source_sha,
-    run_id: String(run.id),
-    ghostty_stamp: provenance.ghostty_stamp
-  }
-  return { ...identity, tag: alphaTag(identity) }
 }
 
 export function releaseAssetNames({ ghostty_stamp }) {
