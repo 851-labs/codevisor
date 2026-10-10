@@ -25,7 +25,11 @@ describe("makeStaleWhileRevalidate", () => {
   it("serves the cached answer while a stale one refreshes in the background", async () => {
     let clock = 0
     const loads = scriptedLoads()
-    const get = makeStaleWhileRevalidate(loads.load, () => clock)
+    let refreshTimestampRead: PromiseWithResolvers<void> | undefined
+    const get = makeStaleWhileRevalidate(loads.load, () => {
+      refreshTimestampRead?.resolve()
+      return clock
+    })
 
     const first = get()
     loads.resolve(0, ["alpha"])
@@ -37,8 +41,9 @@ describe("makeStaleWhileRevalidate", () => {
     expect(await get()).toEqual(["alpha"])
     expect(loads.calls).toBe(2)
 
+    refreshTimestampRead = Promise.withResolvers<void>()
     loads.resolve(1, ["beta"])
-    await nextMacrotask()
+    await refreshTimestampRead.promise
     expect(await get()).toEqual(["beta"])
     expect(loads.calls).toBe(2)
   })
