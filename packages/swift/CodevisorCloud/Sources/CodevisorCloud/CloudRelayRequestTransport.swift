@@ -220,6 +220,29 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
     body: RequestBody,
     deadline: DeadlineFlag
   ) async throws -> (HTTPURLResponse, HttpResponseSource) {
+    let (url, params) = try requestParameters(for: request)
+
+    let (frames, continuation) = AsyncThrowingStream<WireFrame, any Error>.makeStream()
+    let gate = CloudChannelCreditGate()
+    let decoder = JSONDecoder()
+    let channel = try await openHTTPChannel(
+      params: params, body: body, gate: gate, decoder: decoder, continuation: continuation)
+    let source = HttpResponseSource(channel: channel, frames: frames)
+    do {
+      try await channel.grantCredit(bytes: CloudRelayProxy.initialCreditBytes)
+      try await sendRequestBody(body, channel: channel, gate: gate)
+      let response = try await source.readHead(url: url)
+      return (response, source)
+    } catch {
+      // No head by the deadline: let the pipe judge whether the machine
+      // answered at all (the host ignores channels that saw traffic).
+      if deadline.hasExpired { await channel.reportUnanswered() }
+      await source.finish(reason: .done)
+      throw error
+    }
+  }
+
+  private func requestParameters(for request: URLRequest) throws -> (URL, JSONValue) {
     guard let url = request.url,
       let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
     else { throw CloudRelayTransportError.invalidRequest }
@@ -233,11 +256,17 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
       "path": .string(path),
       "headers": .object(headers.mapValues { .string($0) }),
     ])
+    return (url, params)
+  }
 
-    let (frames, continuation) = AsyncThrowingStream<WireFrame, any Error>.makeStream()
-    let gate = CloudChannelCreditGate()
-    let decoder = JSONDecoder()
-    let channel = try await endpoint.openFlowControlledChannel(
+  private func openHTTPChannel(
+    params: JSONValue,
+    body: RequestBody,
+    gate: CloudChannelCreditGate,
+    decoder: JSONDecoder,
+    continuation: AsyncThrowingStream<WireFrame, any Error>.Continuation
+  ) async throws -> CloudRelayChannel {
+    return try await endpoint.openFlowControlledChannel(
       channelType: "http",
       params: params,
       compressed: true,
@@ -262,19 +291,6 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
         }
       }
     )
-    let source = HttpResponseSource(channel: channel, frames: frames)
-    do {
-      try await channel.grantCredit(bytes: CloudRelayProxy.initialCreditBytes)
-      try await sendRequestBody(body, channel: channel, gate: gate)
-      let response = try await source.readHead(url: url)
-      return (response, source)
-    } catch {
-      // No head by the deadline: let the pipe judge whether the machine
-      // answered at all (the host ignores channels that saw traffic).
-      if deadline.hasExpired { await channel.reportUnanswered() }
-      await source.finish(reason: .done)
-      throw error
-    }
   }
 
   /// Uploads the body as chunk frames and the terminating end frame, each
