@@ -15,7 +15,7 @@ import Foundation
 /// relay; the machine refuses hellos from devices it has not already pinned
 /// (TOFU happens on the relay, never here), and the E2E channel crypto
 /// authenticates both ends of every frame, so the pipe needs no TLS.
-public actor CloudDirectConnection {
+public actor CloudDirectConnection: CloudChannelHosting {
   public static let protocolVersion = CloudHubConnection.protocolVersion
   static let maximumMessageSize = CloudHubConnection.maximumMessageSize
 
@@ -48,38 +48,7 @@ public actor CloudDirectConnection {
   /// Serializes outbound writes so relay frames hit the wire in seq order
   /// even when several tasks send concurrently (same scheme as the hub).
   private var sendChain: Task<Void, Never> = Task {}
-  private var channels: [String: ChannelState] = [:]
-
-  private final class ChannelState {
-    let cipher: CloudChannelCipher
-    var nextOutboundSeq: UInt64
-    var nextInboundSeq: UInt64 = 0
-    let flowControlled: Bool
-    let compressed: Bool
-    var inboundCredit = 0
-    var receivedInbound = false
-    let onMessage: @Sendable (Data, Int) -> Void
-    let onCredit: @Sendable (Int) -> Void
-    let onClosed: @Sendable (CloudChannelCloseReason?) -> Void
-
-    init(
-      cipher: CloudChannelCipher,
-      nextOutboundSeq: UInt64,
-      flowControlled: Bool,
-      compressed: Bool,
-      onMessage: @escaping @Sendable (Data, Int) -> Void,
-      onCredit: @escaping @Sendable (Int) -> Void,
-      onClosed: @escaping @Sendable (CloudChannelCloseReason?) -> Void
-    ) {
-      self.cipher = cipher
-      self.nextOutboundSeq = nextOutboundSeq
-      self.flowControlled = flowControlled
-      self.compressed = compressed
-      self.onMessage = onMessage
-      self.onCredit = onCredit
-      self.onClosed = onClosed
-    }
-  }
+  private var channels: [String: CloudDirectChannelState] = [:]
 
   public init(
     directURL: URL,
@@ -215,39 +184,9 @@ public actor CloudDirectConnection {
 
   // MARK: Wire
 
-  private struct HelloMessage: Encodable {
-    struct Device: Encodable {
-      var deviceId: String
-      var kind = "app"
-      var name: String
-      var os: String
-      var appVersion: String?
-      var publicKey: String
-    }
-
-    var t = "hello"
-    var protocolVersion = CloudDirectConnection.protocolVersion
-    var device: Device
-
-    enum CodingKeys: String, CodingKey {
-      case t
-      case protocolVersion = "protocol"
-      case device
-    }
-  }
-
-  private struct RelayHeader: Codable {
-    var machineId: String
-    var frame: CloudRelayFrame
-  }
-
-  private struct TypeProbe: Decodable {
-    var t: String
-  }
-
   private func sendHello(identity: CloudAppDeviceIdentity) throws {
-    let hello = HelloMessage(
-      device: HelloMessage.Device(
+    let hello = CloudDirectHelloMessage(
+      device: CloudDirectHelloMessage.Device(
         deviceId: identity.deviceId,
         name: deviceName,
         os: deviceOS,
@@ -262,13 +201,13 @@ public actor CloudDirectConnection {
     case let .data(payload):
       guard let envelopes = try? CloudRelayWire.decode(payload) else { return }
       for envelope in envelopes {
-        guard let relay = try? decoder.decode(RelayHeader.self, from: envelope.header),
+        guard let relay = try? decoder.decode(CloudDirectRelayHeader.self, from: envelope.header),
           relay.machineId == machineDeviceId
         else { continue }
         handleRelay(relay.frame, payload: envelope.payload)
       }
     case let .string(text):
-      guard let probe = try? decoder.decode(TypeProbe.self, from: Data(text.utf8)) else {
+      guard let probe = try? decoder.decode(CloudDirectTypeProbe.self, from: Data(text.utf8)) else {
         return
       }
       switch probe.t {
@@ -333,7 +272,7 @@ public actor CloudDirectConnection {
   }
 
   func sendRelay(frame: CloudRelayFrame, payload: Data = Data()) throws {
-    let header = try encoder.encode(RelayHeader(machineId: machineDeviceId, frame: frame))
+    let header = try encoder.encode(CloudDirectRelayHeader(machineId: machineDeviceId, frame: frame))
     try enqueueSend(
       .data(CloudRelayWire.encode([CloudRelayEnvelope(header: header, payload: payload)])))
   }
@@ -349,11 +288,8 @@ public actor CloudDirectConnection {
       }
     }
   }
-}
+  // MARK: - Inbound relay frames
 
-// MARK: - Inbound relay frames
-
-extension CloudDirectConnection {
   private func handleRelay(_ frame: CloudRelayFrame, payload: Data) {
     guard let state = channels[frame.channelId] else { return }
     state.receivedInbound = true
@@ -378,30 +314,8 @@ extension CloudDirectConnection {
       // Machines never open channels toward the app.
       abortChannel(frame.channelId, reason: .protocolError)
     case let .data(channelId, seq):
-      do {
-        var plaintext = try state.cipher.open(
-          payload,
-          channelId: channelId,
-          direction: .responderToOpener,
-          seq: seq
-        )
-        if state.compressed {
-          plaintext = try Self.unframe(plaintext)
-        }
-        let sealedBytes = payload.count
-        if state.flowControlled {
-          guard sealedBytes <= state.inboundCredit else {
-            abortChannel(channelId, reason: .protocolError)
-            return
-          }
-          state.inboundCredit -= sealedBytes
-        }
-        state.onMessage(plaintext, sealedBytes)
-        // No auto-replenish: machines never gate structured sends on
-        // credit unless the opener negotiated flow control, so a
-        // per-message credit frame would be a pure no-op.
-      } catch {
-        abortChannel(channelId, reason: .cryptoError)
+      if let reason = state.receiveData(payload, channelId: channelId, seq: seq) {
+        abortChannel(channelId, reason: reason)
       }
     case let .credit(channelId, _, bytes):
       guard bytes > 0 else {
@@ -415,22 +329,7 @@ extension CloudDirectConnection {
     }
   }
 
-  /// Strips the negotiated framing byte, inflating DEFLATE bodies.
-  private static func unframe(_ plaintext: Data) throws -> Data {
-    guard let framing = plaintext.first else { throw CloudDeflateError.corruptInput }
-    let body = plaintext.dropFirst()
-    switch framing {
-    case CloudDeflate.framingRaw: return Data(body)
-    case CloudDeflate.framingDeflate: return try CloudDeflate.inflate(Data(body))
-    default: throw CloudDeflateError.corruptInput
-    }
-  }
-
-}
-
-// MARK: - Channels
-
-extension CloudDirectConnection {
+  // MARK: - Channels
 
   /// Opens an end-to-end encrypted channel over this pipe. `onMessage` gets
   /// each decrypted inbound payload; `onClosed` fires once when the channel
@@ -510,7 +409,7 @@ extension CloudDirectConnection {
       direction: .openerToResponder,
       seq: 0
     )
-    let state = ChannelState(
+    let state = CloudDirectChannelState(
       cipher: opened.cipher,
       nextOutboundSeq: 1,
       flowControlled: flowControlled,
@@ -531,27 +430,16 @@ extension CloudDirectConnection {
     }
     return CloudRelayChannel(id: channelId, host: self)
   }
-}
+  // MARK: - CloudChannelHosting
 
-// MARK: - CloudChannelHosting
-
-extension CloudDirectConnection: CloudChannelHosting {
   func send(channelId: String, plaintext: Data) throws -> Int {
     guard let state = channels[channelId] else {
       throw CloudHubConnectionError.channelClosed
     }
     guard isWelcomed, !isDown else { throw CloudHubConnectionError.disconnected }
-    let seq = state.nextOutboundSeq
-    state.nextOutboundSeq += 1
-    let body = state.compressed ? Data([CloudDeflate.framingRaw]) + plaintext : plaintext
-    let sealed = try state.cipher.seal(
-      body,
-      channelId: channelId,
-      direction: .openerToResponder,
-      seq: seq
-    )
-    try sendRelay(frame: .data(channelId: channelId, seq: seq), payload: sealed)
-    return sealed.count
+    let sealed = try state.sealData(plaintext, channelId: channelId)
+    try sendRelay(frame: sealed.frame, payload: sealed.payload)
+    return sealed.payload.count
   }
 
   func grantCredit(channelId: String, bytes: Int) throws {
