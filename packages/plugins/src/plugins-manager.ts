@@ -1,5 +1,3 @@
-import type { IncomingMessage } from "node:http"
-
 import type { PluginSummary } from "@codevisor/api"
 
 import { makePluginEnabledState } from "./plugin-enabled-state.js"
@@ -7,13 +5,15 @@ import { fetchPluginIcon } from "./plugin-icon.js"
 import { makePluginInstaller } from "./plugin-install.js"
 import { makePluginMaintenance } from "./plugin-maintenance.js"
 import {
+  issuePluginPaneToken,
+  makePaneAuthenticator,
+  makePaneContextHeaders,
   makePaneTokenStore,
+  makeSignedContextHeaders,
   PANE_TOKEN_QUERY_PARAM,
   paneCookieHeader,
   paneCookieName,
-  readCookieValue,
-  stripPaneCookie,
-  type PaneTokenScope
+  stripPaneCookie
 } from "./plugin-pane-auth.js"
 import { forwardHttp, spliceUpgrade } from "./plugin-proxy.js"
 import { makePluginRequestLease } from "./plugin-request-lease.js"
@@ -158,53 +158,9 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
     }
   }
 
-  /// Encodes and signs a context payload with the target plugin's key so it
-  /// can trust that X-Codevisor-Context came from this server — shared by
-  /// pane proxying, icons, and tool invocation, which carry different shapes.
-  const signedContextHeaders =
-    (pluginId: string) =>
-    (payload: Readonly<Record<string, unknown>>): Record<string, string> => {
-      const encoded = Buffer.from(JSON.stringify(payload), "utf8").toString("base64")
-      return {
-        "x-codevisor-context": encoded,
-        "x-codevisor-context-signature": tokens.signContext(pluginId, encoded)
-      }
-    }
-
-  const contextHeaders = (scope: PaneTokenScope): Record<string, string> =>
-    signedContextHeaders(scope.pluginId)({
-      cwd: scope.cwd,
-      paneId: scope.paneId,
-      paneType: scope.paneType,
-      pluginId: scope.pluginId,
-      themeMode: scope.themeMode,
-      workspaceId: scope.workspaceId
-    })
-
-  /// Resolves the authenticated pane scope for a proxied request: an initial
-  /// `?codevisorPaneToken=` exchange, an established cookie session, or (for
-  /// upgrades only) the loopback exemption.
-  const authenticate = (
-    pluginId: string,
-    request: IncomingMessage,
-    url: URL
-  ): { scope: PaneTokenScope; viaQueryToken: boolean } | undefined => {
-    const queryToken = url.searchParams.get(PANE_TOKEN_QUERY_PARAM)
-    if (queryToken !== null) {
-      const scope = tokens.exchange(queryToken, pluginId)
-      if (scope !== undefined) {
-        return { scope, viaQueryToken: true }
-      }
-    }
-    const cookieToken = readCookieValue(request.headers.cookie, paneCookieName(pluginId))
-    if (cookieToken !== undefined) {
-      const scope = tokens.verify(cookieToken, pluginId)
-      if (scope !== undefined) {
-        return { scope, viaQueryToken: false }
-      }
-    }
-    return undefined
-  }
+  const signedContextHeaders = makeSignedContextHeaders(tokens)
+  const contextHeaders = makePaneContextHeaders(signedContextHeaders)
+  const authenticate = makePaneAuthenticator(tokens)
 
   /// The installed set changed (install, update, link, uninstall): let the
   /// MCP gateway refresh which plugin tools it advertises to agents.
@@ -385,32 +341,7 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
     issuePaneToken: async (pluginId, paneId, tokenRequest) => {
       const plugin = findPluginOrFail(scan(), pluginId)
       assertEnabled(pluginId)
-      const pane = plugin.manifest.panes.find(
-        (candidate) => candidate.type === tokenRequest.paneType
-      )
-      if (pane === undefined) {
-        throw new PluginsError(
-          "notFound",
-          `Plugin ${pluginId} has no pane type: ${tokenRequest.paneType}`
-        )
-      }
-      const issued = tokens.issue({
-        paneId,
-        paneType: pane.type,
-        pluginId,
-        ...(tokenRequest.cwd === undefined ? {} : { cwd: tokenRequest.cwd }),
-        ...(tokenRequest.themeMode === undefined ? {} : { themeMode: tokenRequest.themeMode }),
-        ...(tokenRequest.workspaceId === undefined ? {} : { workspaceId: tokenRequest.workspaceId })
-      })
-      const query = new URLSearchParams({
-        paneId,
-        [PANE_TOKEN_QUERY_PARAM]: issued.token
-      })
-      return {
-        expiresAt: issued.expiresAt,
-        path: `/v1/plugins/${pluginId}/app${pane.path}?${query.toString()}`,
-        token: issued.token
-      }
+      return issuePluginPaneToken(tokens, plugin, pluginId, paneId, tokenRequest)
     },
     invokeTool: async (pluginId, toolName, args, context = {}) => {
       const plugin = findPluginOrFail(scan(), pluginId)
