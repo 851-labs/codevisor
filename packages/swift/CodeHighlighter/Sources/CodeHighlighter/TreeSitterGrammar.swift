@@ -46,6 +46,19 @@ final class TreeSitterGrammar: @unchecked Sendable {
 
   private init(name: String) throws {
     self.name = name
+    let pointer = try Self.language(named: name)
+    language = pointer
+    let bases = TreeSitterQuerySources.bases(for: name)
+    highlights = try TreeSitterQuery(
+      language: pointer, source: TreeSitterQuerySources.source("highlights", for: name, bases: bases), name: name)
+    let injectionSource = try TreeSitterQuerySources.source("injections", for: name, bases: bases)
+    injections =
+      injectionSource.isEmpty ? nil : try TreeSitterQuery(language: pointer, source: injectionSource, name: name)
+    let localSource = highlights.usesLocals ? try TreeSitterQuerySources.source("locals", for: name, bases: bases) : ""
+    locals = localSource.isEmpty ? nil : try TreeSitterQuery(language: pointer, source: localSource, name: name)
+  }
+
+  private static func language(named name: String) throws -> OpaquePointer {
     let pointer: OpaquePointer?
     switch name {
     case "bash": pointer = tree_sitter_bash()
@@ -73,32 +86,6 @@ final class TreeSitterGrammar: @unchecked Sendable {
     default: pointer = nil
     }
     guard let pointer else { throw TreeSitterError.unavailable(name) }
-    language = pointer
-    var bases = [name]
-    if name == "cpp" { bases = ["c", "cpp"] }
-    if ["javascript", "jsx", "typescript", "tsx"].contains(name) {
-      bases = ["javascript"]
-      if name == "typescript" || name == "tsx" { bases.append("typescript") }
-    }
-    func source(_ kind: String) throws -> String {
-      var fragments = try bases.compactMap { base -> String? in
-        guard let url = Bundle.module.url(forResource: kind, withExtension: "scm", subdirectory: "Queries/\(base)")
-        else { return nil }
-        return try String(contentsOf: url, encoding: .utf8)
-      }
-      if kind == "highlights", ["javascript", "jsx", "tsx"].contains(name),
-        let url = Bundle.module.url(
-          forResource: "highlights-jsx", withExtension: "scm", subdirectory: "Queries/javascript")
-      {
-        fragments.append(try String(contentsOf: url, encoding: .utf8))
-      }
-      return fragments.joined(separator: "\n")
-    }
-    highlights = try TreeSitterQuery(language: pointer, source: source("highlights"), name: name)
-    let injectionSource = try source("injections")
-    injections =
-      injectionSource.isEmpty ? nil : try TreeSitterQuery(language: pointer, source: injectionSource, name: name)
-    let localSource = highlights.usesLocals ? try source("locals") : ""
-    locals = localSource.isEmpty ? nil : try TreeSitterQuery(language: pointer, source: localSource, name: name)
+    return pointer
   }
 }
