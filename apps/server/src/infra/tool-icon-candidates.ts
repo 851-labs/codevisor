@@ -110,3 +110,33 @@ export const rankMcpIcons = (
     })
     .toSorted((lhs, rhs) => lhs.rank - rhs.rank || lhs.order - rhs.order)
     .map(({ icon }) => icon)
+
+/// Names that only resolve on a local or private network. Their hosts are
+/// never sent to a public favicon service.
+const PRIVATE_SUFFIXES = [
+  ".localhost",
+  ".local",
+  ".internal",
+  ".intranet",
+  ".corp",
+  ".lan",
+  ".home",
+  ".arpa",
+  ".test",
+  ".example",
+  ".invalid"
+]
+
+/// Whether a host is a public internet name: dotted, not an IP address,
+/// and not under a local or private-use suffix.
+export const isPublicHost = (host: string): boolean => {
+  const name = host.toLowerCase()
+  if (!name.includes(".") || name.includes(":") || /^[\d.]+$/.test(name)) return false
+  return !PRIVATE_SUFFIXES.some((suffix) => name.endsWith(suffix))
+}
+
+/// A public favicon index, asked only when a site's own icons can't be
+/// fetched (bot protection turns away server-side requests to some sites).
+/// It answers 404 when it has no icon.
+export const publicFaviconUrl = (host: string): string =>
+  `https://icons.duckduckgo.com/ip3/${encodeURIComponent(host)}.ico`

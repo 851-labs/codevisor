@@ -15,7 +15,8 @@ enum TranscriptWorkedSectionProjection {
       message.turn.defersWorkedSection(kind)
       ? message.turn.deferredDetailItemId
       : nil
-    guard !items.isEmpty || deferredDetailID != nil else { return false }
+    guard !items.isEmpty || deferredDetailID != nil || message.turn.showsLiveWorkedHeader(kind)
+    else { return false }
 
     let identity = TranscriptWorkedSectionIdentity(messageID: message.id, kind: kind)
     appendHeader(message, kind: kind, lifecycle: lifecycle, identity: identity, to: &rows)
@@ -38,10 +39,6 @@ enum TranscriptWorkedSectionProjection {
     identity: TranscriptWorkedSectionIdentity,
     to rows: inout [TranscriptPresentationRow]
   ) {
-    // Once a plan lands, the planning section settles like a finished
-    // response while the work after the plan is the live one.
-    let isFixedExpanded = message.turn.isWorkedSectionLive(kind)
-    let defaultExpanded = isFixedExpanded
     rows.append(
       .init(
         id: workedHeaderID(
@@ -54,7 +51,7 @@ enum TranscriptWorkedSectionProjection {
           kind: kind,
           lifecycle: lifecycle
         ),
-        estimatedHeight: 34,
+        estimatedHeight: 18,
         measurementRevision: TranscriptAssistantRowProjection.measurementRevision(
           for: .assistant(message),
           waitingOnBackgroundTask: nil
@@ -62,10 +59,9 @@ enum TranscriptWorkedSectionProjection {
         spacingAfter: 12,
         workedSection: .init(
           identity: identity,
-          role: .header(
-            defaultExpanded: defaultExpanded,
-            isFixedExpanded: isFixedExpanded
-          )
+          // Collapsed by default, live or not: a live header rolls up
+          // what the turn is doing in its own label.
+          role: .header(defaultExpanded: false, isFixedExpanded: false)
         )
       ))
   }

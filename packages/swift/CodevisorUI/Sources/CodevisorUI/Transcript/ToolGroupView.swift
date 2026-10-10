@@ -21,6 +21,17 @@ public struct ToolGroupView: View {
   private var store: TranscriptDisclosureStore { disclosureStore ?? .previews }
 
   public var body: some View {
+    // A lone described workflow reads as its own row, not a group of one:
+    // it draws, discloses, and shimmers exactly like any other call.
+    if let solo = group.soloWorkflow {
+      ToolCallRow(call: solo, isTurnActive: isTurnActive)
+    } else {
+      groupBody
+    }
+  }
+
+  @ViewBuilder
+  private var groupBody: some View {
     let disclosure = store.toolGroupDisclosure(id: group.id)
     let isExpanded = disclosure.isExpanded
     let header = ToolGroupHeaderPresentation(
@@ -55,17 +66,9 @@ public struct ToolGroupView: View {
       }
 
       TranscriptDisclosureContentReveal(isExpanded: isExpanded) {
-        Group {
-          // A lone workflow already reads as its own row: open its details
-          // directly instead of repeating its title in a nested row.
-          if let solo = header.soloWorkflow {
-            if solo.hasPresentableDetails { ToolCallContentCard(call: solo) }
-          } else {
-            VStack(alignment: .leading, spacing: 8) {
-              ForEach(group.calls) { call in
-                ToolCallRow(call: call, isTurnActive: isTurnActive)
-              }
-            }
+        VStack(alignment: .leading, spacing: 8) {
+          ForEach(group.calls) { call in
+            ToolCallRow(call: call, isTurnActive: isTurnActive)
           }
         }
         .padding(.top, 8)
@@ -79,27 +82,23 @@ public struct ToolGroupView: View {
 struct ToolGroupHeaderPresentation {
   let title: String
   let isShimmering: Bool
-  /// Set when the group is a single described gateway workflow, which the
-  /// view renders as one row rather than a group holding a row.
-  let soloWorkflow: ToolCall?
 
   @MainActor
   init(group: ToolCallGroup, isExpanded: Bool, isTurnActive: Bool, totalsCache: DiffTotalsCache) {
-    let solo = group.calls.count == 1 && group.calls[0].integrationDescription != nil ? group.calls[0] : nil
-    soloWorkflow = solo
-    if let solo {
-      // A single workflow is its own row: it shimmers while running,
-      // however it is disclosed, and always carries its own title.
-      isShimmering = isTurnActive && !solo.isSettled
-      title = solo.displayTitle(diffTotals: totalsCache.totals(for: solo))
-      return
-    }
     isShimmering = !isExpanded && isTurnActive && group.hasUnsettledCall
     if isShimmering, let latestCall = group.calls.last {
       title = latestCall.displayTitle(diffTotals: totalsCache.totals(for: latestCall))
     } else {
       title = ToolCallSummary.describe(group.calls)
     }
+  }
+}
+
+extension ToolCallGroup {
+  /// The call when this group is a single described gateway workflow, which
+  /// renders as a plain row rather than a group holding one row.
+  var soloWorkflow: ToolCall? {
+    calls.count == 1 && calls[0].integrationDescription != nil ? calls[0] : nil
   }
 }
 

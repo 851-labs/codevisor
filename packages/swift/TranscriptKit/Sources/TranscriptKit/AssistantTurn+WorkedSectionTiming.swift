@@ -82,6 +82,23 @@ extension AssistantTurn {
     }
   }
 
+  /// Whether `kind` shows its header before any work lands: once the
+  /// provider's first event arrives, a live section's header is the turn's
+  /// activity label. Until then the waiting row keeps its place.
+  public func showsLiveWorkedHeader(_ kind: TranscriptWorkedSectionKind) -> Bool {
+    guard isWorkedSectionLive(kind), finalText == nil else { return false }
+    return isThinking
+      || entries.contains { entry in
+        if case .contextCompaction = entry { return false }
+        return !entry.isBlankText
+      }
+  }
+
+  /// The running section's elapsed time ("12s"), shown after its activity.
+  public func workedSectionElapsed(_ kind: TranscriptWorkedSectionKind, now: Date) -> String {
+    Self.formatWorkedDuration(now.timeIntervalSince(workedSectionStart(kind) ?? now))
+  }
+
   static func formatWorkedDuration(_ interval: TimeInterval) -> String {
     let seconds = max(0, Int(interval.rounded(.down)))
     return seconds < 60 ? "\(seconds)s" : "\(seconds / 60)m \(seconds % 60)s"

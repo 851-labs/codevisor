@@ -94,33 +94,19 @@ struct ToolGroupHeaderPresentationTests {
         ])
       ])
     )
-    for isExpanded in [false, true] {
-      let running = ToolGroupHeaderPresentation(
-        group: ToolCallGroup(calls: [call]), isExpanded: isExpanded, isTurnActive: true, totalsCache: DiffTotalsCache()
-      )
-      #expect(running.soloWorkflow?.toolCallId == "wf")
-      #expect(running.title == "Waiting on reviewers")
-      #expect(running.isShimmering)
-    }
+    #expect(ToolCallGroup(calls: [call]).soloWorkflow?.toolCallId == "wf")
+    #expect(call.displayTitle == "Waiting on reviewers")
     call.status = .completed
-    let done = ToolGroupHeaderPresentation(
-      group: ToolCallGroup(calls: [call]), isExpanded: false, isTurnActive: true, totalsCache: DiffTotalsCache()
-    )
-    #expect(done.title == "Reviewing open PRs")
-    #expect(!done.isShimmering)
+    #expect(call.displayTitle == "Reviewing open PRs")
 
     // Two workflows stay a group, and an undescribed one keeps the old label.
-    let pair = ToolGroupHeaderPresentation(
-      group: ToolCallGroup(calls: [
-        call, ToolCall(toolCallId: "b", title: "mcp__codevisor__execute", status: .completed),
-      ]),
-      isExpanded: false, isTurnActive: false, totalsCache: DiffTotalsCache()
-    )
+    let pair = ToolCallGroup(calls: [
+      call, ToolCall(toolCallId: "b", title: "mcp__codevisor__execute", status: .completed),
+    ])
     #expect(pair.soloWorkflow == nil)
-    let legacy = ToolGroupHeaderPresentation(
-      group: ToolCallGroup(calls: [ToolCall(toolCallId: "c", title: "mcp__codevisor__execute", status: .completed)]),
-      isExpanded: false, isTurnActive: false, totalsCache: DiffTotalsCache()
-    )
+    let legacy = ToolCallGroup(calls: [
+      ToolCall(toolCallId: "c", title: "mcp__codevisor__execute", status: .completed)
+    ])
     #expect(legacy.soloWorkflow == nil)
   }
 

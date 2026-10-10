@@ -31,7 +31,15 @@ extension TranscriptAssistantRowProjection {
       lifecycle: lifecycle,
       to: &rows
     )
-    appendActivityIfNeeded(message, lifecycle: lifecycle, to: &rows)
+    // A ticking worked header already says what the turn is doing.
+    let hasLiveWorkedHeader = rows.contains { row in
+      guard case .header? = row.workedSection?.role, let kind = row.workedSection?.identity.kind
+      else { return false }
+      return message.turn.workedSectionTicks(kind)
+    }
+    if !hasLiveWorkedHeader {
+      appendActivityIfNeeded(message, lifecycle: lifecycle, to: &rows)
+    }
     // A failed turn stays in the active slot until the next bubble starts,
     // and the session-level banner defers to it. Without this row the
     // failure either never appeared (turns with worked items) or was

@@ -334,11 +334,6 @@ struct AssistantTurnBody: View {
           .buttonStyle(TranscriptWorkedSectionButtonStyle())
         }
 
-        // As on macOS: the divider belongs to the disclosure header,
-        // not its revealed contents, so a rendered Worked section
-        // keeps the line collapsed and expanded alike.
-        Divider()
-
         TranscriptDisclosureContentReveal(isExpanded: isExpanded && !items.isEmpty) {
           VStack(alignment: .leading, spacing: 12) {
             TurnItemsView(

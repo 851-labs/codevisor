@@ -40,13 +40,21 @@ struct CodevisorWorkflowDetailsTests {
     #expect(ToolCall(toolCallId: "x", title: "Bash").codevisorWorkflowDetails == nil)
   }
 
-  @Test("A failed workflow reports its error instead of a result")
+  @Test("A failed workflow reports its whole error, without stack frames, instead of a result")
   func failure() throws {
+    let long = String(repeating: "x", count: 120)
     let failed = try #require(
-      workflow(status: .failed, rawOutput: .string("Error: boom\n    at <anonymous> (x.js:1:2)"))
-        .codevisorWorkflowDetails)
-    #expect(failed.failure == "boom")
+      workflow(
+        status: .failed,
+        rawOutput: .string("Error: boom\n\(long)\n    at <anonymous> (x.js:1:2)\n\n    at toError (file:///a.js:1:1)\n")
+      )
+      .codevisorWorkflowDetails)
+    #expect(failed.failure == "Error: boom\n\(long)")
     #expect(failed.result == nil)
+    // Only frames, or nothing at all, still says the workflow failed.
+    let bare = try #require(
+      workflow(status: .failed, rawOutput: .string("    at <anonymous> (x.js:1:2)")).codevisorWorkflowDetails)
+    #expect(bare.failure == "The workflow failed")
   }
 
   @Test("Files the workflow produced are shown once each")

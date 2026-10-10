@@ -5,12 +5,12 @@ import { join } from "node:path"
 import sharp from "sharp"
 import { afterEach, describe, expect, it } from "vitest"
 
+import { publicFaviconUrl } from "./tool-icon-candidates.js"
 import {
   allowedMcpIconUrl,
   isInertSvg,
   makeToolIconStore,
   normalizeIcon,
-  pageIconCandidates,
   registrableDomain,
   sniffImageFormat,
   TOOL_ICON_MAX_BYTES,
@@ -59,6 +59,9 @@ const html = (head: string) => (): Response =>
 
 const image = (data: Uint8Array) => (): Response => new Response(Buffer.from(data))
 
+/// What bot protection answers a server-side request with.
+const blocked = (): Response => new Response("challenge", { status: 403 })
+
 /// A response that claims to come from `url`, as a followed redirect does.
 const redirected = (route: () => Response, url: string) => (): Response => {
   const response = route()
@@ -106,50 +109,6 @@ const store = async (
 }
 
 const DAY = 24 * 60 * 60 * 1000
-
-describe("page icon candidates", () => {
-  it("prefers sized icons near 64px, then SVGs, small rasters, unsized icons, and touch icons", () => {
-    const page = `
-      <link rel="apple-touch-icon" href="/touch.png">
-      <link rel="icon" href="/plain.ico">
-      <link rel="icon" sizes="16x16" href="/16.png">
-      <link rel="icon" type="image/svg+xml" href="/logo.svg">
-      <link rel="shortcut icon" sizes="32x32 192x192" href="/192.png">
-      <link rel=icon sizes=96x96 href=/96.png?a=1&amp;b=2>
-      <link rel="mask-icon" href="/mask.svg">
-      <link rel="icon" href="javascript:alert(1)">
-      <link rel="icon" href="http://[bad">
-      <link rel="icon">
-      <link rel="stylesheet" href="/style.css">
-      <link href="/no-rel.png">
-      <link rel="icon" sizes="large" href="/unsized-too.png">
-      <link rel="icon" href="/96.png?a=1&b=2">`
-    expect(pageIconCandidates(page, "https://example.com/start")).toEqual([
-      "https://example.com/96.png?a=1&b=2",
-      "https://example.com/logo.svg",
-      "https://example.com/192.png",
-      "https://example.com/16.png",
-      "https://example.com/plain.ico",
-      "https://example.com/unsized-too.png",
-      "https://example.com/touch.png"
-    ])
-  })
-
-  it("chooses the variant a page declares for the appearance", () => {
-    const page = `
-      <link rel="icon" href="/light.png" sizes="64x64" media="(prefers-color-scheme: light)">
-      <link rel="icon" href="/dark.png" sizes="64x64" media="(prefers-color-scheme: dark)">
-      <link rel="icon" href="data:image/png;base64,AAAA" sizes="any">`
-    expect(pageIconCandidates(page, "https://example.com/", "light")[0]).toBe(
-      "https://example.com/light.png"
-    )
-    expect(pageIconCandidates(page, "https://example.com/", "dark")).toEqual([
-      "https://example.com/dark.png",
-      "data:image/png;base64,AAAA",
-      "https://example.com/light.png"
-    ])
-  })
-})
 
 describe("icon images", () => {
   it("recognizes formats by their bytes", async () => {
@@ -325,6 +284,30 @@ describe("site icons", () => {
     const { fetchImpl } = fakeFetch({ "https://linear.app/favicon.ico": image(ICO) })
     const icons = makeToolIconStore({ dir: blocked, fetchImpl })
     expect((await icons.site("https://linear.app", "light"))?.contentType).toBe("image/x-icon")
+  })
+
+  it("asks a public favicon index for public sites that turn the server away", async () => {
+    const { icons, requested } = await store({
+      "https://www.emojis.com/": blocked,
+      "https://www.emojis.com/favicon.ico": blocked,
+      [publicFaviconUrl("www.emojis.com")]: image(ICO)
+    })
+    expect((await icons.site("https://www.emojis.com/search", "light"))?.contentType).toBe(
+      "image/x-icon"
+    )
+    expect(requested()).toEqual([
+      "https://www.emojis.com/",
+      "https://www.emojis.com/favicon.ico",
+      "https://icons.duckduckgo.com/ip3/www.emojis.com.ico"
+    ])
+  })
+
+  it("never sends private hosts to the public favicon index", async () => {
+    const { icons, requested } = await store({})
+    for (const origin of ["http://localhost:3000", "http://10.0.0.5", "https://wiki.corp"]) {
+      expect(await icons.site(origin, "light")).toBeUndefined()
+    }
+    expect(requested().some((url) => url.includes("duckduckgo"))).toBe(false)
   })
 
   it("shares one fetch between concurrent requests", async () => {
