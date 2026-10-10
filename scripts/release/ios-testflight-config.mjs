@@ -8,26 +8,16 @@ export const IOS_BUNDLE_ID = "com.dylanplayer.codevisor.ios"
 export function testFlightConfiguration(version, environment = process.env) {
   if (!/^\d+\.\d+\.\d+$/.test(version ?? ""))
     throw new Error("A numeric marketing version is required.")
-  const required = (key) => {
-    const value = environment[key]
-    if (!value) throw new Error(`${key} is required for iOS TestFlight CI.`)
-    return value
-  }
-  const buildNumber = required("CODEVISOR_BUILD_NUMBER")
-  const sourceRevision = required("CODEVISOR_SOURCE_REVISION")
-  const teamId = required("APPLE_TEAM_ID")
-  const keyId = required("APP_STORE_CONNECT_API_KEY_ID")
-  const issuerId = required("APP_STORE_CONNECT_ISSUER_ID")
-  if (!/^[1-9]\d*$/.test(buildNumber))
-    throw new Error("The iOS build number must be a positive integer.")
-  if (!/^[0-9a-f]{40}$/.test(sourceRevision))
-    throw new Error("The iOS source revision must be a full commit SHA.")
-  if (!/^[A-Z0-9]{10}$/.test(teamId))
-    throw new Error("APPLE_TEAM_ID must be a 10-character team ID.")
-  if (!/^[A-Z0-9]+$/.test(keyId)) throw new Error("Invalid App Store Connect key ID.")
-  const privateKey = Buffer.from(required("APP_STORE_CONNECT_API_KEY_BASE64"), "base64").toString(
-    "utf8"
-  )
+  const buildNumber = requiredTestFlightInput(environment, "CODEVISOR_BUILD_NUMBER")
+  const sourceRevision = requiredTestFlightInput(environment, "CODEVISOR_SOURCE_REVISION")
+  const teamId = requiredTestFlightInput(environment, "APPLE_TEAM_ID")
+  const keyId = requiredTestFlightInput(environment, "APP_STORE_CONNECT_API_KEY_ID")
+  const issuerId = requiredTestFlightInput(environment, "APP_STORE_CONNECT_ISSUER_ID")
+  validateTestFlightIdentity(buildNumber, sourceRevision, teamId, keyId)
+  const privateKey = Buffer.from(
+    requiredTestFlightInput(environment, "APP_STORE_CONNECT_API_KEY_BASE64"),
+    "base64"
+  ).toString("utf8")
   return {
     version,
     buildNumber,
@@ -38,6 +28,22 @@ export function testFlightConfiguration(version, environment = process.env) {
     privateKey,
     bundleId: IOS_BUNDLE_ID
   }
+}
+
+function requiredTestFlightInput(environment, key) {
+  const value = environment[key]
+  if (!value) throw new Error(`${key} is required for iOS TestFlight CI.`)
+  return value
+}
+
+function validateTestFlightIdentity(buildNumber, sourceRevision, teamId, keyId) {
+  if (!/^[1-9]\d*$/.test(buildNumber))
+    throw new Error("The iOS build number must be a positive integer.")
+  if (!/^[0-9a-f]{40}$/.test(sourceRevision))
+    throw new Error("The iOS source revision must be a full commit SHA.")
+  if (!/^[A-Z0-9]{10}$/.test(teamId))
+    throw new Error("APPLE_TEAM_ID must be a 10-character team ID.")
+  if (!/^[A-Z0-9]+$/.test(keyId)) throw new Error("Invalid App Store Connect key ID.")
 }
 
 export function exportOptions(teamId) {
