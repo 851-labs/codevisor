@@ -62,20 +62,27 @@ describe("Browser live preview", () => {
     const context = { sessionId: "preview", projectId: "preview" }
     const states: string[] = []
     const frames: string[] = []
+    const firstFrame = Promise.withResolvers<void>()
+    const openerActive = Promise.withResolvers<void>()
     const subscription = provider.subscribePreview!("preview", {
-      status: (status) => states.push(`${status.state}:${status.title}`),
-      frame: (data) => frames.push(data)
+      status: (status) => {
+        const label = `${status.state}:${status.title}`
+        states.push(label)
+        if (label === "active:Opener") openerActive.resolve()
+      },
+      frame: (data) => {
+        frames.push(data)
+        firstFrame.resolve()
+      }
     })
     try {
       subscription.watch(800)
       value(await provider.invoke(context, "use_backend", { backend: "managed" }))
       value(await provider.invoke(context, "tabs", { action: "new", url: `${origin}/` }))
-      for (let attempt = 0; frames.length === 0 && attempt < 100; attempt += 1)
-        await new Promise((resolve) => setTimeout(resolve, 50))
+      await firstFrame.promise
       // JPEG frames of the agent's tab, titled after its page.
       expect(Buffer.from(frames[0]!, "base64").subarray(0, 3).toString("hex")).toBe("ffd8ff")
-      for (let attempt = 0; !states.includes("active:Opener") && attempt < 100; attempt += 1)
-        await new Promise((resolve) => setTimeout(resolve, 50))
+      await openerActive.promise
       expect(states).toContain("active:Opener")
 
       await provider.finishTurn?.("preview")
