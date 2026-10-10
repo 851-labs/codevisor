@@ -1,3 +1,4 @@
+import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { run, setup } from "./test-support.js"
@@ -15,7 +16,8 @@ describe("CodexProvider", () => {
   })
 
   it("holds requestUserInput open until answered, mapping notes onto the reply", async () => {
-    const { client, created, events } = await setup()
+    const { client, created, events, nextEvent } = await setup()
+    const questionAsked = nextEvent(isQuestion)
     const request = client.serverRequest("item/tool/requestUserInput", {
       itemId: "item-q1",
       questions: [
@@ -34,7 +36,7 @@ describe("CodexProvider", () => {
       threadId: "thread-new",
       turnId: "turn-1"
     })
-    await Promise.resolve()
+    await questionAsked
     const asked = events.at(-1)?.payload as Record<string, unknown>
     expect(asked).toMatchObject({
       questionId: "item-q1",
@@ -76,14 +78,15 @@ describe("CodexProvider", () => {
   })
 
   it("cancel rejects the held question so the model sees it was dismissed", async () => {
-    const { client, created, events } = await setup()
+    const { client, created, events, nextEvent } = await setup()
+    const questionAsked = nextEvent(isQuestion)
     const request = client.serverRequest("item/tool/requestUserInput", {
       itemId: "item-q2",
       questions: [{ id: "q", isOther: true, options: [{ label: "A" }], question: "Pick" }],
       threadId: "thread-new",
       turnId: "turn-1"
     })
-    await Promise.resolve()
+    await questionAsked
     await run(created!.handle.answerQuestion!("item-q2", { outcome: "cancelled" }))
     await expect(request).rejects.toThrow("dismissed")
     expect(events.at(-1)?.payload).toMatchObject({
@@ -132,7 +135,8 @@ describe("CodexProvider", () => {
 
   it("auto-resolves timed questions with empty answers, codex-TUI style", async () => {
     vi.useFakeTimers()
-    const { client, events } = await setup()
+    const { client, events, nextEvent } = await setup()
+    const questionAsked = nextEvent(isQuestion)
     const request = client.serverRequest("item/tool/requestUserInput", {
       autoResolutionMs: 60_000,
       itemId: "item-q3",
@@ -140,7 +144,7 @@ describe("CodexProvider", () => {
       threadId: "thread-new",
       turnId: "turn-1"
     })
-    await Promise.resolve()
+    await questionAsked
     vi.advanceTimersByTime(60_000)
     await expect(request).resolves.toEqual({ answers: {} })
     expect(events.at(-1)?.payload).toMatchObject({
@@ -186,7 +190,8 @@ describe("CodexProvider", () => {
   })
 
   it("maps MCP elicitation forms onto questions and coerces typed answers back", async () => {
-    const { client, created, events } = await setup()
+    const { client, created, events, nextEvent } = await setup()
+    const questionAsked = nextEvent(isQuestion)
     const request = client.serverRequest("mcpServer/elicitation/request", {
       message: "GitHub needs a few details.",
       mode: "form",
@@ -211,7 +216,7 @@ describe("CodexProvider", () => {
       threadId: "thread-new",
       turnId: null
     })
-    await Promise.resolve()
+    await questionAsked
     const asked = events.at(-1)?.payload as Record<string, unknown>
     expect(asked.sessionUpdate).toBe("question")
     expect(asked.message).toBe("GitHub needs a few details.")
@@ -252,7 +257,8 @@ describe("CodexProvider", () => {
   })
 
   it("cancels MCP elicitations with the MCP action and declines url mode", async () => {
-    const { client, created, events } = await setup()
+    const { client, created, events, nextEvent } = await setup()
+    const questionAsked = nextEvent(isQuestion)
     const request = client.serverRequest("mcpServer/elicitation/request", {
       message: "Pick one.",
       mode: "form",
@@ -264,7 +270,7 @@ describe("CodexProvider", () => {
       threadId: "thread-new",
       turnId: null
     })
-    await Promise.resolve()
+    await questionAsked
     const asked = events.at(-1)?.payload as Record<string, unknown>
     expect(asked.questions).toEqual([
       {
@@ -295,7 +301,7 @@ describe("CodexProvider", () => {
   })
 
   it("surfaces approvals as Allow/Deny questions with item context", async () => {
-    const { client, created, events } = await setup()
+    const { client, created, events, nextEvent } = await setup()
     // The item opens first; its command becomes the approval prompt's detail.
     client.emit("item/started", {
       item: {
@@ -307,12 +313,13 @@ describe("CodexProvider", () => {
       threadId: "thread-new",
       turnId: "turn-1"
     })
+    const approvalAsked = nextEvent(isQuestion)
     const approval = client.serverRequest("item/commandExecution/requestApproval", {
       itemId: "cmd-1",
       threadId: "thread-new",
       turnId: "turn-1"
     })
-    await Promise.resolve()
+    await approvalAsked
     const asked = events.at(-1)?.payload as Record<string, unknown>
     expect(asked).toMatchObject({
       message: "rm -rf build",
@@ -336,12 +343,13 @@ describe("CodexProvider", () => {
     await expect(approval).resolves.toEqual({ decision: "acceptForSession" })
 
     // Deny and dismissal map onto decline/cancel.
+    const denialAsked = nextEvent(isQuestion)
     const denied = client.serverRequest("item/fileChange/requestApproval", {
       itemId: "edit-1",
       threadId: "thread-new",
       turnId: "turn-1"
     })
-    await Promise.resolve()
+    await denialAsked
     const deniedAsk = events.at(-1)?.payload as Record<string, unknown>
     await run(
       created!.handle.answerQuestion!(deniedAsk.questionId as string, {
@@ -351,12 +359,13 @@ describe("CodexProvider", () => {
     )
     await expect(denied).resolves.toEqual({ decision: "decline" })
 
+    const dismissalAsked = nextEvent(isQuestion)
     const dismissed = client.serverRequest("item/permissions/requestApproval", {
       itemId: "perm-1",
       threadId: "thread-new",
       turnId: "turn-1"
     })
-    await Promise.resolve()
+    await dismissalAsked
     const dismissedAsk = events.at(-1)?.payload as Record<string, unknown>
     await run(
       created!.handle.answerQuestion!(dismissedAsk.questionId as string, { outcome: "cancelled" })
@@ -376,3 +385,7 @@ describe("CodexProvider", () => {
     ).rejects.toThrow("no questions")
   })
 })
+
+const isQuestion = (event: RuntimeEvent): boolean =>
+  event.kind === "session.output" &&
+  (event.payload as Record<string, unknown>).sessionUpdate === "question"
