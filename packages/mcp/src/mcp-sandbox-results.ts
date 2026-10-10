@@ -114,6 +114,42 @@ const callToolErrorMessage = (result: CallToolResult): string => {
   return messages.join("\n") || "Tool call failed"
 }
 
+const sandboxTextBlocks = (content: ReadonlyArray<unknown>): Array<string> =>
+  content.flatMap((block) =>
+    typeof block === "object" && block !== null && (block as { type?: unknown }).type === "text"
+      ? [String((block as { text?: unknown }).text ?? "")]
+      : []
+  )
+
+const sandboxArtifactReferences = (content: ReadonlyArray<unknown>): Array<unknown> =>
+  content.filter(
+    (block) =>
+      typeof block === "object" &&
+      block !== null &&
+      (block as { type?: unknown }).type === "artifact_ref"
+  )
+
+const sandboxRawValue = (structuredContent: unknown, textBlocks: Array<string>): unknown =>
+  structuredContent ??
+  (() => {
+    if (textBlocks.length === 0) return undefined
+    const text = textBlocks.length === 1 ? textBlocks[0]! : textBlocks
+    if (typeof text !== "string") return text
+    try {
+      return JSON.parse(text) as unknown
+    } catch {
+      return text
+    }
+  })()
+
+const sandboxValueWithArtifacts = (rawValue: unknown, artifacts: Array<unknown>): unknown => {
+  if (artifacts.length === 0) return rawValue
+  if (typeof rawValue === "object" && rawValue !== null && !Array.isArray(rawValue)) {
+    return { ...rawValue, artifacts }
+  }
+  return { value: rawValue, artifacts }
+}
+
 /// Native Computer Use and browser-client methods reject their promises on a
 /// failed action. Mirror that behavior inside execute instead of handing the
 /// model a truthy `{ isError: true }` object that it can accidentally ignore.
@@ -129,34 +165,10 @@ export const sandboxSuccessfulToolResult = async (
   }
   if (!Array.isArray(transformed.content)) return transformed
 
-  const textBlocks = transformed.content.flatMap((block) =>
-    typeof block === "object" && block !== null && (block as { type?: unknown }).type === "text"
-      ? [String((block as { text?: unknown }).text ?? "")]
-      : []
-  )
-  const artifacts = transformed.content.filter(
-    (block) =>
-      typeof block === "object" &&
-      block !== null &&
-      (block as { type?: unknown }).type === "artifact_ref"
-  )
-  const rawValue: unknown =
-    transformed.structuredContent ??
-    (() => {
-      if (textBlocks.length === 0) return undefined
-      const text = textBlocks.length === 1 ? textBlocks[0]! : textBlocks
-      if (typeof text !== "string") return text
-      try {
-        return JSON.parse(text) as unknown
-      } catch {
-        return text
-      }
-    })()
-  if (artifacts.length === 0) return rawValue
-  if (typeof rawValue === "object" && rawValue !== null && !Array.isArray(rawValue)) {
-    return { ...rawValue, artifacts }
-  }
-  return { value: rawValue, artifacts }
+  const textBlocks = sandboxTextBlocks(transformed.content)
+  const artifacts = sandboxArtifactReferences(transformed.content)
+  const rawValue: unknown = sandboxRawValue(transformed.structuredContent, textBlocks)
+  return sandboxValueWithArtifacts(rawValue, artifacts)
 }
 
 export const sandboxOutputContent = (
