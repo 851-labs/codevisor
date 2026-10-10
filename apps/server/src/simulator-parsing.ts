@@ -41,10 +41,8 @@ export interface RawRuntime {
   readonly supportedDeviceTypes?: ReadonlyArray<{ readonly identifier?: string }>
 }
 
-/// simctl's JSON, reduced to what clients show. Unavailable devices and
-/// runtimes (a runtime that was deleted) are left out.
-export const parseSimulatorList = (raw: RawList): SimulatorList => {
-  const deviceTypes: SimulatorDeviceType[] = (raw.devicetypes ?? []).flatMap((type) =>
+const simulatorDeviceTypes = (raw: RawList): SimulatorDeviceType[] =>
+  (raw.devicetypes ?? []).flatMap((type) =>
     type.identifier === undefined || type.name === undefined
       ? []
       : [
@@ -55,8 +53,9 @@ export const parseSimulatorList = (raw: RawList): SimulatorList => {
           }
         ]
   )
-  const typeById = new Map(deviceTypes.map((type) => [type.identifier, type]))
-  const runtimes: SimulatorRuntime[] = (raw.runtimes ?? []).flatMap((runtime) =>
+
+const simulatorRuntimes = (raw: RawList): SimulatorRuntime[] =>
+  (raw.runtimes ?? []).flatMap((runtime) =>
     runtime.identifier === undefined || runtime.isAvailable === false
       ? []
       : [
@@ -71,7 +70,12 @@ export const parseSimulatorList = (raw: RawList): SimulatorList => {
           }
         ]
   )
-  const runtimeById = new Map(runtimes.map((runtime) => [runtime.identifier, runtime]))
+
+const collectSimulatorDevices = (
+  raw: RawList,
+  runtimeById: ReadonlyMap<string, SimulatorRuntime>,
+  typeById: ReadonlyMap<string, SimulatorDeviceType>
+): SimulatorDevice[] => {
   const devices: SimulatorDevice[] = []
   for (const [runtimeId, entries] of Object.entries(raw.devices ?? {})) {
     const runtime = runtimeById.get(runtimeId)
@@ -79,25 +83,43 @@ export const parseSimulatorList = (raw: RawList): SimulatorList => {
     for (const device of entries) {
       if (device.isAvailable === false || !udidPattern.test(device.udid ?? "")) continue
       const typeId = device.deviceTypeIdentifier ?? ""
-      devices.push({
-        udid: device.udid!.toUpperCase(),
-        name: device.name ?? "Simulator",
-        state: device.state ?? "Shutdown",
-        runtime: {
-          identifier: runtime.identifier,
-          name: runtime.name,
-          platform: runtime.platform,
-          version: runtime.version
-        },
-        deviceType: typeById.get(typeId) ?? {
-          identifier: typeId,
-          name: typeId.slice(typeId.lastIndexOf(".") + 1),
-          productFamily: "iPhone"
-        },
-        ...(device.lastBootedAt === undefined ? {} : { lastBootedAt: device.lastBootedAt })
-      })
+      devices.push(simulatorListDevice(device, runtime, typeId, typeById))
     }
   }
+  return devices
+}
+
+const simulatorListDevice = (
+  device: RawDevice,
+  runtime: SimulatorRuntime,
+  typeId: string,
+  typeById: ReadonlyMap<string, SimulatorDeviceType>
+): SimulatorDevice => ({
+  udid: device.udid!.toUpperCase(),
+  name: device.name ?? "Simulator",
+  state: device.state ?? "Shutdown",
+  runtime: {
+    identifier: runtime.identifier,
+    name: runtime.name,
+    platform: runtime.platform,
+    version: runtime.version
+  },
+  deviceType: typeById.get(typeId) ?? {
+    identifier: typeId,
+    name: typeId.slice(typeId.lastIndexOf(".") + 1),
+    productFamily: "iPhone"
+  },
+  ...(device.lastBootedAt === undefined ? {} : { lastBootedAt: device.lastBootedAt })
+})
+
+/// simctl's JSON, reduced to what clients show. Unavailable devices and
+/// runtimes (a runtime that was deleted) are left out.
+export const parseSimulatorList = (raw: RawList): SimulatorList => {
+  const deviceTypes = simulatorDeviceTypes(raw)
+  const typeById = new Map(deviceTypes.map((type) => [type.identifier, type]))
+  const runtimes = simulatorRuntimes(raw)
+  const runtimeById = new Map(runtimes.map((runtime) => [runtime.identifier, runtime]))
+  const devices = collectSimulatorDevices(raw, runtimeById, typeById)
   devices.sort(
     (a, b) =>
       familyOrder(a.deviceType.productFamily) - familyOrder(b.deviceType.productFamily) ||
