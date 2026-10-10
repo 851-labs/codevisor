@@ -53,6 +53,37 @@ export const executeToolDescription = (inventory: string): string =>
     'Before writing code, call the `skills` tool with name "execute" for how to use this tool.'
   ].join("\n\n")
 
+const scoreCatalogTool = (
+  server: CatalogServer,
+  tool: Tool,
+  normalized: string,
+  terms: ReadonlyArray<string>
+): number => {
+  const serverName = server.name.toLowerCase()
+  const toolName = tool.name.toLowerCase()
+  const haystack =
+    `${server.name} ${tool.name} ${tool.title ?? ""} ${tool.description ?? ""}`.toLowerCase()
+  let score = normalized.length > 0 && haystack.includes(normalized) ? 40 : 0
+  for (const term of terms) {
+    if (serverName.includes(term)) score += 20
+    if (toolName.includes(term)) score += 12
+    if (haystack.includes(term)) score += 4
+  }
+  return score
+}
+
+const catalogSearchItem = (server: CatalogServer, tool: Tool, score: number) => {
+  return {
+    path: `${server.id}.${tool.name}`,
+    server: server.id,
+    serverName: server.name,
+    name: tool.name,
+    title: tool.title,
+    description: tool.description,
+    score
+  }
+}
+
 /// The discovery half of the gateway, split out of mcp-gateway: what tools
 /// exist (MCP servers, automation providers, plugin tools), how they are
 /// advertised (the inventory string), and how paths resolve to definitions.
@@ -161,25 +192,7 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
     const terms = normalized.split(/[^a-z0-9]+/).filter((term) => term.length > 1)
     const ranked = (await allTools(projectId, sessionId))
       .map(({ server, tool }) => {
-        const serverName = server.name.toLowerCase()
-        const toolName = tool.name.toLowerCase()
-        const haystack =
-          `${server.name} ${tool.name} ${tool.title ?? ""} ${tool.description ?? ""}`.toLowerCase()
-        let score = normalized.length > 0 && haystack.includes(normalized) ? 40 : 0
-        for (const term of terms) {
-          if (serverName.includes(term)) score += 20
-          if (toolName.includes(term)) score += 12
-          if (haystack.includes(term)) score += 4
-        }
-        return {
-          path: `${server.id}.${tool.name}`,
-          server: server.id,
-          serverName: server.name,
-          name: tool.name,
-          title: tool.title,
-          description: tool.description,
-          score
-        }
+        return catalogSearchItem(server, tool, scoreCatalogTool(server, tool, normalized, terms))
       })
       .filter((item) => normalized.length === 0 || item.score > 0)
       .toSorted((left, right) => right.score - left.score || left.path.localeCompare(right.path))
