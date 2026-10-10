@@ -117,7 +117,7 @@ enum TranscriptAssistantRowProjection {
     lifecycle: TranscriptBlockLifecycle,
     to rows: inout [TranscriptPresentationRow]
   ) -> Bool {
-    var projectedContent = appendWorkedSection(
+    var projectedContent = TranscriptWorkedSectionProjection.append(
       message,
       kind: .planning,
       items: message.turn.workedItemsBeforePlan,
@@ -133,7 +133,7 @@ enum TranscriptAssistantRowProjection {
       )
       projectedContent = true
       projectedContent =
-        appendWorkedSection(
+        TranscriptWorkedSectionProjection.append(
           message,
           kind: .implementation,
           items: message.turn.workedItemsAfterPlan,
@@ -345,9 +345,6 @@ enum TranscriptAssistantRowProjection {
     return activityRowEstimatedHeight
   }
 
-}
-
-extension TranscriptAssistantRowProjection {
   static func resultID(
     messageID: UUID,
     lifecycle: TranscriptBlockLifecycle
