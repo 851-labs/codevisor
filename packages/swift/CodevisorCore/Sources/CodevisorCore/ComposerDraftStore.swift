@@ -79,45 +79,12 @@ public final class ComposerDraftStore {
   /// Both persisted draft payloads, decoded. Built off the main actor at
   /// launch (see `ClientLaunchSnapshot`).
   struct Persisted: Sendable {
-    fileprivate var machines: PersistedDrafts?
-    fileprivate var panes: PersistedPaneDrafts?
+    var machines: ComposerPersistedDrafts?
+    var panes: ComposerPersistedPaneDrafts?
   }
 
   public nonisolated static let defaultKey = "composer-drafts"
   public nonisolated static let defaultPaneKey = "composer-pane-drafts"
-
-  fileprivate struct PersistedAttachment: Codable, Sendable {
-    var id: UUID
-    var name: String
-    var mimeType: String
-    var kind: String
-    /// "<id>/<name>" inside `attachmentFiles`. Absent in drafts written
-    /// before staging, whose bytes live under `attachmentKey(id)`.
-    var stagedPath: String?
-  }
-
-  fileprivate struct PersistedDraft: Codable, Sendable {
-    var projectId: UUID
-    var projectServerId: String?
-    var composerText: String
-    var attachments: [PersistedAttachment]
-    var selectedHarnessId: String?
-    var configByHarness: [String: [String: String]]
-    var modeId: String?
-    var isGoalComposerArmed: Bool
-    var isGoalEditing: Bool
-    var composerTextBeforeGoalEdit: String?
-    var usesImmediateDefaultsPersistence: Bool?
-    var selectionWasAutomaticallyCarried: Bool?
-  }
-
-  fileprivate struct PersistedDrafts: Codable, Sendable {
-    var machines: [String: PersistedDraft]
-  }
-
-  fileprivate struct PersistedPaneDrafts: Codable, Sendable {
-    var panes: [String: PersistedDraft]
-  }
 
   private let store: any PersistenceStore
   private let key: String
@@ -175,13 +142,14 @@ public final class ComposerDraftStore {
     var migratedBlobKeys: [String] = []
     if let machines = persisted.machines {
       drafts = machines.machines.mapValues {
-        Self.draft(from: $0, store: store, files: attachmentFiles, migratedBlobKeys: &migratedBlobKeys)
+        ComposerPersistedDraft.draft(
+          from: $0, store: store, files: attachmentFiles, migratedBlobKeys: &migratedBlobKeys)
       }
     }
     if let panes = persisted.panes {
       for (paneId, draft) in panes.panes {
         guard let id = UUID(uuidString: paneId) else { continue }
-        paneDrafts[id] = Self.draft(
+        paneDrafts[id] = ComposerPersistedDraft.draft(
           from: draft, store: store, files: attachmentFiles, migratedBlobKeys: &migratedBlobKeys)
       }
     }
@@ -200,112 +168,19 @@ public final class ComposerDraftStore {
     var persisted = Persisted()
     if let data = store.loadData(forKey: key) {
       do {
-        persisted.machines = try decoder.decode(PersistedDrafts.self, from: data)
+        persisted.machines = try decoder.decode(ComposerPersistedDrafts.self, from: data)
       } catch {
         handleCorruptPayload(store: store, key: key, data: data, error: error)
       }
     }
     if let data = store.loadData(forKey: paneKey) {
       do {
-        persisted.panes = try decoder.decode(PersistedPaneDrafts.self, from: data)
+        persisted.panes = try decoder.decode(ComposerPersistedPaneDrafts.self, from: data)
       } catch {
         handleCorruptPayload(store: store, key: paneKey, data: data, error: error)
       }
     }
     return persisted
-  }
-
-  private static func draft(
-    from persisted: PersistedDraft,
-    store: any PersistenceStore,
-    files: ComposerAttachmentFileStore,
-    migratedBlobKeys: inout [String]
-  ) -> Draft {
-    Draft(
-      projectId: persisted.projectId,
-      projectServerId: persisted.projectServerId,
-      composerText: persisted.composerText,
-      attachments: persisted.attachments.compactMap { attachment in
-        Self.restoreDraftAttachment(
-          attachment, store: store, files: files, migratedBlobKeys: &migratedBlobKeys)
-      },
-      selectedHarnessId: persisted.selectedHarnessId,
-      configByHarness: persisted.configByHarness,
-      modeId: persisted.modeId,
-      isGoalComposerArmed: persisted.isGoalComposerArmed,
-      isGoalEditing: persisted.isGoalEditing,
-      composerTextBeforeGoalEdit: persisted.composerTextBeforeGoalEdit,
-      // Absence identifies a draft written before explicit selections
-      // were persisted immediately.
-      usesImmediateDefaultsPersistence: persisted.usesImmediateDefaultsPersistence ?? false,
-      selectionWasAutomaticallyCarried: persisted.selectionWasAutomaticallyCarried ?? false
-    )
-  }
-
-  private static func restoreDraftAttachment(
-    _ attachment: PersistedAttachment,
-    store: any PersistenceStore,
-    files: ComposerAttachmentFileStore,
-    migratedBlobKeys: inout [String]
-  ) -> DraftAttachment? {
-    let fileURL: URL
-    if let stagedPath = attachment.stagedPath {
-      guard let url = files.fileURL(forRelativePath: stagedPath),
-        FileManager.default.fileExists(atPath: url.path)
-      else { return nil }
-      fileURL = url
-    } else {
-      guard
-        let url = Self.stageLegacyDraftAttachment(
-          attachment, store: store, files: files, migratedBlobKeys: &migratedBlobKeys)
-      else { return nil }
-      fileURL = url
-    }
-    return DraftAttachment(
-      id: attachment.id,
-      name: attachment.name,
-      mimeType: attachment.mimeType,
-      kind: attachment.kind,
-      fileURL: fileURL
-    )
-  }
-
-  private static func stageLegacyDraftAttachment(
-    _ attachment: PersistedAttachment,
-    store: any PersistenceStore,
-    files: ComposerAttachmentFileStore,
-    migratedBlobKeys: inout [String]
-  ) -> URL? {
-    // A draft from before staging: move its blob into a staged file
-    // once, then persist the reference instead.
-    let blobKey = Self.attachmentKey(attachment.id)
-    guard let data = store.loadData(forKey: blobKey),
-      let url = try? files.stage(data: data, id: attachment.id, name: attachment.name)
-    else { return nil }
-    migratedBlobKeys.append(blobKey)
-    return url
-  }
-
-  private static func persisted(from draft: Draft, files: ComposerAttachmentFileStore) -> PersistedDraft {
-    PersistedDraft(
-      projectId: draft.projectId,
-      projectServerId: draft.projectServerId,
-      composerText: draft.composerText,
-      attachments: draft.attachments.compactMap {
-        // A file outside the staging folder can't be referenced portably.
-        guard let stagedPath = files.relativePath(of: $0.fileURL) else { return nil }
-        return PersistedAttachment(
-          id: $0.id, name: $0.name, mimeType: $0.mimeType, kind: $0.kind, stagedPath: stagedPath)
-      },
-      selectedHarnessId: draft.selectedHarnessId,
-      configByHarness: draft.configByHarness,
-      modeId: draft.modeId,
-      isGoalComposerArmed: draft.isGoalComposerArmed,
-      isGoalEditing: draft.isGoalEditing,
-      composerTextBeforeGoalEdit: draft.composerTextBeforeGoalEdit,
-      usesImmediateDefaultsPersistence: draft.usesImmediateDefaultsPersistence,
-      selectionWasAutomaticallyCarried: draft.selectionWasAutomaticallyCarried
-    )
   }
 
   public func draft(forServer serverId: String) -> Draft? {
@@ -397,12 +272,13 @@ public final class ComposerDraftStore {
   /// draft whose attachments exist nowhere.
   private func finishLegacyAttachmentMigration(removing blobKeys: [String]) {
     let files = attachmentFiles
-    let machines = PersistedDrafts(machines: drafts.mapValues { Self.persisted(from: $0, files: files) })
-    var panes: [String: PersistedDraft] = [:]
+    let machines = ComposerPersistedDrafts(
+      machines: drafts.mapValues { ComposerPersistedDraft.persisted(from: $0, files: files) })
+    var panes: [String: ComposerPersistedDraft] = [:]
     for (paneId, draft) in paneDrafts {
-      panes[paneId.uuidString] = Self.persisted(from: draft, files: files)
+      panes[paneId.uuidString] = ComposerPersistedDraft.persisted(from: draft, files: files)
     }
-    let paneDrafts = PersistedPaneDrafts(panes: panes)
+    let paneDrafts = ComposerPersistedPaneDrafts(panes: panes)
     let store = store
     let key = key
     let paneKey = paneKey
@@ -420,7 +296,8 @@ public final class ComposerDraftStore {
 
   private func persistMetadata(immediately: Bool = false) {
     let files = attachmentFiles
-    let persisted = PersistedDrafts(machines: drafts.mapValues { Self.persisted(from: $0, files: files) })
+    let persisted = ComposerPersistedDrafts(
+      machines: drafts.mapValues { ComposerPersistedDraft.persisted(from: $0, files: files) })
     let store = store
     let key = key
     PersistenceEncoding.enqueueLatest(
@@ -437,11 +314,11 @@ public final class ComposerDraftStore {
   }
 
   private func persistPaneMetadata(immediately: Bool = false) {
-    var panes: [String: PersistedDraft] = [:]
+    var panes: [String: ComposerPersistedDraft] = [:]
     for (paneId, draft) in paneDrafts {
-      panes[paneId.uuidString] = Self.persisted(from: draft, files: attachmentFiles)
+      panes[paneId.uuidString] = ComposerPersistedDraft.persisted(from: draft, files: attachmentFiles)
     }
-    let persisted = PersistedPaneDrafts(panes: panes)
+    let persisted = ComposerPersistedPaneDrafts(panes: panes)
     let store = store
     let paneKey = paneKey
     PersistenceEncoding.enqueueLatest(
@@ -458,8 +335,4 @@ public final class ComposerDraftStore {
     }
   }
 
-  /// Where drafts from before staging kept each attachment's bytes.
-  private static func attachmentKey(_ id: UUID) -> String {
-    "composer-draft-attachment-\(id.uuidString.lowercased())"
-  }
 }
