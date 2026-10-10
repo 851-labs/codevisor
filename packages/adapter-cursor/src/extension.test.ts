@@ -198,14 +198,31 @@ describe("Cursor ACP recovery", () => {
         throw new Error("Recovery prompt should have been cancelled")
       }
     ])
-
+    const recoveryScheduled = Promise.withResolvers<void>()
+    const scheduleTimeout = globalThis.setTimeout
+    const scheduling = vi.spyOn(globalThis, "setTimeout").mockImplementation((...args) => {
+      const timer = scheduleTimeout(...args)
+      if (args[1] === 1000) recoveryScheduled.resolve()
+      return timer
+    })
     const pending = Effect.runPromise(connection.prompt(SESSION_ID, "Do the work"))
-    await vi.advanceTimersByTimeAsync(0)
-    await Effect.runPromise(connection.cancel(SESSION_ID))
+    try {
+      await recoveryScheduled.promise
+      expect(vi.getTimerCount()).toBe(1)
+      await Effect.runPromise(connection.cancel(SESSION_ID))
 
-    await expect(pending).resolves.toEqual({ stopReason: "cancelled" })
-    expect(base.prompts).toEqual(["Do the work"])
-    expect(base.cancellations).toEqual([SESSION_ID])
+      await expect(pending).resolves.toEqual({ stopReason: "cancelled" })
+      expect(base.prompts).toEqual(["Do the work"])
+      expect(base.cancellations).toEqual([SESSION_ID])
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      try {
+        await Effect.runPromise(connection.close)
+        await pending.catch(() => undefined)
+      } finally {
+        scheduling.mockRestore()
+      }
+    }
   })
 
   it("does not retry a non-retriable Cursor terminal error", async () => {
