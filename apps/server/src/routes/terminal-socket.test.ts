@@ -1,6 +1,7 @@
 import { once } from "node:events"
 
-import { makeTerminalManager } from "@codevisor/terminal"
+import { makeTerminalManager, type TerminalManagerService } from "@codevisor/terminal"
+import { Effect } from "effect"
 import { describe, expect, it, onTestFinished } from "vitest"
 import { WebSocket, WebSocketServer } from "ws"
 
@@ -363,11 +364,20 @@ describe("terminal socket", () => {
         kill: () => undefined
       }
     )
+    const resynced = Promise.withResolvers<void>()
+    const observed: TerminalManagerService = {
+      ...manager,
+      connectTerminal: (terminalId, lastOutputSeq, sink) =>
+        Effect.map(manager.connectTerminal(terminalId, lastOutputSeq, sink), (disconnect) => {
+          if (lastOutputSeq === 1) resynced.resolve()
+          return disconnect
+        })
+    }
     // Every send counts as backed up, and every completion as drained: each
     // write is followed by a resubscription from the last delivered frame.
     const { messages, received } = await connect((socket) =>
       attachTerminalSocket(
-        manager,
+        observed,
         handle.terminalId,
         { lastOutputSeq: 0, protocol: 1, flowControl: { highWater: -1, lowWater: Infinity } },
         socket
@@ -375,7 +385,7 @@ describe("terminal socket", () => {
     )
     handle.output("one")
     await received(1)
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await resynced.promise
     handle.output("two")
     await received(2)
     expect(messages).toEqual([
