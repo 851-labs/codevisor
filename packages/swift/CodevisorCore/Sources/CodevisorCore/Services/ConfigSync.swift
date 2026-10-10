@@ -136,6 +136,14 @@ public final class ConfigSync {
     {
       await machines.refreshStatus(for: machineId)
     }
+    let documents = await mergeNamespaceDocuments(client: client, namespaces: namespaces)
+    adoptNamespaceDocuments(documents, namespaces: namespaces)
+  }
+
+  private func mergeNamespaceDocuments(
+    client: any CodevisorServerClienting,
+    namespaces: [String]
+  ) async -> [String: ServerSyncDocument] {
     // Each namespace is its own round trip; send them together rather than
     // making a caller wait on one after another. Results apply in order.
     let outgoing = namespaces.map { ($0, loadNamespace($0)) }
@@ -147,6 +155,13 @@ public final class ConfigSync {
       for await (namespace, document) in group { documents[namespace] = document }
       return documents
     }
+    return documents
+  }
+
+  private func adoptNamespaceDocuments(
+    _ documents: [String: ServerSyncDocument],
+    namespaces: [String]
+  ) {
     for namespace in namespaces {
       guard let document = documents[namespace] else { continue }
       apply(namespace: namespace, incoming: document.entries)
@@ -217,6 +232,14 @@ public final class ConfigSync {
     let reachable = machines.allMachines.filter {
       machines.connectionsById[$0.id]?.status?.isReachable == true
     }
+    let missing = await collectMissingSkillBlobs(from: reachable)
+    guard !missing.isEmpty else { return }
+    await ferryMissingSkillBlobs(missing, reachable: reachable)
+  }
+
+  private func collectMissingSkillBlobs(
+    from reachable: [CodevisorMachine]
+  ) async -> [(machineId: String, hash: String)] {
     var missing: [(machineId: String, hash: String)] = []
     for machine in reachable {
       guard
@@ -226,7 +249,13 @@ public final class ConfigSync {
         missing.append((machine.id, item.hash))
       }
     }
-    guard !missing.isEmpty else { return }
+    return missing
+  }
+
+  private func ferryMissingSkillBlobs(
+    _ missing: [(machineId: String, hash: String)],
+    reachable: [CodevisorMachine]
+  ) async {
     var blobCache: [String: Data] = [:]
     var ferried: Set<String> = []
     for item in missing {
