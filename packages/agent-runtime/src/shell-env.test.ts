@@ -128,12 +128,17 @@ describe("resolveShellEnv", () => {
     ["probe output is empty", (): Promise<string> => Promise.resolve("")],
     ["probe output has no PATH line", (): Promise<string> => Promise.resolve("HOME=/x\n")]
   ])("degrades to base + fallbacks when %s", async (_name, runShell) => {
+    const runner = vi.fn(runShell)
     const resolved = await resolveShellEnv({
       base: { PATH: "/base-only" },
       platform: "darwin",
       homedir: "/Users/tester",
-      runShell
+      userShell: () => undefined,
+      executableExists: () => true,
+      listDirectory: () => [],
+      runShell: runner
     })
+    expect(runner).toHaveBeenCalledOnce()
     const directories = (resolved.PATH ?? "").split(":")
     expect(directories[0]).toBe("/base-only")
     expect(directories).toEqual(["/base-only", ...fallbackPathDirectories("/Users/tester")])
