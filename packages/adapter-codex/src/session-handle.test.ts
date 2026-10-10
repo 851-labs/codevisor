@@ -6,8 +6,9 @@ describe("CodexProvider", () => {
   it("plan mode sends the experimental collaboration mode on turn/start", async () => {
     const { client, created } = await setup()
     await run(created!.handle.setMode("plan"))
+    const turnRequested = client.nextRequest("turn/start")
     const promptPromise = run(created!.handle.prompt("plan this"))
-    await Promise.resolve()
+    await turnRequested
     client.emit("turn/completed", {
       threadId: "thread-new",
       turn: { id: "t-plan", status: "completed" }
@@ -30,8 +31,9 @@ describe("CodexProvider", () => {
     // the next turn — codex's collaboration is sticky, so omitting it would
     // leave the model stuck in Plan mode.
     await run(created!.handle.setMode("agent"))
+    const secondTurnRequested = client.nextRequest("turn/start")
     const secondPrompt = run(created!.handle.prompt("implement"))
-    await Promise.resolve()
+    await secondTurnRequested
     client.emit("turn/completed", {
       threadId: "thread-new",
       turn: { id: "t-agent", status: "completed" }
@@ -60,8 +62,9 @@ describe("CodexProvider", () => {
     // xhigh is valid for gpt-5.2-codex but not gpt-5.5.
     await run(created!.handle.setConfigOption("effort", "xhigh"))
     await run(created!.handle.setConfigOption("model", "gpt-5.5"))
+    const turnRequested = client.nextRequest("turn/start")
     const promptPromise = run(created!.handle.prompt("go"))
-    await Promise.resolve()
+    await turnRequested
     client.emit("turn/completed", {
       threadId: "thread-new",
       turn: { id: "t", status: "completed" }
@@ -86,8 +89,9 @@ describe("CodexProvider", () => {
     })
 
     const runTurn = async (text: string, turnId: string): Promise<void> => {
+      const turnRequested = client.nextRequest("turn/start")
       const promptPromise = run(created!.handle.prompt(text))
-      await Promise.resolve()
+      await turnRequested
       client.emit("turn/completed", {
         threadId: "thread-new",
         turn: { id: turnId, status: "completed" }
@@ -119,14 +123,21 @@ describe("CodexProvider", () => {
   })
 
   it("interrupts: turn/interrupt is sent and the turn ends cancelled", async () => {
-    const { client, created, events } = await setup()
+    const { client, created, events, nextEvent } = await setup()
+    const turnRequested = client.nextRequest("turn/start")
     const promptPromise = run(created!.handle.prompt("long work"))
-    await Promise.resolve()
+    await turnRequested
+    const started = nextEvent(
+      (event) =>
+        event.kind === "session.updated" &&
+        (event.payload as Record<string, unknown>).turnState === "started" &&
+        (event.payload as Record<string, unknown>).turnId === "turn-9"
+    )
     client.emit("turn/started", {
       threadId: "thread-new",
       turn: { id: "turn-9", status: "inProgress" }
     })
-    await Promise.resolve()
+    await started
 
     await run(created!.handle.cancel)
     expect(client.requests.at(-1)).toMatchObject({
@@ -145,8 +156,9 @@ describe("CodexProvider", () => {
   it("applies model/effort overrides as sticky turn/start params", async () => {
     const { client, created } = await setup()
     await run(created!.handle.setConfigOption("effort", "high"))
+    const turnRequested = client.nextRequest("turn/start")
     const promptPromise = run(created!.handle.prompt("go"))
-    await Promise.resolve()
+    await turnRequested
     client.emit("turn/completed", {
       threadId: "thread-new",
       turn: { id: "t", status: "completed" }
@@ -158,7 +170,9 @@ describe("CodexProvider", () => {
 
   it("closing a session is silent: pending prompt cancels, no session.error", async () => {
     const { client, created, events } = await setup()
+    const turnRequested = client.nextRequest("turn/start")
     const prompt = run(created!.handle.prompt("hello"))
+    await turnRequested
     client.emit("turn/started", { threadId: "thread-new", turn: { id: "turn-close" } })
     // Deliberate teardown (agent replacement, session close) — must not
     // masquerade as a crash.

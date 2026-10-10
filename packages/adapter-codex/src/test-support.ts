@@ -28,6 +28,7 @@ export const environment: ProviderEnvironment = {
 export class FakeCodexClient implements CodexClient {
   readonly pid = 4242
   readonly requests: Array<{ method: string; params: unknown }> = []
+  private readonly requestWaiters: Array<{ method: string; resolve: () => void }> = []
   readonly notifications: Array<{ method: string; params: unknown }> = []
   private notificationHandler: ((method: string, params: unknown) => void) | undefined
   private requestHandler:
@@ -57,99 +58,112 @@ export class FakeCodexClient implements CodexClient {
 
   async request<T>(method: string, params?: unknown): Promise<T> {
     this.requests.push({ method, params })
-    switch (method) {
-      case "initialize":
-        return {} as T
-      case "thread/start":
-        return { model: this.startModel, thread: { id: "thread-new" } } as T
-      case "thread/resume":
-        if (this.failResume) {
-          throw new Error("thread not found")
-        }
-        return { model: this.startModel, thread: { id: "thread-resumed" } } as T
-      case "thread/list":
-        return { data: this.listedThreads, nextCursor: null } as T
-      case "thread/read":
-        return {
-          thread: {
-            id: "thread-new",
-            name: this.threadName,
-            preview: this.threadPreview
+    try {
+      switch (method) {
+        case "initialize":
+          return {} as T
+        case "thread/start":
+          return { model: this.startModel, thread: { id: "thread-new" } } as T
+        case "thread/resume":
+          if (this.failResume) {
+            throw new Error("thread not found")
           }
-        } as T
-      case "turn/start":
-        return { turn: { id: "turn-1", status: "inProgress" } } as T
-      case "turn/interrupt":
-        return {} as T
-      case "thread/goal/set": {
-        const update = params as {
-          objective?: string
-          status?: string
-          tokenBudget?: number | null
-        }
-        this.goal = {
-          createdAt: this.goal?.createdAt ?? 1_700_000_000,
-          objective: update.objective ?? this.goal?.objective ?? "existing objective",
-          status: update.status ?? this.goal?.status ?? "active",
-          threadId: "thread-new",
-          timeUsedSeconds: this.goal?.timeUsedSeconds ?? 0,
-          tokenBudget:
-            "tokenBudget" in update ? update.tokenBudget! : (this.goal?.tokenBudget ?? null),
-          tokensUsed: this.goal?.tokensUsed ?? 0,
-          updatedAt: 1_700_000_100
-        }
-        return { goal: this.goal } as T
-      }
-      case "thread/goal/clear": {
-        const cleared = this.goal !== undefined
-        this.goal = undefined
-        return { cleared } as T
-      }
-      case "skills/list":
-        if (this.listedSkills === undefined) throw new Error(`Unexpected request: ${method}`)
-        return { data: [{ cwd: "/tmp/project", errors: [], skills: this.listedSkills }] } as T
-      case "model/list":
-        return {
-          data: [
-            {
-              defaultReasoningEffort: "medium",
-              description: "",
-              displayName: "GPT-5.2 Codex",
-              hidden: false,
-              id: "gpt-5.2-codex",
-              model: "gpt-5.2-codex",
-              serviceTiers: [
-                { description: "Faster processing", id: "priority", name: "Priority" }
-              ],
-              supportedReasoningEfforts: [
-                { description: "", reasoningEffort: "low" },
-                { description: "", reasoningEffort: "medium" },
-                { description: "", reasoningEffort: "xhigh" }
-              ]
-            },
-            {
-              defaultReasoningEffort: "high",
-              description: "",
-              displayName: "GPT-5.5",
-              hidden: false,
-              id: "gpt-5.5",
-              model: "gpt-5.5",
-              supportedReasoningEfforts: [
-                { description: "", reasoningEffort: "medium" },
-                { description: "", reasoningEffort: "high" }
-              ]
-            },
-            {
-              displayName: "Hidden model",
-              hidden: true,
-              id: "secret",
-              model: "secret"
+          return { model: this.startModel, thread: { id: "thread-resumed" } } as T
+        case "thread/list":
+          return { data: this.listedThreads, nextCursor: null } as T
+        case "thread/read":
+          return {
+            thread: {
+              id: "thread-new",
+              name: this.threadName,
+              preview: this.threadPreview
             }
-          ]
-        } as T
-      default:
-        throw new Error(`Unexpected request: ${method}`)
+          } as T
+        case "turn/start":
+          return { turn: { id: "turn-1", status: "inProgress" } } as T
+        case "turn/interrupt":
+          return {} as T
+        case "thread/goal/set": {
+          const update = params as {
+            objective?: string
+            status?: string
+            tokenBudget?: number | null
+          }
+          this.goal = {
+            createdAt: this.goal?.createdAt ?? 1_700_000_000,
+            objective: update.objective ?? this.goal?.objective ?? "existing objective",
+            status: update.status ?? this.goal?.status ?? "active",
+            threadId: "thread-new",
+            timeUsedSeconds: this.goal?.timeUsedSeconds ?? 0,
+            tokenBudget:
+              "tokenBudget" in update ? update.tokenBudget! : (this.goal?.tokenBudget ?? null),
+            tokensUsed: this.goal?.tokensUsed ?? 0,
+            updatedAt: 1_700_000_100
+          }
+          return { goal: this.goal } as T
+        }
+        case "thread/goal/clear": {
+          const cleared = this.goal !== undefined
+          this.goal = undefined
+          return { cleared } as T
+        }
+        case "skills/list":
+          if (this.listedSkills === undefined) throw new Error(`Unexpected request: ${method}`)
+          return { data: [{ cwd: "/tmp/project", errors: [], skills: this.listedSkills }] } as T
+        case "model/list":
+          return {
+            data: [
+              {
+                defaultReasoningEffort: "medium",
+                description: "",
+                displayName: "GPT-5.2 Codex",
+                hidden: false,
+                id: "gpt-5.2-codex",
+                model: "gpt-5.2-codex",
+                serviceTiers: [
+                  { description: "Faster processing", id: "priority", name: "Priority" }
+                ],
+                supportedReasoningEfforts: [
+                  { description: "", reasoningEffort: "low" },
+                  { description: "", reasoningEffort: "medium" },
+                  { description: "", reasoningEffort: "xhigh" }
+                ]
+              },
+              {
+                defaultReasoningEffort: "high",
+                description: "",
+                displayName: "GPT-5.5",
+                hidden: false,
+                id: "gpt-5.5",
+                model: "gpt-5.5",
+                supportedReasoningEfforts: [
+                  { description: "", reasoningEffort: "medium" },
+                  { description: "", reasoningEffort: "high" }
+                ]
+              },
+              {
+                displayName: "Hidden model",
+                hidden: true,
+                id: "secret",
+                model: "secret"
+              }
+            ]
+          } as T
+        default:
+          throw new Error(`Unexpected request: ${method}`)
+      }
+    } finally {
+      const waiter = this.requestWaiters.find((candidate) => candidate.method === method)
+      if (waiter !== undefined) {
+        this.requestWaiters.splice(this.requestWaiters.indexOf(waiter), 1)
+        waiter.resolve()
+      }
     }
+  }
+
+  /// Observe one future request; arm before starting the operation.
+  nextRequest(method: string): Promise<void> {
+    return new Promise((resolve) => this.requestWaiters.push({ method, resolve }))
   }
 
   notify(method: string, params?: unknown): void {
