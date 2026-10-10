@@ -102,24 +102,10 @@ export async function waitForBuild(
     const state = candidate?.attributes.processingState
     const internalState = candidate?.betaDetail?.attributes.internalBuildState
     lastState = `processing=${state ?? "not found"}, internal=${internalState ?? "not available"}`
-    if (state === "FAILED" || state === "INVALID") {
-      throw new Error(
-        `Apple rejected iOS ${build.version} (${build.buildNumber}): ${state}. See TestFlight build details.`
-      )
-    }
+    assertProcessingAccepted(state, build)
     if (state === "VALID") {
-      if (candidate.attributes.expired)
-        throw new Error("The matching TestFlight build has expired.")
-      if (candidate.attributes.buildAudienceType !== "APP_STORE_ELIGIBLE") {
-        throw new Error("Expected an APP_STORE_ELIGIBLE build for later release promotion.")
-      }
-      if (
-        ["PROCESSING_EXCEPTION", "EXPIRED", "MISSING_EXPORT_COMPLIANCE"].includes(internalState)
-      ) {
-        throw new Error(
-          `iOS ${build.version} (${build.buildNumber}) cannot enter internal testing: ${internalState}. See TestFlight build details.`
-        )
-      }
+      assertAppStoreEligible(candidate)
+      assertInternalTestingUsable(internalState, build)
       if (["READY_FOR_BETA_TESTING", "IN_BETA_TESTING"].includes(internalState)) return candidate
     }
     if (attempt + 1 < attempts) await sleep(interval)
@@ -127,6 +113,29 @@ export async function waitForBuild(
   throw new Error(
     `Timed out waiting for iOS ${build.version} (${build.buildNumber}) TestFlight readiness (${lastState}). Rerun the delivery job to resume.`
   )
+}
+
+function assertProcessingAccepted(state, build) {
+  if (state === "FAILED" || state === "INVALID") {
+    throw new Error(
+      `Apple rejected iOS ${build.version} (${build.buildNumber}): ${state}. See TestFlight build details.`
+    )
+  }
+}
+
+function assertAppStoreEligible(candidate) {
+  if (candidate.attributes.expired) throw new Error("The matching TestFlight build has expired.")
+  if (candidate.attributes.buildAudienceType !== "APP_STORE_ELIGIBLE") {
+    throw new Error("Expected an APP_STORE_ELIGIBLE build for later release promotion.")
+  }
+}
+
+function assertInternalTestingUsable(internalState, build) {
+  if (["PROCESSING_EXCEPTION", "EXPIRED", "MISSING_EXPORT_COMPLIANCE"].includes(internalState)) {
+    throw new Error(
+      `iOS ${build.version} (${build.buildNumber}) cannot enter internal testing: ${internalState}. See TestFlight build details.`
+    )
+  }
 }
 
 export async function internalGroup(client, appId, name) {
