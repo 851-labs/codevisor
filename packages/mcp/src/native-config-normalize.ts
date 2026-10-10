@@ -149,27 +149,39 @@ export const extractServerIdentity = (raw: Record<string, unknown>): string => {
     const value = raw[key]
     if (typeof value === "string" && value.length > 0) return normalizeUrlIdentity(value)
   }
-  const command =
-    typeof raw["command"] === "string"
-      ? raw["command"]
-      : typeof raw["cmd"] === "string"
-        ? raw["cmd"]
-        : undefined
-  const rawArgs = Array.isArray(raw["args"])
+  const command = nativeIdentityCommand(raw)
+  const rawArgs = nativeIdentityArguments(raw)
+  return command === undefined
+    ? nativeArrayCommandIdentity(raw)
+    : nativeCommandIdentity(command, rawArgs)
+}
+
+const nativeIdentityCommand = (raw: Record<string, unknown>): string | undefined =>
+  typeof raw["command"] === "string"
+    ? raw["command"]
+    : typeof raw["cmd"] === "string"
+      ? raw["cmd"]
+      : undefined
+
+const nativeIdentityArguments = (raw: Record<string, unknown>): ReadonlyArray<string> =>
+  Array.isArray(raw["args"])
     ? raw["args"].filter((item): item is string => typeof item === "string")
     : Array.isArray(raw["command"])
       ? raw["command"].slice(1).filter((item): item is string => typeof item === "string")
       : []
-  if (command === undefined) {
-    // OpenCode encodes the whole invocation as a command array.
-    if (Array.isArray(raw["command"])) {
-      const parts = raw["command"].filter((item): item is string => typeof item === "string")
-      const [first, ...rest] = parts
-      if (first === undefined) return ""
-      return packageIdentity(first, rest) ?? parts.join(" ")
-    }
-    return ""
+
+const nativeArrayCommandIdentity = (raw: Record<string, unknown>): string => {
+  // OpenCode encodes the whole invocation as a command array.
+  if (Array.isArray(raw["command"])) {
+    const parts = raw["command"].filter((item): item is string => typeof item === "string")
+    const [first, ...rest] = parts
+    if (first === undefined) return ""
+    return packageIdentity(first, rest) ?? parts.join(" ")
   }
+  return ""
+}
+
+const nativeCommandIdentity = (command: string, rawArgs: ReadonlyArray<string>): string => {
   const packaged = packageIdentity(command, rawArgs)
   if (packaged !== undefined) return packaged
   if (rawArgs.length > 0) return `${command} ${rawArgs.join(" ")}`
