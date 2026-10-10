@@ -148,13 +148,21 @@ public extension ToolCall {
     else { return command }
     let body = String(command[bodyRange])
     if command[quoteRange] == "'" {
-      // A single-quoted shell word can't contain `'`; joiners splice one in
-      // as `'\''` or `'"'"'`. Any other bare quote means it isn't one word.
-      let splices = [#"'\''"#, #"'"'"'"#]
-      let bare = splices.reduce(body) { $0.replacingOccurrences(of: $1, with: "") }
-      guard !bare.contains("'") else { return command }
-      return splices.reduce(body) { $0.replacingOccurrences(of: $1, with: "'") }
+      return decodeSingleQuotedShellBody(body, original: command)
     }
+    return decodeDoubleQuotedShellBody(body, original: command)
+  }
+
+  private static func decodeSingleQuotedShellBody(_ body: String, original command: String) -> String {
+    // A single-quoted shell word can't contain `'`; joiners splice one in
+    // as `'\''` or `'"'"'`. Any other bare quote means it isn't one word.
+    let splices = [#"'\''"#, #"'"'"'"#]
+    let bare = splices.reduce(body) { $0.replacingOccurrences(of: $1, with: "") }
+    guard !bare.contains("'") else { return command }
+    return splices.reduce(body) { $0.replacingOccurrences(of: $1, with: "'") }
+  }
+
+  private static func decodeDoubleQuotedShellBody(_ body: String, original command: String) -> String {
     var result = ""
     var escaping = false
     for character in body {
