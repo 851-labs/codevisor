@@ -24,7 +24,7 @@ struct TranscriptWorkedRowProjectionTests {
     #expect(compactionRows.map(\.id) == waitingRows.map(\.id))
     #expect(compactionRows.map(\.estimatedHeight) == waitingRows.map(\.estimatedHeight))
     #expect(compactionRows.map(\.spacingAfter) == waitingRows.map(\.spacingAfter))
-    #expect(compactionRows.last?.id == .activeChrome(message.id, .activity))
+    #expect(compactionRows.first?.id == .activeWorkedHeader(message.id, .planning))
   }
 
   @Test func compactionBeforeAnyContentDoesNotCreateAnEmptyWorkedSection() {
@@ -55,11 +55,9 @@ struct TranscriptWorkedRowProjectionTests {
     #expect(!ConversationItem.assistant(historical).hasRenderableTranscriptContent)
   }
 
-  /// Tool calls hide "Thinking…" while they run. The activity row must stay
-  /// laid out through that toggle, or each tool start/finish bounces the
-  /// bottom-pinned transcript by the row's height. Once answer text streams
-  /// the row goes, so no blank gap sits under the answer.
-  @Test func activityRowHoldsAcrossToolCallsUntilAnswerStreams() {
+  /// A live worked header says what the turn is doing, so it replaces the
+  /// separate activity row from the first event until the turn ends.
+  @Test func liveWorkedHeaderReplacesTheActivityRow() {
     let messageID = UUID()
     let commentary = TranscriptEntry.text(id: "commentary", markdown: "Checking the code.")
     func rows(_ entries: [TranscriptEntry]) -> [TranscriptPresentationRow] {
@@ -75,6 +73,11 @@ struct TranscriptWorkedRowProjectionTests {
           )))
     }
     let activityID = TranscriptPresentationRow.ID.activeChrome(messageID, .activity)
+    let headerID = TranscriptPresentationRow.ID.activeWorkedHeader(messageID, .planning)
+    let thinking = TranscriptActiveRowProjection.rows(
+      for: .assistant(
+        AssistantMessage(
+          id: messageID, turn: AssistantTurn(isGenerating: true, isThinking: true))))
     let running = rows([
       commentary,
       .tool(ToolCall(toolCallId: "read", title: "Read source", kind: .read, status: .inProgress)),
@@ -89,9 +92,11 @@ struct TranscriptWorkedRowProjectionTests {
       .text(id: "answer", markdown: "The bug is in the parser."),
     ])
 
-    #expect(running.last?.id == activityID)
-    #expect(settled.last?.id == activityID)
-    #expect(!answering.contains { $0.id == activityID })
+    for projected in [thinking, running, settled, answering] {
+      #expect(projected.first?.id == headerID)
+      #expect(!projected.contains { $0.id == activityID })
+    }
+    #expect(thinking.count == 1)
   }
 
   @Test func streamedWorkedSectionKeepsAStableHeaderAsToolCallsArrive() {

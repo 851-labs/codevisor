@@ -403,8 +403,13 @@ private final class ActivityFixture {
     try #require(view.initialPresentationGate.isReady)
   }
 
+  /// Once the provider's first event lands, the live worked header carries
+  /// the turn's activity in place of the separate activity row.
   func expectActivity(for assistantID: UUID, visible: Bool = true) throws {
-    let row = try #require(view.rows.first { $0.id == .activeChrome(assistantID, .activity) })
+    let row = try #require(
+      view.rows.first {
+        $0.id == .activeChrome(assistantID, .activity) || $0.id == .activeWorkedHeader(assistantID, .planning)
+      })
     let host = try #require(view.mountedHosts[row.layoutKey])
     #expect(host.frame.height > 10)
     #expect(host.frame.intersects(view.contentView.bounds))

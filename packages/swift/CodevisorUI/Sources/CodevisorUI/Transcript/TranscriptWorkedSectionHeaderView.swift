@@ -87,25 +87,20 @@ public enum TranscriptWorkedRowsVisibility {
         continue
       }
       switch membership.role {
-      case let .header(defaultExpanded, isFixedExpanded):
-        let currentTurn = turn(for: row, activeItem: activeItem)
-        let keepsRunningSubagentVisible =
-          currentTurn.map { turn in
-            turn.startedRunningSubagent(runningSubagentRunToolCallIDs)
+      case let .header(defaultExpanded, _):
+        let defaultsExpanded =
+          turn(for: row, activeItem: activeItem).map { turn in
+            turn.workedSectionDefaultsExpanded(
+              membership.identity.kind,
+              runningSubagentRunToolCallIDs: runningSubagentRunToolCallIDs
+            )
           } ?? false
-        let liveIsFixedExpanded =
-          currentTurn.map {
-            $0.isWorkedSectionLive(membership.identity.kind)
-          } ?? isFixedExpanded
-        let expanded =
-          liveIsFixedExpanded
-          ? true
-          : disclosure.isExpanded(
-            membership.identity.kind.disclosureKey(
-              messageID: membership.identity.messageID
-            ),
-            default: defaultExpanded || keepsRunningSubagentVisible
-          )
+        let expanded = disclosure.isExpanded(
+          membership.identity.kind.disclosureKey(
+            messageID: membership.identity.messageID
+          ),
+          default: defaultExpanded || defaultsExpanded
+        )
         expansion[membership.identity] = expanded
         result.append(row)
       case .content:
@@ -171,17 +166,24 @@ public struct TranscriptWorkedSectionHeaderView: View {
   }
 
   public var body: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      if isLiveAndFixedOpen {
-        header(showsChevron: false)
-      } else {
-        Button(action: toggle) {
-          header(showsChevron: true)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(TranscriptWorkedSectionButtonStyle())
+    if hasContent {
+      Button(action: toggle) {
+        header(showsChevron: true)
+          .contentShape(Rectangle())
       }
-      Divider()
+      .buttonStyle(TranscriptWorkedSectionButtonStyle())
+    } else {
+      header(showsChevron: false)
+    }
+  }
+
+  /// A live section shows its header from the turn's first event, before
+  /// there is any work to disclose.
+  private var hasContent: Bool {
+    if turn.defersWorkedSection(kind) { return true }
+    switch kind {
+    case .planning: return !turn.workedItemsBeforePlan.isEmpty
+    case .implementation: return !turn.workedItemsAfterPlan.isEmpty
     }
   }
 
@@ -191,20 +193,14 @@ public struct TranscriptWorkedSectionHeaderView: View {
     kind.disclosureKey(messageID: messageID)
   }
 
-  private var hasRunningSubagent: Bool {
-    turn.startedRunningSubagent(runningSubagentRunToolCallIDs)
-  }
-
-  private var defaultExpanded: Bool {
-    turn.isWorkedSectionLive(kind) || hasRunningSubagent
-  }
-
   private var isExpanded: Bool {
-    store.isExpanded(disclosureKey, default: defaultExpanded)
-  }
-
-  private var isLiveAndFixedOpen: Bool {
-    turn.isWorkedSectionLive(kind)
+    store.isExpanded(
+      disclosureKey,
+      default: turn.workedSectionDefaultsExpanded(
+        kind,
+        runningSubagentRunToolCallIDs: runningSubagentRunToolCallIDs
+      )
+    )
   }
 
   @ViewBuilder
@@ -232,7 +228,26 @@ public struct TranscriptWorkedSectionHeaderView: View {
   @ViewBuilder
   private var label: some View {
     if turn.workedSectionTicks(kind) {
-      TranscriptWorkingDurationLabel(turn: turn, kind: kind)
+      // Collapsed, the header stands in for the hidden work: what the turn
+      // is doing now, shimmering, then for how long. Expanded, the work is
+      // visible, so the header just times it. Once the answer is streaming
+      // the work is done, so the header already reads as settled.
+      if let activity = turn.workedSectionActivity {
+        if isExpanded {
+          TranscriptWorkingDurationLabel(turn: turn, kind: kind, prefix: "Working for ")
+        } else {
+          Text(activity)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .shimmering()
+            .accessibilityLabel(activity)
+          TranscriptWorkingDurationLabel(turn: turn, kind: kind)
+            .fixedSize()
+        }
+      } else {
+        // One run of text, so the label doesn't shift when the turn ends.
+        TranscriptWorkingDurationLabel(turn: turn, kind: kind, prefix: "Worked for ")
+      }
     } else {
       Text(turn.workedSectionTitle(kind, now: Date()))
     }
@@ -308,10 +323,14 @@ public struct TranscriptWorkedDisclosureIndicator: View {
 private struct TranscriptWorkingDurationLabel: View {
   let turn: AssistantTurn
   let kind: TranscriptWorkedSectionKind
+  var prefix = ""
   @State private var now = Date()
 
   var body: some View {
-    Text(turn.workedSectionTitle(kind, now: now))
+    // Beside an activity, fixed-width digits keep the label from jittering
+    // each second; with a prefix, the digits match the settled title.
+    Text(prefix + turn.workedSectionElapsed(kind, now: now))
+      .font(prefix.isEmpty ? .callout.monospacedDigit() : .callout)
       .task(id: turn.workedSectionStart(kind)) {
         now = Date()
         while !Task.isCancelled {
@@ -320,6 +339,44 @@ private struct TranscriptWorkingDurationLabel: View {
           now = Date()
         }
       }
+  }
+}
+
+extension AssistantTurn {
+  /// Sections start collapsed, live ones included: their header says what
+  /// is running. Once the turn ends, a running subagent keeps its work open.
+  fileprivate func workedSectionDefaultsExpanded(
+    _ kind: TranscriptWorkedSectionKind,
+    runningSubagentRunToolCallIDs: Set<String>
+  ) -> Bool {
+    !workedSectionTicks(kind) && startedRunningSubagent(runningSubagentRunToolCallIDs)
+  }
+
+  /// The live worked header's label: the turn's own status (retrying,
+  /// compacting, starting an agent, thinking), else the latest running tool.
+  /// Nil once only the answer is streaming. The timer beside it already says
+  /// the work is ongoing, so the label drops any trailing ellipsis.
+  var workedSectionActivity: String? {
+    var label: String
+    if let activity = AssistantTurnActivity.resolve(
+      turn: self, isWaitingOnUser: false, sessionActivity: nil, backgroundTask: nil,
+      goalActivity: nil),
+      !activity.followsResponse
+    {
+      // The header shows only once work began: between tool calls the
+      // model is deciding what to do next.
+      label =
+        activity.message == AssistantTurnActivity.waitingOnHarnessMessage
+        ? "Thinking" : activity.message
+    } else if let running = toolCalls.last(where: { !$0.isSettled && !isUnstartedSubagent($0) }) {
+      label = running.displayTitle
+    } else {
+      return nil
+    }
+    while let last = label.last, last == "…" || last == "." {
+      label.removeLast()
+    }
+    return label
   }
 }
 

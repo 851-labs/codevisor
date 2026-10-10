@@ -36,7 +36,8 @@ extension ToolCall {
 public struct CodevisorWorkflowDetails: Equatable, Sendable {
   /// Files the workflow produced (screenshots, recordings), each once.
   public var files: [PreviewFile]
-  /// Why the whole workflow failed, when it did.
+  /// Why the whole workflow failed, when it did: the full error, which the
+  /// row's title only summarizes.
   public var failure: String?
   /// What the workflow returned: text as-is, anything else as formatted
   /// JSON. JSON the script stringified is unpacked, and file references
@@ -54,10 +55,20 @@ extension ToolCall {
     return CodevisorWorkflowDetails(
       files: (codevisorExecution?.calls ?? []).flatMap(\.files).filter { seenFiles.insert($0.id).inserted },
       failure: failed
-        ? (codevisorExecution?.error ?? output.unparsed).flatMap(ToolCall.shortError) ?? "The workflow failed"
+        ? (codevisorExecution?.error ?? output.unparsed).flatMap(Self.errorDetail) ?? "The workflow failed"
         : nil,
       result: failed ? nil : output.result ?? output.unparsed
     )
+  }
+
+  /// A workflow's whole error, without the JavaScript stack frames: they
+  /// point into the gateway's sandbox, not the script the model wrote.
+  static func errorDetail(_ error: String) -> String? {
+    let text = error.split(separator: "\n", omittingEmptySubsequences: false)
+      .filter { $0.range(of: #"^\s*at\s"#, options: .regularExpression) == nil }
+      .joined(separator: "\n")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    return text.isEmpty ? nil : text
   }
 
   private static func workflowOutput(_ text: String?) -> (result: String?, unparsed: String?) {

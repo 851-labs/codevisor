@@ -410,11 +410,6 @@ struct AssistantTurnView: View {
         .buttonStyle(TranscriptWorkedSectionButtonStyle())
       }
 
-      // The divider belongs to the disclosure header, not its revealed
-      // contents, so a rendered Worked section keeps the line in both
-      // its collapsed and expanded states.
-      Divider()
-
       TranscriptDisclosureContentReveal(
         isExpanded: expanded && !items.isEmpty
       ) {

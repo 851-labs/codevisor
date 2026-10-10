@@ -4,7 +4,12 @@ import { join } from "node:path"
 
 import sharp from "sharp"
 
-import { pageIconCandidates, rankMcpIcons } from "./tool-icon-candidates.js"
+import {
+  isPublicHost,
+  pageIconCandidates,
+  publicFaviconUrl,
+  rankMcpIcons
+} from "./tool-icon-candidates.js"
 
 /// Artwork for what a gateway workflow touched: the favicon of a site a
 /// browser call visited, or an MCP server's own icon. Resolved once on this
@@ -399,7 +404,11 @@ export const makeToolIconStore = (options: ToolIconStoreOptions): ToolIconStore 
       if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return undefined
       const key = `site:${theme}:${parsed.origin}`
       return cached(key, async () => ({
-        asset: await favicon(parsed.origin, theme),
+        asset:
+          (await favicon(parsed.origin, theme)) ??
+          (isPublicHost(parsed.hostname)
+            ? await imageAt(publicFaviconUrl(parsed.hostname))
+            : undefined),
         source: "favicon"
       }))
     },
