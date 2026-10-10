@@ -32,82 +32,119 @@ export const recommendProjectsFromSessions = (
   const grouped = new Map<string, RecommendationAggregate>()
 
   for (const session of sessions) {
-    if (!isAbsolute(session.cwd)) continue
-    const sessionPath = resolve(session.cwd)
-    if (sessionPath === "/") continue
-
-    const linked = linkedWorktree(sessionPath)
-    const isManaged = isPathInside(sessionPath, managedRoot)
-    // A linked checkout without a surviving primary checkout is temporary;
-    // never suggest the short-lived worktree itself.
-    if (linked.isLinked && linked.root === undefined) continue
-    // Codevisor-managed worktrees are likewise suggestions only when their
-    // Git metadata leads back to a real checkout outside the managed root.
-    if (isManaged && linked.root === undefined) continue
-
-    const path = linked.root ?? sessionPath
-    if (
-      path === "/" ||
-      isPathInside(path, managedRoot) ||
-      isExcludedPath(path, temporaryRoot) ||
-      !isDirectory(path)
-    ) {
-      continue
-    }
-
-    const lastActivity = session.updatedAt
-    const activityTime = lastActivity === undefined ? undefined : Date.parse(lastActivity)
-    const validActivityTime =
-      activityTime === undefined || Number.isNaN(activityTime) ? undefined : activityTime
-    const existing = grouped.get(path)
-    if (existing === undefined) {
-      grouped.set(path, {
-        path,
-        sessionCount: 1,
-        ...(validActivityTime === undefined || lastActivity === undefined
-          ? {}
-          : { lastActivity, lastActivityTime: validActivityTime })
-      })
-      continue
-    }
-    existing.sessionCount += 1
-    if (
-      validActivityTime !== undefined &&
-      lastActivity !== undefined &&
-      (existing.lastActivityTime === undefined || validActivityTime > existing.lastActivityTime)
-    ) {
-      existing.lastActivity = lastActivity
-      existing.lastActivityTime = validActivityTime
-    }
+    const path = recommendationPath(session, managedRoot, temporaryRoot)
+    if (path === undefined) continue
+    recordRecommendation(grouped, path, session)
   }
 
   return [...grouped.values()]
-    .toSorted((left, right) => {
-      if (left.lastActivityTime !== right.lastActivityTime) {
-        if (left.lastActivityTime === undefined) return 1
-        if (right.lastActivityTime === undefined) return -1
-        return right.lastActivityTime - left.lastActivityTime
-      }
-      if (left.sessionCount !== right.sessionCount) return right.sessionCount - left.sessionCount
-      return basename(left.path).localeCompare(basename(right.path), undefined, {
-        sensitivity: "base"
-      })
-    })
+    .toSorted((left, right) => compareRecommendations(left, right))
     .slice(0, limit)
-    .map((entry) =>
-      entry.lastActivity === undefined
-        ? {
-            path: entry.path,
-            name: basename(entry.path),
-            sessionCount: entry.sessionCount
-          }
-        : {
-            path: entry.path,
-            name: basename(entry.path),
-            sessionCount: entry.sessionCount,
-            lastActivity: entry.lastActivity
-          }
-    )
+    .map((entry) => recommendationDTO(entry))
+}
+
+const recommendationPath = (
+  session: AgentSessionSummary,
+  managedRoot: string,
+  temporaryRoot: string
+): string | undefined => {
+  if (!isAbsolute(session.cwd)) return undefined
+  const sessionPath = resolve(session.cwd)
+  if (sessionPath === "/") return undefined
+
+  const linked = linkedWorktree(sessionPath)
+  const isManaged = isPathInside(sessionPath, managedRoot)
+  // A linked checkout without a surviving primary checkout is temporary;
+  // never suggest the short-lived worktree itself.
+  if (linked.isLinked && linked.root === undefined) return undefined
+  // Codevisor-managed worktrees are likewise suggestions only when their
+  // Git metadata leads back to a real checkout outside the managed root.
+  if (isManaged && linked.root === undefined) return undefined
+
+  const path = linked.root ?? sessionPath
+  return isRecommendationRoot(path, managedRoot, temporaryRoot) ? path : undefined
+}
+
+const isRecommendationRoot = (
+  path: string,
+  managedRoot: string,
+  temporaryRoot: string
+): boolean => {
+  return !(
+    path === "/" ||
+    isPathInside(path, managedRoot) ||
+    isExcludedPath(path, temporaryRoot) ||
+    !isDirectory(path)
+  )
+}
+
+const recordRecommendation = (
+  grouped: Map<string, RecommendationAggregate>,
+  path: string,
+  session: AgentSessionSummary
+): void => {
+  const lastActivity = session.updatedAt
+  const activityTime = lastActivity === undefined ? undefined : Date.parse(lastActivity)
+  const validActivityTime =
+    activityTime === undefined || Number.isNaN(activityTime) ? undefined : activityTime
+  const existing = grouped.get(path)
+  if (existing === undefined) {
+    grouped.set(path, {
+      path,
+      sessionCount: 1,
+      ...(validActivityTime === undefined || lastActivity === undefined
+        ? {}
+        : { lastActivity, lastActivityTime: validActivityTime })
+    })
+    return
+  }
+  updateRecommendation(existing, lastActivity, validActivityTime)
+}
+
+const updateRecommendation = (
+  existing: RecommendationAggregate,
+  lastActivity: string | undefined,
+  validActivityTime: number | undefined
+): void => {
+  existing.sessionCount += 1
+  if (
+    validActivityTime !== undefined &&
+    lastActivity !== undefined &&
+    (existing.lastActivityTime === undefined || validActivityTime > existing.lastActivityTime)
+  ) {
+    existing.lastActivity = lastActivity
+    existing.lastActivityTime = validActivityTime
+  }
+}
+
+const compareRecommendations = (
+  left: RecommendationAggregate,
+  right: RecommendationAggregate
+): number => {
+  if (left.lastActivityTime !== right.lastActivityTime) {
+    if (left.lastActivityTime === undefined) return 1
+    if (right.lastActivityTime === undefined) return -1
+    return right.lastActivityTime - left.lastActivityTime
+  }
+  if (left.sessionCount !== right.sessionCount) return right.sessionCount - left.sessionCount
+  return basename(left.path).localeCompare(basename(right.path), undefined, {
+    sensitivity: "base"
+  })
+}
+
+const recommendationDTO = (entry: RecommendationAggregate): ProjectRecommendation => {
+  return entry.lastActivity === undefined
+    ? {
+        path: entry.path,
+        name: basename(entry.path),
+        sessionCount: entry.sessionCount
+      }
+    : {
+        path: entry.path,
+        name: basename(entry.path),
+        sessionCount: entry.sessionCount,
+        lastActivity: entry.lastActivity
+      }
 }
 
 const isDirectory = (path: string): boolean => {
