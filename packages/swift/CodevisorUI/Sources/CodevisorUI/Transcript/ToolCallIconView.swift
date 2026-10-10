@@ -57,54 +57,73 @@ public struct ToolCallIconView: View {
 
   @Environment(\.transcriptController) private var controller
   @Environment(\.colorScheme) private var colorScheme
-  @State private var loaded: LoadedArtwork?
 
   public init(icon: ToolCallIcon) {
     self.icon = icon
   }
 
-  private var request: ToolIconImages.Request? {
-    guard let artwork = icon.artwork, let controller else { return nil }
-    return ToolIconImages.Request(
-      namespace: controller.toolIconCacheNamespace,
-      artwork: artwork,
-      dark: colorScheme == .dark
-    )
-  }
-
   public var body: some View {
-    let request = request
-    let artwork = request.flatMap { loaded?.request == $0 ? loaded?.artwork : ToolIconImages.memoryArtwork(for: $0) }
+    ToolArtworkImage(
+      request: icon.artwork.flatMap { artwork in
+        controller.map {
+          ToolIconImages.Request(
+            namespace: $0.toolIconCacheNamespace, artwork: artwork, dark: colorScheme == .dark)
+        }
+      },
+      side: ToolIconMetrics.artworkSide,
+      fetch: { [weak controller] request in
+        guard let controller else { throw SessionControllerError.serverUnavailable }
+        return try await controller.toolIconData(request)
+      }
+    ) {
+      Image(systemName: icon.symbol)
+        .font(ToolIconMetrics.font)
+        .foregroundStyle(.secondary)
+    }
+    .frame(width: ToolIconMetrics.columnWidth)
+    .accessibilityHidden(true)
+  }
+}
+
+/// Server-resolved artwork at `side` points, drawn in place of `placeholder`
+/// once it is available: from memory in the first frame, from disk on
+/// relaunch, from the server otherwise. Dark marks get a light plate in
+/// dark mode.
+struct ToolArtworkImage<Placeholder: View>: View {
+  let request: ToolIconImages.Request?
+  let side: CGFloat
+  let fetch: ToolIconImages.Fetch
+  @ViewBuilder let placeholder: Placeholder
+
+  @Environment(\.colorScheme) private var colorScheme
+  @State private var loaded: LoadedArtwork?
+
+  var body: some View {
+    let artwork = request.flatMap {
+      loaded?.request == $0 ? loaded?.artwork : ToolIconImages.memoryArtwork(for: $0)
+    }
     Group {
       if let artwork {
-        // Dark marks (GitHub's octocat) vanish on a dark transcript; give
+        // Dark marks (GitHub's octocat) vanish on a dark background; give
         // them the light plate browsers give such tab icons.
         let plated = artwork.isDark && colorScheme == .dark
         artworkImage(artwork.image)
           .resizable()
           .interpolation(.high)
           .aspectRatio(contentMode: .fit)
-          .padding(plated ? 1.5 : 0)
-          .frame(width: ToolIconMetrics.artworkSide, height: ToolIconMetrics.artworkSide)
+          .padding(plated ? side / 10 : 0)
+          .frame(width: side, height: side)
           .background {
-            if plated { RoundedRectangle(cornerRadius: 3.5, style: .continuous).fill(.white.opacity(0.9)) }
+            if plated { RoundedRectangle(cornerRadius: side / 4, style: .continuous).fill(.white.opacity(0.9)) }
           }
-          .clipShape(RoundedRectangle(cornerRadius: 3.5, style: .continuous))
+          .clipShape(RoundedRectangle(cornerRadius: side / 4, style: .continuous))
       } else {
-        Image(systemName: icon.symbol)
-          .font(ToolIconMetrics.font)
-          .foregroundStyle(.secondary)
+        placeholder
       }
     }
-    .frame(width: ToolIconMetrics.columnWidth)
-    .accessibilityHidden(true)
     .task(id: request) {
-      guard let request, let controller else { return }
-      if loaded?.request == request { return }
-      let artwork = await ToolIconImages.artwork(for: request) { [weak controller] request in
-        guard let controller else { throw SessionControllerError.serverUnavailable }
-        return try await controller.toolIconData(request)
-      }
+      guard let request, loaded?.request != request else { return }
+      let artwork = await ToolIconImages.artwork(for: request, fetch: fetch)
       guard !Task.isCancelled, let artwork else { return }
       loaded = LoadedArtwork(request: request, artwork: artwork)
     }

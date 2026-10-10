@@ -1,7 +1,8 @@
 import CodevisorUI
 import SwiftUI
 
-/// A server's artwork in the MCP list. The Codevisor gateway gets the
+/// A server's artwork in the MCP list: its own icon for servers the user
+/// added, a symbol for the built-ins. The Codevisor gateway gets the
 /// product mark — it is Codevisor's own tools, not a third-party server, and
 /// a generic glyph made it look like one. The mark lives in the app's asset
 /// catalog rather than the shared package, which is why the list takes its
@@ -16,8 +17,13 @@ struct McpEntryIcon: View {
         .renderingMode(.template)
         .aspectRatio(contentMode: .fit)
         .frame(width: 16, height: 16)
-    } else {
+    } else if entry.isBuiltIn {
       Image(systemName: symbolName)
+    } else {
+      // A server's own icon, or its brand's favicon; the symbol until then.
+      McpServerIconView(entry: entry) {
+        Image(systemName: symbolName)
+      }
     }
   }
 
