@@ -1,0 +1,242 @@
+import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
+
+import { authoritativeStatsFromInput } from "./diff-stats.js"
+import { settleForkedCommands } from "./forked-commands.js"
+import { isRecord } from "./internal.js"
+import { HIDDEN_TOOLS, PLAN_TOOLS, TASK_TOOLS } from "./message-tool-policy.js"
+import type { ClaudeSession } from "./session.js"
+import { emitPlanUpdate } from "./tasks.js"
+import { toolKind, toolTitle } from "./tool-presentation.js"
+import { ensureObservedTurnStarted } from "./turn-lifecycle.js"
+import {
+  claudeContextUsageFromAssistant,
+  detectApiErrorMessage,
+  detectUsageLimitMessage
+} from "./usage.js"
+
+type AssistantMessage = Extract<SDKMessage, { type: "assistant" }>
+
+export const handleAssistantMessage = (
+  session: ClaudeSession,
+  message: AssistantMessage,
+  readFile: (path: string) => string | undefined
+): void => {
+  const parentId = message.parent_tool_use_id ?? undefined
+  // Error replies surface through turn recovery, never as answer text.
+  const isErrorReply = parentId === undefined ? observeAssistantStatus(session, message) : false
+  const content = message.message.content
+  if (!Array.isArray(content)) return
+  const inner = message.message as unknown as Record<string, unknown>
+  const messageId = typeof inner.id === "string" ? inner.id : undefined
+  // The CLI does not forward subagent stream events, so a subagent's prose
+  // exists only here, in its consolidated assistant messages. Emit it
+  // tagged with the parent tool call — unless this message DID stream
+  // (older CLIs), in which case the chunks are already out and re-emitting
+  // would double the text.
+  const alreadyStreamed =
+    parentId !== undefined &&
+    messageId !== undefined &&
+    session.subagentMessageIds.get(parentId) === messageId
+  if (parentId !== undefined) {
+    const prose = messageProse(content)
+    if (prose !== undefined) session.subagentLastTexts.set(parentId, prose)
+  }
+  emitAssistantContent(session, content, parentId, messageId, alreadyStreamed, readFile)
+  emitUnannouncedAssistantReply(session, content, parentId, messageId, isErrorReply)
+}
+
+const observeAssistantStatus = (session: ClaudeSession, message: AssistantMessage): boolean => {
+  const contextUsage = claudeContextUsageFromAssistant(message.message)
+  if (contextUsage !== undefined) session.latestContextUsage = contextUsage
+  // Remember the SDK's per-message error (overloaded/rate_limit/… or
+  // max_output_tokens) so a following error `result` can be classified
+  // transient vs permanent, and a truncation can be recovered.
+  const assistantError = (message as { error?: unknown }).error
+  const usageLimitText = detectUsageLimitMessage(message)
+  const isErrorReply =
+    typeof assistantError === "string"
+      ? recordStructuredAssistantError(session, assistantError, usageLimitText)
+      : recordUnstructuredAssistantError(session, message, usageLimitText)
+  void ensureObservedTurnStarted(session)
+  return isErrorReply
+}
+
+const recordStructuredAssistantError = (
+  session: ClaudeSession,
+  assistantError: string,
+  usageLimitText: string | undefined
+): boolean => {
+  session.lastAssistantError = assistantError
+  if (
+    usageLimitText !== undefined &&
+    (assistantError === "rate_limit" || assistantError === "billing_error")
+  ) {
+    session.lastUsageLimitText = usageLimitText
+  }
+  return true
+}
+
+const recordUnstructuredAssistantError = (
+  session: ClaudeSession,
+  message: AssistantMessage,
+  usageLimitText: string | undefined
+): boolean => {
+  let isErrorReply = false
+  if (usageLimitText !== undefined) {
+    isErrorReply = true
+    session.lastAssistantError = "rate_limit"
+    session.lastUsageLimitText = usageLimitText
+  }
+  // Some transient failures (e.g. a 529 overload) carry no structured
+  // error — the CLI renders them as an assistant text message ending on
+  // a stop sequence (e.g. "API Error: 529 Overloaded …"). Detect that
+  // shape so the turn retries instead of surfacing the error as if it
+  // were the answer.
+  const apiError = usageLimitText === undefined ? detectApiErrorMessage(message) : undefined
+  if (apiError !== undefined) {
+    isErrorReply = true
+    session.lastAssistantError = "overloaded"
+    session.lastErrorText = apiError
+  }
+  return isErrorReply
+}
+
+const emitAssistantChildText = (
+  session: ClaudeSession,
+  block: Record<string, unknown>,
+  parentId: string,
+  messageId: string | undefined
+): void => {
+  const text = String(block.text ?? "")
+  if (text.length === 0) return
+  void session.emit({
+    kind: "session.output",
+    payload: {
+      content: { text, type: "text" },
+      parentToolCallId: parentId,
+      sessionUpdate: "agent_message_chunk",
+      ...(messageId === undefined ? {} : { messageId })
+    },
+    subjectId: session.key
+  })
+}
+
+const handleAssistantTool = (
+  session: ClaudeSession,
+  block: Record<string, unknown>,
+  parentId: string | undefined,
+  readFile: (path: string) => string | undefined
+): void => {
+  const toolUseId = String(block.id)
+  const toolName = String(block.name)
+  if (PLAN_TOOLS.has(toolName)) {
+    emitPlanUpdate(session, toolName, block.input)
+    return
+  }
+  if (TASK_TOOLS.has(toolName)) {
+    session.taskToolUses.set(toolUseId, { input: block.input, name: toolName })
+    return
+  }
+  // AskUserQuestion surfaces as a blocking question via canUseTool.
+  if (HIDDEN_TOOLS.has(toolName)) return
+  emitAssistantTool(session, toolName, toolUseId, block, parentId, readFile)
+}
+
+const emitAssistantTool = (
+  session: ClaudeSession,
+  toolName: string,
+  toolUseId: string,
+  block: Record<string, unknown>,
+  parentId: string | undefined,
+  readFile: (path: string) => string | undefined
+): void => {
+  const stats = authoritativeStatsFromInput(session, toolName, block.input, readFile)
+  void session.emit({
+    kind: "session.output",
+    payload: {
+      // The streamed tool_call may never have existed for subagent
+      // tools (no subagent stream events), so this update must carry
+      // enough to create the call outright — including its kind.
+      kind: toolKind(toolName),
+      rawInput: block.input,
+      sessionUpdate: "tool_call_update",
+      status: "in_progress",
+      title: toolTitle(toolName, block.input),
+      toolCallId: toolUseId,
+      ...(stats === undefined ? {} : { diffStats: stats }),
+      ...(parentId === undefined ? {} : { parentToolCallId: parentId })
+    },
+    subjectId: session.key
+  })
+}
+
+const emitAssistantReply = (
+  session: ClaudeSession,
+  content: ReadonlyArray<unknown>,
+  messageId: string
+): void => {
+  const prose = messageProse(content)
+  if (settleForkedCommands(session, prose)) {
+    session.forkedCommandReplyPending = true
+  } else if (prose !== undefined) {
+    void session.emit({
+      kind: "session.output",
+      payload: {
+        content: { text: prose, type: "text" },
+        messageId,
+        sessionUpdate: "agent_message_chunk"
+      },
+      subjectId: session.key
+    })
+  }
+}
+
+/// A message's text blocks joined, or undefined when it has none.
+export const messageProse = (content: ReadonlyArray<unknown>): string | undefined => {
+  const texts = content.flatMap((block) =>
+    isRecord(block) && block.type === "text" && typeof block.text === "string" && block.text !== ""
+      ? [block.text]
+      : []
+  )
+  return texts.length === 0 ? undefined : texts.join("\n\n")
+}
+
+const emitAssistantContent = (
+  session: ClaudeSession,
+  content: ReadonlyArray<unknown>,
+  parentId: string | undefined,
+  messageId: string | undefined,
+  alreadyStreamed: boolean,
+  readFile: (path: string) => string | undefined
+): void => {
+  for (const block of content) {
+    if (!isRecord(block)) continue
+    if (block.type === "text" && parentId !== undefined && !alreadyStreamed) {
+      emitAssistantChildText(session, block, parentId, messageId)
+    } else if (block.type === "tool_use") {
+      handleAssistantTool(session, block, parentId, readFile)
+    }
+  }
+}
+
+const emitUnannouncedAssistantReply = (
+  session: ClaudeSession,
+  content: ReadonlyArray<unknown>,
+  parentId: string | undefined,
+  messageId: string | undefined,
+  isErrorReply: boolean
+): void => {
+  // The CLI writes some replies itself (model "<synthetic>"), such as a
+  // forked command's report. They never stream, so a top-level message no
+  // `message_start` announced is shown from here. A completed forked
+  // command's report stays in its agent's thread: Claude answers with it
+  // once the command's turn ends (see `handleResult`).
+  if (
+    parentId === undefined &&
+    messageId !== undefined &&
+    messageId !== session.currentMessageId &&
+    !isErrorReply
+  ) {
+    emitAssistantReply(session, content, messageId)
+  }
+}
