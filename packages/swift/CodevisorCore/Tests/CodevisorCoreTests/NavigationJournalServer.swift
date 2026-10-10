@@ -311,7 +311,8 @@ final class WorkspaceSyncFixture {
     persistence: InMemoryStore = InMemoryStore(),
     clock: any Clock<Duration> = ContinuousClock(),
     connected: Bool = false,
-    customize: (inout Workspace, inout Workspace) -> Void = { _, _ in }
+    customize: (inout Workspace, inout Workspace) -> Void = { _, _ in },
+    now: @escaping () -> Date = Date.init
   ) async {
     let createdAt = Date(timeIntervalSince1970: 1_700_000_000)
     let project = Project(serverId: "local", name: "Shared", createdAt: createdAt)
@@ -327,7 +328,7 @@ final class WorkspaceSyncFixture {
     self.workspace = workspace
     otherWorkspace = other
     let session = ChatSession(id: anchorSessionId, projectId: project.id, serverId: "local", createdAt: createdAt)
-    navigation = NavigationFixture(persistence: persistence, clock: clock)
+    navigation = NavigationFixture(persistence: persistence, clock: clock, now: now)
     server = NavigationJournalServer(
       .fixture(projects: [project], sessions: [session], workspaces: [workspace, other]))
     await navigation.install(

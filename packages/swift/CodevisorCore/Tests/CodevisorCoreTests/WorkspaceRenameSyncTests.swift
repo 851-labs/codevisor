@@ -46,13 +46,17 @@ struct WorkspaceRenameSyncTests {
 
   @Test("A snapshot fetched before a rename was accepted cannot revert its name")
   func supersedesEarlierSnapshot() async throws {
-    let fixture = await WorkspaceSyncFixture(connected: true)
+    let acceptedAt = Date(timeIntervalSince1970: 1_000)
+    let fixture = await WorkspaceSyncFixture(connected: true, now: { acceptedAt })
     let stale = fixture.server.current
-    let fetchedAt = Date(timeIntervalSinceNow: -60)
+    let fetchedAt = Date(timeIntervalSince1970: 999)
     fixture.sync.renameWorkspace(renamed(fixture, "New name"))
     await fixture.flush()
     // Accepted, but its event hasn't arrived: the entry waits for it.
     #expect(fixture.store.pendingIntents.count == 1)
+    #expect(
+      fixture.store.pendingIntents.first?.state
+        == .awaiting(cursor: fixture.server.current.eventCursor, acceptedAt: acceptedAt))
 
     await fixture.store.replace(stale, machineId: fixture.serverId, requestedAt: fetchedAt, resetsStream: false)
     #expect(fixture.current?.name == "New name")
