@@ -1,4 +1,10 @@
 import { createHmac, randomBytes } from "node:crypto"
+import type { IncomingMessage } from "node:http"
+
+import type { PluginPaneTokenRequest, PluginPaneTokenResponse } from "@codevisor/api"
+
+import type { InstalledPlugin } from "./plugin-store.js"
+import { PluginsError } from "./plugins-error.js"
 
 /// Pane traffic cannot carry the machine bearer token: WKWebView cannot set
 /// Authorization on subresource loads and the cloud relay strips the header.
@@ -88,6 +94,128 @@ export const makePaneTokenStore = (now: () => number = Date.now): PaneTokenStore
       createHmac("sha256", contextSecret(pluginId)).update(payload).digest("hex"),
     verify: (token, pluginId) => extend(token, pluginId, INITIAL_TOKEN_TTL_MS)
   }
+}
+
+/// Encodes and signs a context payload with the target plugin's key so it
+/// can trust that X-Codevisor-Context came from this server — shared by
+/// pane proxying, icons, and tool invocation, which carry different shapes.
+export const makeSignedContextHeaders =
+  (tokens: PaneTokenStore) =>
+  (pluginId: string) =>
+  (payload: Readonly<Record<string, unknown>>): Record<string, string> => {
+    const encoded = Buffer.from(JSON.stringify(payload), "utf8").toString("base64")
+    return {
+      "x-codevisor-context": encoded,
+      "x-codevisor-context-signature": tokens.signContext(pluginId, encoded)
+    }
+  }
+
+export const makePaneContextHeaders =
+  (signedContextHeaders: ReturnType<typeof makeSignedContextHeaders>) =>
+  (scope: PaneTokenScope): Record<string, string> =>
+    signedContextHeaders(scope.pluginId)({
+      cwd: scope.cwd,
+      paneId: scope.paneId,
+      paneType: scope.paneType,
+      pluginId: scope.pluginId,
+      themeMode: scope.themeMode,
+      workspaceId: scope.workspaceId
+    })
+
+type AuthenticatedPane = { scope: PaneTokenScope; viaQueryToken: boolean }
+
+const exchangePaneQueryToken = (
+  tokens: PaneTokenStore,
+  queryToken: string,
+  pluginId: string
+): AuthenticatedPane | undefined => {
+  const scope = tokens.exchange(queryToken, pluginId)
+  if (scope !== undefined) {
+    return { scope, viaQueryToken: true }
+  }
+  return undefined
+}
+
+const verifyPaneCookie = (
+  tokens: PaneTokenStore,
+  pluginId: string,
+  request: IncomingMessage
+): AuthenticatedPane | undefined => {
+  const cookieToken = readCookieValue(request.headers.cookie, paneCookieName(pluginId))
+  if (cookieToken !== undefined) {
+    const scope = tokens.verify(cookieToken, pluginId)
+    if (scope !== undefined) {
+      return { scope, viaQueryToken: false }
+    }
+  }
+  return undefined
+}
+
+/// Resolves the authenticated pane scope for a proxied request: an initial
+/// `?codevisorPaneToken=` exchange, an established cookie session, or (for
+/// upgrades only) the loopback exemption.
+export const makePaneAuthenticator =
+  (tokens: PaneTokenStore) =>
+  (pluginId: string, request: IncomingMessage, url: URL): AuthenticatedPane | undefined => {
+    const queryToken = url.searchParams.get(PANE_TOKEN_QUERY_PARAM)
+    if (queryToken !== null) {
+      const authenticated = exchangePaneQueryToken(tokens, queryToken, pluginId)
+      if (authenticated !== undefined) return authenticated
+    }
+    return verifyPaneCookie(tokens, pluginId, request)
+  }
+
+type PluginPane = InstalledPlugin["manifest"]["panes"][number]
+
+const requirePluginPane = (
+  plugin: InstalledPlugin,
+  pluginId: string,
+  tokenRequest: PluginPaneTokenRequest
+): PluginPane => {
+  const pane = plugin.manifest.panes.find((candidate) => candidate.type === tokenRequest.paneType)
+  if (pane === undefined) {
+    throw new PluginsError(
+      "notFound",
+      `Plugin ${pluginId} has no pane type: ${tokenRequest.paneType}`
+    )
+  }
+  return pane
+}
+
+const paneTokenResponse = (
+  pluginId: string,
+  paneId: string,
+  pane: PluginPane,
+  issued: ReturnType<PaneTokenStore["issue"]>
+): PluginPaneTokenResponse => {
+  const query = new URLSearchParams({
+    paneId,
+    [PANE_TOKEN_QUERY_PARAM]: issued.token
+  })
+  return {
+    expiresAt: issued.expiresAt,
+    path: `/v1/plugins/${pluginId}/app${pane.path}?${query.toString()}`,
+    token: issued.token
+  }
+}
+
+export const issuePluginPaneToken = (
+  tokens: PaneTokenStore,
+  plugin: InstalledPlugin,
+  pluginId: string,
+  paneId: string,
+  tokenRequest: PluginPaneTokenRequest
+): PluginPaneTokenResponse => {
+  const pane = requirePluginPane(plugin, pluginId, tokenRequest)
+  const issued = tokens.issue({
+    paneId,
+    paneType: pane.type,
+    pluginId,
+    ...(tokenRequest.cwd === undefined ? {} : { cwd: tokenRequest.cwd }),
+    ...(tokenRequest.themeMode === undefined ? {} : { themeMode: tokenRequest.themeMode }),
+    ...(tokenRequest.workspaceId === undefined ? {} : { workspaceId: tokenRequest.workspaceId })
+  })
+  return paneTokenResponse(pluginId, paneId, pane, issued)
 }
 
 /// Cookie names cannot safely carry the id's namespace dot everywhere, so it
