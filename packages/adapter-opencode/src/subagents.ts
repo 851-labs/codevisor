@@ -165,6 +165,13 @@ export class OpenCodeSubagents {
     }
     const mapped: JsonRecord = { ...update, kind: "agent" }
 
+    this.mapCallInput(call, update, mapped)
+    this.mapCallResult(call, update, mapped)
+    this.mapCallPresentation(call, update, mapped)
+    return mapped
+  }
+
+  private mapCallInput(call: AgentCall, update: JsonRecord, mapped: JsonRecord): void {
     const input = record(update.rawInput)
     if (input !== undefined && Object.keys(input).length > 0) {
       const description = string(input.description)
@@ -185,21 +192,24 @@ export class OpenCodeSubagents {
       // it as starting rather than as an agent named "subagent".
       delete mapped.rawInput
     }
+  }
 
+  private mapCallResult(call: AgentCall, update: JsonRecord, mapped: JsonRecord): void {
     const metadata = record(record(update.rawOutput)?.metadata)
     const childId = string(metadata?.sessionID) ?? string(metadata?.sessionId)
     if (childId !== undefined) this.link(call, childId)
     // A background subagent's call returns while it keeps working: it
     // settles when the child session does.
     if (update.status === "completed" && metadata?.status === "running") delete mapped.status
+  }
 
+  private mapCallPresentation(call: AgentCall, update: JsonRecord, mapped: JsonRecord): void {
     if (call.description !== undefined) mapped.title = call.description
     else if (string(update.title) !== undefined && SUBAGENT_TOOLS.has(String(update.title))) {
       delete mapped.title
     }
     if (call.childId !== undefined)
       mapped._meta = { ...record(update._meta), ...subagentMeta(call) }
-    return mapped
   }
 
   /// Ties a new child session to its caller's open subagent call, preferring
