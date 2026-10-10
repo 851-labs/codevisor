@@ -199,51 +199,10 @@ final class TreeSitterDocument {
     if let localReferencesCache { return localReferencesCache }
     guard let query = grammar.locals else { return [] }
     let matches = try query.matches(tree: tree, source: text.units)
-    func key(_ node: TSNode) -> String {
-      "\(ts_node_start_byte(node)):\(ts_node_end_byte(node)):\(String(cString: ts_node_type(node)))"
-    }
-    let root = ts_tree_root_node(tree)
-    let rootKey = key(root)
-    var scopes: [String: Bool] = [rootKey: true]
-    var definitions: [TreeSitterQuery.Capture] = []
-    var references: [TreeSitterQuery.Capture] = []
-    for match in matches {
-      for capture in match.captures {
-        switch capture.name {
-        case "local.scope": scopes[key(capture.node)] = match.properties["local.scope-inherits"] != "false"
-        case "local.definition": definitions.append(capture)
-        case "local.reference": references.append(capture)
-        default: break
-        }
-      }
-    }
-    func enclosingScopes(_ node: TSNode) -> [String] {
-      var node = node
-      var result: [String] = []
-      while !ts_node_is_null(node) {
-        let id = key(node)
-        if let inherits = scopes[id] {
-          result.append(id)
-          if !inherits { break }
-        }
-        node = ts_node_parent(node)
-      }
-      return result
-    }
     func name(_ capture: TreeSitterQuery.Capture) -> String {
       String(decoding: text.units[capture.range.location..<NSMaxRange(capture.range)], as: UTF16.self)
     }
-    var namesByScope: [String: Set<String>] = [:]
-    for definition in definitions {
-      namesByScope[enclosingScopes(definition.node).first ?? rootKey, default: []].insert(name(definition))
-    }
-    var result = Set(definitions.map { $0.range.location * 2 })
-    for reference in references {
-      let value = name(reference)
-      if enclosingScopes(reference.node).contains(where: { namesByScope[$0]?.contains(value) == true }) {
-        result.insert(reference.range.location * 2)
-      }
-    }
+    let result = TreeSitterLocalReferences.resolve(matches, tree: tree, name: name)
     localReferencesCache = result
     return result
   }
