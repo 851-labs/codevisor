@@ -14,17 +14,11 @@ public struct BrowserProtocolError: LocalizedError, Sendable, Equatable {
 /// The scan checks structure, not every token. Use it for messages Chromium
 /// produced or that were already validated by a full parse.
 public struct BrowserProtocolMessage: Sendable {
-  private struct Member: Sendable {
-    var key: String
-    /// The raw `"key":value` bytes, relative to `data.startIndex`.
-    var member: Range<Int>
-    var value: Range<Int>
-  }
   public let data: Data
-  private let members: [Member]
+  private let members: [BrowserProtocolScanner.Member]
 
   public init?(_ data: Data) {
-    guard let members = data.withUnsafeBytes({ Self.scan(Scanner(bytes: $0)) }) else { return nil }
+    guard let members = data.withUnsafeBytes({ BrowserProtocolScanner(bytes: $0).scan() }) else { return nil }
     self.data = data
     self.members = members
   }
@@ -117,111 +111,6 @@ public struct BrowserProtocolMessage: Sendable {
 
   private static func appendSeparator(_ output: inout Data) {
     if output.count > 1 { output.append(UInt8(ascii: ",")) }
-  }
-
-  private static func scan(_ scanner: Scanner) -> [Member]? {
-    var members: [Member] = []
-    var index = scanner.skipWhitespace(0)
-    guard scanner.byte(index) == UInt8(ascii: "{") else { return nil }
-    index = scanner.skipWhitespace(index + 1)
-    if scanner.byte(index) == UInt8(ascii: "}") {
-      return scanner.skipWhitespace(index + 1) == scanner.count ? [] : nil
-    }
-    while true {
-      guard scanner.byte(index) == UInt8(ascii: "\""), let keyEnd = scanner.skipString(index),
-        let key = scanner.decodeKey(index..<keyEnd)
-      else { return nil }
-      var cursor = scanner.skipWhitespace(keyEnd)
-      guard scanner.byte(cursor) == UInt8(ascii: ":") else { return nil }
-      cursor = scanner.skipWhitespace(cursor + 1)
-      guard let valueEnd = scanner.skipValue(cursor) else { return nil }
-      members.append(Member(key: key, member: index..<valueEnd, value: cursor..<valueEnd))
-      cursor = scanner.skipWhitespace(valueEnd)
-      switch scanner.byte(cursor) {
-      case UInt8(ascii: ","): index = scanner.skipWhitespace(cursor + 1)
-      case UInt8(ascii: "}"): return scanner.skipWhitespace(cursor + 1) == scanner.count ? members : nil
-      default: return nil
-      }
-    }
-  }
-}
-
-private struct Scanner {
-  let bytes: UnsafeRawBufferPointer
-  var count: Int { bytes.count }
-
-  func byte(_ index: Int) -> UInt8? { index < bytes.count ? bytes[index] : nil }
-
-  func skipWhitespace(_ start: Int) -> Int {
-    var index = start
-    while index < bytes.count, Self.isWhitespace(bytes[index]) { index += 1 }
-    return index
-  }
-
-  /// The index after the closing quote of the string that starts at `start`.
-  func skipString(_ start: Int) -> Int? {
-    guard let base = bytes.baseAddress else { return nil }
-    var index = start + 1
-    while index < bytes.count {
-      guard let found = memchr(base + index, Int32(UInt8(ascii: "\"")), bytes.count - index) else { return nil }
-      let quote = base.distance(to: UnsafeRawPointer(found))
-      var backslashes = 0
-      while quote - backslashes - 1 > start, bytes[quote - backslashes - 1] == UInt8(ascii: "\\") { backslashes += 1 }
-      if backslashes.isMultiple(of: 2) { return quote + 1 }
-      index = quote + 1
-    }
-    return nil
-  }
-
-  func skipValue(_ start: Int) -> Int? {
-    guard let first = byte(start) else { return nil }
-    switch first {
-    case UInt8(ascii: "\""): return skipString(start)
-    case UInt8(ascii: "{"), UInt8(ascii: "["):
-      var depth = 0
-      var index = start
-      while index < bytes.count {
-        switch bytes[index] {
-        case UInt8(ascii: "\""):
-          guard let end = skipString(index) else { return nil }
-          index = end
-          continue
-        case UInt8(ascii: "{"), UInt8(ascii: "["): depth += 1
-        case UInt8(ascii: "}"), UInt8(ascii: "]"):
-          depth -= 1
-          if depth == 0 { return index + 1 }
-        default: break
-        }
-        index += 1
-      }
-      return nil
-    default:
-      var index = start
-      while index < bytes.count, !Self.endsScalar(bytes[index]) { index += 1 }
-      return index > start ? index : nil
-    }
-  }
-
-  static func isWhitespace(_ byte: UInt8) -> Bool {
-    switch byte {
-    case 0x20, 0x09, 0x0A, 0x0D: true
-    default: false
-    }
-  }
-
-  static func endsScalar(_ byte: UInt8) -> Bool {
-    switch byte {
-    case UInt8(ascii: ","), UInt8(ascii: "}"), UInt8(ascii: "]"): true
-    default: isWhitespace(byte)
-    }
-  }
-
-  func decodeKey(_ range: Range<Int>) -> String? {
-    let token = UnsafeRawBufferPointer(rebasing: bytes[range])
-    if !token.contains(UInt8(ascii: "\\")) {
-      return String(decoding: UnsafeRawBufferPointer(rebasing: token.dropFirst().dropLast()), as: UTF8.self)
-    }
-    return (try? JSONSerialization.jsonObject(with: Data(token), options: .fragmentsAllowed)) as? String
   }
 }
 
