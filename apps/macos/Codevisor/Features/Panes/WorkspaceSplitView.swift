@@ -275,16 +275,7 @@ private struct SplitLeafView: View {
         PaneGroupContent(group: model)
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
-      .contentShape(Rectangle())
-      .simultaneousGesture(
-        TapGesture().onEnded { model.onActivated?() },
-        including: model.state.selectedPane?.kind == .browser ? .subviews : .all
-      )
-      .background {
-        if model.state.selectedPane?.kind == .browser {
-          BrowserPaneActivationObserver { model.onActivated?() }
-        }
-      }
+      .background { PaneActivationObserver { model.onActivated?() } }
     }
   }
 

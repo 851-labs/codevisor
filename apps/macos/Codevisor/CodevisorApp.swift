@@ -52,6 +52,7 @@ struct CodevisorApp: App {
         FileCommands()
         WorkspaceLayoutCommands()
         BrowserCommands()
+        SimulatorCommands()
         DebugOverlayCommands()
       }
     }

@@ -132,6 +132,7 @@ struct SessionContainerView: View {
       }
       .focusedSceneValue(\.browserPage, activeBrowserModel)
       .focusedSceneValue(\.filePane, activeFileModel)
+      .focusedSceneValue(\.simulatorPane, activeSimulatorModel)
       .focusedSceneValue(
         \.workspaceLayoutActions,
         WorkspaceLayoutActions(

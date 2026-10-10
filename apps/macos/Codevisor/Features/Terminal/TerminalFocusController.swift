@@ -255,7 +255,14 @@ final class TerminalFocusController {
     deferredComposerFocus.cancel()
     pendingComposerFocus = nil
     if let view = composerAreaView(forChat: sessionId) {
-      focusWhenWindowed(view, forChat: sessionId)
+      // A click that activated this chat by landing in its history (selecting
+      // text there) keeps focus where it put it.
+      focusWhenWindowed(view, forChat: sessionId) { [weak self] window in
+        guard let transcript = self?.chatTranscripts[sessionId]?.view,
+          let responder = window.firstResponder as? NSView
+        else { return true }
+        return !responder.isDescendant(of: transcript)
+      }
     } else {
       pendingComposerFocus = sessionId
     }

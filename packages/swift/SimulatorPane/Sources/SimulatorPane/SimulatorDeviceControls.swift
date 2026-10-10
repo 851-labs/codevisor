@@ -15,6 +15,23 @@ enum SimulatorDeviceControls {
   }
 }
 
+extension View {
+  /// Simulator's shortcut for a device control, on an iPhone or iPad. A Mac's menu bar carries
+  /// them instead (`SimulatorDeviceCommandItems`), so they reach the focused pane alone: a shortcut
+  /// on a button in the pane would turn the device while you type in a chat beside it.
+  @ViewBuilder func deviceShortcut(_ shortcut: KeyboardShortcut) -> some View {
+    #if os(iOS)
+      keyboardShortcut(shortcut)
+    #else
+      self
+    #endif
+  }
+
+  func deviceShortcut(_ key: KeyEquivalent, modifiers: EventModifiers) -> some View {
+    deviceShortcut(KeyboardShortcut(key, modifiers: modifiers))
+  }
+}
+
 /// Home, or on an Apple TV the remote's Back, TV and Play/Pause. Shortcuts match Simulator's.
 struct SimulatorHomeButtons: View {
   let model: SimulatorPaneModel
@@ -26,13 +43,13 @@ struct SimulatorHomeButtons: View {
         .help("Back")
       Button("TV", systemImage: "tv") { SimulatorDeviceControls.press("home", on: model) }
         .help("TV")
-        .keyboardShortcut("h", modifiers: [.command, .shift])
+        .deviceShortcut("h", modifiers: [.command, .shift])
       Button("Play/Pause", systemImage: "playpause.fill") { SimulatorDeviceControls.press("play-pause", on: model) }
         .help("Play/Pause")
     } else {
       Button("Home", systemImage: "square.grid.3x3.fill") { SimulatorDeviceControls.press("home", on: model) }
         .help("Home (⇧⌘H)")
-        .keyboardShortcut("h", modifiers: [.command, .shift])
+        .deviceShortcut("h", modifiers: [.command, .shift])
     }
   }
 }
@@ -54,7 +71,7 @@ struct SimulatorScreenshotButton: View {
       }
     }
     .help("Screenshot (⌘S)")
-    .keyboardShortcut("s", modifiers: .command)
+    .deviceShortcut("s", modifiers: .command)
     .disabled(capturing)
   }
 }
@@ -74,18 +91,20 @@ struct SimulatorRotateButton: View {
 
   var body: some View {
     Button("Rotate", systemImage: "rectangle.portrait.rotate") { model.rotate(clockwise: false) }
-      .keyboardShortcut(.leftArrow, modifiers: .command)
+      .deviceShortcut(.leftArrow, modifiers: .command)
       .help("Rotate (⌘← ⌘→)")
       .contextMenu {
         Button("Rotate Left", systemImage: "rotate.left") { model.rotate(clockwise: false) }
         Button("Rotate Right", systemImage: "rotate.right") { model.rotate(clockwise: true) }
       }
-      // ⌘→ turns the other way without a visible button of its own.
-      .background {
-        Button("Rotate Right") { model.rotate(clockwise: true) }
-          .keyboardShortcut(.rightArrow, modifiers: .command)
+      #if os(iOS)
+        // ⌘→ turns the other way without a visible button of its own.
+        .background {
+          Button("Rotate Right") { model.rotate(clockwise: true) }
+          .deviceShortcut(.rightArrow, modifiers: .command)
           .hidden()
-      }
+        }
+      #endif
   }
 }
 

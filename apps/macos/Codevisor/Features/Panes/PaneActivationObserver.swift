@@ -1,10 +1,12 @@
 import AppKit
 import SwiftUI
 
-/// A SwiftUI tap gesture on the browser's ancestor cancels AppKit's button
-/// tracking when the mouse is released. Observe clicks without recognizing or
-/// consuming them so the browser's native controls receive the entire click.
-struct BrowserPaneActivationObserver: NSViewRepresentable {
+/// Makes a click anywhere in a pane activate it, so keyboard shortcuts follow
+/// the pane you're working in. Observes clicks without recognizing or consuming
+/// them: AppKit views that take the mouse-down (the composer's text view, a
+/// simulator's screen) keep a SwiftUI tap gesture from ever firing, and on the
+/// browser such a gesture cancels AppKit's button tracking on mouse-up.
+struct PaneActivationObserver: NSViewRepresentable {
   let onActivate: () -> Void
 
   func makeNSView(context: Context) -> ClickObserverView {

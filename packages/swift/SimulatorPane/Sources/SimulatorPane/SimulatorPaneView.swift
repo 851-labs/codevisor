@@ -91,7 +91,8 @@ public struct SimulatorPaneView: View {
           Button("Start") { model.perform(.boot) }
             .buttonStyle(.glassProminent)
             .controlSize(.large)
-            .keyboardShortcut(.defaultAction)
+            // Not on a Mac, where Return would start it from a chat beside it.
+            .deviceShortcut(.defaultAction)
         } else {
           ProgressView("\(device.state)…").controlSize(.small)
         }

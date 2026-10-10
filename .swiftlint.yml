@@ -5,6 +5,7 @@ only_rules:
   - file_length
   - type_body_length
   - file_name
+  - custom_rules
 
 included:
   - apps/ios
@@ -35,3 +36,28 @@ type_body_length:
 
 file_name:
   severity: warning
+
+custom_rules:
+  # SwiftUI attaches a view's keyboard shortcut to the whole window, so a shortcut on a button in
+  # a pane fires whichever pane has focus (⌘→ in a chat's composer rotated a simulator beside it).
+  # Pane shortcuts belong in focus-scoped menu commands (`*Commands.swift`, reading
+  # `@FocusedValue`), or in AppKit key handling that checks the first responder.
+  pane_keyboard_shortcut:
+    name: Pane keyboard shortcut
+    message: >-
+      A view's keyboard shortcut reaches the whole window, not just its pane; put it in a
+      focus-scoped menu command instead.
+    regex: '(^|[\s)}\]])\.keyboardShortcut\('
+    excluded_match_kinds: [comment, doccomment, string]
+    severity: error
+    included:
+      - packages/swift/SimulatorPane/Sources/
+      - packages/swift/ScreenSharing/Sources/
+      - apps/macos/Codevisor/Chromium/
+      - apps/macos/Codevisor/Features/Panes/
+      - apps/macos/Codevisor/Features/Session/
+      - apps/macos/Codevisor/Features/Terminal/
+    excluded:
+      # Menu commands, scoped to the focused pane; sheets, modal over the window.
+      - Command(s|Items)\.swift$
+      - Sheet\.swift$
