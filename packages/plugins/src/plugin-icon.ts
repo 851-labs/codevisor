@@ -49,16 +49,15 @@ const iconPath = (plugin: InstalledPlugin, paneType: string | undefined): string
   return path
 }
 
-/// SVGs render as images in client-owned chrome, never as documents. Reject
-/// active markup and network-capable references before the bytes leave the
-/// machine so every current and future client gets the same safe subset.
-const validateSvg = (pluginId: string, data: Uint8Array): void => {
-  let source: string
+const decodeSvg = (pluginId: string, data: Uint8Array): string => {
   try {
-    source = new TextDecoder("utf-8", { fatal: true }).decode(data)
+    return new TextDecoder("utf-8", { fatal: true }).decode(data)
   } catch {
     throw new PluginsError("invalid", `Plugin ${pluginId} icon is not valid UTF-8 SVG`)
   }
+}
+
+const validateSvgMarkup = (pluginId: string, source: string): void => {
   if (!/<svg[\s>]/i.test(source)) {
     throw new PluginsError("invalid", `Plugin ${pluginId} icon is not an SVG document`)
   }
@@ -71,6 +70,9 @@ const validateSvg = (pluginId: string, data: Uint8Array): void => {
   if (/@import\b/i.test(source)) {
     throw new PluginsError("invalid", `Plugin ${pluginId} SVG icon contains an external stylesheet`)
   }
+}
+
+const validateSvgReferences = (pluginId: string, source: string): void => {
   const references = source.matchAll(/(?:href|xlink:href)\s*=\s*["']([^"']*)["']/gi)
   for (const match of references) {
     if (!match[1]!.startsWith("#")) {
@@ -80,12 +82,25 @@ const validateSvg = (pluginId: string, data: Uint8Array): void => {
       )
     }
   }
+}
+
+const validateSvgResources = (pluginId: string, source: string): void => {
   const urls = source.matchAll(/url\(\s*["']?([^)'"\s]+)["']?\s*\)/gi)
   for (const match of urls) {
     if (!match[1]!.startsWith("#")) {
       throw new PluginsError("invalid", `Plugin ${pluginId} SVG icon contains an external resource`)
     }
   }
+}
+
+/// SVGs render as images in client-owned chrome, never as documents. Reject
+/// active markup and network-capable references before the bytes leave the
+/// machine so every current and future client gets the same safe subset.
+const validateSvg = (pluginId: string, data: Uint8Array): void => {
+  const source = decodeSvg(pluginId, data)
+  validateSvgMarkup(pluginId, source)
+  validateSvgReferences(pluginId, source)
+  validateSvgResources(pluginId, source)
 }
 
 const readBoundedBody = async (pluginId: string, response: Response): Promise<Uint8Array> => {
