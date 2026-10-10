@@ -2,17 +2,6 @@ import CodevisorClient
 import Foundation
 import Observation
 
-public enum CloudAccountState: Equatable, Sendable {
-  case signedOut
-  case validating
-  case signedIn(userEmail: String?)
-
-  public var isSignedIn: Bool {
-    if case .signedIn = self { return true }
-    return false
-  }
-}
-
 /// The cloud account feature's brain: sign-in state, the machine list, and
 /// custom-server selection. All networking goes through `clientFactory` so
 /// tests can inject a fake client; the session token and custom server URL
@@ -257,6 +246,20 @@ public final class CloudAccountController {
     let token = storedToken
     let localClient = localServerClient
     let accountClient = client
+    clearSessionCredential()
+    discardSessionRosterAndTransports()
+    // Best-effort: a registration this app created follows the user's
+    // sign-out, so signing out disconnects the local machine and revokes
+    // its credential. CLI (`codevisor auth login`) and dev-provisioned
+    // registrations are external — leave them alone.
+    if deregisterLocalMachine, let localClient {
+      scheduleLocalMachineDeregistration(token: token, localClient: localClient, accountClient: accountClient)
+    }
+    refreshAuthProvidersIfUnknown()
+    onSignedOut?()
+  }
+
+  private func clearSessionCredential() {
     localRegistrationTask?.cancel()
     localRegistrationTask = nil
     do {
@@ -264,6 +267,9 @@ public final class CloudAccountController {
     } catch {
       Log.cloud.error("Failed to clear cloud token: \(String(describing: error), privacy: .public)")
     }
+  }
+
+  private func discardSessionRosterAndTransports() {
     machines = []
     cancelSessionValidation()
     isRosterVerified = false
@@ -281,30 +287,29 @@ public final class CloudAccountController {
       self.hub = nil
       Task { await hub.shutdown() }
     }
-    // Best-effort: a registration this app created follows the user's
-    // sign-out, so signing out disconnects the local machine and revokes
-    // its credential. CLI (`codevisor auth login`) and dev-provisioned
-    // registrations are external — leave them alone.
-    if deregisterLocalMachine, let localClient {
-      localDeregistrationTask = Task {
-        do {
-          let registration = try await localClient.cloudRegistration()
-          guard registration.managedBy == "app", let deviceId = registration.deviceId else {
-            return
-          }
-          try await localClient.disconnectCloud()
-          if let token {
-            try? await accountClient.removeMachine(deviceId: deviceId, token: token)
-          }
-          Log.cloud.log("Deregistered this machine from the cloud account on sign-out")
-        } catch {
-          Log.cloud.error(
-            "Local machine cloud deregistration failed: \(String(describing: error), privacy: .public)")
+  }
+
+  private func scheduleLocalMachineDeregistration(
+    token: String?,
+    localClient: any CodevisorServerClienting,
+    accountClient: any CloudAccountClienting
+  ) {
+    localDeregistrationTask = Task {
+      do {
+        let registration = try await localClient.cloudRegistration()
+        guard registration.managedBy == "app", let deviceId = registration.deviceId else {
+          return
         }
+        try await localClient.disconnectCloud()
+        if let token {
+          try? await accountClient.removeMachine(deviceId: deviceId, token: token)
+        }
+        Log.cloud.log("Deregistered this machine from the cloud account on sign-out")
+      } catch {
+        Log.cloud.error(
+          "Local machine cloud deregistration failed: \(String(describing: error), privacy: .public)")
       }
     }
-    refreshAuthProvidersIfUnknown()
-    onSignedOut?()
   }
 
   /// A hub owns an immutable snapshot of the account credentials. Replacing
