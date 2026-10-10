@@ -52,8 +52,18 @@ export class FakePiClient implements PiClient {
   private eventHandler: ((event: Record<string, unknown>) => void) | undefined
   private closeHandler: ((error: Error) => void) | undefined
 
+  private readonly commandWaiters: Array<{ type: string; resolve: () => void }> = []
+
+  nextCommand(type: string): Promise<void> {
+    return new Promise((resolve) => {
+      this.commandWaiters.push({ type, resolve })
+    })
+  }
+
   command<T>(type: string, fields: Record<string, unknown> = {}): Promise<T> {
     this.commands.push({ type, fields })
+    const index = this.commandWaiters.findIndex((waiter) => waiter.type === type)
+    if (index !== -1) this.commandWaiters.splice(index, 1)[0]!.resolve()
     const reply = this.replies[type]
     return reply instanceof Error ? Promise.reject(reply) : Promise.resolve(reply as T)
   }

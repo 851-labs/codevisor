@@ -135,8 +135,9 @@ describe("Pi provider", () => {
   it("runs a turn from the prompt until Pi settles", async () => {
     const { provider, client, events, emit } = setup()
     const { handle } = await run(provider.createSession(definition, "/p", emit))
+    const resultRequested = client.nextCommand("prompt")
     const result = run(handle.prompt({ text: "hi" }))
-    await Promise.resolve()
+    await resultRequested
     client.emit(...settled)
     await expect(result).resolves.toEqual({ stopReason: "end_turn" })
     expect(client.commands.at(-1)).toEqual({ type: "prompt", fields: { message: "hi" } })
@@ -161,20 +162,23 @@ describe("Pi provider", () => {
       },
       { type: "agent_settled" }
     ]
+    const firstRequested = client.nextCommand("prompt")
     const first = run(handle.prompt("one"))
-    await Promise.resolve()
+    await firstRequested
     client.emit(...failing)
     await first
+    const secondRequested = client.nextCommand("prompt")
     const second = run(handle.prompt("two"))
-    await Promise.resolve()
+    await secondRequested
     client.emit(
       failing[0]!,
       { ...failing[1]!, message: { role: "assistant", stopReason: "error" } },
       failing[2]!
     )
     await second
+    const thirdRequested = client.nextCommand("prompt")
     const third = run(handle.prompt("three"))
-    await Promise.resolve()
+    await thirdRequested
     expect(await run(handle.cancel)).toEqual({ runtimeState: "reusable" })
     client.emit(
       failing[0]!,
@@ -207,8 +211,9 @@ describe("Pi provider", () => {
     client.replies.prompt = new Error("No model selected")
     await expect(run(handle.prompt("hi"))).resolves.toEqual({ stopReason: "end_turn" })
     client.replies.prompt = "unexpected"
+    const queuedRequested = client.nextCommand("prompt")
     const queued = run(handle.prompt("hi"))
-    await Promise.resolve()
+    await queuedRequested
     client.emit({ type: "agent_settled" })
     await queued
     expect(turnStates(events).filter(([state]) => state === "ended")).toEqual([
@@ -234,8 +239,9 @@ describe("Pi provider", () => {
   it("asks Pi's dialogs as questions, and cancels the open ones when the turn ends", async () => {
     const { provider, client, events, emit } = setup()
     const { handle } = await run(provider.createSession(definition, "/p", emit))
+    const resultRequested = client.nextCommand("prompt")
     const result = run(handle.prompt("go"))
-    await Promise.resolve()
+    await resultRequested
     client.emit(
       {
         type: "extension_ui_request",
