@@ -56,6 +56,16 @@ export function parseSimulatorArguments(args) {
 }
 
 export function selectSimulatorConfiguration(options, devices, runtimes) {
+  const device = findSimulatorDevice(options, devices)
+  const runtime = selectInstalledSimulatorRuntime(options, device, runtimes)
+  return {
+    deviceType: device.identifier,
+    runtimeIdentifier: runtime.identifier,
+    runtime: `iOS ${runtime.version}`
+  }
+}
+
+function findSimulatorDevice(options, devices) {
   const device = devices.find(
     (entry) => entry.name === options.device || entry.identifier === options.device
   )
@@ -63,26 +73,29 @@ export function selectSimulatorConfiguration(options, devices, runtimes) {
     throw new Error(
       `Unknown simulator device: ${options.device}. Use an installed device type from xcrun simctl list devicetypes.`
     )
-  const candidates = runtimes.filter(
-    (runtime) =>
-      runtime.isAvailable &&
-      runtime.identifier.includes(".iOS-") &&
-      (!options.runtime ||
-        [runtime.identifier, runtime.version, runtime.name].includes(options.runtime)) &&
-      (!runtime.supportedDeviceTypes ||
-        runtime.supportedDeviceTypes.some((type) => type.identifier === device.identifier))
+  return device
+}
+
+function runtimeSupportsDevice(runtime, options, device) {
+  return (
+    runtime.isAvailable &&
+    runtime.identifier.includes(".iOS-") &&
+    (!options.runtime ||
+      [runtime.identifier, runtime.version, runtime.name].includes(options.runtime)) &&
+    (!runtime.supportedDeviceTypes ||
+      runtime.supportedDeviceTypes.some((type) => type.identifier === device.identifier))
   )
+}
+
+function selectInstalledSimulatorRuntime(options, device, runtimes) {
+  const candidates = runtimes.filter((runtime) => runtimeSupportsDevice(runtime, options, device))
   candidates.sort((a, b) => b.version.localeCompare(a.version, undefined, { numeric: true }))
   const runtime = candidates[0]
   if (!runtime)
     throw new Error(
       `No installed iOS runtime supports ${options.device}${options.runtime ? ` with runtime ${options.runtime}` : ""}. Install it in Xcode first.`
     )
-  return {
-    deviceType: device.identifier,
-    runtimeIdentifier: runtime.identifier,
-    runtime: `iOS ${runtime.version}`
-  }
+  return runtime
 }
 
 export async function simulatorOwnerAlive(manifest, identity = processIdentity) {
