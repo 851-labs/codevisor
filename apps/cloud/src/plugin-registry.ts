@@ -150,18 +150,7 @@ const PLUGIN_ID_PATTERN = /^[a-z0-9][a-z0-9-]*\.[a-z0-9][a-z0-9-]*$/
 
 type ManifestValidation = { ok: true; manifest: PluginManifest } | { ok: false; reason: string }
 
-/// Structural validation for indexing. Reuses the PluginManifest Effect
-/// Schema from @codevisor/api; the full install-time ruleset lives in
-/// packages/plugins/src/plugin-manifest.ts (parsePluginManifest) and still
-/// runs on the user's machine before anything executes — the index only needs
-/// enough to publish honest metadata under the right owner.
-export const validateManifestForIndex = (raw: string, repoOwner: string): ManifestValidation => {
-  let json: unknown
-  try {
-    json = JSON.parse(raw)
-  } catch {
-    return { ok: false, reason: `${PLUGIN_MANIFEST_FILENAME} is not valid JSON` }
-  }
+const unsupportedIndexProtocol = (json: unknown): ManifestValidation | undefined => {
   const protocolVersion =
     typeof json === "object" && json !== null && "protocolVersion" in json
       ? (json as { protocolVersion?: unknown }).protocolVersion
@@ -172,13 +161,10 @@ export const validateManifestForIndex = (raw: string, repoOwner: string): Manife
       reason: `unsupported plugin protocolVersion ${protocolVersion} (this index supports 1 and 2)`
     }
   }
-  let manifest: PluginManifest
-  try {
-    manifest = decode(PluginManifest)(json)
-  } catch (cause) {
-    const message = cause instanceof Error ? cause.message : String(cause)
-    return { ok: false, reason: `invalid plugin manifest: ${message}` }
-  }
+  return undefined
+}
+
+const invalidIndexedVersion = (manifest: PluginManifest): ManifestValidation | undefined => {
   if (
     manifest.protocolVersion === 2 &&
     (!isSemanticVersion(manifest.version) ||
@@ -187,6 +173,13 @@ export const validateManifestForIndex = (raw: string, repoOwner: string): Manife
   ) {
     return { ok: false, reason: "protocol v2 version fields must use strict SemVer" }
   }
+  return undefined
+}
+
+const validateIndexedIdentity = (
+  manifest: PluginManifest,
+  repoOwner: string
+): ManifestValidation => {
   if (!PLUGIN_ID_PATTERN.test(manifest.id)) {
     return {
       ok: false,
@@ -205,6 +198,35 @@ export const validateManifestForIndex = (raw: string, repoOwner: string): Manife
   return { ok: true, manifest }
 }
 
+const decodeIndexedManifest = (json: unknown, repoOwner: string): ManifestValidation => {
+  let manifest: PluginManifest
+  try {
+    manifest = decode(PluginManifest)(json)
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause)
+    return { ok: false, reason: `invalid plugin manifest: ${message}` }
+  }
+  const invalidVersion = invalidIndexedVersion(manifest)
+  if (invalidVersion !== undefined) return invalidVersion
+  return validateIndexedIdentity(manifest, repoOwner)
+}
+
+/// Structural validation for indexing. Reuses the PluginManifest Effect
+/// Schema from @codevisor/api; the full install-time ruleset lives in
+/// packages/plugins/src/plugin-manifest.ts (parsePluginManifest) and still
+/// runs on the user's machine before anything executes — the index only needs
+/// enough to publish honest metadata under the right owner.
+export const validateManifestForIndex = (raw: string, repoOwner: string): ManifestValidation => {
+  let json: unknown
+  try {
+    json = JSON.parse(raw)
+  } catch {
+    return { ok: false, reason: `${PLUGIN_MANIFEST_FILENAME} is not valid JSON` }
+  }
+  const unsupportedProtocol = unsupportedIndexProtocol(json)
+  if (unsupportedProtocol !== undefined) return unsupportedProtocol
+  return decodeIndexedManifest(json, repoOwner)
+}
 // -- Index refresh ---------------------------------------------------------------
 
 const toEntry = (
