@@ -13,8 +13,11 @@ struct HomeAgentCollectionActions {
   /// A row dropped somewhere new; the store has it there on return.
   var drop: (HomeListItem, HomeListDrop) -> Void = { _, _ in }
   var workspaceMenu: (AgentSidebarRow, AgentSidebarRow?) -> UIMenu? = { _, _ in nil }
-  var groupMenu: (HomeSidebarGroup) -> UIMenu? = { _ in nil }
   var archive: (UUID) -> Void = { _ in }
+  /// A folder's own actions, from a swipe as from its menu. Deleting may
+  /// archive the workspaces filed in it too.
+  var renameGroup: (HomeSidebarGroup) -> Void = { _ in }
+  var deleteGroup: (HomeSidebarGroup, _ archivingWorkspaces: Bool) -> Void = { _, _ in }
   var refresh: () async -> Void = {}
 }
 
@@ -95,20 +98,46 @@ final class HomeAgentCollectionController: UIViewController, UICollectionViewDel
       // Headers name the two lists when both are there.
       config.headerMode = self?.dataSource?.snapshot().numberOfSections ?? 0 > 1 ? .supplementary : .none
       config.trailingSwipeActionsConfigurationProvider = { [weak self] indexPath in
-        guard let self, case let .workspace(id) = self.dataSource.itemIdentifier(for: indexPath) else { return nil }
-        let archive = UIContextualAction(style: .destructive, title: "Archive") { [weak self] _, _, done in
-          self?.list?.actions.archive(id)
-          done(true)
-        }
-        archive.image = UIImage(systemName: "archivebox")
-        return UISwipeActionsConfiguration(actions: [archive])
+        self?.swipeActions(at: indexPath)
       }
       return NSCollectionLayoutSection.list(using: config, layoutEnvironment: environment)
     }
   }
 
+  /// A workspace archives; a folder deletes (after asking) or renames.
+  private func swipeActions(at indexPath: IndexPath) -> UISwipeActionsConfiguration? {
+    switch dataSource.itemIdentifier(for: indexPath) {
+    case let .workspace(id):
+      let archive = UIContextualAction(style: .destructive, title: "Archive") { [weak self] _, _, done in
+        self?.list?.actions.archive(id)
+        done(true)
+      }
+      archive.image = UIImage(systemName: "archivebox")
+      return UISwipeActionsConfiguration(actions: [archive])
+    case let .group(id):
+      guard let group = model.group(id), group.folder != nil else { return nil }
+      // The row slides back: deleting asks first, renaming asks for a name.
+      let delete = UIContextualAction(style: .destructive, title: "Delete") { [weak self] _, _, done in
+        self?.confirmDelete(group)
+        done(false)
+      }
+      delete.image = UIImage(systemName: "trash")
+      let rename = UIContextualAction(style: .normal, title: "Rename") { [weak self] _, _, done in
+        self?.list?.actions.renameGroup(group)
+        done(true)
+      }
+      rename.image = UIImage(systemName: "pencil")
+      rename.backgroundColor = .systemBlue
+      let actions = UISwipeActionsConfiguration(actions: [delete, rename])
+      actions.performsFirstActionWithFullSwipe = false
+      return actions
+    case nil:
+      return nil
+    }
+  }
+
   private func makeDataSource() {
-    let cell = UICollectionView.CellRegistration<UICollectionViewListCell, HomeListItem> { [weak self] cell, _, item in
+    let cell = UICollectionView.CellRegistration<HomeListCell, HomeListItem> { [weak self] cell, _, item in
       self?.configure(cell, item)
     }
     let header = UICollectionView.SupplementaryRegistration<UICollectionViewListCell>(
@@ -140,25 +169,34 @@ final class HomeAgentCollectionController: UIViewController, UICollectionViewDel
     }
   }
 
-  private func configure(_ cell: UICollectionViewListCell, _ item: HomeListItem) {
+  private func configure(_ cell: HomeListCell, _ item: HomeListItem) {
     guard let environment = list?.environment else { return }
     let disclosure = UICellAccessory.OutlineDisclosureOptions(style: .cell, tintColor: .secondaryLabel)
     switch item {
     case let .workspace(id):
       guard let row = model.placements[id]?.row else { return }
-      cell.configurationUpdateHandler = { cell, state in
+      let draw = { (cell: HomeListCell, isSelected: Bool) in
+        cell.drawnSelected = isSelected
         cell.contentConfiguration = UIHostingConfiguration {
-          HomeListWorkspaceRow(row: row, isSelected: state.isSelected).environment(environment)
+          HomeListWorkspaceRow(row: row, isSelected: isSelected).environment(environment)
         }
       }
+      draw(cell, cell.isSelected)
+      // Beside the detail, a selected row's text turns to the selection's.
+      // Only a change of selection redraws it: a swipe must leave it drawn.
+      cell.configurationUpdateHandler =
+        isSelectionList
+        ? { cell, state in
+          guard let cell = cell as? HomeListCell, cell.drawnSelected != state.isSelected else { return }
+          draw(cell, state.isSelected)
+        } : nil
       cell.accessories =
         !row.children.isEmpty
         ? [.outlineDisclosure(options: disclosure)] : isSelectionList ? [] : [.disclosureIndicator()]
     case let .group(id):
       guard let group = model.group(id) else { return }
-      cell.configurationUpdateHandler = { cell, _ in
-        cell.contentConfiguration = UIHostingConfiguration { HomeListGroupRow(group: group) }
-      }
+      cell.configurationUpdateHandler = nil
+      cell.contentConfiguration = UIHostingConfiguration { HomeListGroupRow(group: group) }
       // An empty folder has nothing to disclose.
       var header = disclosure
       header.style = .header
@@ -253,10 +291,47 @@ final class HomeAgentCollectionController: UIViewController, UICollectionViewDel
       guard let placement = model.placements[id] else { return nil }
       menu = list?.actions.workspaceMenu(placement.row, placement.owner.flatMap { model.placements[$0]?.row })
     case let .group(id):
-      menu = model.group(id).flatMap { list?.actions.groupMenu($0) }
+      menu = model.group(id).flatMap(folderMenu)
     }
     guard let menu else { return nil }
     return UIContextMenuConfiguration(actionProvider: { _ in menu })
+  }
+
+  private func folderMenu(_ group: HomeSidebarGroup) -> UIMenu? {
+    guard group.folder != nil else { return nil }
+    return UIMenu(children: [
+      UIAction(title: "Rename", image: UIImage(systemName: "pencil")) { [weak self] _ in
+        self?.list?.actions.renameGroup(group)
+      },
+      UIAction(title: "Delete Folder…", image: UIImage(systemName: "trash"), attributes: .destructive) {
+        [weak self] _ in self?.confirmDelete(group)
+      },
+    ])
+  }
+
+  /// Asks before deleting a folder, from its row: the folder alone, or
+  /// with the workspaces filed in it.
+  private func confirmDelete(_ group: HomeSidebarGroup) {
+    guard let folder = group.folder else { return }
+    let sheet = UIAlertController(title: "Delete “\(folder.name)”?", message: nil, preferredStyle: .actionSheet)
+    sheet.addAction(
+      UIAlertAction(title: "Delete Folder", style: .default) { [weak self] _ in
+        self?.list?.actions.deleteGroup(group, false)
+      })
+    let count = group.rows.count
+    if count > 0 {
+      sheet.addAction(
+        UIAlertAction(title: "Delete Folder and \(count) Workspace\(count == 1 ? "" : "s")", style: .destructive) {
+          [weak self] _ in self?.list?.actions.deleteGroup(group, true)
+        })
+    }
+    sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+    if let indexPath = dataSource.indexPath(for: .group(group.id)), let cell = collectionView.cellForItem(at: indexPath)
+    {
+      sheet.popoverPresentationController?.sourceView = cell
+      sheet.popoverPresentationController?.sourceRect = cell.bounds
+    }
+    present(sheet, animated: true)
   }
 
   // MARK: - Drag and drop
@@ -340,6 +415,11 @@ extension HomeAgentCollectionController {
     guard let section = sections.last else { return nil }
     return IndexPath(item: collectionView.numberOfItems(inSection: section), section: section)
   }
+}
+
+/// A list cell that remembers whether its row was drawn selected.
+final class HomeListCell: UICollectionViewListCell {
+  var drawnSelected: Bool?
 }
 
 /// A workspace's row: its state, its name, and how many workspaces are

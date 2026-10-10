@@ -31,8 +31,6 @@ struct HomeAgentList: View {
   @State private var collapsedProjects: Set<String> = []
   @State private var renamingFolder: ServerNavigationFolder?
   @State private var folderTitle = ""
-  /// The folder being deleted, with the agents filed in it.
-  @State private var deleting: (folder: ServerNavigationFolder, agents: [UUID])?
 
   private var navigation: NavigationStore { environment.navigationStore }
 
@@ -55,22 +53,6 @@ struct HomeAgentList: View {
       Button("Rename") { commitFolderRename() }
       Button("Cancel", role: .cancel) { renamingFolder = nil }
     }
-    .confirmationDialog(
-      deleting.map { "Delete “\($0.folder.name)”?" } ?? "",
-      isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
-      titleVisibility: .visible
-    ) {
-      if let deleting {
-        let count = deleting.agents.count
-        Button("Delete Folder") { delete(deleting.folder, archiving: []) }
-        if count > 0 {
-          Button("Delete Folder and \(count) Workspace\(count == 1 ? "" : "s")", role: .destructive) {
-            delete(deleting.folder, archiving: deleting.agents)
-          }
-        }
-        Button("Cancel", role: .cancel) {}
-      }
-    }
   }
 
   private var collectionActions: HomeAgentCollectionActions {
@@ -83,8 +65,16 @@ struct HomeAgentList: View {
       setGroupExpanded: { group, isExpanded in setExpanded(group, isExpanded) },
       drop: { item, drop in perform(drop, moving: item) },
       workspaceMenu: { row, owner in workspaceMenu(row, owner: owner) },
-      groupMenu: { group in folderMenu(group) },
       archive: actions.archive,
+      renameGroup: { group in
+        guard let folder = group.folder else { return }
+        folderTitle = folder.name
+        renamingFolder = folder
+      },
+      deleteGroup: { group, archivingWorkspaces in
+        guard let folder = group.folder else { return }
+        delete(folder, archiving: archivingWorkspaces ? group.rows.map(\.id) : [])
+      },
       refresh: actions.refresh
     )
   }
@@ -148,19 +138,6 @@ struct HomeAgentList: View {
         image: UIImage(systemName: "archivebox"), attributes: .destructive
       ) { _ in actions.archive(row.id) })
     return UIMenu(children: items)
-  }
-
-  private func folderMenu(_ group: HomeSidebarGroup) -> UIMenu? {
-    guard let folder = group.folder else { return nil }
-    return UIMenu(children: [
-      UIAction(title: "Rename", image: UIImage(systemName: "pencil")) { _ in
-        folderTitle = folder.name
-        renamingFolder = folder
-      },
-      UIAction(title: "Delete Folder…", image: UIImage(systemName: "trash"), attributes: .destructive) { _ in
-        deleting = (folder, group.rows.map(\.id))
-      },
-    ])
   }
 
   private func change(_ id: UUID, _ change: WorkspaceHierarchyChange) {
