@@ -45,6 +45,8 @@ describe("makeStaleWhileRevalidate", () => {
     loads.resolve(1, ["beta"])
     await refreshTimestampRead.promise
     expect(await get()).toEqual(["beta"])
+    // A subsequent fresh read must not start another refresh.
+    expect(await get()).toEqual(["beta"])
     expect(loads.calls).toBe(2)
   })
 
