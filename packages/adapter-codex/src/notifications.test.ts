@@ -90,8 +90,9 @@ describe("CodexProvider", () => {
     const { client, created, events } = await setup()
     client.threadName = "Harness title"
     client.threadPreview = "First prompt"
+    const turnRequested = client.nextRequest("turn/start")
     const prompt = run(created!.handle.prompt("hello"))
-    await Promise.resolve()
+    await turnRequested
     client.emit("turn/started", {
       threadId: "thread-new",
       turn: { id: "turn-title", status: "inProgress" }
@@ -110,8 +111,9 @@ describe("CodexProvider", () => {
 
   it("surfaces harness retries and marks an exhausted overload retryable", async () => {
     const { client, created, events } = await setup()
+    const turnRequested = client.nextRequest("turn/start")
     const prompt = run(created!.handle.prompt("try this"))
-    await Promise.resolve()
+    await turnRequested
     client.emit("turn/started", {
       threadId: "thread-new",
       turn: { id: "turn-overloaded", status: "inProgress" }
@@ -160,8 +162,9 @@ describe("CodexProvider", () => {
 
   it("preserves Codex's usage-limit guidance instead of presenting it as a retry", async () => {
     const { client, created, events } = await setup()
+    const turnRequested = client.nextRequest("turn/start")
     const prompt = run(created!.handle.prompt("try this"))
-    await Promise.resolve()
+    await turnRequested
     client.emit("turn/started", {
       threadId: "thread-new",
       turn: { id: "turn-usage-limit", status: "inProgress" }
@@ -203,8 +206,9 @@ describe("CodexProvider", () => {
 
   it("labels a retryable HTTP 429 as temporary request throttling", async () => {
     const { client, created, events } = await setup()
+    const turnRequested = client.nextRequest("turn/start")
     const prompt = run(created!.handle.prompt("try this"))
-    await Promise.resolve()
+    await turnRequested
     client.emit("turn/started", {
       threadId: "thread-new",
       turn: { id: "turn-throttled", status: "inProgress" }
