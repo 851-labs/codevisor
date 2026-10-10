@@ -71,7 +71,7 @@ export interface AcpTerminalHost {
   readonly release: (params: { readonly sessionId: string; readonly terminalId: string }) => void
   /// Connection teardown: kills every process that is still running and
   /// removes terminals that were never surfaced to a client. Promoted
-  /// terminals keep their scrollback (the tab outlives the agent process).
+  /// terminals end when their process exits.
   readonly closeAll: () => Promise<void>
 }
 
@@ -146,9 +146,9 @@ export const makeAcpTerminalHost = (config: AcpTerminalHostConfig): AcpTerminalH
       waiter(status)
     }
     if (entry.promoted) {
-      // The task is done, but the entry stays until release so the agent can
-      // still poll output/waitForExit; the terminal (and its tab) stays
-      // attachable for scrollback until the user closes it.
+      // The task is done (the host removed its terminal at exit), but the
+      // entry stays until release so the agent can still poll
+      // output/waitForExit.
       emitTasks(entry.sessionId)
     }
     if (entry.released) {
@@ -353,8 +353,7 @@ export const nodeChildProcessSpawner: AcpTerminalSpawner = (command, args, optio
       child.once("error", () => callback(undefined, undefined))
     },
     write: (data) => {
-      // A promoted tab stays attachable for scrollback after its command
-      // exits; typing there has nowhere to go.
+      // Input racing the command's exit has nowhere to go.
       if (exited || !child.stdin.writable) return
       child.stdin.write(data)
     },

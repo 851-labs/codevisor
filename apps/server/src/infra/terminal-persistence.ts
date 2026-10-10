@@ -75,7 +75,7 @@ export const makeTerminalPersistence = (
     try {
       const snapshot = JSON.parse(raw) as TerminalSnapshot
       if (
-        (snapshot.version !== 1 && snapshot.version !== 2) ||
+        (snapshot.version !== 1 && snapshot.version !== 2 && snapshot.version !== 3) ||
         !Array.isArray(snapshot.terminals)
       ) {
         return

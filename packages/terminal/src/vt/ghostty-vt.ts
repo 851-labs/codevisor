@@ -137,6 +137,13 @@ const RESET_PREFIX = new TextEncoder().encode("\u001bc\u001b[3J")
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
 
+/// An allocator result as an unsigned address; a failed allocation (null) is
+/// an error rather than a write at address 0.
+const allocated = (ptr: number): number => {
+  if (ptr === 0) throw new Error("libghostty-vt is out of memory")
+  return ptr >>> 0
+}
+
 class GhosttyVt {
   readonly exports: GhosttyExports
   private readonly layout: TypeLayout
@@ -146,7 +153,17 @@ class GhosttyVt {
 
   constructor(bytes: Uint8Array<ArrayBuffer>) {
     const instance = new WebAssembly.Instance(new WebAssembly.Module(bytes), {})
-    this.exports = instance.exports as unknown as GhosttyExports
+    const raw = instance.exports as unknown as GhosttyExports
+    // wasm32 pointers reach JS as signed i32s: once the shared heap passes
+    // 2 GiB they arrive negative and every typed-array access with them
+    // throws. Read them as the unsigned addresses they are.
+    this.exports = {
+      ...raw,
+      ghostty_type_json: () => raw.ghostty_type_json() >>> 0,
+      ghostty_wasm_alloc: (len) => allocated(raw.ghostty_wasm_alloc(len)),
+      ghostty_wasm_alloc_opaque: () => allocated(raw.ghostty_wasm_alloc_opaque()),
+      ghostty_wasm_take_opaque: (slot) => raw.ghostty_wasm_take_opaque(slot) >>> 0
+    }
     const jsonPtr = this.exports.ghostty_type_json()
     const memory = this.bytes()
     let end = jsonPtr
@@ -274,7 +291,8 @@ class GhosttyVt {
       const trampoline = new WebAssembly.Instance(new WebAssembly.Module(CALLBACK_TRAMPOLINE), {
         js: {
           cb: (_terminal: number, userdata: number, ptr: number, len: number) => {
-            this.replyHandlers.get(userdata)?.(this.bytes().slice(ptr, ptr + len))
+            const start = ptr >>> 0
+            this.replyHandlers.get(userdata)?.(this.bytes().slice(start, start + len))
           }
         }
       })

@@ -281,7 +281,7 @@ export const backgroundTerminalIntegration = async (
   const registry: BackgroundTerminalIntegration["registry"] = {
     register: (key, controls) => {
       const handle = terminal.registerExternalTerminal(
-        { sessionId: key, normalizeNewlines: true },
+        { sessionId: key, normalizeNewlines: true, endsWithProcess: true },
         {
           write: controls.write ?? (() => undefined),
           resize: controls.resize ?? (() => undefined),

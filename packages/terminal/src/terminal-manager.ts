@@ -214,7 +214,8 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
           removed: false,
           nextOutputSeq: 1,
           closed: exitedBeforeRegistration,
-          external: false
+          external: false,
+          endsWithProcess: false
         }
         runningTerminal = terminal
         for (const frame of pendingFrames) {
@@ -351,11 +352,11 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
         return closed
       }),
     snapshotTerminals: () => ({
-      version: 2,
+      version: 3,
       // Exited session shells are never restored to a session, so persisting
       // them would only carry dead scrollback across restarts forever.
       terminals: [...terminals.values()]
-        .filter((terminal) => terminal.external || !terminal.closed)
+        .filter((terminal) => !terminal.endsWithProcess && (terminal.external || !terminal.closed))
         .map(snapshotEntry)
     }),
     readScreen: (terminalId, format) =>
@@ -368,6 +369,9 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
     restoreTerminals: (snapshot) => {
       for (const entry of snapshot.terminals) {
         if (terminals.has(entry.terminalId)) continue
+        // Older files persisted agent command mirrors, which piled up across
+        // restarts with nothing left to reach or remove them.
+        if (entry.external && snapshot.version < 3) continue
         const terminal: RunningTerminal = {
           terminalId: entry.terminalId,
           sessionId: entry.sessionId,
@@ -386,7 +390,8 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
           removed: false,
           nextOutputSeq: entry.nextOutputSeq,
           closed: true,
-          external: entry.external
+          external: entry.external,
+          endsWithProcess: false
         }
         restoreEntry(terminal, entry)
         // The process died with the previous server; terminals that were
@@ -419,7 +424,8 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
         removed: false,
         nextOutputSeq: 1,
         closed: false,
-        external: true
+        external: true,
+        endsWithProcess: config.endsWithProcess === true
       }
       // A re-registration under the same key replaces the previous terminal
       // (e.g. an agent restarting its dev server): drop the stale one so the
@@ -446,6 +452,10 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
             terminal,
             exitCode === undefined ? { type: "exit" } : { type: "exit", exitCode }
           )
+          if (terminal.endsWithProcess) {
+            dropTerminal(terminal)
+            clearSessionMapping(terminal)
+          }
         },
         remove: () => {
           dropTerminal(terminal)

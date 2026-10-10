@@ -92,6 +92,10 @@ export interface ExternalTerminalConfig {
   /// Pipe-fed processes emit bare "\n" line endings; a real terminal renderer
   /// needs "\r\n". Enabled for mirrors/wrappers that read pipes, not PTYs.
   readonly normalizeNewlines?: boolean
+  /// The terminal only matters while its process runs (an agent command's
+  /// mirror, whose output the transcript keeps): it is removed at exit rather
+  /// than kept for scrollback, and never persisted across restarts.
+  readonly endsWithProcess?: boolean
 }
 
 /// A serializable dump of one terminal's replay state, as captured by
@@ -116,7 +120,9 @@ export interface TerminalSnapshotEntry {
 }
 
 export interface TerminalSnapshot {
-  readonly version: 1 | 2
+  /// Version 3 files never hold `endsWithProcess` terminals; earlier ones
+  /// cannot tell them apart from other external terminals.
+  readonly version: 1 | 2 | 3
   readonly terminals: ReadonlyArray<TerminalSnapshotEntry>
 }
 
@@ -147,8 +153,9 @@ export interface TerminalManagerService {
   readonly closeTerminalsForSessionPrefix: (prefix: string) => Effect.Effect<number, TerminalError>
   /// Registers a terminal whose process the CALLER owns (an agent's background
   /// shell, a mirrored remote process). The manager never spawns or respawns
-  /// it: clients attach with `attachOnly` createTerminal requests, and the
-  /// terminal remains attachable after exit so its scrollback stays readable.
+  /// it: clients attach with `attachOnly` createTerminal requests, and unless
+  /// it `endsWithProcess`, the terminal remains attachable after exit so its
+  /// scrollback stays readable.
   readonly registerExternalTerminal: (
     config: ExternalTerminalConfig,
     process: TerminalProcess
@@ -162,7 +169,9 @@ export interface TerminalManagerService {
   /// the process was still live at snapshot time) but never accept input.
   /// External terminals reclaim their session mapping so `attachOnly` clients
   /// still reach their scrollback; regular session shells do not, so the next
-  /// createTerminal for the session spawns a fresh shell as usual. Terminal
+  /// createTerminal for the session spawns a fresh shell as usual. External
+  /// terminals from files before version 3 are skipped: most are agent
+  /// command mirrors that nothing could reach or remove. Terminal
   /// ids that already exist are skipped — call this before serving clients.
   readonly restoreTerminals: (snapshot: TerminalSnapshot) => void
   /// The terminal's current screen and scrollback: plain text for agents and
