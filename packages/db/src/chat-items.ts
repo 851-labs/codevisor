@@ -253,49 +253,76 @@ export const chatAssistantSummary = (
   textResource?: TranscriptBodyResource | undefined
   planResource?: TranscriptBodyResource | undefined
 } => {
+  const row = readAssistantAnswerRow(sqlite, itemId)
+  const payload =
+    row === undefined ? undefined : (JSON.parse(row.payload) as AssistantAnswerPayload)
+  const plan = sqlite
+    .prepare("select 1 from transcript_entries where item_id = ? and entry_key = 'plan'")
+    .get(itemId)
+  return {
+    text: row === undefined ? "" : readTranscriptText(sqlite, itemId, row.entry_key, 24_000),
+    ...readAssistantPlanPreview(sqlite, itemId, plan),
+    ...readAssistantAnswerMetadata(sqlite, itemId, row, payload),
+    ...(row?.phase == null ? {} : { phase: row.phase })
+  }
+}
+
+type AssistantAnswerRow = {
+  entry_key: string
+  payload: string
+  phase: MessagePhase | null
+  revision: number
+  position: number
+}
+
+type AssistantAnswerPayload = { messageId?: string; generation?: number }
+
+const readAssistantAnswerRow = (
+  sqlite: Database.Database,
+  itemId: string
+): AssistantAnswerRow | undefined => {
   // Indexed state lookup; no provider log scan, including while a turn streams.
-  const row = sqlite
+  return sqlite
     .prepare(
       `select entry_key, payload, phase, revision, position from transcript_entries
     where item_id = ? and parent_id = '' and category = 'text' and text_length > 0
       and coalesce(phase, '') != 'commentary'
     order by position desc limit 1`
     )
-    .get(itemId) as
-    | {
-        entry_key: string
-        payload: string
-        phase: MessagePhase | null
-        revision: number
-        position: number
+    .get(itemId) as AssistantAnswerRow | undefined
+}
+
+const readAssistantPlanPreview = (
+  sqlite: Database.Database,
+  itemId: string,
+  plan: unknown
+): Pick<ReturnType<typeof chatAssistantSummary>, "planResource" | "planDocument"> => {
+  return plan === undefined
+    ? {}
+    : {
+        planResource: transcriptTextResource(sqlite, itemId, "plan"),
+        planDocument: readTranscriptText(sqlite, itemId, "plan", 24_000)
       }
-    | undefined
-  const payload =
-    row === undefined
-      ? undefined
-      : (JSON.parse(row.payload) as { messageId?: string; generation?: number })
-  const plan = sqlite
-    .prepare("select 1 from transcript_entries where item_id = ? and entry_key = 'plan'")
-    .get(itemId)
-  return {
-    text: row === undefined ? "" : readTranscriptText(sqlite, itemId, row.entry_key, 24_000),
-    ...(plan === undefined
-      ? {}
-      : {
-          planResource: transcriptTextResource(sqlite, itemId, "plan"),
-          planDocument: readTranscriptText(sqlite, itemId, "plan", 24_000)
-        }),
-    ...(row === undefined
-      ? {}
-      : {
-          textResource: transcriptTextResource(sqlite, itemId, row.entry_key),
-          messageId: payload?.messageId ?? row.entry_key,
-          textGeneration: payload?.generation ?? 0,
-          textRevision: row.revision,
-          textPosition: row.position
-        }),
-    ...(row?.phase == null ? {} : { phase: row.phase })
-  }
+}
+
+const readAssistantAnswerMetadata = (
+  sqlite: Database.Database,
+  itemId: string,
+  row: AssistantAnswerRow | undefined,
+  payload: AssistantAnswerPayload | undefined
+): Pick<
+  ReturnType<typeof chatAssistantSummary>,
+  "textResource" | "messageId" | "textGeneration" | "textRevision" | "textPosition"
+> => {
+  return row === undefined
+    ? {}
+    : {
+        textResource: transcriptTextResource(sqlite, itemId, row.entry_key),
+        messageId: payload?.messageId ?? row.entry_key,
+        textGeneration: payload?.generation ?? 0,
+        textRevision: row.revision,
+        textPosition: row.position
+      }
 }
 
 export const sessionGoalSnapshot = (
