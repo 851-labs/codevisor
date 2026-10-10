@@ -104,8 +104,9 @@ describe("CodexProvider", () => {
 
   it("maps a full turn: lifecycle, streamed patch stats, command items", async () => {
     const { client, created, events } = await setup()
+    const turnRequested = client.nextRequest("turn/start")
     const promptPromise = run(created!.handle.prompt("change the runner"))
-    await Promise.resolve()
+    await turnRequested
 
     client.emit("turn/started", {
       threadId: "thread-new",
@@ -223,8 +224,9 @@ describe("CodexProvider", () => {
 
   it("titles web searches with their query, re-titling on completion", async () => {
     const { client, created, events } = await setup()
+    const turnRequested = client.nextRequest("turn/start")
     const promptPromise = run(created!.handle.prompt("look it up"))
-    await Promise.resolve()
+    await turnRequested
 
     client.emit("turn/started", {
       threadId: "thread-new",
@@ -270,8 +272,9 @@ describe("CodexProvider", () => {
 
   it("carries agentMessage phase from item/started onto chunks and retro-tags completion-only phases", async () => {
     const { client, created, events } = await setup()
+    const turnRequested = client.nextRequest("turn/start")
     const promptPromise = run(created!.handle.prompt("finality"))
-    await Promise.resolve()
+    await turnRequested
 
     client.emit("turn/started", {
       threadId: "thread-new",

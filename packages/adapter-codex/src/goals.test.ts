@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import { run, setup } from "./test-support.js"
 
@@ -46,7 +46,7 @@ describe("CodexProvider", () => {
   })
 
   it("clears goals and forwards agent-side cleared notifications", async () => {
-    const { client, created, events } = await setup()
+    const { client, created, events, nextEvent } = await setup()
     await run(created!.handle.setGoal!({ objective: "tidy up" }))
     await run(created!.handle.clearGoal!)
     expect(client.requests.at(-1)).toMatchObject({
@@ -55,83 +55,99 @@ describe("CodexProvider", () => {
     })
     expect(events.at(-1)?.payload).toEqual({ goalCleared: true })
 
+    const cleared = nextEvent(
+      (event) =>
+        event.kind === "session.updated" &&
+        (event.payload as Record<string, unknown>).goalCleared === true
+    )
     client.emit("thread/goal/cleared", { threadId: "thread-new" })
-    await Promise.resolve()
+    await cleared
     expect(events.at(-1)?.payload).toEqual({ goalCleared: true })
   })
 
   it("emits out-of-band goal snapshots immediately and throttles accounting ticks", async () => {
-    const { client, events } = await setup()
-    // Out-of-band snapshot (turnId null — e.g. resume) always emits.
-    client.emit("thread/goal/updated", {
-      goal: goalSnapshot({}),
-      threadId: "thread-new",
-      turnId: null
-    })
-    expect(events.at(-1)?.payload).toMatchObject({ goal: { objective: "long haul" } })
-    const countAfterSnapshot = events.length
+    vi.useFakeTimers({ toFake: ["Date"], now: 1_700_000_000_000 })
+    try {
+      const { client, events } = await setup()
+      // Out-of-band snapshot (turnId null — e.g. resume) always emits.
+      client.emit("thread/goal/updated", {
+        goal: goalSnapshot({}),
+        threadId: "thread-new",
+        turnId: null
+      })
+      expect(events.at(-1)?.payload).toMatchObject({ goal: { objective: "long haul" } })
+      const countAfterSnapshot = events.length
 
-    // Accounting-only tick inside a turn within the rate window is held back.
-    client.emit("thread/goal/updated", {
-      goal: goalSnapshot({ tokensUsed: 200 }),
-      threadId: "thread-new",
-      turnId: "turn-1"
-    })
-    expect(events.length).toBe(countAfterSnapshot)
+      // Accounting-only tick inside a turn within the rate window is held back.
+      client.emit("thread/goal/updated", {
+        goal: goalSnapshot({ tokensUsed: 200 }),
+        threadId: "thread-new",
+        turnId: "turn-1"
+      })
+      expect(events.length).toBe(countAfterSnapshot)
 
-    // A material change (status flip) bypasses the throttle.
-    client.emit("thread/goal/updated", {
-      goal: goalSnapshot({ status: "budgetLimited", tokensUsed: 10_000 }),
-      threadId: "thread-new",
-      turnId: "turn-1"
-    })
-    expect(events.at(-1)?.payload).toMatchObject({
-      goal: { status: "budgetLimited", tokensUsed: 10_000 }
-    })
+      // A material change (status flip) bypasses the throttle.
+      client.emit("thread/goal/updated", {
+        goal: goalSnapshot({ status: "budgetLimited", tokensUsed: 10_000 }),
+        threadId: "thread-new",
+        turnId: "turn-1"
+      })
+      expect(events.at(-1)?.payload).toMatchObject({
+        goal: { status: "budgetLimited", tokensUsed: 10_000 }
+      })
 
-    // Malformed goals are skipped, not thrown.
-    client.emit("thread/goal/updated", {
-      goal: goalSnapshot({ status: "later" }),
-      threadId: "thread-new",
-      turnId: "turn-1"
-    })
-    client.emit("thread/goal/updated", { goal: "nope", threadId: "thread-new", turnId: "turn-1" })
-    expect(events.at(-1)?.payload).toMatchObject({ goal: { status: "budgetLimited" } })
+      // Malformed goals are skipped, not thrown.
+      client.emit("thread/goal/updated", {
+        goal: goalSnapshot({ status: "later" }),
+        threadId: "thread-new",
+        turnId: "turn-1"
+      })
+      client.emit("thread/goal/updated", { goal: "nope", threadId: "thread-new", turnId: "turn-1" })
+      expect(events.at(-1)?.payload).toMatchObject({ goal: { status: "budgetLimited" } })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("flushes held accounting snapshots before the turn-ended event", async () => {
-    const { client, created, events } = await setup()
-    const promptPromise = run(created!.handle.prompt("work"))
-    await Promise.resolve()
-    client.emit("turn/started", { threadId: "thread-new", turn: { id: "turn-1" } })
-    const goal = {
-      createdAt: 1_700_000_000,
-      objective: "long haul",
-      status: "active",
-      threadId: "thread-new",
-      timeUsedSeconds: 1,
-      tokenBudget: null,
-      tokensUsed: 50,
-      updatedAt: 1_700_000_001
+    vi.useFakeTimers({ toFake: ["Date"], now: 1_700_000_000_000 })
+    try {
+      const { client, created, events } = await setup()
+      const turnRequested = client.nextRequest("turn/start")
+      const promptPromise = run(created!.handle.prompt("work"))
+      await turnRequested
+      client.emit("turn/started", { threadId: "thread-new", turn: { id: "turn-1" } })
+      const goal = {
+        createdAt: 1_700_000_000,
+        objective: "long haul",
+        status: "active",
+        threadId: "thread-new",
+        timeUsedSeconds: 1,
+        tokenBudget: null,
+        tokensUsed: 50,
+        updatedAt: 1_700_000_001
+      }
+      // First in-turn update emits (it materially differs from "no goal")…
+      client.emit("thread/goal/updated", { goal, threadId: "thread-new", turnId: "turn-1" })
+      // …then a same-shape accounting tick is held by the rate limit.
+      client.emit("thread/goal/updated", {
+        goal: { ...goal, tokensUsed: 999 },
+        threadId: "thread-new",
+        turnId: "turn-1"
+      })
+      const heldCount = events.length
+      client.emit("turn/completed", {
+        threadId: "thread-new",
+        turn: { id: "turn-1", status: "completed" }
+      })
+      await promptPromise
+      expect(events.length).toBeGreaterThan(heldCount)
+      const goalFlush = events.at(-2)
+      const turnEnded = events.at(-1)
+      expect(goalFlush?.payload).toMatchObject({ goal: { tokensUsed: 999 } })
+      expect(turnEnded?.payload).toMatchObject({ turnState: "ended" })
+    } finally {
+      vi.useRealTimers()
     }
-    // First in-turn update emits (it materially differs from "no goal")…
-    client.emit("thread/goal/updated", { goal, threadId: "thread-new", turnId: "turn-1" })
-    // …then a same-shape accounting tick is held by the rate limit.
-    client.emit("thread/goal/updated", {
-      goal: { ...goal, tokensUsed: 999 },
-      threadId: "thread-new",
-      turnId: "turn-1"
-    })
-    const heldCount = events.length
-    client.emit("turn/completed", {
-      threadId: "thread-new",
-      turn: { id: "turn-1", status: "completed" }
-    })
-    await promptPromise
-    expect(events.length).toBeGreaterThan(heldCount)
-    const goalFlush = events.at(-2)
-    const turnEnded = events.at(-1)
-    expect(goalFlush?.payload).toMatchObject({ goal: { tokensUsed: 999 } })
-    expect(turnEnded?.payload).toMatchObject({ turnState: "ended" })
   })
 })
