@@ -4,6 +4,8 @@ import { join } from "node:path"
 
 import sharp from "sharp"
 
+import { pageIconCandidates, rankMcpIcons } from "./tool-icon-candidates.js"
+
 /// Artwork for what a gateway workflow touched: the favicon of a site a
 /// browser call visited, or an MCP server's own icon. Resolved once on this
 /// machine and kept on disk, so a reopened chat draws its icons from cache.
@@ -125,74 +127,11 @@ export const normalizeIcon = async (data: Uint8Array): Promise<ToolIconAsset | u
   }
 }
 
-const attribute = (tag: string, name: string): string | undefined => {
-  const match = new RegExp(`\\s${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i").exec(tag)
-  return match === null ? undefined : (match[1] ?? match[2] ?? match[3])
-}
-
-const largestSize = (sizes: string | undefined): number | undefined => {
-  if (sizes === undefined) return undefined
-  if (/\bany\b/i.test(sizes)) return Number.POSITIVE_INFINITY
-  const dimensions = [...sizes.matchAll(/(\d+)x(\d+)/gi)].map((match) => Number(match[1]))
-  return dimensions.length === 0 ? undefined : Math.max(...dimensions)
-}
-
-/// How well a declared color scheme fits the appearance: icons made for it
-/// first, icons made for the other one last.
-const themeRank = (declared: ToolIconTheme | undefined, theme: ToolIconTheme): number =>
-  declared === undefined ? 0 : declared === theme ? -5000 : 5000
-
 /// The icon links a page declares, best first: icons for the appearance,
 /// then sized raster icons nearest above 64px, then SVGs, then smaller
 /// rasters, then unsized icons, then touch icons (opaque squares that read
 /// heavier at row size). Monochrome mask icons are skipped.
-export const pageIconCandidates = (
-  html: string,
-  pageUrl: string,
-  theme: ToolIconTheme = "light"
-): ReadonlyArray<string> => {
-  const ranked: Array<{ readonly url: string; readonly rank: number; readonly order: number }> = []
-  for (const match of html.matchAll(/<link\b[^>]*>/gi)) {
-    const tag = match[0]
-    const rel = attribute(tag, "rel")?.toLowerCase().split(/\s+/) ?? []
-    const href = attribute(tag, "href")
-    if (href === undefined || rel.includes("mask-icon")) continue
-    const touch = rel.includes("apple-touch-icon") || rel.includes("apple-touch-icon-precomposed")
-    if (!touch && !rel.includes("icon")) continue
-    let url: URL
-    try {
-      url = new URL(href.replaceAll("&amp;", "&"), pageUrl)
-    } catch {
-      continue
-    }
-    if (url.protocol !== "https:" && url.protocol !== "http:" && url.protocol !== "data:") continue
-    const type = attribute(tag, "type")?.toLowerCase()
-    const svg = type === "image/svg+xml" || /\.svg(?:$|\?)/i.test(url.pathname)
-    const size = largestSize(attribute(tag, "sizes"))
-    const rank = touch
-      ? 3000
-      : svg || size === Number.POSITIVE_INFINITY
-        ? 50
-        : size === undefined
-          ? 2000
-          : size >= 64
-            ? size - 64
-            : 100 + (64 - size)
-    const media = attribute(tag, "media")?.toLowerCase() ?? ""
-    const scheme = /prefers-color-scheme\s*:\s*dark/.test(media)
-      ? "dark"
-      : /prefers-color-scheme\s*:\s*light/.test(media)
-        ? "light"
-        : undefined
-    ranked.push({
-      url: url.toString(),
-      rank: rank + themeRank(scheme, theme),
-      order: ranked.length
-    })
-  }
-  ranked.sort((lhs, rhs) => lhs.rank - rhs.rank || lhs.order - rhs.order)
-  return [...new Set(ranked.map((candidate) => candidate.url))]
-}
+export { pageIconCandidates } from "./tool-icon-candidates.js"
 
 const hostOf = (url: string): string | undefined => {
   try {
@@ -230,22 +169,6 @@ export const allowedMcpIconUrl = (src: string, serverUrl: string | undefined): b
   if (url.protocol !== "https:" || serverHost === undefined) return false
   return registrableDomain(url.hostname) === registrableDomain(serverHost)
 }
-
-/// Best first: icons for the appearance's background (MCP's `theme`), then
-/// theme-free ones, nearest 64px, SVGs as large.
-const rankMcpIcons = (
-  icons: ReadonlyArray<McpIcon>,
-  theme: ToolIconTheme
-): ReadonlyArray<McpIcon> =>
-  icons
-    .map((icon, order) => {
-      const sizes = largestSize(icon.sizes?.join(" "))
-      const size = sizes === Number.POSITIVE_INFINITY ? 64 : (sizes ?? 48)
-      const declared = icon.theme === "dark" || icon.theme === "light" ? icon.theme : undefined
-      return { icon, order, rank: themeRank(declared, theme) + Math.abs(size - 64) }
-    })
-    .toSorted((lhs, rhs) => lhs.rank - rhs.rank || lhs.order - rhs.order)
-    .map(({ icon }) => icon)
 
 const decodeDataUri = (src: string): Uint8Array | undefined => {
   const match = /^data:([^,]*?)(;base64)?,(.*)$/is.exec(src)
