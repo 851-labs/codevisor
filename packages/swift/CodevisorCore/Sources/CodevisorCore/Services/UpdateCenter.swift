@@ -195,46 +195,47 @@ public final class UpdateCenter {
     let listed = listedHarnessIds?()
     return orderedMachineIds.flatMap { machineId in
       (harnessesByMachine[machineId] ?? []).compactMap { harness -> UpdateComponent? in
-        if let listed, !listed.contains(harness.id) { return nil }
-        let lifecycleActive = Self.harnessLifecycleIsActive(harness)
-        let available = harness.updateInfo?.updateAvailable == true
-        guard available || lifecycleActive else { return nil }
-        let id = "harness:\(machineId):\(harness.id)"
-        let lifecyclePhase = harness.lifecycle?.phase
-        // An armed update ("pendingUpdate") is in flight from the user's point
-        // of view: the machine runs it as soon as the harness's live chats
-        // end, the same drain a server update performs.
-        let phase: UpdateComponent.Phase =
-          switch lifecyclePhase {
-          case "installing", "updating", "pendingUpdate": .updating
-          case "failed":
-            transientPhases[id]
-              ?? (dismissedHarnessFailures[id] == harness.lifecycle
-                ? .idle : .failed(harness.lifecycle?.error ?? "The update failed."))
-          default: transientPhases[id] ?? .idle
-          }
-        let statusMessage: String? =
-          switch lifecyclePhase {
-          case "pendingUpdate": "Waiting for chats to finish…"
-          case "installing", "updating":
-            harness.lifecycle?.targetVersion.map { "Updating to \($0)…" } ?? "Updating…"
-          default: nil
-          }
-        return UpdateComponent(
-          id: id,
-          kind: .harness,
-          machineId: machineId,
-          machineName: machineName(for: machineId),
-          subjectId: harness.id,
-          title: harness.name,
-          installedVersion: harness.updateInfo?.installedVersion,
-          latestVersion: harness.updateInfo?.latestVersion,
-          updateAvailable: available,
-          phase: phase,
-          statusMessage: statusMessage,
-          notes: harness.updateInfo?.notes
-        )
+        harnessComponent(harness, machineId: machineId, listed: listed)
       }
+    }
+  }
+
+  private func harnessComponent(_ harness: ServerHarness, machineId: String, listed: Set<String>?) -> UpdateComponent? {
+    if let listed, !listed.contains(harness.id) { return nil }
+    let lifecycleActive = Self.harnessLifecycleIsActive(harness)
+    let available = harness.updateInfo?.updateAvailable == true
+    guard available || lifecycleActive else { return nil }
+    let id = "harness:\(machineId):\(harness.id)"
+    let lifecyclePhase = harness.lifecycle?.phase
+    let phase = harnessPhase(harness, id: id, lifecyclePhase: lifecyclePhase)
+    let statusMessage = UpdateComponent.harnessStatusMessage(harness, lifecyclePhase: lifecyclePhase)
+    return UpdateComponent(
+      id: id,
+      kind: .harness,
+      machineId: machineId,
+      machineName: machineName(for: machineId),
+      subjectId: harness.id,
+      title: harness.name,
+      installedVersion: harness.updateInfo?.installedVersion,
+      latestVersion: harness.updateInfo?.latestVersion,
+      updateAvailable: available,
+      phase: phase,
+      statusMessage: statusMessage,
+      notes: harness.updateInfo?.notes
+    )
+  }
+
+  private func harnessPhase(_ harness: ServerHarness, id: String, lifecyclePhase: String?) -> UpdateComponent.Phase {
+    // An armed update ("pendingUpdate") is in flight from the user's point
+    // of view: the machine runs it as soon as the harness's live chats
+    // end, the same drain a server update performs.
+    switch lifecyclePhase {
+    case "installing", "updating", "pendingUpdate": .updating
+    case "failed":
+      transientPhases[id]
+        ?? (dismissedHarnessFailures[id] == harness.lifecycle
+          ? .idle : .failed(harness.lifecycle?.error ?? "The update failed."))
+    default: transientPhases[id] ?? .idle
     }
   }
 

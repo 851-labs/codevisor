@@ -36,6 +36,16 @@ public struct UpdateComponent: Identifiable, Equatable, Sendable {
   /// What changes when the update crosses a major version. Such an update
   /// runs only after the user confirms it, never as part of Update All.
   public var notes: String?
+
+  @MainActor
+  static func harnessStatusMessage(_ harness: ServerHarness, lifecyclePhase: String?) -> String? {
+    switch lifecyclePhase {
+    case "pendingUpdate": "Waiting for chats to finish…"
+    case "installing", "updating":
+      harness.lifecycle?.targetVersion.map { "Updating to \($0)…" } ?? "Updating…"
+    default: nil
+    }
+  }
 }
 
 extension UpdateComponent {
