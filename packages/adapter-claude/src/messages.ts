@@ -1,18 +1,15 @@
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 
+import { handleAssistantMessage, messageProse } from "./assistant-messages.js"
 import { handleSystemMessage } from "./background-tasks.js"
-import { authoritativeStatsFromInput, maybeEmitStreamStats } from "./diff-stats.js"
-import {
-  acceptForkedCommandMessage,
-  settleForkedCommands,
-  startForkedCommand
-} from "./forked-commands.js"
+import { maybeEmitStreamStats } from "./diff-stats.js"
+import { acceptForkedCommandMessage, startForkedCommand } from "./forked-commands.js"
 import { isRecord } from "./internal.js"
+import { HIDDEN_TOOLS } from "./message-tool-policy.js"
 import type { ClaudeSession } from "./session.js"
 import {
   applyTaskCreate,
   applyTaskUpdate,
-  emitPlanUpdate,
   emitTaskPlanUpdate,
   taskIdFromCreateResult
 } from "./tasks.js"
@@ -20,31 +17,10 @@ import {
   finishedToolTitle,
   sourcesContent,
   toolKind,
-  toolTitle,
   webSearchSources
 } from "./tool-presentation.js"
 import { ensureObservedTurnStarted } from "./turn-lifecycle.js"
 import { handleResult } from "./turn-recovery.js"
-import {
-  claudeContextUsageFromAssistant,
-  detectApiErrorMessage,
-  detectUsageLimitMessage
-} from "./usage.js"
-
-/// Snapshot-style tools rendered as plans instead of tool calls: TodoWrite
-/// carries the step checklist (`input.todos`), ExitPlanMode the plan-mode plan
-/// document (`input.plan`).
-const PLAN_TOOLS = new Set(["TodoWrite", "ExitPlanMode"])
-
-/// Newer headless Claude sessions use an incremental task API in every
-/// permission mode instead of TodoWrite's full snapshots. Codevisor accumulates
-/// these mutations into the same plan wire shape clients use for checklists.
-const TASK_TOOLS = new Set(["TaskCreate", "TaskUpdate", "TaskList", "TaskGet"])
-
-/// Tools whose generic tool-call lifecycle never reaches the wire: plan tools
-/// and task tools surface as plan updates, AskUserQuestion as a blocking
-/// `question` event handled through canUseTool.
-const HIDDEN_TOOLS = new Set([...PLAN_TOOLS, ...TASK_TOOLS, "AskUserQuestion"])
 
 // MARK: message pump
 
@@ -63,140 +39,9 @@ export const handleMessage = (
     case "stream_event":
       handleStreamEvent(session, message, readFile)
       break
-    case "assistant": {
-      const parentId = message.parent_tool_use_id ?? undefined
-      // Error replies surface through turn recovery, never as answer text.
-      let isErrorReply = false
-      if (parentId === undefined) {
-        const contextUsage = claudeContextUsageFromAssistant(message.message)
-        if (contextUsage !== undefined) session.latestContextUsage = contextUsage
-        // Remember the SDK's per-message error (overloaded/rate_limit/… or
-        // max_output_tokens) so a following error `result` can be classified
-        // transient vs permanent, and a truncation can be recovered.
-        const assistantError = (message as { error?: unknown }).error
-        const usageLimitText = detectUsageLimitMessage(message)
-        if (typeof assistantError === "string") {
-          isErrorReply = true
-          session.lastAssistantError = assistantError
-          if (
-            usageLimitText !== undefined &&
-            (assistantError === "rate_limit" || assistantError === "billing_error")
-          ) {
-            session.lastUsageLimitText = usageLimitText
-          }
-        } else {
-          if (usageLimitText !== undefined) {
-            isErrorReply = true
-            session.lastAssistantError = "rate_limit"
-            session.lastUsageLimitText = usageLimitText
-          }
-          // Some transient failures (e.g. a 529 overload) carry no structured
-          // error — the CLI renders them as an assistant text message ending on
-          // a stop sequence (e.g. "API Error: 529 Overloaded …"). Detect that
-          // shape so the turn retries instead of surfacing the error as if it
-          // were the answer.
-          const apiError = usageLimitText === undefined ? detectApiErrorMessage(message) : undefined
-          if (apiError !== undefined) {
-            isErrorReply = true
-            session.lastAssistantError = "overloaded"
-            session.lastErrorText = apiError
-          }
-        }
-        void ensureObservedTurnStarted(session)
-      }
-      const content = message.message.content
-      if (!Array.isArray(content)) break
-      const inner = message.message as unknown as Record<string, unknown>
-      const messageId = typeof inner.id === "string" ? inner.id : undefined
-      // The CLI does not forward subagent stream events, so a subagent's prose
-      // exists only here, in its consolidated assistant messages. Emit it
-      // tagged with the parent tool call — unless this message DID stream
-      // (older CLIs), in which case the chunks are already out and re-emitting
-      // would double the text.
-      const alreadyStreamed =
-        parentId !== undefined &&
-        messageId !== undefined &&
-        session.subagentMessageIds.get(parentId) === messageId
-      if (parentId !== undefined) {
-        const prose = messageProse(content)
-        if (prose !== undefined) session.subagentLastTexts.set(parentId, prose)
-      }
-      for (const block of content) {
-        if (!isRecord(block)) continue
-        if (block.type === "text" && parentId !== undefined && !alreadyStreamed) {
-          const text = String(block.text ?? "")
-          if (text.length === 0) continue
-          void session.emit({
-            kind: "session.output",
-            payload: {
-              content: { text, type: "text" },
-              parentToolCallId: parentId,
-              sessionUpdate: "agent_message_chunk",
-              ...(messageId === undefined ? {} : { messageId })
-            },
-            subjectId: session.key
-          })
-        } else if (block.type === "tool_use") {
-          const toolUseId = String(block.id)
-          const toolName = String(block.name)
-          if (PLAN_TOOLS.has(toolName)) {
-            emitPlanUpdate(session, toolName, block.input)
-            continue
-          }
-          if (TASK_TOOLS.has(toolName)) {
-            session.taskToolUses.set(toolUseId, { input: block.input, name: toolName })
-            continue
-          }
-          // AskUserQuestion surfaces as a blocking question via canUseTool.
-          if (HIDDEN_TOOLS.has(toolName)) continue
-          const stats = authoritativeStatsFromInput(session, toolName, block.input, readFile)
-          void session.emit({
-            kind: "session.output",
-            payload: {
-              // The streamed tool_call may never have existed for subagent
-              // tools (no subagent stream events), so this update must carry
-              // enough to create the call outright — including its kind.
-              kind: toolKind(toolName),
-              rawInput: block.input,
-              sessionUpdate: "tool_call_update",
-              status: "in_progress",
-              title: toolTitle(toolName, block.input),
-              toolCallId: toolUseId,
-              ...(stats === undefined ? {} : { diffStats: stats }),
-              ...(parentId === undefined ? {} : { parentToolCallId: parentId })
-            },
-            subjectId: session.key
-          })
-        }
-      }
-      // The CLI writes some replies itself (model "<synthetic>"), such as a
-      // forked command's report. They never stream, so a top-level message no
-      // `message_start` announced is shown from here. A completed forked
-      // command's report stays in its agent's thread: Claude answers with it
-      // once the command's turn ends (see `handleResult`).
-      if (
-        parentId === undefined &&
-        messageId !== undefined &&
-        messageId !== session.currentMessageId &&
-        !isErrorReply
-      ) {
-        const prose = messageProse(content)
-        if (settleForkedCommands(session, prose)) {
-          session.forkedCommandReplyPending = true
-        } else if (prose !== undefined) {
-          void session.emit({
-            kind: "session.output",
-            payload: {
-              content: { text: prose, type: "text" },
-              messageId,
-              sessionUpdate: "agent_message_chunk"
-            },
-            subjectId: session.key
-          })
-        }
-      }
+    case "assistant":
+      handleAssistantMessage(session, message, readFile)
       break
-    }
     case "user": {
       const content = message.message.content
       if (!Array.isArray(content)) break
@@ -433,16 +278,6 @@ const handleStreamEvent = (
     default:
       break
   }
-}
-
-/// A message's text blocks joined, or undefined when it has none.
-const messageProse = (content: ReadonlyArray<unknown>): string | undefined => {
-  const texts = content.flatMap((block) =>
-    isRecord(block) && block.type === "text" && typeof block.text === "string" && block.text !== ""
-      ? [block.text]
-      : []
-  )
-  return texts.length === 0 ? undefined : texts.join("\n\n")
 }
 
 /// The CLI never forwards a subagent's final message: it reaches the parent
