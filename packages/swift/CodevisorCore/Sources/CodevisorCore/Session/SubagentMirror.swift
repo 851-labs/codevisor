@@ -53,7 +53,8 @@ public final class SubagentMirror {
   @ObservationIgnored private var spawningMessageId: UUID?
   /// The thread as read from the parent's settled items, recomputed only when
   /// they change (not on every token the active item streams).
-  @ObservationIgnored private var settledThread: (key: SettledKey, agent: Agent, thread: Thread)?
+  @ObservationIgnored private var settledThread:
+    (key: SettledKey, agent: SubagentThreadCollector.Agent, thread: SubagentThreadCollector.Thread)?
   @ObservationIgnored private var requestedDetailItemIds: Set<String> = []
   @ObservationIgnored private weak var searchedParentModel: SessionModel?
   @ObservationIgnored private var isSearching = false
@@ -116,44 +117,6 @@ public final class SubagentMirror {
 
   // MARK: - Update
 
-  /// One piece of the agent's conversation, as read from the parent.
-  enum Piece: Equatable {
-    /// A message sent to the agent after its spawn (Claude's `SendMessage`),
-    /// or a later run starting without one to show (Codex encrypts them).
-    case followUp(key: String, text: String?, position: Int?)
-    /// One entry of the agent's own thread, in the parent item it streamed
-    /// into under one of its runs' calls.
-    case work(TranscriptEntry, position: Int?, runId: String, turn: AssistantTurn)
-
-    var position: Int? {
-      switch self {
-      case let .followUp(_, _, position), let .work(_, position, _, _): position
-      }
-    }
-  }
-
-  /// The agent's conversation gathered from the parent's items.
-  struct Thread: Equatable {
-    var spawn: ToolCall?
-    var spawnMessageId: UUID?
-    var prompt: String?
-    /// The agent's runs found so far, in order: the spawn, then later runs.
-    var runIds: [String] = []
-    var latestRun: ToolCall?
-    /// The earliest run found continues an agent spawned in history not yet
-    /// loaded: keep searching for the rest of its history.
-    var isMissingEarlierRuns = false
-    var pieces: [Piece] = []
-    /// Its spawning (or continuing) call is open in a generating item.
-    var isLive = false
-    /// The model is still writing its spawning call: the agent appears once
-    /// the call's input arrives, so there's nothing to search for.
-    var isStarting = false
-    /// Parent items after the spawn still in summary form: their details may
-    /// hold messages sent to the agent, or its later work.
-    var summarizedItemIds: [String] = []
-  }
-
   /// Re-derives the mirrored conversation from the parent's transcript.
   func update() {
     guard let parentModel = parent.model, !parent.isLoadingInitialHistory else {
@@ -172,7 +135,7 @@ public final class SubagentMirror {
     let fromSettled = settledThread(of: parentModel, activeTaskId: activeTaskId)
     var thread = fromSettled.thread
     if let activeMessage {
-      Self.collect(fromSettled.agent, from: activeMessage, isActive: true, into: &thread)
+      SubagentThreadCollector.collect(fromSettled.agent, from: activeMessage, isActive: true, into: &thread)
     }
     guard let spawn = thread.spawn else {
       if thread.isStarting {
@@ -216,7 +179,7 @@ public final class SubagentMirror {
   /// items, before gathering.
   private func settledThread(
     of model: SessionModel, activeTaskId: String?
-  ) -> (agent: Agent, thread: Thread) {
+  ) -> (agent: SubagentThreadCollector.Agent, thread: SubagentThreadCollector.Thread) {
     let key = SettledKey(
       model: ObjectIdentifier(model), revision: model.transcriptProjectionRevision, activeTaskId: activeTaskId)
     if let cached = settledThread, cached.key == key { return (cached.agent, cached.thread) }
@@ -224,11 +187,11 @@ public final class SubagentMirror {
       guard case let .assistant(message) = item else { return nil }
       return Self.spawningCall(self.toolCallId, in: message.turn)?.subagentTaskId
     }.first
-    let agent = Agent(toolCallId: toolCallId, taskId: activeTaskId ?? settledTaskId)
-    var thread = Thread()
+    let agent = SubagentThreadCollector.Agent(toolCallId: toolCallId, taskId: activeTaskId ?? settledTaskId)
+    var thread = SubagentThreadCollector.Thread()
     for item in model.settledConversation {
       guard case let .assistant(message) = item else { continue }
-      Self.collect(agent, from: message, isActive: false, into: &thread)
+      SubagentThreadCollector.collect(agent, from: message, isActive: false, into: &thread)
     }
     settledThread = (key, agent, thread)
     return (agent, thread)
@@ -250,7 +213,7 @@ public final class SubagentMirror {
   /// and split into runs at each follow-up. Without positions (older data)
   /// it keeps the parent's item order.
   private func conversation(
-    of thread: Thread, isRunning: Bool
+    of thread: SubagentThreadCollector.Thread, isRunning: Bool
   ) -> (settled: [ConversationItem], active: ConversationItem?) {
     var pieces = thread.pieces
     if pieces.allSatisfy({ $0.position != nil }) {
@@ -492,88 +455,6 @@ public final class SubagentMirror {
     followedParentModel = parentModel
     controller.model = model
     return model
-  }
-}
-
-extension SubagentMirror {
-  /// Which calls are the agent's runs. Opening any of them shows them all:
-  /// the call itself, and every agent call sharing its task id (a Codex
-  /// agent messaged in a later turn gets a chip there for its new run).
-  struct Agent: Equatable {
-    var toolCallId: String
-    var taskId: String?
-
-    func isRun(_ call: ToolCall) -> Bool {
-      call.toolCallId == toolCallId || (call.kind == .agent && taskId != nil && call.subagentTaskId == taskId)
-    }
-  }
-
-  /// Adds one parent item's part of the agent's conversation: its spawn and
-  /// later runs, messages sent to it, and the entries it streamed there.
-  static func collect(_ agent: Agent, from message: AssistantMessage, isActive: Bool, into thread: inout Thread) {
-    let turn = message.turn
-    let opened = spawningCall(agent.toolCallId, in: turn)
-    // A run's call carries its input; an item a run only continues in holds
-    // a bare placeholder call for its thread.
-    var newRuns: [ToolCall] = []
-    for call in turn.allToolCalls
-    where call.rawInput != nil && agent.isRun(call) && !thread.runIds.contains(call.toolCallId) {
-      if thread.spawn == nil {
-        thread.spawn = call
-        thread.spawnMessageId = message.id
-        thread.prompt = call.rawInput?["prompt"]?.stringValue
-        thread.isMissingEarlierRuns = call.continuesSubagent
-      }
-      thread.runIds.append(call.toolCallId)
-      thread.latestRun = call
-      newRuns.append(call)
-    }
-    guard thread.spawn != nil else {
-      if isActive, turn.isGenerating, let opened, !opened.isSettled, turn.isUnstartedSubagent(opened) {
-        thread.isStarting = true
-      }
-      return
-    }
-    if turn.hasDeferredWorkedDetails, !turn.hasHydratedWorkedDetails, let itemId = turn.deferredDetailItemId {
-      thread.summarizedItemIds.append(itemId)
-    }
-    // Messages sent to the agent name the same task as its spawn.
-    let taskId = thread.spawn?.subagentTaskId
-    for case let .tool(sent) in turn.entries
-    where taskId != nil && sent.subagentTaskId == taskId && sent.kind != .agent && sent.toolCallId != agent.toolCallId {
-      guard let text = sent.rawInput?["message"]?.stringValue, !text.isEmpty else { continue }
-      thread.pieces.append(
-        .followUp(
-          key: sent.toolCallId, text: text,
-          position: turn.entryPositions["tool:\(sent.toolCallId)"] ?? sent.statePosition))
-    }
-    for runId in thread.runIds {
-      // A later run starts with the message that started it (Codex's are
-      // encrypted: then just a new run); the first found does too when it
-      // continues an agent spawned earlier.
-      if let run = newRuns.first(where: { $0.toolCallId == runId }),
-        run.toolCallId != thread.spawn?.toolCallId || run.continuesSubagent
-      {
-        thread.pieces.append(
-          .followUp(
-            key: runId, text: run.rawInput?["message"]?.stringValue,
-            position: turn.entryPositions["tool:\(runId)"] ?? run.statePosition))
-      }
-      // An entry without its own position stays behind the one before it,
-      // as the parent's transcript orders entries.
-      var anchor: Int?
-      for entry in turn.subagents[runId]?.entries ?? [] {
-        anchor = turn.entryPositions[entry.id] ?? anchor
-        thread.pieces.append(.work(entry, position: anchor, runId: runId, turn: turn))
-      }
-    }
-    if isActive, turn.isGenerating,
-      turn.allToolCalls.contains(where: {
-        !$0.isSettled && ($0.toolCallId == agent.toolCallId || thread.runIds.contains($0.toolCallId))
-      })
-    {
-      thread.isLive = true
-    }
   }
 }
 
