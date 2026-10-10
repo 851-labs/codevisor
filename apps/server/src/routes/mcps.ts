@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 
+import type { UpdateMcpServerRequest } from "@codevisor/api"
 import {
   CreateMcpServerRequest as CreateMcpServerRequestSchema,
   DetectMcpAuthRequest as DetectMcpAuthRequestSchema,
@@ -8,6 +9,7 @@ import {
   SetNativeMcpEnabledRequest as SetNativeMcpEnabledRequestSchema,
   UpdateMcpServerRequest as UpdateMcpServerRequestSchema
 } from "@codevisor/api"
+import type { McpManager } from "@codevisor/mcp"
 
 import {
   HttpFailure,
@@ -29,78 +31,170 @@ export const routeMcps = async (
   if (!url.pathname.startsWith("/v1/mcps")) return false
   if (manager === undefined) throw new HttpFailure(501, "MCP gateway unavailable")
 
+  const catalog = routeMcpCatalog(manager, request, response, url)
+  if (catalog !== undefined) return catalog
+  const action = routeMcpAction(manager, request, response, url)
+  if (action !== undefined) return action
+  const mutation = routeMcpMutation(manager, request, response, url)
+  if (mutation !== undefined) return mutation
+  return false
+}
+
+function routeMcpCatalog(
+  manager: McpManager,
+  request: IncomingMessage,
+  response: ServerResponse,
+  url: URL
+): Promise<boolean> | undefined {
   if (url.pathname === "/v1/mcps") {
-    if (request.method === "GET") {
-      writeJson(response, 200, await manager.list())
-      return true
-    }
-    if (request.method === "POST") {
-      writeJson(
-        response,
-        201,
-        await manager.create(await readSchema(request, CreateMcpServerRequestSchema))
-      )
-      return true
-    }
+    if (request.method === "GET") return listMcpServers(manager, response)
+    if (request.method === "POST") return createMcpServer(manager, request, response)
   }
-
   if (url.pathname === "/v1/mcps/detect-auth" && request.method === "POST") {
-    const payload = await readSchema(request, DetectMcpAuthRequestSchema)
-    writeJson(response, 200, await manager.detectAuth(payload.url))
-    return true
+    return detectMcpAuthorization(manager, request, response)
   }
-
   const toolsId = matchRoute(url.pathname, "/v1/mcps/:id/tools")
   if (toolsId !== undefined && request.method === "GET") {
-    writeJson(response, 200, await manager.tools(toolsId))
-    return true
+    return listMcpTools(manager, response, toolsId)
   }
+  return undefined
+}
 
+function routeMcpAction(
+  manager: McpManager,
+  request: IncomingMessage,
+  response: ServerResponse,
+  url: URL
+): Promise<boolean> | undefined {
   const action = matchRouteParams(url.pathname, "/v1/mcps/:id/:action")
   if (action !== undefined && request.method === "POST") {
     switch (action.action) {
       case "connect":
-        writeJson(response, 200, await manager.connect(action.id!))
-        return true
+        return connectMcpServer(manager, response, action.id!)
       case "oauth-start":
-        writeJson(response, 201, {
-          authorizationUrl: await manager.beginOAuth(action.id!, url.origin)
-        })
-        return true
+        return beginMcpAuthorization(manager, response, action.id!, url)
       case "oauth-disconnect":
-        writeJson(response, 200, await manager.disconnectOAuth(action.id!))
-        return true
+        return disconnectMcpAuthorization(manager, response, action.id!)
       default:
         break
     }
   }
+  return undefined
+}
 
+function routeMcpMutation(
+  manager: McpManager,
+  request: IncomingMessage,
+  response: ServerResponse,
+  url: URL
+): Promise<boolean> | undefined {
   const id = matchRoute(url.pathname, "/v1/mcps/:id")
   if (id !== undefined) {
-    if (request.method === "PATCH") {
-      const update = await readSchema(request, UpdateMcpServerRequestSchema)
-      if (["browser", "computer"].includes(id)) {
-        const unsupported = Object.keys(update).filter((key) => key !== "enabled")
-        if (unsupported.length > 0) {
-          throw new HttpFailure(
-            409,
-            "Built-in automation providers can only be enabled or disabled"
-          )
-        }
-      }
-      writeJson(response, 200, await manager.update(id, update))
-      return true
-    }
-    if (request.method === "DELETE") {
-      if (["browser", "computer"].includes(id)) {
-        throw new HttpFailure(409, "Built-in automation providers cannot be removed")
-      }
-      await manager.remove(id)
-      writeJson(response, 204, undefined)
-      return true
+    if (request.method === "PATCH") return updateMcpServer(manager, request, response, id)
+    if (request.method === "DELETE") return removeMcpServer(manager, response, id)
+  }
+  return undefined
+}
+
+async function listMcpServers(manager: McpManager, response: ServerResponse): Promise<boolean> {
+  writeJson(response, 200, await manager.list())
+  return true
+}
+
+async function listMcpTools(
+  manager: McpManager,
+  response: ServerResponse,
+  id: string
+): Promise<boolean> {
+  writeJson(response, 200, await manager.tools(id))
+  return true
+}
+
+async function connectMcpServer(
+  manager: McpManager,
+  response: ServerResponse,
+  id: string
+): Promise<boolean> {
+  writeJson(response, 200, await manager.connect(id))
+  return true
+}
+
+async function disconnectMcpAuthorization(
+  manager: McpManager,
+  response: ServerResponse,
+  id: string
+): Promise<boolean> {
+  writeJson(response, 200, await manager.disconnectOAuth(id))
+  return true
+}
+
+async function createMcpServer(
+  manager: McpManager,
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<boolean> {
+  writeJson(
+    response,
+    201,
+    await manager.create(await readSchema(request, CreateMcpServerRequestSchema))
+  )
+  return true
+}
+
+async function detectMcpAuthorization(
+  manager: McpManager,
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<boolean> {
+  const payload = await readSchema(request, DetectMcpAuthRequestSchema)
+  writeJson(response, 200, await manager.detectAuth(payload.url))
+  return true
+}
+
+async function beginMcpAuthorization(
+  manager: McpManager,
+  response: ServerResponse,
+  id: string,
+  url: URL
+): Promise<boolean> {
+  writeJson(response, 201, {
+    authorizationUrl: await manager.beginOAuth(id, url.origin)
+  })
+  return true
+}
+
+function validateMcpEdit(id: string, update: UpdateMcpServerRequest): void {
+  if (["browser", "computer"].includes(id)) {
+    const unsupported = Object.keys(update).filter((key) => key !== "enabled")
+    if (unsupported.length > 0) {
+      throw new HttpFailure(409, "Built-in automation providers can only be enabled or disabled")
     }
   }
-  return false
+}
+
+async function updateMcpServer(
+  manager: McpManager,
+  request: IncomingMessage,
+  response: ServerResponse,
+  id: string
+): Promise<boolean> {
+  const update = await readSchema(request, UpdateMcpServerRequestSchema)
+  validateMcpEdit(id, update)
+  writeJson(response, 200, await manager.update(id, update))
+  return true
+}
+
+async function removeMcpServer(
+  manager: McpManager,
+  response: ServerResponse,
+  id: string
+): Promise<boolean> {
+  if (["browser", "computer"].includes(id)) {
+    throw new HttpFailure(409, "Built-in automation providers cannot be removed")
+  }
+  await manager.remove(id)
+  writeJson(response, 204, undefined)
+  return true
 }
 
 export const routeMcpScopes = async (
