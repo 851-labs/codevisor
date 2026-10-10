@@ -32,41 +32,55 @@ describe("gateway exchanges between machines", () => {
   })
 
   it("reports losses after the target accepted as in-flight", async () => {
-    let release!: () => void
-    const handle = () =>
-      new Promise<GatewayExchange>((resolve) => {
-        release = () => resolve({ status: 200, body: "late" })
-      })
-    const { a, b } = pair({ b: { handle } })
-    const offline = gatewayRequest(a, b, "{}")
-    // Notices about other machines or unknown channels leave it alone.
-    a.socket.receive({ t: "machine-reset", machineId: "c" })
-    a.socket.receive({
-      t: "error",
-      code: "machine-offline",
-      message: "machine relay delivery failed",
-      machineId: "b",
-      channelId: "unknown"
+    const answers: PromiseWithResolvers<GatewayExchange>[] = []
+    const handle = vi.fn(() => {
+      const answer = Promise.withResolvers<GatewayExchange>()
+      answers.push(answer)
+      return answer.promise
     })
-    a.socket.receive({ t: "presence", machine: presence(b, false) })
-    expect(await failure(offline)).toMatchObject({ phase: "in-flight", reason: "peer-gone" })
+    const { a, b, hub } = pair({ b: { handle } })
+    try {
+      const offline = gatewayRequest(a, b, "{}")
+      hub.flush()
+      expect(handle).toHaveBeenCalledTimes(1)
+      // Notices about other machines or unknown channels leave it alone.
+      a.socket.receive({ t: "machine-reset", machineId: "c" })
+      a.socket.receive({
+        t: "error",
+        code: "machine-offline",
+        message: "machine relay delivery failed",
+        machineId: "b",
+        channelId: "unknown"
+      })
+      a.socket.receive({ t: "presence", machine: presence(b, false) })
+      expect(await failure(offline)).toMatchObject({ phase: "in-flight", reason: "peer-gone" })
 
-    a.socket.receive({ t: "presence", machine: presence(b) })
-    const reset = gatewayRequest(a, b, "{}")
-    a.socket.receive({ t: "machine-reset", machineId: "b" })
-    expect((await failure(reset)).phase).toBe("in-flight")
+      a.socket.receive({ t: "presence", machine: presence(b) })
+      const reset = gatewayRequest(a, b, "{}")
+      hub.flush()
+      expect(handle).toHaveBeenCalledTimes(2)
+      a.socket.receive({ t: "machine-reset", machineId: "b" })
+      expect((await failure(reset)).phase).toBe("in-flight")
 
-    const hubWide = gatewayRequest(a, b, "{}")
-    a.socket.receive({ t: "error", code: "machine-offline", message: "gone", machineId: "b" })
-    expect((await failure(hubWide)).phase).toBe("in-flight")
+      const hubWide = gatewayRequest(a, b, "{}")
+      hub.flush()
+      expect(handle).toHaveBeenCalledTimes(3)
+      a.socket.receive({ t: "error", code: "machine-offline", message: "gone", machineId: "b" })
+      expect((await failure(hubWide)).phase).toBe("in-flight")
 
-    // Our own relay socket drops with no session to resume.
-    const lost = gatewayRequest(a, b, "{}")
-    a.socket.onclose?.(1006)
-    expect(await failure(lost)).toMatchObject({ phase: "in-flight", reason: "connection-lost" })
-    // The target's late answer finds no channel and is told to stop.
-    release()
-    await Promise.resolve()
+      // Our own relay socket drops with no session to resume.
+      const lost = gatewayRequest(a, b, "{}")
+      hub.flush()
+      expect(handle).toHaveBeenCalledTimes(4)
+      a.socket.onclose?.(1006)
+      expect(await failure(lost)).toMatchObject({ phase: "in-flight", reason: "connection-lost" })
+    } finally {
+      // Release every started handler, including when a loss assertion fails.
+      for (const answer of answers) answer.resolve({ status: 200, body: "late" })
+      await Promise.all(answers.map((answer) => answer.promise))
+      // The response continuations enqueue their frames before this delivery.
+      hub.flush()
+    }
   })
 
   it("keeps outgoing channels across a resumed relay session", async () => {
