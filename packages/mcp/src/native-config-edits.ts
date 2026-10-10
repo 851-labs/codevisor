@@ -209,16 +209,28 @@ export const appendTomlTable = (
   const separator = content.trim() === "" ? "" : `${content.trimEnd()}\n\n`
   const after = `${separator}${block.trim()}\n`
 
-  let reparsed: Record<string, unknown>
+  verifyTomlRestoration(before, after, parentKey, name, fragment)
+  return after
+}
+
+const parseTomlAfterRestoration = (after: string, name: string): Record<string, unknown> => {
   try {
-    reparsed = parseToml(after) as Record<string, unknown>
+    return parseToml(after) as Record<string, unknown>
   } catch {
     /* v8 ignore next 3 -- stringifyToml output always reparses; kept as a refusal-over-corruption backstop. */
     throw new NativeConfigUnsupportedError(
       `Restoring ${name} would corrupt the file — edit it manually`
     )
   }
-  const expected = {
+}
+
+const restoredTomlDocument = (
+  before: Record<string, unknown>,
+  parentKey: string,
+  name: string,
+  fragment: Record<string, unknown>
+): Record<string, unknown> => {
+  return {
     ...before,
     [parentKey]: {
       ...(before[parentKey] !== null && typeof before[parentKey] === "object"
@@ -227,11 +239,21 @@ export const appendTomlTable = (
       [name]: fragment
     }
   }
+}
+
+const verifyTomlRestoration = (
+  before: Record<string, unknown>,
+  after: string,
+  parentKey: string,
+  name: string,
+  fragment: Record<string, unknown>
+): void => {
+  const reparsed = parseTomlAfterRestoration(after, name)
+  const expected = restoredTomlDocument(before, parentKey, name, fragment)
   /* v8 ignore next 5 -- refusal-over-corruption backstop: stringifyToml of an isolated table appends faithfully, but a mismatch must refuse rather than write. */
   if (canonicalJson(reparsed) !== canonicalJson(expected)) {
     throw new NativeConfigUnsupportedError(
       `Restoring ${name} would change unrelated configuration — edit the file manually`
     )
   }
-  return after
 }
