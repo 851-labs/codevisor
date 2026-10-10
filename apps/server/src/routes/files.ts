@@ -3,6 +3,7 @@ import { createReadStream } from "node:fs"
 import type { IncomingMessage, ServerResponse } from "node:http"
 
 import { MAX_UPLOAD_BYTES, type FileMetadata } from "@codevisor/api"
+import type { StoredAttachmentObject } from "@codevisor/db"
 
 import { mediaPreview } from "../infra/media-previews.js"
 import {
@@ -13,6 +14,7 @@ import {
   run,
   sanitizeFileName,
   writeJson,
+  type ByteRange,
   type CodevisorServerServices
 } from "../server-context.js"
 
@@ -64,78 +66,130 @@ export const routeFiles = async (
   response: ServerResponse,
   url: URL
 ): Promise<boolean> => {
-  if (request.method === "POST" && url.pathname === "/v1/files") {
-    if (Number(request.headers["content-length"]) > MAX_UPLOAD_BYTES) throw uploadTooLarge()
-    const store = services.attachments
-    const object = await store.putStream(limitedUploadBody(request))
-    const name = sanitizeFileName(url.searchParams.get("name") ?? "attachment")
-    const mimeType =
-      request.headers["content-type"]?.split(";")[0]?.trim() ?? "application/octet-stream"
-    const metadata: FileMetadata = {
-      id: randomUUID(),
-      name,
-      mimeType,
-      sizeBytes: object.sizeBytes,
-      sha256: object.sha256,
-      kind: sniffAttachmentKind(object.header, mimeType),
-      createdAt: new Date().toISOString()
-    }
-    await run(services.db.createDiskFile(metadata))
-    writeJson(response, 201, metadata)
-    return true
-  }
+  if (request.method === "POST" && url.pathname === "/v1/files")
+    return uploadAttachment(services, request, response, url)
 
   const fileId = matchRoute(url.pathname, "/v1/files/:id")
-  if (fileId !== undefined && (request.method === "GET" || request.method === "HEAD")) {
-    const file = await attachmentDiskFile(services, fileId)
-    if (request.method === "GET" && url.searchParams.get("preview") === "1") {
-      const preview = await mediaPreview(
-        file.path,
-        file.metadata.mimeType,
-        services.attachments.root,
-        file.metadata.sha256
-      )
-      response.writeHead(200, {
-        "Content-Type": "image/png",
-        "Content-Length": preview.length,
-        "Cache-Control": "private, max-age=31536000, immutable"
-      })
-      response.end(preview)
-      return true
-    }
-    const range = requestedByteRange(request.headers.range, file.metadata.sizeBytes)
-    if (range === "invalid") {
-      response.writeHead(416, {
-        "Accept-Ranges": "bytes",
-        "Content-Range": `bytes */${file.metadata.sizeBytes}`
-      })
-      response.end()
-      return true
-    }
-    const contentLength =
-      range === undefined ? file.metadata.sizeBytes : range.end - range.start + 1
-    response.writeHead(range === undefined ? 200 : 206, {
-      // Files are immutable (content is stored once at upload), so clients
-      // may cache aggressively.
-      "Accept-Ranges": "bytes",
-      "Cache-Control": "private, max-age=31536000, immutable",
-      "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(file.metadata.name)}`,
-      "Content-Length": contentLength,
-      ...(range === undefined
-        ? {}
-        : { "Content-Range": `bytes ${range.start}-${range.end}/${file.metadata.sizeBytes}` }),
-      "Content-Type": file.metadata.mimeType
-    })
-    if (request.method === "HEAD") {
-      response.end()
-      return true
-    }
-    const stream = createReadStream(file.path, range === undefined ? {} : range)
-    /* v8 ignore next -- requires the immutable object to disappear after validation but before the stream opens. */
-    stream.once("error", (cause) => response.destroy(cause))
-    stream.pipe(response)
-    return true
-  }
+  if (fileId !== undefined && (request.method === "GET" || request.method === "HEAD"))
+    return serveAttachment(services, request, response, url, fileId)
 
   return false
+}
+
+type DownloadableAttachment = Awaited<ReturnType<typeof attachmentDiskFile>>
+
+const uploadAttachment = async (
+  services: CodevisorServerServices,
+  request: IncomingMessage,
+  response: ServerResponse,
+  url: URL
+): Promise<boolean> => {
+  if (Number(request.headers["content-length"]) > MAX_UPLOAD_BYTES) throw uploadTooLarge()
+  const store = services.attachments
+  const object = await store.putStream(limitedUploadBody(request))
+  const metadata = uploadedAttachmentMetadata(request, url, object)
+  await run(services.db.createDiskFile(metadata))
+  writeJson(response, 201, metadata)
+  return true
+}
+
+const uploadedAttachmentMetadata = (
+  request: IncomingMessage,
+  url: URL,
+  object: StoredAttachmentObject
+): FileMetadata => {
+  const name = sanitizeFileName(url.searchParams.get("name") ?? "attachment")
+  const mimeType =
+    request.headers["content-type"]?.split(";")[0]?.trim() ?? "application/octet-stream"
+  return {
+    id: randomUUID(),
+    name,
+    mimeType,
+    sizeBytes: object.sizeBytes,
+    sha256: object.sha256,
+    kind: sniffAttachmentKind(object.header, mimeType),
+    createdAt: new Date().toISOString()
+  }
+}
+
+const serveAttachment = async (
+  services: CodevisorServerServices,
+  request: IncomingMessage,
+  response: ServerResponse,
+  url: URL,
+  fileId: string
+): Promise<boolean> => {
+  const file = await attachmentDiskFile(services, fileId)
+  if (request.method === "GET" && url.searchParams.get("preview") === "1")
+    return serveAttachmentPreview(services, response, file)
+  return streamAttachment(request, response, file)
+}
+
+const serveAttachmentPreview = async (
+  services: CodevisorServerServices,
+  response: ServerResponse,
+  file: DownloadableAttachment
+): Promise<boolean> => {
+  const preview = await mediaPreview(
+    file.path,
+    file.metadata.mimeType,
+    services.attachments.root,
+    file.metadata.sha256
+  )
+  response.writeHead(200, {
+    "Content-Type": "image/png",
+    "Content-Length": preview.length,
+    "Cache-Control": "private, max-age=31536000, immutable"
+  })
+  response.end(preview)
+  return true
+}
+
+const writeInvalidAttachmentRange = (response: ServerResponse, sizeBytes: number): boolean => {
+  response.writeHead(416, {
+    "Accept-Ranges": "bytes",
+    "Content-Range": `bytes */${sizeBytes}`
+  })
+  response.end()
+  return true
+}
+
+const writeAttachmentHeaders = (
+  response: ServerResponse,
+  metadata: FileMetadata,
+  range: ByteRange | undefined,
+  contentLength: number
+): void => {
+  response.writeHead(range === undefined ? 200 : 206, {
+    // Files are immutable (content is stored once at upload), so clients
+    // may cache aggressively.
+    "Accept-Ranges": "bytes",
+    "Cache-Control": "private, max-age=31536000, immutable",
+    "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(metadata.name)}`,
+    "Content-Length": contentLength,
+    ...(range === undefined
+      ? {}
+      : { "Content-Range": `bytes ${range.start}-${range.end}/${metadata.sizeBytes}` }),
+    "Content-Type": metadata.mimeType
+  })
+}
+
+const streamAttachment = (
+  request: IncomingMessage,
+  response: ServerResponse,
+  file: DownloadableAttachment
+): boolean => {
+  const range = requestedByteRange(request.headers.range, file.metadata.sizeBytes)
+  if (range === "invalid") return writeInvalidAttachmentRange(response, file.metadata.sizeBytes)
+  const contentLength = range === undefined ? file.metadata.sizeBytes : range.end - range.start + 1
+  writeAttachmentHeaders(response, file.metadata, range, contentLength)
+  if (request.method === "HEAD") {
+    response.end()
+    return true
+  }
+  const stream = createReadStream(file.path, range === undefined ? {} : range)
+  /* v8 ignore next -- requires the immutable object to disappear after validation but before the stream opens. */
+  stream.once("error", (cause) => response.destroy(cause))
+  stream.pipe(response)
+  return true
 }
