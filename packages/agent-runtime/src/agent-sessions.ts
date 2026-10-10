@@ -155,59 +155,67 @@ const newestFirst = (
 ): ReadonlyArray<SessionFileCandidate> =>
   [...candidates].toSorted((a, b) => b.mtimeMs - a.mtimeMs).slice(0, limit)
 
-/// Claude Code: `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`.
-/// The cwd comes from the entries themselves (the encoded directory name is
-/// lossy); the title from the first real user message.
-export const listClaudeAgentSessions = async (
-  options: AgentSessionScanOptions = {}
-): Promise<ReadonlyArray<AgentSessionSummary>> => {
-  const { homedir, limit, fs } = resolved(options)
-  const root = join(homedir, ".claude", "projects")
-  // Stats and reads are independent, so they run concurrently; a machine
-  // with years of sessions otherwise pays one round trip per file.
-  const candidates = (
+const statClaudeSessionFile = async (
+  path: string,
+  fs: AgentSessionFileSystem
+): Promise<SessionFileCandidate | undefined> => {
+  const stat = await fs.statFile(path)
+  return stat === undefined || stat.isDirectory ? undefined : { path, mtimeMs: stat.mtimeMs }
+}
+
+const collectClaudeProjectSessionFiles = async (
+  projectDir: string,
+  fs: AgentSessionFileSystem
+): Promise<ReadonlyArray<SessionFileCandidate | undefined>> => {
+  const entries = (await fs.listDirectory(projectDir)).filter((entry) => entry.endsWith(".jsonl"))
+  return Promise.all(
+    entries.map(async (entry) => statClaudeSessionFile(join(projectDir, entry), fs))
+  )
+}
+
+const collectClaudeSessionFiles = async (
+  root: string,
+  fs: AgentSessionFileSystem
+): Promise<ReadonlyArray<SessionFileCandidate>> => {
+  const projects = await fs.listDirectory(root)
+  return (
     await Promise.all(
-      (await fs.listDirectory(root)).map(async (project) => {
-        const projectDir = join(root, project)
-        const entries = (await fs.listDirectory(projectDir)).filter((entry) =>
-          entry.endsWith(".jsonl")
-        )
-        return Promise.all(
-          entries.map(async (entry): Promise<SessionFileCandidate | undefined> => {
-            const path = join(projectDir, entry)
-            const stat = await fs.statFile(path)
-            return stat === undefined || stat.isDirectory
-              ? undefined
-              : { path, mtimeMs: stat.mtimeMs }
-          })
-        )
-      })
+      projects.map(async (project) => collectClaudeProjectSessionFiles(join(root, project), fs))
     )
   )
     .flat()
     .filter((candidate): candidate is SessionFileCandidate => candidate !== undefined)
+}
 
+const parseClaudeSessionHead = (
+  head: string
+): { cwd: string | undefined; title: string | undefined } => {
+  let cwd: string | undefined
+  let title: string | undefined
+  for (const line of head.split("\n")) {
+    const entry = parseJsonLine(line)
+    if (entry === undefined) continue
+    if (cwd === undefined && typeof entry.cwd === "string" && entry.cwd.length > 0) {
+      cwd = entry.cwd
+    }
+    if (title === undefined && entry.type === "user" && entry.isMeta !== true) {
+      title = truncatedTitle(claudeUserText(entry))
+    }
+    if (cwd !== undefined && title !== undefined) break
+  }
+  return { cwd, title }
+}
+
+const resolveClaudeSessionHeads = async (
+  newest: ReadonlyArray<SessionFileCandidate>,
+  heads: ReadonlyArray<string | undefined>,
+  fs: AgentSessionFileSystem
+): Promise<ReadonlyArray<AgentSessionSummary>> => {
   const sessions: AgentSessionSummary[] = []
-  const newest = newestFirst(candidates, limit)
-  const heads = await Promise.all(
-    newest.map((candidate) => fs.readHead(candidate.path, maxReadBytes))
-  )
   for (const [index, candidate] of newest.entries()) {
     const head = heads[index]
     if (head === undefined) continue
-    let cwd: string | undefined
-    let title: string | undefined
-    for (const line of head.split("\n")) {
-      const entry = parseJsonLine(line)
-      if (entry === undefined) continue
-      if (cwd === undefined && typeof entry.cwd === "string" && entry.cwd.length > 0) {
-        cwd = entry.cwd
-      }
-      if (title === undefined && entry.type === "user" && entry.isMeta !== true) {
-        title = truncatedTitle(claudeUserText(entry))
-      }
-      if (cwd !== undefined && title !== undefined) break
-    }
+    const { cwd, title } = parseClaudeSessionHead(head)
     if (cwd === undefined || !(await fs.directoryExists(cwd))) continue
     sessions.push({
       // The filename is the session id.
@@ -218,6 +226,24 @@ export const listClaudeAgentSessions = async (
     })
   }
   return sessions
+}
+
+/// Claude Code: `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`.
+/// The cwd comes from the entries themselves (the encoded directory name is
+/// lossy); the title from the first real user message.
+export const listClaudeAgentSessions = async (
+  options: AgentSessionScanOptions = {}
+): Promise<ReadonlyArray<AgentSessionSummary>> => {
+  const { homedir, limit, fs } = resolved(options)
+  const root = join(homedir, ".claude", "projects")
+  // Stats and reads are independent, so they run concurrently; a machine
+  // with years of sessions otherwise pays one round trip per file.
+  const candidates = await collectClaudeSessionFiles(root, fs)
+  const newest = newestFirst(candidates, limit)
+  const heads = await Promise.all(
+    newest.map((candidate) => fs.readHead(candidate.path, maxReadBytes))
+  )
+  return resolveClaudeSessionHeads(newest, heads, fs)
 }
 
 const claudeUserText = (entry: Record<string, unknown>): string => {
