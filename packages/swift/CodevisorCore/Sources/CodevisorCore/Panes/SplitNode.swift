@@ -51,9 +51,7 @@ public struct SplitChild: Codable, Sendable, Equatable {
 public indirect enum SplitNode: Codable, Sendable, Equatable {
   case group(id: UUID, state: PaneGroupState)
   case split(orientation: SplitOrientation, children: [SplitChild])
-}
 
-extension SplitNode {
   /// A tree containing a single group leaf.
   public static func leaf(_ state: PaneGroupState, id: UUID = UUID()) -> SplitNode {
     .group(id: id, state: state)
@@ -111,47 +109,9 @@ extension SplitNode {
     newGroupId: UUID,
     newGroupState: PaneGroupState
   ) -> SplitNode {
-    splittingNode(targetId: targetId, edge: edge, newGroupId: newGroupId, newGroupState: newGroupState)
-  }
-
-  private func splittingNode(
-    targetId: UUID, edge: SplitEdge, newGroupId: UUID, newGroupState: PaneGroupState
-  ) -> SplitNode {
-    switch self {
-    case let .group(id, state):
-      guard id == targetId else { return self }
-      let target = SplitChild(fraction: 0.5, node: .group(id: id, state: state))
-      let added = SplitChild(fraction: 0.5, node: .group(id: newGroupId, state: newGroupState))
-      let children = edge.insertsBefore ? [added, target] : [target, added]
-      return .split(orientation: edge.orientation, children: children)
-    case let .split(orientation, children):
-      // Same-orientation parent: insert as a sibling, halving the
-      // target child's share, instead of nesting another split.
-      if orientation == edge.orientation,
-        let index = children.firstIndex(where: {
-          if case let .group(id, _) = $0.node { return id == targetId }
-          return false
-        })
-      {
-        var updated = children
-        let share = updated[index].fraction / 2
-        updated[index].fraction = share
-        let added = SplitChild(fraction: share, node: .group(id: newGroupId, state: newGroupState))
-        updated.insert(added, at: edge.insertsBefore ? index : index + 1)
-        return .split(orientation: orientation, children: updated)
-      }
-      return .split(
-        orientation: orientation,
-        children: children.map {
-          SplitChild(
-            fraction: $0.fraction,
-            node: $0.node.splittingNode(
-              targetId: targetId, edge: edge,
-              newGroupId: newGroupId, newGroupState: newGroupState
-            )
-          )
-        })
-    }
+    SplitTreeInsertion.split(
+      self, targetId: targetId, edge: edge, newGroupId: newGroupId, newGroupState: newGroupState
+    )
   }
 
   /// Removes a group from the tree: its siblings absorb its share, a split
