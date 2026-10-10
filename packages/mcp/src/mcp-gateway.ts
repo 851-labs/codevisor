@@ -30,6 +30,7 @@ import {
   skillsToolDescription,
   skillsToolResult
 } from "./mcp-gateway-skills.js"
+import { makeExecutionSteps } from "./mcp-gateway-steps.js"
 import type { GatewayCallContext, GatewayOrigin, McpManagerConfig } from "./mcp-manager-types.js"
 import { makeRecordingPublisher } from "./mcp-recording-artifacts.js"
 import { type SandboxArtifactPersistence, sandboxOutputContent } from "./mcp-sandbox-results.js"
@@ -281,7 +282,13 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
           argsHash: executionArgsHash({ code, description }),
           description
         })
-        const artifacts = newArtifactCollector()
+        const steps = makeExecutionSteps({
+          recorder,
+          collector: newArtifactCollector(),
+          record,
+          automationProviders,
+          connectUpstream
+        })
         const clientId = turnClientId(sessionId)
         const origin: GatewayOrigin = {
           machineId: selfMachine.id,
@@ -307,7 +314,6 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
           code,
           {
             invoke: async ({ path, args, target }) => {
-              const started = performance.now()
               const machine =
                 target?.machine === undefined || target.machine === selfMachine.id
                   ? undefined
@@ -317,37 +323,30 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
                         ? {}
                         : { machineName: target.machineName })
                     }
-              const machineLabel =
-                machine === undefined ? {} : { machine: machine.machineName ?? machine.machine }
+              const settle = await steps.begin(path, {
+                internal: target?.internal === true,
+                local: machine === undefined,
+                ...(machine === undefined
+                  ? {}
+                  : { machine: machine.machineName ?? machine.machine })
+              })
               try {
                 const value =
                   machine === undefined
                     ? await invokeGatewayTool(callContext, path, args, {
-                        artifacts,
+                        artifacts: steps.artifacts,
                         signal,
                         onBrowser: () => {
                           usedBrowser = true
-                        }
+                        },
+                        onBrowserPage: steps.onBrowserPage
                       })
                     : await invokeOnMachine(machine, path, args, await remoteOrigin(), signal)
-                if (target?.internal !== true)
-                  recorder.call({
-                    path,
-                    ...machineLabel,
-                    ok: true,
-                    ms: Math.round(performance.now() - started)
-                  })
+                await settle({ ok: true, value })
                 return value
               } catch (cause) {
                 const error = gatewayToolError(cause)
-                if (target?.internal !== true)
-                  recorder.call({
-                    path,
-                    ...machineLabel,
-                    ok: false,
-                    ms: Math.round(performance.now() - started),
-                    error: error.message
-                  })
+                await settle({ ok: false, error: error.message })
                 throw error
               }
             }
@@ -381,7 +380,7 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
               })
             },
             ...sandboxOutputContent(result.output),
-            ...artifacts.content
+            ...steps.artifacts.content
           ]
         }
       }

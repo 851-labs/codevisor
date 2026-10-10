@@ -2,8 +2,36 @@
 /// it on the session sink; the server attaches it to the harness tool row as
 /// `_meta.codevisorExecution` so clients can label what a workflow is doing.
 
+/// What a workflow touched, so clients can draw its artwork: the site a
+/// browser call left its tab on, the MCP server a call reached, or one of
+/// Codevisor's own capabilities.
+export type CodevisorExecutionIcon =
+  | { readonly kind: "site"; readonly origin: string }
+  | {
+      readonly kind: "mcp"
+      readonly serverId: string
+      /// The server's host, so the icon still resolves (by favicon) once
+      /// the server is removed or when it lives on another machine.
+      readonly host?: string
+    }
+  | { readonly kind: "builtin"; readonly id: "browser" | "computer" | "codevisor" | "plugin" }
+
+/// A file a workflow call produced (a screenshot, recording, or export),
+/// stored as a server attachment the transcript can show.
+export interface CodevisorExecutionFile {
+  readonly fileId: string
+  readonly name?: string
+  readonly mimeType?: string
+}
+
 export interface CodevisorExecutionCall {
   readonly path: string
+  /// The tool's display title ("Search models"), when it declares one.
+  readonly title?: string
+  /// What the call touched, for the step's icon.
+  readonly icon?: CodevisorExecutionIcon
+  /// Files the call produced.
+  readonly files?: ReadonlyArray<CodevisorExecutionFile>
   /// Display name of the machine the call was routed to, when not local.
   readonly machine?: string
   readonly ok: boolean
@@ -20,6 +48,11 @@ export interface CodevisorExecutionState {
   readonly status?: string
   readonly calls: ReadonlyArray<CodevisorExecutionCall>
   readonly error?: string
+  /// The first thing the workflow touched, which names it once it settles.
+  readonly icon?: CodevisorExecutionIcon
+  /// What the workflow is touching now (the latest call to start, or the
+  /// site a browser call left its tab on), shown while it runs.
+  readonly activeIcon?: CodevisorExecutionIcon
 }
 
 /// A gateway `skills` call, for rows that ran it from inside their own code
@@ -34,6 +67,7 @@ export const CODEVISOR_EXECUTION_MAX_DESCRIPTION = 80
 export const CODEVISOR_EXECUTION_MAX_STATUS = 120
 export const CODEVISOR_EXECUTION_MAX_ERROR = 200
 export const CODEVISOR_EXECUTION_MAX_CALLS = 50
+export const CODEVISOR_EXECUTION_MAX_FILES = 12
 
 const canonicalize = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(canonicalize)

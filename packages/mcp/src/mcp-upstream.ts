@@ -136,10 +136,12 @@ export const makeConnectUpstream = (core: McpManagerCore): ConnectUpstream => {
           abandoned = true
           throw new Error(`${latest.name} changed while connecting`)
         }
+        const serverInfo = client.getServerVersion()
         const connection: UpstreamConnection = {
           client,
           close: () => client.close(),
-          tools
+          tools,
+          ...(serverInfo === undefined ? {} : { serverInfo })
         }
         connections.set(id, connection)
         const updated = await record(id)

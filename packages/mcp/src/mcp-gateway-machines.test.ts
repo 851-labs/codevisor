@@ -1,11 +1,15 @@
 import { createHash } from "node:crypto"
+import { mkdtemp } from "node:fs/promises"
 import { createServer } from "node:http"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
-import { canonicalExecutionArgs } from "@codevisor/api"
+import { canonicalExecutionArgs, type CodevisorExecutionState } from "@codevisor/api"
 import {
   CodeExecutionToolError,
   computerUseTools,
+  makeBrowserUseProvider,
   textToolResult,
   type AutomationProviderContext
 } from "@codevisor/automation"
@@ -15,10 +19,20 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js"
 import { afterEach, describe, expect, it } from "vitest"
 
 import { unavailableBrowserProvider } from "./mcp-automation-builtins.js"
-import { cleanupMcpManagerTests, listen, run, testManager } from "./mcp-manager-test-support.js"
+import {
+  cleanupMcpManagerTests,
+  directories,
+  listen,
+  run,
+  testManager
+} from "./mcp-manager-test-support.js"
 import type { GatewayOrigin, McpManager } from "./mcp-manager-types.js"
 
 afterEach(cleanupMcpManagerTests)
+
+/// A 1×1 transparent PNG.
+const PNG_PIXEL =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
 
 const machineRoster = {
   machines: [
@@ -183,18 +197,37 @@ describe("gateway machines and execution annotations", () => {
           description: "Build the app on the MacBook",
           status: "Finding the MacBook",
           // machines.get's own lookup is the prelude's, not the script's.
+          // Steps carry a label and icon; another machine's tools are labeled by name.
           calls: [
-            { path: "xcode.build", machine: "MacBook Pro", ok: true, ms: expect.any(Number) },
+            {
+              path: "xcode.build",
+              title: "Build",
+              icon: { kind: "mcp", serverId: "xcode" },
+              machine: "MacBook Pro",
+              ok: true,
+              ms: expect.any(Number)
+            },
             {
               path: "xcode.test",
+              title: "Test",
+              icon: { kind: "mcp", serverId: "xcode" },
               machine: "MacBook Pro",
               ok: false,
               ms: expect.any(Number),
               error:
                 "lost connection to MacBook Pro mid-call; the tool may or may not have completed"
             },
-            { path: "codevisor.context.current", ok: true, ms: expect.any(Number) }
-          ]
+            {
+              path: "codevisor.context.current",
+              title: "Context current",
+              icon: { kind: "builtin", id: "codevisor" },
+              ok: true,
+              ms: expect.any(Number)
+            }
+          ],
+          // Named by its first call; another machine's server is known only by id.
+          icon: { kind: "mcp", serverId: "xcode" },
+          activeIcon: { kind: "builtin", id: "codevisor" }
         }
       })
 
@@ -232,6 +265,78 @@ describe("gateway machines and execution annotations", () => {
       expect(await skillReports({})).toEqual({ kind: "codevisor_skill", skill: { ok: true } })
     } finally {
       await client.close()
+    }
+  })
+
+  it("names a browser workflow after the site its tab reached", async () => {
+    const root = await mkdtemp(join(tmpdir(), "gateway-browser-site-"))
+    directories.push(root)
+    const provider = makeBrowserUseProvider(root)
+    const pages: Record<string, string | undefined> = {
+      navigate: "https://linear.app/codevisor/issue/ABC-1",
+      snapshot: "https://linear.app/codevisor/issue/ABC-2",
+      tabs: undefined
+    }
+    const { db, manager } = await testManager({
+      makeBrowserProvider: () => ({
+        ...provider,
+        // Page actions lead with the page they left the tab on.
+        invoke: async (_context, name) => {
+          if (name === "screenshot") {
+            return {
+              content: [{ type: "image", mimeType: "image/png", data: PNG_PIXEL }]
+            }
+          }
+          const url = pages[name]
+          return textToolResult(url === undefined ? "{}" : `Page URL: ${url}\n{}`)
+        }
+      })
+    })
+    await manager.setBrowserPreference("managed")
+    await listenWithMachines(manager)
+    const project = await run(db.createProject({ folderPath: "/tmp/mcp-gateway-site" }))
+    const session = await run(db.createSession({ harnessId: "codex", projectId: project.id }))
+    const events: Array<RuntimeEvent> = []
+    const issued = await manager.issueGateway(session.id, project.id, (event) => {
+      events.push(event)
+    })
+    const client = await connectClient(issued)
+    try {
+      const executed = await client.callTool({
+        name: "execute",
+        arguments: {
+          description: "Read the Linear issue",
+          code: `async () => {
+            await tools.browser.navigate({ url: "https://linear.app/codevisor/issue/ABC-1" });
+            await tools.browser.snapshot({});
+            await tools.browser.screenshot({});
+            await tools.browser.tabs({ action: "list" });
+            return true;
+          }`
+        }
+      })
+      expect(executed.isError, JSON.stringify(executed)).not.toBe(true)
+      const site = { kind: "site", origin: "https://linear.app" }
+      const execution = (events.at(-1)!.payload as { execution: CodevisorExecutionState }).execution
+      expect(execution).toMatchObject({
+        state: "completed",
+        icon: site,
+        // A browser call that reports no page keeps showing the site.
+        activeIcon: site
+      })
+      // Each step is labeled, shown on the site, and carries what it produced.
+      expect(execution.calls.map((call) => [call.title, call.icon])).toEqual([
+        ["Navigate", site],
+        ["Snapshot", site],
+        ["Screenshot", site],
+        ["Tabs", site]
+      ])
+      expect(execution.calls[2]?.files).toEqual([
+        { fileId: expect.any(String), name: "browser-screenshot.png", mimeType: "image/png" }
+      ])
+    } finally {
+      await client.close()
+      await provider.close()
     }
   })
 

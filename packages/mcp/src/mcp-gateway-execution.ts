@@ -6,8 +6,11 @@ import {
   CODEVISOR_EXECUTION_MAX_CALLS,
   CODEVISOR_EXECUTION_MAX_DESCRIPTION,
   CODEVISOR_EXECUTION_MAX_ERROR,
+  CODEVISOR_EXECUTION_MAX_FILES,
   CODEVISOR_EXECUTION_MAX_STATUS,
   type CodevisorExecutionCall,
+  type CodevisorExecutionFile,
+  type CodevisorExecutionIcon,
   type CodevisorExecutionState,
   type CodevisorSkillRead
 } from "@codevisor/api"
@@ -55,9 +58,20 @@ export const executionArgsHash = (args: {
 export interface ExecutionRecorder {
   readonly status: (text: string) => void
   readonly call: (call: CodevisorExecutionCall) => void
+  /// The workflow is touching `icon` now: a call started, or a browser call
+  /// left its tab on a site. The first one names the settled workflow.
+  readonly touch: (icon: CodevisorExecutionIcon) => void
   /// Emits the terminal state and resolves once the sink has taken it.
   readonly finish: (error?: string) => Promise<void>
 }
+
+const sameIcon = (
+  lhs: CodevisorExecutionIcon | undefined,
+  rhs: CodevisorExecutionIcon | undefined
+): boolean => JSON.stringify(lhs) === JSON.stringify(rhs)
+
+const isBareBrowser = (icon: CodevisorExecutionIcon): boolean =>
+  icon.kind === "builtin" && icon.id === "browser"
 
 export const makeExecutionRecorder = (options: {
   readonly sink: RuntimeEventSink | undefined
@@ -75,7 +89,10 @@ export const makeExecutionRecorder = (options: {
       ? undefined
       : truncateText(firstLine, CODEVISOR_EXECUTION_MAX_DESCRIPTION)
   const calls: Array<CodevisorExecutionCall> = []
+  let filesShown = 0
   let status: string | undefined
+  let icon: CodevisorExecutionIcon | undefined
+  let activeIcon: CodevisorExecutionIcon | undefined
   let lastEmitAt = Number.NEGATIVE_INFINITY
   let pending: unknown
   let finished = false
@@ -89,7 +106,9 @@ export const makeExecutionRecorder = (options: {
       ...(description === undefined ? {} : { description }),
       ...(status === undefined ? {} : { status }),
       calls: [...calls],
-      ...(error === undefined ? {} : { error })
+      ...(error === undefined ? {} : { error }),
+      ...(icon === undefined ? {} : { icon }),
+      ...(activeIcon === undefined ? {} : { activeIcon })
     }
     const event = {
       kind: "session.output" as const,
@@ -133,13 +152,29 @@ export const makeExecutionRecorder = (options: {
       status = trimmed.length === 0 ? undefined : trimmed
       scheduleRunning()
     },
-    call: (call) => {
-      calls.push(
-        call.error === undefined
-          ? call
-          : { ...call, error: errorSummary(call.error, CODEVISOR_EXECUTION_MAX_ERROR) }
-      )
+    call: ({ files, error, ...call }) => {
+      // The workflow's first files are what it was for; later ones are cut.
+      const shown = files?.slice(0, Math.max(0, CODEVISOR_EXECUTION_MAX_FILES - filesShown)) ?? []
+      filesShown += shown.length
+      calls.push({
+        ...call,
+        ...(shown.length === 0 ? {} : { files: shown }),
+        ...(error === undefined
+          ? {}
+          : { error: errorSummary(error, CODEVISOR_EXECUTION_MAX_ERROR) })
+      })
       if (calls.length > CODEVISOR_EXECUTION_MAX_CALLS) calls.shift()
+      scheduleRunning()
+    },
+    touch: (next) => {
+      if (finished) return
+      // A site a browser call reached names the workflow better than the
+      // bare browser it started with.
+      const named =
+        icon === undefined || (isBareBrowser(icon) && next.kind === "site") ? next : icon
+      if (sameIcon(named, icon) && sameIcon(next, activeIcon)) return
+      icon = named
+      activeIcon = next
       scheduleRunning()
     },
     finish: async (error) => {
@@ -174,4 +209,81 @@ export const reportSkillRead = async (
   } catch {
     // The read happened; only its label is lost.
   }
+}
+
+const BUILTIN_ICON_IDS = new Set(["browser", "computer", "codevisor", "plugin"] as const)
+
+/// The artwork a sandbox call shows on its workflow before it runs: one of
+/// Codevisor's own capabilities, or the MCP server it reaches. Catalog
+/// lookups (`search`, `describe.tool`) touch nothing worth showing.
+export const executionCallIcon = async (
+  path: string,
+  serverHost: (serverId: string) => Promise<string | undefined>
+): Promise<CodevisorExecutionIcon | undefined> => {
+  const separator = path.indexOf(".")
+  if (separator <= 0) return undefined
+  const serverId = path.slice(0, separator)
+  if (serverId === "describe") return undefined
+  for (const id of BUILTIN_ICON_IDS) {
+    if (id === serverId) return { kind: "builtin", id }
+  }
+  const host = await serverHost(serverId).catch(() => undefined)
+  return { kind: "mcp", serverId, ...(host === undefined ? {} : { host }) }
+}
+
+/// The site a page URL belongs to, as a workflow icon.
+export const siteIcon = (url: string): CodevisorExecutionIcon | undefined => {
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return undefined
+    return { kind: "site", origin: parsed.origin }
+  } catch {
+    return undefined
+  }
+}
+
+const SCRIPT_CELLS: Readonly<Record<string, string>> = {
+  "browser.js": "Used the browser",
+  "computer.js": "Used the desktop"
+}
+
+/// A tool name (or a script cell's path) as a step label:
+/// `search_models` → "Search models", `browser.js` → "Used the browser".
+export const humanizeToolName = (name: string): string => {
+  const cell = SCRIPT_CELLS[name]
+  if (cell !== undefined) return cell
+  if (name === "js" || name.endsWith(".js")) return "Ran a script"
+  const words = name
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[._-]+/g, " ")
+    .trim()
+    .toLowerCase()
+  return words.length === 0 ? name : words.charAt(0).toUpperCase() + words.slice(1)
+}
+
+/// The files a call's result references: stored artifacts (screenshots,
+/// exports) and published recordings, each carrying a server `fileId`.
+export const executionFiles = (value: unknown): Array<CodevisorExecutionFile> => {
+  const files = new Map<string, CodevisorExecutionFile>()
+  const visit = (node: unknown, depth: number): void => {
+    if (depth > 5 || files.size >= CODEVISOR_EXECUTION_MAX_FILES) return
+    if (Array.isArray(node)) {
+      for (const item of node.slice(0, 50)) visit(item, depth + 1)
+      return
+    }
+    if (typeof node !== "object" || node === null) return
+    const record = node as Record<string, unknown>
+    if (typeof record.fileId === "string" && !files.has(record.fileId)) {
+      const mimeType = record.mediaType ?? record.mimeType
+      files.set(record.fileId, {
+        fileId: record.fileId,
+        ...(typeof record.name === "string" ? { name: record.name } : {}),
+        ...(typeof mimeType === "string" ? { mimeType } : {})
+      })
+      return
+    }
+    for (const child of Object.values(record).slice(0, 50)) visit(child, depth + 1)
+  }
+  visit(value, 0)
+  return [...files.values()]
 }

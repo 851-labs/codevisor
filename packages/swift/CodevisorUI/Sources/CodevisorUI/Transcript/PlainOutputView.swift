@@ -110,6 +110,58 @@ extension PlainOutputView where Trailing == EmptyView {
   }
 }
 
+/// Plain text as a bare code block body: no header, no copy button, in the
+/// diff card's capped, scrollable viewport. Given a command, it reads as a
+/// terminal: the command's line first and the output under it.
+struct PlainCodeBodyView: View {
+  var command: String? = nil
+  let output: String
+  var followsTail = false
+
+  @Environment(\.theme) private var theme
+
+  var body: some View {
+    Group {
+      if command == nil, output.isEmpty {
+        Text("No output")
+          .font(.caption)
+          .italic()
+          .foregroundStyle(.secondary)
+          .padding(.horizontal, 8)
+          .padding(.vertical, 6)
+          .frame(maxWidth: .infinity, alignment: .leading)
+      } else {
+        terminalBody
+          .padding(.vertical, 2)
+      }
+    }
+    .background(theme.codeBackground)
+    .clipShape(RoundedRectangle(cornerRadius: 8))
+    .overlay {
+      RoundedRectangle(cornerRadius: 8).strokeBorder(theme.border, lineWidth: 1)
+    }
+    .contentShape(RoundedRectangle(cornerRadius: 8))
+  }
+
+  @ViewBuilder
+  private var terminalBody: some View {
+    #if canImport(AppKit)
+      NativePlainOutputView(text: output, theme: theme, followsTail: followsTail, command: command)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    #elseif canImport(UIKit)
+      IOSNativePlainOutputView(text: output, theme: theme, followsTail: followsTail, command: command)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    #else
+      Text([command, output.isEmpty ? nil : output].compactMap { $0 }.joined(separator: "\n"))
+        .font(.system(.caption, design: .monospaced))
+        .foregroundStyle(theme.textPrimary)
+        .textSelection(.enabled)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+    #endif
+  }
+}
+
 #Preview {
   PlainOutputView(
     title: "Output",

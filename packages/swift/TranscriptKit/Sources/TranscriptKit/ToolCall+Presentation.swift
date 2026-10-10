@@ -165,6 +165,8 @@ public struct CodevisorExecution: Equatable, Sendable {
     /// The machine the call was routed to, when it was not local.
     public var machine: String?
     public var ok: Bool
+    /// Files the call produced: screenshots, recordings, exports.
+    public var files: [PreviewFile]
   }
 
   public var state: State?
@@ -173,9 +175,26 @@ public struct CodevisorExecution: Equatable, Sendable {
   public var status: String?
   public var calls: [Call]
   public var error: String?
+  /// The first thing the workflow touched, which names it once it settles.
+  public var icon: CodevisorExecutionIconRef?
+  /// What the workflow is touching now, while it runs.
+  public var activeIcon: CodevisorExecutionIconRef?
+
+  private static func file(_ json: JSONValue) -> PreviewFile? {
+    guard let fileId = json["fileId"]?.stringValue, !fileId.isEmpty else { return nil }
+    let mimeType = json["mimeType"]?.stringValue ?? "application/octet-stream"
+    return PreviewFile(
+      source: .attachment(fileId: fileId),
+      name: json["name"]?.stringValue ?? "File",
+      mimeType: mimeType,
+      kind: mimeType.hasPrefix("image/") ? .image : .file
+    )
+  }
 
   init?(json: JSONValue) {
     guard case .object = json else { return nil }
+    icon = CodevisorExecutionIconRef(json: json["icon"])
+    activeIcon = CodevisorExecutionIconRef(json: json["activeIcon"])
     state = json["state"]?.stringValue.flatMap(State.init(rawValue:))
     description = json["description"]?.stringValue
     status = json["status"]?.stringValue
@@ -185,7 +204,8 @@ public struct CodevisorExecution: Equatable, Sendable {
       return Call(
         path: path,
         machine: call["machine"]?.stringValue,
-        ok: call["ok"]?.boolValue ?? true
+        ok: call["ok"]?.boolValue ?? true,
+        files: (call["files"]?.arrayValue ?? []).compactMap(Self.file)
       )
     }
   }

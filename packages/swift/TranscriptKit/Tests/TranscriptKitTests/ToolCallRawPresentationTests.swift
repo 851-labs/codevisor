@@ -72,14 +72,26 @@ struct ToolCallRawPresentationTests {
 
   @Test("Shell metadata without output does not make a call expandable")
   func exitCodeDetails() {
+    // Harnesses title shell calls with their command, so it adds nothing.
     let call = ToolCall(
       toolCallId: "run-1",
-      title: "Ran",
+      title: "Ran false",
       kind: .execute,
       rawInput: ["command": "false"],
       exitCode: 7
     )
     #expect(!call.hasPresentableDetails)
     #expect(call.rawDetailSections().isEmpty)
+  }
+
+  @Test("A script the title shows only the start of opens to the whole script")
+  func scriptDetails() {
+    let call = ToolCall(
+      toolCallId: "run-2",
+      title: "Ran cd app",
+      kind: .execute,
+      rawInput: ["command": "cd app\nswift test"]
+    )
+    #expect(call.hasPresentableDetails)
   }
 }

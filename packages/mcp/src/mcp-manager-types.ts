@@ -55,6 +55,17 @@ export type GatewayRemoteInvoker = (
   signal?: AbortSignal
 ) => Promise<unknown>
 
+export interface McpServerIconSources {
+  readonly url?: string
+  readonly icons?: ReadonlyArray<{
+    readonly src: string
+    readonly mimeType?: string | undefined
+    readonly sizes?: ReadonlyArray<string> | undefined
+    readonly theme?: string | undefined
+  }>
+  readonly websiteUrl?: string
+}
+
 export interface McpManager {
   readonly setBaseUrl: (url: string) => void
   readonly list: () => Promise<ReadonlyArray<McpServer>>
@@ -105,6 +116,10 @@ export interface McpManager {
   readonly subscribeServersChanged: (listener: (id: string) => void) => () => void
   readonly remove: (id: string) => Promise<void>
   readonly tools: (id?: string) => Promise<ReadonlyArray<McpTool>>
+  /// What this machine knows about a server's artwork: its URL, and the
+  /// icons and website its live connection reported at `initialize`.
+  /// Undefined for servers this machine doesn't have.
+  readonly iconSources: (id: string) => Promise<McpServerIconSources | undefined>
   readonly connect: (id: string) => Promise<McpServer>
   /// Machine-local suppression (Phase 18): names disabled ON THIS MACHINE
   /// by the config plane's mcp-overlays. Suppressed servers are dropped

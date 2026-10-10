@@ -7,15 +7,17 @@
     let text: String
     let theme: Theme
     let followsTail: Bool
+    /// A command to echo above the output, as a terminal would.
+    var command: String? = nil
 
     func makeUIView(context _: Context) -> IOSNativePlainOutputScrollView {
       let scrollView = IOSNativePlainOutputScrollView()
-      scrollView.setContent(text: text, theme: theme, followsTail: followsTail)
+      scrollView.setContent(text: text, command: command, theme: theme, followsTail: followsTail)
       return scrollView
     }
 
     func updateUIView(_ scrollView: IOSNativePlainOutputScrollView, context _: Context) {
-      scrollView.setContent(text: text, theme: theme, followsTail: followsTail)
+      scrollView.setContent(text: text, command: command, theme: theme, followsTail: followsTail)
     }
 
     func sizeThatFits(
@@ -38,6 +40,7 @@
     private let metrics = IOSNativePlainOutputMetrics()
     private var renderedText: String?
     private var renderedTheme: Theme?
+    private var renderedCommand: String?
 
     override init(frame: CGRect) {
       let textStorage = NSTextStorage()
@@ -86,29 +89,41 @@
       fatalError("init(coder:) has not been implemented")
     }
 
-    func setContent(text: String, theme: Theme, followsTail: Bool) {
-      guard renderedText != text || renderedTheme != theme else { return }
+    func setContent(text output: String, command: String? = nil, theme: Theme, followsTail: Bool) {
+      // The command and output share one document; output streams in as
+      // appended text after the command's line.
+      let text = command.map { output.isEmpty ? $0 : "\($0)\n\(output)" } ?? output
+      guard renderedText != text || renderedTheme != theme || renderedCommand != command else { return }
 
       let shouldFollowTail = followsTail && (renderedText == nil || isAtBottom)
       let oldText = renderedText
       let oldTheme = renderedTheme
       let selection = outputTextView.selectedRange
-      let foreground = UIColor(theme.textPrimary)
+      let primary = UIColor(theme.textPrimary)
+      // Echoed commands read like a prompt line; their output steps back.
+      let foreground = command == nil ? primary : UIColor(theme.textSecondary)
 
       outputTextView.textStorage.beginEditing()
-      if let oldText, oldTheme == theme, text.hasPrefix(oldText) {
+      if let oldText, oldTheme == theme, renderedCommand == command, text.hasPrefix(oldText) {
         let suffix = String(text.dropFirst(oldText.count))
         if !suffix.isEmpty {
           outputTextView.textStorage.append(attributedText(suffix, foreground: foreground))
         }
       } else {
-        outputTextView.textStorage.setAttributedString(
-          attributedText(text, foreground: foreground)
-        )
+        let document = NSMutableAttributedString(attributedString: attributedText(text, foreground: foreground))
+        if let command {
+          document.addAttribute(
+            .foregroundColor,
+            value: primary,
+            range: NSRange(location: 0, length: (command as NSString).length)
+          )
+        }
+        outputTextView.textStorage.setAttributedString(document)
       }
       outputTextView.textStorage.endEditing()
       renderedText = text
       renderedTheme = theme
+      renderedCommand = command
 
       let length = outputTextView.textStorage.length
       outputTextView.selectedRange = NSRange(

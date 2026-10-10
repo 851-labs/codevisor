@@ -121,4 +121,49 @@ struct CodevisorExecutionPresentationTests {
       ToolCall(toolCallId: "t", title: "codevisor.execute", status: .inProgress, meta: ["codevisorExecution": "x"])
         .codevisorExecution == nil)
   }
+
+  @Test("A workflow's icon shows what it touches while it runs, then what it was about")
+  func workflowIcon() throws {
+    let touched =
+      #""icon":{"kind":"site","origin":"https://linear.app"},"activeIcon":{"kind":"mcp","serverId":"s1","host":"mcp.sentry.dev"}"#
+    let running = try snapshot(status: "in_progress", execution: #"{"state":"running","calls":[],"# + touched + "}")
+    #expect(running.icon.artwork == .mcpServer(id: "s1", host: "mcp.sentry.dev"))
+    let settled = try snapshot(status: "completed", execution: #"{"state":"completed","calls":[],"# + touched + "}")
+    #expect(settled.icon == ToolCallIcon(symbol: "globe", artwork: .site(origin: "https://linear.app")))
+
+    // Built-ins draw their own symbols; anything unreadable is the generic integration.
+    let browser = try snapshot(
+      status: "completed",
+      execution: #"{"state":"completed","calls":[],"icon":{"kind":"builtin","id":"computer"}}"#
+    )
+    #expect(browser.icon == ToolCallIcon(symbol: "display"))
+    let unknown = try snapshot(
+      status: "completed",
+      execution: #"{"state":"completed","calls":[],"icon":{"kind":"hologram"},"activeIcon":{"kind":"site"}}"#
+    )
+    #expect(unknown.icon == ToolCallIcon(symbol: "puzzlepiece.extension"))
+  }
+
+  @Test("Every tool call has its own icon")
+  func callIcons() {
+    #expect(ToolCall(toolCallId: "r", title: "Read a.swift", kind: .read).icon == ToolCallIcon(symbol: "doc.text"))
+    #expect(ToolCall(toolCallId: "e", title: "Ran ls", kind: .execute).icon == ToolCallIcon(symbol: "terminal"))
+    #expect(ToolCall(toolCallId: "s", title: "codevisor.skills").icon == ToolCallIcon(symbol: "book"))
+    #expect(ToolCall(toolCallId: "d", title: "tool_search").icon == ToolCallIcon(symbol: "magnifyingglass"))
+  }
+
+  @Test("A skill read shows the skill's text, not its JSON envelope")
+  func skillText() {
+    let read = ToolCall(
+      toolCallId: "s", title: "mcp__codevisor__skills", status: .completed,
+      rawInput: ["name": "browser-use"],
+      rawOutput: [["type": "text", "text": "# Browser Use\n\nUse it for pages.\n"]]
+    )
+    #expect(read.skillText == "# Browser Use\n\nUse it for pages.")
+    let pending = ToolCall(toolCallId: "p", title: "mcp__codevisor__skills", status: .inProgress)
+    #expect(pending.skillText == nil)
+    let workflow = ToolCall(
+      toolCallId: "w", title: "mcp__codevisor__execute", status: .completed, rawOutput: "done")
+    #expect(workflow.skillText == nil)
+  }
 }

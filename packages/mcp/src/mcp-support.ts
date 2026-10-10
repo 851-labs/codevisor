@@ -2,13 +2,15 @@ import type { IncomingMessage } from "node:http"
 
 import type { CreateMcpServerRequest } from "@codevisor/api"
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js"
-import type { Tool } from "@modelcontextprotocol/sdk/types.js"
+import type { Implementation, Tool } from "@modelcontextprotocol/sdk/types.js"
 import { Effect } from "effect"
 
 export interface UpstreamConnection {
   readonly client: Client
   readonly close: () => Promise<void>
   tools: ReadonlyArray<Tool>
+  /// What the server said about itself at `initialize` (name, icons, site).
+  readonly serverInfo?: Implementation
 }
 
 export const run = <A>(effect: Effect.Effect<A, unknown>): Promise<A> => Effect.runPromise(effect)

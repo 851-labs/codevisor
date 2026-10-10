@@ -91,7 +91,12 @@ export const workingUpstream = async () => {
       result = {
         protocolVersion: "2025-11-25",
         capabilities: { tools: {} },
-        serverInfo: { name: "working-upstream", version: "1" }
+        serverInfo: {
+          name: "working-upstream",
+          version: "1",
+          icons: [{ src: "https://tracker.example/icon.png", sizes: ["64x64"] }],
+          websiteUrl: "https://tracker.example"
+        }
       }
     } else if (message.method === "tools/list") {
       const cursor = (message.params as { cursor?: string } | undefined)?.cursor

@@ -8,8 +8,12 @@ import {
   EXECUTION_EMIT_INTERVAL_MS,
   errorSummary,
   executionArgsHash,
+  executionCallIcon,
+  executionFiles,
+  humanizeToolName,
   makeExecutionRecorder,
   reportSkillRead,
+  siteIcon,
   type ExecutionTimers
 } from "./mcp-gateway-execution.js"
 
@@ -237,5 +241,117 @@ describe("execution recorder", () => {
     expect(executionArgsHash({ code: args.code, description: args.description })).toBe(
       executionArgsHash(args)
     )
+  })
+
+  it("names a workflow by the first thing it touched, and shows what it touches now", async () => {
+    const clock = manualTimers()
+    const { recorder, states } = recording(clock.timers)
+    const browser = { kind: "builtin", id: "browser" } as const
+    const linear = { kind: "site", origin: "https://linear.app" } as const
+    const sentry = { kind: "mcp", serverId: "sentry-id", host: "mcp.sentry.dev" } as const
+    recorder.touch(browser)
+    clock.advance(EXECUTION_EMIT_INTERVAL_MS)
+    expect(states().at(-1)).toMatchObject({ icon: browser, activeIcon: browser })
+    // The site a browser call reached names the workflow instead of the bare browser.
+    recorder.touch(linear)
+    clock.advance(EXECUTION_EMIT_INTERVAL_MS)
+    expect(states().at(-1)).toMatchObject({ icon: linear, activeIcon: linear })
+    // Later calls change only what is active; the name stays.
+    recorder.touch(sentry)
+    clock.advance(EXECUTION_EMIT_INTERVAL_MS)
+    expect(states().at(-1)).toMatchObject({ icon: linear, activeIcon: sentry })
+    const emitted = states().length
+    recorder.touch(sentry)
+    clock.advance(EXECUTION_EMIT_INTERVAL_MS)
+    expect(states()).toHaveLength(emitted)
+    await recorder.finish()
+    expect(states().at(-1)).toMatchObject({ state: "completed", icon: linear, activeIcon: sentry })
+    recorder.touch(browser)
+    expect(states().at(-1)).toMatchObject({ activeIcon: sentry })
+  })
+})
+
+describe("execution call icons", () => {
+  it("maps sandbox paths to built-ins and MCP servers, skipping catalog lookups", async () => {
+    const hosts: Record<string, string> = { "linear-id": "mcp.linear.app" }
+    const serverHost = async (id: string) => {
+      if (id === "gone") throw new Error("not found")
+      return hosts[id]
+    }
+    expect(await executionCallIcon("search", serverHost)).toBeUndefined()
+    expect(await executionCallIcon("describe.tool", serverHost)).toBeUndefined()
+    expect(await executionCallIcon("browser.navigate", serverHost)).toEqual({
+      kind: "builtin",
+      id: "browser"
+    })
+    expect(await executionCallIcon("plugin.deploy", serverHost)).toEqual({
+      kind: "builtin",
+      id: "plugin"
+    })
+    expect(await executionCallIcon("linear-id.list_issues", serverHost)).toEqual({
+      kind: "mcp",
+      serverId: "linear-id",
+      host: "mcp.linear.app"
+    })
+    // A server this machine can't describe still gets its id.
+    expect(await executionCallIcon("gone.tool", serverHost)).toEqual({
+      kind: "mcp",
+      serverId: "gone"
+    })
+  })
+
+  it("keeps only web origins as sites", () => {
+    expect(siteIcon("https://linear.app/team/issue/ABC-1?x=1")).toEqual({
+      kind: "site",
+      origin: "https://linear.app"
+    })
+    expect(siteIcon("about:blank")).toBeUndefined()
+    expect(siteIcon("not a url")).toBeUndefined()
+  })
+})
+
+const files = (prefix: string, count: number) =>
+  Array.from({ length: count }, (_, index) => ({ fileId: `${prefix}${index}` }))
+
+describe("execution steps", () => {
+  it("labels tools in words", () => {
+    expect(humanizeToolName("search_models")).toBe("Search models")
+    expect(humanizeToolName("resolve-library-id")).toBe("Resolve library id")
+    expect(humanizeToolName("context.current")).toBe("Context current")
+    expect(humanizeToolName("getIssue")).toBe("Get issue")
+    expect(humanizeToolName("js")).toBe("Ran a script")
+    expect(humanizeToolName("browser.js")).toBe("Used the browser")
+    expect(humanizeToolName("computer.js")).toBe("Used the desktop")
+    expect(humanizeToolName("__")).toBe("__")
+  })
+
+  it("finds the stored files a result references, once each", () => {
+    const shot = { type: "artifact_ref", fileId: "f1", name: "shot.png", mediaType: "image/png" }
+    expect(
+      executionFiles({
+        value: { title: "x" },
+        artifacts: [shot, shot],
+        file: { fileId: "f2", path: "/tmp/r.mp4", mimeType: "video/mp4" },
+        nested: [[{ fileId: "f3" }]],
+        count: 3
+      })
+    ).toEqual([
+      { fileId: "f1", name: "shot.png", mimeType: "image/png" },
+      { fileId: "f2", mimeType: "video/mp4" },
+      { fileId: "f3" }
+    ])
+    expect(executionFiles("text")).toEqual([])
+    expect(executionFiles({ a: { b: { c: { d: { e: { f: { fileId: "deep" } } } } } } })).toEqual([])
+  })
+
+  it("keeps a workflow's first files", async () => {
+    const { recorder, states } = recording()
+    recorder.call({ path: "browser.screenshot", ok: true, ms: 1, files: files("a", 10) })
+    recorder.call({ path: "browser.screenshot", ok: true, ms: 1, files: files("b", 5) })
+    recorder.call({ path: "browser.screenshot", ok: true, ms: 1, files: files("c", 1) })
+    await recorder.finish()
+    const calls = states().at(-1)!.calls
+    expect(calls.map((call) => call.files?.length ?? 0)).toEqual([10, 2, 0])
+    expect(calls[2]).not.toHaveProperty("files")
   })
 })

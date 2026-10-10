@@ -29,6 +29,22 @@ extension EnvironmentValues {
   /// Requests a fresh intrinsic-height measurement from the containing
   /// native transcript row after isolated SwiftUI content changes.
   @Entry public var transcriptInvalidateRowMeasurement: TranscriptRowMeasurementInvalidationAction?
+
+  /// The platform's inline attachment thumbnail, for files tool calls made.
+  @Entry public var transcriptAttachmentThumbnail: TranscriptAttachmentThumbnail?
+}
+
+/// Draws a file as the platform draws inline attachments (thumbnail, Quick
+/// Look on click). Call it like a function.
+public struct TranscriptAttachmentThumbnail: @unchecked Sendable {
+  // Built and called only by views on the main actor.
+  private let make: (PreviewFile) -> AnyView
+
+  public init(_ make: @escaping (PreviewFile) -> AnyView) {
+    self.make = make
+  }
+
+  @MainActor public func callAsFunction(_ file: PreviewFile) -> AnyView { make(file) }
 }
 
 /// Runs a disclosure change with the containing transcript row pinned in the

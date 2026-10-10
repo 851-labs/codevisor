@@ -31,3 +31,12 @@ export const textToolResult = (text: string, isError = false): CallToolResult =>
   ...(isError ? { isError: true } : {}),
   content: [{ type: "text", text }]
 })
+
+/// The page a Browser Use result says its call left the tab on: page
+/// actions (navigation, back/forward, reload, clicks) lead with a
+/// `Page URL:` line.
+export const browserResultPageUrl = (result: CallToolResult): string | undefined => {
+  const first = result.content[0]
+  if (result.isError === true || first?.type !== "text") return undefined
+  return /^Page URL: (\S+)/.exec(first.text)?.[1]
+}

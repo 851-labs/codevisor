@@ -350,6 +350,9 @@ public protocol CodevisorServerClienting: BrowserStateClienting, SimulatorClient
   func filePreview(id: String) async throws -> Data
   func filePreview(path: String, sessionId: UUID?) async throws -> Data
   func fileData(id: String) async throws -> Data
+  /// Tool-call artwork (`GET /v1/tool-icons/…`) as PNG or ICO bytes.
+  /// Throws `httpStatus(404, _)` when there is none.
+  func toolIcon(_ request: ServerToolIconRequest) async throws -> Data
   func readDocument(path: String) async throws -> ServerFileDocument
   func saveDocument(path: String, content: String, version: String) async throws -> ServerFileDocument
   func fileEntries(path: String, showHidden: Bool) async throws -> ServerFileListing

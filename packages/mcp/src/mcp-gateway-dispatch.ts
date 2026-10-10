@@ -2,7 +2,7 @@ import { realpathSync, statSync } from "node:fs"
 import { isAbsolute, relative, resolve } from "node:path"
 
 import type { AutomationToolProvider, BrowserSetupBroker } from "@codevisor/automation"
-import { CodeExecutionToolError } from "@codevisor/automation"
+import { browserResultPageUrl, CodeExecutionToolError } from "@codevisor/automation"
 import type { McpServerRecord } from "@codevisor/db"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 
@@ -27,6 +27,8 @@ export interface GatewayInvokeOptions {
   readonly signal?: AbortSignal
   /// Fires when the call reaches Browser Use.
   readonly onBrowser?: () => void
+  /// Fires with the page a Browser Use call left its tab on.
+  readonly onBrowserPage?: (url: string) => void
 }
 
 /// Keeps a tool failure's code and details (machine_unavailable and friends)
@@ -97,7 +99,9 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
     toolName: string,
     args: Readonly<Record<string, unknown>>,
     collector?: SandboxArtifactCollector,
-    remote?: GatewayOrigin
+    remote?: GatewayOrigin,
+    /// Hears the page each nested browser action (a `browser.js` cell's) leaves its tab on.
+    onPage?: (url: string) => void
   ): Promise<CallToolResult> => {
     if (provider.id !== "browser" && provider.id !== "computer" && provider.id !== "codevisor") {
       throw new Error(`Unknown automation provider: ${provider.id}`)
@@ -128,16 +132,20 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
         : provider.id === "browser"
           ? {
               ...context,
-              invokeBrowser: async (name: string, nested: Record<string, unknown>) =>
-                sandboxSuccessfulToolResult(
-                  await invokeAutomationProvider(
-                    provider,
-                    context,
-                    name,
-                    nested,
-                    collector,
-                    remote
-                  ),
+              invokeBrowser: async (name: string, nested: Record<string, unknown>) => {
+                const result = await invokeAutomationProvider(
+                  provider,
+                  context,
+                  name,
+                  nested,
+                  collector,
+                  remote,
+                  onPage
+                )
+                const pageUrl = browserResultPageUrl(result)
+                if (pageUrl !== undefined) onPage?.(pageUrl)
+                return sandboxSuccessfulToolResult(
+                  result,
                   collector ?? {
                     content: [],
                     maxItems: 20,
@@ -146,6 +154,7 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
                   },
                   "browser." + name
                 )
+              }
             }
           : context
     let safeArgs = args
@@ -259,18 +268,18 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
     const provider = automationProviders.get(serverId)
     if (provider !== undefined) {
       if (serverId === "browser") options.onBrowser?.()
-      return sandboxSuccessfulToolResult(
-        await invokeAutomationProvider(
-          provider,
-          { sessionId: scopeKey, ...(projectId === undefined ? {} : { projectId }) },
-          toolName,
-          input,
-          artifacts,
-          remote
-        ),
+      const result = await invokeAutomationProvider(
+        provider,
+        { sessionId: scopeKey, ...(projectId === undefined ? {} : { projectId }) },
+        toolName,
+        input,
         artifacts,
-        path
+        remote,
+        options.onBrowserPage
       )
+      const pageUrl = serverId === "browser" ? browserResultPageUrl(result) : undefined
+      if (pageUrl !== undefined) options.onBrowserPage?.(pageUrl)
+      return sandboxSuccessfulToolResult(result, artifacts, path)
     }
     const connection = await connectUpstream(serverId)
     return sandboxSuccessfulToolResult(

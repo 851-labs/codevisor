@@ -62,7 +62,10 @@ public extension ToolCall {
   /// collapsed transcript rows stay cheap.
   var hasPresentableDetails: Bool {
     if kind == .execute {
+      // A command alone is worth opening only when it shows more than the
+      // title's one line: a script, or a command the title cut short.
       return !(content?.isEmpty ?? true) || rawOutput != nil
+        || shellCommand.map { !title.hasSuffix($0) } == true
     }
     return !(content?.isEmpty ?? true) || rawInput != nil || rawOutput != nil || exitCode != nil
   }
@@ -100,5 +103,73 @@ public extension ToolCall {
       sections.append(rawOutput)
     }
     return sections
+  }
+}
+
+public extension ToolCall {
+  /// The full command or script a shell call ran, as a terminal would echo
+  /// it. Harnesses report it as `command` (or `cmd`): a string, or an argv
+  /// array. A login-shell wrapper (`/bin/zsh -lc '…'`) is unwrapped to the
+  /// script it runs.
+  var shellCommand: String? {
+    guard kind == .execute, let rawInput else { return nil }
+    let value = rawInput["command"] ?? rawInput["cmd"]
+    let command: String?
+    if let text = value?.stringValue {
+      command = Self.unwrappingShellInvocation(text)
+    } else if let argv = value?.arrayValue?.compactMap(\.stringValue), !argv.isEmpty {
+      command = Self.script(fromArgv: argv) ?? argv.joined(separator: " ")
+    } else {
+      command = nil
+    }
+    guard let command = command?.trimmingCharacters(in: .whitespacesAndNewlines), !command.isEmpty
+    else { return nil }
+    return command
+  }
+
+  private static let shells: Set<String> = ["sh", "bash", "zsh", "fish", "dash"]
+
+  /// `["/bin/bash", "-lc", script]` → `script`.
+  private static func script(fromArgv argv: [String]) -> String? {
+    guard argv.count == 3,
+      shells.contains((argv[0] as NSString).lastPathComponent),
+      ["-c", "-lc", "-cl"].contains(argv[1])
+    else { return nil }
+    return argv[2]
+  }
+
+  /// `/bin/zsh -lc 'rg -n "x"'` → `rg -n "x"`; anything else as-is.
+  static func unwrappingShellInvocation(_ command: String) -> String {
+    let pattern = #"^\s*(?:\S*/)?(sh|bash|zsh|fish|dash)\s+-(?:lc|cl|c)\s+(['"])([\s\S]*)\2\s*$"#
+    guard let regex = try? NSRegularExpression(pattern: pattern),
+      let match = regex.firstMatch(in: command, range: NSRange(command.startIndex..., in: command)),
+      let quoteRange = Range(match.range(at: 2), in: command),
+      let bodyRange = Range(match.range(at: 3), in: command)
+    else { return command }
+    let body = String(command[bodyRange])
+    if command[quoteRange] == "'" {
+      // A single-quoted shell word can't contain `'`; joiners splice one in
+      // as `'\''` or `'"'"'`. Any other bare quote means it isn't one word.
+      let splices = [#"'\''"#, #"'"'"'"#]
+      let bare = splices.reduce(body) { $0.replacingOccurrences(of: $1, with: "") }
+      guard !bare.contains("'") else { return command }
+      return splices.reduce(body) { $0.replacingOccurrences(of: $1, with: "'") }
+    }
+    var result = ""
+    var escaping = false
+    for character in body {
+      if escaping {
+        if !["\"", "\\", "$", "`"].contains(character) { result.append("\\") }
+        result.append(character)
+        escaping = false
+      } else if character == "\\" {
+        escaping = true
+      } else if character == "\"" {
+        return command
+      } else {
+        result.append(character)
+      }
+    }
+    return escaping ? command : result
   }
 }

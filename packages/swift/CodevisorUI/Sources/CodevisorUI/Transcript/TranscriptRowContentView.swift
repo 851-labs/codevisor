@@ -91,6 +91,12 @@ public struct TranscriptRowContentView: View {
   }
 
   public var body: some View {
+    rowContent
+      .environment(\.transcriptAttachmentThumbnail, TranscriptAttachmentThumbnail(leaves.attachmentThumbnail))
+  }
+
+  @ViewBuilder
+  private var rowContent: some View {
     let isWaitingOnUser = controller.pendingQuestion != nil
     switch row.content {
     case let .message(item, waitingOnBackgroundTask):

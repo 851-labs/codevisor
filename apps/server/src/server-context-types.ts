@@ -202,6 +202,9 @@ export interface CodevisorServerServices {
   /// (skill directories, keyed by tree hash). Absent on hosts without a
   /// data directory — the blob routes 501.
   readonly syncBlobs?: import("@codevisor/sync").BlobStore
+  /// Favicons and MCP server icons for transcript workflow rows, cached on
+  /// disk. Absent on hosts without a data directory — the routes 501.
+  readonly toolIcons?: import("./infra/tool-icons.js").ToolIconStore
   /// Every machine on the account and the cross-machine gateway transport
   /// (GET /v1/machines). Absent on hosts without it — the route 501s.
   readonly machines?: import("./infra/machine-link.js").MachineLink

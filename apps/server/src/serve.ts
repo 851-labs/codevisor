@@ -40,6 +40,7 @@ import { migrateLinuxDataLayout } from "./infra/linux-data-migration.js"
 import { makeOpenCodeSetup, openCodeAccountContexts } from "./infra/opencode-setup.js"
 import { acquireServerLease, type ServerLease } from "./infra/server-lease.js"
 import { makeSharedAccounts, type SharedAccounts } from "./infra/shared-accounts.js"
+import { makeToolIconStore } from "./infra/tool-icons.js"
 import {
   restoreTerminalPersistence,
   screenSharingProvider,
@@ -392,6 +393,10 @@ export const runServe = (
         ...(pluginRegistry === undefined ? {} : { pluginRegistry }),
         ...(skills === undefined ? {} : { skills }),
         syncBlobs,
+        toolIcons: makeToolIconStore({
+          dir: join(dirname(databasePath), "tool-icons"),
+          ...(mcp === undefined ? {} : { mcpSources: mcp.iconSources })
+        }),
         machines: machineLink,
         machineEnrollment
       },

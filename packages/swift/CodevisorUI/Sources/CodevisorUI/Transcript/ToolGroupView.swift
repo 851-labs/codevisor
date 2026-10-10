@@ -18,33 +18,6 @@ public struct ToolGroupView: View {
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @State private var totalsCache = DiffTotalsCache()
 
-  private static var iconFont: Font {
-    #if os(iOS)
-      .subheadline
-    #else
-      .callout
-    #endif
-  }
-
-  private static var iconColumnWidth: CGFloat {
-    #if os(iOS)
-      // The terminal symbol is slightly wider than the old 16pt column.
-      // Keep its ink inside the clipped transcript-row host.
-      18
-    #else
-      16
-    #endif
-  }
-
-  private static var headerSpacing: CGFloat {
-    #if os(iOS)
-      // Preserve the existing 24pt icon-column-plus-gap label inset.
-      6
-    #else
-      8
-    #endif
-  }
-
   private var store: TranscriptDisclosureStore { disclosureStore ?? .previews }
 
   public var body: some View {
@@ -58,16 +31,8 @@ public struct ToolGroupView: View {
     )
 
     VStack(alignment: .leading, spacing: 0) {
-      HStack(spacing: Self.headerSpacing) {
-        // Pinned to the first call's icon — a group's icon flipping
-        // as more calls stream in reads as UI churn.
-        Image(systemName: ToolCallSummary.symbol(group.calls.first.map { [$0] } ?? []))
-          // One notch under the row label on both platforms: macOS
-          // pairs a 12pt callout icon with 13pt body text; iOS rows
-          // label at callout 16, so the icon sits at subheadline 15.
-          .font(Self.iconFont)
-          .foregroundStyle(.secondary)
-          .frame(width: Self.iconColumnWidth)
+      // The label stands alone; the rows it opens carry their own icons.
+      HStack(spacing: 6) {
         Text(header.title)
           .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
           .truncationMode(.tail)
@@ -78,6 +43,13 @@ public struct ToolGroupView: View {
       }
       .contentShape(Rectangle())
       .onTapGesture {
+        let change = { disclosure.userToggled() }
+        performAnchoredDisclosureChange?(change) ?? change()
+      }
+      // One disclosure button for VoiceOver and other assistive input.
+      .accessibilityElement(children: .combine)
+      .accessibilityAddTraits(.isButton)
+      .accessibilityAction {
         let change = { disclosure.userToggled() }
         performAnchoredDisclosureChange?(change) ?? change()
       }
@@ -96,7 +68,6 @@ public struct ToolGroupView: View {
             }
           }
         }
-        .padding(.leading, 24)
         .padding(.top, 8)
       }
     }

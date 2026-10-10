@@ -27,6 +27,7 @@ import { routeSkills } from "./routes/skills.js"
 import { configMutationNamespace, runBackgroundSyncReconcile } from "./routes/sync-reconcilers.js"
 import { routeSync } from "./routes/sync.js"
 import { routeTerminals } from "./routes/terminals.js"
+import { routeToolIcons } from "./routes/tool-icons.js"
 import { routeTranscriptStress } from "./routes/transcript-stress.js"
 import { routeWorkspaces } from "./routes/workspaces.js"
 import {
@@ -380,6 +381,9 @@ export const handleRequest = async (
       return
     }
     if (await routeMachineMcps(services, config, fanout, request, response, url)) {
+      return
+    }
+    if (await routeToolIcons(services, request, response, url)) {
       return
     }
     if (await routeMcps(services, request, response, url)) {

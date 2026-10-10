@@ -176,6 +176,15 @@ describe("MCP manager", () => {
         ])
       )
       expect(await manager.tools(created.id)).toHaveLength(2)
+      // What the live server said about itself, for client artwork.
+      expect(await manager.iconSources(created.id)).toEqual({
+        url: upstream.url,
+        icons: [{ src: "https://tracker.example/icon.png", sizes: ["64x64"] }],
+        websiteUrl: "https://tracker.example"
+      })
+      expect(await manager.iconSources("missing")).toBeUndefined()
+      // Built-ins have no URL and no upstream connection to describe them.
+      expect(await manager.iconSources("browser")).toEqual({})
       expect(await manager.tools()).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ serverId: "browser", name: "snapshot" }),

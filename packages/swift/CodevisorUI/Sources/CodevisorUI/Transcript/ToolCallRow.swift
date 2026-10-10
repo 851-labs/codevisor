@@ -52,30 +52,15 @@ public struct ToolCallRow: View {
   public var body: some View {
     let totals = counterTotals
     VStack(alignment: .leading, spacing: 0) {
-      HStack(spacing: 6) {
-        Text(call.displayTitle(diffTotals: totals))
-          // The disclosure body shows output, never the full title,
-          // so at accessibility sizes reflow instead of truncating
-          // (HIG: minimize truncation as font size increases).
-          .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
-          .truncationMode(.tail)
-          .foregroundStyle(.secondary)
-          .shimmering(isTurnActive && !call.isSettled)
-        if let totals {
-          DiffCounter(totals: totals)
-        }
-        if hasDetails {
-          TranscriptDisclosureChevron(expanded: isExpanded)
-        }
-        Spacer(minLength: 0)
+      HStack(spacing: ToolIconMetrics.spacing) {
+        ToolCallIconView(icon: call.icon)
+        rowLabel(totals: totals)
       }
       .contentShape(Rectangle())
-      .onTapGesture {
-        if hasDetails {
-          let change = { store.toggle(disclosureKey, default: false) }
-          performAnchoredDisclosureChange?(change) ?? change()
-        }
-      }
+      .onTapGesture(perform: toggleDetails)
+      .accessibilityElement(children: .combine)
+      .accessibilityAddTraits(hasDetails ? .isButton : [])
+      .accessibilityAction { toggleDetails() }
 
       TranscriptDisclosureContentReveal(isExpanded: isExpanded && hasDetails) {
         // Diffs carry their own card; wrapping them in the labeled
@@ -96,6 +81,8 @@ public struct ToolCallRow: View {
           }
         }
         .padding(.top, 6)
+        // Details sit under the label, clear of the icon column.
+        .padding(.leading, ToolIconMetrics.labelInset)
       }
     }
     // Structural diffing is independent of syntax colors. Warm it once a
@@ -103,6 +90,32 @@ public struct ToolCallRow: View {
     // expansion can draw plain rows in its first frame.
     .task(id: diffPreparationRevision) {
       await prepareSettledDiffs()
+    }
+  }
+
+  private func toggleDetails() {
+    guard hasDetails else { return }
+    let change = { store.toggle(disclosureKey, default: false) }
+    performAnchoredDisclosureChange?(change) ?? change()
+  }
+
+  private func rowLabel(totals: LineDiff.Totals?) -> some View {
+    HStack(spacing: 6) {
+      Text(call.displayTitle(diffTotals: totals))
+        // The disclosure body shows output, never the full title,
+        // so at accessibility sizes reflow instead of truncating
+        // (HIG: minimize truncation as font size increases).
+        .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
+        .truncationMode(.tail)
+        .foregroundStyle(.secondary)
+        .shimmering(isTurnActive && !call.isSettled)
+      if let totals {
+        DiffCounter(totals: totals)
+      }
+      if hasDetails {
+        TranscriptDisclosureChevron(expanded: isExpanded)
+      }
+      Spacer(minLength: 0)
     }
   }
 
@@ -156,8 +169,8 @@ public struct DiffCounter: View {
   }
 }
 
-/// Shell commands use the same editor-like card and single-document viewport
-/// as file diffs, minus gutters, syntax colors, and changed-line fills.
+/// A shell call as a terminal shows it: the command it ran, then its
+/// output, in one headerless block with the diff card's capped viewport.
 private struct ShellToolCallDetails: View {
   let call: ToolCall
 
@@ -183,16 +196,25 @@ private struct ShellToolCallDetails: View {
     return terminals.isEmpty ? nil : terminals.joined(separator: "\n")
   }
 
+  /// A terminal doesn't show the newline that ends the last line.
+  private static func droppingTrailingNewlines(_ text: String) -> String {
+    var end = text.endIndex
+    while end > text.startIndex, text[text.index(before: end)].isNewline {
+      end = text.index(before: end)
+    }
+    return String(text[..<end])
+  }
+
   var body: some View {
+    let command = call.shellCommand
+    let output = outputText ?? ""
     VStack(alignment: .leading, spacing: 8) {
-      if let outputText {
-        PlainOutputView(
-          title: "Shell",
-          text: outputText,
-          emptyMessage: "No output"
+      if command != nil || !output.isEmpty || call.isSettled {
+        PlainCodeBodyView(
+          command: command,
+          output: Self.droppingTrailingNewlines(output),
+          followsTail: !call.isSettled
         )
-      } else if call.isSettled {
-        PlainOutputView(title: "Shell", text: "", emptyMessage: "No output")
       }
 
       ForEach(Array((call.content ?? []).enumerated()), id: \.offset) { _, content in
@@ -226,6 +248,9 @@ public struct ToolCallContentCard: View {
       // The highlighted code block brings its own frame.
       CodevisorWorkflowDetailView(details: workflow)
         .frame(maxWidth: .infinity, alignment: .leading)
+    } else if let skill = call.skillText {
+      // A skill read is the skill's text; its JSON envelope is noise.
+      PlainCodeBodyView(output: skill)
     } else {
       genericCard
     }

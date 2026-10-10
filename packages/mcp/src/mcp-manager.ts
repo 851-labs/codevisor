@@ -94,7 +94,17 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
       unsubscribePluginTools,
       unsubscribeSkills
     }),
-    ...makeMcpBrowserOperations(core)
+    ...makeMcpBrowserOperations(core),
+    iconSources: async (id) => {
+      const server = await core.record(id).catch(() => undefined)
+      if (server === undefined) return undefined
+      const info = core.connections.get(id)?.serverInfo
+      return {
+        ...(server.url === undefined ? {} : { url: server.url }),
+        ...(info?.icons === undefined ? {} : { icons: info.icons }),
+        ...(info?.websiteUrl === undefined ? {} : { websiteUrl: info.websiteUrl })
+      }
+    }
   }
 
   void run(config.db.listMcpServers)
