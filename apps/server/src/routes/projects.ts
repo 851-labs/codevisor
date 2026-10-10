@@ -3,30 +3,14 @@ import type { IncomingMessage, ServerResponse } from "node:http"
 import { homedir } from "node:os"
 import { dirname, isAbsolute, relative, resolve } from "node:path"
 
-import type { Worktree, WorktreeSetupUpdate } from "@codevisor/api"
+import type { Project } from "@codevisor/api"
 import {
   CreateProjectRequest as CreateProjectRequestSchema,
   CreateScratchProjectRequest as CreateScratchProjectRequestSchema,
-  CreateWorktreeRequest as CreateWorktreeRequestSchema,
   UpdateProjectRequest as UpdateProjectRequestSchema
 } from "@codevisor/api"
-import {
-  DatabaseError,
-  scratchWorkspacePath,
-  scratchWorkspacesRoot,
-  worktreesRoot,
-  type CodevisorDatabaseService
-} from "@codevisor/db"
-import {
-  addWorktree,
-  isGitWorkTree,
-  isWorktreeBranchCollision,
-  listCodevisorWorktreeBranchNames,
-  listProjectGitBranches,
-  rollbackFailedWorktree,
-  trashDirectory,
-  worktreeStartPoint
-} from "@codevisor/worktrees"
+import { scratchWorkspacePath, scratchWorkspacesRoot, worktreesRoot } from "@codevisor/db"
+import { isGitWorkTree, listProjectGitBranches, trashDirectory } from "@codevisor/worktrees"
 import { availableDevelopmentWorktreeName } from "@codevisor/worktrees"
 import { availableProductionWorktreeName } from "@codevisor/worktrees"
 
@@ -36,14 +20,12 @@ import {
   discardProjectWorktrees,
   assertLocationFolderExists,
   existingDirectory,
-  failureMessage,
   getProjectOrFail,
   HttpFailure,
   localLocationOrFail,
   matchRoute,
   readSchema,
   run,
-  swallowError,
   worktreeTrashRoot,
   writeJson,
   type CodevisorServerConfig,
@@ -51,9 +33,10 @@ import {
   type EventFanout
 } from "../server-context.js"
 import { routeProjectFromGit } from "./project-clone.js"
-import { isScratchProject, probeProject } from "./project-probe.js"
+import { probeProject } from "./project-probe.js"
 import { projectRecommendationsForRequest } from "./project-recommendations.js"
 import { discoverRepoUrl, reconcileProjectRepoUrls } from "./project-repo-identity.js"
+import { createProjectWorktree } from "./project-worktree-create.js"
 
 export { probeProject } from "./project-probe.js"
 
@@ -66,368 +49,263 @@ export const routeProjects = async (
   url: URL
 ): Promise<boolean> => {
   const serverId = config.id
-  if (request.method === "GET" && url.pathname === "/v1/projects") {
-    // Each list refreshes this machine's view of every folder's remote
-    // (memoized), so a remote added after the project was — or a project
-    // recorded before remotes were tracked — links up without a restart.
-    const environment = await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
-    const projects = await reconcileProjectRepoUrls(
-      services.db,
-      serverId,
-      await run(services.db.listProjects),
-      environment
-    )
-    writeJson(
-      response,
-      200,
-      await Promise.all(projects.map((project) => probeProject(serverId, project)))
-    )
-    return true
-  }
-
+  if (request.method === "GET" && url.pathname === "/v1/projects")
+    return listProjects(services, serverId, response)
   if (request.method === "GET" && url.pathname === "/v1/projects/recommendations") {
     writeJson(response, 200, await projectRecommendationsForRequest(services, url))
     return true
   }
-
-  if (request.method === "POST" && url.pathname === "/v1/projects") {
-    const payload = await readSchema(request, CreateProjectRequestSchema)
-    // A folder-added project is born with its remote, so it groups with
-    // its siblings on other machines from the first list.
-    const repoUrl =
-      payload.repoUrl ??
-      (existingDirectory(payload.folderPath) === undefined
-        ? undefined
-        : await discoverRepoUrl(
-            payload.folderPath,
-            await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
-          ))
-    const project = await run(
-      services.db.createProject({
-        ...payload,
-        ...(repoUrl === undefined ? {} : { repoUrl })
-      })
-    )
-    await appendAndPublish(services.db, fanout, "project.created", project.id, project)
-    writeJson(response, 201, await probeProject(serverId, project))
-    return true
-  }
-
+  if (request.method === "POST" && url.pathname === "/v1/projects")
+    return createProject(services, fanout, serverId, request, response)
   if (request.method === "POST" && url.pathname === "/v1/projects/from-git") {
     await routeProjectFromGit(services, fanout, serverId, request, response)
     return true
   }
-
-  if (request.method === "POST" && url.pathname === "/v1/projects/scratch") {
-    const payload = await readSchema(request, CreateScratchProjectRequestSchema)
-    // Idempotency: re-posting a client-supplied id returns the existing
-    // project instead of allocating a second folder for the same workspace.
-    const requestedId = payload.id
-    if (requestedId !== undefined) {
-      const existing = (await run(services.db.listProjects)).find(
-        (candidate) => candidate.id.toLowerCase() === requestedId.toLowerCase()
-      )
-      if (existing !== undefined) {
-        writeJson(response, 200, await probeProject(serverId, existing))
-        return true
-      }
-    }
-    mkdirSync(scratchWorkspacesRoot(), { recursive: true })
-    // Folder allocation doubles as the name reservation: a plain (non
-    // recursive) mkdir fails on a name already claimed by any other server or
-    // an earlier crash, so the loop simply draws again.
-    const taken = new Set(readdirSync(scratchWorkspacesRoot()))
-    let name: string | undefined
-    for (let attempt = 0; attempt < 100 && name === undefined; attempt += 1) {
-      const candidate =
-        config.worktreeNameStyle === "development"
-          ? availableDevelopmentWorktreeName(taken)
-          : availableProductionWorktreeName(taken)
-      try {
-        mkdirSync(scratchWorkspacePath(candidate))
-        name = candidate
-      } catch {
-        /* v8 ignore next -- requires another process to claim the random candidate between the directory scan and mkdir. */
-        taken.add(candidate)
-      }
-    }
-    /* v8 ignore next 3 -- 100 straight collisions needs an exhausted name pool; the loop bound is a backstop. */
-    if (name === undefined) {
-      throw new HttpFailure(500, "Could not allocate a scratch workspace folder")
-    }
-    const project = await run(
-      services.db.createProject({
-        ...(payload.id === undefined ? {} : { id: payload.id }),
-        folderPath: scratchWorkspacePath(name),
-        name
-      })
-    )
-    await appendAndPublish(services.db, fanout, "project.created", project.id, project)
-    writeJson(response, 201, await probeProject(serverId, project))
-    return true
-  }
+  if (request.method === "POST" && url.pathname === "/v1/projects/scratch")
+    return createScratchProject(services, config, fanout, serverId, request, response)
 
   const projectId = matchRoute(url.pathname, "/v1/projects/:id")
-  if (projectId !== undefined && request.method === "PATCH") {
-    const payload = await readSchema(request, UpdateProjectRequestSchema)
-    const project = await run(services.db.updateProject(projectId, payload))
-    await appendAndPublish(services.db, fanout, "project.updated", project.id, project)
-    writeJson(response, 200, await probeProject(serverId, project))
-    return true
-  }
-
-  if (projectId !== undefined && request.method === "DELETE") {
-    const targets = (await run(services.db.listProjects)).filter(
-      (candidate) => candidate.id.toLowerCase() === projectId.toLowerCase()
-    )
-    // Deleting a project is permanent and takes its chats with it, so the
-    // files it owns must go too. Row deletion cascades; the filesystem does
-    // not, and every worktree directory, branch and snapshot ref would
-    // otherwise stay behind with nothing left to name it.
-    for (const target of targets) await discardProjectWorktrees(services, config.id, target)
-    await run(services.db.deleteProject(projectId))
-    await appendAndPublish(services.db, fanout, "project.deleted", projectId, {
-      id: projectId
-    })
-    const folderPath = targets
-      .flatMap((target) => target.locations)
-      .find((location) => location.serverId === serverId)?.folderPath
-    if (
-      folderPath !== undefined &&
-      url.searchParams.get("deleteFiles") === "true" &&
-      isDeletableProjectFolder(folderPath)
-    ) {
-      // "Delete Project and Files": the checkout itself goes too.
-      const trashed = await trashDirectory(folderPath, {
-        trashRoot: worktreeTrashRoot(),
-        id: `project-${projectId}`
-      })
-      archiveJobs(services).track(trashed.purged)
-    } else if (folderPath !== undefined && dirname(folderPath) === scratchWorkspacesRoot()) {
-      // Deleting a scratch project retires its workspace folder too — but
-      // only when the folder is still empty. Anything the user put there
-      // stays on disk rather than vanishing with the row.
-      try {
-        rmdirSync(folderPath)
-      } catch {
-        // Non-empty or already gone: leave it.
-      }
-    }
-    writeJson(response, 204, undefined)
-    return true
-  }
-
+  if (projectId !== undefined && request.method === "PATCH")
+    return updateProject(services, fanout, serverId, projectId, request, response)
+  if (projectId !== undefined && request.method === "DELETE")
+    return deleteProject(services, config, fanout, serverId, projectId, response, url)
   const branchProjectId = matchRoute(url.pathname, "/v1/projects/:id/git/branches")
-  if (branchProjectId !== undefined && request.method === "GET") {
-    const project = await getProjectOrFail(services.db, branchProjectId)
-    const location = localLocationOrFail(serverId, project)
-    assertLocationFolderExists(location)
-    if (!(await isGitWorkTree(location.folderPath))) {
-      throw new HttpFailure(422, `Project folder is not a git repository: ${location.folderPath}`)
-    }
-    const environment = await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
-    writeJson(response, 200, await listProjectGitBranches(location.folderPath, environment))
-    return true
-  }
-
+  if (branchProjectId !== undefined && request.method === "GET")
+    return listProjectBranches(services, serverId, branchProjectId, response)
   const worktreeProjectId = matchRoute(url.pathname, "/v1/projects/:id/worktrees")
   if (worktreeProjectId !== undefined && request.method === "GET") {
     writeJson(response, 200, await run(services.db.listWorktrees(worktreeProjectId)))
     return true
   }
-
-  if (worktreeProjectId !== undefined && request.method === "POST") {
-    const payload = await readSchema(request, CreateWorktreeRequestSchema)
-    const project = await getProjectOrFail(services.db, worktreeProjectId)
-    const location = localLocationOrFail(serverId, project)
-    assertLocationFolderExists(location)
-    // A scratch folder has no repository of its own. When the scratch root
-    // is nested inside a checkout, git would happily cut a worktree of
-    // THAT repository from here — never what a no-project chat asked for.
-    if (isScratchProject(project)) {
-      throw new HttpFailure(422, "A scratch workspace folder cannot have worktrees")
-    }
-    if (!(await isGitWorkTree(location.folderPath))) {
-      throw new HttpFailure(422, `Project folder is not a git repository: ${location.folderPath}`)
-    }
-    // Server data/worktree directories may be isolated, but local branches
-    // belong to the shared Git repository. Include both namespaces so an
-    // archived worktree or another development server cannot look available.
-    const existing = new Set((await run(services.db.listWorktrees(project.id))).map((w) => w.name))
-    for (const name of await listCodevisorWorktreeBranchNames(location.folderPath)) {
-      existing.add(name)
-    }
-    const requested = slugifyWorktreeName(payload.name)
-    // Refresh once, outside the collision loop. The ref check above handles
-    // established conflicts; retrying `git worktree add -b` handles the race
-    // where another isolated server claims the same branch after our scan.
-    const environment = await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
-    const startPoint = await worktreeStartPoint(
-      location.folderPath,
-      project.worktreeBase,
-      environment
+  if (worktreeProjectId !== undefined && request.method === "POST")
+    return createProjectWorktree(
+      services,
+      config,
+      fanout,
+      serverId,
+      worktreeProjectId,
+      request,
+      response
     )
-    for (let attempt = 0; attempt < 100; attempt += 1) {
-      const name =
-        config.worktreeNameStyle === "development"
-          ? availableDevelopmentWorktreeName(existing)
-          : requested === undefined
-            ? availableProductionWorktreeName(existing)
-            : availableWorktreeName(requested, existing)
-      const branch = `codevisor/${name}`
-      let worktree: Worktree
-      try {
-        worktree = await run(services.db.createWorktree(project.id, name, branch, payload.id))
-      } catch (cause) {
-        // A concurrent request on this server can reserve the candidate after
-        // our initial scan. Retry only the name constraint; a duplicate
-        // client-supplied id or any other database failure is not recoverable
-        // by changing the branch name.
-        /* v8 ignore start -- requires a deterministic interleaving inside the database's atomic unique constraint. */
-        if (isWorktreeNameCollision(cause) && attempt < 99) {
-          existing.add(name)
-          continue
-        }
-        throw cause
-        /* v8 ignore stop */
-      }
-      const startedAt = Date.now()
-      const publishSetup = makeWorktreeSetupPublisher(
-        services.db,
-        fanout,
-        worktree,
-        payload.sessionId
-      )
-      await publishSetup({ state: "started" })
-      try {
-        mkdirSync(dirname(worktree.path), { recursive: true })
-        await addWorktree(
-          location.folderPath,
-          worktree.path,
-          branch,
-          (stream, line) => {
-            void publishSetup({ state: "log", stream, line }).catch(swallowError)
-          },
-          startPoint,
-          environment
-        )
-        await publishSetup({ state: "completed", durationMs: Date.now() - startedAt })
-      } catch (cause) {
-        // Release the reservation before retrying the same client-supplied id
-        // under a new name. Only a branch collision is retryable; other Git
-        // failures retain their terminal setup event and original response.
-        /* v8 ignore start -- requires another process to claim a branch between the preflight scan and git worktree add. */
-        await run(services.db.deleteWorktree(worktree.id)).catch(() => undefined)
-        if (isWorktreeBranchCollision(cause) && attempt < 99) {
-          existing.add(name)
-          await publishSetup({
-            state: "log",
-            stream: "stderr",
-            line: `Branch ${branch} was claimed concurrently; choosing another name.`
-          })
-          continue
-        }
-        try {
-          if (
-            await rollbackFailedWorktree(location.folderPath, worktree.path, branch, environment)
-          ) {
-            await publishSetup({
-              state: "log",
-              stream: "stderr",
-              line: "Removed the partial worktree and branch."
-            })
-          }
-        } catch (cleanupCause) {
-          await publishSetup({
-            state: "log",
-            stream: "stderr",
-            line: `Could not fully remove the partial worktree: ${failureMessage(cleanupCause)}`
-          })
-        }
-        await publishSetup({
-          state: "failed",
-          message: failureMessage(cause),
-          durationMs: Date.now() - startedAt
-        })
-        throw cause
-        /* v8 ignore stop */
-      }
-      await appendAndPublish(services.db, fanout, "worktree.created", worktree.id, worktree)
-      writeJson(response, 201, worktree)
-      return true
-    }
-    /* v8 ignore next -- the allocator's candidate bound guarantees a free name before 100 attempts absent continuous external races. */
-    throw new HttpFailure(422, "Unable to allocate an unused Git worktree branch")
-  }
-
   return false
 }
 
-const slugifyWorktreeName = (name: string | undefined): string | undefined => {
-  const slug = (name ?? "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 64)
-    .replace(/-+$/g, "")
-  return slug.length > 0 ? slug : undefined
-}
-
-/// Keeps explicit names readable and only adds a sequence number when the
-/// requested name is already in use. The upper bound guarantees a free name:
-/// existing.size + 1 distinct candidates cannot all appear in `existing`.
-const availableWorktreeName = (base: string, existing: ReadonlySet<string>): string => {
-  if (!existing.has(base)) {
-    return base
-  }
-  for (let number = 2; number <= existing.size + 2; number += 1) {
-    const suffix = `-${number}`
-    const stem = base.slice(0, 64 - suffix.length).replace(/-+$/g, "")
-    const candidate = `${stem}${suffix}`
-    if (!existing.has(candidate)) {
-      return candidate
-    }
-  }
-  /* v8 ignore next -- existing.size + 1 candidates guarantee a free suffix. */
-  throw new Error("Unable to allocate a unique worktree name")
-}
-
-/* v8 ignore start -- exercised only by the deliberately timing-dependent database race above. */
-const isWorktreeNameCollision = (cause: unknown): boolean =>
-  cause instanceof DatabaseError &&
-  cause.operation === "createWorktree" &&
-  cause.message.includes(
-    "UNIQUE constraint failed: worktrees.project_id, worktrees.server_id, worktrees.name"
+const listProjects = async (
+  services: CodevisorServerServices,
+  serverId: string,
+  response: ServerResponse
+): Promise<boolean> => {
+  // Each list refreshes this machine's view of every folder's remote
+  // (memoized), so a remote added after the project was — or a project
+  // recorded before remotes were tracked — links up without a restart.
+  const environment = await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
+  const projects = await reconcileProjectRepoUrls(
+    services.db,
+    serverId,
+    await run(services.db.listProjects),
+    environment
   )
-/* v8 ignore stop */
+  writeJson(
+    response,
+    200,
+    await Promise.all(projects.map((project) => probeProject(serverId, project)))
+  )
+  return true
+}
 
-type WorktreeSetupDetail = Omit<WorktreeSetupUpdate, "worktreeId" | "projectId" | "name" | "branch">
-
-const makeWorktreeSetupPublisher = (
-  db: CodevisorDatabaseService,
+const createProject = async (
+  services: CodevisorServerServices,
   fanout: EventFanout,
-  worktree: Worktree,
-  mirrorSubjectId?: string
-): ((detail: WorktreeSetupDetail) => Promise<void>) => {
-  let chain: Promise<void> = Promise.resolve()
-  return (detail) => {
-    const update: WorktreeSetupUpdate = {
-      worktreeId: worktree.id,
-      projectId: worktree.projectId,
-      name: worktree.name,
-      branch: worktree.branch,
-      ...detail
-    }
-    const next = chain.then(async () => {
-      await appendAndPublish(db, fanout, "worktree.setup", worktree.id, update)
-      if (mirrorSubjectId !== undefined) {
-        await appendAndPublish(db, fanout, "worktree.setup", mirrorSubjectId, update)
-      }
+  serverId: string,
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<boolean> => {
+  const payload = await readSchema(request, CreateProjectRequestSchema)
+  // A folder-added project is born with its remote, so it groups with
+  // its siblings on other machines from the first list.
+  const repoUrl =
+    payload.repoUrl ??
+    (existingDirectory(payload.folderPath) === undefined
+      ? undefined
+      : await discoverRepoUrl(
+          payload.folderPath,
+          await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
+        ))
+  const project = await run(
+    services.db.createProject({
+      ...payload,
+      ...(repoUrl === undefined ? {} : { repoUrl })
     })
-    /* v8 ignore next -- keeps the chain alive if the event log write fails; awaited callers still see the failure via `next`. */
-    chain = next.catch(() => undefined)
-    return next
+  )
+  await appendAndPublish(services.db, fanout, "project.created", project.id, project)
+  writeJson(response, 201, await probeProject(serverId, project))
+  return true
+}
+
+const allocateScratchWorkspaceFolder = (config: CodevisorServerConfig): string => {
+  mkdirSync(scratchWorkspacesRoot(), { recursive: true })
+  // Folder allocation doubles as the name reservation: a plain (non
+  // recursive) mkdir fails on a name already claimed by any other server or
+  // an earlier crash, so the loop simply draws again.
+  const taken = new Set(readdirSync(scratchWorkspacesRoot()))
+  let name: string | undefined
+  for (let attempt = 0; attempt < 100 && name === undefined; attempt += 1) {
+    const candidate =
+      config.worktreeNameStyle === "development"
+        ? availableDevelopmentWorktreeName(taken)
+        : availableProductionWorktreeName(taken)
+    try {
+      mkdirSync(scratchWorkspacePath(candidate))
+      name = candidate
+    } catch {
+      /* v8 ignore next -- requires another process to claim the random candidate between the directory scan and mkdir. */
+      taken.add(candidate)
+    }
   }
+  /* v8 ignore next 3 -- 100 straight collisions needs an exhausted name pool; the loop bound is a backstop. */
+  if (name === undefined) {
+    throw new HttpFailure(500, "Could not allocate a scratch workspace folder")
+  }
+  return name
+}
+
+const writeExistingScratchProject = async (
+  services: CodevisorServerServices,
+  serverId: string,
+  requestedId: string,
+  response: ServerResponse
+): Promise<boolean> => {
+  const existing = (await run(services.db.listProjects)).find(
+    (candidate) => candidate.id.toLowerCase() === requestedId.toLowerCase()
+  )
+  if (existing !== undefined) {
+    writeJson(response, 200, await probeProject(serverId, existing))
+    return true
+  }
+  return false
+}
+
+const createScratchProject = async (
+  services: CodevisorServerServices,
+  config: CodevisorServerConfig,
+  fanout: EventFanout,
+  serverId: string,
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<boolean> => {
+  const payload = await readSchema(request, CreateScratchProjectRequestSchema)
+  // Idempotency: re-posting a client-supplied id returns the existing
+  // project instead of allocating a second folder for the same workspace.
+  const requestedId = payload.id
+  if (requestedId !== undefined) {
+    if (await writeExistingScratchProject(services, serverId, requestedId, response)) return true
+  }
+  const name = allocateScratchWorkspaceFolder(config)
+  const project = await run(
+    services.db.createProject({
+      ...(payload.id === undefined ? {} : { id: payload.id }),
+      folderPath: scratchWorkspacePath(name),
+      name
+    })
+  )
+  await appendAndPublish(services.db, fanout, "project.created", project.id, project)
+  writeJson(response, 201, await probeProject(serverId, project))
+  return true
+}
+
+const updateProject = async (
+  services: CodevisorServerServices,
+  fanout: EventFanout,
+  serverId: string,
+  projectId: string,
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<boolean> => {
+  const payload = await readSchema(request, UpdateProjectRequestSchema)
+  const project = await run(services.db.updateProject(projectId, payload))
+  await appendAndPublish(services.db, fanout, "project.updated", project.id, project)
+  writeJson(response, 200, await probeProject(serverId, project))
+  return true
+}
+
+const retireEmptyScratchFolder = (folderPath: string): void => {
+  try {
+    rmdirSync(folderPath)
+  } catch {
+    // Non-empty or already gone: leave it.
+  }
+}
+
+const deleteProjectFolder = async (
+  services: CodevisorServerServices,
+  serverId: string,
+  projectId: string,
+  targets: ReadonlyArray<Project>,
+  url: URL
+): Promise<void> => {
+  const folderPath = targets
+    .flatMap((target) => target.locations)
+    .find((location) => location.serverId === serverId)?.folderPath
+  if (
+    folderPath !== undefined &&
+    url.searchParams.get("deleteFiles") === "true" &&
+    isDeletableProjectFolder(folderPath)
+  ) {
+    // "Delete Project and Files": the checkout itself goes too.
+    const trashed = await trashDirectory(folderPath, {
+      trashRoot: worktreeTrashRoot(),
+      id: `project-${projectId}`
+    })
+    archiveJobs(services).track(trashed.purged)
+  } else if (folderPath !== undefined && dirname(folderPath) === scratchWorkspacesRoot()) {
+    // Deleting a scratch project retires its workspace folder too — but
+    // only when the folder is still empty. Anything the user put there
+    // stays on disk rather than vanishing with the row.
+    retireEmptyScratchFolder(folderPath)
+  }
+}
+
+const deleteProject = async (
+  services: CodevisorServerServices,
+  config: CodevisorServerConfig,
+  fanout: EventFanout,
+  serverId: string,
+  projectId: string,
+  response: ServerResponse,
+  url: URL
+): Promise<boolean> => {
+  const targets = (await run(services.db.listProjects)).filter(
+    (candidate) => candidate.id.toLowerCase() === projectId.toLowerCase()
+  )
+  // Deleting a project is permanent and takes its chats with it, so the
+  // files it owns must go too. Row deletion cascades; the filesystem does
+  // not, and every worktree directory, branch and snapshot ref would
+  // otherwise stay behind with nothing left to name it.
+  for (const target of targets) await discardProjectWorktrees(services, config.id, target)
+  await run(services.db.deleteProject(projectId))
+  await appendAndPublish(services.db, fanout, "project.deleted", projectId, {
+    id: projectId
+  })
+  await deleteProjectFolder(services, serverId, projectId, targets, url)
+  writeJson(response, 204, undefined)
+  return true
+}
+
+const listProjectBranches = async (
+  services: CodevisorServerServices,
+  serverId: string,
+  branchProjectId: string,
+  response: ServerResponse
+): Promise<boolean> => {
+  const project = await getProjectOrFail(services.db, branchProjectId)
+  const location = localLocationOrFail(serverId, project)
+  assertLocationFolderExists(location)
+  if (!(await isGitWorkTree(location.folderPath))) {
+    throw new HttpFailure(422, `Project folder is not a git repository: ${location.folderPath}`)
+  }
+  const environment = await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
+  writeJson(response, 200, await listProjectGitBranches(location.folderPath, environment))
+  return true
 }
 
 /// A project folder the server may delete along with its project. Never the
