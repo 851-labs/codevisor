@@ -146,17 +146,24 @@ describe("CodexProvider", () => {
   })
 
   it("turn interrupt and turn completion cancel any held questions", async () => {
-    const { client, created, events } = await setup()
+    const { client, created, events, nextEvent } = await setup()
+    const turnRequested = client.nextRequest("turn/start")
     const promptPromise = run(created!.handle.prompt("go"))
-    await Promise.resolve()
+    await turnRequested
     client.emit("turn/started", { threadId: "thread-new", turn: { id: "turn-q" } })
+    const questionAsked = nextEvent(
+      (event) =>
+        event.kind === "session.output" &&
+        (event.payload as Record<string, unknown>).sessionUpdate === "question" &&
+        (event.payload as Record<string, unknown>).questionId === "item-q4"
+    )
     const request = client.serverRequest("item/tool/requestUserInput", {
       itemId: "item-q4",
       questions: [{ id: "q", isOther: true, options: [{ label: "A" }], question: "Pick" }],
       threadId: "thread-new",
       turnId: "turn-q"
     })
-    await Promise.resolve()
+    await questionAsked
     await run(created!.handle.cancel)
     await expect(request).rejects.toThrow("cancelled with the turn")
     expect(
