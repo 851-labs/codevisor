@@ -4,8 +4,11 @@ import { diffStatsFromTexts, lineCount } from "@codevisor/agent-runtime"
 import type { DiffStat } from "@codevisor/api"
 
 import { isRecord } from "./internal.js"
+import { extractAllStringFields, extractStringField } from "./partial-json-string.js"
 import type { ClaudeSession, ToolInputAccumulator } from "./session.js"
 import { activeToolTitle } from "./tool-presentation.js"
+
+export { extractAllStringFields, extractStringField } from "./partial-json-string.js"
 
 /// Streaming diff-stat updates are throttled per tool call; every event is
 /// persisted server-side, so unbounded input_json_delta emission would bloat
@@ -235,88 +238,3 @@ const diffContentBlock = (
 
 const absolutePath = (cwd: string, path: string): string =>
   isAbsolute(path) ? path : resolve(cwd, path)
-
-/// Extracts a JSON string field's (possibly still-streaming) value from a
-/// partial JSON buffer without a full parser: finds `"field":"` and decodes
-/// escapes until the closing quote or the end of the buffer.
-export const extractStringField = (json: string, field: string): string | undefined => {
-  const key = `"${field}"`
-  let index = json.indexOf(key)
-  if (index === -1) return undefined
-  index += key.length
-  while (index < json.length && (json[index] === " " || json[index] === ":")) index += 1
-  if (json[index] !== '"') return undefined
-  index += 1
-  return decodeJsonString(json, index).value
-}
-
-/// Extracts every occurrence of a string field (for MultiEdit's edits array).
-export const extractAllStringFields = (json: string, field: string): Array<string> => {
-  const key = `"${field}"`
-  const values: Array<string> = []
-  let cursor = 0
-  while (true) {
-    let index = json.indexOf(key, cursor)
-    if (index === -1) return values
-    index += key.length
-    while (index < json.length && (json[index] === " " || json[index] === ":")) index += 1
-    if (json[index] !== '"') {
-      cursor = index
-      continue
-    }
-    index += 1
-    const decoded = decodeJsonString(json, index)
-    values.push(decoded.value)
-    cursor = decoded.end
-  }
-}
-
-const decodeJsonString = (json: string, start: number): { value: string; end: number } => {
-  let out = ""
-  let index = start
-  while (index < json.length) {
-    const ch = json[index]
-    if (ch === "\\") {
-      const next = json[index + 1]
-      if (next === undefined) break
-      switch (next) {
-        case "n":
-          out += "\n"
-          break
-        case "t":
-          out += "\t"
-          break
-        case "r":
-          out += "\r"
-          break
-        case '"':
-          out += '"'
-          break
-        case "\\":
-          out += "\\"
-          break
-        case "/":
-          out += "/"
-          break
-        case "u": {
-          const hex = json.slice(index + 2, index + 6)
-          if (hex.length === 4 && /^[0-9a-fA-F]{4}$/.test(hex)) {
-            out += String.fromCharCode(Number.parseInt(hex, 16))
-            index += 4
-          }
-          break
-        }
-        default:
-          out += next
-      }
-      index += 2
-      continue
-    }
-    if (ch === '"') {
-      return { end: index + 1, value: out }
-    }
-    out += ch
-    index += 1
-  }
-  return { end: index, value: out }
-}
