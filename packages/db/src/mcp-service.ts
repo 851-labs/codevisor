@@ -9,6 +9,40 @@ import type { McpServerRow, NativeConfigBackupRow, NativeMcpRemovalRow } from ".
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
 
+const readProjectMcpSettings = (
+  sqlite: ServiceContext["sqlite"],
+  projectId: string | undefined
+): Map<string, boolean> =>
+  projectId === undefined
+    ? new Map<string, boolean>()
+    : new Map(
+        (
+          sqlite
+            .prepare("select mcp_server_id, enabled from project_mcp_settings where project_id = ?")
+            .all(canonicalUuid(projectId)) as ReadonlyArray<{
+            mcp_server_id: string
+            enabled: number
+          }>
+        ).map((row) => [row.mcp_server_id, row.enabled === 1] as const)
+      )
+
+const readSessionMcpSettings = (
+  sqlite: ServiceContext["sqlite"],
+  sessionId: string | undefined
+): Map<string, boolean> =>
+  sessionId === undefined
+    ? new Map<string, boolean>()
+    : new Map(
+        (
+          sqlite
+            .prepare("select mcp_server_id, enabled from session_mcp_settings where session_id = ?")
+            .all(canonicalUuid(sessionId)) as ReadonlyArray<{
+            mcp_server_id: string
+            enabled: number
+          }>
+        ).map((row) => [row.mcp_server_id, row.enabled === 1] as const)
+      )
+
 export const makeMcpService = (
   context: ServiceContext
 ): Pick<
@@ -107,36 +141,8 @@ export const makeMcpService = (
       }),
     resolveMcpServers: (projectId, sessionId) =>
       attempt("resolveMcpServers", () => {
-        const projectSettings =
-          projectId === undefined
-            ? new Map<string, boolean>()
-            : new Map(
-                (
-                  sqlite
-                    .prepare(
-                      "select mcp_server_id, enabled from project_mcp_settings where project_id = ?"
-                    )
-                    .all(canonicalUuid(projectId)) as ReadonlyArray<{
-                    mcp_server_id: string
-                    enabled: number
-                  }>
-                ).map((row) => [row.mcp_server_id, row.enabled === 1] as const)
-              )
-        const sessionSettings =
-          sessionId === undefined
-            ? new Map<string, boolean>()
-            : new Map(
-                (
-                  sqlite
-                    .prepare(
-                      "select mcp_server_id, enabled from session_mcp_settings where session_id = ?"
-                    )
-                    .all(canonicalUuid(sessionId)) as ReadonlyArray<{
-                    mcp_server_id: string
-                    enabled: number
-                  }>
-                ).map((row) => [row.mcp_server_id, row.enabled === 1] as const)
-              )
+        const projectSettings = readProjectMcpSettings(sqlite, projectId)
+        const sessionSettings = readSessionMcpSettings(sqlite, sessionId)
         return (
           sqlite
             .prepare("select * from mcp_servers order by name collate nocase")
