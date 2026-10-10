@@ -83,6 +83,25 @@ private func binaryOutput(kind: UInt8, seq: UInt64, _ text: String) -> ServerWeb
   return .data(Data(bytes))
 }
 
+/// Parks recurring pings and holds the first reconnect until the test releases it.
+private struct ReconnectTiming: Sendable {
+  let pingInterval: Duration
+  let clock = TestClock()
+  let reconnectWaiting = TestSignal()
+  let releaseReconnect = TestSignal()
+
+  func sleep(for duration: Duration) async throws {
+    try Task.checkCancellation()
+    if duration == pingInterval {
+      try await clock.sleep(for: duration)
+    } else {
+      reconnectWaiting.signal()
+      await releaseReconnect.wait()
+      try Task.checkCancellation()
+    }
+  }
+}
+
 /// Protocol 2: output arrives as binary frames, and a server that announces
 /// it is probed for the round trip that paces output and local echo.
 @MainActor
@@ -221,29 +240,34 @@ struct TerminalTransportProtocolTests {
     let first = ProtocolSocket(messages: [.string(#"{"type":"ready","seq":0,"protocol":2}"#)])
     let second = ProtocolSocket(messages: [.string(#"{"type":"ready","seq":0,"protocol":2}"#)])
     let sockets = SocketSequence([first, second])
+    let timing = ReconnectTiming(pingInterval: TerminalTransport.pingInterval)
     let transport = TerminalTransport(
       config: CodevisorServerConfig(
         baseURL: URL(string: "https://fixture.invalid")!,
         requestTransport: FreshTerminal(),
         webSocketTransport: sockets
       ),
-      // Reconnects at once; pings wait.
-      sleep: { if $0 >= .seconds(5) { try await Task.sleep(for: .seconds(3600)) } },
+      sleep: { try await timing.sleep(for: $0) },
       onEvent: { _ in }
     )
+    defer { transport.detach(); timing.releaseReconnect.signal() }
     transport.sendResize(cols: 80, rows: 24)
     transport.sendFocus()
     try await transport.open(sessionId: "s", cwd: "/", cols: 80, rows: 24)
     // resize, then ping and the claim once `ready` arrives.
     await first.didSend.wait(for: 3)
     #expect(first.sentFrames.compactMap { $0["type"] as? String }.filter { $0 != "ping" } == ["resize", "focus"])
+    await timing.clock.waitForSleep(timing.pingInterval)
     first.cancel(with: .abnormalClosure, reason: nil)
+    await timing.reconnectWaiting.wait()
+    #expect(sockets.didConnect.value == 1)
+    timing.releaseReconnect.signal()
     await sockets.didConnect.wait(for: 2)
+    await timing.clock.waitForSleep(timing.pingInterval, count: 2)
     // The unacknowledged resize and claim, a fresh resize, a ping, a claim.
     await second.didSend.wait(for: 5)
     let types = second.sentFrames.compactMap { $0["type"] as? String }.filter { $0 != "ping" }
     #expect(types == ["resize", "focus", "resize", "focus"])
-    transport.detach()
   }
 
   @Test("Another client's size after the claim ends it", .timeLimit(.minutes(1)))
@@ -257,6 +281,7 @@ struct TerminalTransportProtocolTests {
     ])
     let second = ProtocolSocket(messages: [.string(#"{"type":"ready","seq":0,"protocol":2}"#)])
     let sockets = SocketSequence([first, second])
+    let timing = ReconnectTiming(pingInterval: TerminalTransport.pingInterval)
     let sizes = TestSignal()
     let transport = TerminalTransport(
       config: CodevisorServerConfig(
@@ -264,24 +289,28 @@ struct TerminalTransportProtocolTests {
         requestTransport: FreshTerminal(),
         webSocketTransport: sockets
       ),
-      // Reconnects at once; pings wait.
-      sleep: { if $0 >= .seconds(5) { try await Task.sleep(for: .seconds(3600)) } },
+      sleep: { try await timing.sleep(for: $0) },
       onEvent: { event in
         if case .ptySize = event { sizes.signal() }
       }
     )
+    defer { transport.detach(); timing.releaseReconnect.signal() }
     transport.sendResize(cols: 80, rows: 24)
     transport.sendFocus()
     try await transport.open(sessionId: "s", cwd: "/", cols: 80, rows: 24)
     await sizes.wait(for: 2)
+    await timing.clock.waitForSleep(timing.pingInterval)
     first.cancel(with: .abnormalClosure, reason: nil)
+    await timing.reconnectWaiting.wait()
+    #expect(sockets.didConnect.value == 1)
+    timing.releaseReconnect.signal()
     await sockets.didConnect.wait(for: 2)
+    await timing.clock.waitForSleep(timing.pingInterval, count: 2)
     // No claim after the reconnect: the next frame is the one sent next.
     await second.didSend.wait(for: 2)
     transport.sendClear()
     await second.didSend.wait(for: 3)
     let types = second.sentFrames.compactMap { $0["type"] as? String }.filter { $0 != "ping" }
     #expect(types == ["resize", "clear"])
-    transport.detach()
   }
 }
