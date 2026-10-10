@@ -1,17 +1,10 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
-import { tmpdir } from "node:os"
 
-import type { Harness, HarnessCapability } from "@codevisor/api"
 import { UpdateHarnessRequest as UpdateHarnessRequestSchema } from "@codevisor/api"
 
-import {
-  decorateHarnessSettings,
-  HARNESSES_SYNC_NAMESPACE,
-  setHarnessPreference
-} from "../infra/harness-preferences.js"
+import { HARNESSES_SYNC_NAMESPACE, setHarnessPreference } from "../infra/harness-preferences.js"
 import {
   appendAndPublish,
-  existingDirectory,
   HttpFailure,
   matchRoute,
   readJson,
@@ -26,6 +19,14 @@ import type {
   EventFanout
 } from "../server-context.js"
 import { routeHarnessAuth } from "./harness-auth-routes.js"
+import { discoverHarnesses } from "./harness-discovery.js"
+import { conflictFrom } from "./harness-errors.js"
+
+export {
+  discoverCapabilities,
+  discoverHarnesses,
+  discoverHarnessesFromStoredAuthState
+} from "./harness-discovery.js"
 
 export const routeHarnesses = async (
   services: CodevisorServerServices,
@@ -296,128 +297,3 @@ const updateHarnessPreference = async (
   writeJson(response, 200, harness)
   return true
 }
-
-export const discoverCapabilities = async (
-  services: CodevisorServerServices,
-  url: URL
-): Promise<{ readonly harnesses: ReadonlyArray<HarnessCapability> }> => {
-  const cwd = existingDirectory(url.searchParams.get("cwd")) ?? tmpdir()
-  // Existing chats already know their harness. Filtering before auth
-  // decoration and inspection is important: both stages can start real CLI
-  // processes, so inspecting the whole catalog would put unrelated agents on
-  // the resumed chat's critical path.
-  const requestedHarnessId = url.searchParams.get("harnessId")?.trim() || undefined
-  const requestedConfigSelections = Object.fromEntries(
-    [...url.searchParams.entries()].flatMap(([key, value]) =>
-      key.startsWith("config.") && key.length > "config.".length
-        ? [[key.slice("config.".length), value] as const]
-        : []
-    )
-  )
-  const harnesses = await discoverHarnesses(services, false, requestedHarnessId)
-  const readyHarnesses = harnesses.filter(
-    (harness) => harness.enabled && harness.readiness.state === "ready"
-  )
-  // Fleet-enabled harnesses blocked on sign-in ride along as capability
-  // entries with no options and NO inspection (inspection spawns the CLI).
-  // The composer renders them as "sign in required" rows; older clients
-  // already filter on harness.enabled and never see them.
-  const signInPending = harnesses.filter(
-    (harness) =>
-      !harness.enabled && harness.desiredEnabled === true && harness.readiness.state === "ready"
-  )
-  const pendingCapabilities = signInPending.map((harness) => ({
-    harness,
-    configOptions: []
-  }))
-  return {
-    harnesses: await Promise.all(
-      readyHarnesses.map(async (harness) => {
-        try {
-          const account = await services.auth?.activeAccountContext(harness.id)
-          const metadata = await run(
-            services.agents.inspectHarness(
-              harness.id,
-              cwd,
-              account,
-              requestedHarnessId === harness.id ? requestedConfigSelections : undefined
-            )
-          )
-          return {
-            harness,
-            ...(metadata.modes === undefined ? {} : { modes: metadata.modes }),
-            configOptions: metadata.configOptions,
-            ...(metadata.supportsGoals === undefined
-              ? {}
-              : { supportsGoals: metadata.supportsGoals }),
-            ...(metadata.skills === undefined ? {} : { skills: metadata.skills }),
-            ...(metadata.unappliedConfigSelections === undefined
-              ? {}
-              : { unappliedConfigSelections: metadata.unappliedConfigSelections })
-          }
-        } catch (cause) {
-          // The picker hides a harness with no model option, so a swallowed
-          // failure here looks exactly like "not enabled" to the user. Say why.
-          console.error(
-            `[harnesses] inspecting ${harness.id} failed; it will be missing from the model picker: ${conflictFrom(cause).message}`
-          )
-          return {
-            harness,
-            configOptions: []
-          }
-        }
-      })
-    ).then((inspected) => [...inspected, ...pendingCapabilities])
-  }
-}
-
-/// Lifecycle route failures surface as conflicts with the manager's reason.
-const conflictFrom = (cause: unknown): HttpFailure =>
-  new HttpFailure(409, cause instanceof Error ? cause.message : String(cause))
-
-const discoverHarnessesWithAuthMode = async (
-  services: CodevisorServerServices,
-  authMode: "passive" | "force" | "stored",
-  harnessId?: string,
-  /// Lifecycle decoration (update knowledge, install methods) rides only on
-  /// requests that render it — Settings, rescans, update checks. The plain
-  /// list stays as light as possible for the composer's harness picker.
-  includeLifecycle = false
-): Promise<ReadonlyArray<Harness>> => {
-  const discovered = await decorateHarnessSettings(
-    services.db,
-    await run(services.db.applyHarnessSettings(await run(services.agents.discoverHarnesses)))
-  )
-  const filtered =
-    harnessId === undefined ? discovered : discovered.filter((harness) => harness.id === harnessId)
-  const harnesses =
-    includeLifecycle && services.lifecycle !== undefined
-      ? await services.lifecycle.decorateHarnesses(filtered)
-      : filtered
-  return services.auth === undefined
-    ? harnesses
-    : authMode === "stored"
-      ? services.auth.decorateHarnessesFromStoredState(harnesses)
-      : services.auth.decorateHarnesses(harnesses, authMode === "force")
-}
-
-export const discoverHarnesses = (
-  services: CodevisorServerServices,
-  forceAuth = false,
-  harnessId?: string,
-  includeLifecycle = false
-): Promise<ReadonlyArray<Harness>> =>
-  discoverHarnessesWithAuthMode(
-    services,
-    forceAuth ? "force" : "passive",
-    harnessId,
-    includeLifecycle
-  )
-
-/// Readiness is derived in response to auth events, so it must only read the
-/// state that caused the event. Starting another passive probe here turns one
-/// probe failure into a feedback loop.
-export const discoverHarnessesFromStoredAuthState = (
-  services: CodevisorServerServices
-): Promise<ReadonlyArray<Harness>> =>
-  discoverHarnessesWithAuthMode(services, "stored", undefined, true)
