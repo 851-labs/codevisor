@@ -18,8 +18,9 @@ const activity = (kind: string, id: string, turnId = "turn-1") => ({
 describe("CodexProvider", () => {
   it("nests collab subagent threads under the spawn call and isolates their turn lifecycle", async () => {
     const { client, created, events } = await setup()
+    const turnRequested = client.nextRequest("turn/start")
     const promptPromise = run(created!.handle.prompt("spin up subagents"))
-    await Promise.resolve()
+    await turnRequested
 
     client.emit("turn/started", {
       threadId: "thread-new",
@@ -157,7 +158,6 @@ describe("CodexProvider", () => {
       threadId: "thread-new",
       turnId: "turn-1"
     })
-    await Promise.resolve()
 
     const spawn = events
       .map((event) => event.payload as Record<string, unknown>)
@@ -179,7 +179,6 @@ describe("CodexProvider", () => {
     // Messaged again in the same turn: the same chip runs again.
     client.emit("item/started", activity("interacted", "call-message"))
     client.emit("item/completed", activity("interacted", "call-message"))
-    await Promise.resolve()
 
     const payloads = events.map((event) => event.payload as Record<string, unknown>)
     const chips = payloads.filter(
@@ -226,7 +225,6 @@ describe("CodexProvider", () => {
       "item/completed",
       activity("completed", "subagent-completed-turn-child-2", "turn-2")
     )
-    await Promise.resolve()
 
     const payloads = events.map((event) => event.payload as Record<string, unknown>)
     expect(
@@ -285,7 +283,6 @@ describe("CodexProvider", () => {
       threadId: "thread-new",
       turnId: "turn-1"
     })
-    await Promise.resolve()
 
     const payloads = events.map((event) => event.payload as Record<string, unknown>)
     expect(payloads).toContainEqual(
