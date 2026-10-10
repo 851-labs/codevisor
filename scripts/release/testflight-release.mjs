@@ -6,15 +6,24 @@ const externalReady = new Set(["BETA_APPROVED", "READY_FOR_BETA_TESTING", "IN_BE
 
 export function testFlightReleaseNotes(version, markdown, releaseURL) {
   if (!markdown.trim()) throw new Error("TestFlight release notes must not be empty.")
-  const content = markdown
-    .replace(/^# .+\n/m, "")
-    .replace(/^## /gm, "")
-    .replace(/ \(\[[a-f0-9]+\]\(https:\/\/github\.com\/[^\s)]+\)\)/g, "")
-    .trim()
+  const content = releaseNotesContent(markdown)
   const heading = `Codevisor ${version}\n\n`
   const footer = `\n\nFull release notes: ${releaseURL}`
   const budget = 4000 - heading.length - footer.length
   if (budget < 1) throw new Error("The TestFlight release notes URL is too long.")
+  const body = truncateReleaseNotesContent(content, budget)
+  return `${heading}${body}${footer}`
+}
+
+function releaseNotesContent(markdown) {
+  return markdown
+    .replace(/^# .+\n/m, "")
+    .replace(/^## /gm, "")
+    .replace(/ \(\[[a-f0-9]+\]\(https:\/\/github\.com\/[^\s)]+\)\)/g, "")
+    .trim()
+}
+
+function truncateReleaseNotesContent(content, budget) {
   const truncated = content.length > budget
   let body = content.slice(0, truncated ? budget - 1 : budget)
   if (truncated) {
@@ -23,7 +32,7 @@ export function testFlightReleaseNotes(version, markdown, releaseURL) {
     body = lineEnd > 0 ? body.slice(0, lineEnd) : body.replace(/[\uD800-\uDBFF]$/, "")
     body += "…"
   }
-  return `${heading}${body}${footer}`
+  return body
 }
 
 export function validateBetaMetadata(review, localizations) {
