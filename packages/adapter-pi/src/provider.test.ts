@@ -311,9 +311,23 @@ describe("Pi provider", () => {
 
   it("reports Pi exiting, ending the running turn", async () => {
     const { provider, client, events, emit } = setup()
-    const { handle } = await run(provider.createSession(definition, "/p", emit))
+    const started = Promise.withResolvers<void>()
+    const { handle } = await run(
+      provider.createSession(definition, "/p", (event) => {
+        const emitted = emit(event)
+        const payload = event.payload as Record<string, unknown>
+        if (
+          event.kind === "session.updated" &&
+          payload.turnState === "started" &&
+          payload.initiatedBy === "user"
+        ) {
+          started.resolve()
+        }
+        return emitted
+      })
+    )
     const result = run(handle.prompt("hi"))
-    await Promise.resolve()
+    await started.promise
     client.crash(new Error("pi exited: out of memory"))
     await expect(result).resolves.toEqual({ stopReason: "end_turn" })
     expect(events.some((event) => event.kind === "session.error")).toBe(true)
