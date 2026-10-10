@@ -89,6 +89,8 @@ extension HomeView {
       draftDestination(serverId: serverId)
     case let .agent(serverId, workspaceId):
       WorkspaceOutlineScreen(serverId: serverId, workspaceId: workspaceId)
+    case let .folder(folderId):
+      WorkspaceFolderScreen(folderId: folderId)
     }
   }
 }

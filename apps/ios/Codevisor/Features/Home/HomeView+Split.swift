@@ -91,6 +91,9 @@ extension HomeView {
         serverId: workspace.serverId, workspaceId: workspace.workspaceId, selectedTab: splitTabSelection
       )
       .id(workspace.workspaceId)
+    } else if case let .folder(folderId) = navigation.path.first {
+      WorkspaceFolderScreen(folderId: folderId)
+        .id(folderId)
     } else {
       ContentUnavailableView("No Workspace Selected", systemImage: "square.stack")
     }
@@ -152,6 +155,9 @@ extension HomeView {
     if case let .agent(serverId, workspaceId) = navigation.path.first {
       WorkspaceOutlineScreen(serverId: serverId, workspaceId: workspaceId)
         .id(workspaceId)
+    } else if case let .folder(folderId) = navigation.path.first {
+      WorkspaceFolderScreen(folderId: folderId)
+        .id(folderId)
     } else {
       splitDetail
     }
@@ -181,7 +187,8 @@ extension HomeView {
 
   @ViewBuilder
   var splitDetail: some View {
-    if !hasRemoteMachines && !showsSampleSidebar {
+    // A folder's page has no tab to show beside it.
+    if !hasRemoteMachines && !showsSampleSidebar || isFolderSelected {
       // The sidebar column carries the connect prompt; the detail stays a
       // quiet surface until a machine is paired.
       ChatSurfaceBackground()
@@ -192,6 +199,10 @@ extension HomeView {
         // composer, transcript, and keyboard are not remounted.
         .id(detailIdentity)
     }
+  }
+
+  private var isFolderSelected: Bool {
+    if case .folder = navigation.selection { true } else { false }
   }
 
   /// On iPad the detail is always a tab, so a workspace whose page alone is
@@ -289,6 +300,9 @@ struct HomeDetailParameters {
     case let .newChat(serverId):
       self.serverId = serverId
       isDraft = true
+    case .folder:
+      // Never shown: a folder's page has no tab beside it.
+      isDraft = false
     case let .agent(serverId, workspaceId):
       // A page on its own shows the workspace's last tab beside it.
       self.serverId = serverId

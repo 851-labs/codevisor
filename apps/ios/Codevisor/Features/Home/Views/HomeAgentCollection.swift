@@ -6,6 +6,8 @@ import UIKit
 struct HomeAgentCollectionActions {
   /// A workspace tapped on a phone: its page opens.
   var open: (AgentSidebarRow) -> Void = { _ in }
+  /// A folder tapped: its page opens, pushed or beside the sidebar.
+  var openFolder: (UUID) -> Void = { _ in }
   /// A workspace chosen beside the split's detail.
   var select: (UUID) -> Void = { _ in }
   var setWorkspaceExpanded: (UUID, Bool) -> Void = { _, _ in }
@@ -197,10 +199,12 @@ final class HomeAgentCollectionController: UIViewController, UICollectionViewDel
       guard let group = model.group(id) else { return }
       cell.configurationUpdateHandler = nil
       cell.contentConfiguration = UIHostingConfiguration { HomeListGroupRow(group: group) }
-      // An empty folder has nothing to disclose.
-      var header = disclosure
-      header.style = .header
-      cell.accessories = group.rows.isEmpty ? [] : [.outlineDisclosure(options: header)]
+      // Like a workspace: its chevron discloses what's filed in it, and a
+      // tap opens its page; an empty one has nothing to disclose.
+      cell.accessories =
+        !group.rows.isEmpty
+        ? [.outlineDisclosure(options: disclosure)]
+        : isSelectionList || group.folder == nil ? [] : [.disclosureIndicator()]
     }
   }
 
@@ -265,11 +269,20 @@ final class HomeAgentCollectionController: UIViewController, UICollectionViewDel
   // MARK: - Selection and menus
 
   func collectionView(_ collectionView: UICollectionView, shouldSelectItemAt indexPath: IndexPath) -> Bool {
-    if case .workspace = dataSource.itemIdentifier(for: indexPath) { return true }
-    return false
+    switch dataSource.itemIdentifier(for: indexPath) {
+    case .workspace: true
+    // A project has no page of its own.
+    case let .group(id): model.group(id)?.folder != nil
+    case nil: false
+    }
   }
 
   func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+    if case let .group(id) = dataSource.itemIdentifier(for: indexPath) {
+      collectionView.deselectItem(at: indexPath, animated: true)
+      if let folderId = UUID(uuidString: id) { list?.actions.openFolder(folderId) }
+      return
+    }
     guard case let .workspace(id) = dataSource.itemIdentifier(for: indexPath),
       let row = model.placements[id]?.row
     else { return }

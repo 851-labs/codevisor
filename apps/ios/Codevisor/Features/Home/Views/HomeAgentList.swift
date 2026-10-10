@@ -58,6 +58,7 @@ struct HomeAgentList: View {
   private var collectionActions: HomeAgentCollectionActions {
     HomeAgentCollectionActions(
       open: { row in rowActions.openPage(row.serverId, row.id) },
+      openFolder: { id in rowActions.openFolder(id) },
       select: { id in selection?.wrappedValue = id },
       setWorkspaceExpanded: { id, isExpanded in
         if isExpanded { expanded.insert(id) } else { expanded.remove(id) }

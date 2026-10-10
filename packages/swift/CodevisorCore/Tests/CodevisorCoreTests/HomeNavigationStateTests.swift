@@ -51,6 +51,26 @@ struct HomeNavigationStateTests {
     #expect(split.detailIdentity(promotedDraftSessionId: nil, draftGeneration: generation) == .page(workspaceId))
   }
 
+  @Test("A folder's page is pushed on a stack and selected on a split, with no workspace or tab")
+  func folderPage() {
+    let folder = HomeRoute.folder(UUID())
+    var stack = HomeNavigationState()
+    stack.open(folder, mode: .stack)
+    stack.open(page, mode: .stack)
+    #expect(stack.path == [folder, page])
+
+    var split = HomeNavigationState(path: [page, workspaceRoute()])
+    split.open(folder, mode: .split)
+    #expect(split.path == [folder])
+    #expect(split.clientPage == "folder")
+    #expect(!split.isNewChatSelected)
+    #expect(split.selectedWorkspace == nil)
+    #expect(split.splitTab == nil)
+    if case let .folder(id) = folder {
+      #expect(split.detailIdentity(promotedDraftSessionId: nil, draftGeneration: generation) == .folder(id))
+    }
+  }
+
   @Test("A tab opens through its workspace's page, so Back lands on the page")
   func openTabThroughPage() {
     var fromRoot = HomeNavigationState()

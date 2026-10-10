@@ -19,6 +19,8 @@ public enum HomeDetailIdentity: Hashable, Sendable {
   case workspace(UUID)
   /// A workspace's page, as the root of an iPhone Duo's detail column.
   case page(UUID)
+  /// A folder's page, likewise.
+  case folder(UUID)
 }
 
 /// What Home must do when the size class changes containers.
@@ -57,7 +59,7 @@ public struct HomeNavigationState: Equatable, Sendable {
   public var isNewChatSelected: Bool {
     switch selection {
     case .newChat, .none: true
-    case .agent, .workspace: false
+    case .agent, .folder, .workspace: false
     }
   }
 
@@ -67,6 +69,7 @@ public struct HomeNavigationState: Equatable, Sendable {
     case .none: "home"
     case .newChat: "new_chat"
     case .agent, .workspace: "workspace"
+    case .folder: "folder"
     }
   }
 
@@ -208,6 +211,8 @@ public struct HomeNavigationState: Equatable, Sendable {
       return .draft(draftGeneration)
     case let .agent(_, workspaceId):
       return .page(workspaceId)
+    case let .folder(folderId):
+      return .folder(folderId)
     case let .workspace(_, workspaceId, anchorSessionId, _, _, _):
       if let promotedDraftSessionId, anchorSessionId == promotedDraftSessionId {
         return .draft(draftGeneration)

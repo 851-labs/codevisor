@@ -20,6 +20,9 @@ public enum HomeRoute: Hashable, Sendable {
   /// it, then its tabs.
   case agent(serverId: String, workspaceId: UUID)
 
+  /// A sidebar folder's page: the workspaces filed in it.
+  case folder(UUID)
+
   /// A nil `preferredChatSessionId` restores the workspace's selected tab.
   /// Chat rows supply the chat id so that chat always wins over a
   /// previously selected terminal; non-chat tab rows supply
@@ -43,7 +46,7 @@ public enum HomeRoute: Hashable, Sendable {
   /// The workspace a page or tab belongs to.
   public var workspace: (serverId: String, workspaceId: UUID)? {
     switch self {
-    case .newChat: nil
+    case .newChat, .folder: nil
     case let .agent(serverId, workspaceId): (serverId, workspaceId)
     case let .workspace(serverId, workspaceId, _, _, _, _): (serverId, workspaceId)
     }

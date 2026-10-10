@@ -59,6 +59,7 @@ extension HomeView {
     let list = agentListActions
     return WorkspaceRowActions(
       openPage: { serverId, workspaceId in openRoute(.agent(serverId: serverId, workspaceId: workspaceId)) },
+      openFolder: { folderId in openRoute(.folder(folderId)) },
       openTab: { route in navigation.openTab(route, mode: layoutMode) },
       rename: list.rename,
       archive: list.archive
