@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
@@ -61,6 +61,8 @@ const makeFakeRepo = async (root) => {
   await writeFile(join(root, "packages/sync/dist/index.js"), "export {}")
   await writeFile(join(root, "packages/sync/src/index.ts"), "secret source")
   await writeFile(join(root, "packages/sync/resources/runtime.wasm"), "wasm-v1")
+  await utimes(join(root, "packages/sync/resources"), 1600000000, 1600000000)
+  await utimes(join(root, "packages/sync/resources/runtime.wasm"), 1600000000, 1600000000)
 }
 
 test("syncLinuxWorkspace copies dists and manifests, never sources", async () => {
@@ -89,6 +91,7 @@ test("syncLinuxWorkspace copies dists and manifests, never sources", async () =>
 
     // A resource change alone re-syncs.
     await writeFile(join(root, "packages/sync/resources/runtime.wasm"), "wasm-v2")
+    await utimes(join(root, "packages/sync/resources/runtime.wasm"), 1600000010, 1600000010)
     const resourced = await syncLinuxWorkspace(root, containerRoot)
     assert.equal(resourced.changed, true)
     assert.equal(
