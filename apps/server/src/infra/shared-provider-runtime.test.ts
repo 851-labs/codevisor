@@ -5,7 +5,11 @@ import { Socket } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { SharedCredentialError, type SharedTokenBundle } from "@codevisor/harness-manager"
+import {
+  atomicWriteJson,
+  SharedCredentialError,
+  type SharedTokenBundle
+} from "@codevisor/harness-manager"
 import { describe, expect, it, onTestFinished, vi } from "vitest"
 
 import { run } from "../test-support.js"
@@ -13,6 +17,10 @@ import { fleet } from "./shared-accounts-test-support.js"
 import { makeSharedProviderRuntime, readProviderDocument } from "./shared-provider-runtime.js"
 
 vi.mock("node:fs/promises", { spy: true })
+vi.mock("@codevisor/harness-manager", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@codevisor/harness-manager")>()
+  return { ...actual, atomicWriteJson: vi.fn(actual.atomicWriteJson) }
+})
 
 const capability = "a".repeat(43)
 const token: SharedTokenBundle = {
@@ -213,14 +221,27 @@ describe("OpenCode credentials kept current", () => {
   })
 
   it("rewrites them in the background, and stops once no turn has used the profile for a day", async () => {
-    const { document } = await openCodeProfile({
+    const { path, document } = await openCodeProfile({
       toFake: ["Date", "setInterval", "clearInterval"]
     })
-    expect(vi.getTimerCount()).toBe(1)
-    await vi.advanceTimersByTimeAsync(nearExpiry)
-    await vi.waitFor(async () => expect((await document()).openai.access).toBe("rotated"))
-    await vi.advanceTimersByTimeAsync(24 * 60 * 60_000)
-    expect(vi.getTimerCount()).toBe(0)
+    const rewritten = Promise.withResolvers<void>()
+    const actual = await vi.importActual<typeof import("@codevisor/harness-manager")>(
+      "@codevisor/harness-manager"
+    )
+    const write = vi.mocked(atomicWriteJson).mockImplementation((...args) => {
+      const pending = actual.atomicWriteJson(...args)
+      if (args[0] === path) void pending.then(rewritten.resolve, rewritten.reject)
+      return pending
+    })
+    try {
+      expect(vi.getTimerCount()).toBe(1)
+      await Promise.all([vi.advanceTimersByTimeAsync(nearExpiry), rewritten.promise])
+      expect((await document()).openai.access).toBe("rotated")
+      await vi.advanceTimersByTimeAsync(24 * 60 * 60_000)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      write.mockImplementation(actual.atomicWriteJson)
+    }
   })
 
   it("keeps a sign-in the vault can't serve right now, and drops one that is no longer shared", async () => {
