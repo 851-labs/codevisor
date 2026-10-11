@@ -5,7 +5,7 @@ import { gzipSync } from "node:zlib"
 
 import { makeSkillStore } from "@codevisor/skills"
 import { makeBlobStore } from "@codevisor/sync"
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it, onTestFinished, vi } from "vitest"
 
 import { makeServices, run, tempDirs } from "../test-support.js"
 import {
@@ -39,8 +39,15 @@ const tarHeader = (name: string, size: number): Buffer => {
 
 const elsewhereAt = (wallMs: number) => ({ wallMs, counter: 0, deviceId: "elsewhere" })
 
+const skillsSyncClock = (wallMs: number) => {
+  const now = vi.spyOn(Date, "now").mockReturnValue(wallMs)
+  onTestFinished(() => now.mockRestore())
+  return now
+}
+
 describe("skills sync", () => {
   it("publishes, ferries, applies, edits, and deletes across two machines", async () => {
+    const now = skillsSyncClock(1_700_000_000_000)
     const { services: machineA } = await makeServices("server-a")
     const { services: machineB } = await makeServices("server-b")
     const skillsA = makeSkills()
@@ -89,6 +96,7 @@ describe("skills sync", () => {
     expect(editedHash).not.toBe(hash)
 
     // B deletes the skill; the tombstone removes it from A.
+    now.mockReturnValue(1_700_000_001_000)
     await skillsB.remove("deploy")
     const deletedB = await reconcileSkills(b)
     expect(deletedB.status.published).toEqual(["deploy"])
@@ -156,6 +164,7 @@ describe("skills sync", () => {
   })
 
   it("doesn't republish a deletion the fleet already recorded", async () => {
+    skillsSyncClock(1_700_000_000_000)
     const { services } = await makeServices("server-tomb")
     const store = makeSkills()
     const deps = { db: services.db, store, blobs: makeBlobs(), serverId: "server-tomb" }
@@ -163,7 +172,7 @@ describe("skills sync", () => {
     await reconcileSkills(deps)
     await run(
       services.db.mergeSyncEntries(SKILLS_SYNC_NAMESPACE, [
-        { key: "deploy", value: null, deleted: true, timestamp: elsewhereAt(Date.now() + 60_000) }
+        { key: "deploy", value: null, deleted: true, timestamp: elsewhereAt(1_700_000_060_000) }
       ])
     )
     await store.remove("deploy")
