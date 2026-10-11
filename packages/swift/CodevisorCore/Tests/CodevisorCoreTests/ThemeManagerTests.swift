@@ -64,7 +64,18 @@ struct ThemeManagerTests {
 
   @Test("Deleting the active custom theme falls back cleanly")
   func deleteActive() throws {
-    let manager = makeManager()
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("codevisor-thememanager-tests-\(UUID().uuidString)")
+    defer {
+      #expect(throws: Never.self) {
+        if FileManager.default.fileExists(atPath: directory.path) {
+          try FileManager.default.removeItem(at: directory)
+        }
+      }
+    }
+    let manager = ThemeManager(
+      settings: AppSettingsModel(store: InMemoryStore()),
+      catalog: ThemeCatalog(customThemesDirectory: directory))
     let json = Data(
       """
       {"name": "Mine", "type": "dark",
