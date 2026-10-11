@@ -343,7 +343,6 @@ describe("Browser live preview", () => {
     subscription.watch(800)
     await previews.activity("chat", chrome.runtime, "tab-1")
     chrome.frame("cdp:tab-1", "jpeg-1")
-    await new Promise((resolve) => setImmediate(resolve))
     expect(watcher.frames).toEqual(["jpeg-1"])
     subscription.unwatch()
     await previews.finish("chat")
@@ -358,7 +357,6 @@ describe("Browser live preview", () => {
     previews.subscribe("chat", watching.value).watch(Number.NaN)
     previews.subscribe("chat", idle.value)
     await previews.activity("chat", chrome.runtime, "tab-blank")
-    await new Promise((resolve) => setImmediate(resolve))
     expect(
       chrome.sent.find((sent) => sent.method === "Page.startScreencast")?.params
     ).toMatchObject({
@@ -375,7 +373,6 @@ describe("Browser live preview", () => {
     const missing = viewer()
     unknown.subscribe("chat", missing.value).watch(800)
     await unknown.activity("chat", unattached.runtime, "tab-gone")
-    await new Promise((resolve) => setImmediate(resolve))
     expect(unattached.methods()).not.toContain("Page.startScreencast")
     expect(missing.statuses.at(-1)).toMatchObject({ state: "active", title: "" })
   })
