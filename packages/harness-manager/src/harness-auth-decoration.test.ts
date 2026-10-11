@@ -50,7 +50,7 @@ describe("Codex login methods", () => {
       preferDeviceCode,
       resolveEnv: () => Promise.resolve({ HOME: directory })
     })
-    const [decorated] = await manager.decorateHarnesses([
+    const [decorated] = await manager.decorateHarnessesFromStoredState([
       {
         id: "codex",
         name: "Codex",
