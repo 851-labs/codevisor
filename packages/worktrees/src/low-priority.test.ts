@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import { makePriorityWrapper, systemPriorityHost, withPriority } from "./low-priority.js"
 
@@ -51,25 +51,23 @@ describe("low-priority commands", () => {
   it("probes the real machine for executables", () => {
     expect(systemPriorityHost.isExecutable("/bin/sh")).toBe(true)
     expect(systemPriorityHost.isExecutable("/nonexistent/codevisor-tool")).toBe(false)
-    const previous = process.env.CODEVISOR_COMMAND_PRIORITY
-    delete process.env.CODEVISOR_COMMAND_PRIORITY
+    vi.stubEnv("CODEVISOR_COMMAND_PRIORITY", undefined)
     try {
       expect(withPriority("git", ["status"])).toEqual({ command: "git", args: ["status"] })
     } finally {
-      process.env.CODEVISOR_COMMAND_PRIORITY = previous
+      vi.unstubAllEnvs()
     }
   })
 
   it("runs at normal priority when the environment asks for it", () => {
-    const previous = process.env.CODEVISOR_COMMAND_PRIORITY
-    process.env.CODEVISOR_COMMAND_PRIORITY = "normal"
+    vi.stubEnv("CODEVISOR_COMMAND_PRIORITY", "normal")
     try {
       expect(withPriority("git", ["status"], "background")).toEqual({
         command: "git",
         args: ["status"]
       })
     } finally {
-      process.env.CODEVISOR_COMMAND_PRIORITY = previous
+      vi.unstubAllEnvs()
     }
   })
 })
