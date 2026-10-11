@@ -14,8 +14,15 @@ struct JSONValueTests {
       "array": .array([1, 2, 3]),
       "nested": .object(["a": "b"]),
     ])
+    let literal = Data(
+      #"{"null":null,"bool":true,"number":3.5,"string":"hi","array":[1,2,3],"nested":{"a":"b"}}"#.utf8)
     let data = try JSONEncoder().encode(value)
-    let decoded = try JSONDecoder().decode(JSONValue.self, from: data)
+    let actual = try JSONSerialization.data(
+      withJSONObject: JSONSerialization.jsonObject(with: data), options: [.sortedKeys])
+    let expected = try JSONSerialization.data(
+      withJSONObject: JSONSerialization.jsonObject(with: literal), options: [.sortedKeys])
+    #expect(actual == expected)
+    let decoded = try JSONDecoder().decode(JSONValue.self, from: literal)
     #expect(decoded == value)
   }
 
