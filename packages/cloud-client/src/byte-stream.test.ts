@@ -10,7 +10,8 @@ import {
 
 describe("byte stream protocol", () => {
   it("accepts only the fixed Codevisor loopback service", () => {
-    expect(parseByteStreamChannelParams(codevisorLoopbackParams())).toEqual({
+    expect(codevisorLoopbackParams()).toEqual({ service: "codevisor-loopback", version: 1 })
+    expect(parseByteStreamChannelParams({ service: "codevisor-loopback", version: 1 })).toEqual({
       service: "codevisor-loopback",
       version: 1
     })
