@@ -9,8 +9,8 @@ struct RGBATests {
   func hexParsing() {
     #expect(RGBA(hex: "#abc") == RGBA(r: 0xAA, g: 0xBB, b: 0xCC, a: 1))
     #expect(RGBA(hex: "#aabbcc") == RGBA(r: 0xAA, g: 0xBB, b: 0xCC, a: 1))
-    #expect(RGBA(hex: "#aabbccdd")?.a != nil)
-    #expect(RGBA(hex: "#aabbcc80")!.a > 0.5 && RGBA(hex: "#aabbcc80")!.a < 0.51)
+    #expect(RGBA(hex: "#aabbccdd") == RGBA(r: 0xAA, g: 0xBB, b: 0xCC, a: 221.0 / 255.0))
+    #expect(RGBA(hex: "#aabbcc80") == RGBA(r: 0xAA, g: 0xBB, b: 0xCC, a: 128.0 / 255.0))
     #expect(RGBA(hex: "#abcd") == RGBA(r: 0xAA, g: 0xBB, b: 0xCC, a: 221.0 / 255.0))
     #expect(RGBA(hex: " #FFFFFF ") == RGBA(r: 255, g: 255, b: 255, a: 1))
     #expect(RGBA(hex: "aabbcc") == nil)
@@ -53,10 +53,9 @@ struct RGBATests {
   func compositing() {
     let translucent = RGBA(hex: "#ffffff80")!
     let over = translucent.compositedOver(RGBA(hex: "#000000")!)
-    #expect(over.a == 1)
     // ~50% white over black
-    #expect(abs(over.r - 128) <= 1)
-    #expect(ColorMath.compositeOverBg("#ffffff80", over: "#000000") == over.hexString())
+    #expect(over == RGBA(r: 128, g: 128, b: 128, a: 1))
+    #expect(ColorMath.compositeOverBg("#ffffff80", over: "#000000") == "#808080")
     #expect(ColorMath.compositeOverBg("#ffffff", over: nil) == nil)
   }
 }
