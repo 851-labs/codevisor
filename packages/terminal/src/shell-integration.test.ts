@@ -1,7 +1,8 @@
-import { homedir } from "node:os"
+import { mkdtempSync, rmSync } from "node:fs"
+import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, onTestFinished } from "vitest"
 
 import { makeTerminalManager, type TerminalManagerConfig } from "./index.js"
 import { BUNDLED_GHOSTTY_RESOURCES_DIRECTORY } from "./shell-integration.js"
@@ -141,7 +142,9 @@ describe("@codevisor/terminal Ghostty shell integration", () => {
     expect(other.args).toEqual(["-l"])
     expect(other.env.ZDOTDIR).toBeUndefined()
 
-    const missing = { ghosttyResourcesDirectory: "/codevisor-test/missing" }
+    const directory = mkdtempSync(join(tmpdir(), "codevisor-shell-integration-"))
+    onTestFinished(() => rmSync(directory, { recursive: true }))
+    const missing = { ghosttyResourcesDirectory: join(directory, "missing") }
     for (const shell of ["zsh", "bash", "fish", "nu"]) {
       const { args, env } = await launch(shell, ["-l"], { ZDOTDIR: "/home/me" }, missing)
       expect(args, shell).toEqual(["-l"])
