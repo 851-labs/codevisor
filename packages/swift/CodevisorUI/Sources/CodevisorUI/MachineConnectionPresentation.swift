@@ -42,44 +42,60 @@ public enum MachineConnectionPresentation: Equatable {
       self = .updateNeeded
       return
     }
+    if let lifecycle = Self.lifecycle(availability, status: status, sync: navigationSyncState, lastSeen: lastSeen) {
+      self = lifecycle
+      return
+    }
+    self =
+      Self.reachability(status, sync: navigationSyncState, isLocal: isLocal, cloud: cloud, lastSeen: lastSeen)
+      ?? Self.unprobed(cloud, lastSeen: lastSeen)
+  }
+
+  private static func lifecycle(
+    _ availability: ServerAvailability?, status: MachineStatus?, sync: NavigationSyncState?, lastSeen: Date?
+  ) -> Self? {
     switch availability {
     case .waiting(.connecting):
       // Automatic reconnects retain Offline until the failure clears.
-      if case .stale = navigationSyncState {
-        self = .offline(lastSeen: lastSeen)
+      if case .stale = sync {
+        return .offline(lastSeen: lastSeen)
       } else if status?.isReachable == false {
-        self = .offline(lastSeen: lastSeen)
+        return .offline(lastSeen: lastSeen)
       } else {
-        self = .connecting
+        return .connecting
       }
-      return
     case .waiting(let reason):
-      self = .waiting(reason)
-      return
+      return .waiting(reason)
     case .failed:
-      self = .offline(lastSeen: lastSeen)
-      return
-    default: break
+      return .offline(lastSeen: lastSeen)
+    default: return nil
     }
+  }
+
+  private static func reachability(
+    _ status: MachineStatus?, sync: NavigationSyncState?, isLocal: Bool, cloud: CloudMachineReach?, lastSeen: Date?
+  ) -> Self? {
     if let status, !status.isReachable {
-      self = .offline(lastSeen: lastSeen)
-    } else if case .stale = navigationSyncState {
-      self = .offline(lastSeen: lastSeen)
+      return .offline(lastSeen: lastSeen)
+    } else if case .stale = sync {
+      return .offline(lastSeen: lastSeen)
     } else if status?.isReachable == true {
-      guard navigationSyncState == .current else {
-        self = .syncing
-        return
-      }
-      self = Self.connected(isLocal: isLocal, cloud: cloud)
-    } else if let cloud {
+      guard sync == .current else { return .syncing }
+      return Self.connected(isLocal: isLocal, cloud: cloud)
+    }
+    return nil
+  }
+
+  private static func unprobed(_ cloud: CloudMachineReach?, lastSeen: Date?) -> Self {
+    if let cloud {
       // Not probed yet: the tunnel's own state decides.
       if cloud.route != nil || cloud.dialing {
-        self = .connecting
+        return .connecting
       } else {
-        self = cloud.online ? .connecting : .offline(lastSeen: lastSeen)
+        return cloud.online ? .connecting : .offline(lastSeen: lastSeen)
       }
     } else {
-      self = .connecting
+      return .connecting
     }
   }
 
