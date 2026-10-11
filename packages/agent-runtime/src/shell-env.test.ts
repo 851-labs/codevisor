@@ -1,7 +1,9 @@
 import * as childProcess from "node:child_process"
+import { mkdtempSync, rmSync } from "node:fs"
 import * as os from "node:os"
+import { join } from "node:path"
 
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi, onTestFinished } from "vitest"
 
 import {
   fallbackPathDirectories,
@@ -12,6 +14,12 @@ import {
 } from "./shell-env.js"
 
 const envOutput = (path: string): string => `HOME=/Users/tester\nPATH=${path}\nLANG=en_US.UTF-8\n`
+
+const missingPath = (): string => {
+  const root = mkdtempSync(join(os.tmpdir(), "shell-env-test-"))
+  onTestFinished(() => rmSync(root, { recursive: true }))
+  return join(root, "missing")
+}
 
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:child_process")>()
@@ -234,7 +242,7 @@ describe("resolveShellEnv", () => {
   it("uses the real existence check to skip a missing $SHELL", async () => {
     const shells: Array<string> = []
     await resolveShellEnv({
-      base: { SHELL: "/nonexistent-shell-for-test" },
+      base: { SHELL: missingPath() },
       platform: "linux",
       homedir: "/h",
       userShell: () => undefined,
@@ -273,7 +281,7 @@ describe("resolveShellEnv", () => {
     // runner fails fast — covering the default-runner path without ever
     // spawning a real login shell in tests.
     const resolved = await resolveShellEnv({
-      base: { PATH: "/base-only", SHELL: "/nonexistent-shell-for-test" },
+      base: { PATH: "/base-only", SHELL: missingPath() },
       platform: "linux",
       homedir: "/h",
       executableExists: () => true
@@ -317,9 +325,7 @@ describe("runShellCommand", () => {
   })
 
   it("rejects on spawn failure", async () => {
-    await expect(
-      runShellCommand("/nonexistent-shell-for-test", ["-c", "true"], 5000)
-    ).rejects.toThrow()
+    await expect(runShellCommand(missingPath(), ["-c", "true"], 5000)).rejects.toThrow()
   })
 
   it("rejects when the command exceeds the timeout", async () => {
@@ -349,7 +355,7 @@ describe("nvmBinDirectories", () => {
   it("returns nothing when nvm is absent or holds no versions", () => {
     expect(nvmBinDirectories("/h", () => [])).toEqual([])
     // Default lister tolerates a missing directory.
-    expect(nvmBinDirectories("/nonexistent-home-for-test")).toEqual([])
+    expect(nvmBinDirectories(missingPath())).toEqual([])
   })
 })
 
