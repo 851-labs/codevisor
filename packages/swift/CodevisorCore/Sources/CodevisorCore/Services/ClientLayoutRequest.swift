@@ -1,6 +1,23 @@
 import Foundation
 
-extension ClientLayoutRequest {
+public struct ClientLayoutRequest: Codable, Sendable {
+  public struct Action: Codable, Sendable {
+    public var kind: String
+    public var leafId: UUID?
+    public var targetLeafId: UUID?
+    public var edge: SplitEdge?
+    public var tabId: UUID?
+    public var branchPath: [Int]?
+    public var fractions: [Double]?
+    public var expectedChildren: [[UUID]]?
+    public var tabIds: [UUID]?
+    public var title: String?
+  }
+  public var workspaceId: UUID
+  public var action: Action
+  /// Background layout edits preserve selection unless explicitly requested.
+  public var focus: Bool?
+
   /// Validate on a copy, then let the native owner commit once and publish
   /// any created pane through the same registry used by the UI.
   public func applying(to original: Workspace, compact: Bool) throws -> Workspace {
@@ -19,46 +36,62 @@ extension ClientLayoutRequest {
       workspace.centerTabs.append(tab)
       workspace.selectedCenterTabId = tab.id
     case "split":
-      let (index, leaf) = try source(in: workspace)
-      guard let edge = action.edge else { throw ClientControlError("Missing split edge") }
-      var state = PaneGroupState()
-      _ = state.addNewTabPane()
-      let added = UUID()
-      workspace.centerTabs[index].root = workspace.centerTabs[index].root.splitting(
-        groupId: leaf, edge: edge, newGroupId: added, newGroupState: state
-      )
-      _ = workspace.selectDestination(.leaf(added))
+      try split(in: &workspace)
     case "move", "detach":
       try move(in: &workspace)
     case "resize":
-      let index = try tabIndex(in: workspace)
-      guard let path = action.branchPath, let fractions = action.fractions,
-        let expected = action.expectedChildren,
-        let branch = workspace.centerTabs[index].root.clientSplit(at: path),
-        branch.children.map({ $0.node.allGroups.map(\.id) }) == expected
-      else { throw ClientControlError("Split changed or is unavailable. Read client context again.") }
-      guard fractions.count == branch.children.count,
-        fractions.allSatisfy({ $0.isFinite && $0 > 0 }),
-        abs(fractions.reduce(0, +) - 1) < 0.000001
-      else { throw ClientControlError("Fractions must be positive and sum to 1") }
-      workspace.centerTabs[index].root = workspace.centerTabs[index].root.replacingSplitFractions(
-        at: path, with: fractions
-      )
+      try resize(in: &workspace)
     case "reorder_tabs":
-      guard let ids = action.tabIds, ids.count == workspace.centerTabs.count,
-        Set(ids).count == ids.count, Set(ids) == Set(workspace.centerTabs.map(\.id))
-      else { throw ClientControlError("Supply every current tab id exactly once") }
-      let tabs = Dictionary(uniqueKeysWithValues: workspace.centerTabs.map { ($0.id, $0) })
-      workspace.centerTabs = ids.compactMap { tabs[$0] }
+      try reorderTabs(in: &workspace)
     case "rename_tab":
-      let index = try tabIndex(in: workspace)
-      guard let title = action.title else { throw ClientControlError("Missing tab title") }
-      let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-      workspace.centerTabs[index].customTitle = trimmed.isEmpty ? nil : trimmed
+      try renameTab(in: &workspace)
     default: throw ClientControlError("Unknown layout action")
     }
     if focus != true { preserveSelection(from: original, in: &workspace) }
     return workspace
+  }
+
+  private func split(in workspace: inout Workspace) throws {
+    let (index, leaf) = try source(in: workspace)
+    guard let edge = action.edge else { throw ClientControlError("Missing split edge") }
+    var state = PaneGroupState()
+    _ = state.addNewTabPane()
+    let added = UUID()
+    workspace.centerTabs[index].root = workspace.centerTabs[index].root.splitting(
+      groupId: leaf, edge: edge, newGroupId: added, newGroupState: state
+    )
+    _ = workspace.selectDestination(.leaf(added))
+  }
+
+  private func resize(in workspace: inout Workspace) throws {
+    let index = try tabIndex(in: workspace)
+    guard let path = action.branchPath, let fractions = action.fractions,
+      let expected = action.expectedChildren,
+      let branch = workspace.centerTabs[index].root.clientSplit(at: path),
+      branch.children.map({ $0.node.allGroups.map(\.id) }) == expected
+    else { throw ClientControlError("Split changed or is unavailable. Read client context again.") }
+    guard fractions.count == branch.children.count,
+      fractions.allSatisfy({ $0.isFinite && $0 > 0 }),
+      abs(fractions.reduce(0, +) - 1) < 0.000001
+    else { throw ClientControlError("Fractions must be positive and sum to 1") }
+    workspace.centerTabs[index].root = workspace.centerTabs[index].root.replacingSplitFractions(
+      at: path, with: fractions
+    )
+  }
+
+  private func reorderTabs(in workspace: inout Workspace) throws {
+    guard let ids = action.tabIds, ids.count == workspace.centerTabs.count,
+      Set(ids).count == ids.count, Set(ids) == Set(workspace.centerTabs.map(\.id))
+    else { throw ClientControlError("Supply every current tab id exactly once") }
+    let tabs = Dictionary(uniqueKeysWithValues: workspace.centerTabs.map { ($0.id, $0) })
+    workspace.centerTabs = ids.compactMap { tabs[$0] }
+  }
+
+  private func renameTab(in workspace: inout Workspace) throws {
+    let index = try tabIndex(in: workspace)
+    guard let title = action.title else { throw ClientControlError("Missing tab title") }
+    let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+    workspace.centerTabs[index].customTitle = trimmed.isEmpty ? nil : trimmed
   }
 
   /// Restore selection on the uncommitted copy, so background edits never

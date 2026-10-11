@@ -16,25 +16,6 @@ public struct ClientWindowRequest: Codable, Sendable {
   public var height: Double?
 }
 
-public struct ClientLayoutRequest: Codable, Sendable {
-  public struct Action: Codable, Sendable {
-    public var kind: String
-    public var leafId: UUID?
-    public var targetLeafId: UUID?
-    public var edge: SplitEdge?
-    public var tabId: UUID?
-    public var branchPath: [Int]?
-    public var fractions: [Double]?
-    public var expectedChildren: [[UUID]]?
-    public var tabIds: [UUID]?
-    public var title: String?
-  }
-  public var workspaceId: UUID
-  public var action: Action
-  /// Background layout edits preserve selection unless explicitly requested.
-  public var focus: Bool?
-}
-
 public enum ClientUIAction: Sendable {
   case page(ClientPageRequest)
   case layout(ClientLayoutRequest)
