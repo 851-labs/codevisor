@@ -106,30 +106,40 @@ describe("@codevisor/db", () => {
     const filename = tempDatabase()
     buildV4Fixture(filename)
     const sqlite = new Database(filename)
-    sqlite
-      .prepare(
-        "insert into events (server_id, kind, subject_id, created_at, payload) values (?, ?, ?, ?, ?)"
-      )
-      .run(
-        "local",
-        "session.output",
-        "sess-1",
-        "2026-06-01T01:04:00.000Z",
-        JSON.stringify({ role: "user", text: "from history" })
-      )
-    sqlite.close()
+    try {
+      sqlite
+        .prepare(
+          "insert into events (server_id, kind, subject_id, created_at, payload) values (?, ?, ?, ?, ?)"
+        )
+        .run(
+          "local",
+          "session.output",
+          "sess-1",
+          "2026-06-01T01:04:00.000Z",
+          JSON.stringify({ role: "user", text: "from history" })
+        )
+    } finally {
+      sqlite.close()
+    }
 
     const db = await run(makeDatabase({ filename, serverId: "local" }))
-    const page = await run(db.getTranscriptPage("sess-1", undefined, 32))
-    expect(page.items).toMatchObject([{ sequence: 0, role: "user", text: "from history" }])
+    try {
+      const page = await run(db.getTranscriptPage("sess-1", undefined, 32))
+      expect(page.items).toMatchObject([{ sequence: 0, role: "user", text: "from history" }])
 
-    const migrated = new Database(filename)
-    expect(
-      migrated
-        .prepare("select state, completed, total from backfill_jobs where id = ?")
-        .get("canonical-session-chat-v1")
-    ).toMatchObject({ state: "completed" })
-    migrated.close()
+      const migrated = new Database(filename)
+      try {
+        expect(
+          migrated
+            .prepare("select state, completed, total from backfill_jobs where id = ?")
+            .get("canonical-session-chat-v1")
+        ).toMatchObject({ state: "completed" })
+      } finally {
+        migrated.close()
+      }
+    } finally {
+      await run(db.close)
+    }
   })
 
   it("backfills complete legacy transcript rows and blocks a mismatched projection", async () => {
