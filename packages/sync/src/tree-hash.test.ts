@@ -48,11 +48,12 @@ describe("treeHash", () => {
     expect(afterEdit).not.toBe(before)
 
     writeFileSync(join(base, "extra.md"), "more\n")
-    expect(await treeHash(base)).not.toBe(afterEdit)
+    const afterAdd = await treeHash(base)
+    expect(afterAdd).not.toBe(afterEdit)
 
     rmSync(join(base, "alias.md"))
     symlinkSync("extra.md", join(base, "alias.md"))
-    expect(await treeHash(base)).not.toBe(afterEdit)
+    expect(await treeHash(base)).not.toBe(afterAdd)
   })
 
   it("ignores unreplicable entries like fifos", async () => {
