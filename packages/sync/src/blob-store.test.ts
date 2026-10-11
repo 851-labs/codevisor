@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -26,10 +26,12 @@ describe("blob store", () => {
     store.write(id, new TextEncoder().encode("archive-bytes"))
     expect(store.has(id)).toBe(true)
     expect((await store.read(id)).toString()).toBe("archive-bytes")
+    expect(readFileSync(store.path(id)).toString()).toBe("archive-bytes")
     expect(store.path(id)).toContain(id)
 
     store.remove(id)
     expect(store.has(id)).toBe(false)
+    expect(existsSync(store.path(id))).toBe(false)
     // Removing again is a no-op.
     store.remove(id)
   })
