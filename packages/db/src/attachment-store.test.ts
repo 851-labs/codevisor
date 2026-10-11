@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 
+import type { FileMetadata } from "@codevisor/api"
 import Database from "better-sqlite3"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
@@ -61,17 +62,25 @@ describe("attachment object storage", () => {
   it("upgrades legacy file rows without changing their bytes", async () => {
     const directory = temporaryDirectory()
     const filename = join(directory, "codevisor.sqlite")
+    let bytes: Buffer
+    let metadata: FileMetadata
     const legacy = await run(makeDatabase({ filename, serverId: "local" }))
-    const bytes = Buffer.from("legacy attachment")
-    const metadata = await run(legacy.createFile("legacy.txt", "text/plain", "file", bytes))
-    await run(legacy.close)
+    try {
+      bytes = Buffer.from("legacy attachment")
+      metadata = await run(legacy.createFile("legacy.txt", "text/plain", "file", bytes))
+    } finally {
+      await run(legacy.close)
+    }
 
     const sqlite = new Database(filename)
-    sqlite.exec(`
+    try {
+      sqlite.exec(`
       alter table files drop column storage_state;
       delete from schema_migrations where id = 29;
     `)
-    sqlite.close()
+    } finally {
+      sqlite.close()
+    }
 
     const upgraded = await run(makeDatabase({ filename, serverId: "local" }))
     databases.push(upgraded)
@@ -261,8 +270,11 @@ describe("attachment object storage", () => {
       db.createFile("corrupt.txt", "text/plain", "file", Buffer.from("ok"))
     )
     const sqlite = new Database(filename)
-    sqlite.prepare("update files set data = ? where id = ?").run(Buffer.from("no"), metadata.id)
-    sqlite.close()
+    try {
+      sqlite.prepare("update files set data = ? where id = ?").run(Buffer.from("no"), metadata.id)
+    } finally {
+      sqlite.close()
+    }
     const failures: Array<string | undefined> = []
 
     await expect(
@@ -284,8 +296,11 @@ describe("attachment object storage", () => {
     )
     await run(db.markFileStorageDual(metadata.id))
     const sqlite = new Database(filename)
-    sqlite.prepare("update files set data = ? where id = ?").run(Buffer.from("bad"), metadata.id)
-    sqlite.close()
+    try {
+      sqlite.prepare("update files set data = ? where id = ?").run(Buffer.from("bad"), metadata.id)
+    } finally {
+      sqlite.close()
+    }
 
     await expect(migrateAttachmentBlobs(db, makeAttachmentStore(directory))).rejects.toThrow(
       "Attachment failed verification before clearing its SQLite BLOB"
