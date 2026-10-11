@@ -1,8 +1,8 @@
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { writePluginInstallReceipt, type PluginInstallReceipt } from "./plugin-receipt.js"
 import {
@@ -46,7 +46,7 @@ const writePlugin = (root: string, directoryName: string, id: string): string =>
 
 describe("scanPlugins", () => {
   it("returns empty results for a missing root", () => {
-    const scan = scanPlugins(join(tmpdir(), "does-not-exist-codevisor"))
+    const scan = scanPlugins(join(makeRoot(), "missing"))
     expect(scan.plugins).toHaveLength(0)
     expect(scan.invalid).toHaveLength(0)
   })
@@ -145,7 +145,12 @@ describe("scanPlugins", () => {
   })
 
   it("defaults the root under the home directory", () => {
-    expect(defaultPluginsRoot()).toContain(".codevisor")
+    vi.stubEnv("CODEVISOR_PLUGINS_ROOT", undefined)
+    try {
+      expect(defaultPluginsRoot()).toBe(join(homedir(), ".codevisor", "plugins"))
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 })
 

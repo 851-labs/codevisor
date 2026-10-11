@@ -363,14 +363,14 @@ describe("defaults", () => {
   it("constructs with only a data dir, resolving the root from the environment", async () => {
     const root = makeDir("codevisor-plugins-env-root-")
     writePlugin(root, "example", exampleManifest)
-    process.env["CODEVISOR_PLUGINS_ROOT"] = root
+    vi.stubEnv("CODEVISOR_PLUGINS_ROOT", root)
     try {
       const manager = makePluginsManager({ dataDir: makeDir("codevisor-plugins-env-data-") })
       cleanups.push(() => manager.close())
       const list = await manager.list()
       expect(list.plugins.map((plugin) => plugin.id)).toEqual(["owner.example"])
     } finally {
-      delete process.env["CODEVISOR_PLUGINS_ROOT"]
+      vi.unstubAllEnvs()
     }
   })
 })
