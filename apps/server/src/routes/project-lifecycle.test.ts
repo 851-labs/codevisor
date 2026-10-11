@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { promisify } from "node:util"
 
 import { foodWorktreeNames } from "@codevisor/worktrees"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import { defaultServerConfig, startCodevisorServer } from "../server.js"
 import { jsonRequest, makeServices, run, runningServers, start, tempDirs } from "../test-support.js"
@@ -151,7 +151,7 @@ describe("project lifecycle routes", () => {
     const nonGitRepo = join(root, "non-git")
     mkdirSync(origin)
     mkdirSync(nonGitRepo)
-    process.env["CODEVISOR_WORKTREES_ROOT"] = worktreesRoot
+    vi.stubEnv("CODEVISOR_WORKTREES_ROOT", worktreesRoot)
     tempDirs.push(root)
 
     try {
@@ -223,7 +223,7 @@ describe("project lifecycle routes", () => {
       expect(missing.status).toBe(422)
       expect((missing.body as { readonly error: string }).error).toContain("Manage Project")
     } finally {
-      delete process.env["CODEVISOR_WORKTREES_ROOT"]
+      vi.unstubAllEnvs()
     }
   })
 
@@ -233,7 +233,7 @@ describe("project lifecycle routes", () => {
       execFileAsync("git", [...args], { cwd })
     const worktreesRoot = mkdtempSync(join(tmpdir(), "codevisor-development-worktrees-"))
     tempDirs.push(worktreesRoot)
-    process.env["CODEVISOR_WORKTREES_ROOT"] = worktreesRoot
+    vi.stubEnv("CODEVISOR_WORKTREES_ROOT", worktreesRoot)
     try {
       const { services } = await makeServices("server-dev")
       const server = await run(
@@ -284,7 +284,7 @@ describe("project lifecycle routes", () => {
       expect(scratchMatch).not.toBeNull()
       expect(foodWorktreeNames).toContain(scratchMatch?.[1])
     } finally {
-      delete process.env["CODEVISOR_WORKTREES_ROOT"]
+      vi.unstubAllEnvs()
     }
   })
 })
