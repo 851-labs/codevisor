@@ -21,6 +21,20 @@ import { sweepAttachmentTempFiles } from "../server.js"
 import { jsonRequest, run, start, tempDirs, waitFor, listSubjectEvents } from "../test-support.js"
 import { limitedUploadBody } from "./files.js"
 
+const withAttachmentTempDirectory = (operation: (directory: string) => void): void => {
+  const directory = mkdtempSync(join(tmpdir(), "codevisor-attachment-sweep-"))
+  tempDirs.push(directory)
+  const previousTmpdir = process.env.TMPDIR
+  try {
+    process.env.TMPDIR = directory
+    expect(tmpdir()).toBe(directory)
+    operation(directory)
+  } finally {
+    if (previousTmpdir === undefined) delete process.env.TMPDIR
+    else process.env.TMPDIR = previousTmpdir
+  }
+}
+
 const stagingEntries = (root: string): Array<string> =>
   existsSync(join(root, "staging")) ? readdirSync(join(root, "staging")) : []
 
@@ -430,24 +444,31 @@ describe("file routes", () => {
     database.close()
   })
 
-  it("sweeps stale materialized attachment temp files at startup", async () => {
-    const root = join(tmpdir(), "codevisor-attachments")
-    mkdirSync(root, { recursive: true })
-    const stale = join(root, "sweep-test-stale")
-    const fresh = join(root, "sweep-test-fresh")
-    mkdirSync(stale, { recursive: true })
-    mkdirSync(fresh, { recursive: true })
-    const old = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000)
-    utimesSync(stale, old, old)
+  it("sweeps stale materialized attachment temp files at startup", () => {
+    withAttachmentTempDirectory((directory) => {
+      const root = join(tmpdir(), "codevisor-attachments")
+      const sibling = join(directory, "keep.txt")
+      writeFileSync(sibling, "keep")
+      mkdirSync(root, { recursive: true })
+      const stale = join(root, "sweep-test-stale")
+      const fresh = join(root, "sweep-test-fresh")
+      mkdirSync(stale, { recursive: true })
+      mkdirSync(fresh, { recursive: true })
+      const old = new Date("2024-01-01T00:00:00.000Z")
+      const recent = new Date("2024-01-09T00:00:00.000Z")
+      utimesSync(stale, old, old)
+      utimesSync(fresh, recent, recent)
 
-    sweepAttachmentTempFiles()
-    expect(existsSync(stale)).toBe(false)
-    expect(existsSync(fresh)).toBe(true)
+      sweepAttachmentTempFiles(Date.parse("2024-01-09T00:00:00.000Z"))
+      expect(existsSync(stale)).toBe(false)
+      expect(existsSync(fresh)).toBe(true)
 
-    // A missing temp root is a no-op, not an error.
-    rmSync(root, { force: true, recursive: true })
-    sweepAttachmentTempFiles(Date.now())
-    expect(existsSync(root)).toBe(false)
+      // A missing temp root is a no-op, not an error.
+      rmSync(root, { force: true, recursive: true })
+      sweepAttachmentTempFiles(Date.parse("2024-01-09T00:00:00.000Z"))
+      expect(existsSync(root)).toBe(false)
+      expect(readFileSync(sibling, "utf8")).toBe("keep")
+    })
   })
 
   it("rejects a declared oversized upload before staging bytes", async () => {
