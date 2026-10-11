@@ -215,46 +215,15 @@ public final class SubagentMirror {
   private func conversation(
     of thread: SubagentThreadCollector.Thread, isRunning: Bool
   ) -> (settled: [ConversationItem], active: ConversationItem?) {
-    var pieces = thread.pieces
-    if pieces.allSatisfy({ $0.position != nil }) {
-      pieces = pieces.enumerated().sorted { lhs, rhs in
-        let (l, r) = (lhs.element.position ?? 0, rhs.element.position ?? 0)
-        return l == r ? lhs.offset < rhs.offset : l < r
-      }.map(\.element)
-    }
+    let steps = SubagentConversationSequence.steps(of: thread)
+    let items = conversationItems(from: steps, isRunning: isRunning)
+    guard case .assistant? = items.last else { return (items, nil) }
+    return (Array(items.dropLast()), items.last)
+  }
 
-    struct Run {
-      var entries: [TranscriptEntry] = []
-      var first: AssistantTurn?
-      var last: AssistantTurn?
-      var lastRunId: String?
-    }
-    enum Step {
-      /// A message to the agent; with no text to show, it only separates runs.
-      case instruction(key: String, text: String?)
-      case run(Run)
-    }
-    var steps: [Step] = []
-    if let prompt = thread.prompt, !prompt.isEmpty { steps.append(.instruction(key: "prompt", text: prompt)) }
-    var current = Run()
-    func closeRun() {
-      if !current.entries.isEmpty { steps.append(.run(current)) }
-      current = Run()
-    }
-    for piece in pieces {
-      switch piece {
-      case let .followUp(key, text, _):
-        closeRun()
-        steps.append(.instruction(key: "follow-up:\(key)", text: text))
-      case let .work(entry, _, runId, turn):
-        current.entries.append(entry)
-        current.first = current.first ?? turn
-        current.last = turn
-        current.lastRunId = runId
-      }
-    }
-    closeRun()
-
+  private func conversationItems(
+    from steps: [SubagentConversationSequence.Step], isRunning: Bool
+  ) -> [ConversationItem] {
     var items: [ConversationItem] = []
     var runIndex = 0
     for (index, step) in steps.enumerated() {
@@ -265,25 +234,38 @@ public final class SubagentMirror {
         continue
       case let .run(run):
         let isLatest = index == steps.count - 1
-        let live = isLatest && isRunning
-        let last = run.last ?? AssistantTurn()
-        // A subagent's own timing isn't reported: each run is bounded by the
-        // parent items it streamed into, the latest ending with them or when
-        // it was seen done.
-        let endedAt =
-          live
-          ? nil : !isLatest ? last.endedAt : last.isGenerating ? observedFinishAt : last.endedAt ?? observedFinishAt
-        items.append(
-          .assistant(
-            AssistantMessage(
-              id: rowId("run:\(runIndex)"),
-              turn: Self.mirrorTurn(
-                of: SubagentTranscript(
-                  entries: run.entries, isThinking: last.subagents[run.lastRunId ?? toolCallId]?.isThinking ?? false),
-                isRunning: live, startedAt: run.first?.startedAt, endedAt: endedAt, subagents: last.subagents))))
+        items.append(assistantRun(run, isLatest: isLatest, runIndex: runIndex, isRunning: isRunning))
         runIndex += 1
       }
     }
+    appendPendingRun(to: &items, steps: steps, runIndex: runIndex, isRunning: isRunning)
+    return items
+  }
+
+  private func assistantRun(
+    _ run: SubagentConversationSequence.Run, isLatest: Bool, runIndex: Int, isRunning: Bool
+  ) -> ConversationItem {
+    let live = isLatest && isRunning
+    let last = run.last ?? AssistantTurn()
+    // A subagent's own timing isn't reported: each run is bounded by the
+    // parent items it streamed into, the latest ending with them or when
+    // it was seen done.
+    let endedAt =
+      live
+      ? nil : !isLatest ? last.endedAt : last.isGenerating ? observedFinishAt : last.endedAt ?? observedFinishAt
+    return
+      (.assistant(
+        AssistantMessage(
+          id: rowId("run:\(runIndex)"),
+          turn: Self.mirrorTurn(
+            of: SubagentTranscript(
+              entries: run.entries, isThinking: last.subagents[run.lastRunId ?? toolCallId]?.isThinking ?? false),
+            isRunning: live, startedAt: run.first?.startedAt, endedAt: endedAt, subagents: last.subagents))))
+  }
+
+  private func appendPendingRun(
+    to items: inout [ConversationItem], steps: [SubagentConversationSequence.Step], runIndex: Int, isRunning: Bool
+  ) {
     // Messaged but not yet answering, or started with nothing to show yet:
     // the agent is working on it.
     let awaitsRun = steps.last.map { if case .instruction = $0 { true } else { false } } ?? true
@@ -294,8 +276,6 @@ public final class SubagentMirror {
             id: rowId("run:\(runIndex)"),
             turn: AssistantTurn(isGenerating: true, isThinking: true))))
     }
-    guard case .assistant? = items.last else { return (items, nil) }
-    return (Array(items.dropLast()), items.last)
   }
 
   private func rowId(_ key: String) -> UUID {
