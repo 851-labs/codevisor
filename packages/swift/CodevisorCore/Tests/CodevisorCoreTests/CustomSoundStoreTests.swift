@@ -65,6 +65,11 @@ struct CustomSoundStoreTests {
 
   @Test("Importing a wav produces a playable caf with the same duration")
   func importConvertsToCaf() throws {
+    defer {
+      #expect(throws: Never.self) {
+        try FileManager.default.removeItem(at: workDirectory)
+      }
+    }
     let source = try makeFixture(named: "Ding.wav", duration: 1.5)
     let imported = try store.importSound(from: source)
 
@@ -79,6 +84,11 @@ struct CustomSoundStoreTests {
 
   @Test("Compressed sources (m4a) decode and convert to caf")
   func importsCompressedAudio() throws {
+    defer {
+      #expect(throws: Never.self) {
+        try FileManager.default.removeItem(at: workDirectory)
+      }
+    }
     let source = try makeFixture(named: "Chime.m4a", duration: 2, compressed: true)
     let imported = try store.importSound(from: source)
 
@@ -91,6 +101,11 @@ struct CustomSoundStoreTests {
 
   @Test("Sounds longer than the limit are rejected with the measured duration")
   func rejectsTooLong() throws {
+    defer {
+      #expect(throws: Never.self) {
+        try FileManager.default.removeItem(at: workDirectory)
+      }
+    }
     let source = try makeFixture(named: "Anthem.wav", duration: 6.2)
     #expect {
       try store.importSound(from: source)
@@ -103,6 +118,11 @@ struct CustomSoundStoreTests {
 
   @Test("Non-audio bytes are rejected as unreadable")
   func rejectsNonAudio() throws {
+    defer {
+      #expect(throws: Never.self) {
+        try FileManager.default.removeItem(at: workDirectory)
+      }
+    }
     let source = workDirectory.appendingPathComponent("fake.wav")
     try Data("not audio at all".utf8).write(to: source)
     #expect(throws: CustomSoundStore.ImportError.unreadableAudio) {
@@ -113,6 +133,11 @@ struct CustomSoundStoreTests {
 
   @Test("Re-importing the same name keeps both sounds under distinct names")
   func deduplicatesNames() throws {
+    defer {
+      #expect(throws: Never.self) {
+        try FileManager.default.removeItem(at: workDirectory)
+      }
+    }
     let source = try makeFixture(named: "Ding.wav", duration: 0.5)
     let first = try store.importSound(from: source)
     let second = try store.importSound(from: source)
@@ -124,7 +149,12 @@ struct CustomSoundStoreTests {
 
   @Test("Deleting removes the converted file")
   func deleteRemovesFile() throws {
-    let source = try makeFixture(named: "Ding.wav", duration: 0.5)
+    defer {
+      #expect(throws: Never.self) {
+        try FileManager.default.removeItem(at: workDirectory)
+      }
+    }
+    let source = try makeFixture(named: workDirectory.lastPathComponent + ".wav", duration: 0.5)
     let imported = try store.importSound(from: source)
     try store.deleteSound(at: imported)
     #expect(store.availableSounds().isEmpty)
@@ -133,6 +163,11 @@ struct CustomSoundStoreTests {
 
   @Test("Prepared notification copy names are sanitized and prefixed")
   func preparedName() {
+    defer {
+      #expect(throws: Never.self) {
+        try FileManager.default.removeItem(at: workDirectory)
+      }
+    }
     let url = URL(fileURLWithPath: "/tmp/sounds/My Fancy Sound!.caf")
     #expect(
       CustomSoundStore.preparedNotificationSoundName(for: url) == "Codevisor-My-Fancy-Sound-.caf"
