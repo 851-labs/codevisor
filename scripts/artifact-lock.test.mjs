@@ -80,17 +80,23 @@ test("a second acquirer waits for the holder to release, then proceeds", async (
       }
     }
   )
-  await waiterSawContention.promise
-  assert.equal(waiterEntered, false)
+  try {
+    await waiterSawContention.promise
+    assert.equal(waiterEntered, false)
 
-  holderMayFinish.resolve("held")
-  assert.equal(await holder, "held")
-  await assert.rejects(stat(lockPath), "holder released the lock")
+    holderMayFinish.resolve("held")
+    assert.equal(await holder, "held")
+    await assert.rejects(stat(lockPath), "holder released the lock")
 
-  waiterMayRetry.resolve()
-  await waiter
-  assert.equal(waiterEntered, true)
-  await assert.rejects(stat(lockPath))
+    waiterMayRetry.resolve()
+    await waiter
+    assert.equal(waiterEntered, true)
+    await assert.rejects(stat(lockPath))
+  } finally {
+    holderMayFinish.resolve("held")
+    waiterMayRetry.resolve()
+    await Promise.allSettled([holder, waiter])
+  }
 })
 
 test("a lock left by a dead process is taken over without waiting", async (t) => {
