@@ -73,6 +73,7 @@ struct MachineConnectionTests {
       fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: fake],
       remotes: [remote]
     )
+    defer { controller.stopEventSync() }
 
     await controller.connectMachine(remote.id)
 
@@ -85,7 +86,6 @@ struct MachineConnectionTests {
     // And it landed its own terminal sync state: fleet-aggregated UIs
     // count every machine, not just the selected one.
     #expect(controller.navigationSyncStateByMachineId[remote.id] == .current)
-    controller.stopEventSync()
   }
 
   @Test("An unreachable background machine lands a terminal stale state")
@@ -97,6 +97,7 @@ struct MachineConnectionTests {
       fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: down],
       remotes: [remote]
     )
+    defer { controller.stopEventSync() }
 
     await controller.connectMachine(remote.id)
 
@@ -107,7 +108,6 @@ struct MachineConnectionTests {
         "Expected .stale, got \(String(describing: controller.navigationSyncStateByMachineId[remote.id]))")
       return
     }
-    controller.stopEventSync()
   }
 
   private func waitForSync(_ predicate: () -> Bool) async throws {
@@ -122,6 +122,7 @@ struct MachineConnectionTests {
       fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: remoteFake],
       remotes: [remote]
     )
+    defer { controller.stopEventSync() }
     #expect(controller.selectedMachineId == "local")
 
     await controller.connectMachine(remote.id)
@@ -143,7 +144,6 @@ struct MachineConnectionTests {
     // stamped with ITS server id.
     #expect(controller.selectedMachineId == "local")
     #expect(projectList.sessions.allSatisfy { $0.serverId == remote.id })
-    controller.stopEventSync()
   }
 
   @Test("connectMachine is idempotent while a stream is live")
@@ -154,12 +154,12 @@ struct MachineConnectionTests {
       fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: remoteFake],
       remotes: [remote]
     )
+    defer { controller.stopEventSync() }
 
     await controller.connectMachine(remote.id)
     await controller.connectMachine(remote.id)
     try await waitForSync { remoteFake.eventStreamSubscriberCount >= 1 }
     #expect(remoteFake.eventStreamSubscriberCount == 1)
-    controller.stopEventSync()
   }
 
   @Test("update.changed events refresh a machine's release state live")
@@ -170,6 +170,7 @@ struct MachineConnectionTests {
       fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: remoteFake],
       remotes: [remote]
     )
+    defer { controller.stopEventSync() }
     await controller.connectMachine(remote.id)
     try await waitForSync { remoteFake.eventStreamSubscriberCount == 1 }
 
@@ -187,7 +188,6 @@ struct MachineConnectionTests {
     try await waitForSync {
       controller.serverUpdateInfo(for: remote.id)?.latestVersion == "9.9.9"
     }
-    controller.stopEventSync()
   }
 
   @Test("An update tracks on its own machine, not on the selected one")
@@ -200,6 +200,7 @@ struct MachineConnectionTests {
       fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: remoteFake],
       remotes: [remote]
     )
+    defer { controller.stopEventSync() }
     #expect(controller.selectedMachineId == "local")
 
     await controller.updateServer(machineId: remote.id)
@@ -211,7 +212,6 @@ struct MachineConnectionTests {
       Issue.record("Expected the remote machine's phase to be failed")
     }
     #expect(controller.serverUpdatePhase(for: "local") == .idle)
-    controller.stopEventSync()
   }
 
   @Test("refreshServerUpdates probes every reachable machine")
@@ -230,6 +230,7 @@ struct MachineConnectionTests {
       ],
       remotes: [remoteA, remoteB]
     )
+    defer { controller.stopEventSync() }
 
     // Connect both so their reachability is known, then sweep.
     await controller.connectMachine(remoteA.id)
@@ -243,7 +244,6 @@ struct MachineConnectionTests {
     // would hammer the release origin on every pass.
     #expect(fakeA.updateInfoRefreshes.last == false)
     #expect(fakeB.updateInfoRefreshes.last == false)
-    controller.stopEventSync()
   }
 
   @Test("ensureBackgroundConnections opens a stream for every non-selected machine")
@@ -260,11 +260,11 @@ struct MachineConnectionTests {
       ],
       remotes: [remoteA, remoteB]
     )
+    defer { controller.stopEventSync() }
 
     controller.ensureBackgroundConnections()
     try await waitForSync {
       fakeA.eventStreamSubscriberCount == 1 && fakeB.eventStreamSubscriberCount == 1
     }
-    controller.stopEventSync()
   }
 }
