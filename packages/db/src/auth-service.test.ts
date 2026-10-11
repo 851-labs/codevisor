@@ -51,17 +51,23 @@ describe("@codevisor/db", () => {
   it("persists and clears the preferred Browser Use backend", async () => {
     const filename = tempDatabase()
     const db = await run(makeDatabase({ filename, serverId: "local" }))
-    expect(await run(db.getBrowserPreference)).toBeUndefined()
-    await run(db.setBrowserPreference("chrome"))
-    expect(await run(db.getBrowserPreference)).toBe("chrome")
-    await run(db.close)
+    try {
+      expect(await run(db.getBrowserPreference)).toBeUndefined()
+      await run(db.setBrowserPreference("chrome"))
+      expect(await run(db.getBrowserPreference)).toBe("chrome")
+    } finally {
+      await run(db.close)
+    }
 
     const reopened = await run(makeDatabase({ filename, serverId: "renamed" }))
-    expect(await run(reopened.getBrowserPreference)).toBe("chrome")
-    await run(reopened.setBrowserPreference("managed"))
-    expect(await run(reopened.getBrowserPreference)).toBe("managed")
-    await run(reopened.setBrowserPreference(undefined))
-    expect(await run(reopened.getBrowserPreference)).toBeUndefined()
-    await run(reopened.close)
+    try {
+      expect(await run(reopened.getBrowserPreference)).toBe("chrome")
+      await run(reopened.setBrowserPreference("managed"))
+      expect(await run(reopened.getBrowserPreference)).toBe("managed")
+      await run(reopened.setBrowserPreference(undefined))
+      expect(await run(reopened.getBrowserPreference)).toBeUndefined()
+    } finally {
+      await run(reopened.close)
+    }
   })
 })
