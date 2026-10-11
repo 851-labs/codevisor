@@ -248,7 +248,7 @@ export const evaluate = async <T>(
     )
   )
 
-export const assertReadOnlyFunction = (source: string): void => {
+const parseEvaluationExpression = (source: string): unknown => {
   let expression: unknown
   try {
     expression = parseExpression(source, {
@@ -261,6 +261,40 @@ export const assertReadOnlyFunction = (source: string): void => {
       { cause }
     )
   }
+  return expression
+}
+
+const assertReadOnlyNode = (
+  candidate: Readonly<Record<string, unknown>>,
+  mutatingMethods: ReadonlySet<string>
+): void => {
+  const type = candidate.type
+  if (type === "AssignmentExpression" || type === "UpdateExpression" || type === "NewExpression") {
+    throw new Error("evaluate is read-only and rejects assignment, update, and construction")
+  }
+  if (type === "UnaryExpression" && candidate.operator === "delete") {
+    throw new Error("evaluate is read-only and rejects delete")
+  }
+  if (type === "CallExpression") {
+    const callee = candidate.callee as Readonly<Record<string, unknown>> | undefined
+    const property =
+      callee?.type === "MemberExpression"
+        ? (callee.property as Readonly<Record<string, unknown>> | undefined)
+        : undefined
+    const name =
+      property?.type === "Identifier"
+        ? property.name
+        : property?.type === "StringLiteral"
+          ? property.value
+          : undefined
+    if (typeof name === "string" && mutatingMethods.has(name)) {
+      throw new Error(`evaluate is read-only and rejects ${name}()`)
+    }
+  }
+}
+
+export const assertReadOnlyFunction = (source: string): void => {
+  const expression = parseEvaluationExpression(source)
   const mutatingMethods = new Set([
     "append",
     "appendChild",
@@ -293,33 +327,7 @@ export const assertReadOnlyFunction = (source: string): void => {
     if (node === null || typeof node !== "object" || seen.has(node)) return
     seen.add(node)
     const candidate = node as Readonly<Record<string, unknown>>
-    const type = candidate.type
-    if (
-      type === "AssignmentExpression" ||
-      type === "UpdateExpression" ||
-      type === "NewExpression"
-    ) {
-      throw new Error("evaluate is read-only and rejects assignment, update, and construction")
-    }
-    if (type === "UnaryExpression" && candidate.operator === "delete") {
-      throw new Error("evaluate is read-only and rejects delete")
-    }
-    if (type === "CallExpression") {
-      const callee = candidate.callee as Readonly<Record<string, unknown>> | undefined
-      const property =
-        callee?.type === "MemberExpression"
-          ? (callee.property as Readonly<Record<string, unknown>> | undefined)
-          : undefined
-      const name =
-        property?.type === "Identifier"
-          ? property.name
-          : property?.type === "StringLiteral"
-            ? property.value
-            : undefined
-      if (typeof name === "string" && mutatingMethods.has(name)) {
-        throw new Error(`evaluate is read-only and rejects ${name}()`)
-      }
-    }
+    assertReadOnlyNode(candidate, mutatingMethods)
     for (const [key, value] of Object.entries(candidate)) {
       if (key === "loc" || key === "start" || key === "end") continue
       if (Array.isArray(value)) {
