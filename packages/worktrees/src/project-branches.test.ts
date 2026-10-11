@@ -37,14 +37,16 @@ describe("project worktree branches", () => {
     const clone = join(root, "clone")
     execFileSync("git", ["clone", origin, clone], { cwd: root })
     execFileSync("git", ["remote", "add", "upstream", origin], { cwd: clone })
+    execFileSync("git", ["config", "remote.upstream.followRemoteHEAD", "never"], { cwd: clone })
 
-    expect(await listProjectGitBranches(clone)).toEqual(
-      expect.arrayContaining([
-        { remote: "origin", branch: "main", isDefault: true },
-        { remote: "origin", branch: "release/next", isDefault: false },
-        { remote: "upstream", branch: "alpha", isDefault: false }
-      ])
-    )
+    expect(await listProjectGitBranches(clone)).toEqual([
+      { remote: "origin", branch: "main", isDefault: true },
+      { remote: "origin", branch: "alpha", isDefault: false },
+      { remote: "origin", branch: "release/next", isDefault: false },
+      { remote: "upstream", branch: "alpha", isDefault: false },
+      { remote: "upstream", branch: "main", isDefault: false },
+      { remote: "upstream", branch: "release/next", isDefault: false }
+    ])
     expect(await worktreeStartPoint(clone, { remote: "origin", branch: "release/next" })).toBe(
       "refs/remotes/origin/release/next"
     )
