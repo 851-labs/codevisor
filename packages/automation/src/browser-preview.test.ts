@@ -287,8 +287,7 @@ describe("Browser live preview", () => {
     await previews.close("missing")
     expect(watcher.statuses.at(-1)?.state).toBe("stopped")
     subscription.close()
-    // Finish awaits the reconcile queued after subscription close without forgetting it itself.
-    await previews.finish("chat")
+    await new Promise((resolve) => setImmediate(resolve))
     // A new subscriber starts over: the closed session was forgotten.
     const fresh = viewer()
     previews.subscribe("chat", fresh.value)
