@@ -97,7 +97,7 @@ describe("plugin listing", () => {
 
 describe("pane tokens", () => {
   it("issues a pane URL carrying the token and pane id", async () => {
-    const { manager } = makeManager()
+    const { manager } = makeManager({ now: () => 0 })
     const issued = await manager.issuePaneToken("owner.example", "pane-1", {
       cwd: "/tmp/project",
       paneType: "main",
@@ -107,7 +107,7 @@ describe("pane tokens", () => {
     expect(issued.path).toContain("/v1/plugins/owner.example/app/panes/main/?")
     expect(issued.path).toContain("codevisorPaneToken=")
     expect(issued.path).toContain("paneId=pane-1")
-    expect(Date.parse(issued.expiresAt)).toBeGreaterThan(Date.now())
+    expect(issued.expiresAt).toBe("1970-01-01T00:10:00.000Z")
   })
 
   it("rejects unknown plugins and pane types", async () => {
