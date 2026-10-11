@@ -10,16 +10,38 @@ struct ProtocolCodableTests {
     #expect(decoded == value)
   }
 
+  private func assertWire<T: Codable & Equatable>(_ value: T, json: String) throws {
+    let literal = Data(json.utf8)
+    let encoded = try JSONEncoder().encode(value)
+    let actual = try #require(try JSONSerialization.jsonObject(with: encoded) as? NSDictionary)
+    let expected = try #require(try JSONSerialization.jsonObject(with: literal) as? NSDictionary)
+    #expect(actual == expected)
+    #expect(try JSONDecoder().decode(T.self, from: literal) == value)
+  }
+
   @Test("ContentBlock variants round-trip")
   func contentBlocks() throws {
-    try roundTrip(ContentBlock.text("hi", annotations: Annotations(audience: [.user], priority: 0.5)))
-    try roundTrip(ContentBlock.image(data: "AAAA", mimeType: "image/png", uri: "file://x"))
-    try roundTrip(ContentBlock.audio(data: "BBBB", mimeType: "audio/wav"))
-    try roundTrip(
+    try assertWire(
+      ContentBlock.text("hi", annotations: Annotations(audience: [.user], priority: 0.5)),
+      json: #"{"type":"text","text":"hi","annotations":{"audience":["user"],"priority":0.5}}"#)
+    try assertWire(
+      ContentBlock.image(data: "AAAA", mimeType: "image/png", uri: "file://x"),
+      json: #"{"type":"image","data":"AAAA","mimeType":"image/png","uri":"file://x"}"#)
+    try assertWire(
+      ContentBlock.audio(data: "BBBB", mimeType: "audio/wav"),
+      json: #"{"type":"audio","data":"BBBB","mimeType":"audio/wav"}"#)
+    try assertWire(
       ContentBlock.resourceLink(
-        ResourceLink(name: "n", uri: "u", description: "d", mimeType: "text/plain", title: "t", size: 10)))
-    try roundTrip(ContentBlock.resource(.text(uri: "u", text: "hello", mimeType: "text/plain")))
-    try roundTrip(ContentBlock.resource(.blob(uri: "u", blob: "QkJCQg==", mimeType: nil)))
+        ResourceLink(name: "n", uri: "u", description: "d", mimeType: "text/plain", title: "t", size: 10)),
+      json:
+        #"{"type":"resource_link","name":"n","uri":"u","description":"d","mimeType":"text/plain","title":"t","size":10}"#
+    )
+    try assertWire(
+      ContentBlock.resource(.text(uri: "u", text: "hello", mimeType: "text/plain")),
+      json: #"{"type":"resource","resource":{"uri":"u","text":"hello","mimeType":"text/plain"}}"#)
+    try assertWire(
+      ContentBlock.resource(.blob(uri: "u", blob: "QkJCQg==", mimeType: nil)),
+      json: #"{"type":"resource","resource":{"uri":"u","blob":"QkJCQg=="}}"#)
   }
 
   @Test("ContentBlock decodes by type discriminator")
@@ -229,9 +251,15 @@ struct ProtocolCodableTests {
 
   @Test("ToolCallContent variants round-trip")
   func toolCallContent() throws {
-    try roundTrip(ToolCallContent.content(.text("out")))
-    try roundTrip(ToolCallContent.diff(path: "/a.txt", oldText: "x", newText: "y"))
-    try roundTrip(ToolCallContent.terminal(terminalId: "term-1"))
+    try assertWire(
+      ToolCallContent.content(.text("out")),
+      json: #"{"type":"content","content":{"type":"text","text":"out"}}"#)
+    try assertWire(
+      ToolCallContent.diff(path: "/a.txt", oldText: "x", newText: "y"),
+      json: #"{"type":"diff","path":"/a.txt","oldText":"x","newText":"y"}"#)
+    try assertWire(
+      ToolCallContent.terminal(terminalId: "term-1"),
+      json: #"{"type":"terminal","terminalId":"term-1"}"#)
   }
 
   @Test("Unknown tool call content throws")
