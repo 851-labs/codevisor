@@ -218,20 +218,29 @@ struct ComposerAttachmentTests {
 
   @MainActor
   @Test("File URL attachments appear synchronously while their bytes load")
-  func fileURLAttachmentAppearsSynchronously() throws {
+  func fileURLAttachmentAppearsSynchronously() async throws {
+    let files = ComposerAttachmentFileStore.temporary()
+    try FileManager.default.createDirectory(at: files.root, withIntermediateDirectories: true)
+    defer { #expect(throws: Never.self) { try FileManager.default.removeItem(at: files.root) } }
     let controller = SessionController(
-      project: Project.fromFolder(URL(fileURLWithPath: "/tmp/attachment-tests")),
-      configCache: ConfigOptionCache(store: InMemoryStore())
+      project: Project.fromFolder(files.root),
+      configCache: ConfigOptionCache(store: InMemoryStore()),
+      attachmentFiles: files
     )
-    let url = URL(fileURLWithPath: "/tmp/optimistic-image.png")
+    let url = files.root.appendingPathComponent("missing").appendingPathComponent("optimistic-image.png")
 
-    controller.attachments.attachFileURLs([url])
-
-    let attachment = try #require(controller.composerAttachments.first)
-    #expect(attachment.name == "optimistic-image.png")
-    #expect(attachment.kind == .image)
-    #expect(attachment.fileURL == nil)
-    #expect(attachment.state == .loading)
+    let staging = controller.attachments.attachFileURLs([url])
+    do {
+      let attachment = try #require(controller.composerAttachments.first)
+      #expect(attachment.name == "optimistic-image.png")
+      #expect(attachment.kind == .image)
+      #expect(attachment.fileURL == nil)
+      #expect(attachment.state == .loading)
+    } catch {
+      await staging.value
+      throw error
+    }
+    await staging.value
   }
 
   @MainActor
