@@ -22,11 +22,21 @@ const setup = () => {
 
 describe("base64url", () => {
   it("round-trips arbitrary byte lengths (all padding cases)", () => {
-    for (const length of [0, 1, 2, 3, 4, 31, 32, 33]) {
+    for (const [length, expected] of [
+      [0, ""],
+      [1, "AA"],
+      [2, "ACU"],
+      [3, "ACVK"],
+      [4, "ACVKbw"],
+      [31, "ACVKb5S53gMoTXKXvOEGK1B1mr_kCS5TeJ3C5wwxVg"],
+      [32, "ACVKb5S53gMoTXKXvOEGK1B1mr_kCS5TeJ3C5wwxVns"],
+      [33, "ACVKb5S53gMoTXKXvOEGK1B1mr_kCS5TeJ3C5wwxVnug"]
+    ] as const) {
       const bytes = new Uint8Array(Array.from({ length }, (_, index) => (index * 37) % 256))
       const encoded = toBase64Url(bytes)
+      expect(encoded).toBe(expected)
       expect(encoded).not.toMatch(/[+/=]/)
-      expect(fromBase64Url(encoded)).toEqual(bytes)
+      expect(fromBase64Url(expected)).toEqual(bytes)
     }
   })
 
