@@ -5,7 +5,9 @@ import { makePeerKeyPinStore, parsePeerKeyPins, serializePeerKeyPins } from "./p
 describe("parsePeerKeyPins", () => {
   it("round-trips through serialize", () => {
     const peers = { "app-1": "key-1", "app-2": "key-2" }
-    expect(parsePeerKeyPins(serializePeerKeyPins(peers))).toEqual(peers)
+    const wire = '{"version":1,"peers":{"app-1":"key-1","app-2":"key-2"}}'
+    expect(JSON.parse(serializePeerKeyPins(peers))).toEqual(JSON.parse(wire))
+    expect(parsePeerKeyPins(wire)).toEqual(peers)
   })
 
   it("tolerates corrupt or unrecognized content with an empty pin set", () => {
