@@ -24,6 +24,8 @@ afterEach(() => {
 
 describe("startup checkpoints", () => {
   it("writes boot-scoped stages and counted work before HTTP is available", () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000)
+    vi.spyOn(process, "uptime").mockReturnValue(2)
     const dir = directory()
     const args = { db: join(dir, "db.sqlite"), "boot-id": "this-boot" }
     const log = vi.fn()
@@ -38,7 +40,7 @@ describe("startup checkpoints", () => {
       completed: 2,
       total: 7
     })
-    expect(Date.parse(read().startedAt)).toBeLessThanOrEqual(Date.now())
+    expect(read().startedAt).toBe("2023-11-14T22:13:18.000Z")
     reporter.checkpoint("openingDatabase")
     reporter.work({ id: "migration", completed: 4, total: 10, name: "Updating history" })
     expect(read()).toMatchObject({ stage: "openingDatabase", work: { completed: 4, total: 10 } })
