@@ -6,7 +6,7 @@ import { promisify } from "node:util"
 
 import { listSnapshotRefWorktreeIds, snapshotRefFor } from "@codevisor/worktrees"
 import Database from "better-sqlite3"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import { defaultServerConfig } from "./server-config.js"
 import { sweepTrashedWorktrees, worktreeTrashRoot } from "./server-workspace-effects.js"
@@ -20,11 +20,11 @@ const git = (args: ReadonlyArray<string>, cwd: string) => execFileAsync("git", [
 const withWorktreesRoot = async <A>(body: () => Promise<A>): Promise<A> => {
   const worktreesRoot = mkdtempSync(join(tmpdir(), "codevisor-reconcile-"))
   tempDirs.push(worktreesRoot)
-  process.env["CODEVISOR_WORKTREES_ROOT"] = worktreesRoot
+  vi.stubEnv("CODEVISOR_WORKTREES_ROOT", worktreesRoot)
   try {
     return await body()
   } finally {
-    delete process.env["CODEVISOR_WORKTREES_ROOT"]
+    vi.unstubAllEnvs()
   }
 }
 
