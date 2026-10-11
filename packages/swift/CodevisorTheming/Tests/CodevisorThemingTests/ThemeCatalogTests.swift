@@ -75,6 +75,11 @@ struct ThemeCatalogTests {
   @Test("Import stores the original bytes and lists the theme")
   func importValid() throws {
     let (catalog, dir) = makeCatalog()
+    defer {
+      #expect(throws: Never.self) {
+        try FileManager.default.removeItem(at: dir)
+      }
+    }
     let descriptor = try catalog.importTheme(data: validThemeJSON)
     #expect(descriptor.id == "custom:my-theme")
     #expect(descriptor.displayName == "My Theme")
@@ -106,7 +111,12 @@ struct ThemeCatalogTests {
 
   @Test("Slug de-dupes with numeric suffixes")
   func slugDedupe() throws {
-    let (catalog, _) = makeCatalog()
+    let (catalog, dir) = makeCatalog()
+    defer {
+      #expect(throws: Never.self) {
+        try FileManager.default.removeItem(at: dir)
+      }
+    }
     let first = try catalog.importTheme(data: validThemeJSON)
     let second = try catalog.importTheme(data: validThemeJSON)
     let third = try catalog.importTheme(data: validThemeJSON)
@@ -118,6 +128,11 @@ struct ThemeCatalogTests {
   @Test("Delete removes the file and the entry")
   func delete() throws {
     let (catalog, dir) = makeCatalog()
+    defer {
+      #expect(throws: Never.self) {
+        try FileManager.default.removeItem(at: dir)
+      }
+    }
     let descriptor = try catalog.importTheme(data: validThemeJSON)
     try catalog.deleteCustomTheme(id: descriptor.id)
     #expect(catalog.descriptor(for: descriptor.id) == nil)
