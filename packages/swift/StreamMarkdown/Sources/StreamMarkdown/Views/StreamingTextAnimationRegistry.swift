@@ -107,6 +107,13 @@ public final class StreamingTextAnimationRegistry {
     }
   }
 
+  /// Streams projected but deliberately not shown, such as text inside a
+  /// collapsed disclosure. Whatever arrives unseen is already presented
+  /// when the reader reveals it; only text streamed after that animates.
+  public func observeHiddenStreams<S: Sequence>(_ streamIDs: S) where S.Element == String {
+    presentation.settleUnpresentedStreams(streamIDs)
+  }
+
   /// Hidden arrivals are navigation state. Rebaseline retained rows as well
   /// as new rows when the next authoritative foreground snapshot arrives.
   public func suspendPlayback() {

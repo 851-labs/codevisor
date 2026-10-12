@@ -37,6 +37,9 @@ public struct TranscriptSurfaceInput {
   public var sessionController: SessionController
   public var rows: [TranscriptVirtualRow]
   public var activeRows: [TranscriptVirtualRow]
+  /// Live text streams collapsed out of `activeRows` (see
+  /// `TranscriptWorkedRowsPresentation.hiddenStreamIDs`).
+  public var hiddenActiveStreamIDs: [String]
   public var activeRowsVersion: TranscriptRowSetRevision
   public var rowsVersion: TranscriptRowSetRevision
   public var projectionRevision: UInt64
@@ -68,6 +71,7 @@ public struct TranscriptSurfaceInput {
     sessionController: SessionController,
     rows: [TranscriptVirtualRow],
     activeRows: [TranscriptVirtualRow],
+    hiddenActiveStreamIDs: [String] = [],
     activeRowsVersion: TranscriptRowSetRevision,
     rowsVersion: TranscriptRowSetRevision,
     projectionRevision: UInt64,
@@ -94,6 +98,7 @@ public struct TranscriptSurfaceInput {
     self.sessionController = sessionController
     self.rows = rows
     self.activeRows = activeRows
+    self.hiddenActiveStreamIDs = hiddenActiveStreamIDs
     self.activeRowsVersion = activeRowsVersion
     self.rowsVersion = rowsVersion
     self.projectionRevision = projectionRevision

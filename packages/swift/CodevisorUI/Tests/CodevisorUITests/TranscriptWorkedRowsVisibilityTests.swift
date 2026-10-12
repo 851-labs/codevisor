@@ -44,6 +44,38 @@ struct TranscriptWorkedRowsVisibilityTests {
     #expect(collapsed.visibilityRevision != initiallyExpanded.visibilityRevision)
   }
 
+  @Test("A collapsed live section reports the text streams it hides, and none once opened")
+  func hiddenLiveStreams() {
+    let messageID = UUID()
+    let message = AssistantMessage(
+      id: messageID,
+      turn: AssistantTurn(
+        entries: [
+          .text(id: "commentary", markdown: "Checking the code."),
+          .tool(ToolCall(toolCallId: "read", title: "Read source", kind: .read, status: .inProgress)),
+        ],
+        isGenerating: true,
+        textPhases: ["commentary": .commentary]
+      )
+    )
+    let rows = TranscriptActiveRowProjection.rows(for: .assistant(message))
+    let liveStreams = rows.compactMap { row -> String? in
+      guard case let .markdownChunk(chunk) = row.content, row.workedSection?.role == .content else { return nil }
+      return chunk.animationStreamID
+    }
+    #expect(!liveStreams.isEmpty)
+    let store = TranscriptDisclosureStore()
+    func present() -> TranscriptWorkedRowsPresentation {
+      TranscriptWorkedRowsVisibility.present(
+        rows, disclosure: store, activeItem: .assistant(message), runningSubagentRunToolCallIDs: [])
+    }
+
+    // Live sections start collapsed.
+    #expect(present().hiddenStreamIDs == liveStreams)
+    store.setExpanded(.turn(messageID), true)
+    #expect(present().hiddenStreamIDs.isEmpty)
+  }
+
   @Test("Messaging a running agent keeps open only the turn that messaged it, not the one that spawned it")
   func runningSubagentOpensOnlyItsCurrentRun() {
     let spawn = ToolCall(toolCallId: "toolu_agent", title: "Agent: Slow haiku", kind: .agent, status: .completed)

@@ -22,6 +22,10 @@ public struct TranscriptRowSetRevision: Equatable, Sendable {
 public struct TranscriptWorkedRowsPresentation: Sendable {
   public let rows: [TranscriptPresentationRow]
   public let visibilityRevision: TranscriptWorkedRowsVisibilityRevision
+  /// Live text streams a collapsed section is hiding. Text that arrives
+  /// unseen is already presented once the section opens; only what streams
+  /// in while it is open should animate.
+  public var hiddenStreamIDs: [String] = []
 }
 
 /// Settled transcript rows change far less often than the active turn. Keep
@@ -80,6 +84,7 @@ public enum TranscriptWorkedRowsVisibility {
     var result: [TranscriptPresentationRow] = []
     result.reserveCapacity(rows.count)
     var expansion: [TranscriptWorkedSectionIdentity: Bool] = [:]
+    var hiddenStreamIDs: [String] = []
 
     for row in rows {
       guard let membership = row.workedSection else {
@@ -106,6 +111,8 @@ public enum TranscriptWorkedRowsVisibility {
       case .content:
         if expansion[membership.identity] ?? true {
           result.append(row)
+        } else if case let .markdownChunk(chunk) = row.content, chunk.lifecycle == .receiving {
+          hiddenStreamIDs.append(chunk.animationStreamID)
         }
       }
     }
@@ -118,7 +125,8 @@ public enum TranscriptWorkedRowsVisibility {
             isExpanded ? identity : nil
           }
         )
-      )
+      ),
+      hiddenStreamIDs: hiddenStreamIDs
     )
   }
 

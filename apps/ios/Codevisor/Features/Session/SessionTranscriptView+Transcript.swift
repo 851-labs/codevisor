@@ -46,6 +46,7 @@ extension SessionTranscriptView {
           sessionController: controller,
           rows: visibleRows.rows,
           activeRows: visibleActiveRows.rows,
+          hiddenActiveStreamIDs: visibleActiveRows.hiddenStreamIDs,
           activeRowsVersion: TranscriptRowSetRevision(
             sourceRevision: activeRowsVersion,
             visibilityRevision: visibleActiveRows.visibilityRevision

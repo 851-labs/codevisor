@@ -104,6 +104,7 @@ public final class TranscriptSurfaceController {
       restorationID: input.activeTextRestorationID,
       projectionRevision: input.activeRowsVersion.sourceRevision
     )
+    input.textAnimationRegistry.observeHiddenStreams(input.hiddenActiveStreamIDs)
   }
 
   public var currentScrollCommand = TranscriptScrollCommand()
