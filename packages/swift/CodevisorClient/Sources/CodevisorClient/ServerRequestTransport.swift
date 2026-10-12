@@ -125,7 +125,7 @@ public struct URLSessionWebSocketTransport: ServerWebSocketTransport {
 }
 
 /// Thin adapter putting a URLSessionWebSocketTask behind the seam.
-public final class URLSessionWebSocketConnection: ServerWebSocketConnecting, @unchecked Sendable {
+public final class URLSessionWebSocketConnection: ServerWebSocketConnecting {
   private let task: URLSessionWebSocketTask
 
   public init(task: URLSessionWebSocketTask) {
