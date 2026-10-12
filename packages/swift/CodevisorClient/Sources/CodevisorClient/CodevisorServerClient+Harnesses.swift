@@ -2,10 +2,6 @@ import ACPKit
 import CodevisorProtocol
 import Foundation
 
-private struct UpdateHarnessBody: Encodable {
-  var enabled: Bool
-}
-
 private struct CheckHarnessUpdatesBody: Encodable {
   var harnessIds: [String]?
 }
