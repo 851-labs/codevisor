@@ -498,18 +498,6 @@ struct SessionTranscriptView: View {
 
 }
 
-private extension SessionTranscriptView {
-  func isUser(_ item: ConversationItem) -> Bool {
-    if case .user = item { return true }
-    return false
-  }
-
-  func isAssistant(_ item: ConversationItem) -> Bool {
-    if case .assistant = item { return true }
-    return false
-  }
-}
-
 // MARK: - Bottom chrome geometry
 
 extension SessionTranscriptView {
