@@ -47,7 +47,7 @@ struct UnreachableWebSocketTransport: ServerWebSocketTransport {
   }
 }
 
-private final class UnreachableWebSocketConnection: ServerWebSocketConnecting, @unchecked Sendable {
+private final class UnreachableWebSocketConnection: ServerWebSocketConnecting {
   private let machineId: String
 
   init(machineId: String) {
