@@ -2,6 +2,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   symlinkSync,
   unlinkSync,
   utimesSync,
@@ -12,7 +13,7 @@ import { join } from "node:path"
 
 import { afterEach, describe, expect, it } from "vitest"
 
-import { makeVersionProber, parseVersionOutput } from "./version-probe.js"
+import { binaryIdentity, makeVersionProber, parseVersionOutput } from "./version-probe.js"
 
 describe("parseVersionOutput", () => {
   it("extracts the first semver-ish token", () => {
@@ -113,6 +114,18 @@ describe("makeVersionProber", () => {
     symlinkSync(release("2.0.27"), link)
     await prober.probe([link])
     expect(prober.get(link)).toBe("2.0.27")
+  })
+
+  it("keeps default probing best effort when stat encounters a symlink loop", async () => {
+    const root = mkdtempSync(join(tmpdir(), "version-probe-"))
+    cleanups.push(() => rmSync(root, { force: true, recursive: true }))
+    const path = join(root, "loop")
+    symlinkSync(path, path)
+    expect(() => statSync(path)).toThrow(expect.objectContaining({ code: "ELOOP" }))
+    const prober = makeVersionProber()
+    await expect(prober.probe([path])).resolves.toBeUndefined()
+    expect(prober.get(path)).toBeUndefined()
+    expect(binaryIdentity(path)).toBeUndefined()
   })
 
   it("probes a real binary with the default runner and stat", async () => {
