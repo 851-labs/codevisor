@@ -35,8 +35,12 @@ export interface VersionProber {
 /// replaced file still gets a new inode, and a rewrite a new change time,
 /// which installers can't set.
 export const binaryIdentity = (path: string): string | undefined => {
-  const stats = statSync(path, { throwIfNoEntry: false })
-  return stats === undefined ? undefined : `${stats.dev}:${stats.ino}:${stats.ctimeMs}`
+  try {
+    const stats = statSync(path, { throwIfNoEntry: false })
+    return stats === undefined ? undefined : `${stats.dev}:${stats.ino}:${stats.ctimeMs}`
+  } catch {
+    return undefined
+  }
 }
 
 /// First semver-ish token in the output ("claude 2.1.5 (Claude Code)" → 2.1.5).
