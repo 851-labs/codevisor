@@ -62,8 +62,21 @@ struct WorkspaceSubagentPaneTests {
 
   @Test("A subagent pane's parent and tool call survive persistence")
   func descriptorRoundTrips() throws {
-    let subagent = pane(.subagent, "Map the chat UI", toolCallId: "toolu_1")
-    let restored = try JSONDecoder().decode(PaneDescriptorState.self, from: JSONEncoder().encode(subagent))
+    let subagent = PaneDescriptorState(
+      id: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
+      kind: .subagent, name: "Map the chat UI", terminalKey: "11111111-1111-1111-1111-111111111111",
+      ownerChatSessionId: UUID(uuidString: "22222222-2222-2222-2222-222222222222")!,
+      subagentToolCallId: "toolu_1")
+    let persisted = Data(
+      """
+      {"id":"11111111-1111-1111-1111-111111111111","kind":"subagent","name":"Map the chat UI","terminalKey":"11111111-1111-1111-1111-111111111111","attachOnly":false,"ownerChatSessionId":"22222222-2222-2222-2222-222222222222","subagentToolCallId":"toolu_1"}
+      """.utf8)
+    let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(subagent))
+    let literal = try JSONSerialization.jsonObject(with: persisted)
+    #expect(
+      try JSONSerialization.data(withJSONObject: encoded, options: [.sortedKeys])
+        == JSONSerialization.data(withJSONObject: literal, options: [.sortedKeys]))
+    let restored = try JSONDecoder().decode(PaneDescriptorState.self, from: persisted)
     #expect(restored == subagent)
     #expect(restored.kind.isDeviceLocal)
   }
