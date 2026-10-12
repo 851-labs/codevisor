@@ -1,4 +1,5 @@
 #if canImport(UIKit) && !canImport(AppKit)
+  import CodeHighlighter
   import StreamMarkdown
   import SwiftUI
   import UIKit
@@ -9,15 +10,17 @@
     let followsTail: Bool
     /// A command to echo above the output, as a terminal would.
     var command: String? = nil
+    /// Syntax colors for the text, one token line per line.
+    var syntax: [[CodeHighlighter.Token]]? = nil
 
     func makeUIView(context _: Context) -> IOSNativePlainOutputScrollView {
       let scrollView = IOSNativePlainOutputScrollView()
-      scrollView.setContent(text: text, command: command, theme: theme, followsTail: followsTail)
+      scrollView.setContent(text: text, command: command, theme: theme, followsTail: followsTail, syntax: syntax)
       return scrollView
     }
 
     func updateUIView(_ scrollView: IOSNativePlainOutputScrollView, context _: Context) {
-      scrollView.setContent(text: text, command: command, theme: theme, followsTail: followsTail)
+      scrollView.setContent(text: text, command: command, theme: theme, followsTail: followsTail, syntax: syntax)
     }
 
     func sizeThatFits(
@@ -41,6 +44,7 @@
     private var renderedText: String?
     private var renderedTheme: Theme?
     private var renderedCommand: String?
+    private var renderedSyntax: [[CodeHighlighter.Token]]?
 
     override init(frame: CGRect) {
       let textStorage = NSTextStorage()
@@ -89,11 +93,17 @@
       fatalError("init(coder:) has not been implemented")
     }
 
-    func setContent(text output: String, command: String? = nil, theme: Theme, followsTail: Bool) {
+    func setContent(
+      text output: String, command: String? = nil, theme: Theme, followsTail: Bool,
+      syntax: [[CodeHighlighter.Token]]? = nil
+    ) {
       // The command and output share one document; output streams in as
       // appended text after the command's line.
       let text = command.map { output.isEmpty ? $0 : "\($0)\n\(output)" } ?? output
-      guard renderedText != text || renderedTheme != theme || renderedCommand != command else { return }
+      guard
+        renderedText != text || renderedTheme != theme || renderedCommand != command
+          || renderedSyntax != syntax
+      else { return }
 
       let shouldFollowTail = followsTail && (renderedText == nil || isAtBottom)
       let oldText = renderedText
@@ -104,7 +114,9 @@
       let foreground = command == nil ? primary : UIColor(theme.textSecondary)
 
       outputTextView.textStorage.beginEditing()
-      if let oldText, oldTheme == theme, renderedCommand == command, text.hasPrefix(oldText) {
+      if let oldText, oldTheme == theme, renderedCommand == command, renderedSyntax == syntax,
+        text.hasPrefix(oldText)
+      {
         let suffix = String(text.dropFirst(oldText.count))
         if !suffix.isEmpty {
           outputTextView.textStorage.append(attributedText(suffix, foreground: foreground))
@@ -119,11 +131,15 @@
           )
         }
         outputTextView.textStorage.setAttributedString(document)
+        if let syntax {
+          PlainOutputSyntax.apply(syntax, to: outputTextView.textStorage)
+        }
       }
       outputTextView.textStorage.endEditing()
       renderedText = text
       renderedTheme = theme
       renderedCommand = command
+      renderedSyntax = syntax
 
       let length = outputTextView.textStorage.length
       outputTextView.selectedRange = NSRange(

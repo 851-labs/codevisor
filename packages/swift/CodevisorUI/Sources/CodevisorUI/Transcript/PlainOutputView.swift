@@ -3,6 +3,7 @@
 #elseif canImport(UIKit)
   import UIKit
 #endif
+import CodeHighlighter
 import CodevisorCore
 import StreamMarkdown
 import SwiftUI
@@ -117,6 +118,8 @@ struct PlainCodeBodyView: View {
   var command: String? = nil
   let output: String
   var followsTail = false
+  /// Syntax colors for `output`, one token line per line.
+  var syntax: [[CodeHighlighter.Token]]? = nil
 
   @Environment(\.theme) private var theme
 
@@ -146,11 +149,15 @@ struct PlainCodeBodyView: View {
   @ViewBuilder
   private var terminalBody: some View {
     #if canImport(AppKit)
-      NativePlainOutputView(text: output, theme: theme, followsTail: followsTail, command: command)
-        .frame(maxWidth: .infinity, alignment: .leading)
+      NativePlainOutputView(
+        text: output, theme: theme, followsTail: followsTail, command: command, syntax: syntax
+      )
+      .frame(maxWidth: .infinity, alignment: .leading)
     #elseif canImport(UIKit)
-      IOSNativePlainOutputView(text: output, theme: theme, followsTail: followsTail, command: command)
-        .frame(maxWidth: .infinity, alignment: .leading)
+      IOSNativePlainOutputView(
+        text: output, theme: theme, followsTail: followsTail, command: command, syntax: syntax
+      )
+      .frame(maxWidth: .infinity, alignment: .leading)
     #else
       Text([command, output.isEmpty ? nil : output].compactMap { $0 }.joined(separator: "\n"))
         .font(.system(.caption, design: .monospaced))

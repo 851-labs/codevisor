@@ -108,6 +108,31 @@ struct TranscriptContentLayoutTests {
     #expect(heights.count == reports)
   }
 
+  @Test("A worked note's text sits past its timeline rail, padded like the section's other lines")
+  func workedNoteClearsTimelineRail() throws {
+    let text = "A note between tool calls."
+    func layout(_ timeline: TranscriptTimelineMarks?) throws -> (frame: NSRect, height: CGFloat) {
+      let host = TranscriptMarkdownRowHost(frame: NSRect(x: 0, y: 0, width: 400, height: 16))
+      let chunk = TranscriptMarkdownChunk(
+        messageID: UUID(), sourceID: "worked", ordinal: 0,
+        blocks: MarkdownParser().parse(text), documentSource: text,
+        lifecycle: .settled, container: .assistantWorked, timeline: timeline
+      )
+      var height: CGFloat = 0
+      host.onHeightChange = { height = $0 }
+      host.setContent(
+        chunk, streamID: "worked", style: TranscriptMarkdownRowStyle(markdown: .default, appTheme: .system),
+        linkAction: nil, knownHeight: nil)
+      let markdown = try #require(host.subviews.first { $0 is SettledMarkdownView })
+      return (markdown.frame, height)
+    }
+    let plain = try layout(nil)
+    let note = try layout(TranscriptTimelineMarks(startsLine: true, endsLine: true, railAbove: true, railBelow: true))
+    #expect(note.frame.minX == plain.frame.minX + TranscriptTimelineMarks.gutterWidth)
+    #expect(note.frame.minY == plain.frame.minY + TranscriptTimelineMarks.linePadding)
+    #expect(note.height == plain.height + TranscriptTimelineMarks.linePadding * 2)
+  }
+
   private final class Heights {
     var values: [CGFloat] = []
   }

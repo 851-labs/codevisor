@@ -59,6 +59,34 @@ final class TranscriptMarkdownRowDecoration: NSView {
     if let fragment = chunk.fragment {
       drawFragment(fragment, chunk: chunk, style: style)
     }
+    if let marks = chunk.timeline {
+      drawTimeline(marks)
+    }
+  }
+
+  /// A worked note's stretch of its section's timeline: the rail through
+  /// the row and, on its first row, the note's dot.
+  private func drawTimeline(_ marks: TranscriptTimelineMarks) {
+    let x = TranscriptTimelineMarks.railX
+    let dotY = TranscriptTimelineMarks.dotCenterY
+    let radius = TranscriptTimelineMarks.dotDiameter / 2
+    let gap = radius + 2
+    let rail = NSBezierPath()
+    rail.lineWidth = 1
+    if marks.railAbove {
+      rail.move(to: NSPoint(x: x, y: 0))
+      rail.line(to: NSPoint(x: x, y: marks.startsLine ? dotY - gap : bounds.height))
+    }
+    if marks.railBelow {
+      rail.move(to: NSPoint(x: x, y: marks.startsLine ? dotY + gap : 0))
+      rail.line(to: NSPoint(x: x, y: bounds.height))
+    }
+    NSColor.labelColor.withAlphaComponent(0.18).setStroke()
+    rail.stroke()
+    if marks.startsLine {
+      NSColor.secondaryLabelColor.setFill()
+      NSBezierPath(ovalIn: NSRect(x: x - radius, y: dotY - radius, width: radius * 2, height: radius * 2)).fill()
+    }
   }
 
   private func drawPlanCard(

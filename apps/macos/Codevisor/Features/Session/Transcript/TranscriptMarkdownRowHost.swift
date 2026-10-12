@@ -157,13 +157,18 @@ final class TranscriptMarkdownRowHost: TranscriptMountedRowHost {
       chunk.container == .planDocument
       ? TranscriptMarkdownRowLayout.planHorizontalInset
       : 0
-    let topInset = chunk.topSpacing(in: style.markdown)
+    // A worked note sits beside its section's timeline rail.
+    let timeline = chunk.timeline
+    let linePadding = TranscriptTimelineMarks.linePadding
+    let topInset =
+      chunk.topSpacing(in: style.markdown) + (timeline?.startsLine == true ? linePadding : 0)
     let fragmentSpacing = chunk.fragment.map { style.markdown.gap($0.trailingSpacing) } ?? 0
     let planBottom =
       chunk.container == .planDocument && chunk.isLastInDocument
       ? TranscriptMarkdownRowLayout.planBottomInset
       : 0
-    let leading = planInset + fragmentIndent
+    let timelineBottom = timeline?.endsLine == true ? linePadding : 0
+    let leading = planInset + fragmentIndent + (timeline == nil ? 0 : TranscriptTimelineMarks.gutterWidth)
     return (
       NSRect(
         x: leading,
@@ -172,7 +177,7 @@ final class TranscriptMarkdownRowHost: TranscriptMountedRowHost {
         height: 1
       ),
       topInset,
-      fragmentSpacing + planBottom
+      fragmentSpacing + planBottom + timelineBottom
     )
   }
 }

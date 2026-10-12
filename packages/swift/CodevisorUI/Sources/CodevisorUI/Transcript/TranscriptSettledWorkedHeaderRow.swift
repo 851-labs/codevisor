@@ -174,25 +174,29 @@ private struct TranscriptWorkedItemPresentation<Content: View>: View {
 
   var body: some View {
     let animationEnabled = prepareAnimationPresentation()
-    if let item = workedItem {
-      content(
-        item,
-        turn,
-        reference.messageID,
-        isTurnActive,
-        animationPresentation,
-        animationEnabled
-      )
+    let items = sectionItems
+    if let index = items.firstIndex(where: { $0.id == reference.itemID }) {
+      WorkedTimelineLine(
+        item: items[index], isFirst: index == 0, isLast: index == items.count - 1,
+        isTurnActive: isTurnActive
+      ) { item in
+        content(
+          item,
+          turn,
+          reference.messageID,
+          isTurnActive,
+          animationPresentation,
+          animationEnabled
+        )
+      }
     }
   }
 
-  private var workedItem: WorkedItem? {
-    let items =
-      switch reference.section {
-      case .planning: turn.workedItemsBeforePlan
-      case .implementation: turn.workedItemsAfterPlan
-      }
-    return items.first { $0.id == reference.itemID }
+  private var sectionItems: [WorkedItem] {
+    switch reference.section {
+    case .planning: turn.workedItemsBeforePlan
+    case .implementation: turn.workedItemsAfterPlan
+    }
   }
 
   private func prepareAnimationPresentation() -> Bool {

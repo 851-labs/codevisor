@@ -27,6 +27,8 @@ public struct ToolCallRow: View {
   /// stream flush while their turn is active, and diffing entire file
   /// contents in `body` was a per-render main-thread cost.
   @State private var totalsCache = DiffTotalsCache()
+  @State private var isHovering = false
+  @Environment(\.toolRowsHighlightOnHover) private var highlightsOnHover
 
   private var hasDetails: Bool { call.hasPresentableDetails }
 
@@ -57,6 +59,7 @@ public struct ToolCallRow: View {
         rowLabel(totals: totals)
       }
       .contentShape(Rectangle())
+      .onHover { isHovering = $0 }
       .onTapGesture(perform: toggleDetails)
       .accessibilityElement(children: .combine)
       .accessibilityAddTraits(hasDetails ? .isButton : [])
@@ -76,6 +79,9 @@ public struct ToolCallRow: View {
             }
           } else if call.kind == .execute {
             ShellToolCallDetails(call: call)
+          } else if let read = call.readFileOutput {
+            // A read shows the file, not the call that fetched it.
+            ReadFileBodyView(read: read)
           } else {
             ToolCallContentCard(call: call)
           }
@@ -107,7 +113,7 @@ public struct ToolCallRow: View {
         // (HIG: minimize truncation as font size increases).
         .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
         .truncationMode(.tail)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(highlightsOnHover && hasDetails && isHovering ? .primary : .secondary)
         .shimmering(isTurnActive && !call.isSettled)
       if let totals {
         DiffCounter(totals: totals)

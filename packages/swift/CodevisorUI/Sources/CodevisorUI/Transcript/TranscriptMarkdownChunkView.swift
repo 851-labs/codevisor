@@ -50,6 +50,7 @@ public struct TranscriptMarkdownChunkView: View {
       }
     }
     .environment(\.markdownImageLoader, attachmentImages?.markdownImageLoader ?? .remote)
+    .modifier(WorkedTimelineGutter(marks: chunk.timeline))
   }
 
   private var topSpacing: CGFloat { chunk.topSpacing(in: markdownTheme) }

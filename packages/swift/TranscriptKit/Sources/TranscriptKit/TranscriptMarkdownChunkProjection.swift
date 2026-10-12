@@ -4,6 +4,34 @@ import MarkdownCore
 /// A bounded group of adjacent Markdown blocks rendered by one native
 /// transcript host. Text-like blocks share one TextKit surface, while blocks
 /// with their own layout or interaction remain isolated in one-block chunks.
+/// Where a worked note's row sits on its section's timeline: the note's
+/// dot marks its first row, and the rail runs through every row between the
+/// section's first and last lines.
+public struct TranscriptTimelineMarks: Sendable, Equatable, Hashable {
+  public let startsLine: Bool
+  public let endsLine: Bool
+  public let railAbove: Bool
+  public let railBelow: Bool
+
+  public init(startsLine: Bool, endsLine: Bool, railAbove: Bool, railBelow: Bool) {
+    self.startsLine = startsLine
+    self.endsLine = endsLine
+    self.railAbove = railAbove
+    self.railBelow = railBelow
+  }
+
+  /// The gutter the rail and dot take beside the note's text.
+  public static let gutterWidth: CGFloat = 26
+  /// Padding above a note's first row and below its last, as each timeline
+  /// line has.
+  public static let linePadding: CGFloat = 3
+  /// The rail's x position, the center of its node column.
+  public static let railX: CGFloat = 9
+  /// The dot's center below a note's first row top: on its first line.
+  public static let dotCenterY: CGFloat = 11
+  public static let dotDiameter: CGFloat = 5
+}
+
 public struct TranscriptMarkdownChunk: Sendable, Equatable {
   public let messageID: UUID
   public let sourceID: String
@@ -28,6 +56,8 @@ public struct TranscriptMarkdownChunk: Sendable, Equatable {
   /// know whether they draw the card's first and last edges. Assistant
   /// response chunks use zero so stable prefix rows do not change on append.
   public let documentBlockCount: Int
+  /// Set for a worked note, which reads as a line of the section's timeline.
+  public let timeline: TranscriptTimelineMarks?
 
   public init(
     messageID: UUID,
@@ -40,7 +70,8 @@ public struct TranscriptMarkdownChunk: Sendable, Equatable {
     animationSourceID: String? = nil,
     documentBlockCount: Int = 0,
     fragment: MarkdownFragmentLayout? = nil,
-    precedingRole: MarkdownBlockRole? = nil
+    precedingRole: MarkdownBlockRole? = nil,
+    timeline: TranscriptTimelineMarks? = nil
   ) {
     precondition(!blocks.isEmpty, "Markdown chunks must contain at least one block")
     self.messageID = messageID
@@ -54,6 +85,7 @@ public struct TranscriptMarkdownChunk: Sendable, Equatable {
     self.documentBlockCount = documentBlockCount
     self.fragment = fragment
     self.precedingRole = precedingRole
+    self.timeline = timeline
   }
 
   /// A source append can leave this rendered prefix unchanged. Its pacing
@@ -65,7 +97,7 @@ public struct TranscriptMarkdownChunk: Sendable, Equatable {
       && lhs.ordinal == rhs.ordinal && lhs.blocks == rhs.blocks
       && lhs.lifecycle == rhs.lifecycle && lhs.container == rhs.container
       && lhs.fragment == rhs.fragment && lhs.documentBlockCount == rhs.documentBlockCount
-      && lhs.precedingRole == rhs.precedingRole
+      && lhs.precedingRole == rhs.precedingRole && lhs.timeline == rhs.timeline
   }
 
   public var animationGroupID: String { "\(messageID.uuidString):\(animationSourceID)" }
@@ -101,6 +133,7 @@ public struct TranscriptMarkdownChunk: Sendable, Equatable {
     hasher.combine(documentBlockCount)
     hasher.combine(fragment)
     hasher.combine(precedingRole)
+    hasher.combine(timeline)
     return hasher.finalize()
   }
 }

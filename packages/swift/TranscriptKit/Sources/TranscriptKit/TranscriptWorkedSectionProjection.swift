@@ -74,22 +74,21 @@ enum TranscriptWorkedSectionProjection {
     identity: TranscriptWorkedSectionIdentity,
     to rows: inout [TranscriptPresentationRow]
   ) {
-    for item in items {
-      switch item {
-      case let .text(entryID, markdown):
+    // Each item is a line on the section's timeline. Its rows abut so their
+    // rails join into one line; a note keeps its virtualized Markdown rows.
+    for (index, item) in items.enumerated() {
+      let isFirst = index == 0
+      let isLast = index == items.count - 1
+      if case let .text(entryID, markdown) = item {
         appendMarkdown(
           message, kind: kind, entryID: entryID, markdown: markdown,
+          isFirst: isFirst, isLast: isLast,
           lifecycle: lifecycle, identity: identity, to: &rows)
-      default:
+      } else {
         appendWorkedItemRow(
-          message,
-          kind: kind,
-          itemID: item.id,
-          estimatedHeight: estimatedHeight(for: item),
-          lifecycle: lifecycle,
-          identity: identity,
-          to: &rows
-        )
+          message, kind: kind, itemID: item.id, estimatedHeight: 26,
+          lifecycle: lifecycle, identity: identity,
+          spacingAfter: isLast ? 12 : 0, to: &rows)
       }
     }
   }
@@ -99,6 +98,8 @@ enum TranscriptWorkedSectionProjection {
     kind: TranscriptWorkedSectionKind,
     entryID: String,
     markdown: String,
+    isFirst: Bool,
+    isLast: Bool,
     lifecycle: TranscriptBlockLifecycle,
     identity: TranscriptWorkedSectionIdentity,
     to rows: inout [TranscriptPresentationRow]
@@ -109,6 +110,8 @@ enum TranscriptWorkedSectionProjection {
     )
     let chunks = TranscriptMarkdownChunkProjection.chunks(from: blocks)
     for (chunkIndex, chunk) in chunks.enumerated() {
+      let startsLine = chunkIndex == 0
+      let endsLine = chunkIndex == chunks.count - 1
       let projected = TranscriptMarkdownChunk(
         messageID: message.id,
         sourceID: sourceID,
@@ -119,7 +122,13 @@ enum TranscriptWorkedSectionProjection {
         container: .assistantWorked,
         animationSourceID: entryID,
         fragment: chunk.fragment,
-        precedingRole: chunk.precedingRole
+        precedingRole: chunk.precedingRole,
+        timeline: TranscriptTimelineMarks(
+          startsLine: startsLine,
+          endsLine: endsLine,
+          railAbove: !(isFirst && startsLine),
+          railBelow: !(isLast && endsLine)
+        )
       )
       rows.append(
         .init(
@@ -133,7 +142,7 @@ enum TranscriptWorkedSectionProjection {
           content: .markdownChunk(projected),
           estimatedHeight: projected.estimatedHeight,
           measurementRevision: projected.measurementRevision,
-          spacingAfter: chunkIndex == chunks.count - 1 ? 12 : 0,
+          spacingAfter: isLast && endsLine ? 12 : 0,
           workedSection: .init(identity: identity, role: .content)
         ))
     }
@@ -146,6 +155,7 @@ enum TranscriptWorkedSectionProjection {
     estimatedHeight: CGFloat,
     lifecycle: TranscriptBlockLifecycle,
     identity: TranscriptWorkedSectionIdentity,
+    spacingAfter: CGFloat,
     to rows: inout [TranscriptPresentationRow]
   ) {
     let reference = TranscriptWorkedItemReference(
@@ -171,7 +181,7 @@ enum TranscriptWorkedSectionProjection {
           for: .assistant(message),
           waitingOnBackgroundTask: nil
         ),
-        spacingAfter: 12,
+        spacingAfter: spacingAfter,
         workedSection: .init(identity: identity, role: .content)
       ))
   }
@@ -220,14 +230,6 @@ enum TranscriptWorkedSectionProjection {
     switch lifecycle {
     case .receiving: .activeWorkedItem(reference)
     case .settled: .assistantWorkedItem(.init(message: message, reference: reference))
-    }
-  }
-
-  private static func estimatedHeight(for item: WorkedItem) -> CGFloat {
-    switch item {
-    case .text: 80
-    case let .toolGroup(group): max(44, CGFloat(group.calls.count) * 34)
-    case .subagents: 36
     }
   }
 }
