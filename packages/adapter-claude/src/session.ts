@@ -14,6 +14,7 @@ import type {
 import type { QuestionSpec, SessionGoal } from "@codevisor/api"
 
 import type { Deferred } from "./internal.js"
+import type { ClaudeSkillCall } from "./skill-tool.js"
 import type { ClaudeSkills } from "./skills.js"
 import type { SubagentTranscripts } from "./subagent-transcripts.js"
 
@@ -257,6 +258,9 @@ export interface ClaudeSession {
   /// Authoritative Task* inputs keyed by tool_use id, retained until the
   /// matching result confirms whether the mutation succeeded.
   readonly taskToolUses: Map<string, ClaudeTaskToolUse>
+  /// Claude Code `Skill` calls this turn, keyed by tool_use id, until their
+  /// instructions arrive (see skill-tool.ts).
+  readonly skillCalls: Map<string, ClaudeSkillCall>
   /// Cross-turn checklist state built from Task* mutations and task hooks.
   readonly tasks: ClaudeTaskState
   /// Current message id per streaming subagent, keyed by the subagent's

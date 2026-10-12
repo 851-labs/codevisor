@@ -5,6 +5,7 @@ import { settleForkedCommands } from "./forked-commands.js"
 import { isRecord } from "./internal.js"
 import { HIDDEN_TOOLS, PLAN_TOOLS, TASK_TOOLS } from "./message-tool-policy.js"
 import type { ClaudeSession } from "./session.js"
+import { SKILL_TOOL, skillCallMeta } from "./skill-tool.js"
 import { emitPlanUpdate } from "./tasks.js"
 import { toolKind, toolTitle } from "./tool-presentation.js"
 import { ensureObservedTurnStarted } from "./turn-lifecycle.js"
@@ -151,6 +152,8 @@ const emitAssistantTool = (
   readFile: (path: string) => string | undefined
 ): void => {
   const stats = authoritativeStatsFromInput(session, toolName, block.input, readFile)
+  const skill =
+    toolName === SKILL_TOOL ? skillCallMeta(session, toolUseId, block.input, parentId) : undefined
   void session.emit({
     kind: "session.output",
     payload: {
@@ -164,6 +167,7 @@ const emitAssistantTool = (
       title: toolTitle(toolName, block.input),
       toolCallId: toolUseId,
       ...(stats === undefined ? {} : { diffStats: stats }),
+      ...skill,
       ...(parentId === undefined ? {} : { parentToolCallId: parentId })
     },
     subjectId: session.key

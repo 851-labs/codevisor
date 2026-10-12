@@ -13,6 +13,9 @@
     }
 
     private var gestureAxis: GestureAxis?
+    /// Whether the gesture's last event went to this view rather than the
+    /// transcript, so its motionless events reach the same one.
+    private var routesToSelf: Bool?
 
     public override init(frame frameRect: NSRect) {
       super.init(frame: frameRect)
@@ -35,16 +38,30 @@
 
     open override func scrollWheel(with event: NSEvent) {
       let hasGesturePhase = !event.phase.isEmpty || !event.momentumPhase.isEmpty
-      if event.phase.contains(.began) || gestureAxis == nil || !hasGesturePhase {
-        gestureAxis = preferredAxis(for: event)
+      if event.phase.contains(.began) || event.phase.contains(.mayBegin) || !hasGesturePhase {
+        gestureAxis = nil
+        routesToSelf = nil
       }
+      // A trackpad gesture often begins without moving; its axis is the
+      // direction of its first movement, not of that motionless start.
+      if gestureAxis == nil { gestureAxis = preferredAxis(for: event) }
 
-      // Content that fits has nothing to scroll sideways, so the gesture
-      // belongs to the transcript too; otherwise AppKit rubber-bands the
-      // content under the pointer.
-      let consumes =
-        gestureAxis == .vertical ? shouldConsumeVerticalScroll(event) : overflowsHorizontally
-      if !consumes, let outerScrollView = enclosingVerticalScrollView {
+      let toSelf: Bool
+      switch gestureAxis {
+      case .vertical where event.scrollingDeltaY != 0:
+        toSelf = shouldConsumeVerticalScroll(event)
+      case .horizontal:
+        // Content that fits has nothing to scroll sideways, so the gesture
+        // belongs to the transcript too; otherwise AppKit rubber-bands the
+        // content under the pointer.
+        toSelf = overflowsHorizontally
+      default:
+        // A motionless start or end goes wherever the gesture's movement
+        // goes, so neither view is left inside half a gesture.
+        toSelf = routesToSelf ?? (overflowsHorizontally || hasVerticalScroller)
+      }
+      routesToSelf = toSelf
+      if !toSelf, let outerScrollView = enclosingVerticalScrollView {
         outerScrollView.scrollWheel(with: event)
       } else {
         super.scrollWheel(with: event)
@@ -65,8 +82,9 @@
       return scrollableWidth > contentView.bounds.width + 0.5
     }
 
-    private func preferredAxis(for event: NSEvent) -> GestureAxis {
+    private func preferredAxis(for event: NSEvent) -> GestureAxis? {
       if event.modifierFlags.contains(.shift) { return .horizontal }
+      guard event.scrollingDeltaX != 0 || event.scrollingDeltaY != 0 else { return nil }
       return abs(event.scrollingDeltaY) > abs(event.scrollingDeltaX) ? .vertical : .horizontal
     }
 

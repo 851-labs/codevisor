@@ -1,5 +1,6 @@
 import type { AcpStdioExtensionFactory } from "@codevisor/adapter-acp"
 
+import { withSkillRead } from "./skill-tool.js"
 import {
   CHILD_SESSION_UPDATES_CAPABILITY,
   CHILD_UPDATE_METHOD,
@@ -7,11 +8,12 @@ import {
 } from "./subagents.js"
 
 /// OpenCode's additions to an ACP chat connection: its subagents' own
-/// sessions stream in (see `OpenCodeSubagents`).
+/// sessions stream in (see `OpenCodeSubagents`), and its own `skill` tool
+/// reads like a Codevisor skill read (see `skillReadUpdate`).
 export const makeOpenCodeExtension: AcpStdioExtensionFactory = ({ emit }) => {
   const subagents = new OpenCodeSubagents()
   const childUpdate = (params: unknown): void => {
-    for (const event of subagents.childUpdate(params)) emit(event)
+    for (const event of subagents.childUpdate(withSkillRead(params))) emit(event)
   }
   return {
     customizeClientCapabilities: (capabilities) => ({
@@ -26,6 +28,6 @@ export const makeOpenCodeExtension: AcpStdioExtensionFactory = ({ emit }) => {
       )
       return app
     },
-    mapSessionNotification: (notification) => subagents.mapNotification(notification)
+    mapSessionNotification: (notification) => subagents.mapNotification(withSkillRead(notification))
   }
 }

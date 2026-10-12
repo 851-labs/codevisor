@@ -29,9 +29,11 @@ extension ToolCall {
     }
     if let operation = operation.flatMap(CodevisorGatewayOperation.init(rawValue:)) { return operation }
     // OpenCode's Code Mode tool (plain `execute`) calling the gateway from its
-    // own code: the server attaches the workflow it ran, or the skill it read.
-    guard normalized == "execute" else { return nil }
-    if meta?["codevisorExecution"] != nil { return .execute }
+    // own code: the server attaches the workflow it ran.
+    if normalized == "execute", meta?["codevisorExecution"] != nil { return .execute }
+    // Any skill read reads the same: one such code made through the gateway
+    // (the server attaches it), or a harness's own skill tool (Claude Code's
+    // `Skill`) its adapter annotated.
     return meta?["codevisorSkill"] == nil ? nil : .skills
   }
 

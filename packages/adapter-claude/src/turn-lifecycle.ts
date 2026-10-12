@@ -62,6 +62,7 @@ export const finishActiveTurn = (
   }
   session.accumulators.clear()
   session.taskToolUses.clear()
+  session.skillCalls.clear()
   session.subagentMessageIds.clear()
   session.subagentLastTexts.clear()
   // A fork still being mirrored stops reading on its next poll.

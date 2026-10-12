@@ -21,9 +21,10 @@ public struct ToolGroupView: View {
   private var store: TranscriptDisclosureStore { disclosureStore ?? .previews }
 
   public var body: some View {
-    // A lone described workflow reads as its own row, not a group of one:
-    // it draws, discloses, and shimmers exactly like any other call.
-    if let solo = group.soloWorkflow {
+    // A lone described workflow or skill read reads as its own row, not a
+    // group of one repeating its title: it draws, discloses, and shimmers
+    // exactly like any other call.
+    if let solo = group.soloCall {
       ToolCallRow(call: solo, isTurnActive: isTurnActive)
     } else {
       groupBody
@@ -95,10 +96,12 @@ struct ToolGroupHeaderPresentation {
 }
 
 extension ToolCallGroup {
-  /// The call when this group is a single described gateway workflow, which
-  /// renders as a plain row rather than a group holding one row.
-  var soloWorkflow: ToolCall? {
-    calls.count == 1 && calls[0].integrationDescription != nil ? calls[0] : nil
+  /// The call when this group is a single described gateway workflow or a
+  /// single skill read, whose group label would only repeat the row's title,
+  /// so it renders as a plain row rather than a group holding one row.
+  var soloCall: ToolCall? {
+    guard calls.count == 1, let call = calls.first else { return nil }
+    return call.integrationDescription != nil || call.codevisorGatewayOperation == .skills ? call : nil
   }
 }
 

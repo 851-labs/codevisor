@@ -86,6 +86,22 @@ struct CodevisorExecutionPresentationTests {
     #expect(plain.codevisorExecution == nil)
   }
 
+  @Test("A harness's own skill tool, annotated by its adapter, reads like a Codevisor skill read")
+  func harnessSkillTool() {
+    // Claude Code's `Skill`: the adapter tags it and puts the instructions in its output.
+    var call = ToolCall(
+      toolCallId: "sk", title: "Skill", kind: .other, status: .completed,
+      rawInput: ["skill": "tophat", "args": "check the onboarding"],
+      rawOutput: "# Tophat\n\nRun the change."
+    )
+    call.meta = ["codevisorSkill": ["name": "tophat", "ok": true]]
+    #expect(call.displayTitle == "Read the tophat skill")
+    #expect(call.icon == ToolCallIcon(symbol: "book"))
+    #expect(call.skillText == "# Tophat\n\nRun the change.")
+    // Without the annotation it is just another tool.
+    #expect(ToolCall(toolCallId: "sk", title: "Skill").codevisorGatewayOperation == nil)
+  }
+
   @Test("A failed workflow names the error's message without its stack")
   func failedTitle() throws {
     let failed = try snapshot(

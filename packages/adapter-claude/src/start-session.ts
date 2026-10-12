@@ -307,6 +307,7 @@ export const makeStartSession = (deps: StartSessionDeps) => {
       skills: { catalog: commandCatalog, claudePath, commands: undefined, snapshot: undefined },
       openToolCalls: new Set(),
       taskToolUses: new Map(),
+      skillCalls: new Map(),
       tasks: new Map(),
       pendingPrompt: undefined,
       deferredPrompts: [],

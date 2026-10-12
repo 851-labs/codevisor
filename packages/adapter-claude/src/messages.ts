@@ -6,6 +6,7 @@ import { acceptForkedCommandMessage, startForkedCommand } from "./forked-command
 import { isRecord } from "./internal.js"
 import { HIDDEN_TOOLS } from "./message-tool-policy.js"
 import type { ClaudeSession } from "./session.js"
+import { attachSkillText, skillResultMeta } from "./skill-tool.js"
 import { handleStreamEvent } from "./stream-events.js"
 import {
   applyTaskCreate,
@@ -39,6 +40,7 @@ export const handleMessage = (
     case "user": {
       const content = message.message.content
       if (!Array.isArray(content)) break
+      if (message.isSynthetic === true && attachSkillText(session, content)) break
       for (const block of content) {
         if (isRecord(block) && block.type === "tool_result") {
           const toolUseId = String(block.tool_use_id)
@@ -74,6 +76,7 @@ export const handleMessage = (
           // resource_link content so the tool card shows a tappable sources
           // list (self-gating: only web-search results parse to sources).
           const sources = block.is_error === true ? [] : webSearchSources(block.content)
+          const skill = skillResultMeta(session, toolUseId, block.is_error === true)
           void session.emit({
             kind: "session.output",
             payload: {
@@ -82,7 +85,8 @@ export const handleMessage = (
               status: block.is_error === true ? "failed" : "completed",
               toolCallId: toolUseId,
               ...(doneTitle === undefined ? {} : { title: doneTitle }),
-              ...(sources.length === 0 ? {} : { content: sourcesContent(sources) })
+              ...(sources.length === 0 ? {} : { content: sourcesContent(sources) }),
+              ...skill
             },
             subjectId: session.key
           })

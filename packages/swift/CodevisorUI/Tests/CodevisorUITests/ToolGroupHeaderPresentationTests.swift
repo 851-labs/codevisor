@@ -84,7 +84,7 @@ struct ToolGroupHeaderPresentationTests {
   }
 
   @Test("A lone workflow is one row: live status while running, its description once done")
-  func soloWorkflow() {
+  func soloCall() {
     var call = ToolCall(
       toolCallId: "wf", title: "mcp__codevisor__execute", kind: .other, status: .inProgress,
       rawInput: .object(["description": .string("Reviewing open PRs"), "code": .string("1")]),
@@ -94,7 +94,7 @@ struct ToolGroupHeaderPresentationTests {
         ])
       ])
     )
-    #expect(ToolCallGroup(calls: [call]).soloWorkflow?.toolCallId == "wf")
+    #expect(ToolCallGroup(calls: [call]).soloCall?.toolCallId == "wf")
     #expect(call.displayTitle == "Waiting on reviewers")
     call.status = .completed
     #expect(call.displayTitle == "Reviewing open PRs")
@@ -103,11 +103,19 @@ struct ToolGroupHeaderPresentationTests {
     let pair = ToolCallGroup(calls: [
       call, ToolCall(toolCallId: "b", title: "mcp__codevisor__execute", status: .completed),
     ])
-    #expect(pair.soloWorkflow == nil)
+    #expect(pair.soloCall == nil)
     let legacy = ToolCallGroup(calls: [
       ToolCall(toolCallId: "c", title: "mcp__codevisor__execute", status: .completed)
     ])
-    #expect(legacy.soloWorkflow == nil)
+    #expect(legacy.soloCall == nil)
+    // A lone skill read is one row too, and so is a harness's own skill tool.
+    #expect(
+      ToolCallGroup(calls: [ToolCall(toolCallId: "s", title: "mcp__codevisor__skills", status: .completed)])
+        .soloCall != nil)
+    var harnessSkill = ToolCall(toolCallId: "h", title: "Skill", status: .completed)
+    harnessSkill.meta = ["codevisorSkill": ["name": "tophat", "ok": true]]
+    #expect(ToolCallGroup(calls: [harnessSkill]).soloCall?.toolCallId == "h")
+    #expect(ToolCallGroup(calls: [ToolCall(toolCallId: "b", title: "Ran ls", kind: .execute)]).soloCall == nil)
   }
 
   @Test("All terminal statuses restore the summary", arguments: [ToolCallStatus.completed, .failed, .cancelled])
