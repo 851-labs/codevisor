@@ -73,4 +73,12 @@ struct ReadFileOutputTests {
     // Text that merely starts with a number isn't line-numbered.
     #expect(read(["file_path": "/repo/n.txt"], output: "1\tone\ntwo").readFileOutput?.content == .text("1\tone\ntwo"))
   }
+
+  @Test("Reversed content markers remain literal file text")
+  func reversedContentMarkers() {
+    let malformed = "</content><content>\nhello"
+    #expect(
+      read(["file_path": "/repo/n.txt"], output: .string(malformed)).readFileOutput
+        == ReadFileOutput(path: "/repo/n.txt", content: .text(malformed)))
+  }
 }

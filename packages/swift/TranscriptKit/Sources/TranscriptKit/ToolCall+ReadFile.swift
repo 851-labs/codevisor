@@ -70,7 +70,8 @@ extension ToolCall {
       of: #"\n*<system-reminder>[\s\S]*?</system-reminder>\s*"#, with: "", options: .regularExpression)
     // OpenCode: <path>…</path><type>file</type><content>…(footer)</content>
     if let body = text.range(of: #"<content>\n"#, options: .regularExpression),
-      let end = text.range(of: "</content>", options: .backwards)
+      let end = text.range(of: "</content>", options: .backwards),
+      body.upperBound <= end.lowerBound
     {
       text = String(text[body.upperBound..<end.lowerBound])
       text = text.replacingOccurrences(
