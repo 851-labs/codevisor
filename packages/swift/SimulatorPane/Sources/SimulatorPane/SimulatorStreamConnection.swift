@@ -28,7 +28,6 @@ public final class SimulatorStreamConnection: SimulatorConnection {
   @ObservationIgnored private let openTunnel: (@MainActor () async -> CloudTunnelMediaRoute?)?
   @ObservationIgnored private let viewerId = UUID()
   @ObservationIgnored private var runner: Task<Void, Never>?
-  @ObservationIgnored private var sequenceReady = false
   private static let log = Logger(subsystem: "com.codevisor.SimulatorPane", category: "Stream")
 
   public init(
