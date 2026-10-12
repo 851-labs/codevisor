@@ -102,7 +102,6 @@ describe("terminal routes", () => {
       JSON.stringify({ type: "input", clientId: "client-a", clientSeq: 3, data: "after-exit" })
     )
     await received(4)
-    webSocket.close()
 
     expect(spawner.processes[0]?.writes).toEqual(["pwd\n"])
     expect(spawner.processes[0]?.resizes).toEqual([[120, 30]])
@@ -140,6 +139,7 @@ describe("terminal routes", () => {
     })
     await cursorReplayMessagesReceived(1)
     expect(cursorReplayMessages).toEqual([{ type: "exit", seq: 2, exitCode: 0 }])
+    webSocket.close()
     cursorReplaySocket.close()
 
     const missingSocket = new WebSocket(
