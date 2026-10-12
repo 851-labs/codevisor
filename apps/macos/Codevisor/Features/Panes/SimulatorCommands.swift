@@ -14,14 +14,15 @@ extension FocusedValues {
 }
 
 /// The focused simulator's device controls (Home, Save Screenshot, Rotate), with Simulator's
-/// shortcuts. The items exist only while a running simulator has focus, never merely disabled:
-/// a disabled item still swallows its key equivalent, and ⌘← ⌘→ must reach a composer otherwise.
+/// shortcuts. The menu exists only while a running simulator has focus, never as an empty or
+/// disabled menu: a disabled item still swallows its key equivalent, and ⌘← ⌘→ must reach a
+/// composer otherwise.
 struct SimulatorCommands: Commands {
   @FocusedValue(\.simulatorPane) private var simulator
 
   var body: some Commands {
-    CommandMenu("Simulator") {
-      if let simulator, let device = simulator.runningDevice {
+    if let simulator, let device = simulator.runningDevice {
+      CommandMenu("Simulator") {
         SimulatorDeviceCommandItems(model: simulator, device: device) { data, name in
           AppleSimulatorPane.saveScreenshot(data, deviceName: name)
         }

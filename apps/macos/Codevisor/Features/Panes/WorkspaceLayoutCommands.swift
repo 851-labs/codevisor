@@ -30,57 +30,52 @@ extension FocusedValues {
   }
 }
 
+/// The workspace's split layout under View, and tab cycling under Window,
+/// where Mac apps keep them. The tab items that create and close things live
+/// in File, alongside New Chat and Close (see `NewTabMenuItem`).
 struct WorkspaceLayoutCommands: Commands {
   @FocusedValue(\.workspaceLayoutActions) private var actions
   @FocusedValue(\.sidebarActions) private var sidebarActions
 
   var body: some Commands {
-    CommandMenu("Tabs & Splits") {
-      ShortcutButton(.newTab) { actions?.newTab() }
-        .disabled(actions == nil)
+    CommandGroup(after: .sidebar) {
+      Menu("Split") {
+        ShortcutButton(.splitLeft) { actions?.split(.leading) }
+          .disabled(actions == nil)
+        ShortcutButton(.splitRight) { actions?.split(.trailing) }
+          .disabled(actions == nil)
+        ShortcutButton(.splitUp) { actions?.split(.top) }
+          .disabled(actions == nil)
+        ShortcutButton(.splitDown) { actions?.split(.bottom) }
+          .disabled(actions == nil)
+      }
 
-      ShortcutButton(.closeSplit) { actions?.closeSplit() }
-        .disabled(actions == nil)
-      ShortcutButton(.closeTab) { actions?.closeTab() }
-        .disabled(actions == nil)
-      ShortcutButton(.reopenClosedPane) { actions?.reopenClosedPane() }
-        .disabled(actions == nil)
+      Menu("Focus Split") {
+        ShortcutButton(.previousSplit) { actions?.previousSplit() }
+          .disabled(actions == nil)
+        ShortcutButton(.nextSplit) { actions?.nextSplit() }
+          .disabled(actions == nil)
+
+        Divider()
+
+        ShortcutButton(.focusSplitLeft) { actions?.focus(.leading) }
+          .disabled(actions == nil)
+        ShortcutButton(.focusSplitRight) { actions?.focus(.trailing) }
+          .disabled(actions == nil)
+        ShortcutButton(.focusSplitAbove) { actions?.focus(.top) }
+          .disabled(actions == nil)
+        ShortcutButton(.focusSplitBelow) { actions?.focus(.bottom) }
+          .disabled(actions == nil)
+      }
 
       Divider()
+    }
 
+    CommandGroup(before: .windowArrangement) {
       ShortcutButton(.previousTab) { stepTab(-1) }
         .disabled(actions == nil && sidebarActions == nil)
       ShortcutButton(.nextTab) { stepTab(1) }
         .disabled(actions == nil && sidebarActions == nil)
-
-      Divider()
-
-      ShortcutButton(.previousSplit) { actions?.previousSplit() }
-        .disabled(actions == nil)
-      ShortcutButton(.nextSplit) { actions?.nextSplit() }
-        .disabled(actions == nil)
-
-      Divider()
-
-      ShortcutButton(.splitLeft) { actions?.split(.leading) }
-        .disabled(actions == nil)
-      ShortcutButton(.splitRight) { actions?.split(.trailing) }
-        .disabled(actions == nil)
-      ShortcutButton(.splitUp) { actions?.split(.top) }
-        .disabled(actions == nil)
-      ShortcutButton(.splitDown) { actions?.split(.bottom) }
-        .disabled(actions == nil)
-
-      Divider()
-
-      ShortcutButton(.focusSplitLeft) { actions?.focus(.leading) }
-        .disabled(actions == nil)
-      ShortcutButton(.focusSplitRight) { actions?.focus(.trailing) }
-        .disabled(actions == nil)
-      ShortcutButton(.focusSplitAbove) { actions?.focus(.top) }
-        .disabled(actions == nil)
-      ShortcutButton(.focusSplitBelow) { actions?.focus(.bottom) }
-        .disabled(actions == nil)
     }
   }
 
@@ -95,5 +90,28 @@ struct WorkspaceLayoutCommands: Commands {
       // The standalone New Chat page has no workspace container.
       sidebarActions?.stepTab(offset)
     }
+  }
+}
+
+/// File > New Tab.
+struct NewTabMenuItem: View {
+  @FocusedValue(\.workspaceLayoutActions) private var actions
+
+  var body: some View {
+    ShortcutButton(.newTab) { actions?.newTab() }
+      .disabled(actions == nil)
+  }
+}
+
+/// File > Close Tab and Reopen Closed Pane. Close Split is File > Close
+/// itself (see `CloseWindowMenuItem`).
+struct CloseTabMenuItems: View {
+  @FocusedValue(\.workspaceLayoutActions) private var actions
+
+  var body: some View {
+    ShortcutButton(.closeTab) { actions?.closeTab() }
+      .disabled(actions == nil)
+    ShortcutButton(.reopenClosedPane) { actions?.reopenClosedPane() }
+      .disabled(actions == nil)
   }
 }

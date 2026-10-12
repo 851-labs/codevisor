@@ -221,7 +221,7 @@ private struct SplitLeafView: View {
   let leafId: UUID
   let isInactive: Bool
   /// Hidden when the leaf is alone in its tab: the split actions live in
-  /// the Tabs & Splits menu, so the header would only spend a row on chrome.
+  /// the View > Split menu, so the header would only spend a row on chrome.
   let showsHeader: Bool
   /// A new leaf stays as an inert blank shell until its size transition ends.
   let openingEdge: SplitEdge?

@@ -12,30 +12,31 @@ extension FocusedValues {
   }
 }
 
+/// The focused browser page's commands. The menu exists only while a browser
+/// pane has focus, so it isn't an empty, disabled menu everywhere else — and
+/// its disabled items don't swallow ⌘L and ⌘R from other panes.
 struct BrowserCommands: Commands {
   @FocusedValue(\.browserPage) private var page
 
   var body: some Commands {
-    CommandMenu("Browser") {
-      Button("Open Location") { page?.focusAddress() }
-        .keyboardShortcut("l", modifiers: .command)
-        .disabled(page == nil)
-      Button("Developer Tools") { page?.showDevTools() }
-        .keyboardShortcut("i", modifiers: [.command, .option])
-        .disabled(page == nil)
-      Button("Reload Page") { page?.reload() }
-        .keyboardShortcut("r", modifiers: .command)
-        .disabled(page == nil)
-      Button("Reload Page Ignoring Cache") { page?.reload(ignoringCache: true) }
-        .keyboardShortcut("r", modifiers: [.command, .shift])
-        .disabled(page == nil)
-      Divider()
-      ShortcutButton(.browserZoomIn) { page?.zoom(.zoomIn) }
-        .disabled(page?.canZoomIn != true)
-      ShortcutButton(.browserZoomOut) { page?.zoom(.zoomOut) }
-        .disabled(page?.canZoomOut != true)
-      ShortcutButton(.browserResetZoom) { page?.zoom(.reset) }
-        .disabled(page?.canResetZoom != true)
+    if let page {
+      CommandMenu("Browser") {
+        Button("Open Location") { page.focusAddress() }
+          .keyboardShortcut("l", modifiers: .command)
+        Button("Developer Tools") { page.showDevTools() }
+          .keyboardShortcut("i", modifiers: [.command, .option])
+        Button("Reload Page") { page.reload() }
+          .keyboardShortcut("r", modifiers: .command)
+        Button("Reload Page Ignoring Cache") { page.reload(ignoringCache: true) }
+          .keyboardShortcut("r", modifiers: [.command, .shift])
+        Divider()
+        ShortcutButton(.browserZoomIn) { page.zoom(.zoomIn) }
+          .disabled(!page.canZoomIn)
+        ShortcutButton(.browserZoomOut) { page.zoom(.zoomOut) }
+          .disabled(!page.canZoomOut)
+        ShortcutButton(.browserResetZoom) { page.zoom(.reset) }
+          .disabled(!page.canResetZoom)
+      }
     }
   }
 }

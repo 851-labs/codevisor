@@ -75,6 +75,7 @@ struct FileCommands: Commands {
     CommandGroup(replacing: .newItem) {
       NewChatMenuItem()
       NewProjectMenuItem()
+      NewTabMenuItem()
 
       Divider()
 
@@ -84,6 +85,7 @@ struct FileCommands: Commands {
       // its key equivalent — the item renders, but ⌘W never attaches to it. See
       // the note on `View.shortcut(_:)` in ShortcutButton.swift.
       CloseWindowMenuItem()
+      CloseTabMenuItems()
     }
     CommandGroup(after: .newItem) {
       if let file {
@@ -121,25 +123,19 @@ struct FileCommands: Commands {
   }
 }
 
-/// File > Close.
+/// File > Close: Close Split while a workspace is focused, else the window.
 ///
 /// Replacing `.newItem` above drops the standard Close along with "New Window",
-/// which left ⌘W bound only to Tabs & Splits > Close Split. That item is
-/// disabled wherever no workspace is focused, so ⌘W did nothing at all in the
-/// Settings window.
-///
-/// Stays ENABLED even while a workspace is focused. A disabled menu item
-/// SWALLOWS its key equivalent — AppKit does not fall through to the next
-/// matching item — so gating this on `workspace == nil` silently kills ⌘W
-/// inside workspaces instead of deferring to Close Split. Enabled, the Tabs &
-/// Splits item wins the shortcut whenever it is itself enabled; the workspace
-/// branch here is the fallback if that precedence ever shifts, so ⌘W closes a
-/// pane rather than the whole window either way.
+/// so this is the only ⌘W item. It must never be disabled: a disabled menu
+/// item SWALLOWS its key equivalent — AppKit does not fall through to the next
+/// matching item — and ⌘W would do nothing in the Settings window. Only the
+/// title follows focus; the item's structure stays static (see the note on
+/// `View.shortcut(_:)` in ShortcutButton.swift).
 private struct CloseWindowMenuItem: View {
   @FocusedValue(\.workspaceLayoutActions) private var workspace
 
   var body: some View {
-    Button("Close") {
+    Button(workspace == nil ? "Close" : ShortcutCatalog.definition(for: .closeSplit).title) {
       if let workspace {
         workspace.closeSplit()
       } else {

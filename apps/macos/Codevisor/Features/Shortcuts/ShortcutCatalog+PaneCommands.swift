@@ -28,7 +28,7 @@ extension ShortcutCatalog {
   /// The workspace shortcuts AppKit has to match by hand, paired with the
   /// command they run.
   ///
-  /// Note ⌘W: the Tabs & Splits menu binds it to "Close Split", but with a
+  /// Note ⌘W: File > Close reads "Close Split" in a workspace, but with a
   /// pane focused it closes the whole tab. That asymmetry predates this table
   /// and is preserved deliberately — changing it is a product decision, not a
   /// refactor.
