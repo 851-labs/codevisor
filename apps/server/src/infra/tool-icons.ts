@@ -2,8 +2,6 @@ import { createHash } from "node:crypto"
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 
-import sharp from "sharp"
-
 import type { AppIconLoader } from "./tool-icon-apps.js"
 import {
   isPublicHost,
@@ -11,16 +9,19 @@ import {
   publicFaviconUrl,
   rankMcpIcons
 } from "./tool-icon-candidates.js"
+import { normalizeIcon, type ToolIconAsset } from "./tool-icon-images.js"
 
 /// Artwork for what a gateway workflow touched: the favicon of a site a
 /// browser call visited, or an MCP server's own icon. Resolved once on this
 /// machine and kept on disk, so a reopened chat draws its icons from cache.
 /// Every fetch is credential-free and every image is treated as untrusted.
 
-export interface ToolIconAsset {
-  readonly contentType: "image/png" | "image/x-icon"
-  readonly data: Uint8Array
-}
+export {
+  isInertSvg,
+  normalizeIcon,
+  sniffImageFormat,
+  type ToolIconAsset
+} from "./tool-icon-images.js"
 
 /// An MCP icon as the protocol defines it (`Implementation.icons`).
 export interface McpIcon {
@@ -74,68 +75,12 @@ const HTML_MAX_BYTES = 2 * 1024 * 1024
 const FETCH_TIMEOUT_MS = 5_000
 const HIT_TTL_MS = 7 * 24 * 60 * 60 * 1000
 const MISS_TTL_MS = 6 * 60 * 60 * 1000
-const ICON_PIXELS = 128
 
 /// Where an MCP host's brand lives when it isn't the host's own domain.
 const BRAND_SITES: Readonly<Record<string, string>> = {
   "mcp.sentry.dev": "https://sentry.io",
   "api.githubcopilot.com": "https://github.com",
   "mcp.notion.com": "https://www.notion.so"
-}
-
-type ImageFormat = "png" | "jpeg" | "gif" | "webp" | "ico" | "svg"
-
-const startsWith = (data: Uint8Array, bytes: ReadonlyArray<number>, offset = 0): boolean =>
-  data.length >= offset + bytes.length &&
-  bytes.every((byte, index) => data[offset + index] === byte)
-
-/// The image format by magic bytes. Declared MIME types are advisory only.
-export const sniffImageFormat = (data: Uint8Array): ImageFormat | undefined => {
-  if (startsWith(data, [0x89, 0x50, 0x4e, 0x47])) return "png"
-  if (startsWith(data, [0xff, 0xd8, 0xff])) return "jpeg"
-  if (startsWith(data, [0x47, 0x49, 0x46, 0x38])) return "gif"
-  if (startsWith(data, [0x52, 0x49, 0x46, 0x46]) && startsWith(data, [0x57, 0x45, 0x42, 0x50], 8))
-    return "webp"
-  if (startsWith(data, [0x00, 0x00, 0x01, 0x00])) return "ico"
-  const head = new TextDecoder().decode(data.subarray(0, 1024)).trimStart()
-  if (/^(?:<\?xml[^>]*>\s*)?(?:<!--[\s\S]*?-->\s*)*<svg[\s>]/i.test(head)) return "svg"
-  return undefined
-}
-
-/// SVGs become rasters here and never render as documents, but they are
-/// still refused when they carry active content or reach outside themselves.
-export const isInertSvg = (source: string): boolean => {
-  if (/<(?:script|foreignObject|iframe|object|embed)\b/i.test(source)) return false
-  if (/<!DOCTYPE|<!ENTITY|@import\b/i.test(source)) return false
-  for (const match of source.matchAll(/(?:href|xlink:href)\s*=\s*["']([^"']*)["']/gi)) {
-    if (!match[1]!.startsWith("#")) return false
-  }
-  for (const match of source.matchAll(/url\(\s*["']?([^)'"\s]+)["']?\s*\)/gi)) {
-    if (!match[1]!.startsWith("#")) return false
-  }
-  return true
-}
-
-/// A bounded PNG for every raster and SVG source. ICO passes through as-is:
-/// both clients decode it natively, and sharp does not.
-export const normalizeIcon = async (data: Uint8Array): Promise<ToolIconAsset | undefined> => {
-  const format = sniffImageFormat(data)
-  if (format === undefined) return undefined
-  if (format === "ico") return { contentType: "image/x-icon", data }
-  if (format === "svg" && !isInertSvg(new TextDecoder().decode(data))) return undefined
-  try {
-    const png = await sharp(data, {
-      density: format === "svg" ? 192 : 72,
-      limitInputPixels: 16_777_216,
-      animated: false
-    })
-      .resize({ fit: "inside", width: ICON_PIXELS, height: ICON_PIXELS, withoutEnlargement: true })
-      .png({ compressionLevel: 9 })
-      .toBuffer()
-    return { contentType: "image/png", data: new Uint8Array(png) }
-  } catch {
-    return undefined
-  }
 }
 
 /// The icon links a page declares, best first: icons for the appearance,
