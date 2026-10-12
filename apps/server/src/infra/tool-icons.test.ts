@@ -243,26 +243,30 @@ describe("site icons", () => {
       "https://linear.app/": html('<link rel="icon" href="/icon.png">'),
       "https://linear.app/icon.png": () => image(served)()
     })
-    const original = await harness.icons.site("https://linear.app", "light")
-    expect(harness.requested()).toHaveLength(2)
+    try {
+      const original = await harness.icons.site("https://linear.app", "light")
+      expect(harness.requested()).toHaveLength(2)
 
-    // A new store over the same directory reads the disk cache.
-    const reopened = makeToolIconStore({
-      dir: harness.dir,
-      fetchImpl: harness.fetchImpl,
-      now: () => 1_000_000 + DAY
-    })
-    expect(await reopened.site("https://linear.app", "light")).toEqual(original)
-    expect(harness.requested()).toHaveLength(2)
+      // A new store over the same directory reads the disk cache.
+      const reopened = makeToolIconStore({
+        dir: harness.dir,
+        fetchImpl: harness.fetchImpl,
+        now: () => 1_000_000 + DAY
+      })
+      expect(await reopened.site("https://linear.app", "light")).toEqual(original)
+      expect(harness.requested()).toHaveLength(2)
 
-    // A week on, the stale icon is still served at once while it refreshes.
-    served = await png(48)
-    harness.advance(8 * DAY)
-    expect(await harness.icons.site("https://linear.app", "light")).toEqual(original)
-    expect(harness.refreshes).toHaveLength(1)
-    await harness.refreshes[0]
-    const refreshed = await harness.icons.site("https://linear.app", "light")
-    expect((await sharp(refreshed!.data).metadata()).width).toBe(48)
+      // A week on, the stale icon is still served at once while it refreshes.
+      served = await png(48)
+      harness.advance(8 * DAY)
+      expect(await harness.icons.site("https://linear.app", "light")).toEqual(original)
+      expect(harness.refreshes).toHaveLength(1)
+      await harness.refreshes[0]
+      const refreshed = await harness.icons.site("https://linear.app", "light")
+      expect((await sharp(refreshed!.data).metadata()).width).toBe(48)
+    } finally {
+      await Promise.all(harness.refreshes)
+    }
   })
 
   it("remembers a missing icon for a while, then looks again", async () => {
@@ -437,21 +441,25 @@ describe("MCP server icons", () => {
       },
       { mcpSources: async () => live }
     )
-    expect((await harness.icons.mcp("linear", undefined, "light"))?.contentType).toBe(
-      "image/x-icon"
-    )
-    expect((await harness.icons.mcp("linear", undefined, "light"))?.contentType).toBe(
-      "image/x-icon"
-    )
-    expect(harness.refreshes).toHaveLength(0)
+    try {
+      expect((await harness.icons.mcp("linear", undefined, "light"))?.contentType).toBe(
+        "image/x-icon"
+      )
+      expect((await harness.icons.mcp("linear", undefined, "light"))?.contentType).toBe(
+        "image/x-icon"
+      )
+      expect(harness.refreshes).toHaveLength(0)
 
-    live = { ...live, icons: [{ src: "https://linear.app/own.png" }] }
-    expect((await harness.icons.mcp("linear", undefined, "light"))?.contentType).toBe(
-      "image/x-icon"
-    )
-    await harness.refreshes[0]
-    expect((await harness.icons.mcp("linear", undefined, "light"))?.contentType).toBe("image/png")
-    expect(harness.refreshes).toHaveLength(1)
+      live = { ...live, icons: [{ src: "https://linear.app/own.png" }] }
+      expect((await harness.icons.mcp("linear", undefined, "light"))?.contentType).toBe(
+        "image/x-icon"
+      )
+      await harness.refreshes[0]
+      expect((await harness.icons.mcp("linear", undefined, "light"))?.contentType).toBe("image/png")
+      expect(harness.refreshes).toHaveLength(1)
+    } finally {
+      await Promise.all(harness.refreshes)
+    }
   })
 
   it("stops retrying a server whose own icons are all unusable", async () => {
