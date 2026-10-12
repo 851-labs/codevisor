@@ -339,7 +339,8 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
                         onBrowser: () => {
                           usedBrowser = true
                         },
-                        onBrowserPage: steps.onBrowserPage
+                        onBrowserPage: steps.onBrowserPage,
+                        onComputerApp: steps.onComputerApp
                       })
                     : await invokeOnMachine(machine, path, args, await remoteOrigin(), signal)
                 await settle({ ok: true, value })

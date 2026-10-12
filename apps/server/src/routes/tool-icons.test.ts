@@ -18,6 +18,10 @@ describe("tool icon routes", () => {
       mcp: async (serverId, host, theme) => {
         asked.push({ serverId, host, theme })
         return serverId === "sentry id" ? icon : undefined
+      },
+      app: async (bundleId, path) => {
+        asked.push({ bundleId, path })
+        return bundleId === "com.apple.Music" ? icon : undefined
       }
     }
     const { services } = await makeServices("server-a")
@@ -38,6 +42,14 @@ describe("tool icon routes", () => {
       (await fetch(`${server.url}/v1/tool-icons/site?origin=https%3A%2F%2Fbare.example`)).status
     ).toBe(404)
     expect((await fetch(`${server.url}/v1/tool-icons/mcp/stdio`)).status).toBe(404)
+    const app = await fetch(
+      `${server.url}/v1/tool-icons/app?bundleId=com.apple.Music&path=${encodeURIComponent("/System/Applications/Music.app")}`
+    )
+    expect(app.status).toBe(200)
+    expect((await fetch(`${server.url}/v1/tool-icons/app?bundleId=com.example.gone`)).status).toBe(
+      404
+    )
+    expect((await fetch(`${server.url}/v1/tool-icons/app`)).status).toBe(400)
     expect((await fetch(`${server.url}/v1/tool-icons/site`)).status).toBe(400)
     expect((await fetch(`${server.url}/v1/tool-icons/other/path`)).status).toBe(404)
     expect((await fetch(`${server.url}/v1/tool-icons/mcp/stdio`, { method: "POST" })).status).toBe(
@@ -47,7 +59,9 @@ describe("tool icon routes", () => {
       { origin: "https://linear.app", theme: "dark" },
       { serverId: "sentry id", host: "mcp.sentry.dev", theme: "light" },
       { origin: "https://bare.example", theme: "light" },
-      { serverId: "stdio", host: undefined, theme: "light" }
+      { serverId: "stdio", host: undefined, theme: "light" },
+      { bundleId: "com.apple.Music", path: "/System/Applications/Music.app" },
+      { bundleId: "com.example.gone", path: undefined }
     ])
   })
 

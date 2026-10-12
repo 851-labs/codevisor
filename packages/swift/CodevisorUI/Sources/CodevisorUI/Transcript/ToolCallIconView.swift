@@ -45,6 +45,16 @@ enum ToolIconMetrics {
     #endif
   }
 
+  /// Codevisor's mark fills its box edge to edge, so it sits a little
+  /// smaller than artwork to match the symbols' optical size.
+  static var markSide: CGFloat {
+    #if os(iOS)
+      13
+    #else
+      12
+    #endif
+  }
+
   static var labelInset: CGFloat { columnWidth + spacing }
 }
 
@@ -76,9 +86,21 @@ public struct ToolCallIconView: View {
         return try await controller.toolIconData(request)
       }
     ) {
-      Image(systemName: icon.symbol)
-        .font(ToolIconMetrics.font)
-        .foregroundStyle(.secondary)
+      Group {
+        if icon.symbol == ToolCallIcon.codevisorMark {
+          // Codevisor's own tools: the product mark, as a template so it
+          // takes the symbols' color, at their visual size.
+          Image("CodevisorMark", bundle: .module)
+            .renderingMode(.template)
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+            .frame(width: ToolIconMetrics.markSide, height: ToolIconMetrics.markSide)
+        } else {
+          Image(systemName: icon.symbol)
+            .font(ToolIconMetrics.font)
+        }
+      }
+      .foregroundStyle(.secondary)
     }
     .frame(width: ToolIconMetrics.columnWidth)
     .accessibilityHidden(true)
@@ -167,6 +189,8 @@ enum ToolIconImages {
         return "\(namespace)|site|\(origin)|\(dark)"
       case let .mcpServer(id, host):
         return "\(namespace)|mcp|\(id)|\(host ?? "")|\(dark)"
+      case let .app(bundleId, _):
+        return "\(namespace)|app|\(bundleId)"
       }
     }
 
@@ -174,6 +198,7 @@ enum ToolIconImages {
       switch artwork {
       case let .site(origin): .site(origin: origin, dark: dark)
       case let .mcpServer(id, host): .mcpServer(id: id, host: host, dark: dark)
+      case let .app(bundleId, path): .app(bundleId: bundleId, path: path)
       }
     }
   }

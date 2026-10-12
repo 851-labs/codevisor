@@ -5,8 +5,9 @@ import { HttpFailure, matchRoute, type CodevisorServerServices } from "../server
 
 /// Artwork for transcript workflow rows: `GET /v1/tool-icons/site?origin=`
 /// for a site a browser call visited, `GET /v1/tool-icons/mcp/:id?host=`
-/// for an MCP server, each with `theme=light|dark`. 404 when there is none,
-/// so clients draw their symbol.
+/// for an MCP server, each with `theme=light|dark`, and
+/// `GET /v1/tool-icons/app?bundleId=&path=` for an app Computer Use drove.
+/// 404 when there is none, so clients draw their symbol.
 export const routeToolIcons = async (
   services: CodevisorServerServices,
   request: IncomingMessage,
@@ -23,6 +24,10 @@ export const routeToolIcons = async (
     const origin = url.searchParams.get("origin")
     if (origin === null) throw new HttpFailure(400, "origin is required")
     icon = await store.site(origin, theme)
+  } else if (url.pathname === "/v1/tool-icons/app") {
+    const bundleId = url.searchParams.get("bundleId")
+    if (bundleId === null) throw new HttpFailure(400, "bundleId is required")
+    icon = await store.app(bundleId, url.searchParams.get("path") ?? undefined)
   } else {
     const serverId = matchRoute(url.pathname, "/v1/tool-icons/mcp/:id")
     if (serverId === undefined) return false

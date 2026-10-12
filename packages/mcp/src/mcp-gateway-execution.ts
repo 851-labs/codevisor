@@ -14,6 +14,7 @@ import {
   type CodevisorExecutionState,
   type CodevisorSkillRead
 } from "@codevisor/api"
+import type { ComputerUseApp } from "@codevisor/automation"
 
 /// Live transcript annotation for one `execute` call: the latest `status()`
 /// text and every nested tool call, streamed to the session sink so the
@@ -70,8 +71,11 @@ const sameIcon = (
   rhs: CodevisorExecutionIcon | undefined
 ): boolean => JSON.stringify(lhs) === JSON.stringify(rhs)
 
-const isBareBrowser = (icon: CodevisorExecutionIcon): boolean =>
-  icon.kind === "builtin" && icon.id === "browser"
+/// A bare browser or desktop, which the site or app it reaches names better.
+const isBareSurface = (icon: CodevisorExecutionIcon, next: CodevisorExecutionIcon): boolean =>
+  icon.kind === "builtin" &&
+  ((icon.id === "browser" && next.kind === "site") ||
+    (icon.id === "computer" && next.kind === "app"))
 
 export const makeExecutionRecorder = (options: {
   readonly sink: RuntimeEventSink | undefined
@@ -168,10 +172,9 @@ export const makeExecutionRecorder = (options: {
     },
     touch: (next) => {
       if (finished) return
-      // A site a browser call reached names the workflow better than the
-      // bare browser it started with.
-      const named =
-        icon === undefined || (isBareBrowser(icon) && next.kind === "site") ? next : icon
+      // A site a browser call reached (or an app the desktop drove) names
+      // the workflow better than the bare surface it started with.
+      const named = icon === undefined || isBareSurface(icon, next) ? next : icon
       if (sameIcon(named, icon) && sameIcon(next, activeIcon)) return
       icon = named
       activeIcon = next
@@ -230,6 +233,14 @@ export const executionCallIcon = async (
   const host = await serverHost(serverId).catch(() => undefined)
   return { kind: "mcp", serverId, ...(host === undefined ? {} : { host }) }
 }
+
+/// An app Computer Use drove, as a workflow icon.
+export const appIcon = (app: ComputerUseApp): CodevisorExecutionIcon => ({
+  kind: "app",
+  bundleId: app.bundleId,
+  ...(app.name === undefined ? {} : { name: app.name }),
+  ...(app.path === undefined ? {} : { path: app.path })
+})
 
 /// The site a page URL belongs to, as a workflow icon.
 export const siteIcon = (url: string): CodevisorExecutionIcon | undefined => {

@@ -94,6 +94,11 @@ describe("execution steps", () => {
     // Pages that aren't sites leave the browser's icon alone.
     steps.onBrowserPage("about:blank")
 
+    // A desktop call is shown on the app it drove.
+    const desktop = await steps.begin("computer.js", { internal: false, local: true })
+    steps.onComputerApp({ bundleId: "com.apple.Music", name: "Music" })
+    await desktop({ ok: true, value: null })
+
     expect((await finished()).calls).toEqual([
       {
         path: "remote.list_issues",
@@ -119,6 +124,13 @@ describe("execution steps", () => {
         title: "List issues",
         icon: { kind: "mcp", serverId: "remote", host: "mcp.linear.app" },
         machine: "MacBook Pro",
+        ok: true,
+        ms: expect.any(Number)
+      },
+      {
+        path: "computer.js",
+        title: "Used the desktop",
+        icon: { kind: "app", bundleId: "com.apple.Music", name: "Music" },
         ok: true,
         ms: expect.any(Number)
       }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { browserResultPageUrl, textToolResult } from "./automation-provider.js"
+import { browserResultPageUrl, computerResultApp, textToolResult } from "./automation-provider.js"
 
 describe("textToolResult", () => {
   it("returns successful and failed MCP text results", () => {
@@ -26,6 +26,42 @@ describe("browserResultPageUrl", () => {
     expect(browserResultPageUrl({ content: [] })).toBeUndefined()
     expect(
       browserResultPageUrl({ content: [{ type: "image", data: "", mimeType: "image/png" }] })
+    ).toBeUndefined()
+  })
+})
+
+describe("computerResultApp", () => {
+  it("reads the app an observation resolved, and nothing else", () => {
+    const observation = (resolvedApp: unknown) =>
+      textToolResult(JSON.stringify({ snapshotId: "s", resolvedApp, text: "..." }))
+    expect(
+      computerResultApp(
+        observation({
+          id: "com.apple.Music",
+          name: "Music",
+          path: "/System/Applications/Music.app"
+        })
+      )
+    ).toEqual({
+      bundleId: "com.apple.Music",
+      name: "Music",
+      path: "/System/Applications/Music.app"
+    })
+    expect(computerResultApp(observation({ id: "com.apple.Notes" }))).toEqual({
+      bundleId: "com.apple.Notes"
+    })
+    expect(computerResultApp(observation({ id: "" }))).toBeUndefined()
+    expect(computerResultApp(observation(null))).toBeUndefined()
+    // Actions report delivery, not a resolved app.
+    expect(
+      computerResultApp(textToolResult('{"delivered":true,"app":"com.apple.Music"}'))
+    ).toBeUndefined()
+    expect(computerResultApp(textToolResult('"resolvedApp" in plain text'))).toBeUndefined()
+    expect(
+      computerResultApp(textToolResult(JSON.stringify({ resolvedApp: { id: "x.y" } }), true))
+    ).toBeUndefined()
+    expect(
+      computerResultApp({ content: [{ type: "image", data: "", mimeType: "image/png" }] })
     ).toBeUndefined()
   })
 })

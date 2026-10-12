@@ -137,6 +137,27 @@ struct CodevisorExecutionPresentationTests {
       execution: #"{"state":"completed","calls":[],"icon":{"kind":"builtin","id":"computer"}}"#
     )
     #expect(browser.icon == ToolCallIcon(symbol: "display"))
+    let codevisor = try snapshot(
+      status: "completed",
+      execution: #"{"state":"completed","calls":[],"icon":{"kind":"builtin","id":"codevisor"}}"#
+    )
+    #expect(codevisor.icon == ToolCallIcon(symbol: ToolCallIcon.codevisorMark))
+
+    // A desktop workflow draws the app it drove, over the desktop symbol.
+    let music = try snapshot(
+      status: "completed",
+      execution:
+        #"{"state":"completed","calls":[],"icon":{"kind":"app","bundleId":"com.apple.Music","name":"Music","path":"/System/Applications/Music.app"}}"#
+    )
+    #expect(
+      music.icon
+        == ToolCallIcon(
+          symbol: "display", artwork: .app(bundleId: "com.apple.Music", path: "/System/Applications/Music.app")))
+    let unnamedApp = try snapshot(
+      status: "completed",
+      execution: #"{"state":"completed","calls":[],"icon":{"kind":"app","bundleId":""}}"#
+    )
+    #expect(unnamedApp.icon == ToolCallIcon(symbol: "puzzlepiece.extension"))
     let unknown = try snapshot(
       status: "completed",
       execution: #"{"state":"completed","calls":[],"icon":{"kind":"hologram"},"activeIcon":{"kind":"site"}}"#

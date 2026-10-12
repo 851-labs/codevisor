@@ -7,7 +7,7 @@ import { join } from "node:path"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 
 import type { AutomationToolProvider } from "./automation-provider.js"
-import { textToolResult } from "./automation-provider.js"
+import { computerResultApp, textToolResult } from "./automation-provider.js"
 import { makeRecordingArtifacts } from "./computer-use-recording-artifacts.js"
 import { makeComputerUseRepls } from "./computer-use-repl.js"
 import { computerUseTools } from "./computer-use-tools.js"
@@ -357,6 +357,8 @@ export const makeComputerUseProvider = (
           tool: toolName,
           arguments: args
         })
+        const app = computerResultApp(result)
+        if (app !== undefined) context.onApp?.(app)
         return toolName === "stop_recording" || toolName === "recording_status"
           ? await recordingArtifacts.enrich(result, context)
           : result

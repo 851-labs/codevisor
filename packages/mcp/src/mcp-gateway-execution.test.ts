@@ -5,6 +5,7 @@ import { canonicalExecutionArgs, type CodevisorExecutionState } from "@codevisor
 import { describe, expect, it } from "vitest"
 
 import {
+  appIcon,
   EXECUTION_EMIT_INTERVAL_MS,
   errorSummary,
   executionArgsHash,
@@ -268,6 +269,35 @@ describe("execution recorder", () => {
     expect(states().at(-1)).toMatchObject({ state: "completed", icon: linear, activeIcon: sentry })
     recorder.touch(browser)
     expect(states().at(-1)).toMatchObject({ activeIcon: sentry })
+  })
+
+  it("names a desktop workflow by the app it drove", async () => {
+    const clock = manualTimers()
+    const { recorder, states } = recording(clock.timers)
+    const computer = { kind: "builtin", id: "computer" } as const
+    const music = appIcon({ bundleId: "com.apple.Music", name: "Music" })
+    expect(music).toEqual({ kind: "app", bundleId: "com.apple.Music", name: "Music" })
+    expect(appIcon({ bundleId: "a.b", path: "/Applications/B.app" })).toEqual({
+      kind: "app",
+      bundleId: "a.b",
+      path: "/Applications/B.app"
+    })
+    recorder.touch(computer)
+    recorder.touch(music)
+    clock.advance(EXECUTION_EMIT_INTERVAL_MS)
+    expect(states().at(-1)).toMatchObject({ icon: music, activeIcon: music })
+    // A site never renames a desktop workflow, nor an app a browser one.
+    recorder.touch({ kind: "site", origin: "https://linear.app" })
+    clock.advance(EXECUTION_EMIT_INTERVAL_MS)
+    expect(states().at(-1)).toMatchObject({ icon: music })
+    await recorder.finish()
+
+    const browsing = recording(clock.timers)
+    browsing.recorder.touch({ kind: "builtin", id: "browser" })
+    browsing.recorder.touch(music)
+    clock.advance(EXECUTION_EMIT_INTERVAL_MS)
+    expect(browsing.states().at(-1)).toMatchObject({ icon: { kind: "builtin", id: "browser" } })
+    await browsing.recorder.finish()
   })
 })
 

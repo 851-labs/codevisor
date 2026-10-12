@@ -431,6 +431,7 @@ let package = Package(
         .copy("Resources/plugin-bridge.js"), .copy("Resources/BrowserRouting"),
         .copy("Resources/browser-navigation.js"),
         .process("Resources/FileIcons.xcassets"), .copy("Resources/FileIcons"),
+        .process("Resources/ToolIcons.xcassets"),
       ],
       swiftSettings: strictSwiftSettings
     ),

@@ -40,6 +40,7 @@ import { migrateLinuxDataLayout } from "./infra/linux-data-migration.js"
 import { makeOpenCodeSetup, openCodeAccountContexts } from "./infra/opencode-setup.js"
 import { acquireServerLease, type ServerLease } from "./infra/server-lease.js"
 import { makeSharedAccounts, type SharedAccounts } from "./infra/shared-accounts.js"
+import { makeAppIconLoader } from "./infra/tool-icon-apps.js"
 import { makeToolIconStore } from "./infra/tool-icons.js"
 import {
   restoreTerminalPersistence,
@@ -395,6 +396,7 @@ export const runServe = (
         syncBlobs,
         toolIcons: makeToolIconStore({
           dir: join(dirname(databasePath), "tool-icons"),
+          ...(process.platform === "darwin" ? { appIcon: makeAppIconLoader() } : {}),
           ...(mcp === undefined ? {} : { mcpSources: mcp.iconSources })
         }),
         machines: machineLink,

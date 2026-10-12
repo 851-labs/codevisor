@@ -3,8 +3,8 @@
 /// `_meta.codevisorExecution` so clients can label what a workflow is doing.
 
 /// What a workflow touched, so clients can draw its artwork: the site a
-/// browser call left its tab on, the MCP server a call reached, or one of
-/// Codevisor's own capabilities.
+/// browser call left its tab on, the app a Computer Use call drove, the MCP
+/// server a call reached, or one of Codevisor's own capabilities.
 export type CodevisorExecutionIcon =
   | { readonly kind: "site"; readonly origin: string }
   | {
@@ -13,6 +13,13 @@ export type CodevisorExecutionIcon =
       /// The server's host, so the icon still resolves (by favicon) once
       /// the server is removed or when it lives on another machine.
       readonly host?: string
+    }
+  | {
+      readonly kind: "app"
+      readonly bundleId: string
+      readonly name?: string
+      /// Where the app was installed when it ran, a hint for finding its icon.
+      readonly path?: string
     }
   | { readonly kind: "builtin"; readonly id: "browser" | "computer" | "codevisor" | "plugin" }
 

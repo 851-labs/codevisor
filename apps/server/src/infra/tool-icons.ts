@@ -4,6 +4,7 @@ import { join } from "node:path"
 
 import sharp from "sharp"
 
+import type { AppIconLoader } from "./tool-icon-apps.js"
 import {
   isPublicHost,
   pageIconCandidates,
@@ -51,12 +52,17 @@ export interface ToolIconStore {
     host: string | undefined,
     theme: ToolIconTheme
   ) => Promise<ToolIconAsset | undefined>
+  /// An app Computer Use drove, by bundle ID; `path` is where it was
+  /// installed when it ran. Undefined off macOS or when it isn't here.
+  readonly app: (bundleId: string, path: string | undefined) => Promise<ToolIconAsset | undefined>
 }
 
 export interface ToolIconStoreOptions {
   readonly dir: string
   readonly mcpSources?: (serverId: string) => Promise<McpIconSources | undefined>
   readonly fetchImpl?: typeof fetch
+  /// Reads an installed app's icon (macOS); absent elsewhere.
+  readonly appIcon?: AppIconLoader
   readonly now?: () => number
   /// Runs a refresh that nothing awaits (a stale icon was already served).
   readonly background?: (refresh: Promise<unknown>) => void
@@ -411,6 +417,15 @@ export const makeToolIconStore = (options: ToolIconStoreOptions): ToolIconStore 
             : undefined),
         source: "favicon"
       }))
+    },
+    app: async (bundleId, path) => {
+      const loadIcon = options.appIcon
+      if (loadIcon === undefined) return undefined
+      // An app's icon doesn't change with the appearance.
+      return cached(`app:${bundleId}`, async () => {
+        const data = await loadIcon(bundleId, path)
+        return { asset: data === undefined ? undefined : await normalizeIcon(data) }
+      })
     },
     mcp: async (serverId, host, theme) => {
       const sources = await options.mcpSources?.(serverId).catch(() => undefined)

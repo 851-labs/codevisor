@@ -3,18 +3,25 @@ import Foundation
 
 /// What a transcript row draws beside a tool call: an SF Symbol, optionally
 /// replaced by artwork the server resolves — the favicon of a site a browser
-/// workflow visited, or the icon of the MCP server a workflow called. The
-/// symbol is always set, so a row never waits on (or loses) its icon.
+/// workflow visited, the icon of an app a desktop workflow drove, or the
+/// icon of the MCP server a workflow called. The symbol is always set, so a
+/// row never waits on (or loses) its icon.
 public struct ToolCallIcon: Equatable, Hashable, Sendable {
   public enum Artwork: Equatable, Hashable, Sendable {
     /// A site's favicon, by origin (`https://linear.app`).
     case site(origin: String)
     /// An MCP server's icon. `host` resolves servers this machine lacks.
     case mcpServer(id: String, host: String?)
+    /// A macOS app's icon, by bundle ID; `path` is where it ran from.
+    case app(bundleId: String, path: String?)
   }
 
   public var symbol: String
   public var artwork: Artwork?
+
+  /// Not an SF Symbol: views draw Codevisor's own mark for it, tinted like
+  /// the symbols around it. Calls to Codevisor's own tools use it.
+  public static let codevisorMark = "codevisor.mark"
 
   public init(symbol: String, artwork: Artwork? = nil) {
     self.symbol = symbol
@@ -27,6 +34,7 @@ public struct ToolCallIcon: Equatable, Hashable, Sendable {
 public enum CodevisorExecutionIconRef: Equatable, Sendable {
   case site(origin: String)
   case mcp(serverId: String, host: String?)
+  case app(bundleId: String, path: String?)
   case builtin(String)
 
   init?(json: JSONValue?) {
@@ -38,6 +46,9 @@ public enum CodevisorExecutionIconRef: Equatable, Sendable {
     case "mcp":
       guard let id = json["serverId"]?.stringValue, !id.isEmpty else { return nil }
       self = .mcp(serverId: id, host: json["host"]?.stringValue)
+    case "app":
+      guard let bundleId = json["bundleId"]?.stringValue, !bundleId.isEmpty else { return nil }
+      self = .app(bundleId: bundleId, path: json["path"]?.stringValue)
     case "builtin":
       guard let id = json["id"]?.stringValue else { return nil }
       self = .builtin(id)
@@ -52,8 +63,11 @@ public enum CodevisorExecutionIconRef: Equatable, Sendable {
       return ToolCallIcon(symbol: "globe", artwork: .site(origin: origin))
     case let .mcp(serverId, host):
       return ToolCallIcon(symbol: ToolCall.mcpServerSymbol, artwork: .mcpServer(id: serverId, host: host))
+    case let .app(bundleId, path):
+      return ToolCallIcon(symbol: "display", artwork: .app(bundleId: bundleId, path: path))
     case .builtin("browser"): return ToolCallIcon(symbol: "globe")
     case .builtin("computer"): return ToolCallIcon(symbol: "display")
+    case .builtin("codevisor"): return ToolCallIcon(symbol: ToolCallIcon.codevisorMark)
     case .builtin: return ToolCallIcon(symbol: ToolCall.integrationSymbol)
     }
   }

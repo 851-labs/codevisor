@@ -1,7 +1,11 @@
 import { realpathSync, statSync } from "node:fs"
 import { isAbsolute, relative, resolve } from "node:path"
 
-import type { AutomationToolProvider, BrowserSetupBroker } from "@codevisor/automation"
+import type {
+  AutomationToolProvider,
+  BrowserSetupBroker,
+  ComputerUseApp
+} from "@codevisor/automation"
 import { browserResultPageUrl, CodeExecutionToolError } from "@codevisor/automation"
 import type { McpServerRecord } from "@codevisor/db"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
@@ -29,6 +33,8 @@ export interface GatewayInvokeOptions {
   readonly onBrowser?: () => void
   /// Fires with the page a Browser Use call left its tab on.
   readonly onBrowserPage?: (url: string) => void
+  /// Fires with each app a Computer Use call observed.
+  readonly onComputerApp?: (app: ComputerUseApp) => void
 }
 
 /// Keeps a tool failure's code and details (machine_unavailable and friends)
@@ -101,7 +107,9 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
     collector?: SandboxArtifactCollector,
     remote?: GatewayOrigin,
     /// Hears the page each nested browser action (a `browser.js` cell's) leaves its tab on.
-    onPage?: (url: string) => void
+    onPage?: (url: string) => void,
+    /// Hears each app a Computer Use call (or a `computer.js` cell's) observes.
+    onApp?: (app: ComputerUseApp) => void
   ): Promise<CallToolResult> => {
     if (provider.id !== "browser" && provider.id !== "computer" && provider.id !== "codevisor") {
       throw new Error(`Unknown automation provider: ${provider.id}`)
@@ -127,7 +135,8 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
               remote === undefined
                 ? (await run(config.db.getSessionSummary(context.sessionId))).title
                 : `${remote.sessionTitle ?? "Agent"} (from ${remote.machineName})`,
-            publishRecording
+            publishRecording,
+            ...(onApp === undefined ? {} : { onApp })
           }
         : provider.id === "browser"
           ? {
@@ -275,7 +284,8 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
         input,
         artifacts,
         remote,
-        options.onBrowserPage
+        options.onBrowserPage,
+        options.onComputerApp
       )
       const pageUrl = serverId === "browser" ? browserResultPageUrl(result) : undefined
       if (pageUrl !== undefined) options.onBrowserPage?.(pageUrl)
