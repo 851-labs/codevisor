@@ -162,6 +162,7 @@ public struct TranscriptWorkedSectionHeaderView: View {
   @Environment(\.transcriptPerformAnchoredDisclosureChange)
   private var performAnchoredDisclosureChange
   @Environment(\.transcriptInvalidateRowMeasurement) private var invalidateRowMeasurement
+  @State private var smoother = WorkedActivityLabelSmoother()
 
   public init(
     turn: AssistantTurn,
@@ -236,28 +237,46 @@ public struct TranscriptWorkedSectionHeaderView: View {
   @ViewBuilder
   private var label: some View {
     if turn.workedSectionTicks(kind) {
-      // Collapsed, the header stands in for the hidden work: what the turn
-      // is doing now, shimmering, then for how long. Expanded, the work is
-      // visible, so the header just times it. Once the answer is streaming
-      // the work is done, so the header already reads as settled.
-      if let activity = turn.workedSectionActivity {
-        if isExpanded {
-          TranscriptWorkingDurationLabel(turn: turn, kind: kind, prefix: "Working for ")
-        } else {
-          Text(activity)
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .shimmering()
-            .accessibilityLabel(activity)
-          TranscriptWorkingDurationLabel(turn: turn, kind: kind)
-            .fixedSize()
-        }
-      } else {
+      liveLabel
+    } else {
+      Text(turn.workedSectionTitle(kind, now: Date()))
+    }
+  }
+
+  /// Collapsed, the header stands in for the hidden work: what the turn is
+  /// doing now, shimmering, then for how long. Expanded, the work is
+  /// visible, so the header just times it. Once the answer is streaming the
+  /// work is done, so the header already reads as settled. The subject is
+  /// paced (see `WorkedActivityLabelSmoother`) so fast work doesn't flicker.
+  @ViewBuilder
+  private var liveLabel: some View {
+    let activity = turn.workedSectionActivity
+    let shown = smoother.shown ?? WorkedActivityLabelSmoother.initial(activity)
+    Group {
+      switch shown {
+      case let .step(step) where !isExpanded:
+        Text(step)
+          .lineLimit(1)
+          .truncationMode(.tail)
+          .shimmering()
+          .accessibilityLabel(step)
+        TranscriptWorkingDurationLabel(turn: turn, kind: kind)
+          .fixedSize()
+      case .step, .pending:
+        TranscriptWorkingDurationLabel(turn: turn, kind: kind, prefix: "Working for ")
+      case .answering:
         // One run of text, so the label doesn't shift when the turn ends.
         TranscriptWorkingDurationLabel(turn: turn, kind: kind, prefix: "Worked for ")
       }
-    } else {
-      Text(turn.workedSectionTitle(kind, now: Date()))
+    }
+    .onChange(of: activity, initial: true) { _, next in
+      smoother.observe(next, now: Date())
+    }
+    .task(id: smoother.deadline) {
+      guard let deadline = smoother.deadline else { return }
+      try? await Task.sleep(for: .seconds(max(0, deadline.timeIntervalSinceNow)))
+      guard !Task.isCancelled else { return }
+      smoother.tick(now: Date())
     }
   }
 
@@ -358,33 +377,6 @@ extension AssistantTurn {
     runningSubagentRunToolCallIDs: Set<String>
   ) -> Bool {
     !workedSectionTicks(kind) && startedRunningSubagent(runningSubagentRunToolCallIDs)
-  }
-
-  /// The live worked header's label: the turn's own status (retrying,
-  /// compacting, starting an agent, thinking), else the latest running tool.
-  /// Nil once only the answer is streaming. The timer beside it already says
-  /// the work is ongoing, so the label drops any trailing ellipsis.
-  var workedSectionActivity: String? {
-    var label: String
-    if let activity = AssistantTurnActivity.resolve(
-      turn: self, isWaitingOnUser: false, sessionActivity: nil, backgroundTask: nil,
-      goalActivity: nil),
-      !activity.followsResponse
-    {
-      // The header shows only once work began: between tool calls the
-      // model is deciding what to do next.
-      label =
-        activity.message == AssistantTurnActivity.waitingOnHarnessMessage
-        ? "Thinking" : activity.message
-    } else if let running = toolCalls.last(where: { !$0.isSettled && !isUnstartedSubagent($0) }) {
-      label = running.displayTitle
-    } else {
-      return nil
-    }
-    while let last = label.last, last == "…" || last == "." {
-      label.removeLast()
-    }
-    return label
   }
 }
 
