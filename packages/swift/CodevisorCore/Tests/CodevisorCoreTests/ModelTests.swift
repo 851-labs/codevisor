@@ -118,18 +118,24 @@ struct ModelTests {
     #expect(String(data: try JSONEncoder().encode(origin), encoding: .utf8) == #""codevisor""#)
   }
 
-  @Test("Worktree sessions round-trip their worktree name and cwd")
+  @Test("Worktree sessions keep their persisted coding keys")
   func worktreeSessionCodable() throws {
     let session = ChatSession(
-      projectId: UUID(),
+      id: UUID(uuidString: "11111111-1111-4111-8111-111111111111")!,
+      projectId: UUID(uuidString: "22222222-2222-4222-8222-222222222222")!,
       harnessId: "codex",
       worktreeName: "fix-auth",
-      cwd: "/Users/me/codevisor/p/fix-auth"
+      cwd: "/Users/me/codevisor/p/fix-auth",
+      createdAt: Date(timeIntervalSinceReferenceDate: 0)
     )
-    let decoded = try JSONDecoder().decode(
-      ChatSession.self,
-      from: JSONEncoder().encode(session)
+    let object = try #require(
+      try JSONSerialization.jsonObject(with: JSONEncoder().encode(session)) as? [String: Any]
     )
+    #expect(object["worktreeName"] as? String == "fix-auth")
+    #expect(object["cwd"] as? String == "/Users/me/codevisor/p/fix-auth")
+    let literal =
+      #"{"id":"11111111-1111-4111-8111-111111111111","projectId":"22222222-2222-4222-8222-222222222222","harnessId":"codex","worktreeName":"fix-auth","cwd":"/Users/me/codevisor/p/fix-auth","createdAt":0}"#
+    let decoded = try JSONDecoder().decode(ChatSession.self, from: Data(literal.utf8))
     #expect(decoded.worktreeName == "fix-auth")
     #expect(decoded.cwd == "/Users/me/codevisor/p/fix-auth")
   }
