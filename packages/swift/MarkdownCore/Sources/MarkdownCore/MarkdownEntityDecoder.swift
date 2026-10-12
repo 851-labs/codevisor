@@ -29,10 +29,10 @@ enum MarkdownEntityDecoder {
     guard entity.hasPrefix("&"), entity.hasSuffix(";") else { return entity }
     let body = String(entity.dropFirst().dropLast())
     if body.hasPrefix("#x") || body.hasPrefix("#X") {
-      return scalar(String(body.dropFirst(2)), radix: 16) ?? entity
+      return scalar(String(body.dropFirst(2)), radix: 16)
     }
     if body.hasPrefix("#") {
-      return scalar(String(body.dropFirst()), radix: 10) ?? entity
+      return scalar(String(body.dropFirst()), radix: 10)
     }
     return decodeNamed(entity)
   }
@@ -57,7 +57,7 @@ enum MarkdownEntityDecoder {
     }
   }
 
-  private static func scalar(_ value: String, radix: Int) -> String? {
+  private static func scalar(_ value: String, radix: Int) -> String {
     guard let number = UInt32(value, radix: radix),
       number != 0,
       !(0xD800...0xDFFF).contains(number),
