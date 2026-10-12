@@ -21,7 +21,7 @@ export * from "./session-skills.js"
 export * from "./agent-runtime-types.js"
 export { harnessCatalog, OPENCODE_INSTALL_PATH } from "./harness-catalog.js"
 export { locateExecutableOnPath } from "./executable-locator.js"
-export { makeVersionProber } from "./version-probe.js"
+export { binaryIdentity, makeVersionProber } from "./version-probe.js"
 export type { VersionProber, VersionProberOptions } from "./version-probe.js"
 export { clampFailureDetail, summarizeProcessFailure } from "./process-failure.js"
 

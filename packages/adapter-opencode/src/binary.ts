@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process"
 import { accessSync, constants, statSync } from "node:fs"
 import { delimiter, join } from "node:path"
 
-import { OPENCODE_INSTALL_PATH } from "@codevisor/agent-runtime"
+import { binaryIdentity, OPENCODE_INSTALL_PATH } from "@codevisor/agent-runtime"
 
 /// The OpenCode Codevisor runs. A machine can hold two: OpenCode 2 from its
 /// installer, and an OpenCode 1 its package manager still has. OpenCode 1
@@ -36,19 +36,24 @@ const defaultCandidates = (env: NodeJS.ProcessEnv): ReadonlyArray<string> => {
   return installed !== undefined && executable(installed) ? [...onPath, installed] : onPath
 }
 
-const versions = new Map<string, { readonly modified: number; readonly output?: string }>()
+const versions = new Map<
+  string,
+  { readonly identity: string | undefined; readonly output?: string }
+>()
 
 const defaultReadVersion = (path: string): string | undefined => {
-  const modified = statSync(path, { throwIfNoEntry: false })?.mtimeMs ?? Number.NaN
+  const identity = binaryIdentity(path)
   const cached = versions.get(path)
-  if (cached?.modified === modified) return cached.output
+  if (cached !== undefined && identity !== undefined && cached.identity === identity) {
+    return cached.output
+  }
   let output: string | undefined
   try {
     output = execFileSync(path, ["--version"], { encoding: "utf8", timeout: 5_000 })
   } catch {
     output = undefined
   }
-  versions.set(path, { modified, ...(output === undefined ? {} : { output }) })
+  versions.set(path, { identity, ...(output === undefined ? {} : { output }) })
   return output
 }
 /* v8 ignore stop */

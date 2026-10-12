@@ -9,7 +9,7 @@ it("reads both OpenCode version formats", () => {
 })
 
 it("asks a binary for its version once, and again after it changes", async () => {
-  let modified = 1
+  let identity = "a"
   let output = "1.18.34\n"
   const runs: string[] = []
   const probe = makeOpenCodeVersionProbe({
@@ -18,13 +18,14 @@ it("asks a binary for its version once, and again after it changes", async () =>
       if (command === "/missing") throw new Error("ENOENT")
       return output
     },
-    modified: async () => modified
+    identity: (command) => (command === "/missing" ? undefined : identity)
   })
   expect([await probe("/bin/opencode"), await probe("/bin/opencode")]).toEqual([1, 1])
   expect(runs).toEqual(["/bin/opencode"])
-  modified = 2
+  identity = "b"
   output = "opencode v2.0.24\n"
   expect(await probe("/bin/opencode")).toBe(2)
-  expect(await probe("/missing")).toBeUndefined()
-  expect(runs).toEqual(["/bin/opencode", "/bin/opencode", "/missing"])
+  // One it can't stat (a bare command name) is asked every time.
+  expect([await probe("/missing"), await probe("/missing")]).toEqual([undefined, undefined])
+  expect(runs).toEqual(["/bin/opencode", "/bin/opencode", "/missing", "/missing"])
 })

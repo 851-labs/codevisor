@@ -13,9 +13,9 @@ export interface VersionProberOptions {
   /// whose `#!/usr/bin/env node` shebang needs the resolved PATH, which a
   /// service-launched server's own environment does not have.
   readonly readVersionOutput?: (path: string, env: NodeJS.ProcessEnv) => Promise<string>
-  /// Modification time used to invalidate cache entries when a binary is
-  /// upgraded in place; defaults to `statSync`.
-  readonly modifiedTime?: (path: string) => number | undefined
+  /// Invalidates cache entries when a binary changes; defaults to
+  /// `binaryIdentity`.
+  readonly identity?: (path: string) => string | undefined
   readonly timeoutMs?: number
 }
 
@@ -27,6 +27,16 @@ export interface VersionProber {
   /// unchanged cache entries and sharing in-flight probes. Resolves when
   /// every probe settles; never rejects.
   readonly probe: (paths: ReadonlyArray<string>, env?: NodeJS.ProcessEnv) => Promise<void>
+}
+
+/// Changes whenever the file at `path` (symlinks followed) is replaced or
+/// rewritten. The modification time alone does not: Homebrew bottles and npm
+/// tarballs stamp every file with a fixed time, so an upgrade keeps it. A
+/// replaced file still gets a new inode, and a rewrite a new change time,
+/// which installers can't set.
+export const binaryIdentity = (path: string): string | undefined => {
+  const stats = statSync(path, { throwIfNoEntry: false })
+  return stats === undefined ? undefined : `${stats.dev}:${stats.ino}:${stats.ctimeMs}`
 }
 
 /// First semver-ish token in the output ("claude 2.1.5 (Claude Code)" → 2.1.5).
@@ -47,34 +57,26 @@ export const makeVersionProber = (options: VersionProberOptions = {}): VersionPr
           }
         })
       }))
-  const modifiedTime =
-    options.modifiedTime ??
-    ((path: string) => {
-      try {
-        return statSync(path).mtimeMs
-      } catch {
-        return undefined
-      }
-    })
+  const identity = options.identity ?? binaryIdentity
 
   const cache = new Map<
     string,
-    { readonly mtime: number | undefined; readonly version: string | undefined }
+    { readonly identity: string | undefined; readonly version: string | undefined }
   >()
   const inflight = new Map<string, Promise<void>>()
 
   const probeOne = (path: string, env: NodeJS.ProcessEnv): Promise<void> => {
     const existing = inflight.get(path)
     if (existing !== undefined) return existing
-    const mtime = modifiedTime(path)
+    const current = identity(path)
     const cached = cache.get(path)
-    if (cached !== undefined && cached.mtime === mtime) return Promise.resolve()
+    if (cached !== undefined && cached.identity === current) return Promise.resolve()
     const task = readVersionOutput(path, env)
       .then((output) => {
-        cache.set(path, { mtime, version: parseVersionOutput(output) })
+        cache.set(path, { identity: current, version: parseVersionOutput(output) })
       })
       .catch(() => {
-        cache.set(path, { mtime, version: undefined })
+        cache.set(path, { identity: current, version: undefined })
       })
       .finally(() => {
         inflight.delete(path)
