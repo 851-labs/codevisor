@@ -309,12 +309,6 @@ private extension ComposerCard {
     .accessibilityHint("Keep the current goal. Keyboard shortcut: Escape")
   }
 
-  private func chipLabel(_ text: String) -> some View {
-    Text(text)
-      .foregroundStyle(.secondary)
-      .contentShape(Rectangle())
-  }
-
   private var attachButton: some View {
     Button(action: pickFiles) {
       Image(systemName: "paperclip")
