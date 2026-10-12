@@ -18,7 +18,10 @@ struct WorkedTimelineRail<Node: View, Line: View, Expanded: View>: View {
 
   private let lineHeight: CGFloat = 18
   private let nodeWidth: CGFloat = 18
-  private let verticalPadding: CGFloat = 3
+  private let verticalPadding = TranscriptTimelineMarks.linePadding
+  /// How far the rail stops short of the node's center: half a tool icon,
+  /// plus clearance.
+  private let railGap = ToolIconMetrics.artworkSide / 2 + TranscriptTimelineMarks.nodeClearance
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
@@ -33,14 +36,14 @@ struct WorkedTimelineRail<Node: View, Line: View, Expanded: View>: View {
           let x = nodeWidth / 2
           if !isFirst {
             path.move(to: CGPoint(x: x, y: 0))
-            path.addLine(to: CGPoint(x: x, y: verticalPadding + 1))
+            path.addLine(to: CGPoint(x: x, y: TranscriptTimelineMarks.nodeCenterY - railGap))
           }
           if !isLast {
-            path.move(to: CGPoint(x: x, y: verticalPadding + lineHeight - 1))
+            path.move(to: CGPoint(x: x, y: TranscriptTimelineMarks.nodeCenterY + railGap))
             path.addLine(to: CGPoint(x: x, y: proxy.size.height))
           }
         }
-        .stroke(Color.primary.opacity(0.18), lineWidth: 1)
+        .stroke(Color.primary.opacity(0.18), lineWidth: TranscriptTimelineMarks.railWidth)
       }
     }
   }
@@ -83,8 +86,8 @@ struct WorkedTimelineGutter: ViewModifier {
         .background(alignment: .topLeading) {
           GeometryReader { proxy in
             let x = TranscriptTimelineMarks.railX
-            let dotY = TranscriptTimelineMarks.dotCenterY
-            let gap = TranscriptTimelineMarks.dotDiameter / 2 + 2
+            let dotY = TranscriptTimelineMarks.nodeCenterY
+            let gap = TranscriptTimelineMarks.dotDiameter / 2 + TranscriptTimelineMarks.nodeClearance
             Path { path in
               if marks.railAbove {
                 path.move(to: CGPoint(x: x, y: 0))
@@ -95,7 +98,7 @@ struct WorkedTimelineGutter: ViewModifier {
                 path.addLine(to: CGPoint(x: x, y: proxy.size.height))
               }
             }
-            .stroke(Color.primary.opacity(0.18), lineWidth: 1)
+            .stroke(Color.primary.opacity(0.18), lineWidth: TranscriptTimelineMarks.railWidth)
             if marks.startsLine {
               Circle()
                 .fill(.secondary)

@@ -22,13 +22,17 @@ public struct TranscriptTimelineMarks: Sendable, Equatable, Hashable {
 
   /// The gutter the rail and dot take beside the note's text.
   public static let gutterWidth: CGFloat = 26
-  /// Padding above a note's first row and below its last, as each timeline
-  /// line has.
-  public static let linePadding: CGFloat = 3
+  /// Padding above and below every timeline line: a tool line's row, and a
+  /// note's first and last rows.
+  public static let linePadding: CGFloat = 6
+  /// The rail's stroke width.
+  public static let railWidth: CGFloat = 1.5
   /// The rail's x position, the center of its node column.
   public static let railX: CGFloat = 9
-  /// The dot's center below a note's first row top: on its first line.
-  public static let dotCenterY: CGFloat = 11
+  /// A node's center below its line's top: on the line's first text line.
+  public static let nodeCenterY: CGFloat = linePadding + 8
+  /// Clear space between the rail and the node it runs into.
+  public static let nodeClearance: CGFloat = 2.5
   public static let dotDiameter: CGFloat = 5
 }
 

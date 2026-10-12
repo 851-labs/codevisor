@@ -68,11 +68,11 @@ final class TranscriptMarkdownRowDecoration: NSView {
   /// the row and, on its first row, the note's dot.
   private func drawTimeline(_ marks: TranscriptTimelineMarks) {
     let x = TranscriptTimelineMarks.railX
-    let dotY = TranscriptTimelineMarks.dotCenterY
+    let dotY = TranscriptTimelineMarks.nodeCenterY
     let radius = TranscriptTimelineMarks.dotDiameter / 2
-    let gap = radius + 2
+    let gap = radius + TranscriptTimelineMarks.nodeClearance
     let rail = NSBezierPath()
-    rail.lineWidth = 1
+    rail.lineWidth = TranscriptTimelineMarks.railWidth
     if marks.railAbove {
       rail.move(to: NSPoint(x: x, y: 0))
       rail.line(to: NSPoint(x: x, y: marks.startsLine ? dotY - gap : bounds.height))
