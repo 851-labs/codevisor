@@ -144,6 +144,7 @@ struct AttachmentThumbnailView: View {
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("Attachment \(file.name)")
     .accessibilityAddTraits([.isImage, .isButton])
+    .accessibilityAction(.default, preview)
     .accessibilityValue(isLoadingPreview ? "Loading" : "")
     .attachmentContextMenu(file: file, image: image, openInNewTab: openInNewTab)
   }
@@ -229,6 +230,9 @@ struct AttachmentFileChip: View {
     .contentShape(RoundedRectangle(cornerRadius: 8))
     .onTapGesture { onTap?() }
     .help(name)
+    .accessibilityElement(children: .combine)
+    .accessibilityAddTraits(onTap == nil ? [] : .isButton)
+    .accessibilityAction(.default) { onTap?() }
     .accessibilityValue(isLoading ? "Loading" : "")
   }
 }

@@ -51,6 +51,7 @@ struct ComputerUsePiPOverlay<Model: LivePreviewPiPModel>: View {
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: isHovering)
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Live view of \(model.title) controlled by the agent")
+            .accessibilityAction(.default) { model.activateTarget() }
             // A refreshed viewer is a new surface: rebuild the card around it.
             .id(ObjectIdentifier(viewer))
             .offset(x: origin.x + dragOffset.width, y: origin.y + dragOffset.height)

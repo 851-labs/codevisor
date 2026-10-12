@@ -149,6 +149,7 @@ struct PluginRegistryBrowseSheet: View {
     .accessibilityLabel(Text(entry.name))
     .accessibilityHint(Text("Shows details for \(entry.name)"))
     .accessibilityAddTraits(.isButton)
+    .accessibilityAction(.default) { selectedEntry = entry }
   }
 
   private var installedChip: some View {

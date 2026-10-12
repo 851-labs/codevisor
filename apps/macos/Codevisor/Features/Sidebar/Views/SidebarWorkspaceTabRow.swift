@@ -63,6 +63,18 @@ struct SidebarWorkspaceTabRow: View {
               onActivate()
             }
         )
+        // Pointer-down selection and the hover-only close button are
+        // invisible to accessibility. Expose them as actions so assistive
+        // tech and background computer use can select and manage the tab
+        // without hovering or focusing the window.
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction(.default, onActivate)
+        // Plain-title buttons: SwiftUI drops Label-built ones here.
+        .accessibilityActions {
+          if let onRename { Button("Rename", action: onRename) }
+          Button("Close", action: onClose)
+        }
         if isHovered {
           Button(action: onClose) {
             Image(systemName: "xmark")

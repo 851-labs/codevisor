@@ -72,6 +72,14 @@ struct UserMessageView: View {
     // User prompts are immutable once sent, so their copy affordance stays
     // available even while the assistant response is streaming.
     .hoverTracking($isHovered, respectsSuspension: false)
+    // The hidden copy button leaves the accessibility tree, and hover only
+    // tracks in the key window, so copying is also exposed as an action.
+    .accessibilityElement(children: .contain)
+    .accessibilityActions {
+      if !message.text.isEmpty {
+        Button("Copy Message") { PlatformPasteboard.copy(message.text) }
+      }
+    }
   }
 }
 

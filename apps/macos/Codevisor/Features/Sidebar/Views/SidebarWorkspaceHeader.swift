@@ -34,6 +34,9 @@ struct SidebarWorkspaceHeader: View {
         .help("Archive workspace")
         .accessibilityLabel("Archive \(title)")
         .frame(width: 24, height: 14, alignment: .trailing)
+        // Covered by the header's Archive action, which does not depend on
+        // hover.
+        .accessibilityHidden(true)
       }
     }
     .foregroundStyle(.secondary)
@@ -56,6 +59,16 @@ struct SidebarWorkspaceHeader: View {
         Label("Archive", systemImage: "archivebox")
           .labelStyle(.titleAndIcon)
       }
+    }
+    // Hover only tracks in the key window, so the menu's actions are
+    // exposed directly for assistive tech and background computer use.
+    // Plain-title buttons: SwiftUI drops Label-built ones here.
+    .accessibilityElement(children: .combine)
+    .accessibilityAddTraits(.isHeader)
+    .accessibilityActions {
+      Button("New Tab", action: onNewTab)
+      Button("Rename", action: onRename)
+      Button("Archive", action: onArchive)
     }
   }
 

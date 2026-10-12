@@ -87,8 +87,19 @@ struct ComposerAttachmentThumb: View {
         await attachmentPreviewImage(fileURL: fileURL, isVideo: isVideo, isPDF: isPDF)
       }.value
     }
-    .accessibilityElement(children: .combine)
+    // The thumb's tap gesture and hover-only remove button are invisible
+    // to accessibility; expose them as actions so they work without
+    // hovering (assistive tech, background computer use).
+    .accessibilityElement(children: .ignore)
     .accessibilityLabel("Attachment \(attachment.name)")
+    .accessibilityAddTraits(.isButton)
+    .accessibilityAction(.default, preview)
+    .accessibilityActions {
+      Button("Remove", action: onRemove)
+      if case .failed = attachment.state {
+        Button("Retry Upload", action: onRetry)
+      }
+    }
   }
 
   private func preview() {

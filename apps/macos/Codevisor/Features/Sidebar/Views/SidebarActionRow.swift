@@ -14,5 +14,9 @@ struct SidebarActionRow: View {
       .contentShape(Rectangle())
       .sidebarRowHover(isSelected: isSelected, isEnabled: isHoverEnabled)
       .onTapGesture(perform: action)
+      // The tap gesture alone has no accessibility press action.
+      .accessibilityElement(children: .combine)
+      .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+      .accessibilityAction(.default, action)
   }
 }
