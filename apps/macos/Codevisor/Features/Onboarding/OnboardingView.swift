@@ -15,6 +15,7 @@ import CodevisorUI
 /// (and what it adds) instead of a list that looks like a first install.
 /// The project step is a multi-select over suggested folders; completing it
 /// adds every selected folder as a project and opens a new chat in the first.
+/// It can be skipped, finishing onboarding without any projects.
 struct OnboardingView: View {
   @Environment(AppEnvironment.self) var environment
   @Environment(\.theme) var theme

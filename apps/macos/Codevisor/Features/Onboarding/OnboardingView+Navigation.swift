@@ -28,8 +28,10 @@ extension OnboardingView {
       .frame(maxWidth: .infinity)
     }
     .frame(maxWidth: .infinity)
-    // Swap Set Up Later → Continue in place as the last permission lands.
+    // Swap Set Up Later → Continue in place as the last permission lands,
+    // and as the first project is selected.
     .animation(.snappy(duration: 0.2), value: permissions.allGranted)
+    .animation(.snappy(duration: 0.2), value: projectSetup.selectedFolders.isEmpty)
   }
 
   private var pageDots: some View {
@@ -48,15 +50,30 @@ extension OnboardingView {
   /// One button occupies the trailing slot. Until both permissions are
   /// granted the only way forward is to skip, so that action sits there in
   /// a secondary style; granting them promotes Continue back into place.
+  /// The project step works the same way: with nothing selected, Set Up
+  /// Later moves on without adding projects; a selection promotes Continue.
   @ViewBuilder
   private var trailingAction: some View {
-    if step == .permissions, !permissions.allGranted {
-      Button("Set Up Later") { skipPermissions() }
+    if let setUpLater = setUpLaterAction {
+      Button("Set Up Later", action: setUpLater)
         .buttonStyle(.bordered)
         .controlSize(.large)
         .frame(minWidth: 96)
     } else {
       primaryButton
+    }
+  }
+
+  /// What Set Up Later does on the current step, or nil when the step is
+  /// complete (or can't be deferred) and Continue belongs in the slot.
+  private var setUpLaterAction: (() -> Void)? {
+    switch step {
+    case .permissions where !permissions.allGranted:
+      return skipPermissions
+    case .project where projectSetup.selectedFolders.isEmpty:
+      return { navigate(to: .analytics, back: false) }
+    default:
+      return nil
     }
   }
 
@@ -184,10 +201,10 @@ extension OnboardingView {
   }
 
   private func finish() {
-    // No empty-selection guard here: the project step's Continue already
-    // requires a selection, but a mid-flow relaunch resumes PAST that step
-    // with a fresh (empty) in-memory projectSetup — finishing must still
-    // work then, just without adding projects.
+    // No empty-selection guard here: the project step can be skipped, and
+    // a mid-flow relaunch resumes PAST that step with a fresh (empty)
+    // in-memory projectSetup — finishing works either way, just without
+    // adding projects.
     guard !isFinishing else { return }
     isFinishing = true
     Task {
