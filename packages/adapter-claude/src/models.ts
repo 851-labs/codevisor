@@ -279,6 +279,17 @@ export const emitModelFallback = (
 
 type SupportedModel = Awaited<ReturnType<ClaudeSession["q"]["supportedModels"]>>[number]
 
+/// Alias rows are named by family alone ("Opus"); the version they resolve
+/// to only appears as the description's lead ("Opus 5.5 · Best for…").
+/// Anything not shaped exactly like that keeps the CLI's own name.
+const versionedDisplayName = (model: SupportedModel): string => {
+  const [, family = "", suffix = ""] = /^(\S+)(\s+\(.*\))?$/.exec(model.displayName) ?? []
+  const lead = model.description.split(" · ")[0]?.trim() ?? ""
+  if (family === "" || !lead.startsWith(`${family} `)) return model.displayName
+  const version = lead.slice(family.length + 1)
+  return /^\d+(\.\d+)*$/.test(version) ? `${lead}${suffix}` : model.displayName
+}
+
 /// The CLI's "default" pseudo-model is an alias, not a model — the picker
 /// shows real models only.
 export const adoptModelList = (
@@ -288,7 +299,7 @@ export const adoptModelList = (
   session.models = models
     .filter((model) => model.value !== "default")
     .map((model) => ({
-      name: model.displayName,
+      name: versionedDisplayName(model),
       supportedEffortLevels: (model.supportsEffort === true
         ? (model.supportedEffortLevels ?? [])
         : []

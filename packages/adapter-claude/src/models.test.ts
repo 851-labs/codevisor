@@ -299,6 +299,44 @@ describe("ClaudeProvider", () => {
     expect(options).toContainEqual(expect.objectContaining({ currentValue: "high", id: "effort" }))
   })
 
+  it("names alias rows by the version their description leads with", async () => {
+    const fake = new FakeQuery()
+    vi.spyOn(fake, "supportedModels").mockResolvedValue([
+      {
+        description: "Opus 5.5 · Best for everyday, complex tasks · $4/$20 per Mtok",
+        displayName: "Opus",
+        value: "opus"
+      },
+      {
+        description: "Opus 5.5 · Long sessions",
+        displayName: "Opus (1M context)",
+        value: "opus[1m]"
+      },
+      {
+        description: "Sonnet 5.5 · Efficient",
+        displayName: "Sonnet 5 (1M context)",
+        value: "sonnet[1m]"
+      },
+      {
+        description: "Fable 5.1 for your hardest tasks",
+        displayName: "Fable",
+        value: "claude-fable-5-1[1m]"
+      },
+      { description: "", displayName: "Haiku", value: "haiku" }
+    ])
+    const created = await run(makeProvider(fake).createSession(definition, "/tmp", async () => {}))
+
+    const model = created.metadata.configOptions.find((option) => option.id === "model")
+    expect(model?.options.map((option) => option.name)).toEqual([
+      "Opus 5.5",
+      "Opus 5.5 (1M context)",
+      // Not shaped like "Family X.Y" alone, so the CLI's name stands.
+      "Sonnet 5 (1M context)",
+      "Fable",
+      "Haiku"
+    ])
+  })
+
   it("refuses a model the session cannot name instead of reporting the first row", async () => {
     const fake = new FakeQuery()
     vi.spyOn(fake, "supportedModels").mockResolvedValue(RELEASE_MODELS)
