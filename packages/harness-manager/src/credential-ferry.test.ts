@@ -261,9 +261,16 @@ describe("hostile files and path variants", () => {
 
     // An unreadable file propagates its error rather than masking it.
     const { chmod } = await import("node:fs/promises")
+    await writeFile(
+      join(home, "custom-codex", "auth.json"),
+      '{"OPENAI_API_KEY":"permission-fixture"}'
+    )
     await chmod(join(home, "custom-codex", "auth.json"), 0o000)
-    await expect(byId["codex-auth-file"]!.read()).rejects.toThrow()
-    await chmod(join(home, "custom-codex", "auth.json"), 0o600)
+    try {
+      await expect(byId["codex-auth-file"]!.read()).rejects.toMatchObject({ code: "EACCES" })
+    } finally {
+      await chmod(join(home, "custom-codex", "auth.json"), 0o600)
+    }
 
     // An unwritable parent surfaces the real error from the lock setup.
     const lockedHome = await mkdtemp(join(tmpdir(), "codevisor-ferry-l-"))
@@ -272,13 +279,16 @@ describe("hostile files and path variants", () => {
     await mkdir(lockedDir, { recursive: true })
     const { chmod: chmodDir } = await import("node:fs/promises")
     await chmodDir(lockedDir, 0o500)
-    const locked = credentialFerrySources({
-      resolveEnv: () => Promise.resolve({ HOME: lockedHome, PI_CODING_AGENT_DIR: lockedDir })
-    }).find((source) => source.id === "pi-auth")!
-    await expect(
-      locked.apply(canonicalCredentialJson({ a: { type: "api_key", key: "x" } }))
-    ).rejects.toThrow()
-    await chmodDir(lockedDir, 0o700)
+    try {
+      const locked = credentialFerrySources({
+        resolveEnv: () => Promise.resolve({ HOME: lockedHome, PI_CODING_AGENT_DIR: lockedDir })
+      }).find((source) => source.id === "pi-auth")!
+      await expect(
+        locked.apply(canonicalCredentialJson({ a: { type: "api_key", key: "x" } }))
+      ).rejects.toMatchObject({ code: "EACCES" })
+    } finally {
+      await chmodDir(lockedDir, 0o700)
+    }
 
     // An empty override falls back to the default location.
     const emptied = credentialFerrySources({
