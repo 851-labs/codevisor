@@ -124,14 +124,9 @@ struct MachinesSettingsView: View {
         }
       }
   }
-}
-
-// Row/label builders live in a private extension so the struct body stays
-// within the structural lint limits.
-private extension MachinesSettingsView {
   /// A machine reached through the cloud account's relay (row extracted to
   /// CloudMachineRowView; the sheets/dialogs it triggers live on this list).
-  func cloudMachineRow(_ machine: CodevisorMachine, presence: CloudMachine) -> some View {
+  fileprivate func cloudMachineRow(_ machine: CodevisorMachine, presence: CloudMachine) -> some View {
     CloudMachineRowView(
       machine: machine,
       presence: presence,
@@ -145,7 +140,7 @@ private extension MachinesSettingsView {
 
   /// This Mac's own row (the embedded machine): its name follows the
   /// computer name, so there is nothing to rename or remove.
-  func machineRow(_ machine: CodevisorMachine) -> some View {
+  fileprivate func machineRow(_ machine: CodevisorMachine) -> some View {
     HStack(spacing: 10) {
       Image(systemName: EntitySystemSymbol.machine(machine))
         .symbolRenderingMode(.monochrome)
@@ -167,7 +162,7 @@ private extension MachinesSettingsView {
     .accessibilityElement(children: .combine)
   }
 
-  func statusLabel(_ machine: CodevisorMachine) -> some View {
+  fileprivate func statusLabel(_ machine: CodevisorMachine) -> some View {
     let status = machines.statusByMachineId[machine.id]
     // An unreachable machine's probe error (e.g. the local server's launch failure) stays
     // available as the tooltip; the label says Offline.
@@ -176,7 +171,7 @@ private extension MachinesSettingsView {
   }
 
   /// One connection presentation for every kind of machine row.
-  func connection(for machine: CodevisorMachine, presence: CloudMachine?) -> MachineConnectionPresentation {
+  fileprivate func connection(for machine: CodevisorMachine, presence: CloudMachine?) -> MachineConnectionPresentation {
     MachineConnectionPresentation(
       isLocal: machine.isLocal,
       status: machines.statusByMachineId[machine.id],
@@ -186,7 +181,7 @@ private extension MachinesSettingsView {
     )
   }
 
-  func refreshStatuses() async {
+  fileprivate func refreshStatuses() async {
     await environment.cloud.refreshMachines()
     for machine in machines.machines {
       await machines.refreshStatus(for: machine.id)
