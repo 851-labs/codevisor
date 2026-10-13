@@ -346,56 +346,6 @@ describe("Muse item mapping", () => {
     expect(mapper.delta("unknown", "summary", "x")).toEqual([])
   })
 
-  it("shows subagents as agent rows with their objective and result", () => {
-    const mapper = makeMuseItemMapper()
-    const agent = {
-      itemId: "a1",
-      kind: "subagent",
-      revision: 1,
-      status: "inProgress",
-      objective: "Find the bug\nin parser",
-      role: "explorer"
-    }
-    expect(payloads(mapper.item(agent, "started"))).toEqual([
-      {
-        sessionUpdate: "tool_call",
-        toolCallId: "a1",
-        kind: "agent",
-        status: "in_progress",
-        title: "Agent (explorer): Find the bug",
-        rawInput: { prompt: "Find the bug\nin parser" }
-      }
-    ])
-    expect(mapper.item({ ...agent, revision: 2 }, "updated")).toEqual([])
-    expect(
-      payloads(
-        mapper.item(
-          { ...agent, revision: 3, status: "completed", result: { summary: "Found it" } },
-          "completed"
-        )
-      )
-    ).toEqual([
-      {
-        sessionUpdate: "tool_call_update",
-        toolCallId: "a1",
-        status: "completed",
-        content: [{ type: "content", content: { type: "text", text: "Found it" } }]
-      }
-    ])
-    const bare = payloads(
-      mapper.item(
-        { itemId: "a2", kind: "subagent", revision: 2, status: "failed", failureReason: "stopped" },
-        "completed"
-      )
-    )
-    expect(bare[0]).toMatchObject({ title: "Agent" })
-    expect(bare[0]).not.toHaveProperty("rawInput")
-    expect(bare[1]).toMatchObject({
-      status: "failed",
-      content: [{ type: "content", content: { type: "text", text: "stopped" } }]
-    })
-  })
-
   it("shows web searches, skill reads and compactions; skips Muse's housekeeping", () => {
     const mapper = makeMuseItemMapper()
     expect(

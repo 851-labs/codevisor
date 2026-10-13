@@ -24,6 +24,7 @@ import {
   type UserInputRequest
 } from "./protocol.js"
 import { approvalQuestion, userInputQuestion, type MuseQuestion } from "./questions.js"
+import { makeMuseSubagents, type ViewPage } from "./subagents.js"
 import {
   contextUsageUpdate,
   museSkills,
@@ -98,7 +99,18 @@ export const startMuseChat = async (
   let skills: SessionSkills | undefined
   let turn: Turn | undefined
   const questions = new Map<string, MuseQuestion>()
-  const mapper = makeMuseItemMapper()
+  const mapper = makeMuseItemMapper(() => key)
+  const subagents = makeMuseSubagents({
+    page: async (sessionId, cursor) =>
+      record(
+        await client.request("view/page", {
+          sessionId,
+          limit: 1000,
+          ...(cursor === undefined ? {} : { cursor })
+        })
+      ) as unknown as ViewPage,
+    send: (event) => void send(event.kind, event.payload)
+  })
 
   const current = () => models.find((model) => model.modelId === modelId)
   const options_ = () => configOptions({ models, modelId, effort })
@@ -212,13 +224,18 @@ export const startMuseChat = async (
         )
           return
         const error = record(event.error)
-        void endTurn({
-          ...(event.terminal === "cancelled" ? { cancelled: true } : {}),
-          ...(event.terminal === "failed"
-            ? { detail: stopDetail(error, text(event.reason)) ?? "Muse stopped with an error." }
-            : {}),
-          ...(error.retryable === true ? { retryable: true } : {})
-        })
+        const finish = () =>
+          void endTurn({
+            ...(event.terminal === "cancelled" ? { cancelled: true } : {}),
+            ...(event.terminal === "failed"
+              ? { detail: stopDetail(error, text(event.reason)) ?? "Muse stopped with an error." }
+              : {}),
+            ...(error.retryable === true ? { retryable: true } : {})
+          })
+        // A subagent's last steps land in its thread before the turn ends.
+        const draining = subagents.drain()
+        if (draining === undefined) finish()
+        else void draining.then(finish)
         return
       }
       case "item/started":
@@ -228,6 +245,7 @@ export const startMuseChat = async (
         if (typeof item.itemId !== "string") return
         const edge = method.slice("item/".length) as "started" | "updated" | "completed"
         for (const mapped of mapper.item(item, edge)) void send(mapped.kind, mapped.payload)
+        subagents.observe(item, mapper.runRow)
         return
       }
       case "item/delta":
@@ -420,6 +438,7 @@ export const startMuseChat = async (
       await resolved(questionId, question, answer)
     },
     close: () => {
+      subagents.stop()
       void endTurn({ cancelled: true })
       client.close()
     }

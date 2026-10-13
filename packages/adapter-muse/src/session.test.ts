@@ -308,6 +308,65 @@ describe("Muse chat", () => {
     ])
   })
 
+  it("nests a subagent's work under its row and waits for it before ending the turn", async () => {
+    const { client, chat, events } = await start()
+    const child = "child-session"
+    let served = false
+    client.replies["view/page"] = (params: Record<string, unknown>) => {
+      if (params.sessionId !== child || served) return { events: [], nextCursor: null }
+      served = true
+      return {
+        events: [
+          {
+            method: "item/completed",
+            params: {
+              sessionId: child,
+              viewCursor: "v:child:1",
+              item: {
+                itemId: "r1",
+                kind: "toolCall",
+                revision: 2,
+                status: "completed",
+                tool: "read_file",
+                args: "{}"
+              }
+            }
+          }
+        ],
+        // Another page follows: read on from the last cursor.
+        nextCursor: "v:child:1"
+      }
+    }
+    const { finished, turnId } = await send(chat, client, "review it")
+    const agent = {
+      itemId: "a1",
+      kind: "subagent",
+      status: "inProgress",
+      childSessionId: child,
+      subagentId: "subagent-1",
+      role: "reviewer"
+    }
+    client.emit("item/started", { item: { ...agent, revision: 1, controlStatus: "running" } })
+    client.emit("item/updated", {
+      item: { ...agent, revision: 2, controlStatus: "resultReady", result: { summary: "ok" } }
+    })
+    client.emit("turn/completed", { turnId, terminal: "completed" })
+    await expect(finished).resolves.toEqual({ stopReason: "end_turn" })
+    const order = payloads(events).flatMap((payload) =>
+      payload.parentToolCallId === "a1" ? ["child"] : payload.turnState === "ended" ? ["ended"] : []
+    )
+    expect(order).toEqual(["child", "child", "ended"])
+    // Its thread is keyed by this chat: subagent ids repeat across chats.
+    expect(payloads(events).find((payload) => payload.toolCallId === "a1")?._meta).toEqual({
+      codevisorSubagent: { taskId: `${SESSION}:subagent-1` }
+    })
+    expect(client.sent("view/page").slice(0, 2)).toEqual([
+      { sessionId: child, limit: 1000 },
+      { sessionId: child, limit: 1000, cursor: "v:child:1" }
+    ])
+    chat.close()
+  })
+
   it("maps items and ignores malformed ones", async () => {
     const { client, events } = await start()
     const at = events.length

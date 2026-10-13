@@ -1,21 +1,15 @@
 import { diffStatsFromTexts } from "@codevisor/agent-runtime"
-import type { EventKind } from "@codevisor/api"
 
-import { record, text, type MuseItem } from "./protocol.js"
+import { makeAgentRows, MESSAGE_TOOLS } from "./agents.js"
+import { text, type MuseItem } from "./protocol.js"
+import { output, parseArgs, textContent, toolStatus, type Edge, type MappedEvent } from "./rows.js"
+
+export { subagentFinished, subagentTitle } from "./agents.js"
+export type { MappedEvent } from "./rows.js"
 
 /// Maps MSP's item stream (`item/started|updated|completed` carrying the
 /// whole item, `item/delta` appending to one of its fields) onto Codevisor
 /// transcript events.
-
-export interface MappedEvent {
-  readonly kind: EventKind
-  readonly payload: Record<string, unknown>
-}
-
-const output = (payload: Record<string, unknown>): MappedEvent => ({
-  kind: "session.output",
-  payload
-})
 
 /// Muse's built-in tools, as Codevisor's tool kinds.
 export const museToolKind = (tool: string): string => {
@@ -49,15 +43,6 @@ export const museToolKind = (tool: string): string => {
 const hiddenTool = (tool: string): boolean =>
   tool === "write_todos" || tool === "request_user_input" || tool.startsWith("subagent_")
 
-const parseArgs = (args: string | undefined): Record<string, unknown> => {
-  if (args === undefined) return {}
-  try {
-    return record(JSON.parse(args))
-  } catch {
-    return {}
-  }
-}
-
 /// What the call acts on: the command, file, query or address.
 export const museToolTitle = (tool: string, args: Record<string, unknown>): string =>
   text(args.description) ??
@@ -67,20 +52,6 @@ export const museToolTitle = (tool: string, args: Record<string, unknown>): stri
   text(args.query) ??
   text(args.url) ??
   tool
-
-const toolStatus = (status: string): string => {
-  switch (status) {
-    case "inProgress":
-      return "in_progress"
-    case "completed":
-      return "completed"
-    default:
-      return "failed"
-  }
-}
-
-const textContent = (value: string | undefined) =>
-  value === undefined ? [] : [{ type: "content", content: { type: "text", text: value } }]
 
 /// `bash` reports a JSON envelope once it settles; its output and exit code
 /// are the parts worth showing.
@@ -119,8 +90,6 @@ const fileChange = (item: MuseItem, args: Record<string, unknown>) => {
   return diffStats === undefined ? {} : { diffStats }
 }
 
-type Edge = "started" | "updated" | "completed"
-
 const OUTPUT_TAIL = 64 * 1024
 
 /// Item kinds shown as tool-call rows.
@@ -128,10 +97,15 @@ const ROWS = new Set(["toolCall", "subagent", "webSearch", "skillRead", "compact
 
 export interface MuseItemMapper {
   readonly item: (item: MuseItem, edge: Edge) => Array<MappedEvent>
+  /// The row a subagent's work streams under now: its spawn row, or the chip
+  /// of the run a later turn's message started.
+  readonly runRow: (subagentItemId: string) => string
   readonly delta: (itemId: string, field: string, delta: string) => Array<MappedEvent>
 }
 
-export const makeMuseItemMapper = (): MuseItemMapper => {
+/// `scope` names the session the items belong to: subagent ids are only
+/// unique within it.
+export const makeMuseItemMapper = (scope: () => string = () => ""): MuseItemMapper => {
   const revisions = new Map<string, number>()
   /// Text already streamed per item, so a completed item only adds the rest.
   const streamed = new Map<string, string>()
@@ -139,7 +113,7 @@ export const makeMuseItemMapper = (): MuseItemMapper => {
   const thoughts = new Set<string>()
   /// Tool rows the transcript shows; output deltas for anything else drop.
   const tools = new Set<string>()
-
+  const agents = makeAgentRows(scope, tools)
   const message = (item: MuseItem): Array<MappedEvent> => {
     const full = item.text ?? ""
     const seen = streamed.get(item.itemId) ?? ""
@@ -167,6 +141,7 @@ export const makeMuseItemMapper = (): MuseItemMapper => {
 
   const toolCall = (item: MuseItem, edge: Edge): Array<MappedEvent> => {
     const tool = item.tool ?? "tool"
+    if (MESSAGE_TOOLS.has(tool)) return agents.message(item, edge)
     if (hiddenTool(tool)) return []
     tools.add(item.itemId)
     const args = parseArgs(item.args)
@@ -216,32 +191,6 @@ export const makeMuseItemMapper = (): MuseItemMapper => {
     ]
   }
 
-  const subagent = (item: MuseItem, edge: Edge): Array<MappedEvent> => {
-    const objective = text(item.objective)
-    const title = `Agent${item.role === undefined ? "" : ` (${item.role})`}`
-    if (edge === "started")
-      return [
-        output({
-          sessionUpdate: "tool_call",
-          toolCallId: item.itemId,
-          kind: "agent",
-          status: "in_progress",
-          title: objective === undefined ? title : `${title}: ${objective.split("\n")[0]}`,
-          ...(objective === undefined ? {} : { rawInput: { prompt: objective } })
-        })
-      ]
-    if (item.status === "inProgress") return []
-    const result = text(item.result?.text) ?? text(item.result?.summary) ?? item.failureReason
-    return [
-      output({
-        sessionUpdate: "tool_call_update",
-        toolCallId: item.itemId,
-        status: toolStatus(item.status),
-        content: textContent(result)
-      })
-    ]
-  }
-
   /// A one-shot row for an action Muse reports as its own item kind.
   const action = (item: MuseItem, edge: Edge, kind: string, title: string): Array<MappedEvent> =>
     edge === "started"
@@ -281,6 +230,7 @@ export const makeMuseItemMapper = (): MuseItemMapper => {
   }
 
   return {
+    runRow: agents.runRow,
     item: (item, edge) => {
       // Replace-iff-higher: replays and re-issued frames are no-ops. A
       // completed item may arrive without its start (single-shot kinds).
@@ -296,7 +246,7 @@ export const makeMuseItemMapper = (): MuseItemMapper => {
           case "toolCall":
             return toolCall(item, phase)
           case "subagent":
-            return subagent(item, phase)
+            return agents.subagent(item, phase)
           case "webSearch":
             return action(item, phase, "fetch", text(item.query) ?? text(item.url) ?? "Web search")
           case "skillRead":

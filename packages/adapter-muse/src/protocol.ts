@@ -47,8 +47,11 @@ export interface MuseItem {
   readonly failureReason?: string
   readonly fallbackText?: string
   readonly childSessionId?: string
+  readonly controlStatus?: string
   readonly objective?: string
   readonly role?: string
+  readonly agentPath?: string
+  readonly subagentId?: string
   readonly result?: { readonly summary?: string; readonly text?: string }
   readonly selector?: string
   readonly query?: string
