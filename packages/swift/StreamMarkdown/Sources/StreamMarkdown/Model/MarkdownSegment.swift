@@ -26,9 +26,6 @@ public enum MarkdownSegment: Sendable, Equatable {
       isTextRunBlock(block) ? .textRun([block]) : .block(block)
     }
   }
-}
-
-extension MarkdownSegment {
   var blocks: [MarkdownBlock] {
     switch self {
     case let .textRun(blocks): blocks
