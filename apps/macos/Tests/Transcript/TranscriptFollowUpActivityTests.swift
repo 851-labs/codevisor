@@ -121,7 +121,10 @@ struct TranscriptFollowUpActivityTests {
       rowsRevision: 1, activeRevision: 1)
     try fixture.present()
     try #require(fixture.visibility.hasActiveEntranceAnimation)
-    try fixture.expectActivity(for: completed.id, visible: false)
+    // The turn's header sits above its entering answer, which never pushes
+    // it, so it stays visible; no activity line trails the text.
+    #expect(!fixture.view.rows.contains { $0.id == .activeChrome(completed.id, .activity) })
+    try fixture.expectActivity(for: completed.id)
     let firstMarkdown = try #require(
       fixture.view.rows.first { row in
         if case .markdownChunk = row.content { true } else { false }
@@ -469,7 +472,7 @@ private struct ActivityLeaf: View {
         AssistantTurnActivitySlot(
           AssistantTurnActivity.resolve(
             turn: turn, isWaitingOnUser: false, sessionActivity: nil,
-            backgroundTask: nil, goalActivity: nil))
+            backgroundTask: nil, goalActivity: nil), turn: turn)
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)

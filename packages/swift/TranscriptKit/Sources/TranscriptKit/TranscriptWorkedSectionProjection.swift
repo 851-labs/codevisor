@@ -15,7 +15,9 @@ enum TranscriptWorkedSectionProjection {
       message.turn.defersWorkedSection(kind)
       ? message.turn.deferredDetailItemId
       : nil
-    guard !items.isEmpty || deferredDetailID != nil || message.turn.showsLiveWorkedHeader(kind)
+    guard
+      !items.isEmpty || deferredDetailID != nil || message.turn.showsLiveWorkedHeader(kind)
+        || message.turn.showsWorkedHeaderWithoutWork(kind)
     else { return false }
 
     let identity = TranscriptWorkedSectionIdentity(messageID: message.id, kind: kind)

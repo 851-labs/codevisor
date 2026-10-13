@@ -262,7 +262,7 @@ public struct TranscriptWorkedSectionHeaderView: View {
           .accessibilityLabel(step)
         TranscriptWorkingDurationLabel(turn: turn, kind: kind)
           .fixedSize()
-      case .step, .pending:
+      case .step, .pending, .starting:
         TranscriptWorkingDurationLabel(turn: turn, kind: kind, prefix: "Working for ")
       case .answering:
         // One run of text, so the label doesn't shift when the turn ends.
@@ -385,6 +385,30 @@ private extension TranscriptWorkedSectionKind {
     switch self {
     case .planning: .turn(messageID)
     case .implementation: .turnImplementation(messageID)
+    }
+  }
+}
+
+/// A turn's opening line before its harness's first event, including a new
+/// chat's before the harness exists. Timed from the send and drawn as the
+/// worked header that takes over from it, so the count never restarts.
+struct TranscriptStartingWorkedHeader: View {
+  let startedAt: Date
+  @State private var now = Date()
+
+  var body: some View {
+    HStack(spacing: 6) {
+      Text("Working for " + AssistantTurn.formatWorkedDuration(now.timeIntervalSince(startedAt)))
+      Spacer(minLength: 0)
+    }
+    .frame(minHeight: 18)
+    .font(.callout)
+    .foregroundStyle(.secondary)
+    .task {
+      while !Task.isCancelled {
+        now = Date()
+        try? await Task.sleep(for: .seconds(1))
+      }
     }
   }
 }

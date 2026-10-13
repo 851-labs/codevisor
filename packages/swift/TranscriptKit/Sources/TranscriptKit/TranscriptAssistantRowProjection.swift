@@ -329,13 +329,13 @@ enum TranscriptAssistantRowProjection {
   }
 
   /// The outer projection briefly owns one aggregate active row while the
-  /// block projection runs. A fresh turn has one known 32-point activity row;
+  /// block projection runs. A fresh turn has one known 32-point line;
   /// reserving a generic response height here would move the bottom-pinned
   /// transcript before the precise projection arrives.
   static func activeFallbackEstimatedHeight(for item: ConversationItem) -> CGFloat {
     guard case let .assistant(message) = item,
       // Blank spans render nothing, so a turn holding only those is still
-      // a bare activity row and must keep its 32pt reservation.
+      // a bare opening line and must keep its 32pt reservation.
       message.turn.entries.allSatisfy(\.isBlankText),
       message.turn.attachments.isEmpty,
       message.turn.subagents.isEmpty,
@@ -425,7 +425,7 @@ enum TranscriptAssistantRowProjection {
     return hasher.finalize()
   }
 
-  /// One shimmering activity line ("Waiting on harness…"). The optimistic
+  /// A fresh turn's one line: its "Working for…" header. The optimistic
   /// placeholder and a fresh active turn reserve the same height so the
   /// handoff between them never moves the bottom-pinned transcript.
   static let activityRowEstimatedHeight: CGFloat = 32

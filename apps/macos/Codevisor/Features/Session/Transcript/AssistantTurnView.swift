@@ -140,7 +140,7 @@ struct AssistantTurnView: View {
       // The slot stays laid out (invisibly) across tool calls so the
       // label toggling never changes the row's height.
       if presentation.showsActivity, activity.map({ !$0.followsResponse }) ?? turn.reservesActivitySlot {
-        AssistantTurnActivitySlot(activity)
+        AssistantTurnActivitySlot(activity, turn: turn)
       }
       // The final answer streams here, final-styled from its first
       // chunk: the candidate is the last text span not phase-tagged

@@ -6,7 +6,7 @@ import CodevisorProtocol
 
 @Suite("Optimistic first-send projection")
 struct TranscriptOptimisticSendProjectionTests {
-  /// A brand-new chat's first send shows "Waiting on harness…" the moment
+  /// A brand-new chat's first send shows its "Working for…" header the moment
   /// the worktree is up — before the model exists — in the slot the live
   /// active row will take over, and nowhere while setup is still running
   /// or has failed.

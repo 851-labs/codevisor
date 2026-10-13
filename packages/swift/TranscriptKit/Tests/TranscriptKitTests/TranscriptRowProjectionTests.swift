@@ -59,7 +59,9 @@ struct TranscriptRowProjectionTests {
     #expect(chunks.map(\.ordinal) == [0])
     #expect(chunks.map { $0.blocks.count } == [3])
     #expect(chunks.allSatisfy { $0.lifecycle == .settled })
-    #expect(rows.dropLast().map(\.spacingAfter) == [14])
+    // An answer-only turn keeps its "Worked for" header above the answer.
+    #expect(rows.first?.id == .assistantWorkedHeader(message.id, .planning))
+    #expect(rows.dropLast().map(\.spacingAfter) == [12, 14])
     #expect(rows.last?.id == .assistantChrome(message.id, .epilogue))
   }
 

@@ -148,9 +148,9 @@ public struct TranscriptRowContentView: View {
         leaves.userMessage(message)
       }
     case .startingAgent:
-      // The same line the active turn shows before its first provider
-      // event, so the model's real bubble replaces this one seamlessly.
-      ChatActivityRow(AssistantTurnActivity.waitingOnHarnessMessage)
+      // The header the turn shows before its first provider event, so the
+      // model's real bubble replaces this one seamlessly.
+      TranscriptStartingWorkedHeader(startedAt: controller.pendingSendStartedAt ?? Date())
         .suppressedDuringStreamingTextEntrance()
     case let .backgroundTask(description):
       WaitingOnAgentsLine(description: description)

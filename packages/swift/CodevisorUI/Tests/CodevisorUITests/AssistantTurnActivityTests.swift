@@ -20,7 +20,8 @@ struct AssistantTurnActivityTests {
     #expect(activity(turn) == "Compacting context…")
     #expect(turn.streamingItems.isEmpty)
     TranscriptReducer.apply(.contextCompaction(id: "compact", status: status), to: &turn)
-    #expect(activity(turn) == "Waiting on harness...")
+    // Waiting on the harness is the live header's timer, not a label.
+    #expect(activity(turn) == nil)
     #expect(turn.workedItems.isEmpty)
     TranscriptReducer.apply(.agentThoughtChunk(.text("next step")), to: &turn)
     #expect(activity(turn) == "Thinking…")
@@ -68,13 +69,13 @@ struct AssistantTurnActivityTests {
     #expect(activity(turn) == nil)
   }
 
-  @Test("A quiet turn has one waiting label and a retry replaces it")
+  @Test("A quiet turn has no label and a retry gives it one")
   func retryWins() {
     var turn = AssistantTurn(isGenerating: true, isThinking: false)
     #expect(
       AssistantTurnActivity.resolve(
         turn: turn, isWaitingOnUser: false,
-        sessionActivity: nil, backgroundTask: nil, goalActivity: nil)?.message == "Waiting on harness...")
+        sessionActivity: nil, backgroundTask: nil, goalActivity: nil) == nil)
     turn.retryStatus = RetryStatus(attempt: 2, of: 3, message: "Retrying")
     #expect(
       AssistantTurnActivity.resolve(

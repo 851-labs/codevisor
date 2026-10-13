@@ -84,14 +84,28 @@ extension AssistantTurn {
 
   /// Whether `kind` shows its header before any work lands: once the
   /// provider's first event arrives, a live section's header is the turn's
-  /// activity label. Until then the waiting row keeps its place.
+  /// activity label. Until then the turn's opening line times the wait.
   public func showsLiveWorkedHeader(_ kind: TranscriptWorkedSectionKind) -> Bool {
-    guard isWorkedSectionLive(kind), finalText == nil else { return false }
-    return isThinking
-      || entries.contains { entry in
-        if case .contextCompaction = entry { return false }
-        return !entry.isBlankText
-      }
+    isWorkedSectionLive(kind) && (isThinking || hasProviderContent)
+  }
+
+  /// Whether `kind` keeps its header with no work in it: a turn that only
+  /// answers still reads "Worked for", so the timer it showed from the send
+  /// stays above the answer instead of leaving as the answer streams.
+  public func showsWorkedHeaderWithoutWork(_ kind: TranscriptWorkedSectionKind) -> Bool {
+    guard hasProviderContent || (isGenerating && isThinking) else { return false }
+    switch kind {
+    case .planning: return !isSplitByPlan
+    case .implementation: return planResumedAt != nil
+    }
+  }
+
+  /// Whether the provider has sent anything the transcript shows.
+  public var hasProviderContent: Bool {
+    entries.contains { entry in
+      if case .contextCompaction = entry { return false }
+      return !entry.isBlankText
+    }
   }
 
   /// Whether an open `kind` section ends its timeline with a "Thinking"
@@ -107,7 +121,7 @@ extension AssistantTurn {
     Self.formatWorkedDuration(now.timeIntervalSince(workedSectionStart(kind) ?? now))
   }
 
-  static func formatWorkedDuration(_ interval: TimeInterval) -> String {
+  public static func formatWorkedDuration(_ interval: TimeInterval) -> String {
     let seconds = max(0, Int(interval.rounded(.down)))
     return seconds < 60 ? "\(seconds)s" : "\(seconds / 60)m \(seconds % 60)s"
   }

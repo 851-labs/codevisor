@@ -43,8 +43,8 @@ extension TranscriptAssistantRowProjection {
     // A failed turn stays in the active slot until the next bubble starts,
     // and the session-level banner defers to it. Without this row the
     // failure either never appeared (turns with worked items) or was
-    // drawn in place into the aggregate row's 32pt "Waiting on harness"
-    // frame and clipped to a sliver until a remeasure landed.
+    // drawn in place into the aggregate row's 32pt opening frame and
+    // clipped to a sliver until a remeasure landed.
     appendStopDetailEpilogueIfNeeded(
       message,
       waitingOnBackgroundTask: waitingOnBackgroundTask,

@@ -60,6 +60,22 @@ extension SessionModelTests {
     #expect(activeTurn(model)?.startedAt == original)
   }
 
+  @Test("The server's later start, stamped once the harness began, cannot move a turn's start past its send")
+  func serverStartCannotMoveTheSendStartLater() {
+    let sent = Date(timeIntervalSince1970: 1_700_000_000)
+    let harnessStarted = sent.addingTimeInterval(4)
+    let (model, _) = startedTurnModel(now: { sent })
+    let itemId = UUID()
+    model.setConversation([
+      .assistant(AssistantMessage(id: itemId, turn: AssistantTurn(isGenerating: true, startedAt: sent)))
+    ])
+
+    model.setConversation([
+      .assistant(AssistantMessage(id: itemId, turn: AssistantTurn(isGenerating: true, startedAt: harnessStarted)))
+    ])
+    #expect(activeTurn(model)?.startedAt == sent)
+  }
+
   @Test("A snapshot with no start time cannot reset a timer already counting")
   func snapshotDoesNotClobberLocalStartedAt() {
     let original = Date(timeIntervalSince1970: 1_700_000_000)

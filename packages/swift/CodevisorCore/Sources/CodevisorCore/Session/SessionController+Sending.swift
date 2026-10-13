@@ -58,6 +58,7 @@ extension SessionController {
     // transcript only needs the row to be laid out to fly into it.
     if shouldAnimateTranscriptSend {
       requestUserSendAnimation(for: outgoingMessage.id)
+      pendingSendStartedAt = Date()
       pendingUserMessage = outgoingMessage
     }
 
@@ -128,7 +129,7 @@ extension SessionController {
     if let model {
       await pendingConfiguration.apply(to: model)
       await applyPendingGoal(to: model)
-      await model.send(outgoingMessage)
+      await model.send(outgoingMessage, startedAt: pendingSendStartedAt)
       // The message holds server refs now; the staged copies are spent.
       self.attachments.releaseStagedFiles(of: staged)
       if pendingUserMessage?.id == outgoingMessage.id {
@@ -144,8 +145,8 @@ extension SessionController {
       return
     }
     // No "Starting <agent>" phase here: the transcript already shows the
-    // optimistic "Waiting on harness…" line once the worktree is up, and
-    // that line stays through connect, the runtime-configuration replay
+    // turn's "Working for…" header once the worktree is up, and that
+    // header keeps counting through connect, the runtime-configuration replay
     // (whose first call is what actually spawns the harness) and the
     // prompt, until the live turn replaces it in place. A phase row that
     // vanished after the cheap `/open` round trip left the transcript
@@ -157,7 +158,7 @@ extension SessionController {
       status = .idle
       await pendingConfiguration.apply(to: model)
       await applyPendingGoal(to: model)
-      await model.send(outgoingMessage)
+      await model.send(outgoingMessage, startedAt: pendingSendStartedAt)
       // The message holds server refs now; the staged copies are spent.
       self.attachments.releaseStagedFiles(of: staged)
       if pendingUserMessage?.id == outgoingMessage.id {

@@ -11,11 +11,6 @@ public struct AssistantTurnActivity: Equatable {
   /// chips where they can be found.
   public var waitingOn: String?
 
-  /// Shown from the moment a prompt is committed until the provider's first
-  /// event. The optimistic first-send placeholder uses the same words so the
-  /// handoff into the live turn is invisible.
-  public static let waitingOnHarnessMessage = "Waiting on harness..."
-
   public static func resolve(
     turn: AssistantTurn,
     isWaitingOnUser: Bool,
@@ -44,8 +39,8 @@ public struct AssistantTurnActivity: Equatable {
     if turn.isStartingSubagent {
       return Self(message: "Starting agent…", followsResponse: false)
     }
-    guard turn.showsActivityIndicator else { return nil }
-    return Self(message: turn.isThinking ? "Thinking…" : waitingOnHarnessMessage, followsResponse: false)
+    guard turn.showsActivityIndicator, turn.isThinking else { return nil }
+    return Self(message: "Thinking…", followsResponse: false)
   }
 }
 
@@ -66,21 +61,30 @@ public struct AssistantTurnActivityView: View {
   }
 }
 
-/// The activity row's place while no label is showing. The turn keeps
-/// `reservesActivitySlot` across tool calls, so the row renders invisibly at
-/// the label's exact height instead of collapsing and bouncing the
-/// transcript each time a tool starts or finishes.
+/// The activity row's place while no label is showing. Before the
+/// harness's first event it times the wait, as the turn's worked header
+/// will; otherwise the turn keeps `reservesActivitySlot` across tool calls,
+/// so the row renders invisibly at the label's exact height instead of
+/// collapsing and bouncing the transcript each time a tool starts or
+/// finishes.
 public struct AssistantTurnActivitySlot: View {
   public let activity: AssistantTurnActivity?
+  public let waitingSince: Date?
 
-  public init(_ activity: AssistantTurnActivity?) { self.activity = activity }
+  public init(_ activity: AssistantTurnActivity?, turn: AssistantTurn? = nil) {
+    self.activity = activity
+    self.waitingSince = turn?.harnessWaitStartedAt
+  }
 
   public var body: some View {
     if let activity {
       AssistantTurnActivityView(activity)
+    } else if let waitingSince {
+      TranscriptStartingWorkedHeader(startedAt: waitingSince)
+        .suppressedDuringStreamingTextEntrance()
     } else {
       // Plain text in the shimmer's font: same line height, no animation.
-      Text(AssistantTurnActivity.waitingOnHarnessMessage)
+      Text("Thinking…")
         .font(.callout)
         .hidden()
         .accessibilityHidden(true)
@@ -120,5 +124,13 @@ public struct WaitingOnAgentsLine: View {
     let kept = shown.map { current[$0.toolCallId] ?? $0 }
     let keptIds = Set(kept.map(\.toolCallId))
     return kept + waiting.filter { !keptIds.contains($0.toolCallId) }
+  }
+}
+
+extension AssistantTurn {
+  /// When a live turn that has heard nothing from its harness yet started.
+  public var harnessWaitStartedAt: Date? {
+    guard isGenerating, !isThinking, !hasProviderContent else { return nil }
+    return startedAt ?? Date()
   }
 }

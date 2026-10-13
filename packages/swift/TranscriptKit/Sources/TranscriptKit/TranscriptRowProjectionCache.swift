@@ -67,8 +67,8 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
     case activeAttachment(UUID, sourceID: String, ordinal: Int)
     case active(UUID)
     case setup
-    /// The optimistic first send's "Waiting on harness…" line, shown before
-    /// the model exists and replaced in place by the real active row.
+    /// The optimistic first send's "Working for…" header, shown before the
+    /// model exists and replaced in place by the real active row.
     case startingAgent
     case backgroundTask
     case updateGate
@@ -319,7 +319,7 @@ public actor TranscriptRowProjectionCache {
     try TranscriptRowAssembly.assemble(input, options: options)
   }
 
-  /// The optimistic first send shows the same "Waiting on harness…" line the
+  /// The optimistic first send shows the same "Working for…" header the
   /// live turn will replace it with, as soon as nothing local stands in the
   /// way: every setup phase has succeeded (or there is none) and no failure
   /// or connection-recovery state owns the transcript's tail. Connect, the

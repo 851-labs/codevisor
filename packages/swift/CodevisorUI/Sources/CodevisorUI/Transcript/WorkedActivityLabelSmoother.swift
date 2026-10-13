@@ -11,6 +11,8 @@ enum WorkedSectionActivity: Equatable {
   /// A tool is starting but has no real title yet ("Bash" before its
   /// command arrives). It never replaces what the header shows.
   case pending
+  /// Nothing from the harness yet: the header just times the wait.
+  case starting
 }
 
 extension AssistantTurn {
@@ -25,16 +27,17 @@ extension AssistantTurn {
       goalActivity: nil),
       !activity.followsResponse
     {
-      // The header shows only once work began: between tool calls the
-      // model is deciding what to do next.
-      label =
-        activity.message == AssistantTurnActivity.waitingOnHarnessMessage
-        ? "Thinking" : activity.message
+      label = activity.message
     } else if let running = toolCalls.last(where: { !$0.isSettled && !isUnstartedSubagent($0) }) {
       label = running.displayTitle
       // Harnesses announce a tool by its bare name before its input (and
       // real title) arrives; that name isn't worth a frame in the header.
       guard running.rawInput != nil || label.contains(" ") else { return .pending }
+    } else if finalText == nil {
+      // Before the harness's first event the header just times the wait;
+      // between tool calls the model is deciding what to do next.
+      guard hasProviderContent else { return .starting }
+      label = "Thinking"
     } else {
       return .answering
     }

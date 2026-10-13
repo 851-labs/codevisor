@@ -131,6 +131,9 @@ final public class SessionController {
   /// its id and retires this presentation copy. Keeping it for connected
   /// models too guarantees that an animation request is never published
   /// before its target row exists.
+  /// When the pending message was sent: a turn's work is timed from here,
+  /// not from when the harness got around to it.
+  public internal(set) var pendingSendStartedAt: Date?
   public internal(set) var pendingUserMessage: UserMessage? {
     didSet {
       if pendingUserMessage != oldValue { transcriptProjectionRevision &+= 1 }

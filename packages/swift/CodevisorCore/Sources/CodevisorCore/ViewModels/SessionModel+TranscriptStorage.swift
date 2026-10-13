@@ -27,7 +27,7 @@ extension SessionModel {
   }
 
   /// Starts a fresh generating assistant bubble as the active item.
-  func startActiveBubble() {
+  func startActiveBubble(startedAt: Date? = nil) {
     stopConnectionRecovery()
     // A new turn (user- or agent-initiated) clears any lingering session-
     // level error banner so it can't outlive the failure it described —
@@ -38,7 +38,7 @@ extension SessionModel {
       AssistantMessage(
         // Waiting for the first provider event is not itself reasoning.
         // Explicit thought chunks flip this to true in TranscriptReducer.
-        turn: AssistantTurn(isGenerating: true, isThinking: false, startedAt: now())
+        turn: AssistantTurn(isGenerating: true, isThinking: false, startedAt: startedAt ?? now())
       ))
     if !hasActiveItem { hasActiveItem = true }
   }
@@ -83,8 +83,9 @@ extension SessionModel {
   }
 
   /// Live-only turn state the server never stores — where the model reasoned
-  /// between tool calls — carried onto a server copy of the same turn, so
-  /// its worked timeline doesn't regroup the moment the turn settles.
+  /// between tool calls, and when the user sent it — carried onto a server
+  /// copy of the same turn, so its worked timeline doesn't regroup and its
+  /// timer doesn't jump the moment the turn settles.
   func carryingLiveTurnState(_ incoming: ConversationItem) -> ConversationItem {
     guard case var .assistant(message) = incoming else { return incoming }
     let current: AssistantMessage? =
@@ -97,10 +98,20 @@ extension SessionModel {
       } else {
         nil
       }
-    guard let current, !current.turn.callsAfterReasoning.isSubset(of: message.turn.callsAfterReasoning)
-    else { return incoming }
-    message.turn.callsAfterReasoning.formUnion(current.turn.callsAfterReasoning)
-    return .assistant(message)
+    guard let current else { return incoming }
+    var carried = false
+    if !current.turn.callsAfterReasoning.isSubset(of: message.turn.callsAfterReasoning) {
+      message.turn.callsAfterReasoning.formUnion(current.turn.callsAfterReasoning)
+      carried = true
+    }
+    // A turn is timed from its send; the server stamps it only once the
+    // harness starts it. The earlier start keeps the timer from jumping
+    // back when the server's copy lands.
+    if let localStart = current.turn.startedAt, message.turn.startedAt.map({ localStart < $0 }) ?? true {
+      message.turn.startedAt = localStart
+      carried = true
+    }
+    return carried ? .assistant(message) : incoming
   }
 
   /// A snapshot taken before the provider reported the turn started carries

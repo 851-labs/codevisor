@@ -6,6 +6,18 @@ import Testing
 
 @Suite("Live worked header label")
 struct WorkedSectionActivityTests {
+  @Test("Before the harness's first event the turn times the wait from its start, with no label")
+  func waitingOnTheHarness() {
+    let start = Date(timeIntervalSince1970: 100)
+    var turn = AssistantTurn(isGenerating: true, startedAt: start)
+    #expect(turn.harnessWaitStartedAt == start)
+    #expect(turn.workedSectionActivity == .starting)
+
+    turn.isThinking = true
+    #expect(turn.harnessWaitStartedAt == nil)
+    #expect(turn.workedSectionActivity == .step("Thinking"))
+  }
+
   @Test("The label names the current step without a trailing ellipsis")
   func labels() {
     var turn = AssistantTurn(isGenerating: true, isThinking: true)

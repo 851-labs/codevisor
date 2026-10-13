@@ -16,7 +16,7 @@ extension SessionModel {
   /// available. New-chat surfaces render this exact message optimistically
   /// while the agent starts; retaining its id here lets that same row settle
   /// in place instead of being removed and inserted a second time.
-  public func send(_ outgoingMessage: UserMessage) async {
+  public func send(_ outgoingMessage: UserMessage, startedAt: Date? = nil) async {
     let trimmed = outgoingMessage.text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty || !outgoingMessage.attachments.isEmpty else { return }
     let message = UserMessage(
@@ -37,7 +37,7 @@ extension SessionModel {
     settleActiveItem()
     appendSettled(.user(message))
     pendingOptimisticUserMessageIDs.insert(message.id)
-    startActiveBubble()
+    startActiveBubble(startedAt: startedAt)
     isSending = true
     noteProviderActivity()
     onLocalUserMessageAppended?(message.id)

@@ -101,6 +101,30 @@ struct TranscriptWorkedRowProjectionTests {
       thinking.map(\.id) == [headerID, .activeWorkedItem(messageID, .planning, itemID: WorkedItem.thinkingLineID)])
   }
 
+  /// The opening line times the wait for the harness; once it answers, the
+  /// header that takes over stays above the answer, live and settled, so
+  /// nothing above it moves as the turn ends.
+  @Test func answerOnlyTurnKeepsItsHeaderAboveTheAnswer() throws {
+    var message = AssistantMessage(
+      turn: AssistantTurn(isGenerating: true, startedAt: Date(timeIntervalSince1970: 100)))
+    let header = TranscriptPresentationRow.ID.activeWorkedHeader(message.id, .planning)
+    #expect(
+      TranscriptActiveRowProjection.rows(for: .assistant(message)).map(\.id)
+        == [.activeChrome(message.id, .activity)])
+
+    message.turn.entries = [.text(id: "answer", markdown: "Hello.")]
+    let answering = TranscriptActiveRowProjection.rows(for: .assistant(message))
+    #expect(answering.first?.id == header)
+    #expect(!answering.contains { $0.id == .activeChrome(message.id, .activity) })
+
+    message.turn.isGenerating = false
+    message.turn.endedAt = Date(timeIntervalSince1970: 103)
+    let settled = try TranscriptRowProjectionCache.project(
+      makeInput(settled: [.assistant(message)]), options: .init(includesConnectingRow: true))
+    #expect(settled.first?.id == .assistantWorkedHeader(message.id, .planning))
+    #expect(message.turn.workedSectionTitle(.planning, now: .now) == "Worked for 3s")
+  }
+
   @Test func streamedWorkedSectionKeepsAStableHeaderAsToolCallsArrive() {
     let messageID = UUID()
     let commentary = TranscriptEntry.text(id: "commentary", markdown: "Checking the code.")
