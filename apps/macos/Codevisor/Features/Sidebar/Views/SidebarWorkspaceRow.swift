@@ -107,17 +107,12 @@ struct SidebarWorkspaceRow: View {
           Label(isPinned ? "Unpin" : "Pin", systemImage: isPinned ? "pin.slash" : "pin")
             .labelStyle(.titleAndIcon)
         }
-        Divider()
       }
-      Button(action: onNewTab) {
-        Label("New Tab", systemImage: "plus")
-          .labelStyle(.titleAndIcon)
-      }
-      Divider()
       Button(action: onRename) {
         Label("Rename", systemImage: "pencil")
           .labelStyle(.titleAndIcon)
       }
+      Divider()
       Button(action: onArchive) {
         Label("Archive", systemImage: "archivebox")
           .labelStyle(.titleAndIcon)
