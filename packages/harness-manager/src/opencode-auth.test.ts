@@ -14,7 +14,125 @@ import { describe, expect, it, onTestFinished, vi } from "vitest"
 
 import { makeOpenCodeAuthManager, openCodeAuthPath } from "./opencode-auth.js"
 
-const fakeOpenCode = (directory: string): string => {
+const normalizationFixture = {
+  providers: {
+    all: [
+      { id: "missing", name: "C Missing" },
+      { id: "empty", name: "B Empty" },
+      { id: "normalized", name: "A Normalized" }
+    ]
+  },
+  methods: {
+    normalized: [
+      { type: "invalid" },
+      {
+        type: "oauth",
+        prompts: [
+          { type: "invalid", key: "bad", message: "Bad" },
+          { type: "text", message: "Missing key" },
+          { type: "text", key: "missing-message" },
+          { type: "text", key: "plain", message: "Plain" },
+          {
+            type: "text",
+            key: "eq",
+            message: "Equal",
+            placeholder: "",
+            when: { key: "plan", op: "eq", value: "plus" }
+          },
+          {
+            type: "select",
+            key: "neq",
+            message: "Different",
+            options: [
+              { label: "No value" },
+              { value: "no-label" },
+              { value: "one", label: "One" },
+              { value: "two", label: "Two", hint: "Second" }
+            ],
+            when: { key: "plan", op: "neq", value: "free" }
+          },
+          {
+            type: "text",
+            key: "missing-when-key",
+            message: "No condition key",
+            when: { op: "eq", value: "x" }
+          },
+          {
+            type: "text",
+            key: "bad-when-op",
+            message: "Bad condition op",
+            when: { key: "plan", op: "invalid", value: "x" }
+          },
+          {
+            type: "text",
+            key: "missing-when-value",
+            message: "No condition value",
+            when: { key: "plan", op: "eq" }
+          },
+          { type: "select", key: "absent-options", message: "Absent options" },
+          { type: "select", key: "empty-options", message: "Empty options", options: [] }
+        ]
+      },
+      { type: "api", label: "Ignored label" },
+      { type: "oauth", label: "Named OAuth" }
+    ],
+    empty: []
+  }
+} as const
+
+const normalizedProviders = [
+  {
+    id: "normalized",
+    name: "A Normalized",
+    methods: [
+      {
+        id: "1",
+        type: "oauth",
+        label: "Provider account",
+        prompts: [
+          { type: "text", key: "plain", message: "Plain", options: [] },
+          {
+            type: "text",
+            key: "eq",
+            message: "Equal",
+            options: [],
+            placeholder: "",
+            when: { key: "plan", op: "eq", value: "plus" }
+          },
+          {
+            type: "select",
+            key: "neq",
+            message: "Different",
+            options: [
+              { value: "one", label: "One" },
+              { value: "two", label: "Two", hint: "Second" }
+            ],
+            when: { key: "plan", op: "neq", value: "free" }
+          },
+          { type: "text", key: "missing-when-key", message: "No condition key", options: [] },
+          { type: "text", key: "bad-when-op", message: "Bad condition op", options: [] },
+          { type: "text", key: "missing-when-value", message: "No condition value", options: [] },
+          { type: "select", key: "absent-options", message: "Absent options", options: [] },
+          { type: "select", key: "empty-options", message: "Empty options", options: [] }
+        ]
+      },
+      { id: "2", type: "api", label: "API key", prompts: [] },
+      { id: "3", type: "oauth", label: "Named OAuth", prompts: [] }
+    ]
+  },
+  {
+    id: "empty",
+    name: "B Empty",
+    methods: [{ id: "0", type: "api", label: "API key", prompts: [] }]
+  },
+  {
+    id: "missing",
+    name: "C Missing",
+    methods: [{ id: "0", type: "api", label: "API key", prompts: [] }]
+  }
+] as const
+
+const fakeOpenCode = (directory: string, fixturePath?: string): string => {
   const path = join(directory, "opencode")
   writeFileSync(
     path,
@@ -34,9 +152,13 @@ const write = (value) => { fs.mkdirSync(path.dirname(authPath), { recursive: tru
 const json = (res, status, value) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(value)) }
 const body = (req) => new Promise((resolve) => { let value = ""; req.on("data", (x) => value += x); req.on("end", () => resolve(value ? JSON.parse(value) : {})) })
 const expected = "Basic " + Buffer.from("opencode:" + process.env.OPENCODE_SERVER_PASSWORD).toString("base64")
+const fixturePath = ${JSON.stringify(fixturePath ?? null)}
+const fixture = fixturePath === null ? undefined : JSON.parse(fs.readFileSync(fixturePath, "utf8"))
 const server = http.createServer(async (req, res) => {
   if (req.headers.authorization !== expected) return json(res, 401, { message: "unauthorized" })
   const url = new URL(req.url, "http://localhost")
+  if (fixture !== undefined && req.method === "GET" && url.pathname === "/provider") return json(res, 200, fixture.providers)
+  if (fixture !== undefined && req.method === "GET" && url.pathname === "/provider/auth") return json(res, 200, fixture.methods)
   if (req.method === "GET" && url.pathname === "/provider") return json(res, 200, { all: [{ id: "openai", name: "OpenAI" }], connected: [], default: {} })
   if (req.method === "GET" && url.pathname === "/provider/auth") return json(res, 200, { openai: [{ type: "oauth", label: "ChatGPT", prompts: [{ type: "select", key: "plan", message: "Plan", options: [{ value: "plus", label: "Plus" }] }] }, { type: "api", label: "API key" }] })
   if (req.method === "POST" && url.pathname === "/provider/openai/oauth/authorize") return json(res, 200, { url: "https://example.test/login", method: "code", instructions: "Sign in" })
@@ -56,6 +178,24 @@ server.listen(0, "127.0.0.1", () => { const address = server.address(); console.
 }
 
 describe("OpenCode provider authentication", () => {
+  it("normalizes upstream provider methods and prompts without inventing missing fields", async () => {
+    const root = mkdtempSync(join(tmpdir(), "codevisor-opencode-methods-"))
+    onTestFinished(() => rmSync(root, { recursive: true, force: true }))
+    const fixturePath = join(root, "descriptors.json")
+    writeFileSync(fixturePath, JSON.stringify(normalizationFixture))
+    const command = fakeOpenCode(root, fixturePath)
+    const data = join(root, "data")
+    const manager = makeOpenCodeAuthManager({
+      profile: async () => ({
+        command,
+        cwd: root,
+        env: { PATH: process.env.PATH, HOME: root, XDG_DATA_HOME: data },
+        authPath: join(data, "opencode", "auth.json")
+      })
+    })
+    expect(await manager.providers("normalization-account")).toStrictEqual(normalizedProviders)
+  })
+
   it("captures isolated OAuth before completing and releases the flow after capture failure", async () => {
     const root = mkdtempSync(join(tmpdir(), "codevisor-opencode-managed-"))
     onTestFinished(() => rmSync(root, { recursive: true, force: true }))
