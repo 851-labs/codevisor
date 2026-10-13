@@ -96,15 +96,23 @@ function run(command, args, options = {}) {
   })
 }
 
+/// Every signature uses SHA-256 explicitly: macOS's /usr/bin/openssl is
+/// LibreSSL, which still signs `x509 -req` with SHA-1 by default, and the
+/// tunnel's TLS (rustls/webpki) rejects SHA-1 certificates outright.
+const certificateDigest = "-sha256"
+
 /// A per-worktree CA plus one relay certificate for every name devices use.
-/// Regenerated only when the name set changes.
+/// Regenerated only when the name set or the signing digest changes.
 export async function ensureDevCertificates(net) {
   const names = [...new Set(["localhost", "127.0.0.1", "::1", net.relayHost])]
   const dir = net.netRoot
   await mkdir(dir, { recursive: true })
   const namesFile = join(dir, "cert-names.json")
+  // Recording the digest beside the names regenerates certificates an
+  // earlier run signed with SHA-1.
+  const fingerprint = JSON.stringify({ names, digest: certificateDigest })
   const current = await readFile(namesFile, "utf8").catch(() => "")
-  if (current === JSON.stringify(names) && (await exists(join(dir, "relay.key")))) return
+  if (current === fingerprint && (await exists(join(dir, "relay.key")))) return
   const sans = names
     .map((name) => (/^[0-9.:]+$/.test(name) ? `IP:${name}` : `DNS:${name}`))
     .join(",")
@@ -123,6 +131,7 @@ export async function ensureDevCertificates(net) {
   await openssl(
     "req",
     "-new",
+    certificateDigest,
     "-key",
     "ca.key",
     "-subj",
@@ -133,6 +142,7 @@ export async function ensureDevCertificates(net) {
   await openssl(
     "x509",
     "-req",
+    certificateDigest,
     "-in",
     "ca.csr",
     "-signkey",
@@ -149,6 +159,7 @@ export async function ensureDevCertificates(net) {
   await openssl(
     "req",
     "-new",
+    certificateDigest,
     "-key",
     "relay.key",
     "-subj",
@@ -159,6 +170,7 @@ export async function ensureDevCertificates(net) {
   await openssl(
     "x509",
     "-req",
+    certificateDigest,
     "-in",
     "relay.csr",
     "-CA",
@@ -173,7 +185,7 @@ export async function ensureDevCertificates(net) {
     "-out",
     "relay.pem"
   )
-  await writeFile(namesFile, JSON.stringify(names))
+  await writeFile(namesFile, fingerprint)
 }
 
 /// Starts both relays (router + iroh-relay each). Returns the processes.
