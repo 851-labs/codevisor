@@ -153,10 +153,35 @@ extension EnvironmentValues {
 }
 
 enum WorkedTimelineText {
-  /// A group of calls or agents in a few words: "Started 2 agents", or the
-  /// group's summary.
-  static func title(calls: [ToolCall], agents: Int) -> String {
-    guard !calls.isEmpty else { return agents == 1 ? "Started an agent" : "Started \(agents) agents" }
-    return ToolCallSummary.describe(calls)
+  /// A group of calls or agents in a few words: the group's summary, or
+  /// what became of its agents. The turn waits on an agent it runs in the
+  /// foreground ("Waiting for Map the UI"), then has run it ("Ran an
+  /// agent"); one sent to the background, or still running while the turn
+  /// works on, was only started ("Started 2 agents").
+  static func title(calls: [ToolCall], agents: [ToolCall], awaited: [ToolCall]) -> String {
+    guard calls.isEmpty else { return ToolCallSummary.describe(calls) }
+    let waitedOn = agents.filter { agent in awaited.contains { $0.toolCallId == agent.toolCallId } }
+    if !waitedOn.isEmpty { return waiting(for: waitedOn) }
+    let verb = agents.allSatisfy { $0.runsInBackground || !$0.isSettled } ? "Started" : "Ran"
+    return agents.count == 1 ? "\(verb) an agent" : "\(verb) \(agents.count) agents"
+  }
+
+  /// "Waiting for Map the UI", "… for Map the UI and Audit tests", or
+  /// "… for 3 agents" once names would crowd the line.
+  static func waiting(for agents: [ToolCall]) -> String {
+    let names = agents.map(\.agentName)
+    switch names.count {
+    case 1: return "Waiting for \(names[0])"
+    case 2: return "Waiting for \(names[0]) and \(names[1])"
+    default: return "Waiting for \(names.count) agents"
+    }
+  }
+}
+
+extension ToolCall {
+  /// Claude's Agent tool sent to the background: the turn never waits on it.
+  var runsInBackground: Bool {
+    if case .bool(true)? = rawInput?["run_in_background"] { return true }
+    return false
   }
 }

@@ -13,6 +13,8 @@ struct WorkedTimelineLine<Detail: View>: View {
   let isFirst: Bool
   let isLast: Bool
   let isTurnActive: Bool
+  /// The agents the turn is blocked on (see `awaitedAgentCalls`).
+  var awaitedAgents: [ToolCall] = []
   /// The item's ordinary rendering, for what a subagent line opens to.
   let detail: (WorkedItem) -> Detail
 
@@ -78,10 +80,13 @@ struct WorkedTimelineLine<Detail: View>: View {
           DiffCounter(totals: totals)
         }
       } else {
-        Text(WorkedTimelineText.title(calls: calls, agents: item.agentCount))
+        let agents = item.timelineAgents
+        let isWaiting = agents.contains { agent in awaitedAgents.contains { $0.toolCallId == agent.toolCallId } }
+        Text(WorkedTimelineText.title(calls: calls, agents: agents, awaited: awaitedAgents))
           .foregroundStyle(isHovering ? .primary : .secondary)
           .lineLimit(1)
-          .shimmering(isTurnActive && calls.contains { !$0.isSettled } && !isExpanded)
+          .truncationMode(.tail)
+          .shimmering((isWaiting || (isTurnActive && calls.contains { !$0.isSettled })) && !isExpanded)
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -108,7 +113,7 @@ extension WorkedItem {
     if case let .toolGroup(group) = self { group.calls } else { [] }
   }
 
-  fileprivate var agentCount: Int {
-    if case let .subagents(_, calls) = self { calls.count } else { 0 }
+  fileprivate var timelineAgents: [ToolCall] {
+    if case let .subagents(_, calls) = self { calls } else { [] }
   }
 }

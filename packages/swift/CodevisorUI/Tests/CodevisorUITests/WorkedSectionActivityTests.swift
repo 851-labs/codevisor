@@ -18,6 +18,33 @@ struct WorkedSectionActivityTests {
     #expect(turn.workedSectionActivity == .step("Thinking"))
   }
 
+  @Test("A turn blocked on its agents names them, and its agent line says what became of them")
+  func agentWording() {
+    func agent(_ id: String, _ status: ToolCallStatus, background: Bool = false) -> ToolCall {
+      ToolCall(
+        toolCallId: id, title: "Agent: \(id)", kind: .agent, status: status,
+        rawInput: ["description": .string(id), "run_in_background": .bool(background)])
+    }
+    let map = agent("Map the UI", .inProgress)
+    let audit = agent("Audit tests", .inProgress)
+    var turn = AssistantTurn(entries: [.tool(map), .tool(audit)], isGenerating: true)
+    #expect(turn.workedSectionActivity == .step("Waiting for Map the UI and Audit tests"))
+    #expect(
+      WorkedTimelineText.title(calls: [], agents: [map, audit], awaited: turn.awaitedAgentCalls)
+        == "Waiting for Map the UI and Audit tests")
+    #expect(
+      WorkedTimelineText.waiting(for: [map, audit, agent("Third", .inProgress)]) == "Waiting for 3 agents")
+
+    // Run in the foreground to completion, or sent to the background.
+    let ran = agent("Map the UI", .completed)
+    let launched = agent("Map the UI", .completed, background: true)
+    #expect(WorkedTimelineText.title(calls: [], agents: [ran], awaited: []) == "Ran an agent")
+    #expect(WorkedTimelineText.title(calls: [], agents: [launched, launched], awaited: []) == "Started 2 agents")
+    // Still running while the turn works on: started, not waited on.
+    turn.entries.append(.tool(ToolCall(toolCallId: "ls", title: "Ran ls", kind: .execute, status: .inProgress)))
+    #expect(WorkedTimelineText.title(calls: [], agents: [map], awaited: turn.awaitedAgentCalls) == "Started an agent")
+  }
+
   @Test("The label names the current step without a trailing ellipsis")
   func labels() {
     var turn = AssistantTurn(isGenerating: true, isThinking: true)

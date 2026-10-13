@@ -28,6 +28,10 @@ extension AssistantTurn {
       !activity.followsResponse
     {
       label = activity.message
+    } else if case let awaited = awaitedAgentCalls, !awaited.isEmpty {
+      // Blocked on its agents, the turn is waiting rather than running a
+      // call named "Agent: …".
+      label = WorkedTimelineText.waiting(for: awaited)
     } else if let running = toolCalls.last(where: { !$0.isSettled && !isUnstartedSubagent($0) }) {
       label = running.displayTitle
       // Harnesses announce a tool by its bare name before its input (and

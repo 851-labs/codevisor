@@ -183,7 +183,7 @@ private struct TranscriptWorkedItemPresentation<Content: View>: View {
     } else if let index = items.firstIndex(where: { $0.id == reference.itemID }) {
       WorkedTimelineLine(
         item: items[index], isFirst: index == 0, isLast: index == items.count - 1 && !hasThinking,
-        isTurnActive: isTurnActive
+        isTurnActive: isTurnActive, awaitedAgents: isTurnActive ? turn.awaitedAgentCalls : []
       ) { item in
         content(
           item,

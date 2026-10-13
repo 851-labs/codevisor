@@ -43,6 +43,20 @@ public enum WorkedItem: Identifiable, Sendable, Equatable {
   }
 }
 
+extension ToolCall {
+  /// An agent call's agent, as people call it: its task description, else
+  /// its title without the "Agent: " prefix.
+  public var agentName: String {
+    if let description = rawInput?["description"]?.stringValue,
+      !description.trimmingCharacters(in: .whitespaces).isEmpty
+    {
+      return description
+    }
+    let title = displayTitle
+    return title.hasPrefix("Agent: ") ? String(title.dropFirst("Agent: ".count)) : title
+  }
+}
+
 extension AssistantTurn {
   /// An agent call with no agent behind it yet: the model is still writing
   /// its input (Claude streams a call before its arguments), or stopped
@@ -57,6 +71,23 @@ extension AssistantTurn {
   /// The model is writing an agent call (see `isUnstartedSubagent`).
   public var isStartingSubagent: Bool {
     isGenerating && toolCalls.contains { !$0.isSettled && isUnstartedSubagent($0) }
+  }
+
+  /// The agents a live turn is blocked on: open agent calls with nothing
+  /// after them. A foreground Claude agent's call stays open until its agent
+  /// returns; a background one closes at launch. Codex keeps an agent's call
+  /// open while it runs even as the parent works on, so an open call only
+  /// means waiting while nothing has followed it.
+  public var awaitedAgentCalls: [ToolCall] {
+    guard isGenerating else { return [] }
+    var awaited: [ToolCall] = []
+    for entry in entries.reversed() {
+      if case .contextCompaction = entry { continue }
+      if entry.isBlankText { continue }
+      guard case let .tool(call) = entry, call.kind == .agent else { break }
+      if !call.isSettled, !isUnstartedSubagent(call) { awaited.append(call) }
+    }
+    return awaited.reversed()
   }
 
   /// The worked-for entries grouped for display: consecutive tool calls are

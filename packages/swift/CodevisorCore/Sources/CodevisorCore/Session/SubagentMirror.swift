@@ -330,13 +330,7 @@ public final class SubagentMirror {
 
   /// The subagent's short description ("Map the chat UI").
   public static func title(of call: ToolCall) -> String {
-    if let description = call.rawInput?["description"]?.stringValue,
-      !description.trimmingCharacters(in: .whitespaces).isEmpty
-    {
-      return description
-    }
-    let title = call.displayTitle
-    return title.hasPrefix("Agent: ") ? String(title.dropFirst("Agent: ".count)) : title
+    call.agentName
   }
 
   // MARK: - Finding the spawning call

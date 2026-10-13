@@ -314,3 +314,36 @@ struct TranscriptWorkedRowProjectionTests {
     )
   }
 }
+
+@Suite("Awaited agents")
+struct AwaitedAgentTests {
+  private func agent(_ id: String, _ status: ToolCallStatus, background: Bool = false) -> TranscriptEntry {
+    .tool(
+      ToolCall(
+        toolCallId: id, title: "Agent: \(id)", kind: .agent, status: status,
+        rawInput: ["description": .string(id), "run_in_background": .bool(background)]))
+  }
+
+  @Test("A live turn waits on the open agents its work ends with, and on nothing else")
+  func awaitedAgents() {
+    var turn = AssistantTurn(
+      entries: [.text(id: "note", markdown: "Checking."), agent("map", .inProgress), agent("audit", .inProgress)],
+      isGenerating: true)
+    #expect(turn.awaitedAgentCalls.map(\.toolCallId) == ["map", "audit"])
+
+    // A background agent's call closes at launch: nothing to wait on.
+    turn.entries = [agent("map", .completed, background: true)]
+    #expect(turn.awaitedAgentCalls.isEmpty)
+
+    // An agent still running while the parent works on (Codex) isn't awaited.
+    turn.entries = [
+      agent("map", .inProgress),
+      .tool(ToolCall(toolCallId: "ls", title: "Ran ls", kind: .execute, status: .inProgress)),
+    ]
+    #expect(turn.awaitedAgentCalls.isEmpty)
+
+    turn.entries = [agent("map", .inProgress)]
+    turn.isGenerating = false
+    #expect(turn.awaitedAgentCalls.isEmpty)
+  }
+}
