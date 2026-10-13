@@ -20,7 +20,7 @@ export interface SharedHarnessAccount {
 }
 
 export const sharedHarness = (id: string): id is SharedOAuthHarness =>
-  id === "claude-code" || id === "codex"
+  id === "claude-code" || id === "codex" || id === "muse-code"
 export const sharedAccountValue = (value: unknown): SharedHarnessAccount | undefined => {
   if (value === null || typeof value !== "object") return undefined
   const row = value as SharedHarnessAccount

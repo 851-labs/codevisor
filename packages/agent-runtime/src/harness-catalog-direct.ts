@@ -141,3 +141,33 @@ export const piHarness: HarnessDefinition = {
     ]
   }
 }
+
+// Muse Code is driven directly over its session protocol (`muse serve`, the
+// Muse adapter): the user's own Muse, with its sign-in, models, skills and
+// session store.
+export const museCodeHarness: HarnessDefinition = {
+  detectBinaries: ["muse"],
+  // The installer puts muse in ~/.local/bin, which a login shell may not
+  // have on PATH.
+  fallbackPaths: ["~/.local/bin/muse"],
+  id: "muse-code",
+  installHint: "curl -fsSL https://dev.meta.ai/install.sh | sh",
+  installMethods: [{ command: "curl -fsSL https://dev.meta.ai/install.sh | sh", kind: "curl" }],
+  name: "Muse Code",
+  provider: "muse",
+  // Muse reads the canonical store directly (and project .agents/skills).
+  skills: { globalDir: "~/.agents/skills", readsCanonical: true },
+  symbolName: "sparkles",
+  update: {
+    sources: [
+      {
+        // Muse has no self-updater; its installer replaces the binary. The
+        // SDK ships in lockstep with Muse Code (1.4.0+), so its npm version
+        // is the latest release.
+        apply: { kind: "reinstall" },
+        check: { kind: "npm", packageName: "@muse-code/sdk" },
+        when: "any"
+      }
+    ]
+  }
+}

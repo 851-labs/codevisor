@@ -25,6 +25,8 @@ These are local macOS/Linux server installations; iOS manages the selected
 server's harnesses. Windows package managers, Docker containers, source builds,
 and project-specific environment setup are not one-click install methods.
 Native Claude, Codex, Cursor, Grok, and Pi providers keep their existing integrations.
+Muse Code (added 2026-10-13) is native too: Codevisor drives `muse serve`, the
+Muse Session Protocol host, through its Muse adapter; it is not in the ACP registry.
 Registry IDs `claude-acp`, `codex-acp`, `amp-acp`, and `pi-acp` map to Codevisor's
 existing `claude-code`, `codex`, `amp`, and `pi` IDs.
 
@@ -122,13 +124,14 @@ built-in installer. Their native icon assets have also been removed.
 
 ## Bundled icons
 
-Both native apps include 37 branded harness icons. Ten were added from
+Both native apps include 38 branded harness icons. Eleven were added from
 `.repos/lobe-icons/packages/static-svg/icons` at pinned revision
 `4aaf4ee1fb2678a7f989ea570f0f6ce14a9abf75`. The SVGs retain their upstream artwork;
 web-only sizing attributes are removed to match the existing native assets.
 Poolside's alpha-mask gradient stops use white so Apple's luminance-mask
 renderer preserves the artwork instead of producing an empty icon.
 They use vector preservation and template rendering for light/dark appearance.
+Muse Code uses Meta's mark (added 2026-10-13, same revision); Lobe has no Muse-specific icon.
 LobeHub's MIT notice is included in each app's resources.
 
 | Harness                        | Lobe icon                     |
@@ -143,6 +146,7 @@ LobeHub's MIT notice is included in each app's resources.
 | MiniMax Code                   | `minimax.svg` (vendor logo)   |
 | Mistral Vibe                   | `mistral.svg` (vendor logo)   |
 | Poolside                       | `poolside.svg` (vendor logo)  |
+| Muse Code                      | `meta.svg` (vendor logo)      |
 
 Twelve more icons were sourced from official websites, upstream repositories,
 and the ACP registry. Their exact sources, modifications, and license notices

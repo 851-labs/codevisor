@@ -18,6 +18,7 @@ import {
   withTimeout
 } from "./harness-auth-support.js"
 import type { HarnessAuthManager } from "./harness-auth-types.js"
+import { MUSE_HARNESS_ID, type MuseAuth } from "./muse-auth.js"
 
 export type HarnessLoginOperations = Pick<
   HarnessAuthManager,
@@ -29,7 +30,8 @@ export type HarnessLoginOperations = Pick<
 export const makeHarnessLoginOperations = (
   core: HarnessAuthCore,
   probes: HarnessAuthProbes,
-  grok: GrokAuth
+  grok: GrokAuth,
+  muse: MuseAuth
 ): HarnessLoginOperations => {
   const {
     accountCommand,
@@ -306,6 +308,7 @@ export const makeHarnessLoginOperations = (
     const account = await run(config.db.getHarnessAccount(accountId))
     if (account === undefined) throw new Error(`Harness account not found: ${accountId}`)
     if (account.harnessId === "grok-build") return grok.begin(account, methodId, apiKey, shared)
+    if (account.harnessId === MUSE_HARNESS_ID) return muse.begin(account, methodId, apiKey)
     if (methodId === "apiKey") return beginApiKeyLogin(account, apiKey)
     if (
       account.harnessId === "codex" ||
@@ -353,6 +356,7 @@ export const makeHarnessLoginOperations = (
 
   const cancelLogin = async (flowId: string): Promise<void> => {
     await grok.cancel(flowId)
+    await muse.cancel(flowId)
     const codex = codexLogins.get(flowId)
     if (codex !== undefined) {
       if (codex.loginId !== undefined) {
@@ -411,6 +415,8 @@ export const makeHarnessLoginOperations = (
         env: execution.env,
         timeout: 30_000
       })
+    } else if (account.harnessId === MUSE_HARNESS_ID) {
+      await muse.logout(account)
     } else {
       await run(config.agents.logoutHarness(account.harnessId, await contextFor(account)))
     }

@@ -36,7 +36,9 @@ export const openSharedCredential = (
     Buffer.concat([cipher.update(bytes.subarray(28)), cipher.final()]).toString("utf8")
   ) as SharedTokenBundle
   if (
-    !["codex", "claude-code", "pi", "opencode", "grok-build"].includes(bundle.harnessId) ||
+    !["codex", "claude-code", "pi", "opencode", "grok-build", "muse-code"].includes(
+      bundle.harnessId
+    ) ||
     typeof bundle.subject !== "string" ||
     typeof bundle.accessToken !== "string" ||
     !Number.isFinite(bundle.expiresAt) ||

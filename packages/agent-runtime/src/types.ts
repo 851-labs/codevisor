@@ -177,6 +177,8 @@ export interface HarnessAuthInspection {
   }>
   readonly canLogout: boolean
   readonly detail?: string
+  /// Who is signed in, when the harness says (an email or account name).
+  readonly label?: string
 }
 
 /// Per-session control surface returned by a provider. The heavy agent

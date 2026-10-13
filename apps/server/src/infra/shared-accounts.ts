@@ -7,6 +7,7 @@ import { resolveShellEnv, type HarnessAccountContext } from "@codevisor/agent-ru
 import { isoTimestamp, type HarnessAccount } from "@codevisor/api"
 import type { CodevisorDatabaseService, HarnessAccountRecord } from "@codevisor/db"
 import {
+  removeMuseAuth,
   SharedCredentialError,
   sharedApiKey,
   sharedOAuthIdentity
@@ -27,6 +28,7 @@ import {
   type SharedHarnessAccount
 } from "./shared-account-store.js"
 import { makeSharedClaudeGateway } from "./shared-claude-gateway.js"
+import { museSharedContext } from "./shared-muse.js"
 import { makeSharedProviderAccounts } from "./shared-provider-accounts.js"
 import type { OpenCode2Deps } from "./shared-provider-opencode2.js"
 
@@ -139,7 +141,8 @@ export const makeSharedAccounts = (options: {
           previous?.label ??
           (label && label !== "New Account" ? label : undefined) ??
           bundle.email ??
-          (bundle.harnessId === "codex" ? "ChatGPT" : "Claude"),
+          ({ codex: "ChatGPT", "muse-code": "Meta" } as Record<string, string>)[bundle.harnessId] ??
+          "Claude",
         subject: bundle.subject,
         ...(bundle.email ? { email: bundle.email } : {}),
         ...(bundle.organizationId ? { organizationId: bundle.organizationId } : {}),
@@ -175,7 +178,9 @@ export const makeSharedAccounts = (options: {
     const target = await localState.loginTarget(id)
     if (!row || target === undefined) return
     const bundle = await nativeBundle(row, true)
-    if (!bundle?.refreshToken) throw new Error("Sign-in could not be saved. Try signing in again.")
+    // Muse's file sign-in is long-lived: it has no refresh token to require.
+    if (!bundle || (!bundle.refreshToken && bundle.harnessId !== "muse-code"))
+      throw new Error("Sign-in could not be saved. Try signing in again.")
     const account = (await importBundle(bundle, id, true, row.label))!
     if (
       target !== account.id &&
@@ -223,7 +228,7 @@ export const makeSharedAccounts = (options: {
         }
       }
       for (const account of await store.accounts()) await saveLocal(account)
-      for (const harnessId of ["claude-code", "codex"]) await applySelection(harnessId)
+      for (const harnessId of ["claude-code", "codex", "muse-code"]) await applySelection(harnessId)
       await providers.reconcile()
     })().finally(() => {
       reconciling = undefined
@@ -417,6 +422,8 @@ export const makeSharedAccounts = (options: {
         }
       }
       await mkdir(path, { recursive: true, mode: 0o700 })
+      if (account.harnessId === "muse-code")
+        return museSharedContext(account.id, path, bundle, await environment())
       if (bundle.authMethod === "apiKey")
         return {
           id: account.id,
@@ -464,6 +471,9 @@ export const makeSharedAccounts = (options: {
         await store.remove(account.id)
       } else await localState.setDisabled(account.id, true)
       gateway.forget(account.id)
+      // Muse reads its sign-in from disk: signed out, this machine's copy goes.
+      if (account.harnessId === "muse-code")
+        await removeMuseAuth(join(dataDir, "harness-profiles", "muse-code", account.id))
       return probe(account.id)
     },
     rename: async (id: string, label: string) => {

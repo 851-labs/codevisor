@@ -3,6 +3,7 @@ import { makeClaudeProvider } from "@codevisor/adapter-claude"
 import { makeCodexProvider } from "@codevisor/adapter-codex"
 import { makeCursorProvider } from "@codevisor/adapter-cursor"
 import { makeGrokBuildProvider } from "@codevisor/adapter-grok-build"
+import { makeMuseProvider } from "@codevisor/adapter-muse"
 import { makeOpenCodeProvider } from "@codevisor/adapter-opencode"
 import { makePiProvider } from "@codevisor/adapter-pi"
 import type { ProviderFactory } from "@codevisor/agent-runtime"
@@ -15,6 +16,8 @@ export const agentProviderFactories: ReadonlyArray<ProviderFactory> = [
   makeCodexProvider,
   makeCursorProvider,
   makeGrokBuildProvider,
+  // Muse, like Pi, runs its own tools.
+  (environment) => makeMuseProvider(environment),
   makeOpenCodeProvider,
   // Pi runs its own tools; it takes nothing from the factory context.
   (environment) => makePiProvider(environment)

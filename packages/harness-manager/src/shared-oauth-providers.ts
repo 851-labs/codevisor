@@ -3,6 +3,7 @@ import { readFile, realpath } from "node:fs/promises"
 import { join, resolve } from "node:path"
 
 import type { HarnessAuthExec } from "./harness-auth-types.js"
+import { museAuthPath, parseMuseAuth } from "./muse-credentials.js"
 import {
   SharedCredentialError,
   type SharedOAuthHarness,
@@ -124,6 +125,14 @@ export const readNativeOAuth = async (options: {
   readonly platform?: string
 }): Promise<SharedTokenBundle | undefined> => {
   const { harnessId, directory, ownership } = options
+  if (harnessId === "muse-code") {
+    // A managed Muse profile's file-backend sign-in; Muse's default
+    // Keychain sign-in stays with the user's own CLI.
+    if (options.isDefault && options.env.META_API_KEY)
+      return sharedApiKey(harnessId, options.env.META_API_KEY)
+    const document = await jsonFile(museAuthPath(directory))
+    return document === undefined ? undefined : parseMuseAuth(document, ownership)
+  }
   const key = harnessId === "codex" ? options.env.OPENAI_API_KEY : options.env.ANTHROPIC_API_KEY
   if (options.isDefault && key) return sharedApiKey(harnessId, key)
   let document = await jsonFile(

@@ -20,6 +20,7 @@ import { makeHarnessLoginOperations } from "./harness-auth-logins.js"
 import { makeHarnessAuthProbes } from "./harness-auth-probes.js"
 import { run } from "./harness-auth-support.js"
 import type { HarnessAuthManager, HarnessAuthManagerConfig } from "./harness-auth-types.js"
+import { makeMuseAuth } from "./muse-auth.js"
 import { makeOpenCodeAuthManager, openCodeAuthPath } from "./opencode-auth.js"
 import type { OpenCodeProfile } from "./opencode-auth.js"
 import { makePiAuthManager } from "./pi-auth.js"
@@ -133,7 +134,8 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
   const { probeAccount } = probes
   const decoration = makeHarnessAuthDecoration(core, probes)
   const accounts = makeHarnessAccountOperations(core, probes, decoration)
-  const logins = makeHarnessLoginOperations(core, probes, grok)
+  const muse = makeMuseAuth(core, probeAccount)
+  const logins = makeHarnessLoginOperations(core, probes, grok, muse)
 
   return {
     sharedOpenCodeProfiles: (content) =>

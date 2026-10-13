@@ -1,6 +1,12 @@
 import type { CredentialCommand, CredentialCoordinationResult } from "@codevisor/api"
 
-export type SharedOAuthHarness = "claude-code" | "codex" | "pi" | "opencode" | "grok-build"
+export type SharedOAuthHarness =
+  | "claude-code"
+  | "codex"
+  | "pi"
+  | "opencode"
+  | "grok-build"
+  | "muse-code"
 
 export interface SharedTokenBundle {
   readonly authMethod?: "apiKey"

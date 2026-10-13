@@ -1,5 +1,10 @@
 import { additionalAcpHarnesses } from "./harness-catalog-acp.js"
-import { claudeCodeHarness, codexHarness, piHarness } from "./harness-catalog-direct.js"
+import {
+  claudeCodeHarness,
+  codexHarness,
+  museCodeHarness,
+  piHarness
+} from "./harness-catalog-direct.js"
 import { executableHarness } from "./harness-catalog-support.js"
 import type { HarnessDefinition } from "./types.js"
 
@@ -13,6 +18,7 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
   claudeCodeHarness,
   codexHarness,
   piHarness,
+  museCodeHarness,
   executableHarness("gemini", "Gemini CLI", "diamond", ["gemini"], "gemini", ["--acp"], {
     installMethods: [
       { kind: "npm", packageName: "@google/gemini-cli" },

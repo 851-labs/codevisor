@@ -47,7 +47,8 @@ export const makeHarnessAuthDecoration = (
           harness.id === "claude-code" ||
           harness.id === "cursor" ||
           harness.id === "pi" ||
-          harness.id === "opencode",
+          harness.id === "opencode" ||
+          harness.id === "muse-code",
         canLogout: false
       })
     )
@@ -119,6 +120,21 @@ export const makeHarnessAuthDecoration = (
           description: "Use xAI API billing."
         }
       ]
+    if (harnessId === "muse-code")
+      return [
+        {
+          id: "deviceCode",
+          name: "Sign in with Meta",
+          kind: "deviceCode",
+          description: "Confirm a code in your browser."
+        },
+        {
+          id: "apiKey",
+          name: "Use a Meta API Key",
+          kind: "apiKey",
+          description: "Use Meta API billing instead of a Muse subscription."
+        }
+      ]
     if (harnessId === "pi") return []
     return acpLoginMethods.get(harnessId) ?? []
   }
@@ -137,8 +153,9 @@ export const makeHarnessAuthDecoration = (
       ...(active?.detail ? { detail: active.detail } : {}),
       accounts,
       loginMethods: loginMethods(harnessId),
-      supportsMultipleAccounts:
-        harnessId === "codex" || harnessId === "claude-code" || harnessId === "opencode"
+      supportsMultipleAccounts: ["codex", "claude-code", "opencode", "muse-code"].includes(
+        harnessId
+      )
     }
   }
 

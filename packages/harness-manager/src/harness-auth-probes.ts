@@ -14,6 +14,7 @@ import {
   withTimeout,
   type ClaudeAuthStatus
 } from "./harness-auth-support.js"
+import { MUSE_HARNESS_ID } from "./muse-auth.js"
 
 /// Sign-in status probes per harness family: Codex over its app-server
 /// protocol, Claude via `auth status --json`, Cursor via
@@ -227,7 +228,14 @@ export const makeHarnessAuthProbes = (core: HarnessAuthCore, grok: GrokAuth) => 
     return persistProbe(account, {
       authState: inspection.state,
       authMethod: null,
-      canLogin: methods.length > 0,
+      // Who is signed in, or back to the placeholder once nobody is.
+      ...(inspection.label !== undefined
+        ? { label: inspection.label }
+        : account.harnessId === MUSE_HARNESS_ID && inspection.state !== "authenticated"
+          ? { label: "Existing Muse Code account" }
+          : {}),
+      // Muse's sign-in runs through Codevisor (muse-auth.ts), not the agent.
+      canLogin: methods.length > 0 || account.harnessId === MUSE_HARNESS_ID,
       canLogout: inspection.canLogout,
       detail: inspection.detail ?? null
     })

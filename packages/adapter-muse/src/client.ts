@@ -1,0 +1,260 @@
+import { spawn } from "node:child_process"
+
+import { childStdioEndpoint, makeNdjsonTransport } from "@codevisor/agent-runtime"
+import type { NdjsonTransport } from "@codevisor/agent-runtime"
+import {
+  processIdentity,
+  stopProcessTree,
+  stopTreeOnExit,
+  trackProcessTree
+} from "@codevisor/processes"
+
+import {
+  MINIMUM_MUSE_VERSION,
+  record,
+  TESTED_SCHEMA_FINGERPRINT,
+  text,
+  versionAtLeast
+} from "./protocol.js"
+
+/// A JSON-RPC 2.0 client for `muse serve`, the Muse Session Protocol host:
+/// one JSON frame per line over the child's stdio.
+export interface MuseClient {
+  request: <T = unknown>(method: string, params?: unknown) => Promise<T>
+  notify: (method: string, params?: unknown) => void
+  onNotification: (handler: (method: string, params: unknown) => void) => void
+  /// Server→client requests (approvals, user-input prompts). MSP only wants
+  /// a receipt here — the decision travels as its own command — so the
+  /// handler's value is the JSON-RPC result.
+  onRequest: (handler: (method: string, params: unknown) => unknown) => void
+  /// Muse exited or its pipe failed. Not called for `close()`.
+  onClose: (handler: (error: Error) => void) => void
+  close: () => void
+}
+
+export interface MuseSpawnRequest {
+  readonly command: string
+  /// Arguments after `serve`.
+  readonly args: ReadonlyArray<string>
+  readonly cwd: string
+  readonly env: NodeJS.ProcessEnv
+}
+
+export type MuseConnector = (request: MuseSpawnRequest) => Promise<MuseClient>
+
+/// Muse answered a request with an error. `kind` is MSP's stable error
+/// vocabulary (`authRequired`, `notFound`, `commandRejected`, …).
+export class MuseRequestError extends Error {
+  constructor(
+    message: string,
+    readonly code: number | undefined,
+    readonly kind: string | undefined
+  ) {
+    super(message)
+  }
+}
+
+/// Muse itself stopped, as opposed to answering with an error.
+export class MuseExitedError extends Error {}
+
+/// What `muse serve` exit codes mean (MSP exit classification); stderr is
+/// not a contract, so these are the dependable explanations.
+export const museExitMessage = (code: number | null, fallback: string): string => {
+  switch (code) {
+    case 3:
+      return "Muse couldn't load its settings or sign-in. Sign in to Muse again."
+    case 4:
+      return "This Muse session is open in another Muse window. Close it there and try again."
+    case 5:
+      return "This Muse Code build doesn't include the session host Codevisor needs."
+    default:
+      return fallback
+  }
+}
+
+/* v8 ignore start -- spawning runs against a live muse binary; tests drive wireMuseClient over fake transports. */
+export const spawnMuseClient: MuseConnector = async (request) => {
+  const child = spawn(request.command, ["serve", ...request.args], {
+    cwd: request.cwd,
+    env: request.env,
+    detached: process.platform !== "win32",
+    stdio: ["pipe", "pipe", "pipe"]
+  })
+  await new Promise<void>((resolve, reject) => {
+    child.once("spawn", () => resolve())
+    child.once("error", reject)
+  })
+  const endpoint = childStdioEndpoint(child)
+  const transport = makeNdjsonTransport(
+    {
+      ...endpoint,
+      onExit: (handler) =>
+        endpoint.onExit((error) => {
+          const explained = museExitMessage(child.exitCode, "")
+          handler(error ?? (explained === "" ? undefined : new MuseExitedError(explained)))
+        })
+    },
+    { exitMessage: "muse exited" }
+  )
+  const client = wireMuseClient(transport)
+  const pid = child.pid!
+  const identity = await processIdentity(pid)
+  // Muse's shell tool starts commands of its own; they go with the chat.
+  const tree = await trackProcessTree(pid)
+  stopTreeOnExit(child, tree)
+  return {
+    ...client,
+    close: () => {
+      client.close()
+      void (identity === undefined ? Promise.resolve() : stopProcessTree(pid, { identity })).catch(
+        () => child.kill()
+      )
+    }
+  }
+}
+/* v8 ignore stop */
+
+interface Pending {
+  readonly resolve: (value: unknown) => void
+  readonly reject: (error: Error) => void
+}
+
+export const wireMuseClient = (transport: NdjsonTransport): MuseClient => {
+  let nextId = 1
+  const pending = new Map<number, Pending>()
+  let notificationHandler: ((method: string, params: unknown) => void) | undefined
+  let requestHandler: ((method: string, params: unknown) => unknown) | undefined
+  const closeHandlers: Array<(error: Error) => void> = []
+  let closed = false
+
+  const settle = (error: Error, notifyClose: boolean): void => {
+    if (closed) return
+    closed = true
+    for (const entry of pending.values()) entry.reject(error)
+    pending.clear()
+    if (notifyClose) for (const handler of closeHandlers) handler(error)
+  }
+
+  transport.onFailure((error) =>
+    settle(error instanceof MuseExitedError ? error : new MuseExitedError(error.message), true)
+  )
+
+  const reply = (id: unknown, result: unknown) =>
+    transport.send({ jsonrpc: "2.0", id, result: record(result) })
+  const fail = (id: unknown, code: number, message: string) =>
+    transport.send({ jsonrpc: "2.0", id, error: { code, message, data: { kind: "internal" } } })
+
+  const handle = (message: Record<string, unknown>): void => {
+    const id = message.id
+    const method = message.method
+    if (typeof method !== "string") {
+      const entry = typeof id === "number" ? pending.get(id) : undefined
+      if (entry === undefined) return
+      pending.delete(id as number)
+      if (message.error === undefined || message.error === null) {
+        entry.resolve(message.result)
+        return
+      }
+      const error = record(message.error)
+      entry.reject(
+        new MuseRequestError(
+          text(error.message) ?? "Muse rejected the request",
+          typeof error.code === "number" ? error.code : undefined,
+          text(record(error.data).kind)
+        )
+      )
+      return
+    }
+    // Handlers run inside the transport's stream listener: one bad frame is
+    // logged and skipped rather than thrown into the server.
+    try {
+      if (id === undefined) notificationHandler?.(method, message.params)
+      else if (requestHandler === undefined) fail(id, -32601, `No handler for ${method}`)
+      else reply(id, requestHandler(method, message.params))
+    } catch (error) {
+      console.error(`Error handling muse ${method}`, error)
+      // Muse waits on every request it sends; it still gets an answer.
+      if (id !== undefined) fail(id, -32603, `Codevisor couldn't handle ${method}`)
+    }
+  }
+
+  transport.onLine((line) => {
+    let message: unknown
+    try {
+      message = JSON.parse(line)
+    } catch {
+      return
+    }
+    handle(record(message))
+  })
+
+  return {
+    request: <T>(method: string, params?: unknown): Promise<T> =>
+      new Promise<T>((resolve, reject) => {
+        if (closed) {
+          reject(new MuseExitedError("muse is no longer running"))
+          return
+        }
+        const id = nextId
+        nextId += 1
+        pending.set(id, { resolve: resolve as (value: unknown) => void, reject })
+        transport.send({ jsonrpc: "2.0", id, method, ...(params === undefined ? {} : { params }) })
+      }),
+    notify: (method, params) =>
+      transport.send({ jsonrpc: "2.0", method, ...(params === undefined ? {} : { params }) }),
+    onNotification: (handler) => {
+      notificationHandler = handler
+    },
+    onRequest: (handler) => {
+      requestHandler = handler
+    },
+    onClose: (handler) => {
+      closeHandlers.push(handler)
+    },
+    close: () => {
+      settle(new Error("muse client closed"), false)
+      transport.close()
+    }
+  }
+}
+
+export interface MuseHost {
+  readonly version: string
+  readonly experimentalApi: boolean
+  readonly capabilities: ReadonlyArray<string>
+}
+
+/// Opens the MSP connection: `initialize`, then `initialized`, before which
+/// the host answers nothing else. Experimental methods (account sign-in)
+/// need the opt-in; `sessionMcp` lets a session carry Codevisor's tools.
+export const handshake = async (
+  client: MuseClient,
+  warn: (message: string) => void = console.warn
+): Promise<MuseHost> => {
+  const result = record(
+    await client.request("initialize", {
+      clientInfo: { name: "codevisor", title: "Codevisor", version: "1" },
+      capabilities: { experimentalApi: true, requestedCapabilities: ["sessionMcp"] }
+    })
+  )
+  client.notify("initialized")
+  const version = text(record(result.serverInfo).version) ?? "0"
+  if (!versionAtLeast(version, MINIMUM_MUSE_VERSION)) {
+    client.close()
+    throw new Error(
+      `This version of Muse Code (${version}) is too old for Codevisor. Update Muse Code to ${MINIMUM_MUSE_VERSION} or newer.`
+    )
+  }
+  const fingerprint = text(record(result.schema).fingerprint)
+  if (fingerprint !== TESTED_SCHEMA_FINGERPRINT)
+    warn(
+      `Muse Code ${version} speaks MSP schema ${fingerprint ?? "unknown"}; Codevisor was tested against ${TESTED_SCHEMA_FINGERPRINT}.`
+    )
+  return {
+    version,
+    experimentalApi: result.experimentalApi === true,
+    capabilities: Array.isArray(result.grantedCapabilities)
+      ? result.grantedCapabilities.filter((entry): entry is string => typeof entry === "string")
+      : []
+  }
+}

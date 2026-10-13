@@ -27,7 +27,7 @@ export const makeHarnessAccountOperations = (
   const { authSnapshot } = decoration
 
   const createAccount = async (harnessId: string, label?: string): Promise<HarnessAccount> => {
-    if (harnessId !== "codex" && harnessId !== "claude-code" && harnessId !== "opencode") {
+    if (!["codex", "claude-code", "opencode", "muse-code"].includes(harnessId)) {
       throw new Error("This harness does not support multiple managed accounts")
     }
     definition(harnessId)

@@ -1,4 +1,12 @@
-export type ProviderId = "acp" | "claude" | "codex" | "cursor" | "grok-build" | "opencode" | "pi"
+export type ProviderId =
+  | "acp"
+  | "claude"
+  | "codex"
+  | "cursor"
+  | "grok-build"
+  | "muse"
+  | "opencode"
+  | "pi"
 
 export type HarnessLaunch =
   | {

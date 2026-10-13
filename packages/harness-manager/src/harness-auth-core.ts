@@ -26,6 +26,7 @@ import type {
   HarnessAuthExec,
   HarnessAuthManagerConfig
 } from "./harness-auth-types.js"
+import { linkMuseConfigHome, MUSE_HARNESS_ID, museProfileEnv } from "./muse-credentials.js"
 
 /// The account fields a probe can move that clients render. `lastCheckedAt`
 /// is deliberately excluded: it changes on every probe.
@@ -152,6 +153,10 @@ export const makeHarnessAuthCore = (config: HarnessAuthManagerConfig) => {
     const env: Record<string, string> = {}
     if (path !== undefined && account.harnessId === "codex") env.CODEX_HOME = path
     if (path !== undefined && account.harnessId === "claude-code") env.CLAUDE_CONFIG_DIR = path
+    if (path !== undefined && account.harnessId === MUSE_HARNESS_ID) {
+      Object.assign(env, museProfileEnv(path))
+      await linkMuseConfigHome(path, await environment())
+    }
     if (path !== undefined && account.harnessId === "opencode") {
       env.XDG_DATA_HOME = join(path, "data")
       env.XDG_CONFIG_HOME = join(path, "config")
@@ -166,7 +171,11 @@ export const makeHarnessAuthCore = (config: HarnessAuthManagerConfig) => {
     const context: HarnessAccountContext = {
       id: account.id,
       profileKind: account.profileKind,
-      ...(Object.keys(env).length === 0 ? {} : { env })
+      ...(Object.keys(env).length === 0 ? {} : { env }),
+      // A key exported in the user's shell would outrank the account's own.
+      ...(path !== undefined && account.harnessId === MUSE_HARNESS_ID
+        ? { unsetEnv: ["META_API_KEY"] }
+        : {})
     }
     return shared
       ? (config.sharedProviders?.()?.context(publicAccount(account), context) ?? context)
@@ -191,6 +200,9 @@ export const makeHarnessAuthCore = (config: HarnessAuthManagerConfig) => {
     }
     if (account.profileKind === "managed" && account.harnessId === "opencode") {
       delete base.OPENCODE_AUTH_CONTENT
+    }
+    if (account.profileKind === "managed" && account.harnessId === MUSE_HARNESS_ID) {
+      delete base.META_API_KEY
     }
     return { ...base, ...accountContext.env }
   }

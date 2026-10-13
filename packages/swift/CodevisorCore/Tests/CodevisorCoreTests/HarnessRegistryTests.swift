@@ -37,7 +37,7 @@ struct HarnessRegistryTests {
   @Test("Account scope answers every question the screens used to keep lists for")
   func accountScopes() {
     // Server-side shared account rows: one RPC, sign-in hosted on a machine.
-    for id in ["claude-code", "codex", "grok-build"] {
+    for id in ["claude-code", "codex", "grok-build", "muse-code"] {
       let descriptor = HarnessRegistry.descriptor(for: id)
       #expect(descriptor.usesFleetAccountRows)
       #expect(descriptor.sharesFleetAccounts)
@@ -66,6 +66,7 @@ struct HarnessRegistryTests {
     #expect(HarnessRegistry.descriptor(for: "claude-code").supportsMultipleAccounts)
     #expect(HarnessRegistry.descriptor(for: "codex").supportsMultipleAccounts)
     #expect(HarnessRegistry.descriptor(for: "opencode").supportsMultipleAccounts)
+    #expect(HarnessRegistry.descriptor(for: "muse-code").supportsMultipleAccounts)
     #expect(!HarnessRegistry.descriptor(for: "grok-build").supportsMultipleAccounts)
     #expect(!HarnessRegistry.descriptor(for: "pi").supportsMultipleAccounts)
   }

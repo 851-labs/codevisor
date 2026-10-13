@@ -60,6 +60,7 @@
         "@codevisor/adapter-codex": "workspace:*",
         "@codevisor/adapter-cursor": "workspace:*",
         "@codevisor/adapter-grok-build": "workspace:*",
+        "@codevisor/adapter-muse": "workspace:*",
         "@codevisor/adapter-opencode": "workspace:*",
         "@codevisor/adapter-pi": "workspace:*",
         "@codevisor/agent-runtime": "workspace:*",
@@ -191,6 +192,18 @@
         "vitest": "4.1.6",
       },
     },
+    "packages/adapter-muse": {
+      "name": "@codevisor/adapter-muse",
+      "dependencies": {
+        "@codevisor/agent-runtime": "workspace:*",
+        "@codevisor/api": "workspace:*",
+        "@codevisor/processes": "workspace:*",
+        "effect": "4.0.0-beta.92",
+      },
+      "devDependencies": {
+        "vitest": "4.1.6",
+      },
+    },
     "packages/adapter-opencode": {
       "name": "@codevisor/adapter-opencode",
       "dependencies": {
@@ -295,6 +308,7 @@
       "dependencies": {
         "@codevisor/adapter-claude": "workspace:*",
         "@codevisor/adapter-codex": "workspace:*",
+        "@codevisor/adapter-muse": "workspace:*",
         "@codevisor/adapter-opencode": "workspace:*",
         "@codevisor/agent-runtime": "workspace:*",
         "@codevisor/api": "workspace:*",
@@ -572,6 +586,8 @@
     "@codevisor/adapter-cursor": ["@codevisor/adapter-cursor@workspace:packages/adapter-cursor"],
 
     "@codevisor/adapter-grok-build": ["@codevisor/adapter-grok-build@workspace:packages/adapter-grok-build"],
+
+    "@codevisor/adapter-muse": ["@codevisor/adapter-muse@workspace:packages/adapter-muse"],
 
     "@codevisor/adapter-opencode": ["@codevisor/adapter-opencode@workspace:packages/adapter-opencode"],
 
