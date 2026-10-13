@@ -77,28 +77,37 @@ extension SidebarView {
         )
       }
     case .project:
-      // One group per project across machines: synced machines carry the
-      // same logical project id, so a project cloned on two machines is one
-      // folder, and its rows name their machine instead.
-      let names = Dictionary(
-        list.projects.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
-      return SidebarWorkspaceGroup.grouping(items, by: { "project:\($0.projectId)" }) { item in
-        SidebarWorkspaceGroup.Heading(
-          title: names[item.projectId] ?? "Unknown Project",
+      // One folder per logical project: every machine's record of the same
+      // repository, folded by `ProjectGroup` as Settings › Projects and the
+      // composer's picker fold them. Its rows name their machine instead.
+      let records = Dictionary(
+        list.projects.map { ("\($0.serverId)/\($0.id)", $0) }, uniquingKeysWith: { first, _ in first })
+      let groups = Dictionary(
+        ProjectGroup.grouping(list.projects).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+      // A workspace whose project record hasn't arrived yet stays on its own.
+      func groupID(_ item: WorkspaceSidebarItem) -> String {
+        records["\(item.serverId)/\(item.projectId)"].map(ProjectGroup.groupID(for:))
+          ?? "project|\(item.serverId)|\(item.projectId.uuidString)"
+      }
+      return SidebarWorkspaceGroup.grouping(items, by: { "project:\(groupID($0))" }) { item in
+        let group = groups[groupID(item)]
+        return SidebarWorkspaceGroup.Heading(
+          title: group?.name ?? "Unknown Project",
           systemImage: EntitySystemSymbol.projectList,
-          newChatTarget: newChatTarget(forProject: item.projectId, fallbackServer: item.serverId)
+          newChatTarget: newChatTarget(in: group, fallback: item)
         )
       }
     }
   }
 
-  /// Where a project folder's New Chat starts one: this Mac's default
-  /// machine when the project lives there, else the machine of the
+  /// Where a project folder's New Chat starts one: the project's checkout
+  /// on this Mac's default machine when it has one, else the machine of the
   /// folder's first workspace.
-  private func newChatTarget(forProject projectId: UUID, fallbackServer: String) -> NewChatTarget {
-    let preferred = environment.defaultComposerServerId
-    let livesThere = list.projects.contains { $0.serverId == preferred && $0.id == projectId }
-    return NewChatTarget(serverId: livesThere ? preferred : fallbackServer, projectId: projectId)
+  private func newChatTarget(in group: ProjectGroup?, fallback item: WorkspaceSidebarItem) -> NewChatTarget {
+    if let member = group?.member(on: environment.defaultComposerServerId) {
+      return NewChatTarget(member)
+    }
+    return NewChatTarget(serverId: item.serverId, projectId: item.projectId)
   }
 
   /// Whether a group's rows are showing. The flat sidebar's group always is.
