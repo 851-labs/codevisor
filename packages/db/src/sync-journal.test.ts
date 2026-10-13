@@ -105,43 +105,46 @@ it("replays short gaps and resnapshots long gaps without deleting transcript con
 
 it("replays compact tool metadata and pages the complete oversized body", async () => {
   const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
-  const project = await run(db.createProject({ folderPath: "/tmp/journal-body" }))
-  const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
-  await run(
-    db.appendEvent("session.output", session.id, {
+  try {
+    const project = await run(db.createProject({ folderPath: "/tmp/journal-body" }))
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+    await run(
+      db.appendEvent("session.output", session.id, {
+        sessionUpdate: "tool_call",
+        toolCallId: "large",
+        title: "Large output",
+        status: "completed",
+        rawOutput: "z".repeat(5 * 1024 * 1024)
+      })
+    )
+    const replay = await run(db.readSyncBatch(0, session.id))
+    expect(replay.requiresSnapshot).toBe(false)
+    expect(Buffer.byteLength(JSON.stringify(replay))).toBeLessThan(4096)
+    const item = (await run(db.getTranscriptPage(session.id, undefined, 8))).items[0]!
+    const details = await run(db.getTranscriptItemDetails(session.id, item.id))
+    expect(Buffer.byteLength(JSON.stringify(details))).toBeLessThan(4096)
+    expect(details?.entries[0]?.payload).toMatchObject({
       sessionUpdate: "tool_call",
       toolCallId: "large",
       title: "Large output",
       status: "completed",
-      rawOutput: "z".repeat(5 * 1024 * 1024)
+      detailResource: { itemId: item.id, entryKey: "tool:large" }
     })
-  )
-  const replay = await run(db.readSyncBatch(0, session.id))
-  expect(replay.requiresSnapshot).toBe(false)
-  expect(Buffer.byteLength(JSON.stringify(replay))).toBeLessThan(4096)
-  const item = (await run(db.getTranscriptPage(session.id, undefined, 8))).items[0]!
-  const details = await run(db.getTranscriptItemDetails(session.id, item.id))
-  expect(Buffer.byteLength(JSON.stringify(details))).toBeLessThan(4096)
-  expect(details?.entries[0]?.payload).toMatchObject({
-    sessionUpdate: "tool_call",
-    toolCallId: "large",
-    title: "Large output",
-    status: "completed",
-    detailResource: { itemId: item.id, entryKey: "tool:large" }
-  })
-  let position: number | undefined = 0
-  let bytes = 0
-  do {
-    const body: TranscriptBodyPage = (await run(
-      db.getTranscriptBodyPage(session.id, item.id, "tool:large", "rawOutput", position)
-    ))!
-    expect(body.text).toBe("z".repeat(body.text.length))
-    expect(body.text.length).toBeLessThanOrEqual(8192)
-    bytes += body.text.length
-    position = body.nextPosition
-  } while (position !== undefined)
-  expect(bytes).toBe(5 * 1024 * 1024)
-  await run(db.close)
+    let position: number | undefined = 0
+    let bytes = 0
+    do {
+      const body: TranscriptBodyPage = (await run(
+        db.getTranscriptBodyPage(session.id, item.id, "tool:large", "rawOutput", position)
+      ))!
+      expect(body.text).toBe("z".repeat(body.text.length))
+      expect(body.text.length).toBeLessThanOrEqual(8192)
+      bytes += body.text.length
+      position = body.nextPosition
+    } while (position !== undefined)
+    expect(bytes).toBe(5 * 1024 * 1024)
+  } finally {
+    await run(db.close)
+  }
 })
 
 it("bounds the global journal and rejects missing or out-of-range delivery cursors", async () => {
