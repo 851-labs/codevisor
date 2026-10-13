@@ -34,6 +34,22 @@ describe.sequential("Codevisor code executor", () => {
     expect(calls).toEqual([{ path: "browser.tabs", args: { window: "current" } }])
   })
 
+  it("calls the function however the model punctuates it", async () => {
+    const executor = makeCodeExecutor()
+    const results = await Promise.all(
+      [
+        "async () => 42",
+        ";async () => 42",
+        ";async () => {\n  return 42\n};",
+        ";;(async () => 42)",
+        "(async (): Promise<number> => 42) as () => Promise<number>;"
+      ].map((code) => executor.execute(code, unavailableTool))
+    )
+    expect(results.map((result) => [result.result, result.error])).toEqual(
+      Array.from({ length: 5 }, () => [42, undefined])
+    )
+  })
+
   it("provides a native-shaped Playwright locator facade on tools.browser.tab", async () => {
     const calls: Array<{ readonly path: string; readonly args: unknown }> = []
     const result = await makeCodeExecutor().execute(

@@ -108,8 +108,11 @@ const renderParsedBody = (source: string): string => {
     allowImportExportEverywhere: true,
     plugins: ["typescript"]
   }).program
-  if (program.body.length !== 1) return source
-  const statement = program.body[0]
+  // A defensive leading `;` (`;async () => {…}`, as in some skill examples)
+  // is an empty statement, not a second one.
+  const statements = program.body.filter((node) => node.type !== "EmptyStatement")
+  if (statements.length !== 1) return source
+  const statement = statements[0]
   if (statement === undefined) return source
   switch (statement.type) {
     case "ExpressionStatement": {
@@ -118,7 +121,7 @@ const renderParsedBody = (source: string): string => {
       }
       return expression.type === "ArrowFunctionExpression" ||
         expression.type === "FunctionExpression"
-        ? wrapCallableBody(source)
+        ? wrapCallableBody(sliceNode(source, statement.expression as SourceNode))
         : source
     }
     case "FunctionDeclaration":
