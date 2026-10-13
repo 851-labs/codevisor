@@ -45,17 +45,11 @@ struct WorkedTimelineLine<Detail: View>: View {
 
   private func workLine(isExpanded: Bool) -> some View {
     let calls = item.timelineCalls
-    return HStack(spacing: 6) {
-      Text(WorkedTimelineText.title(calls: calls, agents: item.agentCount))
-        .foregroundStyle(isHovering ? .primary : .secondary)
-        .lineLimit(1)
-        .layoutPriority(1)
-        .shimmering(isTurnActive && calls.contains { !$0.isSettled } && !isExpanded)
-      if calls.contains(where: { $0.status == .failed }) {
-        Circle().fill(.red).frame(width: 5, height: 5)
-      }
-      Spacer(minLength: 0)
-    }
+    return Text(WorkedTimelineText.title(calls: calls, agents: item.agentCount))
+      .foregroundStyle(isHovering ? .primary : .secondary)
+      .lineLimit(1)
+      .shimmering(isTurnActive && calls.contains { !$0.isSettled } && !isExpanded)
+      .frame(maxWidth: .infinity, alignment: .leading)
   }
 
   @ViewBuilder
