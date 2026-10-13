@@ -3,7 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import {
   jsonRequest,
@@ -151,5 +151,34 @@ describe("git review routes", () => {
     expect(await Promise.all([lookup(), lookup()])).toEqual([expected, expected])
     expect(await lookup()).toEqual(expected)
     expect(readFileSync(calls, "utf8").trim().split("\n")).toHaveLength(1)
+  })
+
+  it("asks gh again once a pull request answer is a minute old", async () => {
+    const { services } = await makeServices("server-a")
+    const folder = tempFolder("codevisor-pr-stale-")
+    execFileSync("git", ["init", "--quiet", "-b", "feature/stale"], { cwd: folder })
+    const bin = join(tempFolder("codevisor-gh-"), "bin")
+    mkdirSync(bin)
+    const calls = join(bin, "calls")
+    writeFileSync(
+      join(bin, "gh"),
+      `#!/bin/sh\necho call >> '${calls}'\necho '{"number":8,"title":"Stale","state":"OPEN","isDraft":false,"url":"u"}'\n`
+    )
+    chmodSync(join(bin, "gh"), 0o755)
+    const env = { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}` }
+    const server = await startWithApp({ ...services, resolveGitEnvironment: async () => env })
+    runningServers.push(server)
+    const lookup = () =>
+      jsonRequest(server, `/v1/fs/git/pull-request?path=${encodeURIComponent(folder)}`)
+
+    await lookup()
+    const later = Date.now() + 61_000
+    const clock = vi.spyOn(Date, "now").mockReturnValue(later)
+    try {
+      await lookup()
+    } finally {
+      clock.mockRestore()
+    }
+    expect(readFileSync(calls, "utf8").trim().split("\n")).toHaveLength(2)
   })
 })
