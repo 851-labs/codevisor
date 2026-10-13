@@ -18,6 +18,11 @@
         backing: .buffered,
         defer: false
       )
+      window.isReleasedWhenClosed = false
+      defer {
+        window.contentView = nil
+        window.close()
+      }
       window.contentView = hostingView
       hostingView.layoutSubtreeIfNeeded()
 
