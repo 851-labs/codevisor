@@ -71,6 +71,7 @@ struct MachineControllerUpdateTests {
       updatePollAttempts: 50,
       updateScheduler: clock.scheduler
     )
+    defer { controller.stopEventSync() }
 
     // Stable by default.
     await controller.refreshStatus(for: "local")
@@ -82,7 +83,6 @@ struct MachineControllerUpdateTests {
     #expect(fake.updateInfoChannels.last == .alpha)
     await controller.updateServer(machineId: "local")
     #expect(fake.appliedChannels == [.alpha])
-    controller.stopEventSync()
   }
 
   @Test("Remote update accepts a channel-current runtime whose version string differs")
@@ -103,6 +103,7 @@ struct MachineControllerUpdateTests {
       updatePollAttempts: 50,
       updateScheduler: clock.scheduler
     )
+    defer { controller.stopEventSync() }
     controller.serverUpdateChannel = .alpha
 
     await controller.refreshStatus(for: "local")
@@ -111,7 +112,6 @@ struct MachineControllerUpdateTests {
     #expect(controller.serverUpdatePhase(for: "local") == .idle)
     #expect(controller.serverUpdateInfo(for: "local")?.updateAvailable == false)
     #expect(controller.statusByMachineId["local"]?.label.contains("0.1.97") == true)
-    controller.stopEventSync()
   }
 
   @Test("Build numbers confirm convergence when version strings differ")
@@ -134,6 +134,7 @@ struct MachineControllerUpdateTests {
       updatePollAttempts: 50,
       updateScheduler: clock.scheduler
     )
+    defer { controller.stopEventSync() }
     controller.serverUpdateChannel = .alpha
 
     await controller.refreshStatus(for: "local")
@@ -143,7 +144,6 @@ struct MachineControllerUpdateTests {
     #expect(fake.appliedUpdates == 1)
     #expect(controller.serverUpdatePhase(for: "local") == .idle)
     #expect(controller.serverUpdateInfo(for: "local")?.updateAvailable == false)
-    controller.stopEventSync()
   }
 
   @Test("A failed unattended install surfaces the machine's reason")
@@ -161,6 +161,7 @@ struct MachineControllerUpdateTests {
       updatePollAttempts: 50,
       updateScheduler: clock.scheduler
     )
+    defer { controller.stopEventSync() }
 
     await controller.refreshStatus(for: "local")
     await controller.updateServer(machineId: "local")
@@ -171,7 +172,6 @@ struct MachineControllerUpdateTests {
     } else {
       Issue.record("Expected a failed phase, got \(controller.serverUpdatePhase(for: "local"))")
     }
-    controller.stopEventSync()
   }
 
   @Test("A server draining live chats keeps the update in progress until it restarts")
@@ -191,6 +191,7 @@ struct MachineControllerUpdateTests {
       updatePollAttempts: 5,
       updateScheduler: clock.scheduler
     )
+    defer { controller.stopEventSync() }
     await controller.refreshStatus(for: "local")
 
     var messages: [String] = []
@@ -211,7 +212,6 @@ struct MachineControllerUpdateTests {
     #expect(messages.contains { $0.contains("Waiting for 2 chats to finish") })
     // The message is a progress detail of the in-flight update only.
     #expect(controller.connectionsById["local"]?.updateStatusMessage == nil)
-    controller.stopEventSync()
   }
 
   @Test("A busy server declines the update with a clear message")
@@ -229,6 +229,7 @@ struct MachineControllerUpdateTests {
       updatePollAttempts: 50,
       updateScheduler: clock.scheduler
     )
+    defer { controller.stopEventSync() }
 
     await controller.updateServer(machineId: "local")
 
@@ -239,7 +240,6 @@ struct MachineControllerUpdateTests {
     } else {
       Issue.record("Expected a failed phase, got \(controller.serverUpdatePhase(for: "local"))")
     }
-    controller.stopEventSync()
   }
 
   @Test("An unreachable restart times out once draining ends", arguments: [0, 12])

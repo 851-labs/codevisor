@@ -46,9 +46,7 @@ public struct UpdateComponent: Identifiable, Equatable, Sendable {
     default: nil
     }
   }
-}
 
-extension UpdateComponent {
   /// The row's detail in every state: versions when idle, what the machine
   /// is doing while updating, a one-line reason when failed. Status stays on
   /// one line and the full failure output lives behind a details control;
