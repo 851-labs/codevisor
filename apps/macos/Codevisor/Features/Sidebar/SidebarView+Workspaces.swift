@@ -51,7 +51,9 @@ extension SidebarView {
   /// A row's second line: its project, worktree, and machine, leaving out
   /// whatever its group heading already says and anything that repeats the
   /// workspace's own name (workspaces are often named after either). A
-  /// pinned row sits outside its project and machine, so it names both.
+  /// pinned row sits outside its project and machine, so it names both. A
+  /// project folder spans machines, so its rows name theirs when there is
+  /// more than one to tell apart.
   func rowSubtitle(for workspace: Workspace) -> String? {
     let projectName = list.projects.first {
       $0.serverId == workspace.serverId && $0.id == workspace.projectId
@@ -60,7 +62,8 @@ extension SidebarView {
     let candidates: [String?] = [
       heading == .project ? nil : projectName,
       workspace.worktreeName,
-      heading == .flat ? machineName(forServer: workspace.serverId) : nil,
+      heading == .flat || (heading == .project && environment.machines.allMachines.count > 1)
+        ? machineName(forServer: workspace.serverId) : nil,
     ]
     var parts: [String] = []
     for candidate in candidates {

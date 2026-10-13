@@ -171,7 +171,6 @@ struct SidebarView: View {
         if let heading = group.heading {
           SidebarGroupRow(
             title: heading.title,
-            subtitle: heading.subtitle,
             systemImage: heading.systemImage,
             isExpanded: isExpanded,
             isReordering: isReordering,

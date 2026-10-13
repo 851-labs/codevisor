@@ -77,20 +77,28 @@ extension SidebarView {
         )
       }
     case .project:
+      // One group per project across machines: synced machines carry the
+      // same logical project id, so a project cloned on two machines is one
+      // folder, and its rows name their machine instead.
       let names = Dictionary(
-        list.projects.map { ("\($0.serverId)/\($0.id)", $0.name) }, uniquingKeysWith: { first, _ in first })
-      // A project names its machine only when there is more than one to
-      // tell apart; its rows already omit the machine.
-      let namesMachine = environment.machines.allMachines.count > 1
-      return SidebarWorkspaceGroup.grouping(items, by: { "project:\($0.serverId)/\($0.projectId)" }) { item in
+        list.projects.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+      return SidebarWorkspaceGroup.grouping(items, by: { "project:\($0.projectId)" }) { item in
         SidebarWorkspaceGroup.Heading(
-          title: names["\(item.serverId)/\(item.projectId)"] ?? "Unknown Project",
-          subtitle: namesMachine ? machineName(forServer: item.serverId) : nil,
+          title: names[item.projectId] ?? "Unknown Project",
           systemImage: EntitySystemSymbol.projectList,
-          newChatTarget: NewChatTarget(serverId: item.serverId, projectId: item.projectId)
+          newChatTarget: newChatTarget(forProject: item.projectId, fallbackServer: item.serverId)
         )
       }
     }
+  }
+
+  /// Where a project folder's New Chat starts one: this Mac's default
+  /// machine when the project lives there, else the machine of the
+  /// folder's first workspace.
+  private func newChatTarget(forProject projectId: UUID, fallbackServer: String) -> NewChatTarget {
+    let preferred = environment.defaultComposerServerId
+    let livesThere = list.projects.contains { $0.serverId == preferred && $0.id == projectId }
+    return NewChatTarget(serverId: livesThere ? preferred : fallbackServer, projectId: projectId)
   }
 
   /// Whether a group's rows are showing. The flat sidebar's group always is.

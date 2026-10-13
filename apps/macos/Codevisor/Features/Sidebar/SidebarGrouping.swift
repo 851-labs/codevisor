@@ -35,8 +35,6 @@ struct SidebarWorkspaceGroup: Identifiable, Equatable {
   /// What a group row shows and offers.
   struct Heading: Equatable {
     let title: String
-    /// Context the title lacks: a project's machine when there are several.
-    var subtitle: String? = nil
     let systemImage: String
     /// Where the row's New Chat starts one. Nil for machines.
     var newChatTarget: NewChatTarget? = nil

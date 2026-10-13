@@ -5,8 +5,6 @@ import SwiftUI
 /// projects.
 struct SidebarGroupRow: View {
   let title: String
-  /// Context the title lacks: a project's machine when there are several.
-  let subtitle: String?
   let systemImage: String
   let isExpanded: Bool
   let isReordering: Bool
@@ -32,21 +30,9 @@ struct SidebarGroupRow: View {
                 .opacity(isHovered ? 1 : 0)
             }
             .frame(width: 18)
-            // One line: the machine trails the name, giving way first when
-            // the row is narrow.
-            HStack(spacing: 4) {
-              Text(title)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .layoutPriority(1)
-              if let subtitle {
-                Text("·")
-                  .foregroundStyle(.tertiary)
-                Text(subtitle)
-                  .foregroundStyle(.tertiary)
-                  .lineLimit(1)
-              }
-            }
+            Text(title)
+              .lineLimit(1)
+              .truncationMode(.middle)
             Spacer(minLength: 6)
           }
           .padding(.vertical, 5)
