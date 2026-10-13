@@ -3,6 +3,10 @@ import Foundation
 import MarkdownCore
 
 enum TranscriptWorkedSectionProjection {
+  /// The gap below a worked header. A turn's opening line stands in for its
+  /// header and keeps the same gap, so the header replacing it moves nothing.
+  static let headerSpacingAfter: CGFloat = 12
+
   @discardableResult
   static func append(
     _ message: AssistantMessage,
@@ -58,7 +62,7 @@ enum TranscriptWorkedSectionProjection {
           for: .assistant(message),
           waitingOnBackgroundTask: nil
         ),
-        spacingAfter: 12,
+        spacingAfter: headerSpacingAfter,
         workedSection: .init(
           identity: identity,
           // Collapsed by default, live or not: a live header rolls up

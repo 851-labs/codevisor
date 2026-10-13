@@ -153,6 +153,10 @@ public enum TranscriptWorkedRowsVisibility {
 /// a plain Text driven by a small task rather than a TimelineView nested in a
 /// root that may be reconciled during streaming.
 public struct TranscriptWorkedSectionHeaderView: View {
+  /// The header's line, chevron or not. A turn's opening line keeps it too,
+  /// so whatever it shows, the header replacing it moves nothing.
+  static let lineHeight: CGFloat = 18
+
   public let turn: AssistantTurn
   public let messageID: UUID
   public let kind: TranscriptWorkedSectionKind
@@ -226,7 +230,7 @@ public struct TranscriptWorkedSectionHeaderView: View {
       }
       Spacer(minLength: 0)
     }
-    .frame(minHeight: 18)
+    .frame(minHeight: TranscriptWorkedSectionHeaderView.lineHeight)
     .font(.callout)
     .foregroundStyle(.secondary)
     .transaction { transaction in
@@ -401,7 +405,7 @@ struct TranscriptStartingWorkedHeader: View {
       Text("Working for " + AssistantTurn.formatWorkedDuration(now.timeIntervalSince(startedAt)))
       Spacer(minLength: 0)
     }
-    .frame(minHeight: 18)
+    .frame(minHeight: TranscriptWorkedSectionHeaderView.lineHeight)
     .font(.callout)
     .foregroundStyle(.secondary)
     .task {

@@ -8,7 +8,7 @@ struct TranscriptWaitingActivityGeometryTests {
 
   private func activity(_ message: AssistantMessage, aggregate: Bool = false) -> Row {
     if aggregate {
-      return Row(id: .active(message.id), content: .active(.assistant(message)), estimatedHeight: 32)
+      return TranscriptAssistantRowProjection.activeFallbackRow(for: .assistant(message))
     }
     return TranscriptActiveRowProjection.rows(for: .assistant(message))[0]
   }

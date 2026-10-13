@@ -77,18 +77,23 @@ public struct AssistantTurnActivitySlot: View {
   }
 
   public var body: some View {
-    if let activity {
-      AssistantTurnActivityView(activity)
-    } else if let waitingSince {
-      TranscriptStartingWorkedHeader(startedAt: waitingSince)
-        .suppressedDuringStreamingTextEntrance()
-    } else {
-      // Plain text in the shimmer's font: same line height, no animation.
-      Text("Thinking…")
-        .font(.callout)
-        .hidden()
-        .accessibilityHidden(true)
+    Group {
+      if let activity {
+        AssistantTurnActivityView(activity)
+      } else if let waitingSince {
+        TranscriptStartingWorkedHeader(startedAt: waitingSince)
+          .suppressedDuringStreamingTextEntrance()
+      } else {
+        // Plain text in the shimmer's font, no animation.
+        Text("Thinking…")
+          .font(.callout)
+          .hidden()
+          .accessibilityHidden(true)
+      }
     }
+    // A retry or compaction label stands in for the turn's header too, so
+    // every state keeps the header's line height.
+    .frame(minHeight: TranscriptWorkedSectionHeaderView.lineHeight)
   }
 }
 

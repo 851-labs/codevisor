@@ -87,7 +87,8 @@ enum TranscriptRowAssembly {
         .init(
           id: .startingAgent,
           content: .startingAgent,
-          estimatedHeight: TranscriptAssistantRowProjection.activityRowEstimatedHeight
+          estimatedHeight: TranscriptAssistantRowProjection.activityRowEstimatedHeight,
+          spacingAfter: TranscriptWorkedSectionProjection.headerSpacingAfter
         ))
     }
     appendInitialConnection(input, options: options, pendingMessage: pendingMessage, to: &rows)
@@ -166,7 +167,8 @@ enum TranscriptRowAssembly {
           content: .active(activeItem),
           estimatedHeight: TranscriptAssistantRowProjection.activeFallbackEstimatedHeight(
             for: activeItem
-          )
+          ),
+          spacingAfter: TranscriptAssistantRowProjection.activeFallbackSpacingAfter(for: activeItem)
         ))
     }
     if !pendingIsOpeningRow, let message = pendingMessage {

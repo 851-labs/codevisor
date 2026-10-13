@@ -108,13 +108,15 @@ struct TranscriptWorkedRowProjectionTests {
     var message = AssistantMessage(
       turn: AssistantTurn(isGenerating: true, startedAt: Date(timeIntervalSince1970: 100)))
     let header = TranscriptPresentationRow.ID.activeWorkedHeader(message.id, .planning)
-    #expect(
-      TranscriptActiveRowProjection.rows(for: .assistant(message)).map(\.id)
-        == [.activeChrome(message.id, .activity)])
+    let opening = TranscriptActiveRowProjection.rows(for: .assistant(message))
+    #expect(opening.map(\.id) == [.activeChrome(message.id, .activity)])
 
     message.turn.entries = [.text(id: "answer", markdown: "Hello.")]
     let answering = TranscriptActiveRowProjection.rows(for: .assistant(message))
     #expect(answering.first?.id == header)
+    // The header takes the opening line's place with the same gap below it,
+    // so the bottom-pinned transcript doesn't move when it does.
+    #expect(answering.first?.spacingAfter == opening.first?.spacingAfter)
     #expect(!answering.contains { $0.id == .activeChrome(message.id, .activity) })
 
     message.turn.isGenerating = false

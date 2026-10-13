@@ -314,7 +314,9 @@ enum TranscriptAssistantRowProjection {
         measurementRevision: measurementRevision(
           for: .assistant(message),
           waitingOnBackgroundTask: waitingOnBackgroundTask
-        )
+        ),
+        // The activity line stands in for the turn's header.
+        spacingAfter: slice == .activity ? TranscriptWorkedSectionProjection.headerSpacingAfter : nil
       ))
   }
 
@@ -324,7 +326,8 @@ enum TranscriptAssistantRowProjection {
     .init(
       id: .active(item.id),
       content: .active(item),
-      estimatedHeight: activeFallbackEstimatedHeight(for: item)
+      estimatedHeight: activeFallbackEstimatedHeight(for: item),
+      spacingAfter: activeFallbackSpacingAfter(for: item)
     )
   }
 
@@ -333,16 +336,23 @@ enum TranscriptAssistantRowProjection {
   /// reserving a generic response height here would move the bottom-pinned
   /// transcript before the precise projection arrives.
   static func activeFallbackEstimatedHeight(for item: ConversationItem) -> CGFloat {
-    guard case let .assistant(message) = item,
-      // Blank spans render nothing, so a turn holding only those is still
-      // a bare opening line and must keep its 32pt reservation.
-      message.turn.entries.allSatisfy(\.isBlankText),
-      message.turn.attachments.isEmpty,
-      message.turn.subagents.isEmpty,
-      message.turn.planDocument?.isEmpty != false,
-      message.turn.retryStatus != nil || message.turn.showsActivityIndicator
-    else { return 320 }
-    return activityRowEstimatedHeight
+    isOpeningLine(item) ? activityRowEstimatedHeight : 320
+  }
+
+  /// The aggregate row keeps the gap of the opening line it stands in for.
+  static func activeFallbackSpacingAfter(for item: ConversationItem) -> CGFloat? {
+    isOpeningLine(item) ? TranscriptWorkedSectionProjection.headerSpacingAfter : nil
+  }
+
+  private static func isOpeningLine(_ item: ConversationItem) -> Bool {
+    guard case let .assistant(message) = item else { return false }
+    // Blank spans render nothing, so a turn holding only those is still a
+    // bare opening line and must keep its 32pt reservation.
+    return message.turn.entries.allSatisfy(\.isBlankText)
+      && message.turn.attachments.isEmpty
+      && message.turn.subagents.isEmpty
+      && message.turn.planDocument?.isEmpty != false
+      && (message.turn.retryStatus != nil || message.turn.showsActivityIndicator)
   }
 
   static func resultID(
