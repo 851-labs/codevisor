@@ -119,18 +119,24 @@ struct SidebarView: View {
   /// details each row shows.
   @ViewBuilder
   private var sidebarOptionsMenu: some View {
-    Picker("Grouping", selection: $grouping) {
+    Picker(selection: $grouping) {
       ForEach(SidebarGrouping.allCases, id: \.self) { option in
         Text(option.title).tag(option)
       }
+    } label: {
+      Label("Grouping", systemImage: "rectangle.3.group")
+        .labelStyle(.titleAndIcon)
     }
     .pickerStyle(.menu)
-    Menu("Show") {
+    Menu {
       ForEach(SidebarRowDetail.allCases) { detail in
         Toggle(isOn: rowDetailBinding(detail)) {
           Label(detail.title, systemImage: detail.systemImage)
         }
       }
+    } label: {
+      Label("Properties", systemImage: "list.bullet")
+        .labelStyle(.titleAndIcon)
     }
   }
 

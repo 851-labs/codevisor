@@ -13,7 +13,7 @@ struct SidebarWorkspaceRow: View {
   let icon: SidebarWorkspaceIcon
   let store: SessionStore?
   /// When the workspace last changed, shown as an elapsed time. Nil hides
-  /// it (the Show menu's Updated option is off).
+  /// it (the Properties menu's Updated option is off).
   var updatedAt: Date? = nil
   /// The workspace branch's pull request, shown as a badge that opens it.
   /// Nil hides it.
