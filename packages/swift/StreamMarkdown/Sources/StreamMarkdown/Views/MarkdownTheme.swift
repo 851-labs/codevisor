@@ -220,16 +220,10 @@ public extension EnvironmentValues {
     get { self[MarkdownLinkActionKey.self] }
     set { self[MarkdownLinkActionKey.self] = newValue }
   }
-}
-
-extension EnvironmentValues {
   /// The iOS table bleed after applying the enclosing container's limit.
-  var resolvedMarkdownTableBleed: CGFloat {
+  internal var resolvedMarkdownTableBleed: CGFloat {
     max(0, min(markdownTableBleed, markdownTableBleedLimit))
   }
-}
-
-public extension EnvironmentValues {
   var markdownTheme: MarkdownTheme {
     get { self[MarkdownThemeKey.self] }
     set { self[MarkdownThemeKey.self] = newValue }
