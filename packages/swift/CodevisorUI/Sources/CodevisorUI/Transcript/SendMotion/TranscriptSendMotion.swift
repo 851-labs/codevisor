@@ -186,12 +186,4 @@ extension NSValue {
       NSValue(size: size)
     #endif
   }
-
-  static func transcriptPoint(_ point: CGPoint) -> NSValue {
-    #if canImport(UIKit)
-      NSValue(cgPoint: point)
-    #else
-      NSValue(point: point)
-    #endif
-  }
 }
