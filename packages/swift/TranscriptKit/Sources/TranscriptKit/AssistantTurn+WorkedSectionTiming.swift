@@ -94,6 +94,14 @@ extension AssistantTurn {
       }
   }
 
+  /// Whether an open `kind` section ends its timeline with a "Thinking"
+  /// line: only while the harness reports the model reasoning. The note or
+  /// tool that follows takes the line's place, so it never shifts the
+  /// timeline above it.
+  public func showsWorkedThinkingLine(_ kind: TranscriptWorkedSectionKind) -> Bool {
+    isGenerating && isThinking && showsLiveWorkedHeader(kind)
+  }
+
   /// The running section's elapsed time ("12s"), shown after its activity.
   public func workedSectionElapsed(_ kind: TranscriptWorkedSectionKind, now: Date) -> String {
     Self.formatWorkedDuration(now.timeIntervalSince(workedSectionStart(kind) ?? now))

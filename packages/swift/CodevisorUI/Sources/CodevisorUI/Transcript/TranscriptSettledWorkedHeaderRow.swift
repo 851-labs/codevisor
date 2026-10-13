@@ -175,9 +175,14 @@ private struct TranscriptWorkedItemPresentation<Content: View>: View {
   var body: some View {
     let animationEnabled = prepareAnimationPresentation()
     let items = sectionItems
-    if let index = items.firstIndex(where: { $0.id == reference.itemID }) {
+    let hasThinking = isTurnActive && turn.showsWorkedThinkingLine(reference.section)
+    if reference.itemID == WorkedItem.thinkingLineID {
+      if hasThinking {
+        WorkedTimelineThinking(isFirst: items.isEmpty)
+      }
+    } else if let index = items.firstIndex(where: { $0.id == reference.itemID }) {
       WorkedTimelineLine(
-        item: items[index], isFirst: index == 0, isLast: index == items.count - 1,
+        item: items[index], isFirst: index == 0, isLast: index == items.count - 1 && !hasThinking,
         isTurnActive: isTurnActive
       ) { item in
         content(

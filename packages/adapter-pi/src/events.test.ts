@@ -30,6 +30,13 @@ describe("Pi event mapping", () => {
         }
       }
     ])
+    // Reasoning shows from its start, before (or without) any text.
+    expect(map(update({ type: "thinking_start", contentIndex: 1 }))).toEqual([
+      {
+        kind: "session.output",
+        payload: { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "" } }
+      }
+    ])
     expect(map(update({ type: "thinking_delta", contentIndex: 1, delta: "Hmm" }))).toEqual([
       {
         kind: "session.output",

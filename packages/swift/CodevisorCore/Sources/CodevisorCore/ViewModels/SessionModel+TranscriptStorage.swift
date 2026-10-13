@@ -68,6 +68,7 @@ extension SessionModel {
     let items =
       items
       .map(restoringCachedTranscriptDetails)
+      .map(carryingLiveTurnState)
       .filter(\.hasRenderableTranscriptContent)
     if case .assistant = items.last {
       settledConversation = Array(items.dropLast())
@@ -79,6 +80,27 @@ extension SessionModel {
       if hasActiveItem { hasActiveItem = false }
     }
     rebuildSettledIndex()
+  }
+
+  /// Live-only turn state the server never stores — where the model reasoned
+  /// between tool calls — carried onto a server copy of the same turn, so
+  /// its worked timeline doesn't regroup the moment the turn settles.
+  func carryingLiveTurnState(_ incoming: ConversationItem) -> ConversationItem {
+    guard case var .assistant(message) = incoming else { return incoming }
+    let current: AssistantMessage? =
+      if case let .assistant(active)? = activeItem, active.id == message.id {
+        active
+      } else if let index = settledIndexById[message.id], index < settledConversation.count,
+        case let .assistant(settled) = settledConversation[index]
+      {
+        settled
+      } else {
+        nil
+      }
+    guard let current, !current.turn.callsAfterReasoning.isSubset(of: message.turn.callsAfterReasoning)
+    else { return incoming }
+    message.turn.callsAfterReasoning.formUnion(current.turn.callsAfterReasoning)
+    return .assistant(message)
   }
 
   /// A snapshot taken before the provider reported the turn started carries
@@ -107,6 +129,7 @@ extension SessionModel {
   }
 
   func setItem(_ item: ConversationItem, at index: Int) {
+    let item = carryingLiveTurnState(item)
     if index < settledConversation.count {
       settledConversation[index] = item
     } else if index == settledConversation.count, activeItem != nil {

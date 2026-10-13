@@ -3,6 +3,27 @@ import { describe, expect, it } from "vitest"
 import { run, setup } from "./test-support.js"
 
 describe("CodexProvider", () => {
+  it("asks for reasoning summaries, so reasoning is reported as it starts, until the account refuses them", async () => {
+    const { client, created } = await setup()
+    const turn = async (id: string, turnState: Record<string, unknown>) => {
+      const requested = client.nextRequest("turn/start")
+      const prompt = run(created!.handle.prompt("go"))
+      await requested
+      client.emit("turn/completed", { threadId: "thread-new", turn: { id, ...turnState } })
+      await prompt
+      return client.requests.findLast((request) => request.method === "turn/start")?.params
+    }
+    expect(await turn("t1", { status: "completed" })).toMatchObject({ summary: "auto" })
+    // An unrelated failure keeps asking.
+    await turn("t2", { status: "failed", error: { message: "Rate limit reached" } })
+    expect(await turn("t3", { status: "completed" })).toMatchObject({ summary: "auto" })
+    await turn("t4", {
+      status: "failed",
+      error: { message: "Your organization must be verified to generate reasoning summaries." }
+    })
+    expect(await turn("t5", { status: "completed" })).not.toHaveProperty("summary")
+  })
+
   it("plan mode sends the experimental collaboration mode on turn/start", async () => {
     const { client, created } = await setup()
     await run(created!.handle.setMode("plan"))

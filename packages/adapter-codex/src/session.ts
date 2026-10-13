@@ -63,6 +63,9 @@ export interface CodexSession {
   titleGenerator?: CodexTitleGenerator
   currentModel: string
   currentEffort: string | undefined
+  /// Set once the account rejects reasoning summaries (OpenAI requires a
+  /// verified organization for them on API keys); later turns stop asking.
+  reasoningSummariesRejected?: boolean
   /// Undefined until the user picks a speed — the model's default tier applies.
   currentSpeed: "standard" | "fast" | undefined
   currentModeId: string

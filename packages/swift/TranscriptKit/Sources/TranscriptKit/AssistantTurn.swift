@@ -85,6 +85,11 @@ public struct AssistantTurn: Sendable, Equatable {
   /// once a tool call proves it wasn't the answer.
   public var textPhases: [String: MessagePhase]
   public var entryPositions: [String: Int] = [:]
+  /// Tool calls the model reasoned before, seen live. Each starts a new
+  /// tool group, so the worked timeline's "Thinking" line hands its place
+  /// to the call that follows instead of shrinking into the group above.
+  /// Reasoning isn't stored, so reloaded history groups them as before.
+  public var callsAfterReasoning: Set<String> = []
   public var textStates: [String: TranscriptTextState] = [:]
   /// Server transcript item whose hidden worked details have not been fetched
   /// yet. Summary/final text renders immediately; expansion hydrates only this

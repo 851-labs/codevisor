@@ -30,6 +30,10 @@ public enum WorkedItem: Identifiable, Sendable, Equatable {
   /// is the first spawn's, so the item keeps its identity as more join it.
   case subagents(id: String, calls: [ToolCall])
 
+  /// The worked-row id of a live section's "Thinking" line, which isn't an
+  /// item of its own (see `AssistantTurn.showsWorkedThinkingLine`).
+  public static let thinkingLineID = "wthinking"
+
   public var id: String {
     switch self {
     case let .text(id, _): return "wtext:\(id)"
@@ -139,6 +143,7 @@ extension AssistantTurn {
         agents.append(call)
       case let .tool(call):
         flushAgents()
+        if callsAfterReasoning.contains(call.toolCallId) { flushGroup() }
         group.append(call)
         groupHasUnsettledCall = groupHasUnsettledCall || !call.isSettled
       case .contextCompaction:

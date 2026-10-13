@@ -11,6 +11,9 @@ enum TranscriptToolReduction {
       upsertTool(call, entries: &bucket.entries)
       turn.subagents[parent] = bucket
     } else {
+      if turn.isThinking, !turn.entries.contains(where: { $0.id == "tool:\(call.toolCallId)" }) {
+        turn.callsAfterReasoning.insert(call.toolCallId)
+      }
       turn.isThinking = false
       upsertTool(call, entries: &turn.entries)
       turn.receiveGeneratedImage(call)

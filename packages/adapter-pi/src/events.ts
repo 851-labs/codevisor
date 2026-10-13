@@ -143,6 +143,13 @@ export const makePiEventMapper = (contextWindow: () => number | undefined): PiEv
                 content: { type: "text", text: update.delta }
               })
             ]
+      // Pi announces reasoning as it starts, for every provider; its text
+      // may come late (OpenAI summaries) or never (redacted thinking), so
+      // the start itself turns on the client's "Thinking" state.
+      case "thinking_start":
+        return [
+          output({ sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "" } })
+        ]
       case "thinking_delta":
         return text(update.delta) === undefined
           ? []

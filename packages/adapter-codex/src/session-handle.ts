@@ -79,6 +79,12 @@ export const handleFor = (session: CodexSession): AgentSessionHandle => ({
         threadId: session.threadId,
         ...(session.currentModel.length === 0 ? {} : { model: session.currentModel }),
         ...(session.currentEffort === undefined ? {} : { effort: session.currentEffort }),
+        // Codex's models default to no reasoning summaries, and without them
+        // a reasoning item is only reported, started and completed at once,
+        // after the model has finished reasoning. Asking for summaries makes
+        // Codex report reasoning as it starts and ends, which is what drives
+        // the "Thinking" state; the summary text itself isn't shown.
+        ...(session.reasoningSummariesRejected === true ? {} : { summary: "auto" }),
         ...(speed === undefined
           ? {}
           : { serviceTier: speed === "fast" ? CODEX_FAST_TIER : CODEX_STANDARD_TIER }),

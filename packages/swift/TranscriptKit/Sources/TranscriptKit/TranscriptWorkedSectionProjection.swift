@@ -76,9 +76,11 @@ enum TranscriptWorkedSectionProjection {
   ) {
     // Each item is a line on the section's timeline. Its rows abut so their
     // rails join into one line; a note keeps its virtualized Markdown rows.
+    // While the model reasons, a "Thinking" line ends the section.
+    let hasThinking = lifecycle == .receiving && message.turn.showsWorkedThinkingLine(kind)
     for (index, item) in items.enumerated() {
       let isFirst = index == 0
-      let isLast = index == items.count - 1
+      let isLast = index == items.count - 1 && !hasThinking
       if case let .text(entryID, markdown) = item {
         appendMarkdown(
           message, kind: kind, entryID: entryID, markdown: markdown,
@@ -90,6 +92,11 @@ enum TranscriptWorkedSectionProjection {
           lifecycle: lifecycle, identity: identity,
           spacingAfter: isLast ? 12 : 0, to: &rows)
       }
+    }
+    if hasThinking {
+      appendWorkedItemRow(
+        message, kind: kind, itemID: WorkedItem.thinkingLineID, estimatedHeight: 30,
+        lifecycle: lifecycle, identity: identity, spacingAfter: 12, to: &rows)
     }
   }
 

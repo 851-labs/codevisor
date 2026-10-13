@@ -108,6 +108,9 @@ const completeNotificationTurn = (
       ? codexErrorDetails({ error: turn.error })
       : undefined
   const terminalError = completedError ?? session.pendingTurnError
+  if (terminalError !== undefined && rejectsReasoningSummaries(terminalError.message)) {
+    session.reasoningSummariesRejected = true
+  }
   const pending = session.pendingPrompt
   session.pendingPrompt = undefined
   session.interruptRequested = false
@@ -144,6 +147,10 @@ const completeNotificationTurn = (
     })
 }
 
+/// The API's refusal to summarize reasoning for this account.
+const rejectsReasoningSummaries = (message: string): boolean =>
+  /reasoning summar/i.test(message) && /verif/i.test(message)
+
 const handleNotificationItemLifecycle = (
   session: CodexSession,
   method: string,
@@ -169,10 +176,10 @@ const handleNotificationItemLifecycle = (
     }
     return
   }
-  // Codex (as of 0.142) emits no reasoning text deltas — the reasoning
-  // item's lifecycle is the only thinking signal, so an empty thought
-  // chunk drives the client's ephemeral "Thinking…" state through the
-  // otherwise silent gap.
+  // The reasoning item's start is the thinking signal: with reasoning
+  // summaries requested (see turn/start) Codex reports it as the model
+  // starts reasoning, and an empty thought chunk drives the client's
+  // ephemeral "Thinking" state until text or a tool call follows.
   if (item.type === "reasoning" && method === "item/started") {
     void session.emit({
       kind: "session.output",

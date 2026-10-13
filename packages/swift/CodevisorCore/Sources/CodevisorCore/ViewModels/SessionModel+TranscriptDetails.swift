@@ -127,6 +127,7 @@ extension SessionModel {
     _ item: ConversationItem,
     at location: TranscriptStorageLocation
   ) {
+    let item = carryingLiveTurnState(item)
     switch location {
     case let .settled(index): settledConversation[index] = item
     case .active: activeItem = item

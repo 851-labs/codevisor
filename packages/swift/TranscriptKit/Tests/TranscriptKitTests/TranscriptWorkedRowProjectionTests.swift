@@ -96,7 +96,9 @@ struct TranscriptWorkedRowProjectionTests {
       #expect(projected.first?.id == headerID)
       #expect(!projected.contains { $0.id == activityID })
     }
-    #expect(thinking.count == 1)
+    // Reasoning before any work lands shows as the section's only line.
+    #expect(
+      thinking.map(\.id) == [headerID, .activeWorkedItem(messageID, .planning, itemID: WorkedItem.thinkingLineID)])
   }
 
   @Test func streamedWorkedSectionKeepsAStableHeaderAsToolCallsArrive() {
@@ -224,6 +226,49 @@ struct TranscriptWorkedRowProjectionTests {
         $0.workedSection?.role == .content
       }
     )
+  }
+
+  @Test("Thinking ends a live section only while the harness reports reasoning, and what follows takes its place")
+  func thinkingLineFollowsReasoning() throws {
+    var message = AssistantMessage(
+      turn: AssistantTurn(
+        entries: [
+          .text(id: "note", markdown: "Checking the code."),
+          .tool(ToolCall(toolCallId: "read", title: "Read source", kind: .read, status: .completed)),
+        ],
+        isGenerating: true,
+        isThinking: true,
+        textPhases: ["note": .commentary]
+      )
+    )
+    func worked() -> [TranscriptPresentationRow] {
+      TranscriptActiveRowProjection.rows(for: .assistant(message)).filter { $0.workedSection?.role == .content }
+    }
+    let thinkingLine = TranscriptPresentationRow.ID.activeWorkedItem(
+      message.id, .planning, itemID: WorkedItem.thinkingLineID)
+    let reasoning = worked()
+    #expect(reasoning.last?.id == thinkingLine)
+    // Nothing above the line ends the rail, nor puts space before it.
+    #expect(reasoning.dropLast().allSatisfy { $0.spacingAfter == 0 })
+    let note = try #require(
+      reasoning.lazy.compactMap { if case let .markdownChunk(chunk) = $0.content { chunk } else { nil } }.first)
+    #expect(note.timeline?.railBelow == true)
+
+    // The next tool takes the line's place, as a group of its own rather
+    // than joining the group above: same row count, nothing shifts.
+    TranscriptToolReduction.applyCall(
+      ToolCall(toolCallId: "sh", title: "Ran ls", kind: .execute, status: .inProgress, rawInput: ["command": "ls"]),
+      to: &message.turn)
+    #expect(!message.turn.isThinking)
+    let running = worked()
+    #expect(running.count == reasoning.count)
+    #expect(!running.contains { $0.id == thinkingLine })
+    #expect(Array(running.dropLast().map(\.id)) == Array(reasoning.dropLast().map(\.id)))
+
+    // A gap the harness doesn't report as reasoning shows no line.
+    message.turn.entries[2] = .tool(
+      ToolCall(toolCallId: "sh", title: "Ran ls", kind: .execute, status: .completed, rawInput: ["command": "ls"]))
+    #expect(!worked().contains { $0.id == thinkingLine })
   }
 
   private func makeInput(

@@ -93,4 +93,21 @@ extension SessionModelTests {
     ])
     #expect(activeTurn(model)?.startedAt == nil)
   }
+
+  @Test("A server copy of the turn keeps where the model reasoned, so its tool groups don't merge as it settles")
+  func snapshotKeepsReasoningBreaks() {
+    let (model, _) = startedTurnModel(now: { Date(timeIntervalSince1970: 1_700_000_000) })
+    let itemId = UUID()
+    var live = AssistantTurn(isGenerating: true)
+    live.callsAfterReasoning = ["second"]
+    model.setConversation([.assistant(AssistantMessage(id: itemId, turn: live))])
+
+    // The server never stores reasoning, so its copy lacks the break.
+    model.setConversation([.assistant(AssistantMessage(id: itemId, turn: AssistantTurn(isGenerating: true)))])
+    #expect(activeTurn(model)?.callsAfterReasoning == ["second"])
+
+    // A different turn inherits nothing.
+    model.setConversation([.assistant(AssistantMessage(turn: AssistantTurn(isGenerating: true)))])
+    #expect(activeTurn(model)?.callsAfterReasoning.isEmpty == true)
+  }
 }
