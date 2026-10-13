@@ -12,13 +12,20 @@
 use std::{
     collections::HashMap,
     net::{IpAddr, Ipv4Addr, SocketAddr},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering::Relaxed},
+    },
 };
 
 use anyhow::{Context, Result, bail};
 use bytes::{BufMut, Bytes, BytesMut};
-use iroh::endpoint::Connection;
-use tokio::{net::UdpSocket, sync::mpsc, task::JoinHandle};
+use iroh::endpoint::{Connection, SendDatagramError};
+use tokio::{
+    net::UdpSocket,
+    sync::mpsc::{self, error::TrySendError},
+    task::JoinHandle,
+};
 
 pub const FLOW_HEADER_BYTES: usize = 4;
 /// Per-flow queue of datagrams waiting for the local socket. Media is
@@ -26,10 +33,47 @@ pub const FLOW_HEADER_BYTES: usize = 4;
 /// than queued (the RTP stack recovers; stale packets would only add delay).
 const FLOW_QUEUE: usize = 256;
 
+/// What a router did with its datagrams since the connection opened. Every
+/// drop here is silent to the RTP stack on either side (it only sees loss),
+/// so these counters are the one record of where media went missing.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MediaStats {
+    /// Datagrams QUIC accepted for sending. It may still drop the oldest
+    /// unsent ones when its send buffer fills behind the congestion window.
+    pub sent: u64,
+    pub sent_bytes: u64,
+    /// Rejected as larger than the connection's current maximum datagram.
+    pub too_large: u64,
+    /// The largest payload (flow header excluded) rejected as too large.
+    pub largest_too_large: u64,
+    /// Rejected for any other reason (connection lost, unsupported by peer).
+    pub send_failed: u64,
+    pub received: u64,
+    pub received_bytes: u64,
+    /// Arrived for a flow id with no open flow.
+    pub unknown_flow: u64,
+    /// Dropped because the flow's local queue was full.
+    pub queue_full: u64,
+}
+
+#[derive(Default)]
+struct MediaCounters {
+    sent: AtomicU64,
+    sent_bytes: AtomicU64,
+    too_large: AtomicU64,
+    largest_too_large: AtomicU64,
+    send_failed: AtomicU64,
+    received: AtomicU64,
+    received_bytes: AtomicU64,
+    unknown_flow: AtomicU64,
+    queue_full: AtomicU64,
+}
+
 pub struct DatagramRouter {
     connection: Connection,
     flows: Mutex<HashMap<u32, mpsc::Sender<Bytes>>>,
     reader: Mutex<Option<JoinHandle<()>>>,
+    counters: MediaCounters,
 }
 
 impl DatagramRouter {
@@ -38,15 +82,25 @@ impl DatagramRouter {
             connection: connection.clone(),
             flows: Mutex::new(HashMap::new()),
             reader: Mutex::new(None),
+            counters: MediaCounters::default(),
         });
         let weak = Arc::downgrade(&router);
         let task = tokio::spawn(async move {
             while let Ok(datagram) = connection.read_datagram().await {
                 let Some(router) = weak.upgrade() else { return };
+                let counters = &router.counters;
+                counters.received.fetch_add(1, Relaxed);
+                counters.received_bytes.fetch_add(datagram.len() as u64, Relaxed);
                 let Some((flow_id, payload)) = split_datagram(datagram) else { continue };
                 let sender = router.flows.lock().unwrap().get(&flow_id).cloned();
-                if let Some(sender) = sender {
-                    let _ = sender.try_send(payload);
+                match sender.map(|sender| sender.try_send(payload)) {
+                    None | Some(Err(TrySendError::Closed(_))) => {
+                        counters.unknown_flow.fetch_add(1, Relaxed);
+                    }
+                    Some(Err(TrySendError::Full(_))) => {
+                        counters.queue_full.fetch_add(1, Relaxed);
+                    }
+                    Some(Ok(())) => {}
                 }
             }
         });
@@ -76,9 +130,38 @@ impl DatagramRouter {
             .map(|size| size.saturating_sub(FLOW_HEADER_BYTES))
     }
 
+    pub fn stats(&self) -> MediaStats {
+        let counters = &self.counters;
+        MediaStats {
+            sent: counters.sent.load(Relaxed),
+            sent_bytes: counters.sent_bytes.load(Relaxed),
+            too_large: counters.too_large.load(Relaxed),
+            largest_too_large: counters.largest_too_large.load(Relaxed),
+            send_failed: counters.send_failed.load(Relaxed),
+            received: counters.received.load(Relaxed),
+            received_bytes: counters.received_bytes.load(Relaxed),
+            unknown_flow: counters.unknown_flow.load(Relaxed),
+            queue_full: counters.queue_full.load(Relaxed),
+        }
+    }
+
     fn send(&self, flow_id: u32, payload: &[u8]) {
-        // Oversized or congested datagrams are dropped, exactly like UDP.
-        let _ = self.connection.send_datagram(join_datagram(flow_id, payload));
+        // QUIC drops a datagram too large for one packet (UDP would have
+        // fragmented it) or stuck behind congestion; only the counters see it.
+        let counters = &self.counters;
+        match self.connection.send_datagram(join_datagram(flow_id, payload)) {
+            Ok(()) => {
+                counters.sent.fetch_add(1, Relaxed);
+                counters.sent_bytes.fetch_add(payload.len() as u64, Relaxed);
+            }
+            Err(SendDatagramError::TooLarge) => {
+                counters.too_large.fetch_add(1, Relaxed);
+                counters.largest_too_large.fetch_max(payload.len() as u64, Relaxed);
+            }
+            Err(_) => {
+                counters.send_failed.fetch_add(1, Relaxed);
+            }
+        }
     }
 }
 

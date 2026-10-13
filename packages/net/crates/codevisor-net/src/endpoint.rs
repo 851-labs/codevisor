@@ -42,6 +42,15 @@ pub struct PathInfo {
     pub remote: String,
     pub selected: bool,
     pub rtt_ms: f64,
+    /// Largest UDP payload QUIC currently sends on this path (path MTU
+    /// discovery starts at 1200 and probes upwards).
+    pub current_mtu: u16,
+    pub cwnd: u64,
+    pub lost_packets: u64,
+    pub congestion_events: u64,
+    pub black_holes_detected: u64,
+    /// Application datagrams actually put on the wire on this path.
+    pub datagrams_sent: u64,
 }
 
 /// Generates a fresh endpoint secret key (32 bytes).
@@ -336,17 +345,32 @@ impl NetConnection {
         self.connection
             .paths()
             .iter()
-            .map(|path| PathInfo {
-                is_relay: path.is_relay(),
-                remote: transport_addr_string(path.remote_addr()),
-                selected: path.is_selected(),
-                rtt_ms: path.rtt().as_secs_f64() * 1000.0,
+            .map(|path| {
+                let stats = path.stats();
+                PathInfo {
+                    is_relay: path.is_relay(),
+                    remote: transport_addr_string(path.remote_addr()),
+                    selected: path.is_selected(),
+                    rtt_ms: path.rtt().as_secs_f64() * 1000.0,
+                    current_mtu: stats.current_mtu,
+                    cwnd: stats.cwnd,
+                    lost_packets: stats.lost_packets,
+                    congestion_events: stats.congestion_events,
+                    black_holes_detected: stats.black_holes_detected,
+                    datagrams_sent: stats.frame_tx.datagram,
+                }
             })
             .collect()
     }
 
     pub fn max_datagram_size(&self) -> Option<usize> {
         self.connection.max_datagram_size()
+    }
+
+    /// Free bytes in QUIC's outgoing datagram buffer; below a datagram's
+    /// size, sending it drops the oldest datagram still waiting.
+    pub fn datagram_send_buffer_space(&self) -> usize {
+        self.connection.datagram_send_buffer_space()
     }
 
     /// The per-connection datagram demultiplexer used by media flows.
