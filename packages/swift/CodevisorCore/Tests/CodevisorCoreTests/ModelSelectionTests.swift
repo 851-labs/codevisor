@@ -100,6 +100,29 @@ struct ModelSelectionTests {
         == ["model": "gpt-5.6"])
   }
 
+  @Test("A chat another device starts shows that device's picks, not this one's defaults")
+  func chatStartedElsewhereDropsDraftPicks() {
+    let defaults = rememberedDefaults(model: "gpt-5.6")
+    let cache = ConfigOptionCache(store: InMemoryStore())
+    cache.store([catalog(currentModel: "gpt-5.6")], forServer: "machine-a")
+    // An empty chat record (another device opened a new chat) is still a
+    // draft here, so it takes this device's New Chat defaults.
+    var empty = session(configSelections: nil)
+    empty.agentSessionId = ""
+    let controller = controller(for: empty, cache: cache, defaults: defaults)
+    controller.applyComposerDefaults()
+    #expect(controller.modelOption?.currentValue == "gpt-5.6")
+
+    // The other device sends the first prompt with its own model.
+    var started = empty
+    started.agentSessionId = "agent-1"
+    started.configSelections = ["model": "gpt-5.5"]
+    controller.reconcileExistingSession(started)
+
+    #expect(controller.modelOption?.currentValue == "gpt-5.5")
+    #expect(controller.pendingConfiguration.values(for: "codex") == nil)
+  }
+
   @Test("An existing chat without its own model spins instead of showing a catalog default")
   func existingChatWithoutSavedModelWaits() {
     let cache = ConfigOptionCache(store: InMemoryStore())

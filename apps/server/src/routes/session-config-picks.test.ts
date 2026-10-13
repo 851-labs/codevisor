@@ -5,9 +5,11 @@ import { join } from "node:path"
 import type { SessionConfigOption, SessionSummary } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
+import { dependencyConfigOptions } from "../test-support-config-options.js"
 import {
   configSelectionsFromTestOptions,
   jsonRequest,
+  listSubjectEvents,
   makeServices,
   run,
   runningServers,
@@ -287,6 +289,95 @@ describe("session configuration picks", () => {
       method: "POST"
     })
     expect((await run(services.db.getSessionConfigSelections(session.id))).model).toBe("model-next")
+  })
+
+  it("publishes a pick made with no runtime loaded to every client", async () => {
+    const { services } = await makeServices("server-a")
+    const folder = mkdtempSync(join(tmpdir(), "codevisor-session-config-"))
+    tempDirs.push(folder)
+    const project = await run(services.db.createProject({ folderPath: folder }))
+    const session = await run(
+      services.db.createSession({
+        projectId: project.id,
+        harnessId: "codex",
+        agentSessionId: "agent-session-config-offline"
+      })
+    )
+    const server = await startWithApp(services)
+    runningServers.push(server)
+    // A live pick leaves the runtime's own report of the chat's options.
+    await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })
+    await jsonRequest(server, `/v1/sessions/${session.id}/config`, {
+      body: JSON.stringify({ configId: "model", value: "model-saved" }),
+      method: "POST"
+    })
+    await run(services.agents.closeAgentSession("agent-session-config-offline"))
+    const since = listSubjectEvents(services, session.id).at(-1)?.subjectRevision ?? 0
+
+    await jsonRequest(server, `/v1/sessions/${session.id}/config`, {
+      body: JSON.stringify({ configId: "model", value: "model-default" }),
+      method: "POST"
+    })
+
+    // A client opening the chat now sees the pick, not the older report.
+    const runtime = (await run(services.db.getSessionRuntimeState(session.id))) as {
+      readonly configOptions: ReadonlyArray<SessionConfigOption>
+    }
+    expect(configSelectionsFromTestOptions(runtime.configOptions).model).toBe("model-default")
+    // Clients that already have it open hear about both the options and the
+    // saved selection.
+    const published = listSubjectEvents(services, session.id, since).map(
+      (event) => event.payload as Record<string, unknown>
+    )
+    expect(published).toContainEqual(
+      expect.objectContaining({
+        configOptions: expect.arrayContaining([
+          expect.objectContaining({ id: "model", currentValue: "model-default" })
+        ])
+      })
+    )
+    expect(published).toContainEqual(
+      expect.objectContaining({
+        configSelections: expect.objectContaining({ model: "model-default" })
+      })
+    )
+  })
+
+  it("replaces an outdated option report when a runtime starts on the saved picks", async () => {
+    const { agents, services } = await makeServices("server-a")
+    const folder = mkdtempSync(join(tmpdir(), "codevisor-session-config-starts-on-saved-"))
+    tempDirs.push(folder)
+    const project = await run(services.db.createProject({ folderPath: folder }))
+    const session = await run(
+      services.db.createSession({
+        projectId: project.id,
+        harnessId: "codex",
+        agentSessionId: "agent-session-config-starts-on-saved"
+      })
+    )
+    const server = await startWithApp(services)
+    runningServers.push(server)
+    await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })
+    // The runtime once reported another model, and the chat's pick changed
+    // while it was gone.
+    await agents.emit("agent-session-config-starts-on-saved", {
+      kind: "session.updated",
+      subjectId: "agent-session-config-starts-on-saved",
+      payload: { configOptions: dependencyConfigOptions("model-default") }
+    })
+    await run(services.agents.closeAgentSession("agent-session-config-starts-on-saved"))
+    await run(services.db.replaceSessionConfigSelections(session.id, { model: "model-saved" }))
+    agents.configs.splice(0)
+
+    await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })
+
+    // Started on the pick, so nothing needed re-applying...
+    expect(agents.configs).toEqual([])
+    // ...and what a client opening the chat sees is what is now running.
+    const runtime = (await run(services.db.getSessionRuntimeState(session.id))) as {
+      readonly configOptions: ReadonlyArray<SessionConfigOption>
+    }
+    expect(configSelectionsFromTestOptions(runtime.configOptions).model).toBe("model-saved")
   })
 
   it("records a pick for a chat with no agent session or usable snapshot", async () => {

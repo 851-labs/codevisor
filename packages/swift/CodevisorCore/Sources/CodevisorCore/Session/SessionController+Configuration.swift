@@ -22,6 +22,7 @@ extension SessionController {
     let identityChanged =
       serverSession?.id != session.id
       || resumeAgentSessionId != session.agentSessionId
+    let wasDraft = acceptsNewChatDefaults
     serverSession = session
     resumeAgentSessionId = session.agentSessionId
     // New Chat defaults stop applying once this is a real chat: a draft's
@@ -29,6 +30,14 @@ extension SessionController {
     // notice) belongs to the draft, not to the chat's own model.
     if session.agentSessionId?.isEmpty == false {
       draftModelAvailability = nil
+    }
+    // Another device sent this draft's first prompt, so the chat started
+    // with that device's picks. This device's staged defaults were never
+    // the chat's and would otherwise override them (and be applied by the
+    // next send here).
+    if wasDraft, !acceptsNewChatDefaults {
+      pendingConfiguration.restoreValues([:])
+      clearAutomaticSelection()
     }
     if !session.harnessId.isEmpty {
       selectedHarnessId = session.harnessId

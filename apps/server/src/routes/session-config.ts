@@ -3,6 +3,7 @@ import type { SessionConfigOption, SetConfigRequest } from "@codevisor/api"
 
 import type { CodevisorServerServices, EventFanout } from "../server-context.js"
 import { run } from "../server-context.js"
+import { publishSessionConfigOptions, publishSessionSelections } from "./session-config-publish.js"
 import { withSessionMutation } from "./session-operations.js"
 import { configRestorePriority, loadAgentSessionFor } from "./session-workspace.js"
 
@@ -60,10 +61,15 @@ const applySessionConfigPickOwned = async (
         : placeConfigValue(option, payload.value, (candidate, requested) =>
             services.agents.reconcileConfigValue(harnessId, candidate, requested)
           )) ?? payload.value
-    await persistPick(services, sessionId, { [payload.configId]: value }, [payload.configId])
+    await persistPick(services, fanout, sessionId, { [payload.configId]: value }, [
+      payload.configId
+    ])
     const configOptions = known.map((candidate) =>
       candidate.id === payload.configId ? { ...candidate, currentValue: value } : candidate
     )
+    // No runtime reports this pick, so the chat's current options would keep
+    // the old value for every other client.
+    await publishSessionConfigOptions(services, fanout, serverId, sessionId, configOptions)
     return { configId: payload.configId, configOptions }
   }
   const agentSession = await loadAgentSessionFor(services, fanout, serverId, sessionId)
@@ -89,7 +95,7 @@ const applySessionConfigPickOwned = async (
       (option) => option.id
     )
   ]
-  await persistPick(services, sessionId, written, cleared)
+  await persistPick(services, fanout, sessionId, written, cleared)
   return { configId: payload.configId, configOptions }
 }
 
@@ -100,9 +106,11 @@ const isModelDependent = (option: SessionConfigOption): boolean =>
 
 /// Merges `written` into the saved selections; every id in `replaced` is
 /// dropped first (so a dependent the new model lacks goes away) and loses
-/// its unavailable mark — an explicit pick answers it.
+/// its unavailable mark — an explicit pick answers it. Every client hears
+/// about the new selections.
 const persistPick = async (
   services: CodevisorServerServices,
+  fanout: EventFanout,
   sessionId: string,
   written: Readonly<Record<string, string>>,
   replaced: ReadonlyArray<string>
@@ -117,6 +125,7 @@ const persistPick = async (
       without(summary.unavailableConfigSelections ?? {})
     )
   )
+  await publishSessionSelections(services, fanout, sessionId)
 }
 
 /// The last option snapshot a runtime published for this chat. A pick

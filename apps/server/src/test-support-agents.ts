@@ -220,7 +220,13 @@ export const makeAgents = (): AgentRuntimeService & {
         }
         if (cwd.includes("session-config")) {
           dependencyConfigSessions.add(agentSessionId)
-          const configOptions = dependencyConfigOptions()
+          // Claude starts its process on the chat's saved picks.
+          const saved = cwd.includes("starts-on-saved") ? sessionOptions?.configSelections : {}
+          const configOptions = dependencyConfigOptions(
+            saved?.model,
+            saved?.reasoning,
+            saved?.speed
+          )
           configOptionsBySession.set(agentSessionId, configOptions)
           return { configOptions, sessionId: agentSessionId }
         }

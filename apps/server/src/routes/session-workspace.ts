@@ -28,6 +28,7 @@ import {
   type EventFanout,
   type RouteState
 } from "../server-context.js"
+import { publishSessionConfigOptions, publishSessionSelections } from "./session-config-publish.js"
 import { resolveSessionAccount, startSessionAgent } from "./session-creation.js"
 import { sessionEventSink } from "./session-events.js"
 import { withSessionMutation } from "./session-operations.js"
@@ -363,7 +364,7 @@ export const loadAgentSessionFor = async (
       throw new HttpFailure(409, "Workspace was archived while starting its agent")
     }
     await publishSessionSkills(services, fanout, serverId, sessionId, metadata)
-    return restoreSessionConfigSelections(services, sessionId, session.harnessId, metadata)
+    return restoreSessionConfigSelections(services, fanout, serverId, sessionId, metadata)
   }
   const agentSessionId = session.agentSessionId ?? sessionId
   const sink = sessionEventSink(services, fanout, serverId, sessionId)
@@ -384,7 +385,7 @@ export const loadAgentSessionFor = async (
     throw new HttpFailure(409, "Workspace was archived while starting its agent")
   }
   await publishSessionSkills(services, fanout, serverId, sessionId, metadata)
-  return restoreSessionConfigSelections(services, sessionId, session.harnessId, metadata)
+  return restoreSessionConfigSelections(services, fanout, serverId, sessionId, metadata)
 }
 
 export const configRestorePriority = (option: SessionConfigOption | undefined): number => {
@@ -406,8 +407,9 @@ export const configRestorePriority = (option: SessionConfigOption | undefined): 
 /// the provider reconciles onto its current entry for the same pick.
 const restoreSessionConfigSelections = async (
   services: CodevisorServerServices,
+  fanout: EventFanout,
+  serverId: string,
   sessionId: string,
-  harnessId: string,
   metadata: AgentSessionMetadata
 ): Promise<AgentSessionMetadata> => {
   // No option list is not an answer: the Claude adapter returns none when its
@@ -422,7 +424,7 @@ const restoreSessionConfigSelections = async (
   const saved = summary.configSelections ?? {}
   const previouslyUnavailable = summary.unavailableConfigSelections ?? {}
   const reconcile = (option: SessionConfigOption, value: string): string | undefined =>
-    services.agents.reconcileConfigValue(harnessId, option, value)
+    services.agents.reconcileConfigValue(summary.harnessId, option, value)
   let configOptions = metadata.configOptions
   const migrated: Record<string, string> = {}
   // An earlier verdict stands while its pick is unchanged and nothing here
@@ -476,7 +478,11 @@ const restoreSessionConfigSelections = async (
   const selections = { ...saved, ...migrated }
   if (!sameSelections(selections, saved) || !sameSelections(unavailable, previouslyUnavailable)) {
     await run(services.db.replaceSessionConfigSelections(sessionId, selections, unavailable))
+    await publishSessionSelections(services, fanout, sessionId)
   }
+  // A runtime that started on the saved picks needed no restore call, so it
+  // reported nothing; publish what it is running over any older report.
+  await publishSessionConfigOptions(services, fanout, serverId, sessionId, configOptions)
   const current = { ...metadata, configOptions }
   await run(services.db.saveSessionRuntimeState(sessionId, current))
   return current
