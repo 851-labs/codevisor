@@ -52,23 +52,26 @@ describe("shared browser state", () => {
   })
   it("expires cookies without allowing an old device to resurrect them", async () => {
     vi.useFakeTimers({ toFake: ["Date"] })
-    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"))
-    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     try {
-      const expires = Date.now() / 1000 + 60
-      const first = await run(
-        db.exchangeBrowserCookies([{ key, expectedRevision: 0, cookie: { ...cookie, expires } }])
-      )
-      vi.setSystemTime(new Date("2026-01-01T00:01:00Z"))
-      const next = await run(
-        db.exchangeBrowserCookies([
-          { key, expectedRevision: first.revision, cookie: { ...cookie, expires } }
-        ])
-      )
-      expect(next.entries[0]?.cookie).toBeNull()
-      expect(next.revision).toBe(first.revision + 1)
+      vi.setSystemTime(new Date("2026-01-01T00:00:00Z"))
+      const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+      try {
+        const expires = Date.now() / 1000 + 60
+        const first = await run(
+          db.exchangeBrowserCookies([{ key, expectedRevision: 0, cookie: { ...cookie, expires } }])
+        )
+        vi.setSystemTime(new Date("2026-01-01T00:01:00Z"))
+        const next = await run(
+          db.exchangeBrowserCookies([
+            { key, expectedRevision: first.revision, cookie: { ...cookie, expires } }
+          ])
+        )
+        expect(next.entries[0]?.cookie).toBeNull()
+        expect(next.revision).toBe(first.revision + 1)
+      } finally {
+        await run(db.close)
+      }
     } finally {
-      await run(db.close)
       vi.useRealTimers()
     }
   })
