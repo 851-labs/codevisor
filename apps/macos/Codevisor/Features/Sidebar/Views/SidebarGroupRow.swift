@@ -76,7 +76,13 @@ struct SidebarGroupRow: View {
       .foregroundStyle(.primary)
     }
     .contextMenu {
-      Button(isExpanded ? "Collapse" : "Expand", action: onToggle)
+      Button(action: onToggle) {
+        Label(
+          isExpanded ? "Collapse" : "Expand",
+          systemImage: isExpanded ? "rectangle.compress.vertical" : "rectangle.expand.vertical"
+        )
+        .labelStyle(.titleAndIcon)
+      }
       if let onNewChat {
         Divider()
         Button(action: onNewChat) {
