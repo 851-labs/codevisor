@@ -32,14 +32,6 @@ public struct ToolCallRow: View {
 
   private var hasDetails: Bool { call.hasPresentableDetails }
 
-  private var hasOnlyDiffContent: Bool {
-    guard let content = call.content, !content.isEmpty else { return false }
-    return content.allSatisfy { block in
-      if case .diff = block { return true }
-      return false
-    }
-  }
-
   /// Counters render only once there is real diff data — a `+0 −0` badge on
   /// an adapter that never streams stats is noise.
   private var counterTotals: LineDiff.Totals? {
@@ -66,29 +58,10 @@ public struct ToolCallRow: View {
       .accessibilityAction { toggleDetails() }
 
       TranscriptDisclosureContentReveal(isExpanded: isExpanded && hasDetails) {
-        // Diffs carry their own card; wrapping them in the labeled
-        // output card double-borders them for no benefit.
-        Group {
-          if hasOnlyDiffContent {
-            VStack(alignment: .leading, spacing: 8) {
-              ForEach(Array((call.content ?? []).enumerated()), id: \.offset) { _, content in
-                if case let .diff(path, oldText, newText) = content {
-                  DiffView(path: path, oldText: oldText, newText: newText)
-                }
-              }
-            }
-          } else if call.kind == .execute {
-            ShellToolCallDetails(call: call)
-          } else if let read = call.readFileOutput {
-            // A read shows the file, not the call that fetched it.
-            ReadFileBodyView(read: read)
-          } else {
-            ToolCallContentCard(call: call)
-          }
-        }
-        .padding(.top, 6)
-        // Details sit under the label, clear of the icon column.
-        .padding(.leading, ToolIconMetrics.labelInset)
+        ToolCallDetails(call: call)
+          .padding(.top, 6)
+          // Details sit under the label, clear of the icon column.
+          .padding(.leading, ToolIconMetrics.labelInset)
       }
     }
     // Structural diffing is independent of syntax colors. Warm it once a
@@ -148,6 +121,42 @@ public struct ToolCallRow: View {
       guard !Task.isCancelled else { return }
     }
   }
+}
+
+/// What a tool call opens to: its diff, its terminal, the file it read, or
+/// its output.
+struct ToolCallDetails: View {
+  let call: ToolCall
+
+  var body: some View {
+    // Diffs carry their own card; wrapping them in the labeled output card
+    // double-borders them for no benefit.
+    if hasOnlyDiffContent {
+      VStack(alignment: .leading, spacing: 8) {
+        ForEach(Array((call.content ?? []).enumerated()), id: \.offset) { _, content in
+          if case let .diff(path, oldText, newText) = content {
+            DiffView(path: path, oldText: oldText, newText: newText)
+          }
+        }
+      }
+    } else if call.kind == .execute {
+      ShellToolCallDetails(call: call)
+    } else if let read = call.readFileOutput {
+      // A read shows the file, not the call that fetched it.
+      ReadFileBodyView(read: read)
+    } else {
+      ToolCallContentCard(call: call)
+    }
+  }
+
+  private var hasOnlyDiffContent: Bool {
+    guard let content = call.content, !content.isEmpty else { return false }
+    return content.allSatisfy { block in
+      if case .diff = block { return true }
+      return false
+    }
+  }
+
 }
 
 /// The +N/−N added/removed-lines counter. Digits roll up and down via

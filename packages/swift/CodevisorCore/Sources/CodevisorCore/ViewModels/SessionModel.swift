@@ -384,6 +384,18 @@ extension SessionModel {
     return ids
   }
 
+  /// The spawning calls of the subagents a finished turn is waiting on, in
+  /// task order: what the "Waiting on" line shows as chips.
+  public var waitingSubagentCalls: [ToolCall] {
+    var seen = Set<String>()
+    return waitingBackgroundTasks.compactMap { task -> ToolCall? in
+      guard let toolUseId = task.toolUseId, let call = toolCall(toolUseId) else { return nil }
+      let spawn = call.kind == .agent ? call : subagentSpawn(taskId: task.id)
+      guard let spawn, seen.insert(spawn.toolCallId).inserted else { return nil }
+      return spawn
+    }
+  }
+
   private func toolCall(_ id: String) -> ToolCall? {
     for item in conversation.reversed() {
       guard case let .assistant(message) = item else { continue }

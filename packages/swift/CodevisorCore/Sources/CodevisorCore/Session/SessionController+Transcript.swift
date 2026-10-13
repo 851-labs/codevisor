@@ -237,6 +237,10 @@ extension SessionController {
     } ?? "background task"
   }
 
+  /// Spawning calls of the subagents a finished turn is waiting on (see
+  /// SessionModel).
+  public var waitingSubagentCalls: [ToolCall] { model?.waitingSubagentCalls ?? [] }
+
   /// Spawning calls of subagents still running in the background (see
   /// SessionModel). Injected into the transcript so their rows keep
   /// shimmering until the work finishes.

@@ -7,6 +7,9 @@ import SwiftUI
 public struct AssistantTurnActivity: Equatable {
   public let message: String
   public let followsResponse: Bool
+  /// The finished turn waits on background work, shown as its subagents'
+  /// chips where they can be found.
+  public var waitingOn: String?
 
   /// Shown from the moment a prompt is committed until the provider's first
   /// event. The optimistic first-send placeholder uses the same words so the
@@ -33,7 +36,7 @@ public struct AssistantTurnActivity: Equatable {
         return Self(message: goalActivity == .planning ? "Planning…" : "Verifying…", followsResponse: true)
       }
       if let backgroundTask {
-        return Self(message: "Waiting on \(backgroundTask)...", followsResponse: true)
+        return Self(message: "Waiting on \(backgroundTask)...", followsResponse: true, waitingOn: backgroundTask)
       }
     }
     // An agent call being written has no chip yet: this line stands in for
@@ -52,8 +55,14 @@ public struct AssistantTurnActivityView: View {
   public init(_ activity: AssistantTurnActivity) { self.activity = activity }
 
   public var body: some View {
-    ShimmeringText(text: activity.message)
-      .suppressedDuringStreamingTextEntrance()
+    Group {
+      if let waitingOn = activity.waitingOn {
+        WaitingOnAgentsLine(description: waitingOn)
+      } else {
+        ShimmeringText(text: activity.message)
+      }
+    }
+    .suppressedDuringStreamingTextEntrance()
   }
 }
 
@@ -76,5 +85,40 @@ public struct AssistantTurnActivitySlot: View {
         .hidden()
         .accessibilityHidden(true)
     }
+  }
+}
+
+/// A chip for each subagent the finished turn waits on, shimmering while it
+/// runs; a chip opens its agent's thread. Chips stay put as their agents finish,
+/// so the line never reflows under the pointer, until it goes away with the
+/// wait. Falls back to the task's description when no spawning call is in
+/// the transcript.
+public struct WaitingOnAgentsLine: View {
+  let description: String
+  @Environment(\.transcriptController) private var controller
+  @State private var shown: [ToolCall] = []
+
+  public init(description: String) { self.description = description }
+
+  public var body: some View {
+    let calls = Self.merging(shown, controller?.waitingSubagentCalls ?? [])
+    Group {
+      if calls.isEmpty {
+        ShimmeringText(text: "Waiting on \(description)...")
+      } else {
+        SubagentChips(calls: calls, isTurnActive: false)
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .onChange(of: calls.map(\.toolCallId), initial: true) { shown = calls }
+  }
+
+  /// `shown` in place, refreshed from `waiting`, with newly waited-on calls
+  /// after them.
+  nonisolated static func merging(_ shown: [ToolCall], _ waiting: [ToolCall]) -> [ToolCall] {
+    let current = Dictionary(waiting.map { ($0.toolCallId, $0) }, uniquingKeysWith: { first, _ in first })
+    let kept = shown.map { current[$0.toolCallId] ?? $0 }
+    let keptIds = Set(kept.map(\.toolCallId))
+    return kept + waiting.filter { !keptIds.contains($0.toolCallId) }
   }
 }

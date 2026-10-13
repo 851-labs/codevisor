@@ -65,7 +65,11 @@ struct WorkedTimelineRail<Node: View, Line: View, Expanded: View>: View {
     .contentShape(Rectangle())
     .onHover { onHeaderHover?($0) }
     if let onHeaderTap {
-      row.onTapGesture(perform: onHeaderTap)
+      row
+        .onTapGesture(perform: onHeaderTap)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { onHeaderTap() }
     } else {
       row
     }
@@ -149,31 +153,10 @@ extension EnvironmentValues {
 }
 
 enum WorkedTimelineText {
-  /// A tool group in a few words: one call's verb and the program or file
-  /// it touched ("Ran node", "Read slugify.js"), or the group's summary.
+  /// A group of calls or agents in a few words: "Started 2 agents", or the
+  /// group's summary.
   static func title(calls: [ToolCall], agents: Int) -> String {
-    guard !calls.isEmpty else { return agents == 1 ? "Ran an agent" : "Ran \(agents) agents" }
-    guard calls.count == 1, !calls[0].isIntegrationPresentationCall else {
-      return ToolCallSummary.describe(calls)
-    }
-    let call = calls[0]
-    if let program = call.shellCommand?.split(whereSeparator: \.isWhitespace).first {
-      return "Ran \(program)"
-    }
-    let verb: String? =
-      switch ToolCallSummary.category(call.kind) {
-      case .read: "Read"
-      case .edit: "Edited"
-      case .delete: "Deleted"
-      case .move: "Moved"
-      default: nil
-      }
-    let path =
-      call.locations?.first?.path ?? call.rawInput?["file_path"]?.stringValue
-      ?? call.rawInput?["filePath"]?.stringValue ?? call.rawInput?["path"]?.stringValue
-    if let verb, let path, !path.isEmpty {
-      return "\(verb) \((path as NSString).lastPathComponent)"
-    }
+    guard !calls.isEmpty else { return agents == 1 ? "Started an agent" : "Started \(agents) agents" }
     return ToolCallSummary.describe(calls)
   }
 }

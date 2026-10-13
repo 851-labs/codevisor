@@ -85,4 +85,12 @@ struct AssistantTurnActivityTests {
         turn: turn, isWaitingOnUser: true,
         sessionActivity: nil, backgroundTask: nil, goalActivity: nil) == nil)
   }
+
+  @Test("Waiting chips stay in place as their agents finish, and new ones join after them")
+  func waitingChipsStayPut() {
+    func call(_ id: String) -> ToolCall { ToolCall(toolCallId: id, title: id, kind: .agent, status: .completed) }
+    let shown = WaitingOnAgentsLine.merging([], [call("a"), call("b")])
+    #expect(WaitingOnAgentsLine.merging(shown, [call("b")]).map(\.toolCallId) == ["a", "b"])
+    #expect(WaitingOnAgentsLine.merging(shown, [call("c"), call("a")]).map(\.toolCallId) == ["a", "b", "c"])
+  }
 }

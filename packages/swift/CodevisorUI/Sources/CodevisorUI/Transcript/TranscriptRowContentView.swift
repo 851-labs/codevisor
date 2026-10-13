@@ -153,7 +153,7 @@ public struct TranscriptRowContentView: View {
       ChatActivityRow(AssistantTurnActivity.waitingOnHarnessMessage)
         .suppressedDuringStreamingTextEntrance()
     case let .backgroundTask(description):
-      ChatActivityRow("Waiting on \(description)...")
+      WaitingOnAgentsLine(description: description)
         .suppressedDuringStreamingTextEntrance()
     case let .updateGate(harnessName):
       ChatActivityRow("Waiting for \(harnessName) to finish updating...")

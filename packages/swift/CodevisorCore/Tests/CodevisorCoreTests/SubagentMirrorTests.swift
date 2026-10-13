@@ -270,6 +270,8 @@ struct SubagentMirrorTests {
     ]
 
     #expect(parent.runningSubagentToolCallIds == ["toolu_agent"])
+    // The waiting line's chip is the agent's, not the follow-up's.
+    #expect(parent.waitingSubagentCalls.map(\.toolCallId) == ["toolu_agent"])
   }
 
   @Test("An agent the model is still writing waits for its input instead of reading as unavailable")
