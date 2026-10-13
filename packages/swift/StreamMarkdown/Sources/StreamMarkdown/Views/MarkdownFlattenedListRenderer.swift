@@ -88,20 +88,6 @@
       )
       return result
     }
-  }
-
-  public extension MarkdownFragmentMetrics {
-    /// The shared list column, measured for these markers in the body font.
-    static func listColumn(markers: [String]) -> (markerInset: CGFloat, width: CGFloat) {
-      listColumn(
-        markerWidth: markers.map {
-          ($0 as NSString).size(withAttributes: [.font: MarkdownTextRunRenderer.listMarkerFont(for: $0)]).width
-        }.max() ?? 0
-      )
-    }
-  }
-
-  extension MarkdownFlattenedListRenderer {
     private static func appendItems(
       _ items: [Item],
       context: RenderContext,

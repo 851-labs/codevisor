@@ -1,4 +1,7 @@
 import CoreGraphics
+#if canImport(AppKit) || canImport(UIKit)
+  import SwiftUI
+#endif
 
 public enum MarkdownFragmentMetrics {
   /// Bar plus the gap before quoted content.
@@ -22,4 +25,15 @@ public enum MarkdownFragmentMetrics {
     let width = max(listIndent, marker + listMarkerGap)
     return (min(listMarkerInset, width - listMarkerGap - marker), width)
   }
+
+  #if canImport(AppKit) || canImport(UIKit)
+    /// The shared list column, measured for these markers in the body font.
+    public static func listColumn(markers: [String]) -> (markerInset: CGFloat, width: CGFloat) {
+      listColumn(
+        markerWidth: markers.map {
+          ($0 as NSString).size(withAttributes: [.font: MarkdownTextRunRenderer.listMarkerFont(for: $0)]).width
+        }.max() ?? 0
+      )
+    }
+  #endif
 }
