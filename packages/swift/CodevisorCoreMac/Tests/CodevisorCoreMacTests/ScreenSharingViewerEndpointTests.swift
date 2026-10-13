@@ -171,6 +171,29 @@ struct ScreenSharingViewerEndpointTests {
     endpoint.close()
   }
 
+  /// Without Accessibility control still works. A Mac host's pane says system shortcuts stay on this
+  /// Mac, naming it and the app to allow; a Linux desktop needs nothing from this Mac, so says nothing.
+  @Test(arguments: [true, false])
+  func shortcutsThatStayHereAreNotedOnlyForAMacHost(macHost: Bool) async {
+    var capabilities: ScreenSharingCapabilities = [.control, .statistics]
+    if macHost { capabilities.insert(.systemKeys) }
+    let fixture = EndpointFixture(capabilities: capabilities)
+    fixture.session.controlChannel.isAvailable = true
+    fixture.surface.capturesSystemShortcuts = false
+    let endpoint = fixture.make()
+    let log = fixture.observe(endpoint)
+    await awaitObserved { log.events.count >= 1 }
+    #expect(endpoint.beginInput(lease: UUID()) == nil)
+    // A later message on the same stream: every event the grant could cause has arrived before it.
+    fixture.session.controlChannel.deliver(.denied(request: UUID(), reason: "barrier"))
+    await awaitObserved { log.events.contains { if case .message = $0 { true } else { false } } }
+    let notices = log.events.compactMap { event -> String? in
+      if case .inputNotice(let notice) = event { notice } else { nil }
+    }
+    expectNoDifference(notices, macHost ? [ScreenSharingViewerEndpoint.systemShortcutsNotice()] : [])
+    endpoint.close()
+  }
+
   /// 851-2480: the host hears "this screen can show HDR" only while the machine's HDR setting is on
   /// and the screen can; the sheet's note says why HDR isn't showing while it's on.
   @Test func hdrIsReportedOnlyWhileTheSettingIsOnAndTheScreenCanShowIt() {
@@ -231,11 +254,14 @@ struct ScreenSharingViewerEndpointTests {
 
   @MainActor
   private final class EndpointFixture {
-    let session = FakeMediaSession()
+    let session: FakeMediaSession
     let surface = FakeSurface()
     private var consumer: Task<Void, Never>?
 
-    init(resizes: Bool = true) { session.resizesDesktop = resizes }
+    init(resizes: Bool = true, capabilities: ScreenSharingCapabilities = [.control, .statistics]) {
+      session = FakeMediaSession(capabilities: capabilities)
+      session.resizesDesktop = resizes
+    }
 
     func make() -> ScreenSharingViewerEndpoint {
       session.surface = surface

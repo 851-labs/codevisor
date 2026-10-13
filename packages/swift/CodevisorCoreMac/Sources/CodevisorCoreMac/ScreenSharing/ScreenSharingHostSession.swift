@@ -52,6 +52,8 @@ final class ScreenSharingHostSession {
   var hdr = ScreenSharingHostService.DynamicRangeState()
   var clipboard: ScreenSharingHostClipboard?
   var stopping = false
+  /// The teardown `end` started; another `end` of this session waits for it.
+  var ending: Task<Void, Never>?
   var watchdog: Task<Void, Never>?
   var captureTask: Task<Void, Never>?
   var qualityTask: Task<Void, Never>?

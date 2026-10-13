@@ -1,3 +1,4 @@
+import ColorSync
 import CoreGraphics
 
 /// Which physical display a session shares, across renumbering. macOS can give a display a new
@@ -49,6 +50,15 @@ extension ScreenSharingDisplayIdentity {
   init(display id: CGDirectDisplayID) {
     self.init(
       vendor: CGDisplayVendorNumber(id), model: CGDisplayModelNumber(id), serial: CGDisplaySerialNumber(id))
+  }
+
+  /// Whether a viewer's display id (a display's UUID, as the host lists it) is one of this Mac's own
+  /// displays: viewing it, this Mac's host injects input into the screen the viewer is on.
+  static func isOnThisMac(_ displayId: String) -> Bool {
+    online().contains { display in
+      guard let uuid = CGDisplayCreateUUIDFromDisplayID(display.id)?.takeRetainedValue() else { return false }
+      return CFUUIDCreateString(nil, uuid) as String == displayId
+    }
   }
 
   /// The displays WindowServer has online right now.

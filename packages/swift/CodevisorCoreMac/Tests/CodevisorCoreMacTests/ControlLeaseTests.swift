@@ -158,6 +158,24 @@ struct ControlLeaseTests {
     }
   }
 
+  /// A notice (system shortcuts staying on this Mac) shows while controlling and keeps control; one
+  /// arriving after control ended is dropped.
+  @Test func anInputNoticeShowsWhileControllingWithoutGivingControlBack() async {
+    await withMainSerialExecutor {
+      let client = FakeEndpointClient()
+      let store = await makeControllingStore(client)
+      await store.send(.event(.inputNotice("⌘Tab stays here."))) { $0.message = "⌘Tab stays here." }
+      await store.send(.controlReleased(reason: nil)) {
+        $0.wantsControl = false
+        $0.lease = nil
+        $0.phase = .viewing
+        $0.message = nil
+      }
+      await store.receive(\.delegate.released)
+      await store.send(.event(.inputNotice("Late.")))
+    }
+  }
+
   @Test(arguments: [
     ScreenSharingControlEvent.inputLost("Keyboard capture stopped."),
     .sessionFailed("Video decoding failed. Reconnect before controlling."),

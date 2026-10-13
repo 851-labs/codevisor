@@ -153,6 +153,7 @@ struct ScreenSharingVideoSurfaceGeometryTests {
   @Test func theLocalCursorDisappearsOverTheRemoteDisplayAndComesBackInTheBars() throws {
     let fixture = try GeometryFixture(size: .init(width: 640, height: 480))
     defer { fixture.close() }
+    #expect(fixture.window.makeFirstResponder(fixture.surface))  // the user clicked into the video
     #expect(fixture.surface.beginInput())
     fixture.surface.cursorUpdate(with: try fixture.event(at: .init(x: 320, y: 240)))
     #expect(fixture.isRemoteCursor, "the host draws the pointer, so the local one is a 1 × 1 blank")
@@ -169,6 +170,7 @@ struct ScreenSharingVideoSurfaceGeometryTests {
     defer { fixture.close() }
     fixture.surface.cursorUpdate(with: try fixture.event(at: .init(x: 320, y: 240)))
     #expect(NSCursor.current === NSCursor.arrow)
+    #expect(fixture.window.makeFirstResponder(fixture.surface))  // the user clicked into the video
     #expect(fixture.surface.beginInput())
     fixture.surface.cursorUpdate(with: try fixture.event(at: .init(x: 320, y: 240)))
     #expect(fixture.isRemoteCursor)

@@ -37,6 +37,25 @@ struct ScreenSharingKeyboardCaptureTests {
     #expect(recorder.interruptions == 0)
   }
 
+  /// Viewing another machine from inside a Codevisor session, keys this Mac's host injected are the
+  /// user's: claimed like any other. The choice outlives a restart of the tap.
+  @Test func injectedKeysAreClaimedOnlyWhenTheSurfaceSaysTheyAreTheUsers() async throws {
+    let installer = RecordingTapInstaller()
+    let capture = ScreenSharingSystemKeyboardCapture(installer: installer)
+    defer { capture.stop() }
+    let recorder = CaptureRecorder()
+    capture.setClaimsInjectedKeys(true)
+    #expect(capture.start(handle: recorder.handle, interrupted: recorder.interrupt))
+    capture.setClaimsKeys(true)
+    let tap = try #require(installer.tap)
+    #expect(await tap.deliver(.keyDown, code: 13, injected: true) == .consumed)
+    capture.setClaimsInjectedKeys(false)
+    #expect(await tap.deliver(.keyDown, code: 13, injected: true) == .passed)
+    await recorder.delivered.wait(for: 1)
+    await drainMainQueue()
+    #expect(recorder.events.map(\.code) == [13])
+  }
+
   @Test func aTimedOutTapIsReenabledWhileAUserInputDisableInterrupts() async throws {
     let installer = RecordingTapInstaller()
     let capture = ScreenSharingSystemKeyboardCapture(installer: installer)

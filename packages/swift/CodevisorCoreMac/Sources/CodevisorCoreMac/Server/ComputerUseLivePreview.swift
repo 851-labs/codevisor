@@ -370,7 +370,10 @@ final class ComputerUseLivePreviewSurface: NSView, ScreenSharingViewerSurface {
   var onFocusChanged: ((Bool) -> Void)?
   var onInput: ((ScreenSharingInputEvent) -> Void)?
   var onInputReleased: (() -> Void)?
+  var onKeyboardReturned: (() -> Void)?
   var inputFailureMessage: String? { "This preview is view-only." }
+  var capturesSystemShortcuts: Bool { false }
+  var dropsInjectedInput = true
   var view: NSView { self }
 
   init(mailbox: ScreenSharingFrameMailbox, metrics: ScreenSharingMetrics) throws {

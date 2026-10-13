@@ -25,6 +25,8 @@
     private let clock: any Clock<Duration>
     var onInput: ((ScreenSharingInputEvent) -> Void)?
     var onRelease: (() -> Void)?
+    /// Control–Option–Escape gave the keyboard back to the app; the lease stays.
+    var onKeyboardReturned: (() -> Void)?
     private var monitor: Any?
     private var observers: [NSObjectProtocol] = []
     private var motionTask: Task<Void, Never>?
@@ -44,6 +46,15 @@
     /// pointer must look and behave as in View mode, not as the host's cursor.
     var isLive: Bool { active && inputFocused }
     private(set) var failureMessage: String?
+    /// The session tap is running, so system shortcuts (⌘Tab, ⌘Space) reach the host. It needs
+    /// Accessibility; without it control still works and those shortcuts stay on this Mac.
+    private(set) var capturesSystemShortcuts = false
+    /// Input this Mac's own Codevisor host injected (tagged `ScreenSharingInputInjector.eventTag`) is
+    /// ignored, as forwarding it would loop when the video shows this Mac. Off when it shows another
+    /// machine: then it's the user's input arriving through a Codevisor session to this Mac.
+    var dropsInjectedInput = true {
+      didSet { keyboardCapture.setClaimsInjectedKeys(!dropsInjectedInput) }
+    }
 
     init(
       view: any ScreenSharingInputTarget, notificationCenter: NotificationCenter = .default,
@@ -66,27 +77,26 @@
       // The window needn't be key: a grant that arrives while it isn't (the user switched apps while
       // the pane connected) starts suspended and resumes when the window is key again, as after ⌘Tab.
       // Refusing it released control and switched the pane to View for the session (851-2472).
-      guard let view, let window = view.window, window.makeFirstResponder(view) else {
+      guard let view, let window = view.window else {
         failureMessage = "Focus this window and request control again."
         return false
       }
-      guard
-        keyboardCapture.start(
-          handle: { [weak self] type, event in self?.routeSystemKey(type, event: event) ?? false },
-          interrupted: { [weak self] in
-            guard let self, self.active else { return }
-            self.suspend()
-            self.failureMessage = "Keyboard capture stopped. Request control again to resume."
-            self.onRelease?()
-          }
-        )
-      else {
-        failureMessage =
-          "Allow Codevisor in this Mac’s System Settings → Privacy & Security → Accessibility, then request control again."
-        return false
-      }
+      // Without Accessibility the tap doesn't start: the local monitor below still carries the mouse
+      // and ordinary keys, and the endpoint says (to a Mac host) that system shortcuts stay here.
+      capturesSystemShortcuts = keyboardCapture.start(
+        handle: { [weak self] type, event in self?.routeSystemKey(type, event: event) ?? false },
+        interrupted: { [weak self] in
+          guard let self, self.active else { return }
+          self.suspend()
+          self.failureMessage = "Keyboard capture stopped. Request control again to resume."
+          self.onRelease?()
+        }
+      )
       active = true
-      inputFocused = window.isKeyWindow && applicationIsActive()
+      // Control doesn't take the keyboard: a grant arriving as the pane is shown (⌘[ through the
+      // sidebar, a tab switch) leaves focus where it is, so the keys keep driving the app. The video
+      // owns the keyboard once it's clicked, or if it already had focus (a reconnect mid-use).
+      inputFocused = window.isKeyWindow && applicationIsActive() && window.firstResponder === view
       view.controlCursorChanged()
       monitor = NSEvent.addLocalMonitorForEvents(
         matching: [.keyDown, .keyUp, .flagsChanged, .leftMouseDown, .rightMouseDown, .otherMouseDown]
@@ -129,13 +139,22 @@
     func end() {
       active = false
       inputFocused = false
-      keyboardCapture.stop()
+      if capturesSystemShortcuts { keyboardCapture.stop() }
+      capturesSystemShortcuts = false
       view?.controlCursorChanged()
       if let monitor { NSEvent.removeMonitor(monitor) }
       monitor = nil
       for observer in observers { notificationCenter.removeObserver(observer) }
       observers = []; motionTask?.cancel(); motionTask = nil
       pendingMotion = nil; buttons = []; keys = []; textKeys = []; modifiers = 0; scroll = .init(); lastPointer = nil
+    }
+
+    /// Control–Option–Escape: held input is released and the keyboard goes back to the app, still in
+    /// Control; a click into the video takes it again. Choosing View is what gives control back.
+    private func returnKeyboard() {
+      suspend()
+      if let view, let window = view.window, window.firstResponder === view { window.makeFirstResponder(nil) }
+      onKeyboardReturned?()
     }
 
     /// Local controls may own focus while the remote-control lease stays active.
@@ -178,9 +197,7 @@
 
     func route(_ event: NSEvent) -> NSEvent? {
       guard active, let view else { return event }
-      if event.cgEvent?.getIntegerValueField(.eventSourceUserData) == ScreenSharingInputInjector.eventTag {
-        return event
-      }
+      if isDroppedInjection(event.cgEvent) { return event }
       if [.leftMouseDown, .rightMouseDown, .otherMouseDown].contains(event.type) {
         if let window = view.window, window.isKeyWindow, event.window === window,
           view.bounds.contains(view.convert(event.locationInWindow, from: nil))
@@ -209,11 +226,15 @@
 
     private func updateKeyClaim() { keyboardCapture.setClaimsKeys(ownsKeyboard) }
 
+    private func isDroppedInjection(_ event: CGEvent?) -> Bool {
+      dropsInjectedInput && event?.getIntegerValueField(.eventSourceUserData) == ScreenSharingInputInjector.eventTag
+    }
+
     /// Quartz events have no AppKit window association. Never infer ownership
     /// from event.window; require the live app/window/responder relationship.
     func routeSystemKey(_ type: CGEventType, event: CGEvent) -> Bool {
       guard [.keyDown, .keyUp, .flagsChanged].contains(type),
-        event.getIntegerValueField(.eventSourceUserData) != ScreenSharingInputInjector.eventTag,
+        !isDroppedInjection(event),
         let key = NSEvent(cgEvent: event)
       else { return false }
       return routeFocusedKey(key)
@@ -224,7 +245,7 @@
         !view.isHiddenOrHasHiddenAncestor, window.attachedSheet == nil, NSApp.modalWindow == nil
       else { suspend(); return false }
       if event.type == .keyDown, event.keyCode == 53, event.modifierFlags.contains([.control, .option]) {
-        onRelease?(); return true
+        returnKeyboard(); return true
       }
       guard inputFocused, window.firstResponder === view else { suspend(); return false }
       flushMotion()
@@ -256,7 +277,7 @@
     func mouse(_ event: NSEvent) {
       guard active, inputFocused, let view, let window = view.window, window.isKeyWindow, event.window === window,
         window.firstResponder === view,
-        event.cgEvent?.getIntegerValueField(.eventSourceUserData) != ScreenSharingInputInjector.eventTag,
+        !isDroppedInjection(event.cgEvent),
         let point = view.pointer(event, clamp: !buttons.isEmpty)
       else { return }
       lastPointer = point

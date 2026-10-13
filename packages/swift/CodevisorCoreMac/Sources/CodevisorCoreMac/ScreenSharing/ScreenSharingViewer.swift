@@ -13,7 +13,10 @@ import Foundation
 /// timed or transport-specific lives in the backend; the long-running effects
 /// here are the backend's event stream and the endpoint's control-event
 /// stream, and cancelling them is how every transition away from a connection
-/// happens — hiding the pane, choosing another display, or closing.
+/// happens — choosing another display, closing, or staying hidden past
+/// `hiddenGrace`. Hiding alone keeps the connection, as Apple's Screen Sharing
+/// keeps a window's: only control goes back, and showing the pane again picks
+/// up the live picture instead of reconnecting.
 @Reducer
 public struct ScreenSharingViewer {
   public enum InteractionMode: Hashable, Sendable { case control, view }
@@ -57,6 +60,8 @@ public struct ScreenSharingViewer {
     case discoveryResponse(Result<[ServerScreenSharingDisplay], any Error>)
     case displaySelected(String)
     case dynamicResolutionToggled
+    /// The pane stayed hidden for `hiddenGrace`: its connection ends.
+    case hiddenGraceExpired
     case interactionModeChanged(InteractionMode)
     case lease(ControlLease.Action)
     case paneAppeared
@@ -70,9 +75,13 @@ public struct ScreenSharingViewer {
     case systemKeyTapped(ScreenSharingSystemKey)
   }
 
-  enum CancelID { case connection, controlEvents }
+  enum CancelID { case connection, controlEvents, hiddenGrace }
+
+  /// How long a hidden pane keeps its connection (and the host its capture) before letting go.
+  static let hiddenGrace: Duration = .seconds(300)
 
   @Dependency(ScreenSharingViewerBackend.self) var backend
+  @Dependency(\.continuousClock) var clock
   @Dependency(ScreenSharingEndpointClient.self) var endpointClient
 
   public init() {}
@@ -103,7 +112,8 @@ public struct ScreenSharingViewer {
         state.phase = .viewing
         state.message = nil
         state.hostNotice = nil
-        return state.interactionMode == .control ? .send(.lease(.controlRequested)) : .none
+        // A hidden pane (connected or reconnected behind another tab) asks when it's shown.
+        return state.visible && state.interactionMode == .control ? .send(.lease(.controlRequested)) : .none
 
       case .connectionEvent(.reconnecting):
         dropEndpoint(&state)
@@ -123,8 +133,9 @@ public struct ScreenSharingViewer {
         return .cancel(id: CancelID.controlEvents)
 
       // The display the pane last used when it is still listed, else the first one.
+      // Hidden meanwhile too: the connection it starts is kept like any other.
       case .discoveryResponse(.success(let displays)):
-        guard state.visible, state.phase == .loading else { return .none }
+        guard state.phase == .loading else { return .none }
         state.displays = displays
         let preferred = state.preferences.preferredDisplayId
         guard let chosen = state.displays.first(where: { $0.id == preferred }) ?? state.displays.first else {
@@ -134,13 +145,17 @@ public struct ScreenSharingViewer {
         return select(chosen.id, &state)
 
       case .discoveryResponse(.failure(let error)):
-        guard state.visible, state.phase == .loading, !isTaskCancellation(error) else { return .none }
+        guard state.phase == .loading, !isTaskCancellation(error) else { return .none }
         fail(&state, serverErrorMessage(error))
         return .none
 
       case .displaySelected(let id):
         guard state.displays.contains(where: { $0.id == id }) else { return .none }
         return select(id, &state)
+
+      case .hiddenGraceExpired:
+        guard !state.visible else { return .none }
+        return disconnect(&state)
 
       case .dynamicResolutionToggled:
         state.dynamicResolution.toggle()
@@ -163,38 +178,46 @@ public struct ScreenSharingViewer {
         state.interactionMode = .control
         return .merge(tap, .send(.lease(.controlRequested)))
 
-      case .lease(.delegate(.released)):
-        if state.phase == .viewing { state.interactionMode = .view }
-        return .none
-
+      // Only the user changes the mode (choosing View). A denial, revocation or input failure keeps
+      // Control selected, with the lease's message saying why, so the next connection (or Request
+      // Control) asks again rather than the pane staying in View for good (851-2472).
       case .lease:
         return .none
 
       case .paneAppeared:
         guard !state.visible else { return .none }
         state.visible = true
-        return refresh(&state)
+        guard Self.keepsConnection(state.phase) else { return refresh(&state) }
+        // The connection kept while hidden: the picture is already live; ask for control again.
+        let resume: Effect<Action> =
+          state.phase == .viewing && state.interactionMode == .control ? .send(.lease(.controlRequested)) : .none
+        return .merge(.cancel(id: CancelID.hiddenGrace), resume)
 
       case .paneClosed:
         state.visible = false
-        dropEndpoint(&state)
-        state.phase = .suspended
-        return .merge(.cancel(id: CancelID.connection), .cancel(id: CancelID.controlEvents))
+        return disconnect(&state)
 
       case .paneDisappeared:
         guard state.visible else { return .none }
         state.visible = false
-        dropEndpoint(&state)
-        state.phase = .suspended
-        return .merge(.cancel(id: CancelID.connection), .cancel(id: CancelID.controlEvents))
+        guard Self.keepsConnection(state.phase) else { return disconnect(&state) }
+        return .merge(
+          state.lease == nil ? .none : .send(.lease(.suspended)),
+          .run { [clock] send in
+            try await clock.sleep(for: Self.hiddenGrace)
+            await send(.hiddenGraceExpired)
+          }
+          .cancellable(id: CancelID.hiddenGrace, cancelInFlight: true))
 
       // Apply a registry update without echoing the write. A display change
-      // from another client requires a new Connect.
+      // from another client requires a new Connect (when shown; a hidden pane's
+      // kept connection is to the old display, so it goes).
       case .preferencesSynced(let preferences):
         guard state.preferences != preferences else { return .none }
         let displayChanged = state.preferences.preferredDisplayId != preferences.preferredDisplayId
         state.preferences = preferences
-        return displayChanged ? refresh(&state) : .none
+        guard displayChanged else { return .none }
+        return state.visible ? refresh(&state) : disconnect(&state)
 
       case .retryButtonTapped:
         return refresh(&state)
@@ -228,8 +251,21 @@ public struct ScreenSharingViewer {
     return connect(&state)
   }
 
+  /// Ends the connection, if any, and cancels everything that drives it.
+  private func disconnect(_ state: inout State) -> Effect<Action> {
+    dropEndpoint(&state)
+    state.phase = .suspended
+    return .merge(
+      .cancel(id: CancelID.connection), .cancel(id: CancelID.controlEvents), .cancel(id: CancelID.hiddenGrace))
+  }
+
+  /// Phases with a connection worth keeping while hidden: one being made or one showing.
+  static func keepsConnection(_ phase: Phase) -> Bool {
+    [.loading, .connecting, .reconnecting, .viewing].contains(phase)
+  }
+
   private func connect(_ state: inout State) -> Effect<Action> {
-    guard state.visible, let display = state.selectedDisplayId else { return .none }
+    guard let display = state.selectedDisplayId else { return .none }
     dropEndpoint(&state)
     state.phase = .connecting
     state.message = nil

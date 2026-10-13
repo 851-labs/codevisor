@@ -10,6 +10,8 @@ struct ScreenSharingHostLease {
     init(_ request: ServerScreenSharingRequest) {
       workspaceId = request.workspaceId; paneId = request.paneId; viewerId = request.viewerId
     }
+    /// The same pane, whichever of its connections (each has its own viewer id).
+    func isSamePane(as other: Owner) -> Bool { workspaceId == other.workspaceId && paneId == other.paneId }
   }
   private(set) var owner: Owner?
   private(set) var expiresAt: TimeInterval = 0

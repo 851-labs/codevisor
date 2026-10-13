@@ -13,11 +13,15 @@
     /// Whether the tap claims key events from now on. The tap decides on its own thread from this
     /// snapshot, so a busy main thread never holds up the system's keyboard.
     func setClaimsKeys(_ claims: Bool)
+    /// Whether keys this Mac's own Codevisor host injected are claimed like any other (viewing
+    /// another machine from inside a Codevisor session) or let through (viewing this Mac).
+    func setClaimsInjectedKeys(_ claims: Bool)
     func stop()
   }
 
   extension ScreenSharingKeyboardCapture {
     func setClaimsKeys(_ claims: Bool) {}
+    func setClaimsInjectedKeys(_ claims: Bool) {}
   }
 
   /// The system state `ScreenSharingSystemKeyboardCapture.start` installs: a
@@ -124,6 +128,7 @@
 
     private let lock = NSLock()
     private var claims = false
+    private var claimsInjected = false
     private var reenable: (@Sendable () -> Void)?
     private let deliver: @Sendable (ScreenSharingKeyboardTapContext, Key) -> Void
     private let interrupt: @Sendable (ScreenSharingKeyboardTapContext) -> Void
@@ -137,6 +142,7 @@
     }
 
     func setClaims(_ claims: Bool) { lock.withLock { self.claims = claims } }
+    func setClaimsInjected(_ claims: Bool) { lock.withLock { claimsInjected = claims } }
     func setReenable(_ reenable: @escaping @Sendable () -> Void) { lock.withLock { self.reenable = reenable } }
 
     /// The callback's decision: nil consumes the event.
@@ -150,8 +156,8 @@
         interrupt(self)
         return Unmanaged.passUnretained(event)
       case .keyDown, .keyUp, .flagsChanged:
-        guard event.getIntegerValueField(.eventSourceUserData) != ScreenSharingInputInjector.eventTag,
-          lock.withLock({ claims }), let copy = event.copy()
+        let injected = event.getIntegerValueField(.eventSourceUserData) == ScreenSharingInputInjector.eventTag
+        guard lock.withLock({ claims && (claimsInjected || !injected) }), let copy = event.copy()
         else { return Unmanaged.passUnretained(event) }
         deliver(self, Key(type: type, event: copy))
         return nil
@@ -169,6 +175,7 @@
     private let installer: any ScreenSharingKeyboardTapInstaller
     private var teardown: (() -> Void)?
     private var context: ScreenSharingKeyboardTapContext?
+    private var claimsInjectedKeys = false
     private var handle: ((CGEventType, CGEvent) -> Bool)?
     private var interrupted: (() -> Void)?
 
@@ -201,6 +208,7 @@
             }
           }
         })
+      context.setClaimsInjected(claimsInjectedKeys)
       self.handle = handle
       self.interrupted = interrupted
       guard
@@ -223,6 +231,11 @@
     }
 
     func setClaimsKeys(_ claims: Bool) { context?.setClaims(claims) }
+
+    func setClaimsInjectedKeys(_ claims: Bool) {
+      claimsInjectedKeys = claims
+      context?.setClaimsInjected(claims)
+    }
 
     func stop() {
       context?.setClaims(false)

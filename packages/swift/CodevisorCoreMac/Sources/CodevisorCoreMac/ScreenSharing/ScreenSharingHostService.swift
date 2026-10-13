@@ -132,6 +132,12 @@ final class ScreenSharingHostService {
           return .init(status: "stopped", message: "Screen sharing ended on the host Mac.")
         }
       }
+      // This pane's own earlier connection, whose stop trails this start or was lost (a start the
+      // viewer abandoned can still complete after its stop): replaced, not reported as another viewer.
+      if request.operation == .start, let old = current, old.owner.isSamePane(as: .init(request)) {
+        await end(old)
+        guard !isShutdown, attempt.map({ pendingStarts[$0] != nil }) == true else { return .init(status: "stopped") }
+      }
       guard current == nil else {
         return .init(status: "busy", message: "This Mac is already sharing with another viewer.")
       }
@@ -351,7 +357,9 @@ final class ScreenSharingHostService {
   static let captureFailed = "The host Mac couldn't start capturing its screen. Try again."
 
   private func end(_ session: ScreenSharingHostSession, reason: String? = nil) async {
-    guard current === session, !session.stopping else { return }
+    guard current === session else { return }
+    // Already ending: wait for that teardown, so a caller sees the host free once this returns.
+    if let ending = session.ending { return await ending.value }
     if let reason { lastEnd = (session.owner, reason) }
     session.stopping = true
     session.control?.revoke("Screen sharing ended.")
@@ -367,17 +375,21 @@ final class ScreenSharingHostService {
     session.resizing?.cancel()
     session.peer.close()
     session.captureTask?.cancel()
-    // Capture invalidates its generation; a late startup stops its own stream. A wedged replayd
-    // can hold the stop; the session ends anyway (851-2385).
-    if await !ScreenSharingCaptureStallRecovery.stop({ try await session.capture.stop() }) {
-      Self.logger.error("Capture didn't stop within 3 s; ending the session anyway")
+    let ending = Task { [self] in
+      // Capture invalidates its generation; a late startup stops its own stream. A wedged replayd
+      // can hold the stop; the session ends anyway (851-2385).
+      if await !ScreenSharingCaptureStallRecovery.stop({ try await session.capture.stop() }) {
+        Self.logger.error("Capture didn't stop within 3 s; ending the session anyway")
+      }
+      indicator.hide()
+      session.virtualDisplay?.release()
+      session.virtualDisplay = nil
+      session.displaySleepAssertion = nil
+      _ = lease.release(session.owner)
+      if current === session { current = nil }
     }
-    indicator.hide()
-    session.virtualDisplay?.release()
-    session.virtualDisplay = nil
-    session.displaySleepAssertion = nil
-    _ = lease.release(session.owner)
-    if current === session { current = nil }
+    session.ending = ending
+    await ending.value
   }
 
   /// Shared by the system notification adapter and deterministic request-ordering coverage.

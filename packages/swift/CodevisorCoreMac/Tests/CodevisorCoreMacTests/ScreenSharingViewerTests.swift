@@ -174,8 +174,10 @@ struct ScreenSharingViewerTests {
     }
   }
 
+  /// A denial or revocation keeps Control selected (851-2472's sticky View came from treating it as the
+  /// user letting go): the message says why, and asking again is one Request Control away.
   @Test(arguments: [true, false])
-  func deniedOrRevokedControlReturnsTheModeToView(grantFirst: Bool) async {
+  func deniedOrRevokedControlKeepsControlSelectedToAskAgain(grantFirst: Bool) async {
     await withMainSerialExecutor {
       let backend = FakeBackend(displays: [display])
       let client = FakeEndpointClient()
@@ -206,9 +208,17 @@ struct ScreenSharingViewerTests {
           $0.lease?.message = "Host denied control"
         }
       }
-      await store.receive(\.lease.delegate.released) { $0.interactionMode = .view }
+      await store.receive(\.lease.delegate.released)
       expectNoDifference(client.endInputs, [endpoint.id])
-      #expect(store.state.interactionMode == .view)
+      #expect(store.state.interactionMode == .control)
+      await store.send(.interactionModeChanged(.control))
+      await store.receive(\.lease.controlRequested) {
+        $0.lease?.wantsControl = true
+        $0.lease?.requestID = UUID(1)
+        $0.lease?.phase = .requesting
+        $0.lease?.message = nil
+      }
+      expectNoDifference(client.messages(to: endpoint.id).last, .request(id: UUID(1)))
       await store.send(.paneClosed) {
         $0.visible = false
         $0.endpoint = nil
@@ -263,34 +273,6 @@ struct ScreenSharingViewerTests {
         $0.phase = .suspended
       }
       await store.finish()
-    }
-  }
-
-  @Test func hidingSuspendsAndReshowingRediscoversThenReconnects() async {
-    await withMainSerialExecutor {
-      let backend = FakeBackend(displays: [display])
-      let client = FakeEndpointClient()
-      let store = await makeViewingStore(backend, client)
-      await store.send(.paneDisappeared) {
-        $0.visible = false
-        $0.endpoint = nil
-        $0.lease = nil
-        $0.phase = .suspended
-      }
-      expectNoDifference(backend.terminations.value, 1)
-      backend.emit(.ready)  // a late event from the cancelled stream is never delivered
-      await store.send(.paneAppeared) {
-        $0.visible = true
-        $0.phase = .loading
-      }
-      await store.receive(\.discoveryResponse.success) { $0.phase = .connecting }
-      expectNoDifference(backend.connections, ["display", "display"])
-      await store.send(.paneClosed) {
-        $0.visible = false
-        $0.phase = .suspended
-      }
-      await store.finish()
-      expectNoDifference(backend.terminations.value, 2)
     }
   }
 
@@ -376,23 +358,23 @@ struct ScreenSharingViewerTests {
 
   func makeStore(
     _ backend: FakeBackend, _ client: FakeEndpointClient = FakeEndpointClient(),
-    preferences: ScreenSharingPanePreferences = .init()
+    preferences: ScreenSharingPanePreferences = .init(), clock: Clocks.TestClock<Duration> = .init()
   ) -> TestStoreOf<ScreenSharingViewer> {
     TestStore(initialState: ScreenSharingViewer.State(preferences: preferences)) {
       ScreenSharingViewer()
     } withDependencies: {
       $0[ScreenSharingViewerBackend.self] = backend.value
       $0[ScreenSharingEndpointClient.self] = client.value
-      $0.continuousClock = Clocks.TestClock()
+      $0.continuousClock = clock
       $0.uuid = .incrementing
     }
   }
 
   /// Visible and connecting to the first display, which discovery remembered.
   func makeConnectingStore(
-    _ backend: FakeBackend, _ client: FakeEndpointClient
+    _ backend: FakeBackend, _ client: FakeEndpointClient, clock: Clocks.TestClock<Duration> = .init()
   ) async -> TestStoreOf<ScreenSharingViewer> {
-    let store = makeStore(backend, client)
+    let store = makeStore(backend, client, clock: clock)
     await store.send(.paneAppeared) {
       $0.visible = true
       $0.phase = .loading
@@ -411,9 +393,10 @@ struct ScreenSharingViewerTests {
   /// channel, `.control` has a request (id 0) pending.
   func makeViewingStore(
     _ backend: FakeBackend, _ client: FakeEndpointClient,
-    mode: ScreenSharingViewer.InteractionMode = .control, channelAvailable: Bool = true
+    mode: ScreenSharingViewer.InteractionMode = .control, channelAvailable: Bool = true,
+    clock: Clocks.TestClock<Duration> = .init()
   ) async -> TestStoreOf<ScreenSharingViewer> {
-    let store = await makeConnectingStore(backend, client)
+    let store = await makeConnectingStore(backend, client, clock: clock)
     if mode == .view { await store.send(.interactionModeChanged(.view)) { $0.interactionMode = .view } }
     let endpoint = backend.open()
     await store.receive(\.connectionEvent.opened) {

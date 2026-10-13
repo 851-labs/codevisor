@@ -20,7 +20,16 @@
       get { input.onRelease }
       set { input.onRelease = newValue }
     }
+    public var onKeyboardReturned: (() -> Void)? {
+      get { input.onKeyboardReturned }
+      set { input.onKeyboardReturned = newValue }
+    }
     public var inputFailureMessage: String? { input.failureMessage }
+    public var capturesSystemShortcuts: Bool { input.capturesSystemShortcuts }
+    public var dropsInjectedInput: Bool {
+      get { input.dropsInjectedInput }
+      set { input.dropsInjectedInput = newValue }
+    }
     public func setLetterboxColor(_ color: NSColor) { letterboxColor = color }
     public func beginInput() -> Bool { input.begin() }
     public func endInput() { input.end() }

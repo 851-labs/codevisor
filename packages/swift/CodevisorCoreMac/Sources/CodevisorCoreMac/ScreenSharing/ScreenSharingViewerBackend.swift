@@ -272,6 +272,7 @@ private final class NativeScreenSharingViewerRunner {
           throw CancellationError()
         }
         let endpoint = ScreenSharingViewerEndpoint(session: session, surface: try makeSurface(session))
+        endpoint.dropsInjectedInput = ScreenSharingDisplayIdentity.isOnThisMac(display)
         attempt.endpoint = endpoint
         endpoint.onReady = {
           attempt.ready = true; emit(.ready)

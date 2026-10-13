@@ -10,6 +10,8 @@ public enum ScreenSharingControlEvent: Equatable, Sendable {
   case availability(Bool)
   /// The surface can no longer capture input, or the channel could not carry it.
   case inputLost(String?)
+  /// Input is live, with a caveat to show while controlling (system shortcuts staying on this Mac).
+  case inputNotice(String)
   case message(ScreenSharingControlMessage)
   /// The media session failed terminally (today: the hardware decoder).
   case sessionFailed(String)

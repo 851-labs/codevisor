@@ -32,6 +32,9 @@ public struct ControlLease {
     case event(ScreenSharingControlEvent)
     case heartbeatTick
     case requestTimedOut
+    /// The pane was hidden: input stops and a held lease goes back, quietly, and control isn't
+    /// asked for again until the pane is shown and asks.
+    case suspended
 
     @CasePathable
     public enum Delegate: Equatable {
@@ -74,6 +77,12 @@ public struct ControlLease {
 
       case .event(.inputLost(let reason)):
         return release(&state, reason: reason)
+
+      // Shown over the live video, not a release: control works, with that caveat.
+      case .event(.inputNotice(let notice)):
+        guard state.phase == .controlling else { return .none }
+        state.message = notice
+        return .none
 
       case .event(.message(.grant(let request, let lease))):
         guard state.requestID == request, state.phase == .requesting, state.available else {
@@ -122,6 +131,11 @@ public struct ControlLease {
       case .requestTimedOut:
         guard state.phase == .requesting else { return .none }
         return release(&state, reason: "The host did not grant control. Try again.")
+
+      case .suspended:
+        let effect = pause(&state)
+        state.wantsControl = false
+        return effect
       }
     }
   }

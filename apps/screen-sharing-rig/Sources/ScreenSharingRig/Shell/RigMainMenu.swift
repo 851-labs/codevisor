@@ -8,7 +8,7 @@
   /// shortcuts (⌘Q, ⌘W, ⌘M, ⌘H, copy and paste in text fields, full screen)
   /// are menu key equivalents. While a machine is under Control the video
   /// surface captures keys first and forwards them to the machine, as the
-  /// product does; Control–Option–Escape returns to viewing.
+  /// product does; Control–Option–Escape hands the keyboard back.
   @MainActor
   enum RigMainMenu {
     /// Posted by View → Toggle Sidebar; the shell flips its split view's column visibility, as its toolbar button does.

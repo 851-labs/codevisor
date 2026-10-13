@@ -88,7 +88,9 @@ struct ScreenSharingInputSurfaceTests {
     #expect(fixture.keyboard.send(.keyDown, shortcut))
   }
 
-  @Test func injectedHostKeysAreNotCapturedAndEscapeReleasesSystemCapture() throws {
+  /// Control–Option–Escape hands the keyboard back to the app and keeps the lease: the app's
+  /// shortcuts work again, and a click into the video takes the keyboard back.
+  @Test func injectedHostKeysAreNotCapturedAndEscapeHandsTheKeyboardBack() throws {
     let fixture = try InputSurfaceFixture()
     defer { fixture.close() }
     let injected = try fixture.systemKey(code: 12, flags: .maskCommand)
@@ -96,10 +98,52 @@ struct ScreenSharingInputSurfaceTests {
     #expect(!fixture.keyboard.send(.keyDown, injected))
     #expect(fixture.events.isEmpty)
     #expect(fixture.keyboard.send(.keyDown, try fixture.systemKey(code: 53, flags: [.maskControl, .maskAlternate])))
-    #expect(!fixture.controlling && !fixture.input.active)
-    #expect(fixture.keyboard.stops == 1)
+    #expect(fixture.controlling && fixture.input.active && !fixture.input.isLive)
+    #expect(fixture.window.firstResponder !== fixture.view)
+    #expect(fixture.keyboardReturns == 1)
+    #expect(!fixture.keyboard.claims && fixture.keyboard.stops == 0)
+    #expect(!fixture.keyboard.send(.keyDown, try fixture.systemKey(code: 33, flags: .maskCommand)))
     #expect(fixture.events.isEmpty)
-    #expect(!fixture.keyboard.send(.keyDown, try fixture.systemKey(code: 49, flags: .maskCommand)))
+    _ = fixture.input.route(try fixture.mouse(.leftMouseDown, at: .init(x: 100, y: 100)))
+    #expect(fixture.input.isLive && fixture.keyboard.claims)
+  }
+
+  /// Viewing another machine from inside a Codevisor session to this Mac, input this Mac's host
+  /// injected is the user's own: forwarded, and the tap told to claim it.
+  @Test func withAnotherMachineInViewInjectedInputIsForwarded() throws {
+    let fixture = try InputSurfaceFixture()
+    defer { fixture.close() }
+    fixture.input.dropsInjectedInput = false
+    #expect(fixture.keyboard.claimsInjected)
+    let key = try fixture.key(.keyDown, code: 0)
+    key.cgEvent?.setIntegerValueField(.eventSourceUserData, value: ScreenSharingInputInjector.eventTag)
+    #expect(fixture.input.route(key) == nil)
+    #expect(fixture.events.last == .key(code: 0, down: true, repeatKey: false, modifiers: 0))
+    let click = try fixture.mouse(.leftMouseDown, at: .init(x: 100, y: 100))
+    click.cgEvent?.setIntegerValueField(.eventSourceUserData, value: ScreenSharingInputInjector.eventTag)
+    #expect(fixture.input.route(click) === click)
+    fixture.input.mouse(click)
+    #expect(fixture.events.last == .button(.init(x: 0.5, y: 0.5), button: 0, down: true, clicks: 1, modifiers: 0))
+  }
+
+  /// A grant doesn't take the keyboard (⌘[ through the sidebar onto the pane must keep driving the
+  /// app): input goes to the host only once the video is clicked.
+  @Test func aGrantLeavesTheKeyboardWhereItWasUntilTheVideoIsClicked() throws {
+    let fixture = try InputSurfaceFixture(videoFocused: false)
+    defer { fixture.close() }
+    #expect(fixture.controlling && fixture.input.active && !fixture.input.isLive)
+    #expect(fixture.window.firstResponder === fixture.sidebar)
+    #expect(!fixture.keyboard.claims)
+    let back = try fixture.systemKey(code: 33, flags: .maskCommand)
+    #expect(!fixture.keyboard.send(.keyDown, back))
+    let local = try fixture.key(.keyDown, code: 33, flags: .command)
+    #expect(fixture.input.route(local) === local)
+    #expect(fixture.events.isEmpty)
+    _ = fixture.input.route(try fixture.mouse(.leftMouseDown, at: .init(x: 100, y: 100)))
+    #expect(fixture.window.firstResponder === fixture.view)
+    #expect(fixture.input.isLive && fixture.keyboard.claims)
+    #expect(fixture.keyboard.send(.keyDown, back))
+    #expect(fixture.events.last == .key(code: 33, down: true, repeatKey: false, modifiers: 8))
   }
 
   @Test func interruptedCaptureReleasesHeldKeysAndControl() throws {
@@ -145,13 +189,18 @@ struct ScreenSharingInputSurfaceTests {
     #expect(!fixture.keyboard.claims)
   }
 
-  @Test func unavailableKeyboardCaptureReleasesTheGrantWithAnActionableMessage() throws {
+  /// Without Accessibility the tap can't start, and control works anyway: the local monitor carries
+  /// ordinary keys (and the mouse), and system shortcuts stay on this Mac.
+  @Test func withoutKeyboardCaptureControlStillWorksAndSystemShortcutsStayLocal() throws {
     let fixture = try InputSurfaceFixture(keyboardStarts: false)
     defer { fixture.close() }
-    #expect(!fixture.controlling && !fixture.input.active)
-    #expect(fixture.releaseReason?.contains("Accessibility") == true)
-    #expect(fixture.messages.contains { if case .release = $0 { true } else { false } })
-    #expect(fixture.events.isEmpty)
+    #expect(fixture.controlling && fixture.input.isLive && !fixture.input.capturesSystemShortcuts)
+    #expect(fixture.input.route(try fixture.key(.keyDown, code: 0)) == nil)
+    #expect(fixture.events.last == .key(code: 0, down: true, repeatKey: false, modifiers: 0))
+    #expect(!fixture.keyboard.send(.keyDown, try fixture.systemKey(code: 48, flags: .maskCommand)))
+    #expect(!fixture.messages.contains { if case .release = $0 { true } else { false } })
+    fixture.input.end()
+    #expect(fixture.keyboard.stops == 0, "a tap that never started isn't stopped")
   }
 
   @Test func toolbarClickReleasesHeldInputWithoutReleasingControl() throws {
@@ -279,14 +328,13 @@ struct ScreenSharingInputSurfaceTests {
     #expect(!fixture.input.isLive)
   }
 
-  @Test func escapeFromLocalControlsStillReleasesTheLease() throws {
+  @Test func escapeFromLocalControlsKeepsTheLease() throws {
     let fixture = try InputSurfaceFixture()
     defer { fixture.close() }
     _ = fixture.input.route(try fixture.mouse(.leftMouseDown, at: .init(x: 100, y: 510)))
     #expect(fixture.input.route(try fixture.key(.keyDown, code: 53, flags: [.control, .option])) == nil)
-    #expect(!fixture.controlling)
-    #expect(!fixture.input.active)
-    #expect(fixture.messages.contains { if case .release = $0 { true } else { false } })
+    #expect(fixture.controlling && fixture.input.active && !fixture.input.isLive)
+    #expect(!fixture.messages.contains { if case .release = $0 { true } else { false } })
     let localKey = try fixture.key(.keyDown, code: 0)
     #expect(fixture.input.route(localKey) === localKey)
     #expect(fixture.events.isEmpty)
@@ -314,8 +362,11 @@ private final class InputSurfaceFixture {
   let notifications = NotificationCenter()
   let keyboard = InputTestKeyboardCapture()
   let application = InputTestApplication()
+  /// Where focus sits when the user hasn't clicked into the video (the sidebar, another pane).
+  let sidebar = NSTextView(frame: .init(x: 0, y: 490, width: 100, height: 30))
   var messages: [ScreenSharingControlMessage] = []
   var events: [ScreenSharingInputEvent] = []
+  private(set) var keyboardReturns = 0
   /// The lease's data plane, wired exactly as the endpoint wires it.
   lazy var forwarder = ScreenSharingInputForwarder(send: { [unowned self] in
     messages.append($0); return true
@@ -335,13 +386,16 @@ private final class InputSurfaceFixture {
     input.end()
   }
 
-  init(keyboardStarts: Bool = true, windowIsKey: Bool = true) throws {
+  /// `videoFocused`: the user clicked into the video before the grant (most tests start there).
+  init(keyboardStarts: Bool = true, windowIsKey: Bool = true, videoFocused: Bool = true) throws {
     _ = NSApplication.shared
     window = InputTestWindow(
       contentRect: .init(x: 0, y: 0, width: 640, height: 540), styleMask: .borderless, backing: .buffered, defer: false)
     window.key = windowIsKey
     window.isReleasedWhenClosed = false
     window.contentView?.addSubview(view)
+    window.contentView?.addSubview(sidebar)
+    #expect(window.makeFirstResponder(videoFocused ? view : sidebar))
     keyboard.starts = keyboardStarts
     input = ScreenSharingInputSurface(
       view: view, notificationCenter: notifications, keyboardCapture: keyboard,
@@ -352,9 +406,10 @@ private final class InputSurfaceFixture {
       events.append($0); forwarder.forward($0)
     }
     input.onRelease = { [unowned self] in release(reason: input.failureMessage) }
+    input.onKeyboardReturned = { [unowned self] in keyboardReturns += 1 }
     forwarder.onLost = { [unowned self] in release(reason: $0) }
     if input.begin(), let lease { forwarder.begin(lease: lease) } else { release(reason: input.failureMessage) }
-    #expect(controlling == keyboardStarts)
+    #expect(controlling)
   }
 
   func close() { release(reason: nil); window.close() }
@@ -401,8 +456,10 @@ private final class InputTestKeyboardCapture: ScreenSharingKeyboardCapture {
   var stops = 0
   /// What the surface last told the tap about owning the keyboard.
   private(set) var claims = false
+  private(set) var claimsInjected = false
   var handle: ((CGEventType, CGEvent) -> Bool)?
   func setClaimsKeys(_ claims: Bool) { self.claims = claims }
+  func setClaimsInjectedKeys(_ claims: Bool) { claimsInjected = claims }
   var interrupted: (() -> Void)?
   func start(handle: @escaping (CGEventType, CGEvent) -> Bool, interrupted: @escaping () -> Void) -> Bool {
     guard starts else { return false }

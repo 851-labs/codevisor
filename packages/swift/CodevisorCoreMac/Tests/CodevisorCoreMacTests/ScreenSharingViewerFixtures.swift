@@ -99,9 +99,12 @@ final class FakeSurface: ScreenSharingViewerSurface {
   var onFocusChanged: ((Bool) -> Void)?
   var onInput: ((ScreenSharingInputEvent) -> Void)?
   var onInputReleased: (() -> Void)?
+  var onKeyboardReturned: (() -> Void)?
   var onSizeChanged: ((CGSize, CGFloat) -> Void)?
   var onScreenHighDynamicRangeChanged: ((Bool) -> Void)?
   var inputFailureMessage: String?
+  var capturesSystemShortcuts = true
+  var dropsInjectedInput = true
   /// Whether `beginInput` succeeds; false models a refused focus or keyboard capture.
   var beginInputSucceeds = true
   private(set) var inputActive = false

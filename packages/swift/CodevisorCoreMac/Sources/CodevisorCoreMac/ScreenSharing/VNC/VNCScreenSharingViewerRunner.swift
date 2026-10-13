@@ -134,6 +134,8 @@ final class VNCScreenSharingViewerRunner {
       endpoint = ScreenSharingViewerEndpoint(
         session: session, surface: try makeSurface(session))
       endpoint.setDesktopScale = setDesktopScale
+      // Codevisor never injects input for a VNC desktop, so nothing it tags can loop through one.
+      endpoint.dropsInjectedInput = false
     } catch {
       session.close()
       return .ended(error.localizedDescription)

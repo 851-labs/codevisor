@@ -85,7 +85,9 @@ struct ScreenSharingToolbar: ToolbarContent {
         .tag(ScreenSharingViewer.InteractionMode.control)
     }
     .pickerStyle(.segmented).labelsHidden().fixedSize()
-    .help("Send mouse, keyboard and app shortcuts to this Mac. Control–Option–Escape returns to viewing.")
+    .help(
+      "Send mouse, keyboard and app shortcuts to this Mac once you click into it. Control–Option–Escape hands the keyboard back."
+    )
   }
 
 }

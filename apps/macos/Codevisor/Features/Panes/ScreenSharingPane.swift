@@ -59,6 +59,9 @@ final class ScreenSharingPane: Pane {
     observation = observe { [weak self] in
       guard let self else { return }
       store.endpoint?.onFocusChanged = self.onFocusChanged
+      // Control–Option–Escape leaves the keyboard with the pane (its background), so ⌘[ and the
+      // other app shortcuts work again while the pane stays in Control.
+      store.endpoint?.onKeyboardReturned = { [weak self] in self?.onFocus?() }
       // Each new connection plays the machine's sound as its settings say (851-2379).
       if let endpoint = store.endpoint, let audio = endpoint.audio, self.soundAppliedTo != ObjectIdentifier(endpoint) {
         self.soundAppliedTo = ObjectIdentifier(endpoint)
@@ -153,7 +156,9 @@ final class ScreenSharingPane: Pane {
     let url = machine.baseURL
     return ("Codevisor server", url.host().map { host in url.port.map { "\(host):\($0)" } ?? host })
   }
-  func focus() { if store?.lease?.phase != .controlling { onFocus?() } }
+  /// Never takes the keyboard from a video the user clicked into; otherwise the pane's background
+  /// has it, controlling or not, since control alone no longer focuses the video.
+  func focus() { if store?.endpoint?.videoHasKeyboardFocus != true { onFocus?() } }
   func visibilityChanged(_ visible: Bool) { store?.send(visible ? .paneAppeared : .paneDisappeared) }
   func applyPreferences(_ preferences: ScreenSharingPanePreferences) { store?.send(.preferencesSynced(preferences)) }
   func willDelete() async {
@@ -232,8 +237,15 @@ private struct ScreenSharingPaneView: View {
     VStack(spacing: 0) {
       // Lease messages describe control of a picture that's showing, not a connection being made (851-2470).
       if store.phase == .viewing, let message = store.lease?.message {
-        Text(message).font(.caption).foregroundStyle(.secondary)
-          .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.vertical, 8)
+        HStack {
+          Text(message).font(.caption).foregroundStyle(.secondary)
+          Spacer()
+          // A failed request keeps Control selected; asking again is one click, not a mode round trip.
+          if store.interactionMode == .control, store.lease?.phase == .viewing {
+            Button("Request Control") { store.send(.interactionModeChanged(.control)) }.controlSize(.small)
+          }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
       }
       if let message = store.endpoint?.clipboard?.message {
         Text(message).font(.caption).foregroundStyle(.secondary)

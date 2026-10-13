@@ -13,7 +13,13 @@
     var onInput: ((ScreenSharingInputEvent) -> Void)? { get set }
     /// The surface lost the ability to capture input (event tap interrupted, focus refused).
     var onInputReleased: (() -> Void)? { get set }
+    /// The user handed the keyboard back to the app (Control–Option–Escape) without leaving Control.
+    var onKeyboardReturned: (() -> Void)? { get set }
     var inputFailureMessage: String? { get }
+    /// Input is live with system shortcuts too (⌘Tab, ⌘Space); false when they stay on this Mac.
+    var capturesSystemShortcuts: Bool { get }
+    /// Ignore input this Mac's own Codevisor host injected (true unless the video shows another machine).
+    var dropsInjectedInput: Bool { get set }
     func beginInput() -> Bool
     func endInput()
     func stop()

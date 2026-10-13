@@ -1,6 +1,7 @@
 import AppKit
 import ScreenSharing
 import OSLog
+import SystemConfiguration
 
 /// One connected viewing endpoint, for any backend: the surface rendering the
 /// session's frames, the control channel and input forwarding the lease
@@ -24,11 +25,22 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
   /// A native Mac host: the Apps, Mission Control and Desktop buttons (851-2469) do something there.
   public var supportsSystemKeys: Bool { capabilities.contains(.systemKeys) }
   public var view: NSView { surface.view }
+  /// Whether input this Mac's own Codevisor host injected is ignored: yes (the default) when the video
+  /// shows one of this Mac's displays, where forwarding it would loop back through the same screen;
+  /// no when it shows another machine, where it's the user's input through a Codevisor session.
+  public var dropsInjectedInput: Bool {
+    get { surface.dropsInjectedInput }
+    set { surface.dropsInjectedInput = newValue }
+  }
+  /// The video is the first responder: keys go to the host (while controlling), not the app.
+  public var videoHasKeyboardFocus: Bool { view.window?.firstResponder === view }
   public let clipboard: ScreenSharingViewerClipboard?
   public let diagnostics = ScreenSharingViewerDiagnostics()
   public var failure: String? { session.failure }
   /// Set by the pane: keyboard focus moved into or out of the video surface.
   public var onFocusChanged: ((Bool) -> Void)?
+  /// Set by the pane: Control–Option–Escape handed the keyboard back; focus goes to the pane, not the video.
+  public var onKeyboardReturned: (() -> Void)?
   /// The first presented frame; fired at most once. The backend turns it into `.ready`.
   var onReady: (() -> Void)?
   let session: any ScreenSharingViewingSession
@@ -169,6 +181,7 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
       self?.surface.endInput()
       self?.emit(.inputLost(reason))
     }
+    surface.onKeyboardReturned = { [weak self] in self?.onKeyboardReturned?() }
     surface.onFocusChanged = { [weak self] focused in
       if focused { self?.clipboard?.poll() }
       self?.onFocusChanged?(focused)
@@ -228,19 +241,54 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
       }
     }
     // Statistics callbacks must never delay the lease's heartbeats, which run on their own timer.
+    let statsLogId = id
     diagnosticsTask = Task { [weak self] in
+      let statsLog = Self.openStatsLog(for: statsLogId)
       while !Task.isCancelled {
         do { try await Task.sleep(for: .seconds(1)) } catch { return }
         if let self, self.presented {
           let statistics = await self.session.statistics()
           guard !Task.isCancelled else { return }
-          self.diagnostics.update(
-            metrics: self.session.metrics.snapshot(), statistics: statistics,
-            now: ProcessInfo.processInfo.systemUptime)
+          let metrics = self.session.metrics.snapshot()
+          let now = ProcessInfo.processInfo.systemUptime
+          self.diagnostics.update(metrics: metrics, statistics: statistics, now: now)
+          if let statsLog,
+            let line = try? JSONEncoder().encode(StatsRecord(time: now, statistics: statistics, metrics: metrics))
+          {
+            statsLog.write(line + Data("\n".utf8))
+          }
         }
       }
     }
     ScreenSharingEndpointRegistry.shared.register(self)
+  }
+
+  /// Names the Mac the user is sitting at and the app as Accessibility lists it: two Macs are in
+  /// play, and a development build is listed under its own name.
+  static func systemShortcutsNotice(
+    appName: String = NSRunningApplication.current.localizedName ?? "Codevisor",
+    macName: String = SCDynamicStoreCopyComputerName(nil, nil) as String? ?? "this Mac"
+  ) -> String {
+    "⌘Tab, ⌘Space and other system shortcuts stay on \(macName). To send them too, allow \(appName) in "
+      + "System Settings → Privacy & Security → Accessibility on \(macName)."
+  }
+
+  private struct StatsRecord: Encodable {
+    let time: TimeInterval
+    let statistics: [String: String]
+    let metrics: ScreenSharingMetrics.Snapshot
+  }
+
+  /// `CODEVISOR_SCREEN_SHARING_STATS_LOG` (a directory) opts in to a 1 Hz JSONL record of each
+  /// session's raw statistics and metrics, one file per endpoint, for measuring a session over time.
+  private static func openStatsLog(for id: ID) -> FileHandle? {
+    guard let directory = ProcessInfo.processInfo.environment["CODEVISOR_SCREEN_SHARING_STATS_LOG"] else {
+      return nil
+    }
+    let file = URL(fileURLWithPath: directory, isDirectory: true).appendingPathComponent("\(id.uuidString).jsonl")
+    try? FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+    guard FileManager.default.createFile(atPath: file.path, contents: nil) else { return nil }
+    return try? FileHandle(forWritingTo: file)
   }
 
   // MARK: Control plane, addressed through ScreenSharingEndpointClient
@@ -271,6 +319,8 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     guard surface.beginInput() else { return surface.inputFailureMessage }
     forwarder.begin(lease: lease)
     clipboard?.setControlling(true)
+    // Only a Mac host has system shortcuts worth sending; a Linux desktop needs nothing from this Mac.
+    if supportsSystemKeys, !surface.capturesSystemShortcuts { emit(.inputNotice(Self.systemShortcutsNotice())) }
     if let key = pendingSystemKey {
       pendingSystemKey = nil
       press(key)

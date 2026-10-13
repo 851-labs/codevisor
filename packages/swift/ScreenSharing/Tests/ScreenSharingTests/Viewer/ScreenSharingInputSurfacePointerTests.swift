@@ -211,6 +211,8 @@ private final class PointerFixture {
     view = PointerTestView(frame: .init(x: 0, y: 0, width: 640, height: 540))
     window.contentView?.addSubview(view)
     window.contentView?.layoutSubtreeIfNeeded()
+    // The user clicked into the video: a grant alone doesn't give it the keyboard or pointer.
+    #expect(window.makeFirstResponder(view))
     input = ScreenSharingInputSurface(
       view: view, notificationCenter: notifications, keyboardCapture: keyboard, applicationIsActive: { true },
       clock: clock)
