@@ -360,7 +360,7 @@ final class PaneGroupModel: Identifiable {
       guard state.panes.indices.contains(index) else { return }
       select(id: state.panes[index].id)
       requestSelectedPaneFocus()
-    case .split, .previousSplit, .nextSplit, .reopenClosedPane, .previousWorkspace, .nextWorkspace:
+    case .split, .focusSplit, .previousSplit, .nextSplit, .reopenClosedPane, .previousWorkspace, .nextWorkspace:
       return
     case .closeTab:
       guard let selected = state.selectedPane,

@@ -17,11 +17,19 @@
         ScrollView {
           VStack(alignment: .leading, spacing: 1) {
             ForEach(AppStoreScreenshotData.sections) { section in
-              SidebarWorkspaceRow(
-                name: section.name, subtitle: section.machineName, icon: section.sidebarIcon, store: store,
-                isSelected: section.rows.contains { $0.id == selectedRowID },
-                isReordering: false, onActivate: {}, onNewTab: {}, onRename: {}, onArchive: {}
+              SidebarWorkspaceHeader(
+                name: section.name, machineName: section.machineName, isReordering: false,
+                onArchive: {}, onRename: {}, onNewTab: {}
               )
+              ForEach(section.rows) { row in
+                SidebarWorkspaceTabRow(
+                  title: row.title, kind: row.kind, isAgentOwned: false,
+                  chatSession: row.session, store: store,
+                  isSelected: (scene == "conversation" && row.id == AppStoreScreenshotData.id(11))
+                    || (scene == "browser" && row.id == AppStoreScreenshotData.id(13)),
+                  isReordering: false, titleFont: .body, onActivate: {}, onClose: {}
+                )
+              }
             }
           }
         }
@@ -30,28 +38,18 @@
       .padding(.horizontal, 8)
       .themedSurface(.sidebar)
     }
-
-    /// The tab the scene shows; its workspace's row is the selected one.
-    private var selectedRowID: UUID? {
-      switch scene {
-      case "conversation": AppStoreScreenshotData.id(11)
-      case "browser": AppStoreScreenshotData.id(13)
-      default: nil
-      }
-    }
-  }
-
-  private extension ScreenshotSidebarSection {
-    /// The chat carrying the section's status, as production picks a
-    /// workspace's icon.
-    var sidebarIcon: SidebarWorkspaceIcon {
-      let chats = rows.filter { $0.session != nil }
-      let chat = (chats.first { $0.status == status } ?? chats.first)?.session
-      return chat.map(SidebarWorkspaceIcon.chat) ?? .workspace
-    }
   }
 
   private extension ScreenshotSidebarTabRow {
+    var kind: PaneKind {
+      switch icon {
+      case .chat: .chat
+      case .browser: .browser
+      case .terminal: .terminal
+      case .document: .document
+      }
+    }
+
     var session: ChatSession? {
       guard case let .chat(harnessId, _) = icon else { return nil }
       return ChatSession(

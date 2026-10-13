@@ -23,7 +23,9 @@ extension SessionContainerView {
   /// A sidebar-originated tab action for this workspace.
   func performCenterTabRequest(_ request: CenterTabRequest) {
     switch request.action {
+    case let .close(tabId): closeCenterTab(tabId)
     case .new: addCenterTab()
+    case let .closeLeaf(leafId): closeLeaf(leafId)
     }
   }
 
@@ -69,8 +71,9 @@ extension SessionContainerView {
   // MARK: - Tab strip
 
   /// The tab strip shows once a workspace has more than one listed tab.
+  /// Only with the sidebar refresh; the classic sidebar lists tabs itself.
   func showsCenterTabBar(in workspace: Workspace) -> Bool {
-    workspace.listedCenterTabs().count > 1
+    FeatureFlag.sidebarRefresh.isEnabled && workspace.listedCenterTabs().count > 1
   }
 
   /// The workspace's listed tabs as strip items, numbered for ⌘1–⌘9.

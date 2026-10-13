@@ -73,6 +73,7 @@ enum PaneGroupCommand {
   case previousWorkspace
   case nextWorkspace
   case split(SplitEdge)
+  case focusSplit(SplitEdge)
   case previousSplit
   case nextSplit
   case closeTab

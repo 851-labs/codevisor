@@ -80,17 +80,21 @@ struct WorkspaceLayoutCommands: Commands {
         .disabled(actions == nil && sidebarActions == nil)
       ShortcutButton(.nextTab) { stepTab(1) }
         .disabled(actions == nil && sidebarActions == nil)
-      ShortcutButton(.previousTabInWorkspace) { actions?.previousTabInWorkspace() }
-        .disabled(actions == nil)
-      ShortcutButton(.nextTabInWorkspace) { actions?.nextTabInWorkspace() }
-        .disabled(actions == nil)
+      // The refreshed sidebar's own commands; absent rather than disabled
+      // without it, so their keys stay free for split focus.
+      if FeatureFlag.sidebarRefresh.isEnabled {
+        ShortcutButton(.previousTabInWorkspace) { actions?.previousTabInWorkspace() }
+          .disabled(actions == nil)
+        ShortcutButton(.nextTabInWorkspace) { actions?.nextTabInWorkspace() }
+          .disabled(actions == nil)
 
-      Divider()
+        Divider()
 
-      ShortcutButton(.previousWorkspace) { sidebarActions?.stepWorkspace(-1) }
-        .disabled(sidebarActions == nil)
-      ShortcutButton(.nextWorkspace) { sidebarActions?.stepWorkspace(1) }
-        .disabled(sidebarActions == nil)
+        ShortcutButton(.previousWorkspace) { sidebarActions?.stepWorkspace?(-1) }
+          .disabled(sidebarActions?.stepWorkspace == nil)
+        ShortcutButton(.nextWorkspace) { sidebarActions?.stepWorkspace?(1) }
+          .disabled(sidebarActions?.stepWorkspace == nil)
+      }
     }
   }
 
@@ -98,8 +102,13 @@ struct WorkspaceLayoutCommands: Commands {
     if let actions {
       if offset < 0 { actions.previousTab() } else { actions.nextTab() }
     } else {
-      // The standalone New Chat page has no tabs; it steps the sidebar.
-      sidebarActions?.stepWorkspace(offset)
+      // The standalone New Chat page has no tabs; it steps the sidebar
+      // (workspaces in the refresh, tab rows in the classic sidebar).
+      if let stepWorkspace = sidebarActions?.stepWorkspace {
+        stepWorkspace(offset)
+      } else {
+        sidebarActions?.stepTab?(offset)
+      }
     }
   }
 }

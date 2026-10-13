@@ -56,6 +56,8 @@ extension SessionContainerView {
       store.selectDestination(.tab(tabs[index].id), in: workspace.id)
     case let .split(edge):
       splitActiveLeaf(edge: edge)
+    case let .focusSplit(edge):
+      focusAdjacentLeaf(edge: edge)
     case .previousSplit:
       focusRelativeSplit(offset: -1)
     case .nextSplit:
@@ -72,8 +74,13 @@ extension SessionContainerView {
   /// workspace, as ⌥⌘↑ / ⌥⌘↓ do), never this workspace's tabs; while it is
   /// hidden, this workspace's tabs.
   func stepTab(offset: Int) {
-    if store.isSidebarVisible, let stepWorkspace = store.workspaceStepHandler {
-      stepWorkspace(offset)
+    if FeatureFlag.sidebarRefresh.isEnabled {
+      if store.isSidebarVisible, let stepWorkspace = store.workspaceStepHandler {
+        stepWorkspace(offset)
+        return
+      }
+    } else if store.sidebarTabStepHandler?(offset) == true {
+      // The classic sidebar walks its tab rows, across workspaces.
       return
     }
     selectRelativeCenterTab(offset: offset)

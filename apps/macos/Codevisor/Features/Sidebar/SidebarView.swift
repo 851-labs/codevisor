@@ -12,6 +12,7 @@ import os
 struct SidebarView: View {
   @Environment(AppEnvironment.self) var environment
   @Environment(\.accessibilityReduceMotion) var reduceMotion
+  @Environment(\.theme) private var theme
   @Binding var selection: SidebarSelection?
   var store: SessionStore? = nil
   var publishesSceneActions = true
@@ -217,9 +218,22 @@ struct SidebarView: View {
     .animation(Motion.listReflow(reduceMotion: reduceMotion), value: items.map(\.id))
   }
 
+  /// Under the system theme the split view's own sidebar material shows
+  /// through, as in Mail or Finder: AppKit's sidebar material is what gives
+  /// native sidebar text and headers their exact color (SwiftUI's regular
+  /// material renders the same label colors lighter). Custom themes keep
+  /// their tinted glass.
+  @ViewBuilder
+  private var sidebarBackground: some View {
+    if theme.isSystem {
+      sidebarContent
+    } else {
+      sidebarContent.themedSurface(.sidebar)
+    }
+  }
+
   private var sidebarInteractionView: some View {
-    sidebarContent
-      .themedSurface(.sidebar)
+    sidebarBackground
       .contentShape(Rectangle())
       .sheet(isPresented: $showingAddProject) {
         NewProjectSheet(serverId: environment.defaultComposerServerId) { project in
