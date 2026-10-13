@@ -26,10 +26,10 @@
     "playwright": "1.62.0-alpha-1783623505000",
     "quickjs-emscripten": "0.32.0",
     "sucrase": "3.35.1",
-    "ws": "8.18.3"
+    "ws": "8.22.0"
   },
   "devDependencies": {
-    "@types/ws": "8.18.1",
+    "@types/ws": "8.18.2",
     "vitest": "4.1.6"
   }
 }

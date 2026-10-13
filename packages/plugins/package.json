@@ -16,11 +16,11 @@
   },
   "dependencies": {
     "@codevisor/api": "workspace:*",
-    "sharp": "0.35.2"
+    "sharp": "0.35.5"
   },
   "devDependencies": {
-    "@types/ws": "8.18.1",
+    "@types/ws": "8.18.2",
     "vitest": "4.1.6",
-    "ws": "8.18.3"
+    "ws": "8.22.0"
   }
 }

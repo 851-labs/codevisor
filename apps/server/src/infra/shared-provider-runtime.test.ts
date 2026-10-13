@@ -230,7 +230,9 @@ describe("OpenCode credentials kept current", () => {
     )
     const write = vi.mocked(atomicWriteJson).mockImplementation((...args) => {
       const pending = actual.atomicWriteJson(...args)
-      if (args[0] === path) void pending.then(rewritten.resolve, rewritten.reject)
+      const providers = args[1] as { openai?: { access?: unknown } }
+      if (args[0] === path && providers.openai?.access === "rotated")
+        void pending.then(rewritten.resolve, rewritten.reject)
       return pending
     })
     try {
