@@ -16,6 +16,8 @@ enum ShortcutID: String, CaseIterable, Identifiable, Sendable {
   case selectTab
   case previousTab
   case nextTab
+  case previousTabInWorkspace
+  case nextTabInWorkspace
   case previousWorkspace
   case nextWorkspace
   case previousSplit
@@ -154,12 +156,20 @@ enum ShortcutCatalog {
       )
     case .previousTab:
       ShortcutDefinition(
-        .previousTab, "Previous Tab", ShortcutCombo("[", [.command, .shift]),
-        alternates: [ShortcutCombo(.leftArrow, [.command, .option])], category: .tabsAndSplits)
+        .previousTab, "Previous Sidebar Item", ShortcutCombo("[", [.command, .shift]), category: .tabsAndSplits,
+        context: "Previous tab while the sidebar is hidden")
     case .nextTab:
       ShortcutDefinition(
-        .nextTab, "Next Tab", ShortcutCombo("]", [.command, .shift]),
-        alternates: [ShortcutCombo(.rightArrow, [.command, .option])], category: .tabsAndSplits)
+        .nextTab, "Next Sidebar Item", ShortcutCombo("]", [.command, .shift]), category: .tabsAndSplits,
+        context: "Next tab while the sidebar is hidden")
+    case .previousTabInWorkspace:
+      ShortcutDefinition(
+        .previousTabInWorkspace, "Previous Tab in Workspace", ShortcutCombo(.leftArrow, [.command, .option]),
+        category: .tabsAndSplits)
+    case .nextTabInWorkspace:
+      ShortcutDefinition(
+        .nextTabInWorkspace, "Next Tab in Workspace", ShortcutCombo(.rightArrow, [.command, .option]),
+        category: .tabsAndSplits)
     case .previousWorkspace:
       ShortcutDefinition(
         .previousWorkspace, "Previous Workspace", ShortcutCombo(.upArrow, [.command, .option]),

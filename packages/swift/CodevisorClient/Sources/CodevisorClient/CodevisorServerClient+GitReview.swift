@@ -116,6 +116,59 @@ public struct ServerGitRefs: Codable, Equatable, Sendable {
   }
 }
 
+/// The current branch's pull request, as the machine's `gh` reports it.
+public struct ServerGitPullRequest: Codable, Equatable, Hashable, Sendable {
+  public enum State: String, Codable, Sendable {
+    case open
+    case closed
+    case merged
+  }
+
+  /// The pull request's checks rolled up: any failure wins, then anything
+  /// still running.
+  public enum Checks: String, Codable, Sendable {
+    case passing
+    case failing
+    case pending
+    case none
+  }
+
+  public let number: Int
+  public let title: String
+  public let state: State
+  public let isDraft: Bool
+  public let url: URL
+  public let checks: Checks
+
+  public init(number: Int, title: String, state: State, isDraft: Bool, url: URL, checks: Checks = .none) {
+    self.number = number
+    self.title = title
+    self.state = state
+    self.isDraft = isDraft
+    self.url = url
+    self.checks = checks
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case number, title, state, isDraft, url, checks
+  }
+
+  /// Servers that predate check rollups omit `checks`.
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    number = try container.decode(Int.self, forKey: .number)
+    title = try container.decode(String.self, forKey: .title)
+    state = try container.decode(State.self, forKey: .state)
+    isDraft = try container.decode(Bool.self, forKey: .isDraft)
+    url = try container.decode(URL.self, forKey: .url)
+    checks = try container.decodeIfPresent(Checks.self, forKey: .checks) ?? .none
+  }
+}
+
+struct ServerGitPullRequestLookup: Decodable {
+  let pullRequest: ServerGitPullRequest?
+}
+
 extension CodevisorServerClient {
   public func gitDiff(
     path: String, mode: ServerGitDiffMode, base: String?, revision: String?
@@ -132,6 +185,13 @@ extension CodevisorServerClient {
 
   public func gitRefs(path: String) async throws -> ServerGitRefs {
     try await get(gitRequestPath("/v1/fs/git/refs", items: [URLQueryItem(name: "path", value: path)]))
+  }
+
+  public func gitPullRequest(path: String) async throws -> ServerGitPullRequest? {
+    let lookup: ServerGitPullRequestLookup = try await get(
+      gitRequestPath("/v1/fs/git/pull-request", items: [URLQueryItem(name: "path", value: path)])
+    )
+    return lookup.pullRequest
   }
 
   private func gitRequestPath(_ endpoint: String, items: [URLQueryItem]) throws -> String {
@@ -154,6 +214,9 @@ extension CodevisorServerClienting {
     throw CodevisorServerClientError.invalidResponse
   }
   public func gitRefs(path: String) async throws -> ServerGitRefs {
+    throw CodevisorServerClientError.invalidResponse
+  }
+  public func gitPullRequest(path: String) async throws -> ServerGitPullRequest? {
     throw CodevisorServerClientError.invalidResponse
   }
 }

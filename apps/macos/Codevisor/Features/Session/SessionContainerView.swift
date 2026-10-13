@@ -144,8 +144,10 @@ struct SessionContainerView: View {
             closeCenterTab(workspace.selectedCenterTabId)
           },
           reopenClosedPane: reopenClosedPane,
-          previousTab: { selectRelativeCenterTab(offset: -1) },
-          nextTab: { selectRelativeCenterTab(offset: 1) },
+          previousTab: { stepTab(offset: -1) },
+          nextTab: { stepTab(offset: 1) },
+          previousTabInWorkspace: { selectRelativeCenterTab(offset: -1) },
+          nextTabInWorkspace: { selectRelativeCenterTab(offset: 1) },
           previousSplit: { focusRelativeSplit(offset: -1) },
           nextSplit: { focusRelativeSplit(offset: 1) },
           split: splitActiveLeaf,

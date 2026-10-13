@@ -343,12 +343,16 @@ final class PaneGroupModel: Identifiable {
     case .newTab:
       addNewTabPane()
       requestSelectedPaneFocus()
-    case .nextTab, .previousTab:
+    case .nextTab, .previousTab, .nextTabInWorkspace, .previousTabInWorkspace:
       let panes = state.panes
       guard panes.count > 1,
         let index = panes.firstIndex(where: { $0.id == state.selectedPaneId })
       else { return }
-      let step: Int = if case .nextTab = command { 1 } else { -1 }
+      let step: Int =
+        switch command {
+        case .nextTab, .nextTabInWorkspace: 1
+        default: -1
+        }
       let target = panes[(index + step + panes.count) % panes.count]
       select(id: target.id)
       requestSelectedPaneFocus()

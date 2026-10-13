@@ -83,6 +83,8 @@ final class SessionStore {
   @ObservationIgnored var centerLeafGroups: [CenterLeafKey: PaneGroupModel] = [:]
   /// The groups' live browser pages by pane id.
   @ObservationIgnored let browserPanes = BrowserPaneIndex()
+  /// The sidebar's pull request badges for this window's workspaces.
+  @ObservationIgnored let pullRequests = SidebarPullRequests()
   /// One live unsent new-chat draft per machine, mirrored to disk by
   /// `ComposerDraftStore`. A controller permanently owns the server client
   /// it was created with, so reusing a draft after a machine switch can send
@@ -126,6 +128,10 @@ final class SessionStore {
   /// rows. Installed by the docked sidebar, which owns that order and the
   /// selection.
   @ObservationIgnored var workspaceStepHandler: ((Int) -> Void)?
+  /// Whether this window's sidebar is showing (docked, or as the compact
+  /// drawer). ⇧⌘[ / ⇧⌘] step the sidebar's rows while it is, and the
+  /// workspace's tabs while it isn't. Kept current by the root view.
+  @ObservationIgnored var isSidebarVisible = true
   /// Panes the user closed, newest last, per workspace — what ⌘⇧T brings
   /// back. In memory only: the archive is the durable recovery for chats;
   /// this is the browser-style undo for the current run.

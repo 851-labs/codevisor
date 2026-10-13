@@ -362,6 +362,9 @@ public protocol CodevisorServerClienting: BrowserStateClienting, SimulatorClient
   /// server answers `unchanged` without resending files.
   func gitDiff(path: String, mode: ServerGitDiffMode, base: String?, revision: String?) async throws -> ServerGitDiff
   func gitRefs(path: String) async throws -> ServerGitRefs
+  /// The pull request for the current branch of the git checkout at `path`;
+  /// nil when there is none or the machine's `gh` can't tell.
+  func gitPullRequest(path: String) async throws -> ServerGitPullRequest?
   /// Reads a live file from this machine. Relative paths are resolved by the
   /// server against the specified session's authoritative working directory.
   func fileData(sessionId: UUID, path: String) async throws -> Data

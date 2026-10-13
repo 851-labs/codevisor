@@ -135,7 +135,7 @@ const queryParameters = (endpoint: Endpoint): ReadonlyArray<JsonObject> => {
       }
     ]
   }
-  if (endpoint === "GET /v1/fs/git/refs") {
+  if (endpoint === "GET /v1/fs/git/refs" || endpoint === "GET /v1/fs/git/pull-request") {
     return [{ name: "path", in: "query", required: true, schema: { type: "string" } }]
   }
   if (endpoint === "GET /v1/files/:id") {

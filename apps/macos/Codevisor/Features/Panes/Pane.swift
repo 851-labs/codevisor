@@ -62,8 +62,12 @@ struct PaneContext {
 
 /// Workspace tab and split commands emitted by a focused pane.
 enum PaneGroupCommand {
+  /// Every tab in sidebar order, across workspaces.
   case previousTab
   case nextTab
+  /// The current workspace's tabs, wrapping.
+  case previousTabInWorkspace
+  case nextTabInWorkspace
   case newTab
   case selectTab(Int)
   case previousWorkspace

@@ -37,8 +37,12 @@ extension SessionContainerView {
     case .newTab:
       addCenterTab()
     case .previousTab:
-      selectRelativeCenterTab(offset: -1)
+      stepTab(offset: -1)
     case .nextTab:
+      stepTab(offset: 1)
+    case .previousTabInWorkspace:
+      selectRelativeCenterTab(offset: -1)
+    case .nextTabInWorkspace:
       selectRelativeCenterTab(offset: 1)
     case .previousWorkspace:
       store.workspaceStepHandler?(-1)
@@ -62,6 +66,17 @@ extension SessionContainerView {
       reopenClosedPane()
     }
     return true
+  }
+
+  /// ⇧⌘[ / ⇧⌘]: while the sidebar shows, its rows (New Chat, then each
+  /// workspace, as ⌥⌘↑ / ⌥⌘↓ do), never this workspace's tabs; while it is
+  /// hidden, this workspace's tabs.
+  func stepTab(offset: Int) {
+    if store.isSidebarVisible, let stepWorkspace = store.workspaceStepHandler {
+      stepWorkspace(offset)
+      return
+    }
+    selectRelativeCenterTab(offset: offset)
   }
 
   /// Cycles the strip's tabs, wrapping at either end.

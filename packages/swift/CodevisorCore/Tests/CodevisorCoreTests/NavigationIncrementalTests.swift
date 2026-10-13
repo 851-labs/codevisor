@@ -133,7 +133,7 @@ struct NavigationIncrementalTests {
     #expect(list.session(busy.id, serverId: "m")?.unreadCount == 3)
   }
 
-  @Test("The sidebar lists live workspaces, and a chat-less workspace routes through its closed chat")
+  @Test("The sidebar lists live and archived workspaces apart; a chat-less one routes via its closed chat")
   func sidebarList() async throws {
     let open = ChatSession(projectId: project.id, serverId: "m", title: "Open")
     let closed = ChatSession(projectId: project.id, serverId: "m", title: "Closed")
@@ -158,6 +158,7 @@ struct NavigationIncrementalTests {
     #expect(Set(sidebar.keys) == [terminalOnly.id, live.id])
     #expect(sidebar[terminalOnly.id]?.routingChatIds == [closed.id])
     #expect(sidebar[live.id]?.routingChatIds == [open.id])
+    #expect(fixture.store.workspaceEntries.archived.map(\.id) == [archived.id])
   }
 
   @Test("An unrelated change leaves the sidebar list as it was")

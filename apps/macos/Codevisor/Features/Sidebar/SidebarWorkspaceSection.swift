@@ -15,6 +15,8 @@ struct SidebarWorkspaceSection: View {
   let selection: SidebarSelection?
   /// Whether the row names its machine depends on the grouping.
   let grouping: SidebarGrouping
+  /// The optional details each row shows.
+  let rowDetails: [SidebarRowDetail]
   /// The dragged workspace, whose row dims in place.
   let draggingID: UUID?
 

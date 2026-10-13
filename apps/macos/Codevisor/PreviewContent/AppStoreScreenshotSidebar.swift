@@ -18,7 +18,7 @@
           VStack(alignment: .leading, spacing: 1) {
             ForEach(AppStoreScreenshotData.sections) { section in
               SidebarWorkspaceRow(
-                name: section.name, machineName: section.machineName, status: section.sidebarStatus,
+                name: section.name, subtitle: section.machineName, icon: section.sidebarIcon, store: store,
                 isSelected: section.rows.contains { $0.id == selectedRowID },
                 isReordering: false, onActivate: {}, onNewTab: {}, onRename: {}, onArchive: {}
               )
@@ -42,12 +42,25 @@
   }
 
   private extension ScreenshotSidebarSection {
-    var sidebarStatus: SidebarWorkspaceStatus {
-      switch status {
-      case .idle: .idle
-      case .unread: .unread
-      case .inProgress: .working
-      }
+    /// The chat carrying the section's status, as production picks a
+    /// workspace's icon.
+    var sidebarIcon: SidebarWorkspaceIcon {
+      let chats = rows.filter { $0.session != nil }
+      let chat = (chats.first { $0.status == status } ?? chats.first)?.session
+      return chat.map(SidebarWorkspaceIcon.chat) ?? .workspace
+    }
+  }
+
+  private extension ScreenshotSidebarTabRow {
+    var session: ChatSession? {
+      guard case let .chat(harnessId, _) = icon else { return nil }
+      return ChatSession(
+        id: id, projectId: AppStoreScreenshotData.projectID,
+        serverId: AppStoreScreenshotData.machineID, harnessId: harnessId,
+        title: title, createdAt: AppStoreScreenshotData.date, updatedAt: AppStoreScreenshotData.date,
+        sidebarState: status == .inProgress ? .inProgress : (status == .unread ? .unread : .idle),
+        unreadCount: status == .unread ? 1 : 0
+      )
     }
   }
 #endif

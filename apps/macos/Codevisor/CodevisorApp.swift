@@ -317,6 +317,13 @@ struct RootView: View {
           .shadow(color: .black.opacity(0.22), radius: 18, y: 6)
       }
     }
+    // ⇧⌘[ / ⇧⌘] step the sidebar's rows while it shows, tabs otherwise.
+    .onChange(of: clientSidebarVisible, initial: true) { _, visible in
+      store?.isSidebarVisible = visible
+    }
+    .onChange(of: store.map(ObjectIdentifier.init)) { _, _ in
+      store?.isSidebarVisible = clientSidebarVisible
+    }
   }
 
   /// At compact widths the system sidebar remains collapsed and its normal

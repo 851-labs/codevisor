@@ -162,6 +162,7 @@ export const endpoints = [
   "POST /v1/fs/mkdir",
   "GET /v1/fs/git/diff",
   "GET /v1/fs/git/refs",
+  "GET /v1/fs/git/pull-request",
   "GET /v1/events",
   "GET /v1/events/cursor",
   "GET /v1/events/socket",

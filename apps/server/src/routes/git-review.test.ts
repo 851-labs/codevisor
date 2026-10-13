@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process"
-import { mkdtempSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -115,5 +115,41 @@ describe("git review routes", () => {
         ]
       }
     })
+  })
+
+  it("answers a folder's pull request from gh, sharing one lookup across asks", async () => {
+    const { services } = await makeServices("server-a")
+    const folder = tempFolder("codevisor-pr-")
+    execFileSync("git", ["init", "--quiet", "-b", "feature/badge"], { cwd: folder })
+    const bin = join(tempFolder("codevisor-gh-"), "bin")
+    mkdirSync(bin)
+    const calls = join(bin, "calls")
+    writeFileSync(
+      join(bin, "gh"),
+      `#!/bin/sh\necho call >> '${calls}'\necho '{"number":7,"title":"Badge","state":"OPEN","isDraft":true,"url":"https://github.com/o/r/pull/7"}'\n`
+    )
+    chmodSync(join(bin, "gh"), 0o755)
+    const env = { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}` }
+    const server = await startWithApp({ ...services, resolveGitEnvironment: async () => env })
+    runningServers.push(server)
+    const lookup = () =>
+      jsonRequest(server, `/v1/fs/git/pull-request?path=${encodeURIComponent(folder)}`)
+
+    const expected = {
+      status: 200,
+      body: {
+        pullRequest: {
+          number: 7,
+          title: "Badge",
+          state: "open",
+          isDraft: true,
+          url: "https://github.com/o/r/pull/7",
+          checks: "none"
+        }
+      }
+    }
+    expect(await Promise.all([lookup(), lookup()])).toEqual([expected, expected])
+    expect(await lookup()).toEqual(expected)
+    expect(readFileSync(calls, "utf8").trim().split("\n")).toHaveLength(1)
   })
 })

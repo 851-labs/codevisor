@@ -9,6 +9,8 @@ struct WorkspaceLayoutActions: Equatable {
   let reopenClosedPane: @MainActor () -> Void
   let previousTab: @MainActor () -> Void
   let nextTab: @MainActor () -> Void
+  let previousTabInWorkspace: @MainActor () -> Void
+  let nextTabInWorkspace: @MainActor () -> Void
   let previousSplit: @MainActor () -> Void
   let nextSplit: @MainActor () -> Void
   let split: @MainActor (SplitEdge) -> Void
@@ -72,19 +74,32 @@ struct WorkspaceLayoutCommands: Commands {
     }
 
     CommandGroup(before: .windowArrangement) {
-      ShortcutButton(.previousTab) { actions?.previousTab() }
+      // The sidebar owns the order across workspaces, so these work from
+      // the New Chat page too.
+      ShortcutButton(.previousTab) { stepTab(-1) }
+        .disabled(actions == nil && sidebarActions == nil)
+      ShortcutButton(.nextTab) { stepTab(1) }
+        .disabled(actions == nil && sidebarActions == nil)
+      ShortcutButton(.previousTabInWorkspace) { actions?.previousTabInWorkspace() }
         .disabled(actions == nil)
-      ShortcutButton(.nextTab) { actions?.nextTab() }
+      ShortcutButton(.nextTabInWorkspace) { actions?.nextTabInWorkspace() }
         .disabled(actions == nil)
 
       Divider()
 
-      // The sidebar owns the workspace order, so these work from the New
-      // Chat page too.
       ShortcutButton(.previousWorkspace) { sidebarActions?.stepWorkspace(-1) }
         .disabled(sidebarActions == nil)
       ShortcutButton(.nextWorkspace) { sidebarActions?.stepWorkspace(1) }
         .disabled(sidebarActions == nil)
+    }
+  }
+
+  private func stepTab(_ offset: Int) {
+    if let actions {
+      if offset < 0 { actions.previousTab() } else { actions.nextTab() }
+    } else {
+      // The standalone New Chat page has no tabs; it steps the sidebar.
+      sidebarActions?.stepWorkspace(offset)
     }
   }
 }

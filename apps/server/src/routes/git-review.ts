@@ -1,8 +1,14 @@
 import { statSync } from "node:fs"
 import type { IncomingMessage, ServerResponse } from "node:http"
 
-import { GitDiffMode } from "@codevisor/api"
-import { gitDiff, gitRefs, GitReviewError, type GitReviewFailureCode } from "@codevisor/worktrees"
+import { GitDiffMode, type GitPullRequest } from "@codevisor/api"
+import {
+  gitDiff,
+  gitPullRequest,
+  gitRefs,
+  GitReviewError,
+  type GitReviewFailureCode
+} from "@codevisor/worktrees"
 import { Schema } from "effect"
 
 import { HttpFailure, writeJson, type CodevisorServerServices } from "../server-context.js"
@@ -31,8 +37,37 @@ const requestedDirectory = (url: URL): string => {
   return path
 }
 
-/// Git review for the Review pane: the diff of one comparison mode, and the
-/// branches branch mode can compare against. Both read-only.
+/// How long a directory's pull request answer is reused. `gh` makes a GitHub
+/// round trip, and every window's sidebar asks about every workspace.
+const pullRequestTtlMs = 60_000
+
+/// Answers (and lookups still running) per directory, so concurrent and
+/// repeated asks share one `gh` call.
+const pullRequests = new Map<
+  string,
+  { readonly at: number; readonly lookup: Promise<GitPullRequest | null> }
+>()
+
+const cachedPullRequest = (
+  directory: string,
+  env: NodeJS.ProcessEnv,
+  now = Date.now()
+): Promise<GitPullRequest | null> => {
+  for (const [key, entry] of pullRequests) {
+    if (now - entry.at >= pullRequestTtlMs) pullRequests.delete(key)
+  }
+  const cached = pullRequests.get(directory)
+  if (cached !== undefined) return cached.lookup
+  const lookup = gitPullRequest(directory, env)
+  pullRequests.set(directory, { at: now, lookup })
+  return lookup
+}
+
+const gitReviewPaths = new Set(["/v1/fs/git/diff", "/v1/fs/git/refs", "/v1/fs/git/pull-request"])
+
+/// Git review for the Review pane and the sidebar: the diff of one comparison
+/// mode, the branches branch mode can compare against, and the current
+/// branch's pull request. All read-only.
 export const routeGitReview = async (
   services: CodevisorServerServices,
   request: IncomingMessage,
@@ -40,12 +75,16 @@ export const routeGitReview = async (
   url: URL
 ): Promise<boolean> => {
   if (request.method !== "GET") return false
-  if (url.pathname !== "/v1/fs/git/diff" && url.pathname !== "/v1/fs/git/refs") return false
+  if (!gitReviewPaths.has(url.pathname)) return false
   const directory = requestedDirectory(url)
   const env = await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
   try {
     if (url.pathname === "/v1/fs/git/refs") {
       writeJson(response, 200, await gitRefs(directory, env))
+      return true
+    }
+    if (url.pathname === "/v1/fs/git/pull-request") {
+      writeJson(response, 200, { pullRequest: await cachedPullRequest(directory, env) })
       return true
     }
     const mode = url.searchParams.get("mode")

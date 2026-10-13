@@ -149,11 +149,12 @@ extension SidebarView {
   /// the list.
   @ViewBuilder
   private func reorderGhost(for id: UUID) -> some View {
-    if let workspace = environment.navigationStore.workspaceEntries.entry(id).workspace {
+    if let entry = listedSidebarItems.first(where: { $0.id == id }), let item = listItem(for: entry) {
       SidebarWorkspaceRowLabel(
-        name: workspace.name,
-        machineName: rowMachineName(forServer: workspace.serverId),
-        status: status(of: workspace)
+        name: item.workspace.name,
+        subtitle: rowSubtitle(for: item.workspace),
+        icon: icon(for: item),
+        store: store
       )
       .padding(.vertical, 5)
       .padding(.horizontal, 8)
