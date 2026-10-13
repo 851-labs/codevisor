@@ -16,7 +16,10 @@ describe("resolveServerIdentity", () => {
     const filename = tempDatabase()
     const minted = resolveServerIdentity(filename)
     const db = await run(makeDatabase({ filename, serverId: minted }))
-    expect(await run(db.getOrCreateInstanceId)).toBe(minted)
-    await Effect.runPromise(db.close)
+    try {
+      expect(await run(db.getOrCreateInstanceId)).toBe(minted)
+    } finally {
+      await Effect.runPromise(db.close)
+    }
   })
 })
