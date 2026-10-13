@@ -110,13 +110,6 @@ enum SimulatorRuntime {
   /// simctl's state values: 1 shutdown, 3 booted, others in between.
   static func isBooted(_ device: NSObject) -> Bool { uint64(device, "state") == 3 }
 
-  /// The runtime's major version ("27.0" → 27), 0 when unknown.
-  static func runtimeMajorVersion(_ device: NSObject) -> Int {
-    guard let runtime = object(device, "runtime"), let version = object(runtime, "versionString") as? String
-    else { return 0 }
-    return Int(version.split(separator: ".").first ?? "") ?? 0
-  }
-
   static func productFamily(_ device: NSObject) -> String {
     guard let type = object(device, "deviceType") else { return "iPhone" }
     return object(type, "productFamily") as? String ?? "iPhone"
