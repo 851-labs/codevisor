@@ -79,14 +79,14 @@ describe("parseGitPullRequest", () => {
   })
 })
 
-describe("rollUpChecks", () => {
-  const run = (status: string, conclusion: string | null = null) => ({
-    __typename: "CheckRun",
-    status,
-    conclusion
-  })
-  const commitStatus = (state: string) => ({ __typename: "StatusContext", state })
+const run = (status: string, conclusion: string | null = null) => ({
+  __typename: "CheckRun",
+  status,
+  conclusion
+})
+const commitStatus = (state: string) => ({ __typename: "StatusContext", state })
 
+describe("rollUpChecks", () => {
   it("is none without checks", () => {
     expect(rollUpChecks([])).toBe("none")
     expect(rollUpChecks(undefined)).toBe("none")
