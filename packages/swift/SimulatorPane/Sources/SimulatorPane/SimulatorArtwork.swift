@@ -184,25 +184,6 @@ enum SimulatorArtwork {
     return context.makeImage()
   }
 
-  /// `image` turned clockwise by quarter turns.
-  static func turned(_ image: CGImage, quarterTurns: Int) -> CGImage {
-    let turns = ((quarterTurns % 4) + 4) % 4
-    guard turns != 0 else { return image }
-    let size =
-      turns % 2 == 0
-      ? CGSize(width: image.width, height: image.height) : CGSize(width: image.height, height: image.width)
-    guard
-      let context = CGContext(
-        data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: 8, bytesPerRow: 0,
-        space: image.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
-        bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue)
-    else { return image }
-    context.translateBy(x: size.width / 2, y: size.height / 2)
-    context.rotate(by: -CGFloat(turns) * .pi / 2)
-    context.draw(image, in: CGRect(x: -image.width / 2, y: -image.height / 2, width: image.width, height: image.height))
-    return context.makeImage() ?? image
-  }
-
   static func symbol(family: String) -> String {
     switch family {
     case "iPad": "ipad"
