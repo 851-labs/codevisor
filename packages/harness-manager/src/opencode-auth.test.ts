@@ -109,6 +109,7 @@ describe("OpenCode provider authentication", () => {
 
   it("lists, adds, replaces, and removes profile-scoped credentials", async () => {
     const root = mkdtempSync(join(tmpdir(), "codevisor-opencode-auth-"))
+    onTestFinished(() => rmSync(root, { recursive: true, force: true }))
     const data = join(root, "data")
     mkdirSync(data, { recursive: true })
     const command = fakeOpenCode(root)
@@ -155,6 +156,7 @@ describe("OpenCode provider authentication", () => {
 
   it("serializes auth servers that belong to the same profile", async () => {
     const root = mkdtempSync(join(tmpdir(), "codevisor-opencode-auth-lock-"))
+    onTestFinished(() => rmSync(root, { recursive: true, force: true }))
     const data = join(root, "data")
     mkdirSync(data, { recursive: true })
     const manager = makeOpenCodeAuthManager({
