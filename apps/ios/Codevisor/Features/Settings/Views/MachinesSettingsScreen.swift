@@ -12,6 +12,7 @@ import SwiftUI
 /// connected, and which machine the app points at follows the chat you open.
 struct MachinesSettingsScreen: View {
   @Environment(AppEnvironment.self) private var environment
+  @Environment(\.theme) private var theme
   @State private var renamingMachine: CodevisorMachine?
   @State private var renameText = ""
   @State private var removingCloudMachine: CloudMachine?
@@ -92,6 +93,15 @@ struct MachinesSettingsScreen: View {
     removingCloudMachine = cloudMachine(for: machine)
   }
 
+  /// The status dot and how the machine is reached, as one `Text` so the
+  /// list styles it as the row's subtitle.
+  private func connectionText(_ connection: MachineConnectionPresentation) -> Text {
+    let dot = Text(Image(systemName: "circlebadge.fill"))
+      .font(.caption2)
+      .foregroundStyle(connection.indicator == .connected ? theme.statusOK : .gray)
+    return Text("\(dot) \(connection.label())")
+  }
+
   /// Reachability and sync failures must remain visible even when the cloud
   /// roster says the host is online.
   private func machineRow(_ machine: CodevisorMachine) -> some View {
@@ -103,31 +113,27 @@ struct MachinesSettingsScreen: View {
       navigationSyncState: machines.navigationSyncStateByMachineId[machine.id],
       cloud: presence.map { CloudMachineReach(presence: $0, pipes: cloud.directPaths) }
     )
-    return HStack(spacing: 10) {
+    let keyChanged = presence.map { cloud.machinesWithChangedKeys.contains($0.deviceId) } ?? false
+    // The status rides under the name as the label's subtitle rather than
+    // trailing it, so long names don't wrap against it.
+    return Label {
+      Text(machine.name)
+      if keyChanged {
+        Text("\(Image(systemName: "exclamationmark.shield.fill")) Key Changed")
+          .foregroundStyle(.orange)
+      } else {
+        connectionText(connection)
+      }
+    } icon: {
       Image(systemName: EntitySystemSymbol.machine(machine))
         .foregroundStyle(.secondary)
-        .accessibilityHidden(true)
-      Text(machine.name)
-      Spacer(minLength: 10)
-      if let presence, cloud.machinesWithChangedKeys.contains(presence.deviceId) {
-        Button {
-          trustingKey = presence
-        } label: {
-          HStack(spacing: 5) {
-            Image(systemName: "exclamationmark.shield.fill")
-              .accessibilityHidden(true)
-            Text("Key Changed")
-              .font(.footnote)
-          }
-          .foregroundStyle(.orange)
-        }
-        .buttonStyle(.plain)
-      } else {
-        MachineConnectionBadge(connection, font: .footnote)
-      }
     }
     .accessibilityElement(children: .combine)
+    .accessibilityAddTraits(keyChanged ? .isButton : [])
     .contentShape(Rectangle())
+    .onTapGesture {
+      if keyChanged { trustingKey = presence }
+    }
     .contextMenu {
       if let presence, cloud.machinesWithChangedKeys.contains(presence.deviceId) {
         Button {
