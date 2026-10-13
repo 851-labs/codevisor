@@ -20,7 +20,7 @@ extension SidebarView {
   var archivedSection: some View {
     let items = archivedSidebarItems
     if !items.isEmpty {
-      SidebarArchivedHeader(count: items.count, isExpanded: archivedExpanded) {
+      SidebarSectionHeader(title: "Archived", isExpanded: archivedExpanded) {
         withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) {
           archivedExpanded.toggle()
           archivedVisibleCount = archivedPageSize
@@ -77,40 +77,5 @@ extension SidebarView {
       parts.append(candidate)
     }
     return parts.isEmpty ? nil : parts.joined(separator: " · ")
-  }
-}
-
-/// The Archived section's heading: the list headings' style plus a
-/// disclosure chevron and count, since unlike them it collapses.
-struct SidebarArchivedHeader: View {
-  @Environment(\.theme) private var theme
-  let count: Int
-  let isExpanded: Bool
-  let onToggle: () -> Void
-
-  var body: some View {
-    Button(action: onToggle) {
-      HStack(spacing: 6) {
-        // The native sidebar section header style, as the other headings.
-        Text("Archived")
-          .font(.subheadline.weight(.semibold))
-          .foregroundStyle(SidebarSectionHeaderStyle.color(theme))
-        TranscriptDisclosureChevron(expanded: isExpanded)
-        Spacer(minLength: 0)
-        Text("\(count)")
-          .font(.caption)
-          .monospacedDigit()
-          .foregroundStyle(.tertiary)
-      }
-      .foregroundStyle(.secondary)
-      .padding(.horizontal, 10)
-      .padding(.top, 12)
-      .padding(.bottom, 4)
-      .contentShape(Rectangle())
-    }
-    .buttonStyle(.plain)
-    .accessibilityLabel("Archived, \(count)")
-    .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
-    .accessibilityAddTraits(.isHeader)
   }
 }

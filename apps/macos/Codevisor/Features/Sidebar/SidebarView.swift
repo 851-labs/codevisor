@@ -13,6 +13,7 @@ struct SidebarView: View {
   @Environment(AppEnvironment.self) var environment
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Environment(\.theme) private var theme
+  @Environment(\.openSettings) private var openSettings
   @Binding var selection: SidebarSelection?
   var store: SessionStore? = nil
   var publishesSceneActions = true
@@ -29,6 +30,9 @@ struct SidebarView: View {
   /// The Archived section starts collapsed: the archive is somewhere you go
   /// looking, not something that should crowd the live list.
   @ClientPreference("sidebar.archivedExpanded", default: false) var archivedExpanded
+  @ClientPreference("sidebar.pinnedExpanded", default: true) var pinnedExpanded
+  /// The list's own heading collapses every group beneath it.
+  @ClientPreference("sidebar.listExpanded", default: true) var listExpanded
   /// Not persisted: reopening the archive starts at the newest page.
   @State var archivedVisibleCount = archivedPageSize
   /// The archived workspace a click is asking to restore.
@@ -103,27 +107,16 @@ struct SidebarView: View {
     .overlay(alignment: .topLeading) { reorderOverlay }
   }
 
-  /// The list's heading, named for its top-level rows, carrying the
-  /// grouping menu.
+  /// The list's heading, named for its top-level rows. Grouping and the
+  /// row details live in the list's context menu.
   private var workspacesHeader: some View {
-    SidebarSectionHeader(title: grouping.listTitle) {
-      Menu {
-        sidebarOptionsMenu
-      } label: {
-        Image(systemName: "line.3.horizontal.decrease")
-          .font(.callout.weight(.semibold))
-          .foregroundStyle(.secondary)
-      }
-      .menuStyle(.button)
-      .buttonStyle(.plain)
-      .fixedSize()
-      .help("Group and show options")
-      .accessibilityLabel("Sidebar options")
+    SidebarSectionHeader(title: grouping.listTitle, isExpanded: listExpanded) {
+      withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) { listExpanded.toggle() }
     }
   }
 
-  /// Shared by the header's menu and the list's context menu: how rows are
-  /// grouped, and which optional details each row shows.
+  /// The list's context menu: how rows are grouped, and which optional
+  /// details each row shows.
   @ViewBuilder
   private var sidebarOptionsMenu: some View {
     Picker("Grouping", selection: $grouping) {
@@ -159,11 +152,15 @@ struct SidebarView: View {
     let rest = groups.filter { $0.id != SidebarWorkspaceGroup.pinnedID }
     return VStack(alignment: .leading, spacing: 1) {
       if let pinned {
-        SidebarSectionHeader(title: "Pinned") { EmptyView() }
-        workspaceList(pinned.items)
+        SidebarSectionHeader(title: "Pinned", isExpanded: pinnedExpanded) {
+          withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) { pinnedExpanded.toggle() }
+        }
+        if pinnedExpanded {
+          workspaceList(pinned.items)
+        }
       }
       workspacesHeader
-      ForEach(rest) { group in
+      ForEach(listExpanded ? rest : []) { group in
         let isExpanded = isExpanded(group)
         if let heading = group.heading {
           SidebarGroupRow(
@@ -226,9 +223,22 @@ struct SidebarView: View {
   @ViewBuilder
   private var sidebarBackground: some View {
     if theme.isSystem {
-      sidebarContent
+      vibrantContent
     } else {
-      sidebarContent.themedSurface(.sidebar)
+      vibrantContent.themedSurface(.sidebar)
+    }
+  }
+
+  /// The rows in their own hosting view, so they render with the sidebar's
+  /// vibrancy (see `SidebarVibrancyHost`), carrying the environment they
+  /// read across.
+  private var vibrantContent: some View {
+    let open = openSettings
+    return SidebarVibrancyHost {
+      sidebarContent
+        .environment(environment)
+        .environment(\.theme, theme)
+        .environment(\.sidebarOpenSettings, SidebarOpenSettingsAction { open() })
     }
   }
 

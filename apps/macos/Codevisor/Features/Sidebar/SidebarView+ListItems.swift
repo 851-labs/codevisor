@@ -98,6 +98,12 @@ extension SidebarView {
     group.heading == nil || !collapsedGroupIDs.contains(group.id)
   }
 
+  /// Whether a group's rows are on screen: its section heading and the
+  /// group itself are both expanded.
+  func isShowing(_ group: SidebarWorkspaceGroup) -> Bool {
+    group.id == SidebarWorkspaceGroup.pinnedID ? pinnedExpanded : listExpanded && isExpanded(group)
+  }
+
   func toggleGroup(_ group: SidebarWorkspaceGroup) {
     if collapsedGroupIDs.contains(group.id) {
       collapsedGroupIDs.removeAll { $0 == group.id }
@@ -110,6 +116,6 @@ extension SidebarView {
   /// shows them (collapsed groups' rows are hidden). For actions that need
   /// the whole list (keyboard stepping) -- never read from a view body.
   var listedWorkspaceItems: [SidebarWorkspaceListItem] {
-    workspaceGroups.filter(isExpanded).flatMap(\.items).compactMap(listItem(for:))
+    workspaceGroups.filter(isShowing).flatMap(\.items).compactMap(listItem(for:))
   }
 }
