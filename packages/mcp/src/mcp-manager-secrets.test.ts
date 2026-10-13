@@ -166,6 +166,15 @@ describe("MCP manager secrets and replication", () => {
       headers: { "X-Org": "851" }
     })
     expect(await manager.staticSecrets(stdio.id)).toEqual({ env: { B: "2", A: "1" } })
+    await manager.update(stdio.id, {
+      env: { A: "changed", B: "discarded", C: "3" },
+      removeEnv: ["B"]
+    })
+    expect(await manager.staticSecrets(stdio.id)).toEqual({ env: { A: "changed", C: "3" } })
+    await manager.update(stdio.id, { removeEnv: ["A", "C"] })
+    expect(await manager.staticSecrets(stdio.id)).toEqual({})
+    await manager.update(stdio.id, { env: { D: "4" } })
+    expect(await manager.staticSecrets(stdio.id)).toEqual({ env: { D: "4" } })
     // A bare server has nothing, and a cleared bearer normalizes to absent.
     expect(await manager.staticSecrets(bare.id)).toEqual({})
     await manager.update(full.id, { bearerToken: "" })
