@@ -13,6 +13,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
   // machine, whose content converges with every other machine.
   case agents, mcps, skills, plugins
   case projects, machines
+  case developer
 
   var id: String { rawValue }
 
@@ -30,6 +31,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case .plugins: "Plugins"
     case .projects: "Projects"
     case .machines: "Machines"
+    case .developer: "Developer"
     }
   }
 
@@ -47,6 +49,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case .plugins: "puzzlepiece"
     case .projects: "folder"
     case .machines: "desktopcomputer"
+    case .developer: "hammer"
     }
   }
 }
@@ -257,7 +260,7 @@ extension EnvironmentValues {
 /// sidebar style (System Settings, Xcode 26): sections on the left, the
 /// selected section's content on the right with push navigation for
 /// per-item pages. Client-scoped sections (Updates, Privacy & Data, Appearance,
-/// Notifications, Shortcuts) sit alongside Machines, which owns everything
+/// Notifications, Shortcuts, Developer) sit alongside Machines, which owns everything
 /// scoped to a specific machine: its server, harnesses, MCP servers, and
 /// skills.
 struct SettingsView: View {
@@ -376,6 +379,9 @@ struct SettingsView: View {
     case .machines:
       MachinesSettingsView()
         .navigationTitle("Machines")
+    case .developer:
+      DeveloperSettingsView()
+        .navigationTitle("Developer")
     }
   }
 }

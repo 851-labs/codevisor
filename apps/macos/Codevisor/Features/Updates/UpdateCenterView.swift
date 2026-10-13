@@ -4,8 +4,8 @@ import CodevisorUI
 import SwiftUI
 
 /// Settings › Updates — the one place updates live. Software Update's
-/// shape: a summary with the fleet-wide actions and the channel preference
-/// on top, then one section per machine listing what that machine can
+/// shape: a summary with the fleet-wide actions on top (the channel
+/// preference lives in Settings › Developer), then one section per machine listing what that machine can
 /// update (its Codevisor, then its harnesses and plugins).
 ///
 /// The pane shows what the last sweep found — the same list behind the
@@ -102,9 +102,6 @@ struct UpdateCenterView: View {
         }
       }
       .padding(.vertical, 4)
-      Toggle("Receive alpha updates", isOn: alphaUpdatesEnabled)
-        .toggleStyle(.switch)
-        .disabled(center.isCheckingForUpdates || center.hasUpdateInFlight)
     } footer: {
       if let notice = center.updateAllNotice {
         Label(notice, systemImage: "exclamationmark.triangle")
@@ -255,19 +252,6 @@ struct UpdateCenterView: View {
       get: { failureDetailsId == id },
       set: { presented in
         if !presented, failureDetailsId == id { failureDetailsId = nil }
-      }
-    )
-  }
-
-  // MARK: - Channel
-
-  private var alphaUpdatesEnabled: Binding<Bool> {
-    Binding(
-      get: { environment.settings.alphaUpdatesEnabled },
-      set: { enabled in
-        environment.setAlphaUpdatesEnabled(enabled)
-        // A different channel means a different list: check it afresh.
-        Task { await center.refresh(force: true) }
       }
     )
   }
