@@ -142,12 +142,16 @@ struct MachinesSettingsScreen: View {
           Label("Trust New Key…", systemImage: "exclamationmark.shield")
         }
       }
-      Button("Rename…") {
+      Button {
         renameText = machine.name
         renamingMachine = machine
+      } label: {
+        Label("Rename…", systemImage: "pencil")
       }
-      Button("Disconnect…", role: .destructive) {
+      Button(role: .destructive) {
         removeMachine(machine)
+      } label: {
+        Label("Disconnect…", systemImage: "trash")
       }
     }
     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
