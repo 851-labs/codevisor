@@ -8,6 +8,7 @@ import type { CatalogServer, makeMcpGateway } from "./mcp-gateway.js"
 import type { McpManagerCore } from "./mcp-manager-core.js"
 import type { McpManager } from "./mcp-manager-types.js"
 import { encryptSecrets, type StoredOAuth, type StoredSecrets } from "./mcp-secret-store.js"
+import { connectionSecretsSignature, updatedSecrets } from "./mcp-secret-update.js"
 import { errorMessage, requireHttpUrl, run, validateRequest } from "./mcp-support.js"
 import type { ConnectUpstream } from "./mcp-upstream.js"
 
@@ -33,37 +34,6 @@ export type McpServerOperations = Pick<
   | "tools"
   | "update"
 >
-
-const mergedSecretRecord = (
-  current: Readonly<Record<string, string>> | undefined,
-  updates: Readonly<Record<string, string>> | undefined,
-  removals: ReadonlyArray<string> | undefined
-): Record<string, string> | undefined => {
-  const next = { ...current, ...updates }
-  for (const name of removals ?? []) delete next[name]
-  return Object.keys(next).length === 0 ? undefined : next
-}
-
-/// The secret material a live connection depends on, in a stable shape so
-/// two StoredSecrets can be compared by value (ciphertext never can be —
-/// every encryption uses a fresh nonce).
-const connectionSecretsSignature = (stored: StoredSecrets): string =>
-  JSON.stringify({
-    bearerToken:
-      stored.bearerToken === undefined || stored.bearerToken === ""
-        ? undefined
-        : stored.bearerToken,
-    headers: stored.headers === undefined ? undefined : Object.entries(stored.headers).toSorted(),
-    env: stored.env === undefined ? undefined : Object.entries(stored.env).toSorted(),
-    oauth:
-      stored.oauth === undefined
-        ? undefined
-        : {
-            configuredClientId: stored.oauth.configuredClientId,
-            configuredClientSecret: stored.oauth.configuredClientSecret,
-            tokens: stored.oauth.tokens
-          }
-  })
 
 /// The managed-server lifecycle: create, update, remove, connect, and the
 /// project/session resolution views over the persisted records.
@@ -226,35 +196,7 @@ export const makeMcpServerOperations = (
       oauthClientId: request.oauthClientId,
       oauthClientSecret: request.oauthClientSecret
     })
-    const updatedOauth: StoredOAuth | undefined =
-      request.oauthClientId === undefined && request.oauthClientSecret === undefined
-        ? currentSecrets.oauth
-        : {
-            ...currentSecrets.oauth,
-            ...(request.oauthClientId === undefined
-              ? {}
-              : { configuredClientId: request.oauthClientId }),
-            ...(request.oauthClientSecret === undefined
-              ? {}
-              : { configuredClientSecret: request.oauthClientSecret })
-          }
-    const nextSecrets: StoredSecrets = {
-      ...currentSecrets,
-      ...(request.env === undefined && request.removeEnv === undefined
-        ? {}
-        : { env: mergedSecretRecord(currentSecrets.env, request.env, request.removeEnv) }),
-      ...(request.headers === undefined && request.removeHeaders === undefined
-        ? {}
-        : {
-            headers: mergedSecretRecord(
-              currentSecrets.headers,
-              request.headers,
-              request.removeHeaders
-            )
-          }),
-      ...(request.bearerToken === undefined ? {} : { bearerToken: request.bearerToken }),
-      ...(updatedOauth === undefined ? {} : { oauth: updatedOauth })
-    }
+    const nextSecrets = updatedSecrets(currentSecrets, request)
     const nextAuthType = request.authType ?? current.authType
     const oauthIsAuthorized = nextSecrets.oauth?.tokens !== undefined
     const needsAuthorization = nextAuthType === "oauth" && !oauthIsAuthorized
