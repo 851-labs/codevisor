@@ -38,50 +38,53 @@ const seed = async (filename: string) => {
 describe("@codevisor/db shared tab order", () => {
   it("lists listed panes first, then the rest in their current order", async () => {
     const { db, workspace } = await seed(tempDatabase())
-    const titles = async () =>
-      (await run(db.listWorkspacePanes))
-        .filter((pane) => pane.workspaceId === workspace.id)
-        .map((pane) => pane.title)
-    expect(await titles()).toEqual(["Chat", "Terminal", "Browser"])
+    try {
+      const titles = async () =>
+        (await run(db.listWorkspacePanes))
+          .filter((pane) => pane.workspaceId === workspace.id)
+          .map((pane) => pane.title)
+      expect(await titles()).toEqual(["Chat", "Terminal", "Browser"])
 
-    const other = await run(
-      db.upsertWorkspace({ projectId: workspace.projectId, name: "other", hasCustomName: false })
-    )
-    const foreign = await run(
-      db.upsertWorkspacePane(other.id, {
-        id: "foreign-pane",
-        providerId: "codevisor",
-        paneType: "terminal",
-        title: "Other"
-      })
-    )
-    const before = (await run(db.listWorkspacePanes)).filter(
-      (pane) => pane.workspaceId === workspace.id
-    )
+      const other = await run(
+        db.upsertWorkspace({ projectId: workspace.projectId, name: "other", hasCustomName: false })
+      )
+      const foreign = await run(
+        db.upsertWorkspacePane(other.id, {
+          id: "foreign-pane",
+          providerId: "codevisor",
+          paneType: "terminal",
+          title: "Other"
+        })
+      )
+      const before = (await run(db.listWorkspacePanes)).filter(
+        (pane) => pane.workspaceId === workspace.id
+      )
 
-    // UUID aliases deduplicate; unknown and foreign ids cannot join this workspace.
-    const reordered = await run(
-      db.reorderWorkspacePanes(workspace.id, [
-        browser.toUpperCase(),
-        "not-a-pane",
-        foreign.id,
-        browser
-      ])
-    )
-    expect(reordered.map((pane) => pane.title)).toEqual(["Browser", "Chat", "Terminal"])
-    expect(await titles()).toEqual(["Browser", "Chat", "Terminal"])
-    for (const pane of reordered) {
-      const {
-        position: _position,
-        updatedAt: _updatedAt,
-        ...content
-      } = before.find((original) => original.id === pane.id)!
-      expect(pane).toMatchObject(content)
+      // UUID aliases deduplicate; unknown and foreign ids cannot join this workspace.
+      const reordered = await run(
+        db.reorderWorkspacePanes(workspace.id, [
+          browser.toUpperCase(),
+          "not-a-pane",
+          foreign.id,
+          browser
+        ])
+      )
+      expect(reordered.map((pane) => pane.title)).toEqual(["Browser", "Chat", "Terminal"])
+      expect(await titles()).toEqual(["Browser", "Chat", "Terminal"])
+      for (const pane of reordered) {
+        const {
+          position: _position,
+          updatedAt: _updatedAt,
+          ...content
+        } = before.find((original) => original.id === pane.id)!
+        expect(pane).toMatchObject(content)
+      }
+      expect((await run(db.listWorkspacePanes)).find((pane) => pane.id === foreign.id)).toEqual(
+        foreign
+      )
+    } finally {
+      await run(db.close)
     }
-    expect((await run(db.listWorkspacePanes)).find((pane) => pane.id === foreign.id)).toEqual(
-      foreign
-    )
-    await run(db.close)
   })
 
   it("rolls back every pane when a later position write fails", async () => {
@@ -114,20 +117,23 @@ describe("@codevisor/db shared tab order", () => {
 
   it("moves a tab without counting it as a content change", async () => {
     const { db, workspace } = await seed(tempDatabase())
-    const before = (await run(db.listWorkspacePanes)).find((pane) => pane.id === browser)!
+    try {
+      const before = (await run(db.listWorkspacePanes)).find((pane) => pane.id === browser)!
 
-    const moved = await run(
-      db.updateWorkspacePane(workspace.id, browser, { position: "0000000000018" })
-    )
-    expect(moved).toMatchObject({ position: "0000000000018", revision: before.revision })
-    expect((await run(db.listWorkspacePanes))[0]?.id).toBe(browser)
+      const moved = await run(
+        db.updateWorkspacePane(workspace.id, browser, { position: "0000000000018" })
+      )
+      expect(moved).toMatchObject({ position: "0000000000018", revision: before.revision })
+      expect((await run(db.listWorkspacePanes))[0]?.id).toBe(browser)
 
-    // Anything besides the position is still an edit.
-    const renamed = await run(
-      db.updateWorkspacePane(workspace.id, browser, { title: "Docs", position: "0000000000019" })
-    )
-    expect(renamed.revision).toBeGreaterThan(before.revision)
-    await run(db.close)
+      // Anything besides the position is still an edit.
+      const renamed = await run(
+        db.updateWorkspacePane(workspace.id, browser, { title: "Docs", position: "0000000000019" })
+      )
+      expect(renamed.revision).toBeGreaterThan(before.revision)
+    } finally {
+      await run(db.close)
+    }
   })
 
   it("starts existing tabs in creation order when upgrading", async () => {
