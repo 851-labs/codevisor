@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process"
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { gitPullRequest, parseGitPullRequest, rollUpChecks } from "./git-pull-request.js"
 import { makeGitRepo } from "./git-test-support.js"
@@ -18,6 +18,10 @@ const fakeGh = (root: string, script: string): { env: NodeJS.ProcessEnv; argsFil
 }
 
 describe("gitPullRequest", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
   it("asks gh about the current branch and normalizes its answer", async () => {
     const { root, repo } = makeGitRepo()
     execFileSync("git", ["checkout", "-q", "-b", "feature/badge"], { cwd: repo })
@@ -45,6 +49,24 @@ describe("gitPullRequest", () => {
     expect(await gitPullRequest(repo, env)).toBeNull()
   })
 
+  it("uses the process environment when none is given", async () => {
+    const { root, repo } = makeGitRepo()
+    const { env } = fakeGh(
+      root,
+      `echo '{"number":3,"title":"t","state":"OPEN","isDraft":false,"url":"u"}'`
+    )
+    vi.stubEnv("PATH", env.PATH)
+
+    expect(await gitPullRequest(repo)).toEqual({
+      number: 3,
+      title: "t",
+      state: "open",
+      isDraft: false,
+      url: "u",
+      checks: "none"
+    })
+  })
+
   it("is null on a detached HEAD without asking gh", async () => {
     const { root, repo } = makeGitRepo()
     execFileSync("git", ["checkout", "-q", "--detach"], { cwd: repo })
@@ -58,6 +80,13 @@ describe("gitPullRequest", () => {
 describe("parseGitPullRequest", () => {
   it("rejects malformed or unknown answers", () => {
     expect(parseGitPullRequest("not json")).toBeNull()
+    expect(parseGitPullRequest("null")).toBeNull()
+    expect(parseGitPullRequest("42")).toBeNull()
+    expect(
+      parseGitPullRequest(
+        JSON.stringify({ number: 1, title: "t", state: 1, isDraft: false, url: "u" })
+      )
+    ).toBeNull()
     expect(
       parseGitPullRequest(
         JSON.stringify({ number: 1, title: "t", state: "LOCKED", isDraft: false, url: "u" })
