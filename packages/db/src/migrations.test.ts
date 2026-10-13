@@ -22,245 +22,254 @@ describe("@codevisor/db", () => {
   it("migrates once and persists projects, sessions, conversation, and events", async () => {
     const filename = tempDatabase()
     const db = await run(makeDatabase({ filename, serverId: "local" }))
+    try {
+      expect(await run(db.migrate)).toEqual([])
 
-    expect(await run(db.migrate)).toEqual([])
-
-    const firstProject = await run(db.createProject({ folderPath: "/tmp/codevisor" }))
-    const secondProject = await run(
-      db.createProject({ folderPath: "/tmp/named", name: "Named Project" })
-    )
-    const emptyProject = await run(db.createProject({ folderPath: "" }))
-    const clientProject = await run(
-      db.createProject({
+      const firstProject = await run(db.createProject({ folderPath: "/tmp/codevisor" }))
+      const secondProject = await run(
+        db.createProject({ folderPath: "/tmp/named", name: "Named Project" })
+      )
+      const emptyProject = await run(db.createProject({ folderPath: "" }))
+      const clientProject = await run(
+        db.createProject({
+          id: "project-client-id",
+          folderPath: "/tmp/client",
+          name: "Client Project",
+          origin: "imported",
+          createdAt: "2026-06-30T00:00:00.000Z"
+        })
+      )
+      expect(firstProject.name).toBe("codevisor")
+      expect(secondProject.name).toBe("Named Project")
+      expect(emptyProject.name).toBe("")
+      expect(clientProject).toMatchObject({
         id: "project-client-id",
-        folderPath: "/tmp/client",
         name: "Client Project",
         origin: "imported",
         createdAt: "2026-06-30T00:00:00.000Z"
       })
-    )
-    expect(firstProject.name).toBe("codevisor")
-    expect(secondProject.name).toBe("Named Project")
-    expect(emptyProject.name).toBe("")
-    expect(clientProject).toMatchObject({
-      id: "project-client-id",
-      name: "Client Project",
-      origin: "imported",
-      createdAt: "2026-06-30T00:00:00.000Z"
-    })
-    expect(clientProject.locations).toHaveLength(1)
-    expect(clientProject.locations[0]).toMatchObject({
-      projectId: "project-client-id",
-      serverId: "local",
-      folderPath: "/tmp/client"
-    })
+      expect(clientProject.locations).toHaveLength(1)
+      expect(clientProject.locations[0]).toMatchObject({
+        projectId: "project-client-id",
+        serverId: "local",
+        folderPath: "/tmp/client"
+      })
 
-    const updatedProject = await run(
-      db.updateProject(firstProject.id, {
-        name: "Archived Codevisor"
+      const updatedProject = await run(
+        db.updateProject(firstProject.id, {
+          name: "Archived Codevisor"
+        })
+      )
+      expect(updatedProject).toMatchObject({ name: "Archived Codevisor" })
+      expect(await run(db.updateProject(secondProject.id, {}))).toMatchObject({
+        name: "Named Project"
       })
-    )
-    expect(updatedProject).toMatchObject({ name: "Archived Codevisor" })
-    expect(await run(db.updateProject(secondProject.id, {}))).toMatchObject({
-      name: "Named Project"
-    })
-    await expect(run(db.updateProject("missing", { name: "nope" }))).rejects.toBeInstanceOf(
-      DatabaseError
-    )
+      await expect(run(db.updateProject("missing", { name: "nope" }))).rejects.toBeInstanceOf(
+        DatabaseError
+      )
 
-    const firstSession = await run(
-      db.createSession({
-        projectId: firstProject.id,
-        harnessId: "codex",
-        agentSessionId: "agent-1"
-      })
-    )
-    const secondSession = await run(
-      db.createSession({
-        projectId: secondProject.id,
-        harnessId: "claude-code",
-        title: "Explicit title"
-      })
-    )
-    const clientSession = await run(
-      db.createSession({
-        id: "session-client-id",
-        projectId: clientProject.id,
-        harnessId: "codex",
+      const firstSession = await run(
+        db.createSession({
+          projectId: firstProject.id,
+          harnessId: "codex",
+          agentSessionId: "agent-1"
+        })
+      )
+      const secondSession = await run(
+        db.createSession({
+          projectId: secondProject.id,
+          harnessId: "claude-code",
+          title: "Explicit title"
+        })
+      )
+      const clientSession = await run(
+        db.createSession({
+          id: "session-client-id",
+          projectId: clientProject.id,
+          harnessId: "codex",
+          agentSessionId: "agent-client-id",
+          title: "Client Session",
+          origin: "imported",
+          createdAt: "2026-06-30T00:00:00.000Z",
+          updatedAt: "2026-06-30T00:01:00.000Z"
+        })
+      )
+      expect(firstSession.title).toBe("New Session")
+      expect(firstSession.agentSessionId).toBe("agent-1")
+      expect(firstSession.cwd).toBe("/tmp/codevisor")
+      expect(firstSession.worktreeName).toBeUndefined()
+      expect(secondSession.title).toBe("Explicit title")
+      expect(clientSession).toMatchObject({
         agentSessionId: "agent-client-id",
-        title: "Client Session",
+        id: "session-client-id",
         origin: "imported",
-        createdAt: "2026-06-30T00:00:00.000Z",
+        title: "Client Session",
         updatedAt: "2026-06-30T00:01:00.000Z"
       })
-    )
-    expect(firstSession.title).toBe("New Session")
-    expect(firstSession.agentSessionId).toBe("agent-1")
-    expect(firstSession.cwd).toBe("/tmp/codevisor")
-    expect(firstSession.worktreeName).toBeUndefined()
-    expect(secondSession.title).toBe("Explicit title")
-    expect(clientSession).toMatchObject({
-      agentSessionId: "agent-client-id",
-      id: "session-client-id",
-      origin: "imported",
-      title: "Client Session",
-      updatedAt: "2026-06-30T00:01:00.000Z"
-    })
-    expect(await run(db.updateSession(secondSession.id, {}))).toMatchObject({
-      title: "Explicit title"
-    })
-    expect(
-      await run(db.updateSession(secondSession.id, { agentSessionId: "agent-2" }))
-    ).toMatchObject({
-      agentSessionId: "agent-2",
-      title: "Explicit title"
-    })
-    expect(
-      await run(db.updateSession(secondSession.id, { worktreeName: "fix-auth" }))
-    ).toMatchObject({
-      worktreeName: "fix-auth"
-    })
+      expect(await run(db.updateSession(secondSession.id, {}))).toMatchObject({
+        title: "Explicit title"
+      })
+      expect(
+        await run(db.updateSession(secondSession.id, { agentSessionId: "agent-2" }))
+      ).toMatchObject({
+        agentSessionId: "agent-2",
+        title: "Explicit title"
+      })
+      expect(
+        await run(db.updateSession(secondSession.id, { worktreeName: "fix-auth" }))
+      ).toMatchObject({
+        worktreeName: "fix-auth"
+      })
 
-    const renamedSession = await run(
-      db.updateSession(firstSession.id, { title: "Renamed session" })
-    )
-    expect(renamedSession).toMatchObject({
-      title: "Renamed session"
-    })
-    expect(
-      await run(db.updateSessionTitleFromHarness(firstSession.id, "Harness replacement"))
-    ).toBeUndefined()
-    expect((await run(db.getSessionSummary(firstSession.id))).title).toBe("Renamed session")
-    expect(
-      await run(db.updateSessionTitleFromHarness(secondSession.id, "Harness title"))
-    ).toMatchObject({ title: "Harness title" })
+      const renamedSession = await run(
+        db.updateSession(firstSession.id, { title: "Renamed session" })
+      )
+      expect(renamedSession).toMatchObject({
+        title: "Renamed session"
+      })
+      expect(
+        await run(db.updateSessionTitleFromHarness(firstSession.id, "Harness replacement"))
+      ).toBeUndefined()
+      expect((await run(db.getSessionSummary(firstSession.id))).title).toBe("Renamed session")
+      expect(
+        await run(db.updateSessionTitleFromHarness(secondSession.id, "Harness title"))
+      ).toMatchObject({ title: "Harness title" })
 
-    await run(db.appendConversationItem(firstSession.id, "user", "user-1", "hello", false))
-    await run(
-      db.appendConversationItem(firstSession.id, "assistant", "assistant-1", "streaming", true)
-    )
-    await run(db.appendConversationItem(firstSession.id, "assistant", undefined, "no id", false))
-    const detail = await run(db.getSessionDetail(firstSession.id))
-    expect(detail.eventCursor).toBe(0)
-    expect(
-      detail.conversation.map((item) => [item.role, item.messageId, item.text, item.isGenerating])
-    ).toEqual([
-      ["user", "user-1", "hello", false],
-      ["assistant", "assistant-1", "streaming", true],
-      ["assistant", "imported-text", "no id", false]
-    ])
+      await run(db.appendConversationItem(firstSession.id, "user", "user-1", "hello", false))
+      await run(
+        db.appendConversationItem(firstSession.id, "assistant", "assistant-1", "streaming", true)
+      )
+      await run(db.appendConversationItem(firstSession.id, "assistant", undefined, "no id", false))
+      const detail = await run(db.getSessionDetail(firstSession.id))
+      expect(detail.eventCursor).toBe(0)
+      expect(
+        detail.conversation.map((item) => [item.role, item.messageId, item.text, item.isGenerating])
+      ).toEqual([
+        ["user", "user-1", "hello", false],
+        ["assistant", "assistant-1", "streaming", true],
+        ["assistant", "imported-text", "no id", false]
+      ])
 
-    const event = await run(
-      db.appendEvent("session.output", firstSession.id, { text: "chunk", index: 1 })
-    )
-    expect(event.id).toBe(1)
-    expect(event).toMatchObject({ subjectRevision: 1 })
-    expect(event.globalEventId).toBeUndefined()
-    expect(listEvents(filename).filter((event) => event.kind !== "navigation.changed")).toEqual([])
-    expect((await run(db.getSessionDetail(firstSession.id))).eventCursor).toBe(1)
-    await run(db.appendEvent("session.output", "other-subject", { text: "elsewhere" }))
-    expect(
-      listEvents(filename).filter((event) => event.kind !== "navigation.changed")
-    ).toMatchObject([{ kind: "session.output", payload: { text: "elsewhere" } }])
-    expect(listSubjectEvents(filename, firstSession.id)).toMatchObject([
-      { id: 1, kind: "session.output", payload: { text: "chunk", index: 1 } }
-    ])
-    expect(listSubjectEvents(filename, "unknown-subject")).toEqual([])
+      const event = await run(
+        db.appendEvent("session.output", firstSession.id, { text: "chunk", index: 1 })
+      )
+      expect(event.id).toBe(1)
+      expect(event).toMatchObject({ subjectRevision: 1 })
+      expect(event.globalEventId).toBeUndefined()
+      expect(listEvents(filename).filter((event) => event.kind !== "navigation.changed")).toEqual(
+        []
+      )
+      expect((await run(db.getSessionDetail(firstSession.id))).eventCursor).toBe(1)
+      await run(db.appendEvent("session.output", "other-subject", { text: "elsewhere" }))
+      expect(
+        listEvents(filename).filter((event) => event.kind !== "navigation.changed")
+      ).toMatchObject([{ kind: "session.output", payload: { text: "elsewhere" } }])
+      expect(listSubjectEvents(filename, firstSession.id)).toMatchObject([
+        { id: 1, kind: "session.output", payload: { text: "chunk", index: 1 } }
+      ])
+      expect(listSubjectEvents(filename, "unknown-subject")).toEqual([])
 
-    expect(await run(db.getSessionActionResult(firstSession.id, "prompt-1"))).toBeUndefined()
-    await run(
-      db.saveSessionActionResult(firstSession.id, "prompt-1", "prompt", {
+      expect(await run(db.getSessionActionResult(firstSession.id, "prompt-1"))).toBeUndefined()
+      await run(
+        db.saveSessionActionResult(firstSession.id, "prompt-1", "prompt", {
+          stopReason: "end_turn"
+        })
+      )
+      await run(
+        db.saveSessionActionResult(firstSession.id, "prompt-1", "prompt", {
+          stopReason: "duplicate_should_not_replace"
+        })
+      )
+      expect(await run(db.getSessionActionResult(firstSession.id, "prompt-1"))).toEqual({
         stopReason: "end_turn"
       })
-    )
-    await run(
-      db.saveSessionActionResult(firstSession.id, "prompt-1", "prompt", {
-        stopReason: "duplicate_should_not_replace"
+
+      const queuedA = await run(db.createPromptQueueItem(firstSession.id, "queued a"))
+      const queuedB = await run(db.createPromptQueueItem(firstSession.id, "queued b"))
+      expect(
+        (await run(db.getSessionDetail(firstSession.id))).promptQueue.map((item) => item.text)
+      ).toEqual(["queued a", "queued b"])
+      expect(
+        (await run(db.reorderPromptQueue(firstSession.id, [queuedB.id, queuedA.id]))).map(
+          (item) => item.text
+        )
+      ).toEqual(["queued b", "queued a"])
+      expect(
+        (
+          await run(db.reorderPromptQueue(firstSession.id, ["missing", queuedA.id, queuedA.id]))
+        ).map((item) => item.text)
+      ).toEqual(["queued a", "queued b"])
+      await run(db.reorderPromptQueue(firstSession.id, [queuedB.id, queuedA.id]))
+      expect(
+        await run(db.updatePromptQueueItem(firstSession.id, queuedB.id, "queued b edited"))
+      ).toMatchObject({ text: "queued b edited" })
+      expect(await run(db.claimPromptQueueItem(firstSession.id))).toMatchObject({
+        id: queuedB.id,
+        text: "queued b edited"
       })
-    )
-    expect(await run(db.getSessionActionResult(firstSession.id, "prompt-1"))).toEqual({
-      stopReason: "end_turn"
-    })
+      expect(await run(db.listPromptQueue(firstSession.id))).toMatchObject([{ id: queuedA.id }])
+      expect(await run(db.listProcessingPromptQueue(firstSession.id))).toMatchObject([
+        { id: queuedB.id }
+      ])
+      await run(db.completePromptQueueItem(firstSession.id, queuedB.id))
+      await run(db.deletePromptQueueItem(firstSession.id, queuedA.id))
+      expect(await run(db.listPromptQueue(firstSession.id))).toEqual([])
+      await expect(
+        run(db.updatePromptQueueItem(firstSession.id, "missing-queue-item", "nope"))
+      ).rejects.toBeInstanceOf(DatabaseError)
+      await expect(
+        run(db.deletePromptQueueItem(firstSession.id, "missing-queue-item"))
+      ).rejects.toBeInstanceOf(DatabaseError)
+      expect(await run(db.claimPromptQueueItem(firstSession.id))).toBeUndefined()
 
-    const queuedA = await run(db.createPromptQueueItem(firstSession.id, "queued a"))
-    const queuedB = await run(db.createPromptQueueItem(firstSession.id, "queued b"))
-    expect(
-      (await run(db.getSessionDetail(firstSession.id))).promptQueue.map((item) => item.text)
-    ).toEqual(["queued a", "queued b"])
-    expect(
-      (await run(db.reorderPromptQueue(firstSession.id, [queuedB.id, queuedA.id]))).map(
-        (item) => item.text
+      expect(await run(db.hasConversationMessage(firstSession.id, "dispatch-1"))).toBe(false)
+      await run(db.appendConversationItem(firstSession.id, "user", "dispatch-1", "run it", false))
+      expect(await run(db.hasConversationMessage(firstSession.id, "dispatch-1"))).toBe(true)
+      expect(await run(db.hasTerminalAssistantAfterMessage(firstSession.id, "dispatch-1"))).toBe(
+        false
       )
-    ).toEqual(["queued b", "queued a"])
-    expect(
-      (await run(db.reorderPromptQueue(firstSession.id, ["missing", queuedA.id, queuedA.id]))).map(
-        (item) => item.text
+      await run(db.appendConversationItem(firstSession.id, "assistant", undefined, "done", false))
+      expect(await run(db.hasTerminalAssistantAfterMessage(firstSession.id, "dispatch-1"))).toBe(
+        true
       )
-    ).toEqual(["queued a", "queued b"])
-    await run(db.reorderPromptQueue(firstSession.id, [queuedB.id, queuedA.id]))
-    expect(
-      await run(db.updatePromptQueueItem(firstSession.id, queuedB.id, "queued b edited"))
-    ).toMatchObject({ text: "queued b edited" })
-    expect(await run(db.claimPromptQueueItem(firstSession.id))).toMatchObject({
-      id: queuedB.id,
-      text: "queued b edited"
-    })
-    expect(await run(db.listPromptQueue(firstSession.id))).toMatchObject([{ id: queuedA.id }])
-    expect(await run(db.listProcessingPromptQueue(firstSession.id))).toMatchObject([
-      { id: queuedB.id }
-    ])
-    await run(db.completePromptQueueItem(firstSession.id, queuedB.id))
-    await run(db.deletePromptQueueItem(firstSession.id, queuedA.id))
-    expect(await run(db.listPromptQueue(firstSession.id))).toEqual([])
-    await expect(
-      run(db.updatePromptQueueItem(firstSession.id, "missing-queue-item", "nope"))
-    ).rejects.toBeInstanceOf(DatabaseError)
-    await expect(
-      run(db.deletePromptQueueItem(firstSession.id, "missing-queue-item"))
-    ).rejects.toBeInstanceOf(DatabaseError)
-    expect(await run(db.claimPromptQueueItem(firstSession.id))).toBeUndefined()
 
-    expect(await run(db.hasConversationMessage(firstSession.id, "dispatch-1"))).toBe(false)
-    await run(db.appendConversationItem(firstSession.id, "user", "dispatch-1", "run it", false))
-    expect(await run(db.hasConversationMessage(firstSession.id, "dispatch-1"))).toBe(true)
-    expect(await run(db.hasTerminalAssistantAfterMessage(firstSession.id, "dispatch-1"))).toBe(
-      false
-    )
-    await run(db.appendConversationItem(firstSession.id, "assistant", undefined, "done", false))
-    expect(await run(db.hasTerminalAssistantAfterMessage(firstSession.id, "dispatch-1"))).toBe(true)
+      const sqlite = new Database(filename)
+      try {
+        sqlite
+          .prepare(
+            "update sessions set usage_used = 12, usage_size = 120, cost_amount = 0.42, cost_currency = 'USD' where id = ?"
+          )
+          .run(firstSession.id)
+      } finally {
+        sqlite.close()
+      }
+      expect((await run(db.getSessionDetail(firstSession.id))).session.usage).toEqual({
+        costAmount: 0.42,
+        costCurrency: "USD",
+        size: 120,
+        used: 12
+      })
 
-    const sqlite = new Database(filename)
-    sqlite
-      .prepare(
-        "update sessions set usage_used = 12, usage_size = 120, cost_amount = 0.42, cost_currency = 'USD' where id = ?"
+      expect((await run(db.listSessions)).map((session) => session.id)).toContain(firstSession.id)
+      expect((await run(db.listProjects)).map((project) => project.id)).toContain(secondProject.id)
+
+      await expect(run(db.updateSession("missing", { title: "Missing" }))).rejects.toBeInstanceOf(
+        DatabaseError
       )
-      .run(firstSession.id)
-    sqlite.close()
-    expect((await run(db.getSessionDetail(firstSession.id))).session.usage).toEqual({
-      costAmount: 0.42,
-      costCurrency: "USD",
-      size: 120,
-      used: 12
-    })
-
-    expect((await run(db.listSessions)).map((session) => session.id)).toContain(firstSession.id)
-    expect((await run(db.listProjects)).map((project) => project.id)).toContain(secondProject.id)
-
-    await expect(run(db.updateSession("missing", { title: "Missing" }))).rejects.toBeInstanceOf(
-      DatabaseError
-    )
-    await run(db.deleteSession(secondSession.id))
-    await expect(run(db.getSessionDetail(secondSession.id))).rejects.toBeInstanceOf(DatabaseError)
-    expect(
-      (await run(db.setProjectRepoUrl(clientProject.id, "git@github.com:acme/widget.git"))).repoUrl
-    ).toBe("git@github.com:acme/widget.git")
-    expect((await run(db.setProjectRepoUrl(clientProject.id, null))).repoUrl).toBeUndefined()
-    await expect(run(db.setProjectRepoUrl("missing", "x"))).rejects.toBeInstanceOf(DatabaseError)
-    await run(db.deleteProject(clientProject.id))
-    await expect(run(db.getSessionDetail(clientSession.id))).rejects.toBeInstanceOf(DatabaseError)
-    await expect(run(db.deleteProject("missing"))).rejects.toBeInstanceOf(DatabaseError)
-
-    await Effect.runPromise(db.close)
+      await run(db.deleteSession(secondSession.id))
+      await expect(run(db.getSessionDetail(secondSession.id))).rejects.toBeInstanceOf(DatabaseError)
+      expect(
+        (await run(db.setProjectRepoUrl(clientProject.id, "git@github.com:acme/widget.git")))
+          .repoUrl
+      ).toBe("git@github.com:acme/widget.git")
+      expect((await run(db.setProjectRepoUrl(clientProject.id, null))).repoUrl).toBeUndefined()
+      await expect(run(db.setProjectRepoUrl("missing", "x"))).rejects.toBeInstanceOf(DatabaseError)
+      await run(db.deleteProject(clientProject.id))
+      await expect(run(db.getSessionDetail(clientSession.id))).rejects.toBeInstanceOf(DatabaseError)
+      await expect(run(db.deleteProject("missing"))).rejects.toBeInstanceOf(DatabaseError)
+    } finally {
+      await Effect.runPromise(db.close)
+    }
   })
 
   it("repairs stale worked-detail markers when migration 10 is applied", async () => {
