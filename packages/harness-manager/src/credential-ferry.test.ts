@@ -1,14 +1,15 @@
 import { rmSync } from "node:fs"
 import { mkdtemp, readFile, writeFile, mkdir, stat } from "node:fs/promises"
-import { tmpdir } from "node:os"
+import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { credentialFerrySources, canonicalCredentialJson } from "./credential-ferry.js"
 
 const roots: string[] = []
 afterEach(() => {
+  vi.unstubAllEnvs()
   for (const root of roots.splice(0)) rmSync(root, { force: true, recursive: true })
 })
 
@@ -215,13 +216,13 @@ describe("devin source", () => {
     }).find((candidate) => candidate.id === "devin-credentials-file")!
     await expect(brokenSource.read()).rejects.toThrow()
 
-    // A bare environment falls back to the process home; the read itself
-    // must be well-formed either way (present file or none).
+    // A bare resolver environment falls back to the owned process home.
+    vi.stubEnv("HOME", home)
+    expect(homedir()).toBe(home)
     const bare = credentialFerrySources({ resolveEnv: () => Promise.resolve({}) }).find(
       (candidate) => candidate.id === "devin-credentials-file"
     )!
-    const bareRead = await bare.read()
-    expect(bareRead === undefined || typeof bareRead === "string").toBe(true)
+    expect(await bare.read()).toBe('windsurf_api_key = "wk"\n')
   })
 })
 
@@ -285,20 +286,27 @@ describe("hostile files and path variants", () => {
     })
     expect(await emptied.find((source) => source.id === "pi-auth")!.read()).toBeUndefined()
 
-    // Absent HOME falls back to the OS home for path computation only —
-    // reads on the resulting paths must not throw.
+    // An absent resolver HOME falls back to the owned process home.
+    vi.stubEnv("HOME", home)
+    expect(homedir()).toBe(home)
+    await mkdir(join(home, ".codex"), { recursive: true })
+    await writeFile(join(home, ".codex", "auth.json"), '{"OPENAI_API_KEY":"owned-fallback"}')
+    await mkdir(join(home, ".pi", "agent"), { recursive: true })
+    await writeFile(
+      join(home, ".pi", "agent", "auth.json"),
+      '{"openai":{"type":"api_key","key":"owned-pi"}}'
+    )
     const bare = credentialFerrySources({
       resolveEnv: () => Promise.resolve({ PI_CODING_AGENT_DIR: "~/nowhere-pi" })
     })
     const pi = bare.find((source) => source.id === "pi-auth")!
     expect(await pi.read()).toBeUndefined()
     const codexBare = bare.find((source) => source.id === "codex-auth-file")!
-    await codexBare.read().catch(() => undefined)
-    // Fully empty env: the pi DEFAULT path also computes off the OS home.
+    expect(await codexBare.read()).toBe('{"OPENAI_API_KEY":"owned-fallback"}')
+    // Fully empty resolver env selects the owned default Pi path.
     const emptyEnv = credentialFerrySources({ resolveEnv: () => Promise.resolve({}) })
-    await emptyEnv
-      .find((source) => source.id === "pi-auth")!
-      .read()
-      .catch(() => undefined)
+    expect(await emptyEnv.find((source) => source.id === "pi-auth")!.read()).toBe(
+      '{"openai":{"type":"api_key","key":"owned-pi"}}'
+    )
   })
 })
