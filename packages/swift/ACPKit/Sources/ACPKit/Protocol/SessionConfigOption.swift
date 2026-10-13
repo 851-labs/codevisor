@@ -96,11 +96,8 @@ public struct SessionConfigOption: Sendable, Codable, Equatable, Identifiable {
   public var currentName: String {
     options.first { $0.value == currentValue }?.name ?? currentValue
   }
-}
-
-public extension SessionConfigOption {
   /// Well-known category identifiers.
-  enum Category {
+  public enum Category {
     public static let mode = "mode"
     public static let model = "model"
     public static let modelConfig = "model_config"
