@@ -12,14 +12,30 @@ import {
   writeFile
 } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { promisify } from "node:util"
 
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import { migrateLegacyLayout, migrateTmpDataDir } from "./legacy-layout.js"
 
 const execFileAsync = promisify(execFile)
+const ignoreLog = (): void => undefined
+const commit = (cwd: string, message: string) =>
+  execFileAsync(
+    "git",
+    [
+      "-c",
+      "user.email=tests@codevisor.dev",
+      "-c",
+      "user.name=Codevisor Tests",
+      "commit",
+      "--allow-empty",
+      "-m",
+      message
+    ],
+    { cwd }
+  )
 
 describe("Codevisor tmp data dir migration", () => {
   it("relocates the database and sidecar state from the temp directory", async () => {
@@ -130,6 +146,7 @@ describe("Codevisor legacy file layout migration", () => {
       databasePath: join(data, "codevisor-server.sqlite"),
       worktreesRoot: worktrees,
       homeDirectory: home,
+      log: ignoreLog,
       onProgress: ({ state, completed, total }) => progress.push({ state, completed, total })
     })
 
@@ -157,6 +174,7 @@ describe("Codevisor legacy file layout migration", () => {
         databasePath: join(data, "codevisor-server.sqlite"),
         worktreesRoot: join(home, "codevisor"),
         homeDirectory: home,
+        log: ignoreLog,
         onProgress: ({ state }) => states.push(state)
       })
     ).rejects.toThrow("different contents")
@@ -181,7 +199,8 @@ describe("Codevisor legacy file layout migration", () => {
     await migrateLegacyLayout({
       databasePath: join(data, "codevisor-server.sqlite"),
       worktreesRoot: join(home, "codevisor"),
-      homeDirectory: home
+      homeDirectory: home,
+      log: ignoreLog
     })
 
     await expect(readFile(join(data, "settings.json"), "utf8")).resolves.toBe("same")
@@ -205,7 +224,8 @@ describe("Codevisor legacy file layout migration", () => {
       migrateLegacyLayout({
         databasePath: join(data, "codevisor-server.sqlite"),
         worktreesRoot: join(home, "codevisor"),
-        homeDirectory: home
+        homeDirectory: home,
+        log: ignoreLog
       })
     ).rejects.toThrow("different contents")
 
@@ -220,7 +240,8 @@ describe("Codevisor legacy file layout migration", () => {
       migrateLegacyLayout({
         databasePath: join(data, "codevisor-server.sqlite"),
         worktreesRoot: join(home, "codevisor"),
-        homeDirectory: home
+        homeDirectory: home,
+        log: ignoreLog
       })
     ).rejects.toThrow("different contents")
   })
@@ -239,7 +260,8 @@ describe("Codevisor legacy file layout migration", () => {
     await migrateLegacyLayout({
       databasePath: join(data, "codevisor-server.sqlite"),
       worktreesRoot: join(home, "codevisor"),
-      homeDirectory: home
+      homeDirectory: home,
+      log: ignoreLog
     })
 
     await expect(readFile(join(data, "server-herdman.log"), "utf8")).resolves.toBe("legacy log")
@@ -300,7 +322,8 @@ describe("Codevisor legacy file layout migration", () => {
     await migrateLegacyLayout({
       databasePath: join(home, ".codevisor", "codevisor-server.sqlite"),
       worktreesRoot: worktrees,
-      homeDirectory: home
+      homeDirectory: home,
+      log: ignoreLog
     })
 
     const movedWorktree = join(worktrees, "project", "feature")
@@ -318,12 +341,84 @@ describe("Codevisor legacy file layout migration", () => {
       execFileAsync("git", ["status", "--short"], { cwd: join(movedWorktree, "deps", "sub") })
     ).resolves.toMatchObject({ stdout: "" })
 
-    // A completed submodule repair is idempotent and does not schedule another migration.
+    // A recorded repair does not schedule another migration.
     await migrateLegacyLayout({
       databasePath: join(home, ".codevisor", "codevisor-server.sqlite"),
       worktreesRoot: worktrees,
-      homeDirectory: home
+      homeDirectory: home,
+      log: ignoreLog
     })
+  })
+
+  it("leaves checked-out and deinitialized submodules in current worktrees alone", async () => {
+    const home = await mkdtemp(join(tmpdir(), "codevisor-layout-deinit-"))
+    const repository = join(home, "repository")
+    const submoduleRepository = join(home, "submodule")
+    const worktree = join(home, "codevisor", "project", "feature")
+    for (const directory of [repository, submoduleRepository]) {
+      await mkdir(directory, { recursive: true })
+      await execFileAsync("git", ["init"], { cwd: directory })
+      await commit(directory, "Initial commit")
+    }
+    for (const path of ["deps/kept", "deps/removed"]) {
+      await execFileAsync(
+        "git",
+        ["-c", "protocol.file.allow=always", "submodule", "add", submoduleRepository, path],
+        { cwd: repository }
+      )
+    }
+    await commit(repository, "Add submodules")
+    await mkdir(dirname(worktree), { recursive: true })
+    await execFileAsync("git", ["worktree", "add", "-b", "feature", worktree], { cwd: repository })
+    await execFileAsync(
+      "git",
+      ["-c", "protocol.file.allow=always", "submodule", "update", "--init"],
+      { cwd: worktree }
+    )
+    await execFileAsync("git", ["submodule", "deinit", "-f", "deps/removed"], { cwd: worktree })
+
+    const log = vi.fn()
+    await migrateLegacyLayout({
+      databasePath: join(home, ".codevisor", "codevisor-server.sqlite"),
+      worktreesRoot: join(home, "codevisor"),
+      homeDirectory: home,
+      log
+    })
+
+    expect(log).not.toHaveBeenCalled()
+  })
+
+  it("skips a worktree Git can't read and stops rescanning once recorded", async () => {
+    const home = await mkdtemp(join(tmpdir(), "codevisor-layout-unreadable-"))
+    const repository = join(home, "repository")
+    const worktree = join(home, "codevisor", "project", "feature")
+    await mkdir(repository, { recursive: true })
+    await execFileAsync("git", ["init"], { cwd: repository })
+    await commit(repository, "Initial commit")
+    await mkdir(dirname(worktree), { recursive: true })
+    await execFileAsync("git", ["worktree", "add", "-b", "feature", worktree], { cwd: repository })
+    const modules = join(repository, ".git", "worktrees", "feature", "modules", "deps", "sub")
+    await mkdir(modules, { recursive: true })
+    await writeFile(join(modules, "config"), "not [ a valid config\n")
+    const options = {
+      databasePath: join(home, ".codevisor", "codevisor-server.sqlite"),
+      worktreesRoot: join(home, "codevisor"),
+      homeDirectory: home,
+      log: ignoreLog
+    }
+
+    const log = vi.fn()
+    const states: string[] = []
+    await migrateLegacyLayout({ ...options, log, onProgress: ({ state }) => states.push(state) })
+
+    expect(log).toHaveBeenCalledOnce()
+    expect(log.mock.calls[0]?.[0]).toContain(`Skipped repairing Git links for ${worktree}`)
+    expect(states.at(-1)).toBe("completed")
+
+    const laterBootLog = vi.fn()
+    await migrateLegacyLayout({ ...options, log: laterBootLog })
+
+    expect(laterBootLog).not.toHaveBeenCalled()
   })
 
   it("repairs a worktree moved by an interrupted previous migration", async () => {
@@ -359,7 +454,8 @@ describe("Codevisor legacy file layout migration", () => {
     await migrateLegacyLayout({
       databasePath: join(home, ".codevisor", "codevisor-server.sqlite"),
       worktreesRoot: worktrees,
-      homeDirectory: home
+      homeDirectory: home,
+      log: ignoreLog
     })
 
     const movedWorktree = join(worktrees, "project", "feature")
@@ -371,11 +467,12 @@ describe("Codevisor legacy file layout migration", () => {
       execFileAsync("git", ["status", "--short"], { cwd: movedWorktree })
     ).resolves.toMatchObject({ stdout: "" })
 
-    // A completed repair is idempotent and exercises the valid-pointer scan.
+    // A recorded repair does not schedule another migration.
     await migrateLegacyLayout({
       databasePath: join(home, ".codevisor", "codevisor-server.sqlite"),
       worktreesRoot: worktrees,
-      homeDirectory: home
+      homeDirectory: home,
+      log: ignoreLog
     })
   })
 
@@ -389,7 +486,8 @@ describe("Codevisor legacy file layout migration", () => {
     await migrateLegacyLayout({
       databasePath: join(home, "Codevisor Development", "test-instance", "codevisor-server.sqlite"),
       worktreesRoot: developmentRoot,
-      homeDirectory: home
+      homeDirectory: home,
+      log: ignoreLog
     })
 
     await expect(readFile(join(legacyWorktree, "progress.txt"), "utf8")).resolves.toBe("keep me")

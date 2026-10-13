@@ -182,7 +182,8 @@ export const runServe = (
         databasePath,
         worktreesRoot: worktreesRoot(),
         homeDirectory: homedir(),
-        onProgress: reportUpgrade
+        onProgress: reportUpgrade,
+        log: (message) => console.error(message)
       })
     )
     // No server may identify as the default "local": every machine

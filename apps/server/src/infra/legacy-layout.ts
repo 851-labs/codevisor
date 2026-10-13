@@ -11,7 +11,8 @@ import {
   realpath,
   rename,
   rm,
-  rmdir
+  rmdir,
+  writeFile
 } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, dirname, join, relative, resolve, sep } from "node:path"
@@ -26,9 +27,14 @@ export interface LegacyLayoutMigrationOptions {
   readonly worktreesRoot: string
   readonly homeDirectory: string
   readonly onProgress?: (progress: DataUpgradeProgress) => void
+  /// Receives worktrees whose Git links could not be repaired.
+  readonly log: (message: string) => void
 }
 
 const migrationId = "codevisor-file-layout-v1"
+/// Written to the data directory once moved worktrees have been repaired, so
+/// later boots skip rescanning every worktree for an interrupted repair.
+const worktreeRepairMarker = `${migrationId}.json`
 const migrationName = "Moving HerdMan data to Codevisor"
 
 const pathExists = async (path: string): Promise<boolean> => {
@@ -168,6 +174,24 @@ interface SubmoduleWorktreeRepair {
   readonly worktreePath: string
 }
 
+/// Reads a submodule's `core.worktree`, or undefined when it is unset. Git
+/// clears the key on `git submodule deinit`, leaving no checkout to repair.
+const configuredSubmoduleWorktree = async (configPath: string): Promise<string | undefined> => {
+  try {
+    const { stdout } = await execFileAsync("git", [
+      "config",
+      "--file",
+      configPath,
+      "--get",
+      "core.worktree"
+    ])
+    return stdout.trim()
+  } catch (error) {
+    if ((error as { readonly code?: unknown }).code === 1) return undefined
+    throw error
+  }
+}
+
 const submoduleWorktreesNeedingRepair = async (
   gitFile: string,
   legacyWorktreesRoot: string,
@@ -184,14 +208,9 @@ const submoduleWorktreesNeedingRepair = async (
   for (const entry of await readdir(modulesDirectory, { recursive: true })) {
     if (basename(entry) !== "config") continue
     const configPath = join(modulesDirectory, entry)
-    const { stdout } = await execFileAsync("git", [
-      "config",
-      "--file",
-      configPath,
-      "--get",
-      "core.worktree"
-    ])
-    const configuredWorktree = resolve(dirname(configPath), stdout.trim())
+    const worktree = await configuredSubmoduleWorktree(configPath)
+    if (worktree === undefined) continue
+    const configuredWorktree = resolve(dirname(configPath), worktree)
     const legacyRelativePath = relative(legacyWorktreesRoot, configuredWorktree)
     if (
       legacyRelativePath === ".." ||
@@ -208,74 +227,93 @@ const submoduleWorktreesNeedingRepair = async (
   return repairs
 }
 
-const worktreesNeedingRepair = async (
-  root: string,
-  legacyWorktreesRoot: string,
-  canonicalWorktreesRoot: string
-): Promise<ReadonlyArray<string>> => {
+const linkedWorktreeGitFiles = async (root: string): Promise<ReadonlyArray<string>> => {
   if (!(await pathExists(root))) return []
-  const worktrees: string[] = []
-
+  const gitFiles: string[] = []
   for (const project of await readdir(root, { withFileTypes: true })) {
     if (!project.isDirectory()) continue
     const projectDirectory = join(root, project.name)
     for (const worktree of await readdir(projectDirectory, { withFileTypes: true })) {
       if (!worktree.isDirectory()) continue
-      const worktreeDirectory = join(projectDirectory, worktree.name)
-      const gitFile = join(worktreeDirectory, ".git")
-      if (!(await pathExists(gitFile)) || !(await lstat(gitFile)).isFile()) continue
-
-      const adminDirectory = resolve(
-        dirname(gitFile),
-        (await readFile(gitFile, "utf8")).trim().replace(/^gitdir:\s*/, "")
-      )
-      const backPointer = join(adminDirectory, "gitdir")
-      if (!(await pathExists(backPointer))) continue
-      const storedGitFile = resolve(
-        dirname(backPointer),
-        (await readFile(backPointer, "utf8")).trim()
-      )
-      let pointsToGitFile = false
-      if (await pathExists(storedGitFile)) {
-        pointsToGitFile = (await realpath(storedGitFile)) === (await realpath(gitFile))
-      }
-      const submoduleRepairs = await submoduleWorktreesNeedingRepair(
-        gitFile,
-        legacyWorktreesRoot,
-        canonicalWorktreesRoot
-      )
-      if (!pointsToGitFile || submoduleRepairs.length > 0) {
-        worktrees.push(worktreeDirectory)
-      }
+      const gitFile = join(projectDirectory, worktree.name, ".git")
+      if ((await pathExists(gitFile)) && (await lstat(gitFile)).isFile()) gitFiles.push(gitFile)
     }
   }
-
-  return worktrees
+  return gitFiles
 }
 
-const repairMovedWorktrees = async (
+const worktreeNeedsRepair = async (
+  gitFile: string,
+  legacyWorktreesRoot: string,
+  canonicalWorktreesRoot: string
+): Promise<boolean> => {
+  const adminDirectory = resolve(
+    dirname(gitFile),
+    (await readFile(gitFile, "utf8")).trim().replace(/^gitdir:\s*/, "")
+  )
+  const backPointer = join(adminDirectory, "gitdir")
+  if (!(await pathExists(backPointer))) return false
+  const storedGitFile = resolve(dirname(backPointer), (await readFile(backPointer, "utf8")).trim())
+  const pointsToGitFile =
+    (await pathExists(storedGitFile)) &&
+    (await realpath(storedGitFile)) === (await realpath(gitFile))
+  return (
+    !pointsToGitFile ||
+    (await submoduleWorktreesNeedingRepair(gitFile, legacyWorktreesRoot, canonicalWorktreesRoot))
+      .length > 0
+  )
+}
+
+const worktreeRepairPending = async (
   root: string,
   legacyWorktreesRoot: string,
   canonicalWorktreesRoot: string
-): Promise<void> => {
-  for (const worktree of await worktreesNeedingRepair(
-    root,
-    legacyWorktreesRoot,
-    canonicalWorktreesRoot
-  )) {
-    await execFileAsync("git", ["-C", worktree, "worktree", "repair", worktree])
-    for (const repair of await submoduleWorktreesNeedingRepair(
-      join(worktree, ".git"),
+): Promise<boolean> => {
+  for (const gitFile of await linkedWorktreeGitFiles(root)) {
+    // A worktree that can't be inspected is left to the repair pass, which reports it.
+    const pending = await worktreeNeedsRepair(
+      gitFile,
       legacyWorktreesRoot,
       canonicalWorktreesRoot
-    )) {
-      await execFileAsync("git", [
-        "config",
-        "--file",
-        repair.configPath,
-        "core.worktree",
-        repair.worktreePath
-      ])
+    ).catch(() => true)
+    if (pending) return true
+  }
+  return false
+}
+
+/// Repairs each moved worktree independently. A worktree Git can't repair is
+/// reported and skipped: its files are already in place, and one broken
+/// checkout must not keep the server from starting.
+const repairMovedWorktrees = async (
+  root: string,
+  legacyWorktreesRoot: string,
+  canonicalWorktreesRoot: string,
+  log: (message: string) => void
+): Promise<void> => {
+  for (const gitFile of await linkedWorktreeGitFiles(root)) {
+    const worktree = dirname(gitFile)
+    try {
+      if (!(await worktreeNeedsRepair(gitFile, legacyWorktreesRoot, canonicalWorktreesRoot))) {
+        continue
+      }
+      await execFileAsync("git", ["-C", worktree, "worktree", "repair", worktree])
+      for (const repair of await submoduleWorktreesNeedingRepair(
+        gitFile,
+        legacyWorktreesRoot,
+        canonicalWorktreesRoot
+      )) {
+        await execFileAsync("git", [
+          "config",
+          "--file",
+          repair.configPath,
+          "core.worktree",
+          repair.worktreePath
+        ])
+      }
+    } catch (error) {
+      /* v8 ignore next -- Node filesystem and git failures use Error instances. */
+      const message = error instanceof Error ? error.message : String(error)
+      log(`Skipped repairing Git links for ${worktree}: ${message}`)
     }
   }
 }
@@ -300,6 +338,8 @@ const report = (
 /// Moves the pre-Codevisor data layout before the database opens. This is a
 /// blocking update backfill: the server health endpoint intentionally remains
 /// unavailable until every file and worktree is safely in its new location.
+/// Repairing Git links in moved worktrees is best-effort and runs until the
+/// data directory records it as complete.
 export const migrateLegacyLayout = async (options: LegacyLayoutMigrationOptions): Promise<void> => {
   const { homeDirectory } = options
   const dataDirectory = dirname(options.databasePath)
@@ -346,36 +386,50 @@ export const migrateLegacyLayout = async (options: LegacyLayoutMigrationOptions)
     }
   }
 
-  if (options.worktreesRoot === canonicalWorktreesRoot && (await pathExists(legacyWorktreesRoot))) {
+  const { log } = options
+  const managesWorktrees = options.worktreesRoot === canonicalWorktreesRoot
+  const repairMarker = join(dataDirectory, worktreeRepairMarker)
+  const repairRecorded = await pathExists(repairMarker)
+  const recordRepairComplete = async (): Promise<void> => {
+    if (!managesWorktrees || repairRecorded) return
+    await mkdir(dataDirectory, { recursive: true })
+    await writeFile(repairMarker, `${JSON.stringify({ id: migrationId })}\n`)
+  }
+
+  if (managesWorktrees && (await pathExists(legacyWorktreesRoot))) {
     operations.push(async () => {
       await moveWithoutOverwrite(legacyWorktreesRoot, options.worktreesRoot)
       await repairMovedWorktrees(
         options.worktreesRoot,
         canonicalLegacyWorktreesRoot,
-        canonicalCodevisorWorktreesRoot
+        canonicalCodevisorWorktreesRoot,
+        log
       )
     })
   } else if (
-    options.worktreesRoot === canonicalWorktreesRoot &&
-    (
-      await worktreesNeedingRepair(
-        options.worktreesRoot,
-        canonicalLegacyWorktreesRoot,
-        canonicalCodevisorWorktreesRoot
-      )
-    ).length > 0
+    managesWorktrees &&
+    !repairRecorded &&
+    (await worktreeRepairPending(
+      options.worktreesRoot,
+      canonicalLegacyWorktreesRoot,
+      canonicalCodevisorWorktreesRoot
+    ))
   ) {
     // A previous attempt may have moved the files before it was interrupted.
     operations.push(() =>
       repairMovedWorktrees(
         options.worktreesRoot,
         canonicalLegacyWorktreesRoot,
-        canonicalCodevisorWorktreesRoot
+        canonicalCodevisorWorktreesRoot,
+        log
       )
     )
   }
 
-  if (operations.length === 0) return
+  if (operations.length === 0) {
+    await recordRepairComplete()
+    return
+  }
   let completed = 0
   report(options.onProgress, "running", completed, operations.length)
   try {
@@ -384,6 +438,7 @@ export const migrateLegacyLayout = async (options: LegacyLayoutMigrationOptions)
       completed += 1
       report(options.onProgress, "running", completed, operations.length)
     }
+    await recordRepairComplete()
     report(options.onProgress, "completed", operations.length, operations.length)
   } catch (error) {
     /* v8 ignore next -- Node filesystem and git failures use Error instances. */
