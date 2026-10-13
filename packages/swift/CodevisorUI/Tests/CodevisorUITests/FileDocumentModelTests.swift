@@ -262,6 +262,7 @@ struct FileDocumentModelTests {
     await awaitObserved { reopened.isDirty }
     #expect(reopened.text == String(repeating: "x", count: 20))
     #expect(document.draftError == nil)
+    await clock.waitForSleep(.milliseconds(500))
     clock.advance(by: .milliseconds(500))
     await awaitObserved { !document.isDirty && !document.isSaving }
   }
