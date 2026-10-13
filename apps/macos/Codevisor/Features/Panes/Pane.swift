@@ -24,9 +24,6 @@ struct PaneContext {
   let sessionId: UUID?
   /// The key the server's PTY manager stores this pane's shell under.
   let terminalKey: String
-  /// Agent-owned background terminal: attach to the registered terminal
-  /// instead of spawning a shell (see PaneDescriptorState.attachOnly).
-  let attachOnly: Bool
   /// The machine (server URL + auth) the pane's backing resources live on.
   let machine: CodevisorMachine
   /// Source data for working-directory resolution: the anchor session's cwd

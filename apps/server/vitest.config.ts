@@ -41,7 +41,6 @@ export default defineConfig({
         "src/serve-self-updater.ts",
         "src/cli.ts",
         "src/cli/wiring.ts",
-        "src/bg-wrap.ts",
         "src/terminal-proxy.ts",
         // The cloud bridge is an integration boundary over `ws`, live
         // terminals, and the filesystem. Everything it composes is fully

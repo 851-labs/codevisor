@@ -42,7 +42,6 @@ public final class TerminalController {
 
   private let terminalKey: String
   private let cwd: String
-  private let attachOnly: Bool
   private let transport: TerminalTransport
   private weak var renderer: (any TerminalRenderer)?
   /// Output that arrived before a renderer attached, in order.
@@ -65,7 +64,6 @@ public final class TerminalController {
     config: CodevisorServerConfig,
     terminalKey: String,
     cwd: String,
-    attachOnly: Bool = false,
     clock: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now },
     sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
   ) {
@@ -73,7 +71,6 @@ public final class TerminalController {
     self.sleep = sleep
     self.terminalKey = terminalKey
     self.cwd = cwd
-    self.attachOnly = attachOnly
     let owner = WeakController()
     transport = TerminalTransport(config: config) { event in owner.value?.handle(event) }
     owner.value = self
@@ -92,10 +89,9 @@ public final class TerminalController {
     }
     opened = true
     transport.sendResize(cols: cols, rows: rows)
-    Task { [weak self, transport, terminalKey, cwd, attachOnly] in
+    Task { [weak self, transport, terminalKey, cwd] in
       do {
-        try await transport.open(
-          sessionId: terminalKey, cwd: cwd, cols: cols, rows: rows, attachOnly: attachOnly)
+        try await transport.open(sessionId: terminalKey, cwd: cwd, cols: cols, rows: rows)
       } catch {
         self?.report(error.localizedDescription)
       }

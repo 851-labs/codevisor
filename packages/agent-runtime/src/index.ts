@@ -11,7 +11,6 @@ import { adapterPromise, runtimeError } from "./types.js"
 
 export * from "./types.js"
 export * from "./attachments.js"
-export * from "./background-terminals.js"
 export * from "./diff-stats.js"
 export * from "./shell-env.js"
 export * from "./agent-sessions.js"

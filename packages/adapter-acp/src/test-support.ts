@@ -30,13 +30,9 @@ export const makeAcpAgentRuntime = ({ connector, ...config }: AcpRuntimeTestConf
   makeAgentRuntime({
     ...config,
     providerFactories: [
-      (env, context) =>
-        makeAcpProvider(env, {
-          ...context,
-          ...(connector === undefined ? {} : { connector })
-        }),
-      (env, context) => makeClaudeProvider(env, context),
-      (env, context) => makeCodexProvider(env, context)
+      (env) => makeAcpProvider(env, connector === undefined ? {} : { connector }),
+      (env) => makeClaudeProvider(env),
+      (env) => makeCodexProvider(env)
     ]
   })
 

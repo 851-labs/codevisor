@@ -1,6 +1,5 @@
 import {
   sanitizeModelValue,
-  type BackgroundTerminalIntegration,
   type HarnessAccountContext,
   type HarnessDefinition,
   type ProviderEnvironment,
@@ -9,12 +8,10 @@ import {
 } from "@codevisor/agent-runtime"
 
 import type { CodexClient } from "./client.js"
-import { closeCommandTerminals, emitCodexBackgroundTasks } from "./command-terminals.js"
 import { configuredMcpServerNames, NATIVE_AUTOMATION_MCP_SERVERS } from "./config-file.js"
 import { isRecord } from "./internal.js"
 import { CODEX_FAST_TIER, currentCodexModelFor, DEFAULT_CODEX_MODE } from "./models.js"
 import { handleNotification } from "./notifications.js"
-import { killCodexCommandProcesses, type CodexCommandKiller } from "./process-kill.js"
 import { cancelPendingQuestions, serverRequestResponse } from "./questions.js"
 import type { CodexSession } from "./session.js"
 import {
@@ -25,10 +22,6 @@ import {
 import { CodexTitleGenerator } from "./title-generation.js"
 
 export interface CodexStartSessionDeps {
-  readonly config: {
-    readonly backgroundTerminals?: BackgroundTerminalIntegration
-    readonly killCommandProcesses?: CodexCommandKiller
-  }
   readonly connect: (
     definition: HarnessDefinition,
     cwd: string,
@@ -43,7 +36,6 @@ export interface CodexStartSessionDeps {
 /// makeSkillsOperations pattern): the startSession body is unchanged, its
 /// closed-over provider dependencies are injected.
 export const makeStartSession = ({
-  config,
   connect,
   environment,
   readConfigFile
@@ -126,13 +118,10 @@ export const makeStartSession = ({
     }
     const session: CodexSession = {
       activeTurnId: undefined,
-      backgroundTerminals: config.backgroundTerminals,
       client,
       collabRunTurns: new Map(),
       collabThreads: new Map(),
       collaborationEngaged: false,
-      commandTerminals: new Map(),
-      killCommandProcesses: config.killCommandProcesses ?? killCodexCommandProcesses,
       currentEffort: undefined,
       currentModeId: DEFAULT_CODEX_MODE,
       currentModel: sanitizeModelValue(response.model ?? ""),
@@ -217,18 +206,12 @@ export const makeStartSession = ({
       session.pendingPrompt?.resolve({ stopReason: "cancelled" })
       session.pendingPrompt = undefined
       cancelPendingQuestions(session)
-      closeCommandTerminals(session)
       void session.emit({
         kind: "session.error",
         payload: { message: error.message },
         subjectId: session.key
       })
     })
-    // A fresh session has no running commands; this snapshot clears stale
-    // "running" tasks a client may replay from a previous server process.
-    if (config.backgroundTerminals !== undefined) {
-      emitCodexBackgroundTasks(session)
-    }
     return session
   }
   return startSession

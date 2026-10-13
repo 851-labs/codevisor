@@ -2,7 +2,6 @@ import type { Harness, HarnessUsageLimits, SessionConfigOption, SessionGoal } fr
 import { Effect } from "effect"
 
 import type { AgentSessionListOptions, AgentSessionSummary } from "./agent-sessions.js"
-import type { BackgroundTerminalIntegration } from "./background-terminals.js"
 import { AgentRuntimeError } from "./types.js"
 import type {
   AgentProvider,
@@ -20,28 +19,15 @@ import type {
   SetGoalUpdate
 } from "./types.js"
 
-/// Shared context the runtime hands to every provider factory: the pieces of
-/// runtime-owned state a harness adapter may integrate with.
-export interface ProviderFactoryContext {
-  readonly backgroundTerminals?: BackgroundTerminalIntegration
-}
-
 /// Constructs a provider against the runtime's live environment. Adapter
 /// packages export `make*Provider` functions that plug in here; the app
 /// composes the set it wants.
-export type ProviderFactory = (
-  environment: ProviderEnvironment,
-  context: ProviderFactoryContext
-) => AgentProvider
+export type ProviderFactory = (environment: ProviderEnvironment) => AgentProvider
 
 export interface AgentRuntimeConfig {
   readonly env?: NodeJS.ProcessEnv
   readonly executableExists?: (name: string, env: NodeJS.ProcessEnv) => boolean
   readonly locateExecutable?: (name: string, env: NodeJS.ProcessEnv) => string | undefined
-  /// Server-owned terminals for agent background processes; providers surface
-  /// long-running agent commands through it as attachable terminal tabs.
-  /// Absent (tests, embedded runtimes), providers keep the plain behavior.
-  readonly backgroundTerminals?: BackgroundTerminalIntegration
   /// Harness adapters to register, constructed against the runtime's
   /// environment. The runtime registers no providers on its own — the app
   /// composes the adapter set (mix and match per deployment).

@@ -93,9 +93,8 @@ export const makeClaudeSessionHandle = () => {
         // messages, preventing an observed/phantom follow-up turn.
         session.retired = true
         failDeferredPrompts(session, new Error("Claude runtime was retired"))
-        if (session.backgroundTasks.size > 0 || session.backgroundShellKeys.size > 0) {
+        if (session.backgroundTasks.size > 0) {
           session.backgroundTasks.clear()
-          session.backgroundShellKeys.clear()
           await emitBackgroundTasks(session)
         }
         await pauseGoalForForcedCancellation(session)

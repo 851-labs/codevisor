@@ -3,17 +3,12 @@ import {
   makeStdioAcpConnectorWithOptions,
   type AcpConnector
 } from "@codevisor/adapter-acp"
-import type {
-  AgentProvider,
-  BackgroundTerminalIntegration,
-  ProviderEnvironment
-} from "@codevisor/agent-runtime"
+import type { AgentProvider, ProviderEnvironment } from "@codevisor/agent-runtime"
 
 import { makeCursorExtension } from "./extension.js"
 
 export interface CursorProviderConfig {
   readonly connector?: AcpConnector
-  readonly backgroundTerminals?: BackgroundTerminalIntegration
 }
 
 export const makeCursorProvider = (
@@ -21,13 +16,7 @@ export const makeCursorProvider = (
   config: CursorProviderConfig = {}
 ): AgentProvider => {
   const connector =
-    config.connector ??
-    makeStdioAcpConnectorWithOptions({
-      extension: makeCursorExtension,
-      ...(config.backgroundTerminals === undefined
-        ? {}
-        : { backgroundTerminals: config.backgroundTerminals })
-    })
+    config.connector ?? makeStdioAcpConnectorWithOptions({ extension: makeCursorExtension })
   return makeAcpProvider(environment, {
     connector,
     providerId: "cursor"

@@ -34,7 +34,7 @@
       switch self {
       case let .chat(harnessId, fallbackSymbolName): .chat(harnessId: harnessId, fallbackSymbolName: fallbackSymbolName)
       case .browser: .browser(favicon: nil)
-      case let .terminal(isAgentOwned): .terminal(isAgentOwned: isAgentOwned)
+      case .terminal: .terminal
       case .document: .document
       }
     }

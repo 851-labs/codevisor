@@ -1,6 +1,5 @@
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
 
-import { openCommandTerminal, settleCommandTerminal } from "./command-terminals.js"
 import {
   commandStatus,
   fileChangeDiffBlocks,
@@ -158,7 +157,6 @@ function emitCommandItem(
   if (started) {
     session.itemKinds.set(itemId, "execute")
     if (command.length > 0) session.itemTitles.set(itemId, command)
-    openCommandTerminal(session, itemId, command, item.source)
     void session.emit(
       event({
         kind: "execute",
@@ -170,7 +168,6 @@ function emitCommandItem(
       })
     )
   } else {
-    settleCommandTerminal(session, itemId, item)
     void session.emit(
       event({
         sessionUpdate: "tool_call_update",

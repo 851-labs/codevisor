@@ -14,9 +14,11 @@ import { Effect } from "effect"
 
 export const acpProtocolVersion = acp.PROTOCOL_VERSION
 
-export const acpClientCapabilities = (terminal: boolean): acp.ClientCapabilities => ({
+/// No `terminal` capability: agents run their own shell commands, as they do
+/// under their own UIs.
+export const acpClientCapabilities = (): acp.ClientCapabilities => ({
   plan: {},
-  terminal
+  terminal: false
 })
 
 export interface AcpHarnessLaunchRequest {

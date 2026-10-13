@@ -17,8 +17,9 @@ Create a terminal with `POST /v1/terminals`:
 }
 ```
 
-`shell` and `args` are optional. Set `attachOnly: true` to attach to an agent-owned background
-terminal without spawning a shell; creation fails until that terminal has registered. The response
+`shell` and `args` are optional. Set `attachOnly: true` to attach to a terminal the server already
+runs (a plugin's output, a sign-in flow) without spawning a shell; creation fails until that
+terminal has registered. The response
 contains `terminalId`, `websocketPath`, and `nextOutputSeq`.
 
 Shells the server starts load Ghostty's shell integration (zsh, bash 4 and later, fish, elvish,

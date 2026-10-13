@@ -260,13 +260,9 @@ describe("ClaudeProvider", () => {
     expect(snapshots().at(-1)).toEqual([])
   })
 
-  it("rewrites background Bash through the terminal wrapper and stamps terminalKey", async () => {
+  it("keeps a background shell's spawning call when the SDK restates its tasks", async () => {
     const fake = new FakeQuery()
     const provider = makeClaudeProvider(environment, {
-      backgroundTerminals: {
-        registry: { register: () => ({ exit: () => {}, output: () => {}, remove: () => {} }) },
-        wrapCommand: (key, command) => `bg-wrap ${key} :: ${command}`
-      },
       checkVersion: async () => "2.1.0",
       queryFn: (input) => {
         fake.options = input.options
@@ -280,62 +276,15 @@ describe("ClaudeProvider", () => {
       })
     )
     fake.push(initMessage())
-    const created = await createPromise
-    const sessionKey = created.metadata.sessionId
+    await createPromise
+    const latest = () =>
+      events
+        .filter((event) => event.kind === "session.updated")
+        .map((event) => event.payload as Record<string, unknown>)
+        .filter((payload) => Array.isArray(payload.backgroundTasks))
+        .map((payload) => payload.backgroundTasks as Array<Record<string, unknown>>)
+        .at(-1)
 
-    const preToolUse = fake.options?.hooks?.PreToolUse?.[0]
-    expect(preToolUse?.matcher).toBe("Bash")
-    const hook = preToolUse?.hooks[0]
-    expect(hook).toBeDefined()
-
-    // Background commands are wrapped under a key derived from the tool use.
-    const wrapped = await hook?.(
-      {
-        hook_event_name: "PreToolUse",
-        tool_input: { command: "npm run dev", run_in_background: true },
-        tool_name: "Bash"
-      } as never,
-      "tool-bash-9",
-      { signal: new AbortController().signal }
-    )
-    expect((wrapped as { hookSpecificOutput?: unknown } | undefined)?.hookSpecificOutput).toEqual({
-      hookEventName: "PreToolUse",
-      updatedInput: {
-        command: `bg-wrap ${sessionKey}:bg:tool-bash-9 :: npm run dev`,
-        run_in_background: true
-      }
-    })
-
-    // Foreground commands, malformed inputs, and hook calls without a tool
-    // use id all pass through untouched.
-    const foreground = await hook?.(
-      {
-        hook_event_name: "PreToolUse",
-        tool_input: { command: "ls" },
-        tool_name: "Bash"
-      } as never,
-      "tool-bash-10",
-      { signal: new AbortController().signal }
-    )
-    expect(foreground).toEqual({})
-    const malformed = await hook?.(
-      { hook_event_name: "PreToolUse", tool_input: "ls", tool_name: "Bash" } as never,
-      "tool-bash-11",
-      { signal: new AbortController().signal }
-    )
-    expect(malformed).toEqual({})
-    const anonymous = await hook?.(
-      {
-        hook_event_name: "PreToolUse",
-        tool_input: { command: "sleep 99", run_in_background: true },
-        tool_name: "Bash"
-      } as never,
-      undefined,
-      { signal: new AbortController().signal }
-    )
-    expect(anonymous).toEqual({})
-
-    // The task spawned by the wrapped tool use carries the terminal key.
     fake.push(
       systemMessage("task_started", {
         description: "npm run dev",
@@ -345,63 +294,23 @@ describe("ClaudeProvider", () => {
       })
     )
     await fake.drain()
-    const snapshots = events
-      .filter((event) => event.kind === "session.updated")
-      .map((event) => event.payload as Record<string, unknown>)
-      .filter((payload) => Array.isArray(payload.backgroundTasks))
-      .map((payload) => payload.backgroundTasks as Array<Record<string, unknown>>)
-    expect(snapshots.at(-1)).toEqual([
-      {
-        description: "npm run dev",
-        id: "bg-9",
-        status: "running",
-        taskType: "shell",
-        terminalKey: `${sessionKey}:bg:tool-bash-9`,
-        toolUseId: "tool-bash-9"
-      }
-    ])
+    const started = {
+      description: "npm run dev",
+      id: "bg-9",
+      status: "running",
+      taskType: "shell",
+      toolUseId: "tool-bash-9"
+    }
+    expect(latest()).toEqual([started])
 
-    // The SDK's full level snapshot is authoritative, but carries less detail;
-    // reconciliation must preserve Codevisor's terminal classification.
+    // The SDK's full level snapshot is authoritative but carries less detail.
     fake.push(
       systemMessage("background_tasks_changed", {
         tasks: [{ description: "npm run dev", task_id: "bg-9", task_type: "shell" }]
       })
     )
     await fake.drain()
-    expect(snapshots.at(-1)?.[0]).toMatchObject({
-      id: "bg-9",
-      terminalKey: `${sessionKey}:bg:tool-bash-9`,
-      toolUseId: "tool-bash-9"
-    })
-
-    // Task completion clears the tool-use → key mapping, so a task reusing
-    // the tool use id later gets no stale terminal key.
-    fake.push(systemMessage("background_tasks_changed", { tasks: [] }))
-    fake.push(
-      systemMessage("task_started", {
-        description: "npm run dev (again)",
-        task_id: "bg-10",
-        task_type: "shell",
-        tool_use_id: "tool-bash-9"
-      })
-    )
-    await fake.drain()
-    const latest = events
-      .filter((event) => event.kind === "session.updated")
-      .map((event) => event.payload as Record<string, unknown>)
-      .filter((payload) => Array.isArray(payload.backgroundTasks))
-      .map((payload) => payload.backgroundTasks as Array<Record<string, unknown>>)
-      .at(-1)
-    expect(latest).toEqual([
-      {
-        description: "npm run dev (again)",
-        id: "bg-10",
-        status: "running",
-        taskType: "shell",
-        toolUseId: "tool-bash-9"
-      }
-    ])
+    expect(latest()).toEqual([started])
   })
 
   it("derives subagent taskType, applies patches and hides skip_transcript tasks", async () => {

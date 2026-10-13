@@ -42,11 +42,7 @@ describe("@codevisor/agent-runtime", () => {
       executableExists: (name) => ["gemini", "goose", "codex", "cursor-agent"].includes(name),
       // Pinned so path/version enrichment stays off regardless of what is
       // installed on the machine running the tests (e.g. ChatGPT.app).
-      locateExecutable: () => undefined,
-      // Exercises the background-terminal threading into every provider.
-      backgroundTerminals: {
-        registry: { register: () => ({ exit: () => {}, output: () => {}, remove: () => {} }) }
-      }
+      locateExecutable: () => undefined
     })
 
     const harnesses = await run(runtime.discoverHarnesses)

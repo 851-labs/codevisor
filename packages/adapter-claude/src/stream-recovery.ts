@@ -50,9 +50,8 @@ export const resumeSessionAfterStreamDeath = async (
   // resolver belonged to the dead query, and background tasks whose child
   // processes went down with it. The resumed CLI re-asks anything it needs.
   void cancelClaudePendingQuestions(session)
-  if (session.backgroundTasks.size > 0 || session.backgroundShellKeys.size > 0) {
+  if (session.backgroundTasks.size > 0) {
     session.backgroundTasks.clear()
-    session.backgroundShellKeys.clear()
     emitBackgroundTasks(session)
   }
   // A fresh session was started with `--session-id`; the resumed one must

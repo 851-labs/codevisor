@@ -6,7 +6,6 @@ import {
 import {
   OPENCODE_INSTALL_PATH,
   type AgentProvider,
-  type BackgroundTerminalIntegration,
   type ProviderEnvironment
 } from "@codevisor/agent-runtime"
 
@@ -19,7 +18,6 @@ const OPENCODE_NAMES = new Set(["opencode", OPENCODE_INSTALL_PATH])
 
 export interface OpenCodeProviderConfig {
   readonly connector?: AcpConnector
-  readonly backgroundTerminals?: BackgroundTerminalIntegration
   /// The OpenCode to run; the newest installed by default.
   readonly locateOpenCode?: (env: NodeJS.ProcessEnv) => string | undefined
 }
@@ -34,13 +32,7 @@ export const makeOpenCodeProvider = (
 ): AgentProvider => {
   const { locateOpenCode = makeOpenCodeLocator(), ...acp } = config
   const connector =
-    acp.connector ??
-    makeStdioAcpConnectorWithOptions({
-      extension: makeOpenCodeExtension,
-      ...(acp.backgroundTerminals === undefined
-        ? {}
-        : { backgroundTerminals: acp.backgroundTerminals })
-    })
+    acp.connector ?? makeStdioAcpConnectorWithOptions({ extension: makeOpenCodeExtension })
   // OpenCode is launched by name; answer it with the newest install. A
   // getter, so environment refreshes still reach the provider.
   const opencode: ProviderEnvironment = {

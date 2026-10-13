@@ -1,10 +1,8 @@
 import { randomUUID } from "node:crypto"
 
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
-import { backgroundTerminalKey } from "@codevisor/agent-runtime"
 
 import { finishForkedCommand, forkedCommandRowId } from "./forked-commands.js"
-import { isRecord } from "./internal.js"
 import type { BackgroundTaskEntry, ClaudeSession } from "./session.js"
 import { updateClaudeCommands } from "./skills.js"
 import { toolKind } from "./tool-presentation.js"
@@ -69,10 +67,6 @@ export const handleSystemMessage = (
         if (removeBackgroundTask(session, message.task_id)) emitBackgroundTasks(session)
         break
       }
-      const terminalKey =
-        message.tool_use_id === undefined
-          ? undefined
-          : session.backgroundShellKeys.get(message.tool_use_id)
       // A forked command has no spawning tool call; its row stands in for one.
       const toolUseId = message.tool_use_id ?? forkedCommandRowId(session, message.task_id)
       session.backgroundTasks.set(message.task_id, {
@@ -80,8 +74,7 @@ export const handleSystemMessage = (
         id: message.task_id,
         status: "running",
         taskType: message.subagent_type !== undefined ? "subagent" : (message.task_type ?? "task"),
-        ...(toolUseId === undefined ? {} : { toolUseId }),
-        ...(terminalKey === undefined ? {} : { terminalKey })
+        ...(toolUseId === undefined ? {} : { toolUseId })
       })
       emitBackgroundTasks(session)
       if (message.subagent_type !== undefined && message.tool_use_id !== undefined) {
@@ -200,13 +193,8 @@ const replaceBackgroundTasks = (
       id: task.task_id,
       status: existing?.status ?? "running",
       taskType: existing?.taskType ?? task.task_type,
-      ...(existing?.toolUseId === undefined ? {} : { toolUseId: existing.toolUseId }),
-      ...(existing?.terminalKey === undefined ? {} : { terminalKey: existing.terminalKey })
+      ...(existing?.toolUseId === undefined ? {} : { toolUseId: existing.toolUseId })
     })
-  }
-  for (const [id, existing] of session.backgroundTasks) {
-    if (next.has(id) || existing.toolUseId === undefined) continue
-    session.backgroundShellKeys.delete(existing.toolUseId)
   }
   session.backgroundTasks.clear()
   for (const [id, task] of next) session.backgroundTasks.set(id, task)
@@ -217,39 +205,7 @@ const removeBackgroundTask = (session: ClaudeSession, taskId: string): boolean =
   const entry = session.backgroundTasks.get(taskId)
   if (entry === undefined) return false
   session.backgroundTasks.delete(taskId)
-  if (entry.toolUseId !== undefined) {
-    session.backgroundShellKeys.delete(entry.toolUseId)
-  }
   return true
-}
-
-/// PreToolUse rewrite for `Bash(run_in_background: true)`: the command runs
-/// under the server's background-terminal wrapper, which tees output to an
-/// attachable terminal while stdout/stderr still flow to the SDK unchanged
-/// (BashOutput/KillShell keep working). Foreground commands pass through.
-export const wrapBackgroundBash = (
-  session: ClaudeSession,
-  toolInput: unknown,
-  toolUseID: string,
-  wrapCommand: (key: string, command: string) => string
-): {
-  hookSpecificOutput?: {
-    hookEventName: "PreToolUse"
-    updatedInput: Record<string, unknown>
-  }
-} => {
-  if (!isRecord(toolInput)) return {}
-  if (toolInput.run_in_background !== true || typeof toolInput.command !== "string") {
-    return {}
-  }
-  const key = backgroundTerminalKey(session.key, toolUseID)
-  session.backgroundShellKeys.set(toolUseID, key)
-  return {
-    hookSpecificOutput: {
-      hookEventName: "PreToolUse",
-      updatedInput: { ...toolInput, command: wrapCommand(key, toolInput.command) }
-    }
-  }
 }
 
 const claudeInternalRetryStatus = (

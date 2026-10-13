@@ -240,7 +240,6 @@ extension SessionModel {
       updateGateHarnessName = waiting ? harnessName : nil
     case let .backgroundTasks(tasks):
       backgroundTasks = tasks
-      hasBackgroundTaskSnapshot = true
     case .runtimeState:
       break
     case let .planApprovalRequired(required):

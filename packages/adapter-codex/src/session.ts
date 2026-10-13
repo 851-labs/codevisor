@@ -1,13 +1,7 @@
-import type {
-  BackgroundTerminalIntegration,
-  ExternalTerminalStream,
-  QuestionAnswer,
-  RuntimeEmit
-} from "@codevisor/agent-runtime"
+import type { QuestionAnswer, RuntimeEmit } from "@codevisor/agent-runtime"
 import type { QuestionSpec, SessionGoal } from "@codevisor/api"
 
 import type { CodexClient } from "./client.js"
-import type { CodexCommandKiller } from "./process-kill.js"
 import type { CodexSkill } from "./skills.js"
 import type { CodexTitleGenerator } from "./title-generation.js"
 
@@ -35,18 +29,6 @@ export interface PendingCodexQuestion {
   readonly timer: NodeJS.Timeout | undefined
   readonly respond: (answers: NonNullable<QuestionAnswer["answers"]>) => unknown
   readonly cancelResponse?: unknown
-}
-
-/// One in-flight command execution's terminal mirror. `promoted` flips when
-/// the command outlives the promotion delay — that is when it appears in the
-/// `backgroundTasks` snapshot (and therefore as a tab).
-export interface CodexCommandTerminal {
-  readonly itemId: string
-  readonly terminalKey: string
-  readonly description: string
-  readonly stream: ExternalTerminalStream
-  promoted: boolean
-  promotionTimer: NodeJS.Timeout | undefined
 }
 
 export interface CodexSession {
@@ -95,11 +77,6 @@ export interface CodexSession {
   /// item id → human-readable title, so approval prompts can say WHAT is
   /// being approved (approval params carry only the item id).
   readonly itemTitles: Map<string, string>
-  /// Read-only terminal mirrors for in-flight command executions, keyed by
-  /// item id. Codex owns the processes; we own the mirrors.
-  readonly commandTerminals: Map<string, CodexCommandTerminal>
-  readonly backgroundTerminals: BackgroundTerminalIntegration | undefined
-  readonly killCommandProcesses: CodexCommandKiller
   /// Goal-snapshot throttle state: the last snapshot broadcast to the wire,
   /// when it went out, and the freshest one held back by the rate limit
   /// (flushed at turn end so final totals always persist).

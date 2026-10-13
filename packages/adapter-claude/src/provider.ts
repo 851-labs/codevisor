@@ -13,7 +13,6 @@ import {
   type AgentProvider,
   type AgentRuntimeError,
   type AgentSessionSummary,
-  type BackgroundTerminalIntegration,
   type CreatedAgentSession,
   type HarnessDefinition,
   type LoadedAgentSession,
@@ -42,10 +41,6 @@ export interface ClaudeProviderConfig {
   readonly readFile?: (path: string) => string | undefined
   readonly subagentTranscripts?: (configDir: string) => SubagentTranscripts
   readonly checkVersion?: (claudePath: string) => Promise<string>
-  /// When set (and `wrapCommand` is present), background Bash commands are
-  /// rewritten to tee their output through a server-owned terminal so clients
-  /// can attach to the live process; foreground commands are untouched.
-  readonly backgroundTerminals?: BackgroundTerminalIntegration
 }
 
 export const makeClaudeProvider = (
@@ -66,7 +61,6 @@ export const makeClaudeProvider = (
       }
     })
   const checkVersion = config.checkVersion ?? runClaudeVersion
-  const wrapCommand = config.backgroundTerminals?.wrapCommand
   const versionCache = new Map<string, string>()
 
   const locateClaude = (definition: HarnessDefinition): string => {
@@ -98,8 +92,7 @@ export const makeClaudeProvider = (
     locateClaude,
     queryFn,
     readFile,
-    subagentTranscripts: config.subagentTranscripts ?? nodeSubagentTranscripts,
-    wrapCommand
+    subagentTranscripts: config.subagentTranscripts ?? nodeSubagentTranscripts
   })
   const handleFor = makeClaudeSessionHandle()
 

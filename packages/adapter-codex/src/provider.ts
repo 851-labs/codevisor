@@ -6,7 +6,6 @@ import {
   type AgentRuntimeError,
   type AgentSessionSummary,
   withoutEnv,
-  type BackgroundTerminalIntegration,
   type CreatedAgentSession,
   type HarnessAccountContext,
   type HarnessDefinition,
@@ -26,7 +25,6 @@ import { defaultConfigFileReader } from "./config-file.js"
 import { isRecord } from "./internal.js"
 import { configOptionsFor, modesFor } from "./models.js"
 import { codexThreadTitle } from "./notifications.js"
-import type { CodexCommandKiller } from "./process-kill.js"
 import { handleFor } from "./session-handle.js"
 import { connectSharedCodexAccount } from "./shared-oauth.js"
 import { codexSessionSkills } from "./skills.js"
@@ -44,14 +42,6 @@ export interface CodexProviderConfig {
   /// Injectable for tests: reads the codex home's `config.toml` text, or
   /// `undefined` when the file is missing or unreadable.
   readonly configFileReader?: (path: string) => string | undefined
-  /// When set, command executions mirror their streamed output
-  /// (`item/commandExecution/outputDelta`) into server-owned terminals;
-  /// commands that outlive the promotion delay surface as terminal tabs.
-  /// Codex owns the processes, so the mirrors are read-only for input; kill
-  /// is best-effort via the codex process tree (see process-kill.ts).
-  readonly backgroundTerminals?: BackgroundTerminalIntegration
-  /// Injectable for tests: the best-effort process-tree kill.
-  readonly killCommandProcesses?: CodexCommandKiller
 }
 
 const codexCandidates = (definition: HarnessDefinition): ReadonlyArray<string> => [
@@ -187,7 +177,7 @@ export const makeCodexProvider = (
     }
   }
 
-  const startSession = makeStartSession({ config, connect, environment, readConfigFile })
+  const startSession = makeStartSession({ connect, environment, readConfigFile })
 
   return {
     createSession: (

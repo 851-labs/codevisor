@@ -11,11 +11,8 @@ import {
 
 describe("@codevisor/agent-runtime", () => {
   it("advertises only provider-neutral ACP client capabilities", () => {
-    expect(acpClientCapabilities(true)).toEqual({
-      plan: {},
-      terminal: true
-    })
-    expect(acpClientCapabilities(false)).toEqual({
+    // Agents run their own shell commands, as under their own UIs.
+    expect(acpClientCapabilities()).toEqual({
       plan: {},
       terminal: false
     })

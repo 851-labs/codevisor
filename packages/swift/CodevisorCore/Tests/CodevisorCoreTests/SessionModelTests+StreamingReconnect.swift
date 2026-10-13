@@ -155,7 +155,6 @@ extension SessionModelTests {
     #expect(model.pendingQuestion == question)
     #expect(model.isSending)
     #expect(model.backgroundTasks.map(\.id) == ["task-after-reconnect"])
-    #expect(model.hasBackgroundTaskSnapshot)
     await settleUntil { !client.sessionEventSinceValues.isEmpty }
     #expect(client.sessionEventSinceValues == [2])
     await model.answerQuestion(

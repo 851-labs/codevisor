@@ -152,7 +152,7 @@ describe("@codevisor/db", () => {
         turnState: "started"
       })
     )
-    // A dev server left running for the user: a terminal-backed shell and a
+    // A dev server left running for the user: a backgrounded task and a
     // codex-style shell task. Neither holds the finish — whatever the agent
     // left running is FOR the user to look at.
     await run(
@@ -162,8 +162,7 @@ describe("@codevisor/db", () => {
             id: "dev-server",
             description: "bun run dev",
             status: "running",
-            taskType: "task",
-            terminalKey: "session:bg:tool-1"
+            taskType: "task"
           },
           {
             id: "checks",

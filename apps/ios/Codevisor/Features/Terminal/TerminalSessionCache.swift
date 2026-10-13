@@ -10,7 +10,6 @@ final class TerminalSessionCache {
   struct Key: Hashable {
     let server: String
     let terminalKey: String
-    let attachOnly: Bool
   }
 
   private static let budget = 8
@@ -28,9 +27,9 @@ final class TerminalSessionCache {
   }
 
   func session(
-    terminalKey: String, cwd: String, config: CodevisorServerConfig, attachOnly: Bool
+    terminalKey: String, cwd: String, config: CodevisorServerConfig
   ) -> TerminalSession {
-    let key = Key(server: config.baseURL.absoluteString, terminalKey: terminalKey, attachOnly: attachOnly)
+    let key = Key(server: config.baseURL.absoluteString, terminalKey: terminalKey)
     // An ended shell stays up while it's on screen, showing its exit; the
     // next visit starts a new one.
     if let existing = sessions[key], !existing.hasExited || existing.isVisible {
@@ -39,7 +38,7 @@ final class TerminalSessionCache {
     }
     evict(key)
     let session = TerminalSession(
-      terminalKey: terminalKey, cwd: cwd, config: config, attachOnly: attachOnly)
+      terminalKey: terminalKey, cwd: cwd, config: config)
     session.onExit = { [weak self, weak session] in
       guard let session, !session.isVisible else { return }
       self?.evict(key)

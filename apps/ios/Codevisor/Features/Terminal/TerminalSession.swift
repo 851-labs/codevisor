@@ -51,9 +51,9 @@ final class TerminalSession: NSObject, ObservableObject {
 
   var isVisible: Bool { view.window != nil }
 
-  init(terminalKey: String, cwd: String, config: CodevisorServerConfig, attachOnly: Bool) {
+  init(terminalKey: String, cwd: String, config: CodevisorServerConfig) {
     connection = CodevisorCore.TerminalController(
-      config: config, terminalKey: terminalKey, cwd: cwd, attachOnly: attachOnly)
+      config: config, terminalKey: terminalKey, cwd: cwd)
     // libghostty calls these on its I/O thread; the main queue keeps their
     // order.
     let owner = WeakSession()

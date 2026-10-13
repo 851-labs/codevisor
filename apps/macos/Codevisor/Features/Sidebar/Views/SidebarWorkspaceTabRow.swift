@@ -9,7 +9,6 @@ import SwiftUI
 struct SidebarWorkspaceTabRow: View {
   let title: String
   let kind: PaneKind
-  let isAgentOwned: Bool
   var browserFavicon: NSImage? = nil
   /// A plugin pane's identity, so the row shows the plugin's own artwork
   /// (fetched through `pluginIconClient`) instead of the generic glyph.
@@ -158,7 +157,7 @@ struct SidebarWorkspaceTabRow: View {
   private var iconName: String {
     switch kind {
     case .chat: "text.bubble"
-    case .terminal: isAgentOwned ? "server.rack" : "terminal"
+    case .terminal: "terminal"
     case .newTab: "square.dashed"
     case .plugin: "puzzlepiece.extension"
     case .document: "text.document"

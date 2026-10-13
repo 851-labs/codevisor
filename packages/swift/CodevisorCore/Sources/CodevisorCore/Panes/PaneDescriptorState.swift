@@ -50,18 +50,11 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
   /// uses the bare chat-session UUID so it reattaches to shells created
   /// before panes existed; later panes use "<sessionUuid>:<paneUuid>".
   public let terminalKey: String
-  /// Agent-owned background terminals: the pane only ever attaches to a
-  /// terminal the server already registered (never spawns a shell), and the
-  /// proxy's teardown must not kill the agent's process.
-  public let attachOnly: Bool
   /// Chat panes only: the session this pane shows. A chat pane is a
   /// REFERENCE — the server owns the session; closing the pane never
   /// deletes it.
   public var chatSessionId: UUID?
-  /// Agent-owned terminals only: the CHAT whose background task streams
-  /// here. The workspace hosts every chat's task tabs, so
-  /// pruning must be owner-scoped — chat B's empty snapshot must never
-  /// tear down chat A's dev server.
+  /// Subagent panes only: the parent chat whose subagent this shows.
   public var ownerChatSessionId: UUID?
   /// Plugin panes only: the owner-namespaced plugin id ("owner.name").
   public var pluginId: String?
@@ -88,7 +81,6 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
     kind: PaneKind,
     name: String,
     terminalKey: String,
-    attachOnly: Bool = false,
     chatSessionId: UUID? = nil,
     ownerChatSessionId: UUID? = nil,
     pluginId: String? = nil,
@@ -106,7 +98,6 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
     self.kind = kind
     self.name = name
     self.terminalKey = terminalKey
-    self.attachOnly = attachOnly
     self.chatSessionId = chatSessionId
     self.ownerChatSessionId = ownerChatSessionId
     self.pluginId = pluginId
@@ -128,13 +119,9 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
       kind: try container.decode(PaneKind.self, forKey: .kind),
       name: try container.decode(String.self, forKey: .name),
       terminalKey: try container.decode(String.self, forKey: .terminalKey),
-      // Panes persisted before agent terminals existed are user shells.
-      attachOnly: try container.decodeIfPresent(Bool.self, forKey: .attachOnly) ?? false,
       // Chat panes persisted before workspaces existed learn their
       // session id in the workspace backfill.
       chatSessionId: try container.decodeIfPresent(UUID.self, forKey: .chatSessionId),
-      // Agent tabs persisted before owner scoping have no owner; any
-      // syncer may manage them.
       ownerChatSessionId: try container.decodeIfPresent(UUID.self, forKey: .ownerChatSessionId),
       // Panes persisted before plugin panes existed carry no plugin
       // payload.

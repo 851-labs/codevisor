@@ -95,41 +95,6 @@ struct WorkspaceClosingTests {
     #expect(workspace.selectedCenterTabId == selected.id)
   }
 
-  @Test("Closing the selected tab lands on the listed tab above, never a hidden agent terminal tab")
-  func closingSelectedTabSkipsAgentTerminalTabs() {
-    let chat = WorkspaceTab(root: .leaf(.centerInitial(sessionId: UUID())))
-    var agentGroup = PaneGroupState()
-    agentGroup.appendAgentTerminal(name: "dev server", terminalKey: "task-1")
-    let agent = WorkspaceTab(root: .leaf(agentGroup))
-    var closingGroup = PaneGroupState()
-    closingGroup.addTerminalPane(sessionId: UUID())
-    let closing = WorkspaceTab(root: .leaf(closingGroup))
-    var workspace = makeWorkspace(tabs: [chat, agent, closing], selected: closing.id)
-    workspace.centerTabs[2].root = .leaf(PaneGroupState())
-
-    workspace.pruneClosedCenterTab(closing.id)
-
-    #expect(workspace.centerTabs.map(\.id) == [chat.id, agent.id])
-    #expect(workspace.selectedCenterTabId == chat.id)
-  }
-
-  @Test("With no listed tab above, the listed tab below takes over")
-  func closingFirstTabFallsForwardPastAgentTerminalTabs() {
-    var closingGroup = PaneGroupState()
-    closingGroup.addTerminalPane(sessionId: UUID())
-    let closing = WorkspaceTab(root: .leaf(closingGroup))
-    var agentGroup = PaneGroupState()
-    agentGroup.appendAgentTerminal(name: "tests", terminalKey: "task-2")
-    let agent = WorkspaceTab(root: .leaf(agentGroup))
-    let chat = WorkspaceTab(root: .leaf(.centerInitial(sessionId: UUID())))
-    var workspace = makeWorkspace(tabs: [closing, agent, chat], selected: closing.id)
-    workspace.centerTabs[0].root = .leaf(PaneGroupState())
-
-    workspace.pruneClosedCenterTab(closing.id)
-
-    #expect(workspace.selectedCenterTabId == chat.id)
-  }
-
   private func splitTab() -> WorkspaceTab {
     let first = UUID()
     let second = UUID()

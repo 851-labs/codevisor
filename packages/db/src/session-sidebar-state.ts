@@ -5,7 +5,7 @@ import { backgroundTasksFromRaw } from "./event-payloads.js"
 
 /// Only work that verifiably completes AND re-invokes the agent holds a
 /// finished turn in `inProgress`: running subagents. Background shells and
-/// watchers (`terminalKey` mirrors, codex/acp `shell` tasks, Claude's
+/// watchers (codex/acp `shell` tasks, Claude's
 /// `Monitor`/`local_bash`) deliberately do not — a dev server or a `tail -f`
 /// that never fires must not pin a chat in progress until its timeout. If
 /// one later re-invokes the agent, that continuation is its own turn and

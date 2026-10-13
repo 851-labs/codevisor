@@ -165,10 +165,6 @@ public final class SessionModel {
       }
     }
   }
-  /// Whether any snapshot has arrived yet. Terminal-tab pruning waits for
-  /// this: before the first snapshot, an empty `backgroundTasks` just means
-  /// history hasn't replayed, not that every task ended.
-  public internal(set) var hasBackgroundTaskSnapshot = false
   public internal(set) var persistedSetupPhases: [SessionSetupPhase] = [] {
     didSet { if persistedSetupPhases != oldValue { transcriptProjectionRevision &+= 1 } }
   }

@@ -492,7 +492,6 @@ final class PaneGroupModel: Identifiable {
     case (.terminal, .terminal):
       // TerminalPane captures connection identity in its PaneContext.
       return previous.terminalKey != next.terminalKey
-        || previous.attachOnly != next.attachOnly
     case (.plugin, .plugin):
       // PluginPane captures the plugin identity at creation; a pane
       // re-pointed at another plugin/pane type needs a fresh webview.

@@ -16,9 +16,7 @@ export const agentProviderFactories: ReadonlyArray<ProviderFactory> = [
   makeCodexProvider,
   makeCursorProvider,
   makeGrokBuildProvider,
-  // Muse, like Pi, runs its own tools.
-  (environment) => makeMuseProvider(environment),
+  makeMuseProvider,
   makeOpenCodeProvider,
-  // Pi runs its own tools; it takes nothing from the factory context.
-  (environment) => makePiProvider(environment)
+  makePiProvider
 ]

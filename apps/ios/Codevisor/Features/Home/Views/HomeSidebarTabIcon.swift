@@ -24,8 +24,8 @@ struct HomeSidebarTabIcon: View {
       case let .chat(harnessId, fallbackSymbolName):
         HarnessIconView(harnessId: harnessId, fallbackSymbolName: fallbackSymbolName, size: size)
           .foregroundStyle(glyphStyle)
-      case let .terminal(isAgentOwned):
-        symbol(isAgentOwned ? "server.rack" : "terminal")
+      case .terminal:
+        symbol("terminal")
       case let .browser(favicon):
         if let favicon {
           Image(uiImage: favicon)

@@ -160,7 +160,7 @@
           row(11, title, .chat(harnessId: "codex", fallbackSymbolName: "sparkle"), status: .unread),
           row(12, "Polish the mobile layout", .chat(harnessId: "claude-code", fallbackSymbolName: "sparkle")),
           row(13, "Daylight — localhost:3000", .browser(favicon: nil)),
-          row(14, "Development server", .terminal(isAgentOwned: false)),
+          row(14, "Development server", .terminal),
         ]
       ),
       ScreenshotSidebarSection(
@@ -180,7 +180,7 @@
         rows: [
           row(32, "Add search to the API", .chat(harnessId: "codex", fallbackSymbolName: "sparkle")),
           row(33, "Review the test coverage", .chat(harnessId: "claude-code", fallbackSymbolName: "sparkle")),
-          row(34, "Terminal", .terminal(isAgentOwned: false)),
+          row(34, "Terminal", .terminal),
         ]
       ),
     ]
@@ -209,7 +209,7 @@
     enum Icon {
       case chat(harnessId: String, fallbackSymbolName: String)
       case browser(favicon: String?)
-      case terminal(isAgentOwned: Bool)
+      case terminal
       case document
     }
     let id: UUID

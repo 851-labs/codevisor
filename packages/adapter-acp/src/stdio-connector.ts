@@ -9,14 +9,12 @@ import {
   skillsUpdateEvent,
   summarizeProcessFailure,
   type AgentSessionMetadata,
-  type BackgroundTerminalIntegration,
   type QuestionAnswer,
   type RuntimeEvent
 } from "@codevisor/agent-runtime"
 import { trackProcessTree } from "@codevisor/processes"
 import { Effect } from "effect"
 
-import { makeAcpTerminalHost } from "./acp-terminals.js"
 import { rewriteAgentLines } from "./agent-lines.js"
 import { createClientApp, type ConfigureAcpClientApp } from "./client-app.js"
 import { acpClientCapabilities, type AcpConnector } from "./connection.js"
@@ -56,9 +54,7 @@ export interface AcpStdioExtension {
 export type AcpStdioExtensionFactory = (context: AcpStdioExtensionContext) => AcpStdioExtension
 
 export interface StdioAcpConnectorOptions {
-  readonly backgroundTerminals?: BackgroundTerminalIntegration
   readonly connectTimeoutMs?: number
-  readonly terminalCommandMode?: "argv" | "shell"
   readonly extension?: AcpStdioExtensionFactory
 }
 
@@ -91,15 +87,6 @@ export const makeStdioAcpConnectorWithOptions = (
       const safeEmit = (event: RuntimeEvent): void => {
         void emit(event).catch(() => undefined)
       }
-      const terminals =
-        options.backgroundTerminals === undefined
-          ? undefined
-          : makeAcpTerminalHost({
-              commandMode: options.terminalCommandMode ?? "argv",
-              emit,
-              env: request.env,
-              integration: options.backgroundTerminals
-            })
       const emitQuestionResolved = (
         questionId: string,
         pending: PendingAcpQuestion,
@@ -184,7 +171,6 @@ export const makeStdioAcpConnectorWithOptions = (
             responseFor: (answer) => acpPermissionOutcome(question.optionIds, answer)
           })
         },
-        terminals,
         extension?.configureClientApp
       ).connect(
         acp.ndJsonStream(
@@ -227,12 +213,10 @@ export const makeStdioAcpConnectorWithOptions = (
       }
       closeConnection = (error) => {
         cancelQuestions(undefined)
-        void terminals?.closeAll().catch(() => undefined)
         connection.close(error)
       }
       child.once("exit", () => {
         cancelQuestions(undefined)
-        void terminals?.closeAll().catch(() => undefined)
         // A CLI that dies at startup can emit megabytes of minified bundle and
         // stack frames; this message reaches the UI, so summarize rather than
         // forward the captured tail verbatim.
@@ -241,7 +225,7 @@ export const makeStdioAcpConnectorWithOptions = (
         )
       })
       let initialized: acp.InitializeResponse
-      const clientCapabilities = acpClientCapabilities(terminals !== undefined)
+      const clientCapabilities = acpClientCapabilities()
       try {
         initialized = await promiseWithTimeout(
           Promise.race([
@@ -278,9 +262,7 @@ export const makeStdioAcpConnectorWithOptions = (
       const established = sdkConnection(connection, stderr, {
         terminate: async () => {
           cancelQuestions(undefined)
-          const results = await Promise.allSettled([terminals?.closeAll(), terminate()])
-          const failed = results.find((result) => result.status === "rejected")
-          if (failed?.status === "rejected") throw failed.reason
+          await terminate()
         },
         promptCapabilities: initialized?.agentCapabilities?.promptCapabilities ?? {},
         questions: { answerQuestion, cancelQuestions },
@@ -330,14 +312,8 @@ export const makeStdioAcpConnectorWithOptions = (
     })
 })
 
-export const makeStdioAcpConnector = (
-  backgroundTerminals?: BackgroundTerminalIntegration,
-  connectTimeoutMs = 10_000
-): AcpConnector =>
-  makeStdioAcpConnectorWithOptions({
-    connectTimeoutMs,
-    ...(backgroundTerminals === undefined ? {} : { backgroundTerminals })
-  })
+export const makeStdioAcpConnector = (connectTimeoutMs = 10_000): AcpConnector =>
+  makeStdioAcpConnectorWithOptions({ connectTimeoutMs })
 
 const promiseWithTimeout = <A>(
   promise: Promise<A>,

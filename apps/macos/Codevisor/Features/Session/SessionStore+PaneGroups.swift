@@ -248,7 +248,6 @@ extension SessionStore {
         paneId: descriptor.id,
         sessionId: session?.id,
         terminalKey: descriptor.terminalKey,
-        attachOnly: descriptor.attachOnly,
         machine: machine,
         session: liveSession,
         project: project,

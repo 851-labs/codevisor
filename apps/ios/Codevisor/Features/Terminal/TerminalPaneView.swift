@@ -13,9 +13,6 @@ struct TerminalPaneView: View {
   let terminalKey: String
   let cwd: String
   let config: CodevisorServerConfig
-  /// Attach to a terminal something else spawned (a harness auth flow's
-  /// PTY) instead of asking the server to start a shell.
-  var attachOnly: Bool = false
 
   @StateObject private var keyController = TerminalKeyController()
   @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -48,7 +45,7 @@ struct TerminalPaneView: View {
   /// Kept alive across visits, so returning shows the terminal as it is now.
   private var session: TerminalSession {
     TerminalSessionCache.shared.session(
-      terminalKey: terminalKey, cwd: cwd, config: config, attachOnly: attachOnly)
+      terminalKey: terminalKey, cwd: cwd, config: config)
   }
 
   var body: some View {

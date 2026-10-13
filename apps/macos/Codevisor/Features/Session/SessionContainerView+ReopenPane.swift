@@ -5,11 +5,10 @@ import SwiftUI
 
 extension SessionContainerView {
   /// Records a closing center pane so ⌘⇧T can bring it back. Skipped for
-  /// what cannot meaningfully return: the New Tab placeholder, an unsent
-  /// draft (its composer state is discarded on close), and agent-owned
-  /// terminals (they belong to their background task, not the user).
+  /// what cannot meaningfully return: the New Tab placeholder and an unsent
+  /// draft (its composer state is discarded on close).
   func rememberClosedPane(_ descriptor: PaneDescriptorState, leafId: UUID) {
-    guard descriptor.kind != .newTab, !descriptor.attachOnly else { return }
+    guard descriptor.kind != .newTab else { return }
     if descriptor.kind == .chat, descriptor.chatSessionId == nil { return }
     // Runs from `onPaneWillClose`, before the close is applied anywhere,
     // so the tab's position is still readable here.

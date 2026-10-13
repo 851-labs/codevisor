@@ -144,7 +144,6 @@ struct SessionScreen: View {
           paneId: descriptor.id,
           sessionId: session.id,
           terminalKey: descriptor.terminalKey,
-          attachOnly: descriptor.attachOnly,
           machine: .local,
           session: session,
           project: project

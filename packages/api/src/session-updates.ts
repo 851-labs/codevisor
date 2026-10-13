@@ -115,21 +115,13 @@ export type ContextCompactionPayload = typeof ContextCompactionPayload.Type
 
 /** One in-flight background task (backgrounded shell, subagent, etc.) owned by
  *  the agent process. `toolUseId` links the task back to the tool call that
- *  spawned it, when known. `terminalKey` is set when the task's process output
- *  streams through a server-owned terminal — clients attach to it with the
- *  regular terminal API (`POST /v1/terminals` with `sessionId: terminalKey`,
- *  `attachOnly: true`) and render it as a live terminal tab. */
+ *  spawned it, when known. */
 export const BackgroundTask = Schema.Struct({
   id: Schema.String,
   description: Schema.String,
   status: Schema.String,
   taskType: Schema.String,
-  toolUseId: Schema.optional(Schema.String),
-  terminalKey: Schema.optional(Schema.String),
-  /** The terminal is a read-only mirror: the provider cannot forward input
-   *  or kill the process (codex owns its command executions). Clients hide
-   *  the kill affordance while the task runs. */
-  readOnly: Schema.optional(Schema.Boolean)
+  toolUseId: Schema.optional(Schema.String)
 })
 export type BackgroundTask = typeof BackgroundTask.Type
 

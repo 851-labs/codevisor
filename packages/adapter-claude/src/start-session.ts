@@ -15,7 +15,7 @@ import {
   type ToolGatewayConfig
 } from "@codevisor/agent-runtime"
 
-import { emitBackgroundTasks, wrapBackgroundBash } from "./background-tasks.js"
+import { emitBackgroundTasks } from "./background-tasks.js"
 import { emitAuthoritativeDiff } from "./diff-stats.js"
 import { handleMessage } from "./messages.js"
 import {
@@ -59,7 +59,6 @@ export interface StartSessionDeps {
   readonly readFile: (path: string) => string | undefined
   /// The subagent transcripts in a Claude config directory.
   readonly subagentTranscripts: (configDir: string) => SubagentTranscripts
-  readonly wrapCommand: ((key: string, command: string) => string) | undefined
 }
 
 /// Session/query startup extracted from makeClaudeProvider as a deps-factory
@@ -73,8 +72,7 @@ export const makeStartSession = (deps: StartSessionDeps) => {
     locateClaude,
     queryFn,
     readFile,
-    subagentTranscripts,
-    wrapCommand
+    subagentTranscripts
   } = deps
   /// The model list the last process reported. A saved model is checked
   /// against it before being handed to a new process: a value no current
@@ -234,36 +232,7 @@ export const makeStartSession = (deps: StartSessionDeps) => {
               }
             ]
           }
-        ],
-        // Hooks run in every permission mode (unlike canUseTool, which the
-        // bypassPermissions default never invokes) — the only reliable seam
-        // for rewriting background Bash through the server's terminal host.
-        ...(wrapCommand === undefined
-          ? {}
-          : {
-              PreToolUse: [
-                {
-                  matcher: "Bash",
-                  hooks: [
-                    async (hookInput, toolUseID) => {
-                      if (
-                        hookInput.hook_event_name !== "PreToolUse" ||
-                        session === undefined ||
-                        toolUseID === undefined
-                      ) {
-                        return {}
-                      }
-                      return wrapBackgroundBash(
-                        session,
-                        hookInput.tool_input,
-                        toolUseID,
-                        wrapCommand
-                      )
-                    }
-                  ]
-                }
-              ]
-            })
+        ]
       },
       ...(resume === undefined
         ? { extraArgs: { ...nativeToolArgs, "session-id": sessionKey } }
@@ -283,7 +252,6 @@ export const makeStartSession = (deps: StartSessionDeps) => {
       latestContextUsage: undefined,
       activeContextCompactionId: undefined,
       accumulators: new Map(),
-      backgroundShellKeys: new Map(),
       backgroundTasks: new Map(),
       hiddenBackgroundTaskIds: new Set(),
       currentEffort:

@@ -2,7 +2,6 @@ import { adapterPromise, normalizePromptInput } from "@codevisor/agent-runtime"
 import type { AgentSessionHandle, SetGoalUpdate } from "@codevisor/agent-runtime"
 
 import { codexInput } from "./attachments.js"
-import { closeCommandTerminals } from "./command-terminals.js"
 import { emitGoalCleared, emitGoalSnapshot, sessionGoalFrom } from "./goals.js"
 import {
   CODEX_FAST_TIER,
@@ -44,7 +43,6 @@ export const handleFor = (session: CodexSession): AgentSessionHandle => ({
     cancelPendingQuestions(session)
     if (session.client.closeAndWait !== undefined) await session.client.closeAndWait()
     else session.client.close()
-    closeCommandTerminals(session)
   }),
   prompt: (input) =>
     adapterPromise("prompt", async () => {

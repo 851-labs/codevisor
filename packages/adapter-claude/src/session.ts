@@ -122,9 +122,6 @@ export interface BackgroundTaskEntry {
   status: string
   readonly taskType: string
   readonly toolUseId?: string
-  /// Set when the task's process streams through a server-owned terminal
-  /// (background Bash rewritten by the PreToolUse hook).
-  readonly terminalKey?: string
 }
 
 /// A forked slash command's subagent (see `forked-commands.ts`), described
@@ -283,10 +280,6 @@ export interface ClaudeSession {
   /// SDK housekeeping tasks marked `skip_transcript` are absent from the UI
   /// even when the authoritative level snapshot includes their ids.
   readonly hiddenBackgroundTaskIds: Set<string>
-  /// tool_use id → server terminal key, recorded when the PreToolUse hook
-  /// rewrites a background Bash command; consumed by `task_started` to stamp
-  /// the task with its attachable terminal.
-  readonly backgroundShellKeys: Map<string, string>
   /// question id → held AskUserQuestion canUseTool promise.
   readonly pendingQuestions: Map<string, PendingClaudeQuestion>
   /// Client-side goal snapshot. Claude Code's goal mode is driven through the

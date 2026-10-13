@@ -211,8 +211,7 @@ final class GhosttyTerminalSurface: TerminalSurface {
     controller = TerminalController(
       config: descriptor.serverConfig,
       terminalKey: descriptor.terminalKey,
-      cwd: descriptor.workingDirectory,
-      attachOnly: descriptor.attachOnly)
+      cwd: descriptor.workingDirectory)
     hostIO = GhosttyHostIO.make(for: controller)
     var config = Ghostty.SurfaceConfiguration()
     // No local process: the surface's I/O is the server terminal. The shell

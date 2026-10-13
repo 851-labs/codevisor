@@ -138,10 +138,7 @@ extension SessionModel {
       // whose `released` this client never received (the server restarted
       // in between) must not keep the chat marked as held.
       updateGateHarnessName = page.updateGateHarnessName
-      if let tasks = page.backgroundTasks {
-        backgroundTasks = tasks
-        hasBackgroundTaskSnapshot = true
-      }
+      if let tasks = page.backgroundTasks { backgroundTasks = tasks }
       goal = page.goal
       // The page and cursor form one durable session snapshot. Seed the
       // latest full checklist before subscribing after that cursor so a

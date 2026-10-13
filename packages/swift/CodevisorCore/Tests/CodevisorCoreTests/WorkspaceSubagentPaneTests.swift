@@ -69,7 +69,7 @@ struct WorkspaceSubagentPaneTests {
       subagentToolCallId: "toolu_1")
     let persisted = Data(
       """
-      {"id":"11111111-1111-1111-1111-111111111111","kind":"subagent","name":"Map the chat UI","terminalKey":"11111111-1111-1111-1111-111111111111","attachOnly":false,"ownerChatSessionId":"22222222-2222-2222-2222-222222222222","subagentToolCallId":"toolu_1"}
+      {"id":"11111111-1111-1111-1111-111111111111","kind":"subagent","name":"Map the chat UI","terminalKey":"11111111-1111-1111-1111-111111111111","ownerChatSessionId":"22222222-2222-2222-2222-222222222222","subagentToolCallId":"toolu_1"}
       """.utf8)
     let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(subagent))
     let literal = try JSONSerialization.jsonObject(with: persisted)

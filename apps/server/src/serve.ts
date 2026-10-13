@@ -59,7 +59,6 @@ import {
   monitorAppOwner,
   bundledVersion,
   bundledBuildMetadata,
-  backgroundTerminalIntegration,
   resolveServeModes,
   selfUpdateServeArgs,
   databaseStartupFailure
@@ -236,7 +235,6 @@ export const runServe = (
     const terminal = makeTerminalManager()
     restoreTerminalPersistence(dirname(databasePath), terminal, startup)
     startup.checkpoint("initializingServices")
-    const backgroundTerminals = yield* Effect.promise(() => backgroundTerminalIntegration(terminal))
     // Cloud relay presence + sealed channels, and every machine on the
     // account for cross-machine gateway calls. Optional — local operation
     // never depends on it.
@@ -251,7 +249,6 @@ export const runServe = (
     const shellEnv = makeShellEnvCache(() => resolveShellEnv())
     const gitEnvironment = shellEnv.current()
     const agents = makeAgentRuntime({
-      ...(backgroundTerminals === undefined ? {} : { backgroundTerminals }),
       providerFactories: agentProviderFactories,
       resolveEnv: shellEnv.refresh
     })

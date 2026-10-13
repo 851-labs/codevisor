@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 
-import type { AgentRuntimeConfig, ProviderFactoryContext } from "./agent-runtime-types.js"
+import type { AgentRuntimeConfig } from "./agent-runtime-types.js"
 import { locateExecutableOnPath } from "./executable-locator.js"
 import { harnessCatalog } from "./harness-catalog.js"
 import { makeMessagePhases, type MessagePhases } from "./message-phases.js"
@@ -79,12 +79,8 @@ export const makeAgentRuntimeCore = (config: AgentRuntimeConfig) => {
       return path === undefined ? [] : [path]
     })
   const providers = new Map<ProviderId, AgentProvider>()
-  const factoryContext: ProviderFactoryContext =
-    config.backgroundTerminals === undefined
-      ? {}
-      : { backgroundTerminals: config.backgroundTerminals }
   for (const factory of config.providerFactories ?? []) {
-    const provider = factory(environment, factoryContext)
+    const provider = factory(environment)
     providers.set(provider.id, provider)
   }
   for (const provider of Object.values(config.providers ?? {})) {

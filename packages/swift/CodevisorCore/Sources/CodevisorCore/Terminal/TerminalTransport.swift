@@ -55,7 +55,7 @@ public final class TerminalTransport {
   /// Frames numbered below this were buffered before the attach, or before
   /// the latest reconnect.
   private var liveOutputSeq = 0
-  private var attachment: (sessionId: String, cwd: String, attachOnly: Bool)?
+  private var attachment: (sessionId: String, cwd: String)?
   /// Replayed output received so far, held until the history is complete.
   private var replayedOutput: TerminalOutput?
   private var websocketPath: String?
@@ -135,17 +135,10 @@ public final class TerminalTransport {
   }
 
   /// Creates (or, idempotently per session key, reuses) the server-side
-  /// terminal and starts streaming. `attachOnly` never spawns a shell —
-  /// for agent-owned background-task terminals.
-  public func open(
-    sessionId: String,
-    cwd: String,
-    cols: Int,
-    rows: Int,
-    attachOnly: Bool = false
-  ) async throws {
-    attachment = (sessionId, cwd, attachOnly)
-    let created = try await requestTerminal(cols: cols, rows: rows, attachOnly: attachOnly)
+  /// terminal and starts streaming.
+  public func open(sessionId: String, cwd: String, cols: Int, rows: Int) async throws {
+    attachment = (sessionId, cwd)
+    let created = try await requestTerminal(cols: cols, rows: rows, attachOnly: false)
     websocketPath = created.websocketPath
     // Attach from seq 0 so the server replays the terminal's buffered
     // scrollback into this fresh renderer (reusing a session's live PTY

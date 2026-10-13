@@ -372,13 +372,6 @@ export const handleNotification = (
       handleNotificationItemLifecycle(session, method, payload, parentToolCallId, parentField)
       break
     }
-    case "item/commandExecution/outputDelta": {
-      const itemId = typeof payload.itemId === "string" ? payload.itemId : undefined
-      const delta = typeof payload.delta === "string" ? payload.delta : undefined
-      if (itemId === undefined || delta === undefined) break
-      session.commandTerminals.get(itemId)?.stream.output(delta)
-      break
-    }
     case "item/fileChange/patchUpdated": {
       emitStreamedFilePatch(session, payload, parentField)
       break

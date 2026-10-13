@@ -49,7 +49,7 @@
           row(
             "Add dark mode support",
             .chat(harnessId: "codex", fallbackSymbolName: "chevron.left.forwardslash.chevron.right"), status: .unread),
-          row("Terminal 1", .terminal(isAgentOwned: false)),
+          row("Terminal 1", .terminal),
           row("Codevisor — localhost:3000", .browser(favicon: nil)),
           row("New Tab", .newTab),
         ]
@@ -81,7 +81,7 @@
         status: .error,
         rows: [
           row("Migrate sessions table", .chat(harnessId: "claude-code", fallbackSymbolName: "sparkle"), status: .error),
-          row("Terminal 2", .terminal(isAgentOwned: false)),
+          row("Terminal 2", .terminal),
         ]
       ),
       HomeSidebarSection(

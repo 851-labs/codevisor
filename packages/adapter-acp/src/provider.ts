@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto"
 
-import type { BackgroundTerminalIntegration } from "@codevisor/agent-runtime"
 import {
   adapterPromise,
   runtimeError,
@@ -122,10 +121,6 @@ export interface AcpProviderConfig {
   /// keeps `acp`; packages that compose its transport register their own id.
   readonly providerId?: ProviderId
   readonly connector?: AcpConnector
-  /// When set, the client advertises the ACP `terminal` capability and backs
-  /// `terminal/*` with server-owned processes (surfaced as terminal tabs once
-  /// they outlive the promotion delay).
-  readonly backgroundTerminals?: BackgroundTerminalIntegration
   /// Adjusts the agent's environment at launch, after the account's.
   readonly launchEnv?: (env: NodeJS.ProcessEnv, launch: AcpLaunchContext) => NodeJS.ProcessEnv
 }
@@ -148,7 +143,7 @@ export const makeAcpProvider = (
   environment: ProviderEnvironment,
   config: AcpProviderConfig = {}
 ): AgentProvider => {
-  const connector = config.connector ?? makeStdioAcpConnector(config.backgroundTerminals)
+  const connector = config.connector ?? makeStdioAcpConnector()
   const launchEnv = config.launchEnv ?? ((env: NodeJS.ProcessEnv) => env)
 
   const connect = (

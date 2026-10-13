@@ -141,6 +141,35 @@ struct WorkspaceSyncPaneMappingTests {
     #expect(WorkspaceSyncModel.descriptor(from: record(paneType: "new-tab", title: "New tab")) == nil)
   }
 
+  @Test("Terminals map; the hidden agent terminals older clients published do not")
+  func agentTerminalRowsAreIgnored() {
+    func record(_ resourceId: String, metadata: String?) -> ServerWorkspacePane {
+      ServerWorkspacePane(
+        id: UUID().uuidString,
+        workspaceId: workspaceId.uuidString,
+        providerId: "codevisor",
+        paneType: "terminal",
+        title: "Terminal",
+        resourceKind: "terminal",
+        resourceId: resourceId,
+        metadata: metadata,
+        createdAt: "2026-01-01T00:00:00.000Z"
+      )
+    }
+    let user = WorkspaceSyncModel.descriptor(from: record("shell", metadata: #"{"attachOnly":false}"#))
+    #expect(user?.kind == .terminal)
+    #expect(user?.terminalKey == "shell")
+    #expect(WorkspaceSyncModel.descriptor(from: record("shell", metadata: nil))?.kind == .terminal)
+    // An older server may still list one until its cleanup runs.
+    let agent = record("chat:bg:tool-1", metadata: #"{"attachOnly":true,"ownerChatSessionId":"\#(UUID())"}"#)
+    #expect(WorkspaceSyncModel.descriptor(from: agent) == nil)
+    // Published terminals no longer carry any metadata.
+    let pane = PaneDescriptorState(id: UUID(), kind: .terminal, name: "Terminal", terminalKey: "shell")
+    let published = WorkspaceSyncModel.serverPane(
+      from: pane, workspaceId: workspaceId, createdAt: Date(timeIntervalSince1970: 0))
+    #expect(published.metadata == nil)
+  }
+
   @Test("Review panes sync what they compare; an unknown mode falls back to branch")
   func reviewPaneRoundTrip() throws {
     let id = UUID()

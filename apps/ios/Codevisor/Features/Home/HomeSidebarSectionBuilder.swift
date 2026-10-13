@@ -20,7 +20,6 @@ struct HomeSidebarSectionBuilder {
     // Machines this device knows about. Their cached workspaces show at
     // launch; records from a machine that has since been removed do not.
     let knownMachineIDs = Set(machines.allMachines.map(\.id))
-    let visibility = PaneNavigationVisibility()
     return entries.sidebar.compactMap { item -> HomeSidebarSection? in
       guard knownMachineIDs.contains(item.serverId),
         let workspace = entries.entry(item.id).workspace, !workspace.isArchived
@@ -28,7 +27,7 @@ struct HomeSidebarSectionBuilder {
       // The first routing chat that still exists anchors the workspace; a
       // terminal-only workspace routes through a closed chat Core retained.
       let anchor = item.routingChatIds.first { session($0, serverId: item.serverId) != nil }
-      let rows = rows(for: workspace, visibility: visibility)
+      let rows = rows(for: workspace)
       return HomeSidebarSection(
         id: workspace.id,
         serverId: workspace.serverId,
@@ -46,11 +45,10 @@ struct HomeSidebarSectionBuilder {
   }
 
   /// Navigable panes in the same order as the workspace's tab grid.
-  private func rows(for workspace: Workspace, visibility: PaneNavigationVisibility) -> [HomeSidebarTabRow] {
+  private func rows(for workspace: Workspace) -> [HomeSidebarTabRow] {
     var seen: Set<UUID> = []
     var rows: [HomeSidebarTabRow] = []
     func append(_ pane: PaneDescriptorState, in tab: WorkspaceTab?, owner: WorkspaceTab) {
-      guard visibility.includes(pane) else { return }
       guard seen.insert(pane.id).inserted else { return }
       let chat =
         pane.kind == .chat
@@ -102,7 +100,7 @@ struct HomeSidebarSectionBuilder {
         fallbackSymbolName: chat.map(harnessSymbol(for:)) ?? "text.bubble"
       )
     case .terminal:
-      .terminal(isAgentOwned: pane.attachOnly)
+      .terminal
     case .browser:
       .browser(favicon: BrowserPaneCache.shared.favicon(paneId: pane.id))
     case .plugin:

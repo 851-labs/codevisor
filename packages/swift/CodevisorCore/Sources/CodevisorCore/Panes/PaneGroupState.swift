@@ -302,18 +302,12 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
   }
 
   /// Which pane takes over when the selected pane at `index` goes away:
-  /// the nearest pane navigation lists — the one before it first, then the
-  /// one after — so closing a tab lands where the sidebar shows, never on
-  /// a hidden agent terminal. Only when nothing listed remains does the
-  /// plain right-neighbor rule apply.
+  /// the one before it, else the one after.
   static func replacementSelection(
-    afterRemovingAt index: Int, from panes: [PaneDescriptorState],
-    visibility: PaneNavigationVisibility = PaneNavigationVisibility()
+    afterRemovingAt index: Int, from panes: [PaneDescriptorState]
   ) -> UUID? {
     guard !panes.isEmpty else { return nil }
-    let before = panes[..<index].last(where: visibility.includes)
-    let after = panes[index...].first(where: visibility.includes)
-    return (before ?? after ?? panes[min(index, panes.count - 1)]).id
+    return (index > 0 ? panes[index - 1] : panes[0]).id
   }
 
   /// Selects an existing pane, ignoring unknown identities.

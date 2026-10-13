@@ -3,10 +3,9 @@ import Foundation
 extension WorkspaceSyncModel {
   private struct BrowserPaneMetadata: Codable { var url: String? }
 
-  private struct NativePaneMetadata: Codable {
-    var attachOnly: Bool
-    var ownerChatSessionId: UUID?
-  }
+  /// Terminal metadata older clients published. `attachOnly` marked a hidden
+  /// tab for an agent's background command, which no longer exists.
+  private struct LegacyTerminalMetadata: Decodable { var attachOnly: Bool? }
 
   nonisolated static func serverPane(
     from pane: PaneDescriptorState,
@@ -26,13 +25,6 @@ extension WorkspaceSyncModel {
       paneType = "terminal"
       resourceKind = "terminal"
       resourceId = pane.terminalKey
-      let value = NativePaneMetadata(
-        attachOnly: pane.attachOnly,
-        ownerChatSessionId: pane.ownerChatSessionId
-      )
-      if let data = try? JSONEncoder().encode(value) {
-        metadata = String(data: data, encoding: .utf8)
-      }
     case .newTab:
       paneType = "new-tab"
       resourceKind = nil
@@ -169,16 +161,16 @@ extension WorkspaceSyncModel {
         chatSessionId: sessionId
       )
     case "terminal":
-      let decoded = record.metadata
+      let legacy = record.metadata
         .flatMap { $0.data(using: .utf8) }
-        .flatMap { try? JSONDecoder().decode(NativePaneMetadata.self, from: $0) }
+        .flatMap { try? JSONDecoder().decode(LegacyTerminalMetadata.self, from: $0) }
+      // A server that predates their cleanup may still list agent tabs.
+      if legacy?.attachOnly == true { return nil }
       return PaneDescriptorState(
         id: id,
         kind: .terminal,
         name: record.title,
         terminalKey: record.resourceId ?? id.uuidString,
-        attachOnly: decoded?.attachOnly ?? false,
-        ownerChatSessionId: decoded?.ownerChatSessionId,
         liveTitle: PaneDescriptorState.normalizedLiveTitle(record.liveTitle),
         terminalActivity: record.terminalActivity.flatMap(TerminalActivity.init(rawValue:))
       )

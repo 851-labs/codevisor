@@ -19,7 +19,6 @@ final class WorkspaceSplitDragCoordinator {
     let sourceLeafId: UUID
     let name: String
     let kind: PaneKind
-    let isAgentOwned: Bool
     var location: CGPoint
     var resolution: WorkspaceSplitDropResolution?
   }
@@ -61,14 +60,12 @@ final class WorkspaceSplitDragCoordinator {
     sourceLeafId: UUID,
     name: String,
     kind: PaneKind,
-    isAgentOwned: Bool,
     location: CGPoint
   ) {
     active = ActiveDrag(
       sourceLeafId: sourceLeafId,
       name: name,
       kind: kind,
-      isAgentOwned: isAgentOwned,
       location: location,
       resolution: resolve(location, sourceLeafId: sourceLeafId)
     )
@@ -242,12 +239,11 @@ struct WorkspaceSplitDragGhost: View {
   @Environment(\.theme) private var theme
   let name: String
   let kind: PaneKind
-  let isAgentOwned: Bool
 
   private var iconName: String {
     switch kind {
     case .chat: "text.bubble"
-    case .terminal: isAgentOwned ? "server.rack" : "terminal"
+    case .terminal: "terminal"
     case .newTab: "square.dashed"
     case .plugin: "puzzlepiece.extension"
     case .document: "doc.richtext"

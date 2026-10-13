@@ -183,15 +183,11 @@ struct WorkspaceSplitView: View {
   private var dragGhostOverlay: some View {
     GeometryReader { proxy in
       if let drag = dragCoordinator?.active {
-        WorkspaceSplitDragGhost(
-          name: drag.name,
-          kind: drag.kind,
-          isAgentOwned: drag.isAgentOwned
-        )
-        .position(
-          x: drag.location.x - proxy.frame(in: .global).minX,
-          y: drag.location.y - proxy.frame(in: .global).minY
-        )
+        WorkspaceSplitDragGhost(name: drag.name, kind: drag.kind)
+          .position(
+            x: drag.location.x - proxy.frame(in: .global).minX,
+            y: drag.location.y - proxy.frame(in: .global).minY
+          )
       }
     }
     .allowsHitTesting(false)
@@ -366,7 +362,7 @@ private struct SplitLeafHeader: View {
   private var iconName: String {
     switch pane?.kind {
     case .chat: "text.bubble"
-    case .terminal: pane?.attachOnly == true ? "server.rack" : "terminal"
+    case .terminal: "terminal"
     case .plugin: "puzzlepiece.extension"
     case .document: "doc.richtext"
     case .browser: "globe"
@@ -389,7 +385,6 @@ private struct SplitLeafHeader: View {
           sourceLeafId: leafId,
           name: title(pane),
           kind: pane.kind,
-          isAgentOwned: pane.attachOnly,
           location: value.location
         )
       }

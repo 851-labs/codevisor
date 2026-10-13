@@ -152,8 +152,6 @@ struct SessionContainerView: View {
           focus: focusAdjacentLeaf
         )
       )
-      // Keep background terminals synchronized across all of a workspace's
-      // chats, including persisted terminal descriptors from older layouts.
       .environment(\.openFileDocument, OpenFileDocumentAction { openFileDocument($0) })
       .environment(
         \.openSubagent,
@@ -161,9 +159,6 @@ struct SessionContainerView: View {
           openSubagent(parentSessionId: parentId, toolCallId: toolCallId, title: title, placement: placement)
         }
       )
-      .onChange(of: backgroundTaskFingerprint, initial: true) { _, _ in
-        syncWorkspaceBackgroundTerminals()
-      }
       // Any change to this workspace -- local or from another device --
       // reaches mounted pane models that hold live views and focus.
       .onChange(of: workspaceEntry.generation, initial: true) { _, _ in

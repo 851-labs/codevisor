@@ -11,9 +11,6 @@ struct TerminalLaunchDescriptor {
   /// per key; a session's first pane uses the bare session UUID (legacy)
   /// and later panes use "<sessionUuid>:<paneUuid>".
   let terminalKey: String
-  /// Agent-owned background terminal: attach to a registered terminal
-  /// instead of spawning a shell, and never close it on teardown.
-  let attachOnly: Bool
   let machine: CodevisorMachine
   /// Relay-aware connection to the machine (cloud machines tunnel through
   /// the in-process relay transports).
@@ -27,7 +24,6 @@ struct TerminalLaunchDescriptor {
     machine: CodevisorMachine,
     serverConfig: CodevisorServerConfig? = nil,
     terminalKey: String,
-    attachOnly: Bool = false,
     workspaceRootDirectory: String? = nil
   ) -> TerminalLaunchDescriptor {
     // The session's cwd IS the workspace's one working directory
@@ -39,7 +35,6 @@ struct TerminalLaunchDescriptor {
       projectFolderPath: project.folderURL.path)
     return TerminalLaunchDescriptor(
       terminalKey: terminalKey,
-      attachOnly: attachOnly,
       machine: machine,
       serverConfig: serverConfig ?? machine.serverConfig,
       workingDirectory: folder

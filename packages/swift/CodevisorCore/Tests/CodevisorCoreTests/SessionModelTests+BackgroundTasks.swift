@@ -14,13 +14,11 @@ extension SessionModelTests {
       sessionId: sessionId.uuidString
     )
 
-    // Echoed prompt finishes the turn, so the session is idle. No
-    // snapshot yet — tab pruning must not treat that as "no tasks".
+    // Echoed prompt finishes the turn, so the session is idle.
     await model.send("run tests in the background")
     await settleUntil { !model.isSending }
     #expect(model.isSending == false)
     #expect(model.isWaitingOnBackgroundTasks == false)
-    #expect(model.hasBackgroundTaskSnapshot == false)
 
     // The prompt echo consumed envelope ids 1-2; manual emits continue
     // the monotonic sequence from 3.
@@ -55,7 +53,6 @@ extension SessionModelTests {
         )
       ])
     #expect(model.isWaitingOnBackgroundTasks)
-    #expect(model.hasBackgroundTaskSnapshot)
 
     // A watcher with no terminal (Claude's `Monitor`, a `tail -f` that may
     // never fire) is not pending work: the turn is done for the user.
@@ -79,41 +76,6 @@ extension SessionModelTests {
         ])
       ))
     await settleUntil { model.backgroundTasks.first?.id == "bg-1b" }
-    #expect(model.waitingBackgroundTasks.isEmpty)
-    #expect(model.isWaitingOnBackgroundTasks == false)
-
-    // A task with an attachable terminal renders as a terminal tab, not
-    // the waiting indicator: it is running, not being waited on.
-    client.emit(
-      ServerEventEnvelope(
-        id: 5,
-        serverId: "local",
-        kind: "session.updated",
-        subjectId: sessionId.uuidString,
-        createdAt: "2026-06-30T00:00:02.500Z",
-        payload: .object([
-          "backgroundTasks": .array([
-            .object([
-              "id": .string("bg-2"),
-              "description": .string("npm run dev"),
-              "status": .string("running"),
-              "taskType": .string("shell"),
-              "terminalKey": .string("\(sessionId.uuidString):bg:tool-1"),
-            ])
-          ])
-        ])
-      ))
-    await settleUntil { model.backgroundTasks.first?.id == "bg-2" }
-    #expect(
-      model.backgroundTasks == [
-        BackgroundTaskInfo(
-          id: "bg-2",
-          description: "npm run dev",
-          status: "running",
-          taskType: "shell",
-          terminalKey: "\(sessionId.uuidString):bg:tool-1"
-        )
-      ])
     #expect(model.waitingBackgroundTasks.isEmpty)
     #expect(model.isWaitingOnBackgroundTasks == false)
 

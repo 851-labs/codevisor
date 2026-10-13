@@ -131,31 +131,19 @@ public struct BackgroundTaskInfo: Sendable, Equatable, Codable, Identifiable {
   public var status: String
   public var taskType: String
   public var toolUseId: String?
-  /// Set when the task's process streams through a server-owned terminal.
-  /// Clients attach with the regular terminal API (`sessionId: terminalKey`,
-  /// `attachOnly: true`) and render the task as a live terminal tab instead
-  /// of the "Waiting on…" indicator.
-  public var terminalKey: String?
-  /// The terminal is a read-only mirror: input and kill are unavailable
-  /// while the task runs (codex owns its command executions).
-  public var readOnly: Bool?
 
   public init(
     id: String,
     description: String,
     status: String,
     taskType: String,
-    toolUseId: String? = nil,
-    terminalKey: String? = nil,
-    readOnly: Bool? = nil
+    toolUseId: String? = nil
   ) {
     self.id = id
     self.description = description
     self.status = status
     self.taskType = taskType
     self.toolUseId = toolUseId
-    self.terminalKey = terminalKey
-    self.readOnly = readOnly
   }
 }
 

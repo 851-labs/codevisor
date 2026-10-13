@@ -1,9 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
-import { homedir, tmpdir } from "node:os"
+import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
-import type { BackgroundTerminalIntegration } from "@codevisor/agent-runtime"
 import type { DataUpgradeProgress, ScreenSharingRequest } from "@codevisor/api"
 import { macNativeHostAvailable, requestMacScreenSharing } from "@codevisor/automation"
 import type { CodevisorDatabaseService } from "@codevisor/db"
@@ -13,13 +12,7 @@ import {
   type NativeMcpManager,
   type NativeMcpManagerConfig
 } from "@codevisor/mcp"
-import type { TerminalManagerService } from "@codevisor/terminal"
 
-import {
-  backgroundTerminalSocketPath,
-  startBackgroundTerminalHost,
-  wrapBackgroundCommand
-} from "./infra/background-terminal-host.js"
 import { makeCloudServerControl, startCloudBridge } from "./infra/cloud-bridge.js"
 import { makeMachineEnrollment } from "./infra/machine-enrollment.js"
 import { makeMachineLink } from "./infra/machine-link.js"
@@ -268,52 +261,6 @@ export const bundledBuildMetadata = (): {
     }
   } catch {
     return {}
-  }
-}
-
-/// Backs agent background processes with server-owned terminals: providers
-/// register mirrors in-process through the registry, and out-of-process
-/// wrappers (background Bash) attach over the unix-socket host. Best-effort —
-/// a host failure degrades to the plain no-terminal behavior.
-export const backgroundTerminalIntegration = async (
-  terminal: TerminalManagerService
-): Promise<BackgroundTerminalIntegration | undefined> => {
-  const registry: BackgroundTerminalIntegration["registry"] = {
-    register: (key, controls) => {
-      const handle = terminal.registerExternalTerminal(
-        { sessionId: key, normalizeNewlines: true, endsWithProcess: true },
-        {
-          write: controls.write ?? (() => undefined),
-          resize: controls.resize ?? (() => undefined),
-          kill: controls.kill ?? (() => undefined),
-          ...(controls.stop === undefined ? {} : { stop: controls.stop })
-        }
-      )
-      return { output: handle.output, exit: handle.exit, remove: handle.remove }
-    }
-  }
-  try {
-    const host = await startBackgroundTerminalHost({
-      registry,
-      // The data dir under Application Support routinely exceeds the unix
-      // socket path limit, and so does TMPDIR once a dev runner points it
-      // into a deep worktree; the helper picks a location that fits.
-      socketPath: backgroundTerminalSocketPath(tmpdir(), process.pid)
-    })
-    const runtimeDir = dirname(fileURLToPath(import.meta.url))
-    return {
-      registry,
-      wrapCommand: wrapBackgroundCommand({
-        nodePath: process.execPath,
-        socketPath: host.socketPath,
-        wrapperPath: join(runtimeDir, "bg-wrap.js")
-      })
-    }
-  } catch (cause) {
-    console.error(
-      `Background terminal host unavailable: ${cause instanceof Error ? cause.message : String(cause)}`
-    )
-    return { registry }
   }
 }
 
