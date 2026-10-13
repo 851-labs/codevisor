@@ -37,6 +37,7 @@ struct TerminalAgentStatusTests {
     arguments: [
       (#","terminalActivity":"working""#, TerminalActivity.working),
       (#","terminalActivity":"idle""#, .idle),
+      (#","terminalActivity":"blocked""#, .blocked),
       ("", nil),
       // A value this client doesn't know yet must not drop the pane.
       (#","terminalActivity":"thinking""#, nil),
@@ -60,9 +61,12 @@ struct TerminalAgentStatusTests {
   }
 
   @Test(
-    "Only a working agent shows the working indicator; otherwise a terminal shows its ordinary icon",
+    "A terminal shows the chat indicator for what its program reports, and its ordinary icon when idle",
     arguments: [
       (PaneKind.terminal, TerminalActivity.working, AgentPaneStatus.working),
+      (.terminal, .done, .unread),
+      (.terminal, .blocked, .actionRequired),
+      (.terminal, .error, .error),
       (.terminal, .idle, nil),
       (.terminal, nil, nil),
       (.chat, .working, nil),

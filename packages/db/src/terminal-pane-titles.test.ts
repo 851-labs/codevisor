@@ -54,10 +54,11 @@ it("sets a terminal's live title and activity on its panes and journals only rea
 
   // An unchanged status journals nothing, so settled repeats cost no events.
   expect(await run(db.setTerminalPaneStatus("TERM-1", "Claude Code", "working"))).toEqual([])
-  expect(await run(db.setTerminalPaneStatus("term-2", "vim", undefined))).toHaveLength(1)
+  // A program reporting its own status (OSC 7501) can say more than a title.
+  expect(await run(db.setTerminalPaneStatus("term-2", "terraform", "blocked"))).toHaveLength(1)
   expect(await statuses()).toEqual({
     "Term-1": ["Claude Code", "working"],
-    "term-2": ["vim", undefined]
+    "term-2": ["terraform", "blocked"]
   })
   // The terminal exiting clears both.
   await run(db.setTerminalPaneStatus("term-1", undefined, undefined))

@@ -6,6 +6,8 @@ import { closeFrame, FakeProcess, makeSpawner, run } from "./test-support.js"
 const osc = (title: string): string => `\u001b]2;${title}\u0007`
 /// A shell integration's semantic prompt mark.
 const mark = (kind: string): string => `\u001b]133;${kind}\u0007`
+/// A Program Status Protocol report.
+const report = (body: string): string => `\u001b]7501;${body}\u001b\\`
 
 const subscribed = (manager: TerminalManagerService) => {
   const titles: Array<[string, string | undefined, string?]> = []
@@ -179,5 +181,67 @@ describe("@codevisor/terminal settled titles", () => {
       ["agent:bg:1", "server 2"],
       ["agent:bg:1", undefined]
     ])
+  })
+})
+
+describe("@codevisor/terminal program status (OSC 7501)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it("answers the support query for live terminals, whether or not a client is attached", async () => {
+    const { manager, spawner, created, output } = await shell()
+    output("\u001b]7501;?\u0007")
+    const disconnect = await run(manager.connectTerminal(created.terminalId, 0, () => undefined))
+    output("\u001b]7501;?\u001b\\")
+    disconnect()
+    expect(spawner.processes[0]!.writes).toEqual([
+      "\u001b]7501;?:states=idle,working,done,blocked,error:kinds=permission,question,auth\u0007",
+      "\u001b]7501;?:states=idle,working,done,blocked,error:kinds=permission,question,auth\u001b\\"
+    ])
+  })
+
+  it("publishes what a program reports in place of what its title suggests", async () => {
+    const { manager, output } = await shell()
+    const { titles } = subscribed(manager)
+
+    output(`${mark("C")}${osc("⠂ Claude Code")}${report("state=blocked:kind=permission")}`)
+    vi.advanceTimersByTime(500)
+    expect(titles).toEqual([["Term-1", "Claude Code", "blocked"]])
+
+    // Clearing every record hands status back to the title.
+    output(report("state=clear"))
+    vi.advanceTimersByTime(500)
+    expect(titles.at(-1)).toEqual(["Term-1", "Claude Code", "working"])
+  })
+
+  it("keeps done and error past the shell prompt, and drops the rest", async () => {
+    const { manager, output } = await shell()
+    const { titles } = subscribed(manager)
+
+    output(`${mark("C")}${report("state=working:app=terraform")}`)
+    vi.advanceTimersByTime(500)
+    output(`${mark("D;0")}${mark("A")}➜ `)
+    vi.advanceTimersByTime(500)
+    expect(titles).toEqual([
+      ["Term-1", undefined, "working"],
+      ["Term-1", undefined]
+    ])
+
+    // A program that finishes just before exiting leaves its result behind.
+    output(`${mark("C")}${report("state=done")}${mark("D;0")}${mark("A")}➜ `)
+    vi.advanceTimersByTime(500)
+    expect(titles.at(-1)).toEqual(["Term-1", undefined, "done"])
+    output(`${mark("C")}ls${mark("D;0")}${mark("A")}➜ `)
+    vi.advanceTimersByTime(500)
+    expect(titles.at(-1)).toEqual(["Term-1", undefined, "done"])
+
+    // Only the program, or a full reset, takes it away.
+    output("\u001bc")
+    vi.advanceTimersByTime(500)
+    expect(titles.at(-1)).toEqual(["Term-1", undefined])
   })
 })

@@ -134,6 +134,26 @@ What the glyph meant is recorded as `terminalActivity`:
 A spinner animating the title changes neither the title nor the activity, so a working agent is
 recorded once when it starts and once when it stops. Neither survives a server restart.
 
+## Program status (OSC 7501)
+
+Programs that speak the [Program Status Protocol](https://www.superlogical.com/rex/docs/build/program-status)
+(OSC 7501) report their own status, and it takes precedence over anything read from the title.
+The server answers the protocol's support query (`ESC ] 7501 ; ? ST`) for every running terminal,
+so programs that check for support before reporting work too.
+
+`terminalActivity` is then the most urgent of the terminal's records: `error`, `blocked`,
+`working`, `done`, then `idle`. The server applies the specification's lifetime rules. A new shell
+prompt (OSC 133 `A`) drops `working`, `blocked`, and `idle` records, but `done` and `error` stay
+until the program replaces or clears them or the terminal is reset. Once no records are left,
+activity comes from the title again.
+
+For example, from a shell in a terminal pane, this shows the pane as waiting on you until you press
+Return; the prompt that follows drops the record:
+
+```sh
+printf '\e]7501;state=blocked:kind=question\e\\'; read -r
+```
+
 ## Reading the screen
 
 `GET /v1/terminals/{id}/screen?format=text` returns the terminal's current screen and scrollback as

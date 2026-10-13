@@ -3,9 +3,9 @@ import CodevisorUI
 import SwiftUI
 
 /// A workspace tab as a sidebar row: the tab's kind glyph — a
-/// chat tab borrows the chat row's live status icon, and a terminal running
-/// an agent shows the same working indicator while it works — its title, and a
-/// hover close button.
+/// chat tab borrows the chat row's live status icon, and a terminal shows the
+/// same indicators for what its program reports — its title, and a hover
+/// close button.
 struct SidebarWorkspaceTabRow: View {
   let title: String
   let kind: PaneKind
@@ -19,7 +19,7 @@ struct SidebarWorkspaceTabRow: View {
   /// The chat a chat tab shows, when it is still known to the session
   /// list; drives the activity/unread leading icon.
   let chatSession: ChatSession?
-  /// A terminal tab's agent status, shown in place of the terminal glyph.
+  /// A terminal tab's program status, shown in place of the terminal glyph.
   var terminalStatus: AgentPaneStatus? = nil
   /// A subagent tab's harness (its chat's), for the harness icon.
   var subagentHarnessId: String? = nil

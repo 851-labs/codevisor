@@ -139,9 +139,15 @@ struct HomeSidebarSectionBuilder {
     return .idle
   }
 
-  /// A terminal whose agent is working shows the chat's in-progress
-  /// indicator; any other pane stays idle.
+  /// A terminal shows the chat indicator for what its program reports; any
+  /// other pane stays idle.
   private func status(forTerminal pane: PaneDescriptorState) -> HomeSessionStatus {
-    pane.terminalAgentStatus == .working ? .inProgress : .idle
+    switch pane.terminalAgentStatus {
+    case .working: .inProgress
+    case .unread: .unread
+    case .actionRequired: .actionRequired
+    case .error: .error
+    case nil: .idle
+    }
   }
 }

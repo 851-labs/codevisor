@@ -1,4 +1,11 @@
 import type { RunningTerminal } from "./frames.js"
+import {
+  makeProgramStatusRecords,
+  makeProgramStatusScanner,
+  PROGRAM_STATUS_QUERY_REPLY,
+  type ProgramStatusRecords,
+  type ProgramStatusScanner
+} from "./program-status.js"
 import { makeShellPrompt, type ShellPrompt } from "./shell-prompt.js"
 import { terminalTitleStatus } from "./terminal-title-status.js"
 import type { TerminalTitleListener, TerminalTitleStatus } from "./types.js"
@@ -19,6 +26,9 @@ interface TitleState {
   /// The last title listeners heard.
   published: TerminalTitleStatus
   prompt: ShellPrompt
+  /// What the program reports with OSC 7501, which outranks its title.
+  scanner: ProgramStatusScanner
+  records: ProgramStatusRecords
   timer?: ReturnType<typeof setTimeout>
 }
 
@@ -37,6 +47,13 @@ export interface TerminalTitles {
 /// timer: the agent publishes once when it starts and once when it stops.
 /// While the shell waits at its prompt the terminal has no title (see
 /// `ShellPrompt`): the pane shows its own name until a command runs.
+///
+/// Activity a program reports itself (OSC 7501, see `program-status.ts`)
+/// replaces whatever its title suggests for as long as it holds a record.
+/// This side answers the protocol's support query for every live terminal,
+/// attached or not: the renderers in the apps don't speak it. A renderer
+/// built from a libghostty that does would answer too, so drop one of the
+/// replies when GhosttyKit moves past it.
 export const makeTerminalTitles = (): TerminalTitles => {
   const states = new WeakMap<RunningTerminal, TitleState>()
   const listeners = new Set<TerminalTitleListener>()
@@ -53,12 +70,22 @@ export const makeTerminalTitles = (): TerminalTitles => {
       const state = states.get(terminal) ?? {
         current: NO_TITLE,
         published: NO_TITLE,
-        prompt: makeShellPrompt()
+        prompt: makeShellPrompt(),
+        scanner: makeProgramStatusScanner(),
+        records: makeProgramStatusRecords()
       }
       states.set(terminal, state)
       state.prompt.observe(data)
-      const status =
+      for (const event of state.scanner.scan(data)) {
+        if (event.type === "query") {
+          terminal.process.write(`\u001b]7501;${PROGRAM_STATUS_QUERY_REPLY}${event.terminator}`)
+        } else {
+          state.records.apply(event)
+        }
+      }
+      const title =
         state.prompt.running() === false ? NO_TITLE : terminalTitleStatus(terminal.screen.title())
+      const status = { title: title.title, activity: state.records.summary() ?? title.activity }
       if (same(status, state.current)) return
       state.current = status
       clearTimeout(state.timer)

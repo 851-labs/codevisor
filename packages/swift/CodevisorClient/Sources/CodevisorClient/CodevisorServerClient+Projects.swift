@@ -199,9 +199,9 @@ public struct ServerWorkspacePane: Codable, Equatable, Sendable {
   /// Server-owned, so pane upserts never send it; nil when no program has
   /// set one or on servers that predate live titles.
   public var liveTitle: String?
-  /// Terminal panes only: "working" while an agent CLI in the terminal is
-  /// running a turn, "idle" once it waits; nil when no agent reports status
-  /// or on servers that predate terminal status. Kept raw so a value this
+  /// Terminal panes only: what the program in the terminal says it is doing
+  /// ("working", "idle", "done", "blocked", or "error"); nil when it says
+  /// nothing or on servers that predate terminal status. Kept raw so a value this
   /// client doesn't know yet never fails the record. Server-owned.
   public var terminalActivity: String?
 

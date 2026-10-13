@@ -2,8 +2,9 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// The working and unread indicators an agent's pane shows in its icon
-/// slot. Chats show both; a CLI running in a terminal shows only working.
+/// The indicators an agent's pane shows in its icon slot. Chats use working
+/// and unread here (`ChatSessionLeadingIcon` draws their other states); a
+/// terminal shows whichever state its program reports.
 struct AgentStatusIndicator: View {
   let status: AgentPaneStatus
   /// The working glyph's tint; see `ChatSessionLeadingIcon.activityColor`.
@@ -17,6 +18,10 @@ struct AgentStatusIndicator: View {
       AgentActivityIndicator(color: activityColor)
     case .unread:
       UnreadBadge(color: theme.isSystem ? .blue : theme.accent)
+    case .actionRequired:
+      ActionRequiredIndicator(color: theme.statusError, subject: "terminal")
+    case .error:
+      ErrorUnreadBadge(color: theme.statusError, subject: "terminal")
     }
   }
 }

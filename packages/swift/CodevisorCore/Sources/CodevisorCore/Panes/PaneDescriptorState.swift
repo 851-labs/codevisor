@@ -72,7 +72,7 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
   /// publishes back as the record's title.
   public var liveTitle: String?
   /// Terminal panes only, from the server's pane record like `liveTitle`:
-  /// what an agent CLI running in the terminal is doing.
+  /// what the program running in the terminal says it is doing.
   public var terminalActivity: TerminalActivity?
   /// Subagent panes only: the tool call that spawned the subagent.
   public var subagentToolCallId: String?

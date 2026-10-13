@@ -70,10 +70,13 @@ export const UpsertWorkspaceRequest = Schema.Struct({
 })
 export type UpsertWorkspaceRequest = typeof UpsertWorkspaceRequest.Type
 
-/// What the agent in a terminal says it is doing, read from the leading glyph
-/// of the title it sets: a spinner while `working`, Claude Code's `✳` once
-/// `idle` at its prompt.
-export const TerminalActivity = Schema.Literals(["working", "idle"])
+/// What the program in a terminal says it is doing. A program that speaks the
+/// Program Status Protocol (OSC 7501) reports any of these itself: `idle`,
+/// `working`, `done` (finished, not yet looked at), `blocked` (needs the
+/// user), or `error` (failed and stopped). Otherwise it is read from the
+/// leading glyph of the title an agent sets: a spinner while `working`,
+/// Claude Code's `✳` once `idle` at its prompt.
+export const TerminalActivity = Schema.Literals(["working", "idle", "done", "blocked", "error"])
 export type TerminalActivity = typeof TerminalActivity.Type
 
 /// A server-owned pane identity. Layout deliberately does not live here:
@@ -95,8 +98,9 @@ export const WorkspacePane = Schema.Struct({
   /// Code's `✳`) is dropped: `terminalActivity` carries what it meant.
   /// Clients show it (unless the user renamed the tab) in place of `title`.
   liveTitle: Schema.optional(Schema.String),
-  /// What the agent in a terminal pane is doing, from its title; absent when
-  /// its title shows no activity (a plain shell, a program without one).
+  /// What the program in a terminal pane is doing, as it reports (OSC 7501)
+  /// or else as its title shows; absent when neither says (a plain shell, a
+  /// program without one).
   terminalActivity: Schema.optional(TerminalActivity),
   /// Monotonic server-owned content revision. Clients use this to reject a
   /// snapshot that was captured before an optimistic pane conversion landed.

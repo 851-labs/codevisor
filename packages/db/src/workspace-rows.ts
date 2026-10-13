@@ -1,3 +1,5 @@
+import type { TerminalActivity } from "@codevisor/api"
+
 export interface WorkspaceRow {
   readonly sidebar_position: string
   readonly sidebar_order_revision: number
@@ -24,7 +26,7 @@ export interface WorkspacePaneRow {
   readonly resource_id: string | null
   readonly metadata: string | null
   readonly live_title: string | null
-  readonly terminal_activity: "working" | "idle" | null
+  readonly terminal_activity: TerminalActivity | null
   readonly revision: number
   /// The shared tab order key. Inserts and the upgrade assign one; the
   /// column default of "" only covers rows written outside the service.
