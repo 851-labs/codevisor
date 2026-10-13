@@ -37,9 +37,6 @@ struct ModelConfigMenu: View {
       }
     }
   }
-}
-
-private extension ModelConfigMenu {
   private func modelButton(_ presentation: ModelPickerPresentation) -> some View {
     Autocomplete.Menu(isPresented: $isPresented) {
       for group in modelGroups {
