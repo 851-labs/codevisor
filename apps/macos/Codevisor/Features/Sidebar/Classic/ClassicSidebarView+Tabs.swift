@@ -14,9 +14,8 @@ extension ClassicSidebarView {
   /// animation.
   func tabRowIDs(in workspace: Workspace) -> [UUID] {
     workspace.centerTabs.flatMap { tab -> [UUID] in
-      let groups = sidebarGroups(tab, in: workspace)
-      guard !groups.isEmpty else { return [] }
-      return tab.root.allGroups.count > 1 ? groups.map(\.id) : [tab.id]
+      let groups = tab.root.allGroups
+      return groups.count > 1 ? groups.map(\.id) : [tab.id]
     }
   }
 
@@ -29,22 +28,20 @@ extension ClassicSidebarView {
     let workspace = item.workspace
     let routesSelection = routesSelectedSession(workspace)
     ForEach(workspace.centerTabs) { tab in
-      if !sidebarGroups(tab, in: workspace).isEmpty {
-        VStack(alignment: .leading, spacing: 1) {
-          tabRows(tab, in: item, routesSelection: routesSelection)
-        }
-        // The picked-up tab stays dimmed in place while its copy travels.
-        .opacity(draggingID == tab.id ? 0.4 : 1)
-        .onGeometryChange(for: CGRect.self) { proxy in
-          proxy.frame(in: .named(Self.reorderSpace))
-        } action: { frame in
-          recordTabFrame(frame, for: tab.id)
-        }
-        .onDisappear { forgetTabGeometry(for: tab.id) }
-        // Alongside the row's own press-to-select, so a drag selects too.
-        .simultaneousGesture(reorderGesture(for: .tab(tab.id, workspaceID: workspace.id)))
-        .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+      VStack(alignment: .leading, spacing: 1) {
+        tabRows(tab, in: item, routesSelection: routesSelection)
       }
+      // The picked-up tab stays dimmed in place while its copy travels.
+      .opacity(draggingID == tab.id ? 0.4 : 1)
+      .onGeometryChange(for: CGRect.self) { proxy in
+        proxy.frame(in: .named(Self.reorderSpace))
+      } action: { frame in
+        recordTabFrame(frame, for: tab.id)
+      }
+      .onDisappear { forgetTabGeometry(for: tab.id) }
+      // Alongside the row's own press-to-select, so a drag selects too.
+      .simultaneousGesture(reorderGesture(for: .tab(tab.id, workspaceID: workspace.id)))
+      .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
     }
   }
 
@@ -53,8 +50,8 @@ extension ClassicSidebarView {
   /// selection.
   @ViewBuilder
   func tabRows(_ tab: WorkspaceTab, in item: SidebarWorkspaceListItem, routesSelection: Bool) -> some View {
-    let groups = sidebarGroups(tab, in: item.workspace)
-    if tab.root.allGroups.count > 1 {
+    let groups = tab.root.allGroups
+    if groups.count > 1 {
       ForEach(groups, id: \.id) { leaf in
         workspacePaneRow(
           leafId: leaf.id,
@@ -64,18 +61,8 @@ extension ClassicSidebarView {
           routesSelection: routesSelection
         )
       }
-    } else if !groups.isEmpty {
+    } else {
       workspaceTabRow(tab, in: item, routesSelection: routesSelection)
-    }
-  }
-
-  private func sidebarGroups(
-    _ tab: WorkspaceTab, in workspace: Workspace
-  ) -> [(id: UUID, state: PaneGroupState)] {
-    let visibility = PaneNavigationVisibility()
-    return tab.root.allGroups.filter { group in
-      let pane = leafDescriptor(leafId: group.id, persisted: group.state, in: workspace)
-      return pane.map { visibility.includes($0) } ?? true
     }
   }
 
@@ -92,7 +79,6 @@ extension ClassicSidebarView {
     return SidebarWorkspaceTabRow(
       title: paneTitle(descriptor, chatSession: chatSession),
       kind: descriptor?.kind ?? .newTab,
-      isAgentOwned: descriptor?.attachOnly ?? false,
       browserFavicon: browserFavicon(descriptor),
       pluginId: descriptor?.pluginId,
       pluginPaneType: descriptor?.pluginPaneType,
@@ -130,7 +116,6 @@ extension ClassicSidebarView {
     return SidebarWorkspaceTabRow(
       title: tabTitle(tab, descriptor: descriptor, chatSession: chatSession),
       kind: descriptor?.kind ?? .newTab,
-      isAgentOwned: descriptor?.attachOnly ?? false,
       browserFavicon: browserFavicon(descriptor),
       pluginId: descriptor?.pluginId,
       pluginPaneType: descriptor?.pluginPaneType,
@@ -317,9 +302,8 @@ extension ClassicSidebarView {
     [.newChat]
       + listedWorkspaceItems.flatMap { item in
         item.workspace.centerTabs.flatMap { tab -> [SidebarTabEntry] in
-          let groups = sidebarGroups(tab, in: item.workspace)
-          guard !groups.isEmpty else { return [] }
-          guard tab.root.allGroups.count > 1 else { return [.tab(item: item, tab: tab, leaf: nil)] }
+          let groups = tab.root.allGroups
+          guard groups.count > 1 else { return [.tab(item: item, tab: tab, leaf: nil)] }
           return groups.map { .tab(item: item, tab: tab, leaf: ($0.id, $0.state)) }
         }
       }

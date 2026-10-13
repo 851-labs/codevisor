@@ -148,7 +148,6 @@ struct PaneTab: View {
 /// everything else shows its kind (or its page's or plugin's own artwork).
 struct PaneTabIcon: View {
   let kind: PaneKind
-  var isAgentOwned = false
   var browserFavicon: NSImage? = nil
   /// A plugin pane's identity, so the tab shows the plugin's own artwork
   /// (fetched through `pluginIconClient`) instead of the generic glyph.
@@ -198,7 +197,7 @@ struct PaneTabIcon: View {
   private var systemImage: String {
     switch kind {
     case .chat: "text.bubble"
-    case .terminal: isAgentOwned ? "server.rack" : "terminal"
+    case .terminal: "terminal"
     case .newTab: "square.dashed"
     case .plugin: "puzzlepiece.extension"
     case .document: "text.document"
@@ -213,7 +212,7 @@ struct PaneTabIcon: View {
   var help: String {
     switch kind {
     case .chat: "Chat"
-    case .terminal: isAgentOwned ? "Agent background process" : "Terminal"
+    case .terminal: "Terminal"
     case .newTab: "New tab"
     case .plugin: "Plugin pane"
     case .document: "Document"

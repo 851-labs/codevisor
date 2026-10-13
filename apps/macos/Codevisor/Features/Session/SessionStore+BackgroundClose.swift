@@ -69,7 +69,7 @@ extension SessionStore {
       model.onPaneWillClose = nil
       model.onPaneClosed = { [weak self] descriptor in
         guard let self else { return }
-        if descriptor.kind != .newTab, !descriptor.attachOnly,
+        if descriptor.kind != .newTab,
           descriptor.kind != .chat || descriptor.chatSessionId != nil
         {
           recordClosedPane(

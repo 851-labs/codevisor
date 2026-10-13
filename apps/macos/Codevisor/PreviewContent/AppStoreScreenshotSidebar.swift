@@ -23,7 +23,7 @@
               )
               ForEach(section.rows) { row in
                 SidebarWorkspaceTabRow(
-                  title: row.title, kind: row.kind, isAgentOwned: false,
+                  title: row.title, kind: row.kind,
                   chatSession: row.session, store: store,
                   isSelected: (scene == "conversation" && row.id == AppStoreScreenshotData.id(11))
                     || (scene == "browser" && row.id == AppStoreScreenshotData.id(13)),

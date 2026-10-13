@@ -49,9 +49,9 @@ extension SessionContainerView {
     case .nextWorkspace:
       store.workspaceStepHandler?(1)
     case let .selectTab(index):
-      // Numbered as the strip shows them, skipping hidden agent terminals.
+      // Numbered as the strip shows them.
       let workspace = navigationWorkspace
-      let tabs = workspace.listedCenterTabs()
+      let tabs = workspace.centerTabs
       guard tabs.indices.contains(index) else { return true }
       store.selectDestination(.tab(tabs[index].id), in: workspace.id)
     case let .split(edge):
@@ -89,7 +89,7 @@ extension SessionContainerView {
   /// Cycles the strip's tabs, wrapping at either end.
   func selectRelativeCenterTab(offset: Int) {
     let workspace = navigationWorkspace
-    let tabs = workspace.listedCenterTabs()
+    let tabs = workspace.centerTabs
     guard tabs.count > 1,
       let index = tabs.firstIndex(where: { $0.id == workspace.selectedCenterTabId })
     else { return }

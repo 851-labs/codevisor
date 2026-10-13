@@ -70,15 +70,15 @@ extension SessionContainerView {
 
   // MARK: - Tab strip
 
-  /// The tab strip shows once a workspace has more than one listed tab.
+  /// The tab strip shows once a workspace has more than one tab.
   /// Only with the sidebar refresh; the classic sidebar lists tabs itself.
   func showsCenterTabBar(in workspace: Workspace) -> Bool {
-    FeatureFlag.sidebarRefresh.isEnabled && workspace.listedCenterTabs().count > 1
+    FeatureFlag.sidebarRefresh.isEnabled && workspace.centerTabs.count > 1
   }
 
-  /// The workspace's listed tabs as strip items, numbered for ⌘1–⌘9.
+  /// The workspace's tabs as strip items, numbered for ⌘1–⌘9.
   func centerTabItems(in workspace: Workspace) -> [PaneTabStripItem] {
-    workspace.listedCenterTabs().enumerated().map { index, tab in
+    workspace.centerTabs.enumerated().map { index, tab in
       let descriptor = centerTabDescriptor(tab, in: workspace)
       let title = centerTabTitle(tab, descriptor: descriptor)
       return PaneTabStripItem(
@@ -112,7 +112,6 @@ extension SessionContainerView {
     }
     return PaneTabIcon(
       kind: descriptor?.kind ?? .newTab,
-      isAgentOwned: descriptor?.attachOnly ?? false,
       browserFavicon: descriptor.flatMap {
         $0.kind == .browser ? store.localBrowserModel(paneId: $0.id)?.favicon : nil
       },
