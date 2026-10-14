@@ -46,20 +46,20 @@
       case ended = 4
     }
 
-    private func event(_ phase: Phase, deltaY: Int32) throws -> NSEvent {
+    private func event(_ phase: Phase, deltaY: Int32, flags: CGEventFlags = []) throws -> NSEvent {
       let cgEvent = try #require(
         CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: deltaY, wheel2: 0, wheel3: 0))
-      cgEvent.flags = []
+      cgEvent.flags = flags
       cgEvent.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
       cgEvent.setIntegerValueField(.scrollWheelEventScrollPhase, value: phase.rawValue)
       return try #require(NSEvent(cgEvent: cgEvent))
     }
 
-    private func swipeDown(over output: BoundedOutput) throws {
-      output.scrollWheel(with: try event(.began, deltaY: 0))
-      output.scrollWheel(with: try event(.changed, deltaY: -12))
-      output.scrollWheel(with: try event(.changed, deltaY: -12))
-      output.scrollWheel(with: try event(.ended, deltaY: 0))
+    private func swipeDown(over output: BoundedOutput, flags: CGEventFlags = []) throws {
+      output.scrollWheel(with: try event(.began, deltaY: 0, flags: flags))
+      output.scrollWheel(with: try event(.changed, deltaY: -12, flags: flags))
+      output.scrollWheel(with: try event(.changed, deltaY: -12, flags: flags))
+      output.scrollWheel(with: try event(.ended, deltaY: 0, flags: flags))
     }
 
     @Test("A swipe that begins motionless over long lines still hands off at the bottom")
@@ -68,6 +68,14 @@
       mounted.output.canScrollDown = false
       try swipeDown(over: mounted.output)
       #expect(mounted.transcript.scrollEvents == 3)
+    }
+
+    @Test("Holding Shift keeps a swipe over long lines on the output's horizontal axis")
+    func shiftedSwipeOverWideOutputStaysInIt() throws {
+      let mounted = mount(documentWidth: 1_400)
+      mounted.output.canScrollDown = false
+      try swipeDown(over: mounted.output, flags: .maskShift)
+      #expect(mounted.transcript.scrollEvents == 0)
     }
 
     @Test("A swipe that begins motionless over fitting lines scrolls the output it is over")
