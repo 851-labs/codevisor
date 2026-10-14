@@ -17,7 +17,8 @@ struct ModelSelectionTests {
         hasSettings: bits & 4 != 0,
         isResolvingSettings: bits & 8 != 0
       )
-      #expect(presentation.spinnerCount <= 1, "combination \(bits)")
+      #expect(
+        !(presentation.modelChip == .loading && presentation.showsSettingsSpinner), "combination \(bits)")
     }
   }
 
@@ -29,14 +30,14 @@ struct ModelSelectionTests {
     )
     #expect(unknown.modelChip == .loading)
     #expect(!unknown.showsSettingsChip)
-    #expect(unknown.spinnerCount == 1)
+    #expect(!unknown.showsSettingsSpinner)
 
     let unselected = ModelPickerPresentation(
       isModelListKnown: true, selectedModelName: nil,
       hasSettings: false, isResolvingSettings: false
     )
     #expect(unselected.modelChipTitle == "Select a model")
-    #expect(unselected.spinnerCount == 0)
+    #expect(!unselected.showsSettingsSpinner)
 
     let refreshing = ModelPickerPresentation(
       isModelListKnown: true, selectedModelName: "Opus",
@@ -44,7 +45,7 @@ struct ModelSelectionTests {
     )
     #expect(refreshing.modelChip == .model(name: "Opus"))
     #expect(refreshing.showsSettingsChip)
-    #expect(refreshing.spinnerCount == 0)
+    #expect(!refreshing.showsSettingsSpinner)
 
     let picked = ModelPickerPresentation(
       isModelListKnown: true, selectedModelName: "Sonnet",
@@ -53,7 +54,6 @@ struct ModelSelectionTests {
     #expect(picked.modelChip == .model(name: "Sonnet"))
     #expect(picked.showsSettingsChip)
     #expect(picked.showsSettingsSpinner)
-    #expect(picked.spinnerCount == 1)
   }
 
   @Test("An existing chat never reads or writes New Chat defaults")
@@ -110,7 +110,7 @@ struct ModelSelectionTests {
     let controller = controller(for: session(configSelections: nil), cache: cache)
 
     #expect(controller.modelPickerPresentation.modelChip == .loading)
-    #expect(controller.modelPickerPresentation.spinnerCount == 1)
+    #expect(!controller.modelPickerPresentation.showsSettingsSpinner)
   }
 
   @Test("An existing chat whose model was withdrawn asks for a new one")

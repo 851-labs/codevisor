@@ -20,7 +20,6 @@ extension SessionModelTests {
     let model = SessionModel(
       serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
       sessionId: sessionId.uuidString,
-      stalledTurnQuietInterval: .seconds(300),
       quietTurnScheduler: scheduler.scheduler
     )
 
@@ -59,7 +58,6 @@ extension SessionModelTests {
     let model = SessionModel(
       serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
       sessionId: sessionId.uuidString,
-      stalledTurnQuietInterval: .seconds(300),
       quietTurnScheduler: scheduler.scheduler
     )
     await model.loadHistoryForInitialDisplay()
@@ -102,7 +100,6 @@ extension SessionModelTests {
     let model = SessionModel(
       serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
       sessionId: sessionId.uuidString,
-      stalledTurnQuietInterval: .seconds(300),
       quietTurnScheduler: scheduler.scheduler
     )
     await model.loadHistoryForInitialDisplay()
@@ -141,7 +138,6 @@ extension SessionModelTests {
     let model = SessionModel(
       serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
       sessionId: sessionId.uuidString,
-      stalledTurnQuietInterval: .seconds(300),
       quietTurnScheduler: scheduler.scheduler
     )
 
