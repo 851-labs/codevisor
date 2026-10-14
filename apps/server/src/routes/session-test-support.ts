@@ -15,20 +15,11 @@ export const setUpWorkspace = async () => {
   const workspaceFolder = join(workspaceRoot, "codevisor")
   mkdirSync(workspaceFolder)
   const workspaceResponse = await jsonRequest(server, "/v1/projects", {
-    body: JSON.stringify({ folderPath: workspaceFolder, id: "workspace-client-id" }),
+    body: JSON.stringify({ folderPath: workspaceFolder }),
     method: "POST"
   })
   expect(workspaceResponse.status).toBe(201)
   const workspace = workspaceResponse.body as { readonly id: string }
-  expect(workspace.id).toBe("workspace-client-id")
-  expect(
-    (
-      await jsonRequest(server, `/v1/projects/${workspace.id}`, {
-        body: JSON.stringify({ name: "Renamed" }),
-        method: "PATCH"
-      })
-    ).body
-  ).toMatchObject({ name: "Renamed" })
   return { agents, server, services, workspace, workspaceFolder, workspaceRoot }
 }
 

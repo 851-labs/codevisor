@@ -216,6 +216,12 @@ describe("project routes", () => {
     expect((resync.body as { id: string }).id).toBe(lowerId)
     expect(((await jsonRequest(server, "/v1/projects")).body as Array<unknown>).length).toBe(1)
 
+    const renamed = await jsonRequest(server, `/v1/projects/${upperId}`, {
+      body: JSON.stringify({ name: "Renamed" }),
+      method: "PATCH"
+    })
+    expect(renamed).toMatchObject({ status: 200, body: { id: lowerId, name: "Renamed" } })
+
     const session = await jsonRequest(server, "/v1/sessions", {
       body: JSON.stringify({ projectId: upperId, harnessId: "codex" }),
       method: "POST"

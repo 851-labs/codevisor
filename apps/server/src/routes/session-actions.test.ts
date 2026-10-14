@@ -412,7 +412,7 @@ describe("session action routes", () => {
     const websocketReplay = await readWebSocketEvents(server, 2, 0)
     expect(websocketReplay).toEqual([
       expect.objectContaining({ kind: "project.created" }),
-      expect.objectContaining({ kind: "project.updated" })
+      expect.objectContaining({ kind: "session.created" })
     ])
     const socketReplayEvents = listEvents(services)
     const socketReplayCursor = socketReplayEvents.at(-1)?.id ?? 0
