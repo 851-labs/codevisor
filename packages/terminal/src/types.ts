@@ -113,8 +113,10 @@ export interface TerminalSnapshotEntry {
 }
 
 export interface TerminalSnapshot {
-  /// Version 3 files never hold agent command mirrors; earlier ones cannot
-  /// tell them apart from other external terminals.
+  /// Files before version 3 persisted agent command mirrors, which cannot be
+  /// told apart from other external terminals, so restore skips their
+  /// external entries. Version 3 has no such guard: every external terminal
+  /// it holds is restored, so callers must not register short-lived ones.
   readonly version: 1 | 2 | 3
   readonly terminals: ReadonlyArray<TerminalSnapshotEntry>
 }
@@ -144,8 +146,8 @@ export interface TerminalManagerService {
   /// background-task terminals (`<agentSessionId>:bg:...`) must not keep
   /// processes running. Returns how many terminals were removed.
   readonly closeTerminalsForSessionPrefix: (prefix: string) => Effect.Effect<number, TerminalError>
-  /// Registers a terminal whose process the CALLER owns (an agent's background
-  /// shell, a mirrored remote process). The manager never spawns or respawns
+  /// Registers a terminal whose process the CALLER owns (a harness lifecycle
+  /// command, a plugin process). The manager never spawns or respawns
   /// it: clients attach with `attachOnly` createTerminal requests, and the
   /// terminal remains attachable after exit so its scrollback stays readable.
   readonly registerExternalTerminal: (

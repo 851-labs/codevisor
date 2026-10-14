@@ -5,7 +5,11 @@ import { run } from "./test-support.js"
 
 describe("terminal shutdown", () => {
   it("normalizes failures while replaying a terminal to a disconnected client", async () => {
-    for (const failure of [new Error("disconnected"), "disconnected"]) {
+    for (const failure of [
+      new Error("disconnected"),
+      "disconnected",
+      { toString: () => "disconnected" }
+    ]) {
       const manager = makeTerminalManager()
       const terminal = manager.registerExternalTerminal(
         { sessionId: "replay" },

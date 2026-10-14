@@ -31,16 +31,15 @@ describe("@codevisor/terminal terminal manager", () => {
       shell: "/bin/zsh"
     })
 
-    await expect(
-      run(
-        manager.createTerminal({
-          sessionId: "session-1",
-          cwd: "/tmp/project",
-          cols: 0,
-          rows: 24
-        })
-      )
-    ).rejects.toBeInstanceOf(TerminalError)
+    for (const [cols, rows] of [
+      [0, 24],
+      [80, 0]
+    ] as const) {
+      await expect(
+        run(manager.createTerminal({ sessionId: "session-2", cwd: "/tmp/project", cols, rows }))
+      ).rejects.toBeInstanceOf(TerminalError)
+    }
+    expect(spawner.requests).toHaveLength(1)
   })
 
   it("buffers early process frames and rejects input after an early exit", async () => {

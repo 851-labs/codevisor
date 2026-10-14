@@ -5,10 +5,7 @@ import { createVtTerminal, loadGhosttyVt } from "./ghostty-vt.js"
 const decode = (bytes: Uint8Array): string => new TextDecoder().decode(bytes)
 
 describe("libghostty-vt terminal state", () => {
-  it("loads the bundled wasm build, lazily or explicitly", () => {
-    const lazy = createVtTerminal({ cols: 20, rows: 4 })
-    lazy.free()
-    loadGhosttyVt()
+  it("loads the bundled wasm build on first use and ignores empty writes", () => {
     const terminal = createVtTerminal({ cols: 20, rows: 4 })
     terminal.write("")
     terminal.write("ready")
