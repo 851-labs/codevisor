@@ -54,6 +54,7 @@ extension SidebarView {
     let listItem = SidebarWorkspaceListItem(workspace: workspace, routingSession: routingSession(for: item))
     return SidebarArchivedWorkspaceRow(
       name: workspace.name,
+      subtitle: rowSubtitle(for: workspace, isArchived: true),
       icon: icon(for: listItem),
       store: store,
       isReordering: isReordering,

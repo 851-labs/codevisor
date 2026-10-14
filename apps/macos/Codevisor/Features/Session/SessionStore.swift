@@ -86,7 +86,9 @@ final class SessionStore {
   /// The groups' live browser pages by pane id.
   @ObservationIgnored let browserPanes = BrowserPaneIndex()
   /// The sidebar's pull request badges for this window's workspaces.
-  @ObservationIgnored let pullRequests = SidebarPullRequests()
+  @ObservationIgnored let pullRequests = SidebarGitLookup.pullRequests()
+  /// The sidebar's branch names for this window's workspaces.
+  @ObservationIgnored let branches = SidebarGitLookup.branches()
   /// One live unsent new-chat draft per machine, mirrored to disk by
   /// `ComposerDraftStore`. A controller permanently owns the server client
   /// it was created with, so reusing a draft after a machine switch can send

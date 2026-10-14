@@ -129,14 +129,22 @@ struct SidebarView: View {
     }
     .pickerStyle(.menu)
     Menu {
-      ForEach(SidebarRowDetail.allCases) { detail in
-        Toggle(isOn: rowDetailBinding(detail)) {
-          Label(detail.title, systemImage: detail.systemImage)
-        }
+      ForEach(SidebarRowDetail.subtitleDetails) { detail in
+        rowDetailToggle(detail)
+      }
+      Divider()
+      ForEach(SidebarRowDetail.trailingDetails) { detail in
+        rowDetailToggle(detail)
       }
     } label: {
       Label("Properties", systemImage: "list.bullet")
         .labelStyle(.titleAndIcon)
+    }
+  }
+
+  private func rowDetailToggle(_ detail: SidebarRowDetail) -> some View {
+    Toggle(isOn: rowDetailBinding(detail)) {
+      Label(detail.title, systemImage: detail.systemImage)
     }
   }
 
@@ -299,17 +307,18 @@ struct SidebarView: View {
           store?.workspaceStepHandler = nil
         }
       }
-      // PR badges: the docked sidebar keeps the window's answers fresh while
-      // they show; the store re-asks a workspace only once its answer is stale.
-      .task(id: pullRequestRefreshKey) {
-        guard publishesSceneActions, pullRequestRefreshKey != nil else { return }
+      // PR badges and branches: the docked sidebar keeps the window's answers
+      // fresh while they show; the store re-asks a workspace only once its
+      // answer is stale.
+      .task(id: gitLookupRefreshKey) {
+        guard publishesSceneActions, gitLookupRefreshKey != nil else { return }
         while !Task.isCancelled {
-          refreshPullRequests()
+          refreshGitLookups()
           try? await Task.sleep(for: .seconds(60))
         }
       }
       .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-        if publishesSceneActions, pullRequestRefreshKey != nil { refreshPullRequests() }
+        if publishesSceneActions, gitLookupRefreshKey != nil { refreshGitLookups() }
       }
       .focusedSceneValue(
         \.sidebarActions,

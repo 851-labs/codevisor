@@ -152,6 +152,7 @@ extension SidebarView {
     if let entry = listedSidebarItems.first(where: { $0.id == id }), let item = listItem(for: entry) {
       SidebarWorkspaceRowLabel(
         name: item.workspace.name,
+        subtitle: rowSubtitle(for: item.workspace),
         icon: icon(for: item),
         store: store
       )

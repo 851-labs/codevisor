@@ -12,6 +12,7 @@ extension SidebarView {
     let id = workspace.id
     return SidebarWorkspaceRow(
       name: workspace.name,
+      subtitle: rowSubtitle(for: workspace),
       icon: icon(for: item),
       store: store,
       updatedAt: rowDetails.contains(.updated) ? lastUpdated(item.workspace) : nil,
@@ -59,25 +60,77 @@ extension SidebarView {
     return SidebarRowMachine(name: name, systemImage: SidebarRowMachine.systemImage(isLocal: machine.isLocal))
   }
 
-  /// Restarts the PR refresh loop when badges are turned on or off, or the
-  /// listed workspaces change. Nil while badges are off.
-  var pullRequestRefreshKey: [UUID]? {
-    rowDetails.contains(.pullRequest) ? listedSidebarItems.map(\.id) : nil
+  /// A row's second line: the Properties menu's project, branch, and
+  /// worktree, in that order. Leaves out the project when the row's group
+  /// heading already names it (a project folder; pinned and archived rows
+  /// sit outside it), and anything that repeats the workspace's own name or
+  /// an earlier part (workspaces are often named after their worktree, and
+  /// worktrees after their branch).
+  func rowSubtitle(for workspace: Workspace, isArchived: Bool = false) -> String? {
+    let groupNamesProject = !isArchived && grouping == .project && !isPinned(workspace)
+    // The logical project's name, as its folder reads: every machine's
+    // record of one repository folds into one, named by the oldest.
+    let projectName = ProjectGroup.grouping(list.projects).first {
+      $0.contains(serverId: workspace.serverId, projectId: workspace.projectId)
+    }?.name
+    let candidates: [String?] = SidebarRowDetail.subtitleDetails.map { detail in
+      guard rowDetails.contains(detail) else { return nil }
+      return switch detail {
+      case .project: groupNamesProject ? nil : projectName
+      case .branch: store?.branches.byWorkspace[workspace.id]
+      case .worktree: workspace.worktreeName
+      default: nil
+      }
+    }
+    var parts: [String] = []
+    for candidate in candidates {
+      guard let candidate, !candidate.isEmpty, candidate != workspace.name, !parts.contains(candidate) else {
+        continue
+      }
+      parts.append(candidate)
+    }
+    return parts.isEmpty ? nil : parts.joined(separator: " · ")
   }
 
-  /// Asks each workspace row on screen about its pull request; workspaces in
-  /// collapsed groups, or without a checkout yet, are left alone.
-  func refreshPullRequests() {
+  /// What the git refresh loop asks about; a change restarts it.
+  struct GitLookupRefreshKey: Equatable {
+    let pullRequests: Bool
+    let branches: Bool
+    let workspaceIds: [UUID]
+  }
+
+  /// Restarts the git refresh loop when PR badges or branches are turned on
+  /// or off, or the listed workspaces change. Nil while both are off.
+  var gitLookupRefreshKey: GitLookupRefreshKey? {
+    let pullRequests = rowDetails.contains(.pullRequest)
+    let branches = rowDetails.contains(.branch)
+    guard pullRequests || branches else { return nil }
+    return GitLookupRefreshKey(
+      pullRequests: pullRequests, branches: branches, workspaceIds: listedSidebarItems.map(\.id)
+    )
+  }
+
+  /// Asks each workspace row on screen about its pull request and branch,
+  /// whichever the rows show; workspaces in collapsed groups, or without a
+  /// checkout yet, are left alone.
+  func refreshGitLookups() {
     guard let store else { return }
-    let targets = listedWorkspaceItems.compactMap { item -> SidebarPullRequests.Target? in
+    let checkouts = listedWorkspaceItems.compactMap { item -> (id: UUID, path: String, serverId: String)? in
       guard let path = item.workspace.rootDirectory, !path.isEmpty else { return nil }
-      return SidebarPullRequests.Target(
-        workspaceId: item.workspace.id,
-        path: path,
-        client: environment.machines.client(for: item.workspace.serverId)
-      )
+      return (item.workspace.id, path, item.workspace.serverId)
     }
-    store.pullRequests.refresh(targets)
+    if rowDetails.contains(.pullRequest) {
+      store.pullRequests.refresh(
+        checkouts.map {
+          .init(workspaceId: $0.id, path: $0.path, client: environment.machines.client(for: $0.serverId))
+        })
+    }
+    if rowDetails.contains(.branch) {
+      store.branches.refresh(
+        checkouts.map {
+          .init(workspaceId: $0.id, path: $0.path, client: environment.machines.client(for: $0.serverId))
+        })
+    }
   }
 
   /// When the workspace last changed: its most recently updated chat, else

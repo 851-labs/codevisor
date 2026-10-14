@@ -3,12 +3,14 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// One workspace in the sidebar: its chat's icon and name, then the
-/// properties the Properties menu turns on (its pull request, its machine,
-/// when it last changed). Its tabs live in the strip above the workspace's
-/// content.
+/// One workspace in the sidebar: its chat's icon and name, over the
+/// Properties menu's project, branch, and worktree, then its pull request,
+/// machine, and when it last changed. Its tabs live in the strip above the
+/// workspace's content.
 struct SidebarWorkspaceRow: View {
   let name: String
+  /// The second line. Nil keeps the row to one line.
+  var subtitle: String? = nil
   let icon: SidebarWorkspaceIcon
   let store: SessionStore?
   /// When the workspace last changed, shown as an elapsed time. Nil hides
@@ -39,7 +41,7 @@ struct SidebarWorkspaceRow: View {
       isHoverForced: false
     ) { isHovered in
       HStack(spacing: 7) {
-        SidebarWorkspaceRowLabel(name: name, icon: icon, store: store)
+        SidebarWorkspaceRowLabel(name: name, subtitle: subtitle, icon: icon, store: store)
           .padding(.vertical, 5)
           .contentShape(Rectangle())
           // Only the label activates on pointer-down. The archive button is
@@ -137,10 +139,11 @@ struct SidebarWorkspaceRow: View {
   }
 }
 
-/// The row's icon and name, shared with the reorder ghost so the lifted row
-/// and its stand-in never drift apart in style.
+/// The row's icon, name, and second line, shared with the reorder ghost so
+/// the lifted row and its stand-in never drift apart in style.
 struct SidebarWorkspaceRowLabel: View {
   let name: String
+  var subtitle: String? = nil
   let icon: SidebarWorkspaceIcon
   let store: SessionStore?
 
@@ -149,15 +152,24 @@ struct SidebarWorkspaceRowLabel: View {
   }
 
   var body: some View {
+    // The icon sits centered across both lines.
     HStack(spacing: 7) {
       leadingIcon
-      Text(Self.title(for: name))
-        .lineLimit(1)
-        .truncationMode(.middle)
-        .frame(maxWidth: .infinity, alignment: .leading)
+      VStack(alignment: .leading, spacing: 1) {
+        Text(Self.title(for: name))
+          .lineLimit(1)
+          .truncationMode(.middle)
+        if let subtitle {
+          Text(subtitle)
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+            .lineLimit(1)
+        }
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
     }
     // Native sidebar rows keep the label color whether or not they are
-    // selected; only the glyph reads as secondary.
+    // selected; only the glyph and the second line read as secondary.
     .foregroundStyle(.primary)
     .accessibilityElement(children: .combine)
   }
