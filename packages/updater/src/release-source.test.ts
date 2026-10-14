@@ -119,7 +119,7 @@ describe("GitHub and compatibility fetches", () => {
     })
   })
 
-  it("uses the first-party stable manifest by default", async () => {
+  it("queries the first-party stable manifest without caching", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(
       new Response(
         JSON.stringify({
