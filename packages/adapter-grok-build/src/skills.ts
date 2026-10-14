@@ -39,7 +39,7 @@ const jsonObject = (content: string | undefined): Record<string, unknown> => {
   }
 }
 
-export const readGrokConfigFile = (path: string): string | undefined => {
+const readGrokConfigFile = (path: string): string | undefined => {
   try {
     return readFileSync(path, "utf8")
   } catch {
