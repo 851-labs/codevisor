@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import type { AutomationProviderContext } from "./automation-provider.js"
 import { CodeExecutionToolError } from "./code-executor.js"
-import { codevisorTools, makeCodevisorProvider } from "./codevisor-provider.js"
+import { makeCodevisorProvider } from "./codevisor-provider.js"
 
 const callingContext: AutomationProviderContext = {
   sessionId: "calling session/id",
@@ -35,9 +35,14 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+const publishedTools = makeCodevisorProvider(
+  () => "http://unused",
+  async () => "unused"
+).tools
+
 describe("Codevisor MCP provider", () => {
   it("publishes a unique, resource-oriented tool contract", async () => {
-    const names = codevisorTools.map((tool) => tool.name)
+    const names = publishedTools.map((tool) => tool.name)
     expect(new Set(names).size).toBe(names.length)
     expect(names).toEqual(
       expect.arrayContaining([
@@ -60,18 +65,18 @@ describe("Codevisor MCP provider", () => {
       ])
     )
 
-    const worktree = codevisorTools.find((tool) => tool.name === "worktrees.create")!
+    const worktree = publishedTools.find((tool) => tool.name === "worktrees.create")!
     expect(worktree.inputSchema).toMatchObject({
       properties: { projectId: { type: "string" }, id: { anyOf: expect.any(Array) } }
     })
     expect(worktree.inputSchema.required).toBeUndefined()
-    const transcript = codevisorTools.find((tool) => tool.name === "sessions.transcript")!
+    const transcript = publishedTools.find((tool) => tool.name === "sessions.transcript")!
     expect(transcript.inputSchema).toMatchObject({
       properties: {
         sessionId: { description: "Session id. Defaults to the calling session." }
       }
     })
-    const capabilities = codevisorTools.find((tool) => tool.name === "server.capabilities")!
+    const capabilities = publishedTools.find((tool) => tool.name === "server.capabilities")!
     expect(capabilities.inputSchema).toMatchObject({
       properties: {
         cwd: { description: "Working directory used to resolve harness capabilities." }
@@ -227,7 +232,7 @@ describe("Codevisor MCP provider", () => {
   })
 
   it("gates consent-marked tools on an explicit confirm argument", async () => {
-    const install = codevisorTools.find((tool) => tool.name === "plugins.install")!
+    const install = publishedTools.find((tool) => tool.name === "plugins.install")!
     expect(install.inputSchema.required).toContain("confirm")
     expect(install.inputSchema).toMatchObject({
       properties: { source: { type: "string" }, confirm: { type: "boolean" } }
