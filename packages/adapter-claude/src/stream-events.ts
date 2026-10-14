@@ -13,7 +13,7 @@ const startStreamMessage = (
   parentId: string | undefined
 ): void => {
   const inner = event.message
-  const innerId = isRecord(inner) ? String(inner.id ?? "") : undefined
+  const innerId = isRecord(inner) ? (typeof inner.id === "string" ? inner.id : "") : undefined
   if (parentId === undefined) {
     session.currentMessageId = innerId
     session.currentMessageTextStreamed = false
@@ -116,7 +116,7 @@ const emitStreamText = (
 ): void => {
   const messageId =
     parentId === undefined ? session.currentMessageId : session.subagentMessageIds.get(parentId)
-  const text = String(delta.text ?? "")
+  const text = typeof delta.text === "string" ? delta.text : ""
   if (text.length > 0) {
     if (parentId === undefined) {
       session.currentMessageTextStreamed = true
@@ -148,7 +148,7 @@ const applyStreamDelta = (
     void session.emit({
       kind: "session.output",
       payload: {
-        content: { text: String(delta.thinking ?? ""), type: "text" },
+        content: { text: typeof delta.thinking === "string" ? delta.thinking : "", type: "text" },
         sessionUpdate: "agent_thought_chunk",
         ...(parentId === undefined ? {} : { parentToolCallId: parentId })
       },
@@ -158,7 +158,7 @@ const applyStreamDelta = (
     const toolUseId = event.index !== undefined ? findAccumulatorId(session, event) : ""
     const accumulator = session.accumulators.get(toolUseId)
     if (accumulator !== undefined) {
-      accumulator.json += String(delta.partial_json ?? "")
+      accumulator.json += typeof delta.partial_json === "string" ? delta.partial_json : ""
       maybeEmitStreamStats(session, toolUseId, accumulator, readFile, false)
     }
   }

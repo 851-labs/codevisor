@@ -39,7 +39,7 @@ type Route = (() => Response) | Error
 const fakeFetch = (routes: Record<string, Route>) => {
   const requested: Array<{ url: string; init: RequestInit | undefined }> = []
   const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
-    const url = String(input)
+    const url = input instanceof Request ? input.url : input.toString()
     requested.push({ url, init })
     const route = routes[url]
     if (route instanceof Error) throw route

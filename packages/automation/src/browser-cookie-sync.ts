@@ -22,7 +22,7 @@ const normalize = (raw: Record<string, unknown>): BrowserCookie | undefined => {
     name: raw.name,
     value: raw.value,
     domain: raw.domain,
-    path: String(raw.path ?? "/"),
+    path: typeof raw.path === "string" ? raw.path : "/",
     secure: raw.secure === true,
     httpOnly: raw.httpOnly === true,
     sameSite:

@@ -45,38 +45,38 @@ test("reuse performs only metadata reading and strict signature verification", a
   ])
 })
 
-for (const [name, overrides, message] of [
-  [
-    "missing",
-    {
+for (const { name, overrides, message } of [
+  {
+    name: "missing",
+    overrides: {
       capture: async () => {
         throw new Error("missing plist")
       }
     },
-    /missing plist/
-  ],
-  [
-    "foreign",
-    { capture: async () => JSON.stringify({ CFBundleIdentifier: "other" }) },
-    /Cannot reuse/
-  ],
-  [
-    "wrong executable",
-    {
+    message: /missing plist/
+  },
+  {
+    name: "foreign",
+    overrides: { capture: async () => JSON.stringify({ CFBundleIdentifier: "other" }) },
+    message: /Cannot reuse/
+  },
+  {
+    name: "wrong executable",
+    overrides: {
       capture: async () =>
         JSON.stringify({ CFBundleIdentifier: "dev.example", CFBundleExecutable: "Other" })
     },
-    /Cannot reuse/
-  ],
-  [
-    "invalid signature",
-    {
+    message: /Cannot reuse/
+  },
+  {
+    name: "invalid signature",
+    overrides: {
       run: async () => {
         throw new Error("invalid signature")
       }
     },
-    /invalid signature/
-  ]
+    message: /invalid signature/
+  }
 ]) {
   test(`${name} artifact rejects reuse without a rebuild or signing command`, async () => {
     const { options, calls } = fixture(overrides)

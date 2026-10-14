@@ -46,8 +46,9 @@ export function observeBrowserRuntime(
         const guid = typeof params.guid === "string" ? params.guid : randomUUID()
         active.downloads.set(guid, {
           guid,
-          url: String(params.url ?? ""),
-          suggestedFilename: String(params.suggestedFilename ?? "download"),
+          url: typeof params.url === "string" ? params.url : "",
+          suggestedFilename:
+            typeof params.suggestedFilename === "string" ? params.suggestedFilename : "download",
           ...(typeof params.filePath === "string" ? { path: params.filePath } : {})
         })
       } else if (

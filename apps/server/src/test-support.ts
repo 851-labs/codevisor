@@ -412,7 +412,7 @@ export const readWebSocketEvents = async (
   const events: Array<unknown> = []
   let isDone = false
   const received = new Promise<ReadonlyArray<unknown>>((resolve, reject) => {
-    webSocket.on("message", (data) => {
+    webSocket.on("message", (data: Buffer) => {
       if (isDone) {
         return
       }

@@ -272,6 +272,8 @@ const harnessSummaries = (body: unknown): ReadonlyArray<HarnessSummary> => {
   })
 }
 
+const reported = (value: unknown): string => (typeof value === "string" ? value : "unknown")
+
 export interface StatusOptions extends CommandOptions {
   readonly json?: boolean | undefined
 }
@@ -317,10 +319,8 @@ export const statusCommand = async (
   }
   deps.log(`Codevisor server ${String(manifest.version)} is running on port ${port}`)
   deps.log(`  name:      ${String(manifest.name)}`)
-  deps.log(
-    `  machine:   ${String(manifest.hostname ?? "unknown")} (${String(manifest.machineId ?? "unknown")})`
-  )
-  deps.log(`  platform:  ${String(manifest.platform)}/${String(manifest.arch ?? "unknown")}`)
+  deps.log(`  machine:   ${reported(manifest.hostname)} (${reported(manifest.machineId)})`)
+  deps.log(`  platform:  ${String(manifest.platform)}/${reported(manifest.arch)}`)
   if (harnesses.length > 0) {
     deps.log("  harnesses:")
     for (const harness of harnesses) {

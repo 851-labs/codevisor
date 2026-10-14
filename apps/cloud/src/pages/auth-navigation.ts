@@ -9,5 +9,5 @@ export const validAuthRedirect = (value: string): boolean =>
 export const loginURL = (redirect: string, step = "sign-in"): string => {
   const query = new URLSearchParams({ redirect })
   if (step !== "sign-in") query.set("step", step)
-  return `/login?${query}`
+  return `/login?${query.toString()}`
 }

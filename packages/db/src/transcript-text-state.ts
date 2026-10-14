@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3"
 
-import { payloadText, type JsonRecord } from "./event-payloads.js"
+import { payloadMarkdown, payloadText, type JsonRecord } from "./event-payloads.js"
 import { transcriptTextResource } from "./transcript-bodies.js"
 
 export const transcriptTextBlockSize = 8192
@@ -124,7 +124,7 @@ const makeTranscriptEventPatch = (
 ): JsonRecord => {
   const metadata = JSON.parse(row.payload) as JsonRecord
   const final = payload.sessionUpdate === "assistant_message_finalized"
-  const rawText = final ? String(payload.markdown ?? "") : (payloadText(payload) ?? "")
+  const rawText = (final ? payloadMarkdown(payload) : payloadText(payload)) ?? ""
   const offset = final ? 0 : row.text_length - rawText.length
   const text = prefix(rawText, 24_000)
   return {

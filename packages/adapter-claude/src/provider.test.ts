@@ -198,7 +198,7 @@ describe("ClaudeProvider", () => {
       settings: { effortLevel: "xhigh", fastMode: false }
     })
     expect(resumed.userMessages).toHaveLength(1)
-    expect(String(resumed.userMessages[0]?.message.content)).toContain("interrupted and restarted")
+    expect(resumed.userMessages[0]?.message.content).toContain("interrupted and restarted")
     expect(events.map((event) => event.payload as Record<string, unknown>)).not.toContainEqual(
       expect.objectContaining({ turnState: "ended" })
     )

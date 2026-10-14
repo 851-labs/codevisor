@@ -128,9 +128,9 @@ export const parseLocator = (value: unknown, depth = 0): BrowserLocator => {
   const or = locator.or === undefined ? undefined : parseLocator(locator.or, depth + 1)
   const filters = parseLocatorFilters(locator, depth)
   return {
-    ...(locator.ref === undefined ? {} : { ref: String(locator.ref) }),
-    ...(locator.css === undefined ? {} : { css: String(locator.css) }),
-    ...(locator.role === undefined ? {} : { role: String(locator.role) }),
+    ...(typeof locator.ref === "string" ? { ref: locator.ref } : {}),
+    ...(typeof locator.css === "string" ? { css: locator.css } : {}),
+    ...(typeof locator.role === "string" ? { role: locator.role } : {}),
     ...(locator.name === undefined ? {} : { name: parseTextMatcher(locator.name, "locator.name") }),
     ...(locator.label === undefined
       ? {}
@@ -139,7 +139,7 @@ export const parseLocator = (value: unknown, depth = 0): BrowserLocator => {
       ? {}
       : { placeholder: parseTextMatcher(locator.placeholder, "locator.placeholder") }),
     ...(locator.text === undefined ? {} : { text: parseTextMatcher(locator.text, "locator.text") }),
-    ...(locator.testId === undefined ? {} : { testId: String(locator.testId) }),
+    ...(typeof locator.testId === "string" ? { testId: locator.testId } : {}),
     ...(locator.exact === true ? { exact: true } : {}),
     ...(scope === undefined ? {} : { scope }),
     ...(locator.frame === undefined ? {} : { frame: locator.frame as string[] }),

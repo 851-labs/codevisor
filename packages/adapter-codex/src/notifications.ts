@@ -315,7 +315,7 @@ export const handleNotification = (
       void session.emit({
         kind: "session.output",
         payload: {
-          content: { text: String(payload.delta ?? ""), type: "text" },
+          content: { text: typeof payload.delta === "string" ? payload.delta : "", type: "text" },
           sessionUpdate: "agent_message_chunk",
           ...(typeof payload.itemId === "string" ? { messageId: payload.itemId } : {}),
           ...(phase === undefined ? {} : { phase }),
@@ -330,7 +330,7 @@ export const handleNotification = (
       void session.emit({
         kind: "session.output",
         payload: {
-          content: { text: String(payload.delta ?? ""), type: "text" },
+          content: { text: typeof payload.delta === "string" ? payload.delta : "", type: "text" },
           sessionUpdate: "agent_thought_chunk",
           ...parentField
         },
@@ -364,7 +364,7 @@ export const handleNotification = (
             isRecord(step)
               ? [
                   {
-                    content: String(step.step ?? ""),
+                    content: typeof step.step === "string" ? step.step : "",
                     priority: "medium",
                     status: planStatus(step.status)
                   }

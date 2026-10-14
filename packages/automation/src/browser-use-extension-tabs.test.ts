@@ -49,7 +49,7 @@ describe("Browser Use extension tab lifecycle", () => {
     let creates = 0
     let targetPolls = 0
     const extensionCommands: string[] = []
-    client.on("message", (data) => {
+    client.on("message", (data: Buffer) => {
       const request = JSON.parse(data.toString()) as {
         id: number
         method: string
@@ -188,7 +188,7 @@ describe("Browser Use extension tab lifecycle", () => {
     let attachCount = 0
     let rejectNextSessionCommand: string | undefined
     const evaluatedSessions: string[] = []
-    client.on("message", (data) => {
+    client.on("message", (data: Buffer) => {
       const request = JSON.parse(data.toString()) as {
         id: number
         method: string

@@ -94,7 +94,7 @@ const emitAssistantChildText = (
   parentId: string,
   messageId: string | undefined
 ): void => {
-  const text = String(block.text ?? "")
+  const text = typeof block.text === "string" ? block.text : ""
   if (text.length === 0) return
   void session.emit({
     kind: "session.output",

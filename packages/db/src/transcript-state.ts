@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3"
 
-import { jsonRecord, payloadText, type JsonRecord } from "./event-payloads.js"
+import { jsonRecord, payloadMarkdown, payloadText, type JsonRecord } from "./event-payloads.js"
 import type { SessionEventRow } from "./rows.js"
 import { mergeTranscriptFields } from "./transcript-bodies.js"
 import { appendTranscriptText } from "./transcript-text-state.js"
@@ -140,7 +140,7 @@ const projectTranscriptText = (
     db,
     itemId,
     key,
-    final ? String(payload.markdown ?? "") : (payloadText(payload) ?? ""),
+    (final ? payloadMarkdown(payload) : payloadText(payload)) ?? "",
     final
   )
   upsertTranscriptTextHead(db, itemId, parent, key)
@@ -259,7 +259,7 @@ const projectTranscriptCompaction = (
   payload: JsonRecord,
   parent: string
 ): void => {
-  const key = `compaction:${payload.compactionId ?? "current"}`
+  const key = `compaction:${typeof payload.compactionId === "string" ? payload.compactionId : "current"}`
   if (payload.status === "failed") {
     db.prepare("delete from transcript_entries where item_id = ? and entry_key = ?").run(
       itemId,
@@ -309,7 +309,7 @@ export const projectTranscriptState = (
   } else if (update === "context_compaction") {
     projectTranscriptCompaction(db, event, itemId, payload, parent)
   } else if (update === "question" || update === "question_resolved") {
-    save(db, event, itemId, `${update}:${payload.questionId}`, "question", parent, payload)
+    save(db, event, itemId, `${update}:${String(payload.questionId)}`, "question", parent, payload)
   } else if (update !== undefined) {
     save(db, event, itemId, update, update, parent, payload)
   }

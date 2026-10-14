@@ -212,7 +212,9 @@ function emitMcpItem(
   started: boolean,
   event: ItemEvent
 ): void {
-  const title = `${String(item.server ?? "")}.${String(item.tool ?? "")}`
+  const server = typeof item.server === "string" ? item.server : ""
+  const tool = typeof item.tool === "string" ? item.tool : ""
+  const title = `${server}.${tool}`
   if (started) {
     session.itemKinds.set(itemId, "other")
     void session.emit(

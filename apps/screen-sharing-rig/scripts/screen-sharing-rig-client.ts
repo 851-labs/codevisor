@@ -64,7 +64,9 @@ export async function http<T>(
   if (!response.ok) {
     const error =
       typeof parsed === "object" && parsed !== null && "error" in parsed ? parsed.error : undefined
-    throw new Error(`${method} ${url} → ${response.status}: ${String(error ?? text)}`)
+    throw new Error(
+      `${method} ${url} → ${response.status}: ${typeof error === "string" ? error : text}`
+    )
   }
   return parsed as T
 }

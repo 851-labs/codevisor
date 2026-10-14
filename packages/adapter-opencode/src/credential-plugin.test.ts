@@ -53,7 +53,7 @@ const load = async (options: unknown) => {
 
 it("refreshes Codevisor-shared sign-ins through the broker, never with a real refresh token", async () => {
   const fetch = vi.fn(async (_url: string, init: RequestInit) => {
-    const body = JSON.parse(String(init.body)) as { rejectedAccessToken?: string }
+    const body = JSON.parse(init.body as string) as { rejectedAccessToken?: string }
     return Response.json({
       credential: {
         access: `fresh-for-${body.rejectedAccessToken}`,

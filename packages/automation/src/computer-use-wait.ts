@@ -24,17 +24,18 @@ export const waitForComputerState = async (
     sleep: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
   }
 ): Promise<CallToolResult> => {
-  if (typeof args.text !== "string" && typeof args.role !== "string")
-    throw new Error("wait_for requires text or role")
-  if (args.text === "" || args.role === "") throw new Error("Wait conditions cannot be empty")
+  const text = typeof args.text === "string" ? args.text : undefined
+  const role = typeof args.role === "string" ? args.role : undefined
+  if (text === undefined && role === undefined) throw new Error("wait_for requires text or role")
+  if (text === "" || role === "") throw new Error("Wait conditions cannot be empty")
   const timeout = args.timeout_ms ?? 10000
   if (typeof timeout !== "number" || !Number.isInteger(timeout) || timeout < 0 || timeout > 30000)
     throw new Error("timeout_ms must be 0–30000")
   if (args.state !== undefined && args.state !== "present" && args.state !== "absent")
     throw new Error("state must be present or absent")
   const {
-    text,
-    role,
+    text: _text,
+    role: _role,
     state: requested = "present",
     timeout_ms: _timeout,
     screenshot,
@@ -46,13 +47,13 @@ export const waitForComputerState = async (
     const tree = typeof state.text === "string" ? state.text : ""
     const present =
       role === undefined
-        ? tree.includes(String(text))
+        ? tree.includes(text!)
         : tree
             .split("\n")
             .some(
               (line) =>
-                line.trim().split(/\s+/)[1] === String(role).replaceAll(" ", "_") &&
-                (text === undefined || line.includes(String(text)))
+                line.trim().split(/\s+/)[1] === role.replaceAll(" ", "_") &&
+                (text === undefined || line.includes(text))
             )
     return requested === "absent" ? !present : present
   }

@@ -178,7 +178,7 @@ const main = async (): Promise<void> => {
           const size = terminalSize()
           enqueue({ type: "resize", cols: size.cols, rows: size.rows })
         })
-        nextSocket.on("message", (data) => {
+        nextSocket.on("message", (data: Buffer) => {
           const frame = JSON.parse(data.toString()) as TerminalServerFrame
           if (frame.seq > lastOutputSeq) {
             lastOutputSeq = frame.seq

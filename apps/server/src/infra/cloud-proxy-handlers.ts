@@ -229,7 +229,7 @@ export const wsChannelHandler =
     })
     socket.on("message", (data, isBinary) => {
       const bytes = Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data as ArrayBuffer)
-      for (const frame of encodeWsFrames(isBinary ? new Uint8Array(bytes) : String(data))) {
+      for (const frame of encodeWsFrames(isBinary ? new Uint8Array(bytes) : bytes.toString())) {
         channel.send(frame)
       }
       if (flowControlled && channel.queuedOutboundBytes() > PROXY_OUTBOUND_HIGH_WATER_BYTES) {
