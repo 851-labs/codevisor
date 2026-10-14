@@ -168,10 +168,12 @@ struct TranscriptAutoscrollTests {
     let window = NSWindow(
       contentRect: view.frame, styleMask: [.borderless], backing: .buffered, defer: false
     )
+    window.isReleasedWhenClosed = false
     window.contentView = view
     defer {
       view.prepareForDismantle()
       window.contentView = nil
+      window.close()
     }
     view.reduceMotion = reduceMotion
     let settledHeader = TranscriptVirtualRow(

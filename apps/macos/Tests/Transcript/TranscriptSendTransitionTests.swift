@@ -15,8 +15,12 @@ struct TranscriptSendTransitionTests {
     _ = NSApplication.shared
     let host = TranscriptRowHost(frame: NSRect(x: 0, y: 0, width: 320, height: 15))
     let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
     window.contentView = host
-    defer { window.contentView = nil }
+    defer {
+      window.contentView = nil
+      window.close()
+    }
     host.syncContentWidth()
     host.installRootView(AnyView(Color.clear.frame(height: 15)), knownHeight: 15)
     host.prepareForImmediatePresentation()
@@ -207,6 +211,7 @@ private final class SendFixture {
     content.addSubview(view)
     content.addSubview(editor)
     window = NSWindow(contentRect: content.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
     window.contentView = content
     view.isPreparingInitialProjection = false
     view.initialPositionConfigured = true
@@ -256,5 +261,6 @@ private final class SendFixture {
     TranscriptSendStaging.shared.cancel(session: ObjectIdentifier(self))
     view.prepareForDismantle()
     window.contentView = nil
+    window.close()
   }
 }
