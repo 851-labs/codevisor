@@ -23,6 +23,27 @@
       window.contentView?.layoutSubtreeIfNeeded()
       return window
     }
+    private func detachedSuggestions(
+      focus: Autocomplete.InputFocus
+    ) throws -> (NSHostingView<some View>, NSSearchField, Autocomplete.InputCapsuleView) {
+      _ = NSApplication.shared
+      let host = NSHostingView(
+        rootView: Autocomplete.Suggestions(focus: focus) { Autocomplete.Action("Match") {} }
+          .environment(\.locale, Locale(identifier: "en_US_POSIX")))
+      host.frame = NSRect(x: 0, y: 0, width: 300, height: 250)
+      host.layoutSubtreeIfNeeded()
+      let field = try #require(self.field(in: host))
+      let container = try #require(field.superview as? Autocomplete.InputCapsuleView)
+      return (host, field, container)
+    }
+    private func attach(_ host: NSView) -> FocusTestWindow {
+      let window = FocusTestWindow(
+        contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+      window.isReleasedWhenClosed = false
+      window.contentView = host
+      host.layoutSubtreeIfNeeded()
+      return window
+    }
 
     @Test("An inherited SwiftUI disabled environment prevents Return from invoking a row")
     func inheritedDisabled() {
@@ -77,31 +98,20 @@
     }
 
     @Test("An early focus request remains pending until attachment")
-    func pendingFocus() {
-      _ = NSApplication.shared
-      let container = Autocomplete.InputCapsuleView(metrics: .xcodeMenu, showsCheckmarks: false, showsIcons: false)
-      var focused = false
-      container.requestFocus = { [weak container] in
-        guard let container, let window = container.window else { return }
-        focused = window.makeFirstResponder(container.searchField)
-        if focused { container.requestFocus = nil }
-      }
+    func pendingFocus() throws {
+      let focus = Autocomplete.InputFocus()
+      focus.focus()
+      let (host, field, container) = try detachedSuggestions(focus: focus)
       container.requestFocus?()
-      #expect(!focused)
       #expect(container.requestFocus != nil)
-      let window = FocusTestWindow(
-        contentRect: NSRect(x: 0, y: 0, width: 280, height: 50),
-        styleMask: [.borderless], backing: .buffered, defer: false)
-      window.isReleasedWhenClosed = false
+      #expect(field.currentEditor() == nil)
+      let window = attach(host)
       defer {
-        if window.contentView != nil { window.contentView = nil }
+        window.contentView = nil
         window.close()
       }
-      window.contentView = container
-      window.contentView?.layoutSubtreeIfNeeded()
-      #expect(focused)
+      #expect((window.firstResponder as? NSTextView)?.delegate === field)
       #expect(container.requestFocus == nil)
-      window.contentView = nil
     }
 
     @Test("The native field handles a favorite key equivalent once without selecting or dismissing")
@@ -180,24 +190,14 @@
       let focus = Autocomplete.InputFocus()
       var isCurrent = true
       focus.focus(ifCurrent: { isCurrent })
-      let host = NSHostingView(
-        rootView: Autocomplete.Suggestions(focus: focus) { Autocomplete.Action("Match") {} }
-          .environment(\.locale, Locale(identifier: "en_US_POSIX")))
-      host.frame = NSRect(x: 0, y: 0, width: 300, height: 250)
-      host.layoutSubtreeIfNeeded()
-      let field = try #require(self.field(in: host))
-      let container = try #require(field.superview as? Autocomplete.InputCapsuleView)
+      let (host, field, container) = try detachedSuggestions(focus: focus)
       _ = try #require(container.requestFocus)
       isCurrent = false
-      let window = FocusTestWindow(
-        contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
-      window.isReleasedWhenClosed = false
+      let window = attach(host)
       defer {
         window.contentView = nil
         window.close()
       }
-      window.contentView = host
-      host.layoutSubtreeIfNeeded()
       #expect((window.firstResponder as? NSTextView)?.delegate !== field)
       #expect(container.requestFocus == nil)
     }
