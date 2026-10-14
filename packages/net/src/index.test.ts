@@ -11,8 +11,14 @@ import {
 
 describe("codevisor-net addon", () => {
   const endpoints: TunnelEndpoint[] = []
+  const acceptedOutcomes: Promise<PromiseSettledResult<unknown>[]>[] = []
   afterEach(async () => {
-    await Promise.all(endpoints.splice(0).map((endpoint) => endpoint.close()))
+    const closed = await Promise.allSettled(endpoints.splice(0).map((endpoint) => endpoint.close()))
+    const accepted = (await Promise.all(acceptedOutcomes.splice(0))).flat()
+    const errors = [...closed, ...accepted].flatMap((result) =>
+      result.status === "rejected" ? [result.reason] : []
+    )
+    if (errors.length > 0) throw new AggregateError(errors, "codevisor-net fixture cleanup failed")
   })
 
   const bind = async (secretKeyHex?: string): Promise<TunnelEndpoint> => {
@@ -49,6 +55,7 @@ describe("codevisor-net addon", () => {
         await stream.send(message.kind, message.payload)
       }
     })()
+    acceptedOutcomes.push(Promise.allSettled([accepted]))
 
     const connection = await client.connect(server.addr(), ALPN_CHANNELS)
     expect(connection.remoteId()).toBe(server.endpointId())
