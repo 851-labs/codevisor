@@ -170,11 +170,7 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
     timeout: TimeInterval? = nil
   ) async throws -> Response {
     let data = try await perform(path, method: method, body: body, timeout: timeout)
-    do {
-      return try decoder.decode(Response.self, from: data)
-    } catch {
-      throw error
-    }
+    return try decoder.decode(Response.self, from: data)
   }
 
   func sendNoResponse(_ path: String, method: String) async throws {
