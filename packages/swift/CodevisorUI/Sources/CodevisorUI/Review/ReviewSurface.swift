@@ -35,28 +35,18 @@ struct ReviewSurface {
   }
 }
 
-/// A one-device-pixel rule in the theme's border color.
-private struct ReviewHairline: View {
-  let theme: Theme
-  @Environment(\.pixelLength) private var pixelLength
-
-  var body: some View {
-    theme.border.frame(height: pixelLength)
-  }
-}
-
 extension View {
   /// A file header: a flat band whose bottom hairline divides it from the
   /// code (or from the next file, while folded).
   func reviewCardHeader(isCollapsed _: Bool, theme: Theme) -> some View {
     background { ReviewSurface(theme: theme).headerFill }
-      .overlay(alignment: .bottom) { ReviewHairline(theme: theme) }
+      .overlay(alignment: .bottom) { Hairline(color: theme.border) }
   }
 
   /// A file's diff below its header, closed by a hairline.
   func reviewCardBody(theme: Theme) -> some View {
     background(theme.codeBackground)
       .background(ReviewSurface(theme: theme).page)
-      .overlay(alignment: .bottom) { ReviewHairline(theme: theme) }
+      .overlay(alignment: .bottom) { Hairline(color: theme.border) }
   }
 }
