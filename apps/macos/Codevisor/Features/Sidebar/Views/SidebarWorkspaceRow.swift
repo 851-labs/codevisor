@@ -162,7 +162,7 @@ struct SidebarWorkspaceRowLabel: View {
         if let subtitle {
           Text(subtitle)
             .font(.caption2)
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(.secondary)
             .lineLimit(1)
         }
       }
