@@ -337,7 +337,6 @@ final class FakeLocalServerClient: CodevisorServerClienting, @unchecked Sendable
   func capabilities(cwd: String) async throws -> ServerCapabilities { ServerCapabilities(harnesses: []) }
   func listProjects() async throws -> [ServerProject] { [] }
   func upsertProject(_ project: Project) async throws -> ServerProject { fatalError("unused") }
-  func updateProject(_ project: Project) async throws -> ServerProject { fatalError("unused") }
   func deleteProject(id: UUID) async throws {}
   func listSessions() async throws -> [ServerSession] { [] }
   func upsertSession(_ session: ChatSession) async throws -> ServerSession { fatalError("unused") }

@@ -136,7 +136,6 @@ public protocol CodevisorServerClienting: BrowserStateClienting, SimulatorClient
   func navigationSnapshot() async throws -> ServerNavigationSnapshot
   func listProjects() async throws -> [ServerProject]
   func upsertProject(_ project: Project) async throws -> ServerProject
-  func updateProject(_ project: Project) async throws -> ServerProject
   func deleteProject(id: UUID) async throws
   func deleteProject(id: UUID, deletingFiles: Bool) async throws
   func listProjectGitBranches(projectId: UUID) async throws -> [ServerProjectGitBranch]
