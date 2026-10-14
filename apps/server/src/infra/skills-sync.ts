@@ -238,7 +238,6 @@ export const archiveEntryNames = (bytes: Buffer): ReadonlyArray<string> => {
       header
         .subarray(0, 100)
         .toString("utf8")
-        // oxlint-disable-next-line no-control-regex
         .replace(/\0[^]*$/, "")
     )
     const size = Number.parseInt(
