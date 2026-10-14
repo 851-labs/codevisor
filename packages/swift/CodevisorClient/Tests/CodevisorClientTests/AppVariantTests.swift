@@ -6,35 +6,6 @@ import CodevisorProtocol
 
 @Suite("CodevisorAppVariant")
 struct AppVariantTests {
-  @Test("Legacy HerdMan files are copied over without overwriting")
-  func legacyApplicationSupportMigration() throws {
-    let fileManager = FileManager.default
-    let root = fileManager.temporaryDirectory
-      .appendingPathComponent("codevisor-migration-\(UUID().uuidString)")
-    defer { try? fileManager.removeItem(at: root) }
-    let legacy = root.appendingPathComponent("HerdMan")
-    let destination = root.appendingPathComponent("Codevisor")
-    try fileManager.createDirectory(at: legacy, withIntermediateDirectories: true)
-    try fileManager.createDirectory(at: destination, withIntermediateDirectories: true)
-
-    try Data(#"{"lastHarnessId":"claude-code"}"#.utf8)
-      .write(to: legacy.appendingPathComponent("composer-defaults.json"))
-    try Data("current".utf8).write(to: destination.appendingPathComponent("settings.json"))
-    try Data("stale".utf8).write(to: legacy.appendingPathComponent("settings.json"))
-    try Data("log".utf8).write(to: legacy.appendingPathComponent("debug.log"))
-
-    CodevisorAppVariant.migrateLegacyApplicationSupport(
-      from: legacy, to: destination, fileManager: fileManager
-    )
-
-    let copied = try Data(contentsOf: destination.appendingPathComponent("composer-defaults.json"))
-    #expect(String(decoding: copied, as: UTF8.self) == #"{"lastHarnessId":"claude-code"}"#)
-    let kept = try Data(contentsOf: destination.appendingPathComponent("settings.json"))
-    #expect(String(decoding: kept, as: UTF8.self) == "current")
-    #expect(!fileManager.fileExists(atPath: destination.appendingPathComponent("debug.log").path))
-    #expect(fileManager.fileExists(atPath: legacy.appendingPathComponent("composer-defaults.json").path))
-  }
-
   @Test("Parses the dev cloud configuration from launch environment")
   func developmentCloudParsing() {
     let full = CodevisorAppVariant.developmentCloud(from: [
@@ -44,22 +15,6 @@ struct AppVariantTests {
 
     #expect(CodevisorAppVariant.developmentCloud(from: [:]) == nil)
     #expect(CodevisorAppVariant.developmentCloud(from: ["CODEVISOR_DEV_CLOUD_URL": ""]) == nil)
-  }
-
-  @Test("Migration is a no-op when there is no legacy folder")
-  func migrationWithoutLegacyFolder() throws {
-    let fileManager = FileManager.default
-    let root = fileManager.temporaryDirectory
-      .appendingPathComponent("codevisor-migration-\(UUID().uuidString)")
-    defer { try? fileManager.removeItem(at: root) }
-    let destination = root.appendingPathComponent("Codevisor")
-    try fileManager.createDirectory(at: destination, withIntermediateDirectories: true)
-
-    CodevisorAppVariant.migrateLegacyApplicationSupport(
-      from: root.appendingPathComponent("HerdMan"), to: destination, fileManager: fileManager
-    )
-
-    #expect(try fileManager.contentsOfDirectory(atPath: destination.path).isEmpty)
   }
 
   @Test("Recovers dev instance configuration when relaunched outside the runner")

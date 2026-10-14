@@ -351,10 +351,6 @@ extension CodevisorServerClient {
     var source: String
   }
 
-  struct PluginLinkBody: Encodable {
-    var path: String
-  }
-
   struct PluginUpdateApplyBody: Encodable {
     var planId: String
   }
