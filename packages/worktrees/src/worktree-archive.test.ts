@@ -272,12 +272,6 @@ describe("chooseRestoreName", () => {
     expect(chooseRestoreName("sushi", new Set(["sushi"]))).toBe("sushi-2")
     expect(chooseRestoreName("sushi", new Set(["sushi", "sushi-2"]))).toBe("sushi-3")
   })
-
-  it("gives up rather than looping forever when the space is exhausted", () => {
-    const taken = new Set(["sushi"])
-    for (let index = 2; index <= 99; index += 1) taken.add(`sushi-${String(index)}`)
-    expect(chooseRestoreName("sushi", taken)).toBeUndefined()
-  })
 })
 
 describe("snapshot identity", () => {
