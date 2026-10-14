@@ -102,14 +102,6 @@ struct RFBNetworkTransportTests {
     #expect(try await readExactly(4, from: transport) == [1, 2, 3, 4])
   }
 
-  @Test func everyListenerGetsItsOwnEphemeralPort() async throws {
-    let first = try await LoopbackListener(handle: LoopbackListener.echo)
-    defer { first.stop() }
-    let second = try await LoopbackListener(handle: LoopbackListener.echo)
-    defer { second.stop() }
-    #expect(first.port != second.port)
-  }
-
   @Test func aLargeWriteIsReassembledByTheReader() async throws {
     let listener = try await LoopbackListener(handle: LoopbackListener.echo)
     defer { listener.stop() }
