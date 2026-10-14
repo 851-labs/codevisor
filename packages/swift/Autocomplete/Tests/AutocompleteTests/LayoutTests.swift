@@ -50,6 +50,7 @@
       let window = NSWindow(
         contentRect: NSRect(x: 0, y: 0, width: 600, height: 600),
         styleMask: [.borderless], backing: .buffered, defer: false)
+      window.isReleasedWhenClosed = false
       window.contentView = NSHostingView(rootView: Fixture(options: options))
       return window
     }
@@ -107,7 +108,10 @@
     func liveFontChanges() throws {
       let options = SelectionStore(Options())
       let window = mount(options)
-      defer { window.contentView = nil }
+      defer {
+        window.contentView = nil
+        window.close()
+      }
       let view = try #require(window.contentView)
       settle(view)
       try highlightLast(in: view)
@@ -127,7 +131,10 @@
     func filteringAndReordering() throws {
       let options = SelectionStore(Options(fontSize: 24))
       let window = mount(options)
-      defer { window.contentView = nil }
+      defer {
+        window.contentView = nil
+        window.close()
+      }
       let view = try #require(window.contentView)
       settle(view)
       try highlightLast(in: view)
@@ -159,7 +166,10 @@
     func scrollingToBottom() throws {
       let options = SelectionStore(Options(fontSize: 24, maximumHeight: 160))
       let window = mount(options)
-      defer { window.contentView = nil }
+      defer {
+        window.contentView = nil
+        window.close()
+      }
       let view = try #require(window.contentView)
       settle(view)
       try highlightLast(in: view)
