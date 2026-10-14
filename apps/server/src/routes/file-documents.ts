@@ -158,7 +158,7 @@ export async function routeFileDocuments(
       return await writeDocument(request, response, path)
     throw new HttpFailure(405, "This file operation is not supported.", "method_not_allowed")
   } catch (error) {
-    throwDocumentFailure(error)
+    throw documentFailure(error)
   }
 }
 
@@ -239,18 +239,18 @@ async function writeDocument(
   return true
 }
 
-function throwDocumentFailure(error: unknown): never {
-  if (error instanceof HttpFailure) throw error
+function documentFailure(error: unknown): unknown {
+  if (error instanceof HttpFailure) return error
   const code = (error as NodeJS.ErrnoException).code
   if (code === "ENOENT")
-    throw new HttpFailure(404, "This file has been moved or deleted.", "not_found")
+    return new HttpFailure(404, "This file has been moved or deleted.", "not_found")
   if (code === "EACCES" || code === "EPERM")
-    throw new HttpFailure(
+    return new HttpFailure(
       403,
       "You don’t have permission to access this file.",
       "permission_denied"
     )
   if (code === "ENOTDIR")
-    throw new HttpFailure(400, "This path is not a folder.", "not_a_directory")
-  throw error
+    return new HttpFailure(400, "This path is not a folder.", "not_a_directory")
+  return error
 }

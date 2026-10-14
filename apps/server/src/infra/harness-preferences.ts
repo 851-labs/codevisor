@@ -11,7 +11,7 @@ export const harnessPreference = (value: unknown): HarnessPreference | undefined
   const candidate = value as Record<string, unknown>
   if (typeof candidate.enabled !== "boolean" || typeof candidate.installed !== "boolean")
     return undefined
-  if (candidate.installed !== true && candidate.uninstall !== true) return undefined
+  if (!candidate.installed && candidate.uninstall !== true) return undefined
   return { enabled: candidate.enabled, installed: candidate.installed }
 }
 

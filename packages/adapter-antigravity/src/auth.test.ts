@@ -10,11 +10,11 @@ import {
 } from "./auth.js"
 import { fakeTerminalSpawner } from "./test-support.js"
 
-const URL_ =
+const SIGN_IN_URL =
   "https://accounts.google.com/o/oauth2/auth?client_id=1&redirect_uri=https%3A%2F%2Fantigravity.google%2Foauth-callback"
 const MENU =
   "\x1b[1m Select login method:\x1b[0m\r\n > 1. Google OAuth\r\n2. Use a Google Cloud project"
-const LINK = `Open the URL below in your browser:\r\n \x1b]8;id=abc;${URL_}\x07${URL_.slice(0, 40)}\x1b]8;;\x07`
+const LINK = `Open the URL below in your browser:\r\n \x1b]8;id=abc;${SIGN_IN_URL}\x07${SIGN_IN_URL.slice(0, 40)}\x1b]8;;\x07`
 const MANAGED = { HOME: "/home/me", [AGY_GEMINI_DIR_ENV]: "/profile/gemini" }
 
 afterEach(() => {
@@ -67,10 +67,10 @@ describe("Antigravity accounts", () => {
   })
 
   it("takes the sign-in link only from agy's finished hyperlink", () => {
-    expect(signInUrl(LINK)).toBe(URL_)
-    expect(signInUrl(`\x1b]8;id=abc;${URL_}\x1b\\`)).toBe(URL_)
-    expect(signInUrl(`\x1b[2m${URL_}\x1b[0m\r\n`)).toBeUndefined()
-    expect(signInUrl(`\x1b]8;id=abc;${URL_}`)).toBeUndefined()
+    expect(signInUrl(LINK)).toBe(SIGN_IN_URL)
+    expect(signInUrl(`\x1b]8;id=abc;${SIGN_IN_URL}\x1b\\`)).toBe(SIGN_IN_URL)
+    expect(signInUrl(`\x1b[2m${SIGN_IN_URL}\x1b[0m\r\n`)).toBeUndefined()
+    expect(signInUrl(`\x1b]8;id=abc;${SIGN_IN_URL}`)).toBeUndefined()
     expect(signInUrl("Welcome")).toBeUndefined()
   })
 })
@@ -120,7 +120,7 @@ describe("Antigravity sign-in", () => {
     expect(tty.terminal.written.filter((data) => data === "\r")).toHaveLength(1)
     tty.terminal.draw(LINK)
     const { url } = await tty.started
-    expect(url).toBe(URL_)
+    expect(url).toBe(SIGN_IN_URL)
   })
 
   it("waits for a link agy writes in pieces", async () => {
@@ -129,7 +129,7 @@ describe("Antigravity sign-in", () => {
     const cut = LINK.indexOf("redirect_uri")
     tty.terminal.draw(LINK.slice(0, cut))
     tty.terminal.draw(LINK.slice(cut))
-    expect((await tty.started).url).toBe(URL_)
+    expect((await tty.started).url).toBe(SIGN_IN_URL)
   })
 
   it("finishes once agy holds the sign-in the pasted code made", async () => {

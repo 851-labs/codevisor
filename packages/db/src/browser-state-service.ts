@@ -54,11 +54,11 @@ export const makeBrowserStateService = ({
   CodevisorDatabaseService,
   "exchangeBrowserCookies" | "getBrowserNavigation" | "setBrowserNavigation"
 > => {
-  const read = <T>(key: string): T | undefined => {
+  const read = (key: string): unknown => {
     const row = sqlite.prepare("select value from instance_meta where key = ?").get(key) as
       | { value: string }
       | undefined
-    return row ? (JSON.parse(row.value) as T) : undefined
+    return row ? JSON.parse(row.value) : undefined
   }
   const write = (key: string, value: unknown) =>
     sqlite
@@ -71,7 +71,7 @@ export const makeBrowserStateService = ({
       attempt("exchangeBrowserCookies", () =>
         sqlite.transaction(() => {
           if (mutations.length > 20_000) throw new Error("Too many cookie changes")
-          const current = read<BrowserCookieSnapshot>("browser-cookies-v1") ?? {
+          const current = (read("browser-cookies-v1") as BrowserCookieSnapshot | undefined) ?? {
             revision: 0,
             entries: []
           }
@@ -88,8 +88,9 @@ export const makeBrowserStateService = ({
         })()
       ),
     getBrowserNavigation: (paneId) =>
-      attempt("getBrowserNavigation", () =>
-        read<BrowserNavigation>(`browser-navigation:${paneId}`)
+      attempt(
+        "getBrowserNavigation",
+        () => read(`browser-navigation:${paneId}`) as BrowserNavigation | undefined
       ),
     setBrowserNavigation: (paneId, navigation) =>
       attempt("setBrowserNavigation", () => {

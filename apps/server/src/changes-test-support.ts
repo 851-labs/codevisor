@@ -10,8 +10,8 @@ export const fixtureChanged = (): void => {
 
 export const observableFixture = <T extends object>(value: T): T =>
   new Proxy(value, {
-    set(target, key, value) {
-      const changed = Reflect.set(target, key, value)
+    set(target, key, assigned) {
+      const changed = Reflect.set(target, key, assigned)
       fixtureChanged()
       return changed
     }

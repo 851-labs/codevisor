@@ -5,6 +5,9 @@ import { join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
 
+const compileObjectiveCpp = (...args) =>
+  execFileSync("xcrun", ["clang++", "-std=c++20", "-fobjc-arc", ...args], { stdio: "pipe" })
+
 test(
   "CEF Keychain interposition scopes app and helper queries without touching the real Keychain",
   {
@@ -95,12 +98,10 @@ int main(int argc, char **argv) {
 }
 `
       )
-      const compile = (...args) =>
-        execFileSync("xcrun", ["clang++", "-std=c++20", "-fobjc-arc", ...args], { stdio: "pipe" })
       const mockLibrary = join(directory, "MockSecurity.dylib")
-      compile("-dynamiclib", mock, "-framework", "Foundation", "-o", mockLibrary)
+      compileObjectiveCpp("-dynamiclib", mock, "-framework", "Foundation", "-o", mockLibrary)
       const clientLibrary = join(directory, "Client.dylib")
-      compile("-dynamiclib", client, mockLibrary, "-o", clientLibrary)
+      compileObjectiveCpp("-dynamiclib", client, mockLibrary, "-o", clientLibrary)
       const contents = join(directory, "Fixture.app/Contents")
       mkdirSync(join(contents, "MacOS"), { recursive: true })
       const executable = join(contents, "MacOS/Fixture")
@@ -108,7 +109,7 @@ int main(int argc, char **argv) {
         new URL("../apps/macos/ChromiumHelper/ChromiumKeychain.mm", import.meta.url)
       )
       const storageLibrary = join(directory, "Storage.dylib")
-      compile(
+      compileObjectiveCpp(
         "-dynamiclib",
         adapter,
         mockLibrary,
@@ -119,7 +120,7 @@ int main(int argc, char **argv) {
         "-o",
         storageLibrary
       )
-      compile(
+      compileObjectiveCpp(
         main,
         `-Wl,-needed_library,${storageLibrary}`,
         mockLibrary,

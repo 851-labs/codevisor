@@ -170,7 +170,7 @@ export const makeHarnessUpdateGate = (
         })
         return { lifecycle, queued: false, terminalId }
       }
-      case "appBundleSwap": {
+      default: {
         if (platform !== "darwin" || origin !== "appBundle") {
           throw new Error(`${definition.name} updates via its desktop app`)
         }

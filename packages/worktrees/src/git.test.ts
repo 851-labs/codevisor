@@ -30,6 +30,14 @@ import { worktreeStartPoint } from "./project-branches.js"
 
 const makeRepo = () => makeGitRepo()
 
+const commitEmpty = (cwd: string, message: string) => {
+  execFileSync(
+    "git",
+    ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-m", message],
+    { cwd }
+  )
+}
+
 describe("git helper", () => {
   it("wraps spawn failures without stderr as GitError", async () => {
     const failure = await addWorktree(
@@ -239,18 +247,11 @@ describe("git helper", () => {
     const origin = join(root, "origin")
     mkdirSync(origin)
     execFileSync("git", ["init", "-b", "main"], { cwd: origin })
-    const commit = (cwd: string, message: string) => {
-      execFileSync(
-        "git",
-        ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-m", message],
-        { cwd }
-      )
-    }
-    commit(origin, "remote-tip")
+    commitEmpty(origin, "remote-tip")
     const clone = join(root, "clone")
     execFileSync("git", ["clone", origin, clone], { cwd: root })
-    commit(clone, "local-drift")
-    commit(origin, "new-remote-tip")
+    commitEmpty(clone, "local-drift")
+    commitEmpty(origin, "new-remote-tip")
     const staleRemoteTip = execFileSync("git", ["rev-parse", "origin/main"], { cwd: clone })
       .toString()
       .trim()

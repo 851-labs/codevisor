@@ -6,6 +6,20 @@ import type { MuseItem } from "./protocol.js"
 const payloads = (events: ReadonlyArray<{ payload: Record<string, unknown> }>) =>
   events.map((entry) => entry.payload)
 
+const subagentTitle = (fields: Partial<MuseItem>) =>
+  payloads(
+    makeMuseItemMapper().item(
+      {
+        itemId: "a",
+        kind: "subagent",
+        revision: 1,
+        status: "inProgress",
+        ...fields
+      },
+      "started"
+    )
+  )[0]!.title
+
 describe("Muse subagent rows", () => {
   it("shows subagents as agent rows with their objective and result", () => {
     const mapper = makeMuseItemMapper()
@@ -69,34 +83,23 @@ describe("Muse subagent rows", () => {
   })
 
   it("names a subagent by the task Muse gave it, not its whole objective", () => {
-    const title = (fields: Partial<MuseItem>) =>
-      payloads(
-        makeMuseItemMapper().item(
-          {
-            itemId: "a",
-            kind: "subagent",
-            revision: 1,
-            status: "inProgress",
-            ...fields
-          },
-          "started"
-        )
-      )[0]!.title
     const objective =
       "Review /private/tmp/ws/calc.py and /private/tmp/ws/main.py for bugs. Read both files in full, inspect for correctness, and report each bug."
     expect(
-      title({
+      subagentTitle({
         agentPath: "main/Review calc.py and main.py/1",
         objective,
         role: "Code reviewer"
       })
     ).toBe("Agent: Review calc.py and main.py")
-    expect(title({ agentPath: "main/Audit repo/1/Check tests/2" })).toBe("Agent: Check tests")
-    expect(title({ agentPath: "main/1", objective })).toBe(
+    expect(subagentTitle({ agentPath: "main/Audit repo/1/Check tests/2" })).toBe(
+      "Agent: Check tests"
+    )
+    expect(subagentTitle({ agentPath: "main/1", objective })).toBe(
       "Agent: Review /private/tmp/ws/calc.py and /private/tmp/ws/main.py…"
     )
-    expect(title({ objective: "x".repeat(80) })).toBe(`Agent: ${"x".repeat(60)}…`)
-    expect(title({ objective: "  ", role: "Code reviewer" })).toBe("Agent (Code reviewer)")
+    expect(subagentTitle({ objective: "x".repeat(80) })).toBe(`Agent: ${"x".repeat(60)}…`)
+    expect(subagentTitle({ objective: "  ", role: "Code reviewer" })).toBe("Agent (Code reviewer)")
   })
 
   it("marks a subagent answered once Muse holds its result, and reopens it for follow-up work", () => {

@@ -73,7 +73,7 @@ const usageLimitResolution = (
   const usageLimitDetail = resolveUsageLimitDetail(session, message, lastError)
   const usageLimitExceeded =
     usageLimitDetail !== undefined &&
-    (message.is_error === true ||
+    (message.is_error ||
       subtype !== "success" ||
       lastError === "rate_limit" ||
       lastError === "billing_error")

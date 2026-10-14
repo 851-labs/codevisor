@@ -48,36 +48,38 @@ describe("releaseChannelReader", () => {
   })
 })
 
-describe("machineReleaseChannel", () => {
-  const db = (entries: { key: string; value: unknown; deleted: boolean }[]) =>
-    ({ getSyncEntries: () => Effect.succeed(entries) }) as unknown as Parameters<
-      typeof syncedUpdateChannel
-    >[0]
+const syncEntriesDb = (entries: { key: string; value: unknown; deleted: boolean }[]) =>
+  ({ getSyncEntries: () => Effect.succeed(entries) }) as unknown as Parameters<
+    typeof syncedUpdateChannel
+  >[0]
 
+describe("machineReleaseChannel", () => {
   it("reads the synced updateChannel setting, ignoring other and deleted entries", async () => {
     expect(
       await syncedUpdateChannel(
-        db([
+        syncEntriesDb([
           { key: "theme", value: "dark", deleted: false },
           { key: "updateChannel", value: "alpha", deleted: false }
         ])
       )
     ).toBe("alpha")
     expect(
-      await syncedUpdateChannel(db([{ key: "updateChannel", value: "alpha", deleted: true }]))
+      await syncedUpdateChannel(
+        syncEntriesDb([{ key: "updateChannel", value: "alpha", deleted: true }])
+      )
     ).toBeUndefined()
   })
 
   it("reads the channel file before the synced setting has loaded", () => {
     const dir = dataDir()
     writeFileSync(join(dir, "app-update-channel"), "alpha")
-    expect(machineReleaseChannel(dir, db([]), {})()).toBe("alpha")
+    expect(machineReleaseChannel(dir, syncEntriesDb([]), {})()).toBe("alpha")
   })
 
   it("reports Alpha for development servers, whatever the settings say", () => {
     const dev = machineReleaseChannel(
       dataDir(),
-      db([{ key: "updateChannel", value: "stable", deleted: false }]),
+      syncEntriesDb([{ key: "updateChannel", value: "stable", deleted: false }]),
       { CODEVISOR_DEV_INSTANCE_ID: "kasha" }
     )
     expect(dev()).toBe("alpha")

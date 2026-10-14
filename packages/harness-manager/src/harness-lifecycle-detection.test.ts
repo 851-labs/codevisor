@@ -15,13 +15,14 @@ import { makeHarnessLifecycleManager } from "./harness-lifecycle.js"
 
 afterEach(cleanupLifecycleTests)
 
+const npmLatestFetch: FetchLike = async (url) =>
+  url.includes("registry.npmjs.org")
+    ? jsonResponse({ "dist-tags": { latest: "2.0.0" } })
+    : jsonResponse({}, 404)
+
 describe("harness lifecycle update detection", () => {
   it("checks, persists, decorates, and emits only on change", async () => {
     const db = await makeDb()
-    const fetchImpl: FetchLike = async (url) =>
-      url.includes("registry.npmjs.org")
-        ? jsonResponse({ "dist-tags": { latest: "2.0.0" } })
-        : jsonResponse({}, 404)
     const events: Array<unknown> = []
     const lifecycle = makeHarnessLifecycleManager({
       agents: agentsStub(
@@ -29,7 +30,7 @@ describe("harness lifecycle update detection", () => {
         [harness("fake-cli", "/Users/dev/.local/bin/fake-cli", "1.0.0")]
       ),
       db,
-      fetchImpl,
+      fetchImpl: npmLatestFetch,
       home: "/Users/dev",
       realpath: (path) => path
     })
@@ -56,7 +57,7 @@ describe("harness lifecycle update detection", () => {
     const rebooted = makeHarnessLifecycleManager({
       agents: agentsStub([npmDefinition], []),
       db,
-      fetchImpl
+      fetchImpl: npmLatestFetch
     })
     const decorated = await rebooted.decorateHarnesses([
       harness("fake-cli", "/Users/dev/.local/bin/fake-cli", "1.0.0")

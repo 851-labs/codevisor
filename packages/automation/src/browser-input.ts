@@ -138,7 +138,7 @@ export const triggerMediaDownload = async (
   page: PageHandle,
   objectId: string
 ): Promise<void> => {
-  const result = evaluatedValue<{ error?: string }>(
+  const result = evaluatedValue(
     await runtime.connection.send(
       "Runtime.callFunctionOn",
       {
@@ -150,7 +150,7 @@ export const triggerMediaDownload = async (
       },
       page.sessionId
     )
-  )
+  ) as { error?: string }
   if (result.error !== undefined) throw new Error(result.error)
 }
 
@@ -181,12 +181,7 @@ export const fillResolvedElement = async (
   slowly: boolean,
   replace: boolean
 ): Promise<string | undefined> => {
-  const preparation = evaluatedValue<{
-    actual?: string
-    error?: string
-    needsInput?: boolean
-    type?: string
-  }>(
+  const preparation = evaluatedValue(
     await runtime.connection.send(
       "Runtime.callFunctionOn",
       {
@@ -198,7 +193,12 @@ export const fillResolvedElement = async (
       },
       page.sessionId
     )
-  )
+  ) as {
+    actual?: string
+    error?: string
+    needsInput?: boolean
+    type?: string
+  }
   if (preparation.error !== undefined) throw new Error(preparation.error)
   if (preparation.needsInput === true) {
     if (slowly) {
@@ -208,7 +208,7 @@ export const fillResolvedElement = async (
       }
     } else await runtime.connection.send("Input.insertText", { text }, page.sessionId)
   }
-  const actual = evaluatedValue<string | undefined>(
+  const actual = evaluatedValue(
     await runtime.connection.send(
       "Runtime.callFunctionOn",
       {
@@ -219,7 +219,7 @@ export const fillResolvedElement = async (
       },
       page.sessionId
     )
-  )
+  ) as string | undefined
   if (replace && actual !== text && preparation.actual === undefined) {
     throw new Error(
       `Browser fill verification failed: expected ${JSON.stringify(text)}, received ${JSON.stringify(actual)}`
@@ -261,7 +261,7 @@ const checkedState = async (
       },
       page.sessionId
     )
-  )
+  ) as { checked?: boolean; error?: string; radio?: boolean }
 
 export const setCheckedElement = async (
   runtime: BrowserRuntime,
@@ -289,7 +289,7 @@ export const selectOptionsElement = async (
   element: ResolvedElement,
   values: ReadonlyArray<unknown>
 ): Promise<string[]> => {
-  const result = evaluatedValue<{ error?: string; selected?: string[] }>(
+  const result = evaluatedValue(
     await runtime.connection.send(
       "Runtime.callFunctionOn",
       {
@@ -301,7 +301,7 @@ export const selectOptionsElement = async (
       },
       page.sessionId
     )
-  )
+  ) as { error?: string; selected?: string[] }
   if (result.error !== undefined) throw new Error(result.error)
   return result.selected ?? []
 }

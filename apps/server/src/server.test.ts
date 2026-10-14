@@ -68,6 +68,7 @@ describe("@codevisor/server", () => {
   it("gates HTTP and websocket clients until startup recovery finishes", async () => {
     const { services } = await makeServices("server-a")
     const listening = Promise.withResolvers<number>()
+    // oxlint-disable-next-line typescript/unbound-method
     const emit = Server.prototype.emit
     const observed = vi.spyOn(Server.prototype, "emit").mockImplementation(function (
       this: Server,

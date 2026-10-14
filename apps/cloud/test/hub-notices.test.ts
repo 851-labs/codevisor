@@ -71,6 +71,7 @@ describe("abandoned machine session", () => {
     ]
     const sent: { socket: WebSocket; frame: unknown }[] = []
     const remove = vi.fn()
+    const broadcastMachineNotice = vi.fn()
     const port = {
       sql: { exec: () => ({ toArray: () => [row] }) },
       net: {
@@ -80,7 +81,7 @@ describe("abandoned machine session", () => {
         byConnectionId: (id: string) =>
           [...attachments].filter(([, a]) => a.connectionId === id).map(([socket]) => socket),
         byTag: () => [],
-        broadcastMachineNotice: vi.fn(),
+        broadcastMachineNotice,
         broadcastToPeerMachines: vi.fn(),
         send: (socket: WebSocket, encoded: string) => {
           sent.push({ socket, frame: decodeHubToApp(encoded) })
@@ -93,7 +94,7 @@ describe("abandoned machine session", () => {
     abandonSession(port, expired)
 
     expect(remove).toHaveBeenCalledWith("machine-before")
-    expect(port.net.broadcastMachineNotice).not.toHaveBeenCalled()
+    expect(broadcastMachineNotice).not.toHaveBeenCalled()
     expect(sent).toEqual([
       {
         socket: appSocket,

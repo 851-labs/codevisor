@@ -188,8 +188,8 @@ export const makeWorkspacesService = (
           "select * from workspace_panes where workspace_id = ? order by position, created_at, id"
         )
         return sqlite.transaction(() => {
-          const panes = select.all(workspaceId) as ReadonlyArray<WorkspacePaneRow>
-          reorderPanePositions(sqlite, panes, paneIds)
+          const currentPanes = select.all(workspaceId) as ReadonlyArray<WorkspacePaneRow>
+          reorderPanePositions(sqlite, currentPanes, paneIds)
           return (select.all(workspaceId) as ReadonlyArray<WorkspacePaneRow>).map(
             workspacePaneFromRow
           )

@@ -134,8 +134,8 @@ export const routeMachineRelay = (
   const opened = openerRouter(hub, socket, machine, machineDeviceId)
   let peerId: string | undefined
   let batch: { header: unknown; payload: Uint8Array }[] = []
-  const reportGone = (peerId: string): void => {
-    hub.send(socket, encodeCloudFrame({ t: "peer-gone", peerId }))
+  const reportGone = (gonePeerId: string): void => {
+    hub.send(socket, encodeCloudFrame({ t: "peer-gone", peerId: gonePeerId }))
   }
   const reportedGone = new Set<string>()
   const flush = (): void => {

@@ -16,8 +16,10 @@ export const browserKeyDescription = (
   return printableKeyDescription(raw, modifiers)
 }
 
+const isSingleCharacter = (value: string): boolean => /^.$/su.test(value)
+
 const chordParts = (value: string): string[] => {
-  return [...value].length === 1
+  return isSingleCharacter(value)
     ? [value === " " ? "Space" : value]
     : value
         .split("+")
@@ -116,7 +118,7 @@ const printableKeyDescription = (
   raw: string,
   modifiers: number
 ): ReturnType<typeof browserKeyDescription> => {
-  if ([...raw].length !== 1) throw new Error(`Unsupported key: ${raw}`)
+  if (!isSingleCharacter(raw)) throw new Error(`Unsupported key: ${raw}`)
   const upper = raw.toUpperCase()
   const letter = /^[A-Z]$/.test(upper)
   const code = letter ? `Key${upper}` : /^[0-9]$/.test(raw) ? `Digit${raw}` : raw

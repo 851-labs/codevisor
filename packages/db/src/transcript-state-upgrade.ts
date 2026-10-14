@@ -25,7 +25,7 @@ export const runTranscriptStateUpgrade = (
   let completed = existing?.completed ?? 0
   const total =
     existing?.total ??
-    Number((db.prepare("select count(*) as n from session_events").get() as { n: number }).n)
+    (db.prepare("select count(*) as n from session_events").get() as { n: number }).n
   if (existing === undefined)
     db.transaction(() => {
       db.exec(

@@ -285,15 +285,15 @@ describe("refreshPluginIndex", () => {
   })
 })
 
-describe("plugin registry routes", () => {
-  const seed = async (): Promise<PluginIndexEntry> => {
-    const stub = githubStub([
-      { owner: "octocat", name: "notes", manifest: JSON.stringify(manifest()) }
-    ])
-    await refreshPluginIndex({ ...env, GITHUB_FETCH: stub.fetch })
-    return (await readIndex()).entries[0] as PluginIndexEntry
-  }
+const seedNotesPlugin = async (): Promise<PluginIndexEntry> => {
+  const stub = githubStub([
+    { owner: "octocat", name: "notes", manifest: JSON.stringify(manifest()) }
+  ])
+  await refreshPluginIndex({ ...env, GITHUB_FETCH: stub.fetch })
+  return (await readIndex()).entries[0] as PluginIndexEntry
+}
 
+describe("plugin registry routes", () => {
   it("serves an honest empty index before the first poll", async () => {
     await env.PLUGIN_INDEX.delete(PLUGIN_INDEX_KEY)
     const response = await SELF.fetch(`${BASE}/plugins/index.json`)
@@ -304,7 +304,7 @@ describe("plugin registry routes", () => {
   })
 
   it("serves the index and per-plugin documents with cache headers", async () => {
-    const entry = await seed()
+    const entry = await seedNotesPlugin()
     const index = await SELF.fetch(`${BASE}/plugins/index.json`)
     expect(index.status).toBe(200)
     expect(index.headers.get("cache-control")).toBe(

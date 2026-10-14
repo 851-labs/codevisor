@@ -24,6 +24,32 @@ const entry = (key: string, value: unknown, wallMs: number, deviceId = "device-a
   timestamp: { wallMs, counter: 0, deviceId }
 })
 
+const reconcileWithAuth = async (state: string, serverId: string) => {
+  const { services: base } = await makeServices(serverId)
+  await run(base.db.setHarnessEnabled("codex", false))
+  await run(
+    base.db.mergeSyncEntries("harnesses", [
+      {
+        key: "codex",
+        value: { enabled: true, installed: true },
+        timestamp: { wallMs: 10, counter: 0, deviceId: "z" }
+      }
+    ])
+  )
+  const auth = {
+    subscribe: () => () => {},
+    decorateHarnesses: (list: ReadonlyArray<unknown>) =>
+      Promise.resolve(
+        (list as Array<Record<string, unknown>>).map((harness) => ({
+          ...harness,
+          auth: { state }
+        }))
+      )
+  } as unknown as NonNullable<CodevisorServerServices["auth"]>
+  const authedServer = await startWithApp({ ...base, auth })
+  return jsonRequest(authedServer, "/v1/sync/harnesses/reconcile", { method: "POST" })
+}
+
 describe("/v1/sync", () => {
   it("merges replicas and publishes only real changes", async () => {
     const { services } = await makeServices("server-sync")
@@ -152,7 +178,7 @@ describe("/v1/sync", () => {
     })
     const doc = await jsonRequest(server, "/v1/sync/harnesses")
     const entries = (doc.body as { entries: Array<{ key: string; value: unknown }> }).entries
-    expect(entries.find((entry) => entry.key === "codex")?.value).toMatchObject({
+    expect(entries.find((synced) => synced.key === "codex")?.value).toMatchObject({
       enabled: true,
       installed: true,
       uninstall: false
@@ -191,7 +217,7 @@ describe("/v1/sync", () => {
         value: { harnesses: Array<{ id: string; state: string; reason?: string }> }
       }>
     }
-    expect(readiness.entries.flatMap((entry) => entry.value.harnesses)).toContainEqual(
+    expect(readiness.entries.flatMap((synced) => synced.value.harnesses)).toContainEqual(
       expect.objectContaining({
         id: "codex",
         state: "blocked",
@@ -238,31 +264,6 @@ describe("/v1/sync", () => {
     expect(installing.body).toMatchObject({ installing: ["codex"] })
     expect(installs).toEqual(["codex"])
 
-    const reconcileWithAuth = async (state: string, serverId: string) => {
-      const { services: base } = await makeServices(serverId)
-      await run(base.db.setHarnessEnabled("codex", false))
-      await run(
-        base.db.mergeSyncEntries("harnesses", [
-          {
-            key: "codex",
-            value: { enabled: true, installed: true },
-            timestamp: { wallMs: 10, counter: 0, deviceId: "z" }
-          }
-        ])
-      )
-      const auth = {
-        subscribe: () => () => {},
-        decorateHarnesses: (list: ReadonlyArray<unknown>) =>
-          Promise.resolve(
-            (list as Array<Record<string, unknown>>).map((harness) => ({
-              ...harness,
-              auth: { state }
-            }))
-          )
-      } as unknown as NonNullable<CodevisorServerServices["auth"]>
-      const authedServer = await startWithApp({ ...base, auth })
-      return jsonRequest(authedServer, "/v1/sync/harnesses/reconcile", { method: "POST" })
-    }
     expect((await reconcileWithAuth("loggedOut", "server-h1")).body).toMatchObject({
       blocked: [{ id: "codex", reason: "Sign in required" }]
     })

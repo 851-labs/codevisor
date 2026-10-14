@@ -69,7 +69,7 @@ const resolveLaunch = (
         ? undefined
         : { args: ["-y", launch.packageName, ...launch.args], command }
     }
-    case "executable": {
+    default: {
       const located =
         environment.locateExecutable(launch.command, environment.env) ??
         (definition.detectBinaries.includes(installed)
@@ -124,6 +124,82 @@ const skillListTimeoutMs = (sessionOptions: CreateSessionOptions | undefined): n
 
 const authProbeTimeoutMs = 10_000
 
+const acpSessionHandle = (
+  connection: AcpAgentConnection,
+  sessionId: string,
+  emit: RuntimeEmit,
+  account?: HarnessAccountContext
+): AgentSessionHandle => ({
+  prompt: (input) =>
+    Effect.gen(function* () {
+      if (account?.beforeTurn !== undefined) {
+        const beforeTurn = account.beforeTurn
+        yield* Effect.promise(() => beforeTurn().catch(() => undefined))
+      }
+      const turnId = randomUUID()
+      yield* adapterPromise("promptTurnStart", () =>
+        emit(turnLifecycleEvent(sessionId, turnId, "started"))
+      )
+      const result = yield* connection.prompt(sessionId, input)
+      yield* adapterPromise("promptTurnEnd", () =>
+        emit(
+          turnLifecycleEvent(
+            sessionId,
+            turnId,
+            "ended",
+            result.stopReason,
+            result.stopDetail,
+            result.retryable
+          )
+        )
+      )
+      return result
+    }),
+  cancel: Effect.gen(function* () {
+    yield* connection.cancel(sessionId)
+    yield* adapterPromise("cancelTurnEnd", () =>
+      emit(turnLifecycleEvent(sessionId, randomUUID(), "ended", "cancelled"))
+    )
+    return { runtimeState: "reusable" as const }
+  }),
+  setMode: (modeId) =>
+    Effect.gen(function* () {
+      yield* connection.setMode(sessionId, modeId)
+      yield* adapterPromise("setModeEvent", () =>
+        emit({ kind: "session.updated", subjectId: sessionId, payload: { modeId } })
+      )
+    }),
+  setConfigOption: (configId, value) =>
+    Effect.gen(function* () {
+      const configOptions = yield* connection.setConfigOption(sessionId, configId, value)
+      yield* adapterPromise("setConfigOptionEvent", () =>
+        emit({
+          kind: "session.updated",
+          subjectId: sessionId,
+          payload: { configId, configOptions, value }
+        })
+      )
+      return configOptions as ReadonlyArray<SessionConfigOption>
+    }),
+  ...(connection.answerQuestion === undefined
+    ? {}
+    : {
+        answerQuestion: (questionId: string, answer: QuestionAnswer) =>
+          connection.answerQuestion!(sessionId, questionId, answer)
+      }),
+  ...(connection.setGoal === undefined
+    ? {}
+    : {
+        setGoal: (update: SetGoalUpdate) => connection.setGoal!(sessionId, update)
+      }),
+  ...(connection.clearGoal === undefined
+    ? {}
+    : {
+        clearGoal: connection.clearGoal(sessionId)
+      }),
+  close: connection.close
+})
+
 export const makeAcpProvider = (
   environment: ProviderEnvironment,
   config: AcpProviderConfig = {}
@@ -165,82 +241,6 @@ export const makeAcpProvider = (
       )
     })
 
-  const handleFor = (
-    connection: AcpAgentConnection,
-    sessionId: string,
-    emit: RuntimeEmit,
-    account?: HarnessAccountContext
-  ): AgentSessionHandle => ({
-    prompt: (input) =>
-      Effect.gen(function* () {
-        if (account?.beforeTurn !== undefined) {
-          const beforeTurn = account.beforeTurn
-          yield* Effect.promise(() => beforeTurn().catch(() => undefined))
-        }
-        const turnId = randomUUID()
-        yield* adapterPromise("promptTurnStart", () =>
-          emit(turnLifecycleEvent(sessionId, turnId, "started"))
-        )
-        const result = yield* connection.prompt(sessionId, input)
-        yield* adapterPromise("promptTurnEnd", () =>
-          emit(
-            turnLifecycleEvent(
-              sessionId,
-              turnId,
-              "ended",
-              result.stopReason,
-              result.stopDetail,
-              result.retryable
-            )
-          )
-        )
-        return result
-      }),
-    cancel: Effect.gen(function* () {
-      yield* connection.cancel(sessionId)
-      yield* adapterPromise("cancelTurnEnd", () =>
-        emit(turnLifecycleEvent(sessionId, randomUUID(), "ended", "cancelled"))
-      )
-      return { runtimeState: "reusable" as const }
-    }),
-    setMode: (modeId) =>
-      Effect.gen(function* () {
-        yield* connection.setMode(sessionId, modeId)
-        yield* adapterPromise("setModeEvent", () =>
-          emit({ kind: "session.updated", subjectId: sessionId, payload: { modeId } })
-        )
-      }),
-    setConfigOption: (configId, value) =>
-      Effect.gen(function* () {
-        const configOptions = yield* connection.setConfigOption(sessionId, configId, value)
-        yield* adapterPromise("setConfigOptionEvent", () =>
-          emit({
-            kind: "session.updated",
-            subjectId: sessionId,
-            payload: { configId, configOptions, value }
-          })
-        )
-        return configOptions as ReadonlyArray<SessionConfigOption>
-      }),
-    ...(connection.answerQuestion === undefined
-      ? {}
-      : {
-          answerQuestion: (questionId: string, answer: QuestionAnswer) =>
-            connection.answerQuestion!(sessionId, questionId, answer)
-        }),
-    ...(connection.setGoal === undefined
-      ? {}
-      : {
-          setGoal: (update: SetGoalUpdate) => connection.setGoal!(sessionId, update)
-        }),
-    ...(connection.clearGoal === undefined
-      ? {}
-      : {
-          clearGoal: connection.clearGoal(sessionId)
-        }),
-    close: connection.close
-  })
-
   return {
     id: config.providerId ?? "acp",
     readiness: (definition) =>
@@ -261,7 +261,7 @@ export const makeAcpProvider = (
           .createSession(cwd, toolGateway, skillListTimeoutMs(sessionOptions))
           .pipe(
             Effect.map((metadata) => ({
-              handle: handleFor(connection, metadata.sessionId, emit, account),
+              handle: acpSessionHandle(connection, metadata.sessionId, emit, account),
               metadata
             })),
             Effect.onError(() => connection.close.pipe(Effect.ignoreCause))
@@ -282,7 +282,7 @@ export const makeAcpProvider = (
           .loadSession(agentSessionId, cwd, toolGateway, skillListTimeoutMs(sessionOptions))
           .pipe(
             Effect.map((metadata) => ({
-              handle: handleFor(connection, metadata.sessionId, emit, account),
+              handle: acpSessionHandle(connection, metadata.sessionId, emit, account),
               metadata,
               sessionId: metadata.sessionId
             })),

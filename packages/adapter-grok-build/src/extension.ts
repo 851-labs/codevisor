@@ -152,7 +152,7 @@ const extendGrokConnection = (
           update.tokenBudget === undefined || update.tokenBudget === null
             ? ""
             : ` --budget ${update.tokenBudget}`
-        runGoalPrompt(sessionId, `/goal ${objective}${budget}`, true)
+        void runGoalPrompt(sessionId, `/goal ${objective}${budget}`, true)
         return goal
       }
 
@@ -180,7 +180,7 @@ const extendGrokConnection = (
           updatedAt: new Date().toISOString()
         }
         goals.set(sessionId, goal)
-        runGoalPrompt(sessionId, "/goal resume", true)
+        void runGoalPrompt(sessionId, "/goal resume", true)
         return goal
       }
       throw new Error(`Unsupported Grok goal status: ${update.status ?? "unchanged"}`)
@@ -217,20 +217,22 @@ export const makeGrokBuildExtension: AcpStdioExtensionFactory = ({ emit, enqueue
   const normalizer = new GrokStreamNormalizer()
   const subagents = new GrokSubagents()
 
+  const planApproval = ({ params }: { readonly params: unknown }) => {
+    const question = grokPlanApprovalQuestion(params)
+    return question === undefined
+      ? Promise.resolve({ outcome: "cancelled" as const })
+      : enqueueQuestion(question)
+  }
+
+  const askUserQuestion = ({ params }: { readonly params: unknown }) => {
+    const question = grokAskUserQuestion(params)
+    return question === undefined
+      ? Promise.resolve({ outcome: "cancelled" as const })
+      : enqueueQuestion(question)
+  }
+
   return {
     configureClientApp: (app) => {
-      const planApproval = ({ params }: { readonly params: unknown }) => {
-        const question = grokPlanApprovalQuestion(params)
-        return question === undefined
-          ? Promise.resolve({ outcome: "cancelled" as const })
-          : enqueueQuestion(question)
-      }
-      const askUserQuestion = ({ params }: { readonly params: unknown }) => {
-        const question = grokAskUserQuestion(params)
-        return question === undefined
-          ? Promise.resolve({ outcome: "cancelled" as const })
-          : enqueueQuestion(question)
-      }
       for (const method of ["_x.ai/exit_plan_mode", "x.ai/exit_plan_mode"]) {
         app.onRequest<unknown, GrokPlanApprovalResponse>(method, (params) => params, planApproval)
       }
@@ -251,7 +253,7 @@ export const makeGrokBuildExtension: AcpStdioExtensionFactory = ({ emit, enqueue
             const sessionId = subagents.sessionOf(params)
             if (sessionId !== undefined && subagents.isChildSession(sessionId)) return
             emitAll(emit, events)
-            const mapped = grokGoalNotification(params, (sessionId) => goals.get(sessionId))
+            const mapped = grokGoalNotification(params, (goalSessionId) => goals.get(goalSessionId))
             if (mapped === undefined) return
             if (mapped.goal === undefined) goals.delete(mapped.sessionId)
             else goals.set(mapped.sessionId, mapped.goal)

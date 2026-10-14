@@ -20,6 +20,9 @@ import { isDeletableProjectFolder } from "./projects.js"
 
 const execFileAsync = promisify(execFile)
 
+const runGit = (args: ReadonlyArray<string>, cwd: string) =>
+  execFileAsync("git", [...args], { cwd })
+
 describe("project routes", () => {
   it("returns machine-local project recommendations from installed harness sessions", async () => {
     const { agents, services } = await makeServices("server-a")
@@ -108,9 +111,6 @@ describe("project routes", () => {
   })
 
   it("clones a git remote into the managed repos dir as a project", async () => {
-    const git = (args: ReadonlyArray<string>, cwd: string) =>
-      execFileAsync("git", [...args], { cwd })
-
     const reposRoot = mkdtempSync(join(tmpdir(), "codevisor-repos-"))
     tempDirs.push(reposRoot)
     process.env["CODEVISOR_REPOS_ROOT"] = reposRoot
@@ -120,10 +120,13 @@ describe("project routes", () => {
       tempDirs.push(origin)
       const originRepo = join(origin, "widget.git")
       mkdirSync(originRepo)
-      await git(["init"], originRepo)
+      await runGit(["init"], originRepo)
       writeFileSync(join(originRepo, "README.md"), "hello")
-      await git(["add", "."], originRepo)
-      await git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "init"], originRepo)
+      await runGit(["add", "."], originRepo)
+      await runGit(
+        ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "init"],
+        originRepo
+      )
 
       const url = `file://${originRepo}`
       const created = await jsonRequest(server, "/v1/projects/from-git", {

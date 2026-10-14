@@ -2,7 +2,9 @@ export const validAuthRedirect = (value: string): boolean =>
   value.startsWith("/") &&
   !value.startsWith("//") &&
   !value.includes("\\") &&
-  ![...value].some((character) => character.charCodeAt(0) <= 32 || character.charCodeAt(0) === 127)
+  !value
+    .split("")
+    .some((character) => character.charCodeAt(0) <= 32 || character.charCodeAt(0) === 127)
 
 export const loginURL = (redirect: string, step = "sign-in"): string => {
   const query = new URLSearchParams({ redirect })

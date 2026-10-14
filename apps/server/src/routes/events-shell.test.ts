@@ -49,51 +49,49 @@ const attention = (id: number, sidebarState: string): EventEnvelope => ({
   payload: { sidebarState }
 })
 
+const shellFixture = async (since = 1) => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] })
+  const log: EventEnvelope[] = []
+  const fanout = await run(makeEventFanout)
+  const listEvents = vi.fn((cursor: number) => Effect.sync(() => log.filter((e) => e.id > cursor)))
+  const sockets: ReturnType<typeof makeSocket>[] = []
+  const connect = async () => {
+    const client = makeSocket()
+    sockets.push(client)
+    await attachEventSocket(
+      {
+        readSyncBatch: (cursor: number) =>
+          Effect.map(listEvents(cursor), (events) => ({
+            events,
+            cursor: Math.max(cursor, ...events.map((event) => event.id)),
+            requiresSnapshot: false
+          }))
+      } as never,
+      fanout,
+      since,
+      client.socket as never,
+      "server",
+      undefined,
+      25_000,
+      true
+    )
+    return client
+  }
+  return {
+    log,
+    fanout,
+    listEvents,
+    connect,
+    close: () => sockets.forEach((c) => c.socket.close())
+  }
+}
+
 describe("durable shell subscriptions", () => {
   afterEach(() => vi.useRealTimers())
 
-  const fixture = async (since = 1) => {
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] })
-    const log: EventEnvelope[] = []
-    const fanout = await run(makeEventFanout)
-    const listEvents = vi.fn((cursor: number) =>
-      Effect.sync(() => log.filter((e) => e.id > cursor))
-    )
-    const sockets: ReturnType<typeof makeSocket>[] = []
-    const connect = async () => {
-      const client = makeSocket()
-      sockets.push(client)
-      await attachEventSocket(
-        {
-          readSyncBatch: (cursor: number) =>
-            Effect.map(listEvents(cursor), (events) => ({
-              events,
-              cursor: Math.max(cursor, ...events.map((event) => event.id)),
-              requiresSnapshot: false
-            }))
-        } as never,
-        fanout,
-        since,
-        client.socket as never,
-        "server",
-        undefined,
-        25_000,
-        true
-      )
-      return client
-    }
-    return {
-      log,
-      fanout,
-      listEvents,
-      connect,
-      close: () => sockets.forEach((c) => c.socket.close())
-    }
-  }
-
   it("recovers a missed update on every client without navigation or another event", async () => {
     const state = "unread"
-    const f = await fixture()
+    const f = await shellFixture()
     try {
       const clients = [await f.connect(), await f.connect()]
       for (const client of clients) {
@@ -118,7 +116,7 @@ describe("durable shell subscriptions", () => {
   })
 
   it("delivers missed and out-of-order broadcasts from the log before advancing the cursor", async () => {
-    const f = await fixture()
+    const f = await shellFixture()
     try {
       const client = await f.connect()
       f.log.push(attention(2, "unread"), attention(3, "idle"))
@@ -150,7 +148,7 @@ describe("durable shell subscriptions", () => {
   })
 
   it("drains a change racing a snapshot before checkpointing, without overlapping reads", async () => {
-    const f = await fixture()
+    const f = await shellFixture()
     const captured = Promise.withResolvers<void>()
     const release = Promise.withResolvers<EventEnvelope[]>()
     f.listEvents.mockImplementationOnce(() =>
@@ -180,7 +178,7 @@ describe("durable shell subscriptions", () => {
   })
 
   it("preserves live-only subscriptions and allows holes in the global log", async () => {
-    const f = await fixture(Number.MAX_SAFE_INTEGER)
+    const f = await shellFixture(Number.MAX_SAFE_INTEGER)
     try {
       f.log.push(attention(2, "unread"))
       const client = await f.connect()
@@ -208,7 +206,7 @@ describe("durable shell subscriptions", () => {
   })
 
   it("closes on a failed read and removes its timer and subscription", async () => {
-    const f = await fixture()
+    const f = await shellFixture()
     try {
       const client = await f.connect()
       f.listEvents.mockImplementationOnce(
@@ -226,7 +224,7 @@ describe("durable shell subscriptions", () => {
   it.each([false, true])(
     "does not send after closing during a read (has events: %s)",
     async (hasEvents) => {
-      const f = await fixture()
+      const f = await shellFixture()
       const captured = Promise.withResolvers<void>()
       const release = Promise.withResolvers<EventEnvelope[]>()
       try {

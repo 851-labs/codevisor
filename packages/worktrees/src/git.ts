@@ -1,7 +1,7 @@
 import { execFile, spawn } from "node:child_process"
 import { realpathSync } from "node:fs"
 import { readFile } from "node:fs/promises"
-import { join, resolve } from "node:path"
+import { join, resolve as resolvePath } from "node:path"
 
 import type { BranchDiffTotals } from "@codevisor/api"
 
@@ -333,19 +333,20 @@ export const removeWorktree = (
 ): Promise<string> =>
   git("worktree", ["worktree", "remove", path, "--force"], repoDir, env, { priority })
 
+const canonicalPath = (candidate: string): string => {
+  try {
+    return realpathSync(candidate)
+  } catch {
+    return resolvePath(candidate)
+  }
+}
+
 export const rollbackFailedWorktree = async (
   repoDir: string,
   path: string,
   branch: string,
   env?: NodeJS.ProcessEnv
 ): Promise<boolean> => {
-  const canonicalPath = (candidate: string): string => {
-    try {
-      return realpathSync(candidate)
-    } catch {
-      return resolve(candidate)
-    }
-  }
   const records = (
     await gitRaw("worktree-list", ["worktree", "list", "--porcelain", "-z"], repoDir, env)
   )

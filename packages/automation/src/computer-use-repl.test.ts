@@ -22,6 +22,15 @@ afterEach(async () => {
   await Promise.all(pools.splice(0).map((value) => value.close()))
 })
 
+const replyEmpty = async () => reply({})
+
+const replyWithMissedWait = async (method: string) =>
+  reply({
+    snapshotId: "s",
+    text: "1 AXWindow",
+    ...(method === "wait_for" ? { matched: false } : {})
+  })
+
 describe("Computer Use REPL", () => {
   it("records an observed window across cells and returns the video artifact without hidden observations", async () => {
     const repl = pool()
@@ -224,16 +233,15 @@ describe("Computer Use REPL", () => {
 
   it("isolates sessions, preserves helper functions and destructuring, and resets explicitly", async () => {
     const repl = pool()
-    const invoke = async () => reply({})
     await repl.execute(
       "a",
       "let {value: count} = {value: 2}; function twice(n) { return n * 2; }",
-      invoke
+      replyEmpty
     )
-    expect(text(await repl.execute("a", "count = twice(count); count", invoke))).toBe("4")
-    expect((await repl.execute("b", "count", invoke)).isError).toBe(true)
+    expect(text(await repl.execute("a", "count = twice(count); count", replyEmpty))).toBe("4")
+    expect((await repl.execute("b", "count", replyEmpty)).isError).toBe(true)
     await repl.reset("a")
-    expect((await repl.execute("a", "count", invoke)).isError).toBe(true)
+    expect((await repl.execute("a", "count", replyEmpty)).isError).toBe(true)
   })
 
   it("retains bindings after an uncertain action and surfaces native details without retrying", async () => {
@@ -252,17 +260,15 @@ describe("Computer Use REPL", () => {
 
   it("preserves app bindings after an ordinary wait timeout", async () => {
     const repl = pool()
-    const invoke = async (method: string) =>
-      reply({
-        snapshotId: "s",
-        text: "1 AXWindow",
-        ...(method === "wait_for" ? { matched: false } : {})
-      })
-    await repl.execute("a", 'let app=await computer.getApp("Music",{emit:false})', invoke)
+    await repl.execute(
+      "a",
+      'let app=await computer.getApp("Music",{emit:false})',
+      replyWithMissedWait
+    )
     const timedOut = await repl.execute(
       "a",
       'computer.write("Move attempted"); await app.waitFor({text:"Missing",timeout_ms:0})',
-      invoke
+      replyWithMissedWait
     )
     expect(timedOut.isError).toBe(true)
     expect(timedOut.content[0]).toMatchObject({
@@ -271,7 +277,7 @@ describe("Computer Use REPL", () => {
     })
     expect(text(timedOut)).toContain('"matched":false')
     expect(text(timedOut)).toContain("Move attempted")
-    expect(text(await repl.execute("a", "app.id", invoke))).toBe("Music")
+    expect(text(await repl.execute("a", "app.id", replyWithMissedWait))).toBe("Music")
   })
 
   it("carries explicit windows, key sequences, drag endpoints and rich text through the sandbox", async () => {

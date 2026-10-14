@@ -67,17 +67,18 @@ const cloudControl = (bridge?: CloudServerControl["bridgeTunnelMedia"]): CloudSe
   ...(bridge === undefined ? {} : { bridgeTunnelMedia: bridge })
 })
 
+const answeringHost = async (request: ScreenSharingRequest) => ({
+  ...reply,
+  status: "connecting",
+  ...(request.operation === "start" ? { answer: "fixture answer" } : {})
+})
+
 describe("Screen Sharing media over the tunnel", () => {
-  const answering = async (request: ScreenSharingRequest) => ({
-    ...reply,
-    status: "connecting",
-    ...(request.operation === "start" ? { answer: "fixture answer" } : {})
-  })
   const tunnelMedia = { endpointId: "e".repeat(64), flowId: 3 }
 
   it("bridges the viewer's flow to the host answer and reports it", async () => {
     const bridge = vi.fn(async () => ({ flowId: 3, maxPayload: 1150 }))
-    const { request, post } = await fixture(answering, cloudControl(bridge))
+    const { request, post } = await fixture(answeringHost, cloudControl(bridge))
     const response = await post({ ...request, tunnelMedia })
     expect(response.body).toMatchObject({
       answer: "fixture answer",
@@ -88,11 +89,11 @@ describe("Screen Sharing media over the tunnel", () => {
 
   it("keeps plain WebRTC when the flow can't be bridged", async () => {
     const unbridged = await fixture(
-      answering,
+      answeringHost,
       cloudControl(async () => undefined)
     )
-    const noBridgeSupport = await fixture(answering, cloudControl())
-    const noCloud = await fixture(answering)
+    const noBridgeSupport = await fixture(answeringHost, cloudControl())
+    const noCloud = await fixture(answeringHost)
     for (const { request, post } of [unbridged, noBridgeSupport, noCloud]) {
       const response = await post({ ...request, tunnelMedia })
       expect(response.status).toBe(200)
@@ -102,7 +103,7 @@ describe("Screen Sharing media over the tunnel", () => {
 
   it("only bridges when the host produced an answer", async () => {
     const bridge = vi.fn(async () => ({ flowId: 3 }))
-    const { request, post } = await fixture(answering, cloudControl(bridge))
+    const { request, post } = await fixture(answeringHost, cloudControl(bridge))
     await post({ ...request, operation: "heartbeat", tunnelMedia })
     expect(bridge).not.toHaveBeenCalled()
   })

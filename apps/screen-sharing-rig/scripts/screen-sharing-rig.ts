@@ -70,7 +70,7 @@ const { command, options, positional } = (() => {
     return parseRigArguments(process.argv.slice(2))
   } catch (error) {
     process.stderr.write(`${errorMessage(error)}\n\n${usage}`)
-    process.exit(2)
+    return process.exit(2)
   }
 })()
 if (options.help || options.h) {
@@ -110,21 +110,21 @@ function runPlan(plan: Plan): void {
   for (const [commandName, ...args] of plan) run(commandName, args)
 }
 
-function readJSON<T>(path: string): T {
-  return JSON.parse(readFileSync(path, "utf8")) as T
+function readJSON(path: string): unknown {
+  return JSON.parse(readFileSync(path, "utf8"))
 }
 function readLocalConfig(): RigConfiguration {
   if (!existsSync(localConfigPath))
     throw new Error(`No rig on this Mac yet: ${localConfigPath}. Run install first.`)
-  return readJSON<RigConfiguration>(localConfigPath)
+  return readJSON(localConfigPath) as RigConfiguration
 }
 function readDeployRecord(): DeployRecord {
   if (!existsSync(deployRecordPath))
     throw new Error(`No deploy record: ${deployRecordPath}. Run install first.`)
-  return readJSON<DeployRecord>(deployRecordPath)
+  return readJSON(deployRecordPath) as DeployRecord
 }
 
-async function build({ debug = false, install = true } = {}): Promise<string> {
+async function build({ debug = false, install: installAfterBuild = true } = {}): Promise<string> {
   const configuration = debug ? "debug" : "release"
   const identities = parseCodesigningIdentities(
     run("/usr/bin/security", ["find-identity", "-v", "-p", "codesigning"], { capture: true })
@@ -197,7 +197,7 @@ async function build({ debug = false, install = true } = {}): Promise<string> {
   process.stdout.write(
     `Built ${buildApp} (${commit.slice(0, 8)}${dirty ? "*" : ""} ${configuration})\nDesignated requirement: ${requirement}\n`
   )
-  if (install) installLocally()
+  if (installAfterBuild) installLocally()
   return buildApp
 }
 
@@ -240,21 +240,21 @@ async function install(): Promise<void> {
   const port = portOption ? Number(portOption) : undefined
   const controlPortOption = stringOption(options, "control-port")
   const controlPort = controlPortOption ? Number(controlPortOption) : undefined
-  const hud = !options["no-hud"]
+  const showHud = !options["no-hud"]
   const viewer = rigConfiguration({
     role: "viewer",
     token,
     peer: hostAddress,
     port,
     controlPort,
-    hud
+    hud: showHud
   })
   const host = rigConfiguration({
     role: "host",
     token,
     port,
     controlPort,
-    hud,
+    hud: showHud,
     capture: stringOption(options, "capture") ?? "synthetic"
   })
   const { remoteHome, remoteUid } = remoteFacts(target)

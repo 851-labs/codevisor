@@ -33,6 +33,12 @@ const closeBlankPages = async (connection: CdpConnection): Promise<void> => {
   }
 }
 
+const profileKey = (context: AutomationProviderContext): string =>
+  createHash("sha256")
+    .update(context.projectId ?? "global")
+    .digest("hex")
+    .slice(0, 24)
+
 export const makeBrowserRuntimeFactory = (options: {
   dataDir: string
   db: CodevisorDatabaseService | undefined
@@ -45,11 +51,6 @@ export const makeBrowserRuntimeFactory = (options: {
 }) => {
   const { dataDir, db, profilesDir, browsersDir, downloadsDir, fallbackReasons, ensureSetup } =
     options
-  const profileKey = (context: AutomationProviderContext): string =>
-    createHash("sha256")
-      .update(context.projectId ?? "global")
-      .digest("hex")
-      .slice(0, 24)
 
   let fallbackLaunch: Promise<unknown> = Promise.resolve()
 

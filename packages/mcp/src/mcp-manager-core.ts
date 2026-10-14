@@ -157,7 +157,7 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
         if (existing.kind !== builtin.kind) {
           throw new Error(`Reserved built-in MCP id is already in use: ${builtin.id}`)
         }
-        const state = builtinProviderState(builtin.id, existing.enabled)
+        const providerState = builtinProviderState(builtin.id, existing.enabled)
         return run(
           config.db.saveMcpServer({
             id: existing.id,
@@ -170,14 +170,14 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
             enabled: existing.enabled,
             authType: existing.authType,
             ...(existing.oauthScope === undefined ? {} : { oauthScope: existing.oauthScope }),
-            connectionState: state.connectionState,
+            connectionState: providerState.connectionState,
             toolCount: provider.tools.length,
-            ...(state.detail === undefined ? {} : { detail: state.detail }),
+            ...(providerState.detail === undefined ? {} : { detail: providerState.detail }),
             ...(existing.secretCipher === undefined ? {} : { secretCipher: existing.secretCipher })
           })
         )
       }
-      const state = builtinProviderState(builtin.id, true)
+      const providerState = builtinProviderState(builtin.id, true)
       return run(
         config.db.saveMcpServer({
           ...builtin,
@@ -185,9 +185,9 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
           args: [],
           enabled: true,
           authType: "none",
-          connectionState: state.connectionState,
+          connectionState: providerState.connectionState,
           toolCount: provider.tools.length,
-          ...(state.detail === undefined ? {} : { detail: state.detail })
+          ...(providerState.detail === undefined ? {} : { detail: providerState.detail })
         })
       )
     })
@@ -260,27 +260,27 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
     await builtinsReady
     for (const builtin of BUILTIN_MCP_SERVERS) {
       const current = await record(builtin.id)
-      const state = builtinProviderState(builtin.id, current.enabled)
+      const providerState = builtinProviderState(builtin.id, current.enabled)
       if (
         builtin.id === "computer" &&
         current.connectionState === "unavailable" &&
-        state.connectionState === "connected" &&
+        providerState.connectionState === "connected" &&
         current.detail !== undefined &&
         current.detail !== "Open the native Codevisor app to use Computer Use"
       ) {
         continue
       }
       if (
-        current.connectionState === state.connectionState &&
-        current.detail === state.detail &&
+        current.connectionState === providerState.connectionState &&
+        current.detail === providerState.detail &&
         current.toolCount === automationProviders.get(builtin.id)!.tools.length
       ) {
         continue
       }
       await saveRecord(current, {
-        connectionState: state.connectionState,
+        connectionState: providerState.connectionState,
         toolCount: automationProviders.get(builtin.id)!.tools.length,
-        ...(state.detail === undefined ? {} : { detail: state.detail })
+        ...(providerState.detail === undefined ? {} : { detail: providerState.detail })
       })
     }
   }

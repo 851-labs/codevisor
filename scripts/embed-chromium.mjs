@@ -29,20 +29,20 @@ async function* files(directory, relative = "") {
   }
 }
 
-async function assembleFramework(framework) {
-  const versioned = join(framework, "Versions/A")
+async function assembleFramework(destination) {
+  const versioned = join(destination, "Versions/A")
   await mkdir(versioned, { recursive: true })
   await run(
     "rsync",
     ["-a", join(source, architectures[0], "sdk/Release", name) + "/", versioned + "/"],
     root
   )
-  await symlink("A", join(framework, "Versions/Current"))
+  await symlink("A", join(destination, "Versions/Current"))
   for (const item of ["Chromium Embedded Framework", "Libraries", "Resources"]) {
-    await symlink(`Versions/Current/${item}`, join(framework, item))
+    await symlink(`Versions/Current/${item}`, join(destination, item))
   }
   const binaries = []
-  for await (const path of files(framework)) {
+  for await (const path of files(destination)) {
     if (path.endsWith("Chromium Embedded Framework") || path.endsWith(".dylib")) binaries.push(path)
   }
   if (architectures.length > 1) {
@@ -55,7 +55,7 @@ async function assembleFramework(framework) {
             join(source, arch, "sdk/Release", name, path.replace(/^Versions\/A\//, ""))
           ),
           "-output",
-          join(framework, path)
+          join(destination, path)
         ],
         root
       )
@@ -63,7 +63,7 @@ async function assembleFramework(framework) {
     for (const arch of architectures.slice(1)) {
       await cp(
         join(source, arch, "sdk/Release", name, `Resources/v8_context_snapshot.${arch}.bin`),
-        join(framework, `Resources/v8_context_snapshot.${arch}.bin`)
+        join(destination, `Resources/v8_context_snapshot.${arch}.bin`)
       )
     }
   }
@@ -77,13 +77,13 @@ async function assembleFramework(framework) {
         "--options",
         "runtime",
         "--timestamp=none",
-        join(framework, path)
+        join(destination, path)
       ],
       root
     )
   await run(
     "codesign",
-    ["--force", "--sign", signing, "--options", "runtime", "--timestamp=none", framework],
+    ["--force", "--sign", signing, "--options", "runtime", "--timestamp=none", destination],
     root
   )
 }
@@ -189,7 +189,10 @@ const devToolsSection = resourceHeader
   ?.split("// From ")[0]
 if (!devToolsSection) throw new Error("CEF SDK is missing its DevTools resource index")
 const devToolsResources = Object.fromEntries(
-  [...devToolsSection.matchAll(/^#define (\w+) (\d+)$/gm)].map(([, name, id]) => [name, Number(id)])
+  [...devToolsSection.matchAll(/^#define (\w+) (\d+)$/gm)].map(([, resourceName, id]) => [
+    resourceName,
+    Number(id)
+  ])
 )
 if (!devToolsResources.ENTRYPOINTS_DEVTOOLS_APP_DEVTOOLS_APP_JS)
   throw new Error("CEF SDK is missing the inspector frontend")

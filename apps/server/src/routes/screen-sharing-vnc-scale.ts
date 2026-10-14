@@ -24,7 +24,7 @@ export const systemScalerCommands: ScalerCommands = {
         command,
         [...args],
         { env: { ...process.env, ...env }, timeout: 10_000 },
-        (error, stdout) => (error ? reject(error) : resolve(String(stdout)))
+        (error, stdout) => (error ? reject(error) : resolve(stdout))
       )
     ),
   spawnDetached: (command, args, env) =>

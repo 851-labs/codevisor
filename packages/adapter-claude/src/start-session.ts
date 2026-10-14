@@ -145,7 +145,7 @@ export const makeStartSession = (deps: StartSessionDeps) => {
         if (session.currentModeId === "bypassPermissions") {
           console.error(
             `[claude] auto-allowed ${toolName} escalated under bypassPermissions` +
-              `${check.agentID === undefined ? "" : ` agent=${check.agentID}`}` +
+              (check.agentID === undefined ? "" : ` agent=${check.agentID}`) +
               `: ${check.decisionReason ?? "no reason given"}`
           )
           return { behavior: "allow", updatedInput: toolInput }
@@ -266,7 +266,7 @@ export const makeStartSession = (deps: StartSessionDeps) => {
       turnId: randomUUID()
     }
     session = created
-    emitBackgroundTasks(created)
+    void emitBackgroundTasks(created)
 
     const resumeAfterStreamDeath = (): Promise<boolean> =>
       resumeSessionAfterStreamDeath(created, {

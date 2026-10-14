@@ -314,13 +314,9 @@ export const jsonRequest = async (
   path: string,
   init: RequestInit = {}
 ): Promise<{ readonly status: number; readonly body: unknown }> => {
-  const response = await fetch(`${server.url}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...init.headers
-    }
-  })
+  const headers = new Headers(init.headers)
+  if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json")
+  const response = await fetch(`${server.url}${path}`, { ...init, headers })
   const text = await response.text()
   return {
     status: response.status,

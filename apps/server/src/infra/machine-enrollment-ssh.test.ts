@@ -71,6 +71,30 @@ class SshCancellation {
   }
 }
 
+const enrollmentCloud = (joinedOnce: () => boolean): MachineEnrollmentCloud => ({
+  deviceId: () => SELF_DEVICE,
+  machines: () => [
+    presence(SELF_DEVICE, "mac-studio", { serverId: "machine-self" }),
+    ...(joinedOnce()
+      ? [
+          presence("device-new", "hetzner-1", {
+            serverId: "machine-new",
+            addedBy: { deviceId: SELF_DEVICE, name: "mac-studio" }
+          })
+        ]
+      : [])
+  ],
+  invite: async () => ({ code: CODE, expiresAt: "2100-01-01T00:10:00Z" }),
+  removePeer: async () => undefined
+})
+
+const machineLinkFor = (cloud: MachineEnrollmentCloud) =>
+  makeMachineLink({
+    self: { id: "machine-self", name: () => "mac-studio", os: "darwin" },
+    cloud: { ...cloud, request: () => Promise.reject(new Error("unused")) },
+    now: Date.now
+  })
+
 describe("the real ssh runner", () => {
   const directories: string[] = []
   afterEach(() => {
@@ -88,36 +112,12 @@ describe("the real ssh runner", () => {
     return { command, stdinPath }
   }
 
-  const account = (joinedOnce: () => boolean): MachineEnrollmentCloud => ({
-    deviceId: () => SELF_DEVICE,
-    machines: () => [
-      presence(SELF_DEVICE, "mac-studio", { serverId: "machine-self" }),
-      ...(joinedOnce()
-        ? [
-            presence("device-new", "hetzner-1", {
-              serverId: "machine-new",
-              addedBy: { deviceId: SELF_DEVICE, name: "mac-studio" }
-            })
-          ]
-        : [])
-    ],
-    invite: async () => ({ code: CODE, expiresAt: "2100-01-01T00:10:00Z" }),
-    removePeer: async () => undefined
-  })
-
-  const linkFor = (cloud: MachineEnrollmentCloud) =>
-    makeMachineLink({
-      self: { id: "machine-self", name: () => "mac-studio", os: "darwin" },
-      cloud: { ...cloud, request: () => Promise.reject(new Error("unused")) },
-      now: Date.now
-    })
-
   it("runs ssh with the script on stdin and the default installer", async () => {
     const ssh = fakeSsh('echo "✓ Connected as hetzner-1."')
-    const cloud = account(() => existsSync(ssh.stdinPath))
+    const cloud = enrollmentCloud(() => existsSync(ssh.stdinPath))
     const enrollment = makeMachineEnrollment({
       cloud,
-      link: linkFor(cloud),
+      link: machineLinkFor(cloud),
       sshCommand: ssh.command
     })
     expect(await enrollment.add({ ssh: "box" })).toMatchObject({
@@ -132,7 +132,7 @@ describe("the real ssh runner", () => {
   it("polls on the real clock until the new machine comes online", async () => {
     const ssh = fakeSsh("true")
     let polls = 0
-    const cloud = account(() => existsSync(ssh.stdinPath))
+    const cloud = enrollmentCloud(() => existsSync(ssh.stdinPath))
     const machines = cloud.machines
     const enrollment = makeMachineEnrollment({
       cloud: {
@@ -142,7 +142,7 @@ describe("the real ssh runner", () => {
             machine.deviceId === "device-new" ? { ...machine, online: ++polls > 1 } : machine
           )
       },
-      link: linkFor(cloud),
+      link: machineLinkFor(cloud),
       sshCommand: ssh.command
     })
     expect((await enrollment.add({ ssh: "box" })).online).toBe(true)
@@ -153,10 +153,10 @@ describe("the real ssh runner", () => {
     const ssh = fakeSsh(
       'i=0; while [ $i -lt 4000 ]; do echo "line $i of noisy install output"; i=$((i+1)); done; exit 7'
     )
-    const cloud = account(() => false)
+    const cloud = enrollmentCloud(() => false)
     const enrollment = makeMachineEnrollment({
       cloud,
-      link: linkFor(cloud),
+      link: machineLinkFor(cloud),
       sshCommand: ssh.command
     })
     const message = await enrollment.add({ ssh: "box" }).then(
@@ -170,10 +170,10 @@ describe("the real ssh runner", () => {
 
   it("stops the run when the caller cancels", async () => {
     const ssh = fakeSsh("printf 'codevisor-ssh-ready\\n'\nexec sleep 30")
-    const cloud = account(() => false)
+    const cloud = enrollmentCloud(() => false)
     const enrollment = makeMachineEnrollment({
       cloud,
-      link: linkFor(cloud),
+      link: machineLinkFor(cloud),
       sshCommand: ssh.command
     })
     const cancellation = new SshCancellation(ssh.command)
@@ -195,10 +195,10 @@ describe("the real ssh runner", () => {
   })
 
   it("says so when ssh can't run here", async () => {
-    const cloud = account(() => false)
+    const cloud = enrollmentCloud(() => false)
     const enrollment = makeMachineEnrollment({
       cloud,
-      link: linkFor(cloud),
+      link: machineLinkFor(cloud),
       sshCommand: join(tmpdir(), "codevisor-no-such-ssh")
     })
     await expect(enrollment.add({ ssh: "box" })).rejects.toMatchObject({

@@ -117,7 +117,7 @@ describe("Codevisor native action parity", () => {
     await provider.invoke(context, "clients.layout", { clientId: "client", ...selectedTab })
     expect(bodies).toEqual([page, layout, window, backgroundTab, selectedTab])
 
-    const tool = provider.tools.find((tool) => tool.name === "clients.layout")!
+    const tool = provider.tools.find((candidate) => candidate.name === "clients.layout")!
     expect(tool.inputSchema.required).not.toContain("focus")
     expect(tool.inputSchema.properties?.focus).toMatchObject({
       description: expect.stringContaining("Defaults to false")

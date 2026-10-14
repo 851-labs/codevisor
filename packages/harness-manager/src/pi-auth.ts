@@ -101,10 +101,30 @@ const eventValue = (event: AuthEvent): PiAuthEvent => {
         message: event.message,
         ...(event.links?.[0]?.url === undefined ? {} : { url: event.links[0].url })
       }
-    case "progress":
+    default:
       return { type: event.type, message: event.message }
   }
 }
+
+const ensureAuthFile = async (path: string): Promise<void> => {
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 })
+  try {
+    await writeFile(path, "{}", { encoding: "utf8", flag: "wx", mode: 0o600 })
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code !== "EEXIST") throw cause
+  }
+  await chmod(path, 0o600)
+}
+
+const promptValue = (prompt: AuthPrompt): PiAuthPrompt => ({
+  id: randomUUID(),
+  type: prompt.type,
+  message: prompt.message,
+  ...(!("placeholder" in prompt) || prompt.placeholder === undefined
+    ? {}
+    : { placeholder: prompt.placeholder }),
+  options: prompt.type === "select" ? [...prompt.options] : []
+})
 
 export const makePiAuthManager = (config: PiAuthManagerConfig): PiAuthManager => {
   const catalog = config.providers ?? builtinProviders()
@@ -112,16 +132,6 @@ export const makePiAuthManager = (config: PiAuthManagerConfig): PiAuthManager =>
 
   const authPath = async (): Promise<string> => {
     return piAuthPath(await config.resolveEnv())
-  }
-
-  const ensureAuthFile = async (path: string): Promise<void> => {
-    await mkdir(dirname(path), { recursive: true, mode: 0o700 })
-    try {
-      await writeFile(path, "{}", { encoding: "utf8", flag: "wx", mode: 0o600 })
-    } catch (cause) {
-      if ((cause as NodeJS.ErrnoException).code !== "EEXIST") throw cause
-    }
-    await chmod(path, 0o600)
   }
 
   const readCredentials = async (): Promise<AuthFile> => {
@@ -166,16 +176,6 @@ export const makePiAuthManager = (config: PiAuthManagerConfig): PiAuthManager =>
     config.onFlowChanged?.(publicFlow(flow))
   }
 
-  const promptValue = (prompt: AuthPrompt): PiAuthPrompt => ({
-    id: randomUUID(),
-    type: prompt.type,
-    message: prompt.message,
-    ...(!("placeholder" in prompt) || prompt.placeholder === undefined
-      ? {}
-      : { placeholder: prompt.placeholder }),
-    options: prompt.type === "select" ? [...prompt.options] : []
-  })
-
   const runLogin = async (
     flow: InternalFlow,
     provider: Provider,
@@ -183,9 +183,9 @@ export const makePiAuthManager = (config: PiAuthManagerConfig): PiAuthManager =>
     shared: boolean
   ): Promise<void> => {
     try {
-      const login = method === "oauth" ? provider.auth.oauth?.login : provider.auth.apiKey?.login
-      if (login === undefined) throw new Error(`${provider.name} does not support ${method}`)
-      const credential = await login({
+      const auth = method === "oauth" ? provider.auth.oauth : provider.auth.apiKey
+      if (auth?.login === undefined) throw new Error(`${provider.name} does not support ${method}`)
+      const credential = await auth.login({
         signal: flow.abort.signal,
         notify: (event) => {
           update(flow, {

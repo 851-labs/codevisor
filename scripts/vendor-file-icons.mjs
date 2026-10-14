@@ -47,11 +47,12 @@ for (const item of active) {
 const fileNames = { ...languageNames, ...names }
 const fileExtensions = { ...languageSuffixes, ...suffixes }
 delete fileExtensions.txt
+const byCodeUnit = (a, b) => (a < b ? -1 : a > b ? 1 : 0)
 const icons = [
   ...new Set([...Object.values(fileNames), ...Object.values(fileExtensions)])
-].toSorted()
+].toSorted(byCodeUnit)
 const sorted = (value) =>
-  Object.fromEntries(Object.entries(value).toSorted(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+  Object.fromEntries(Object.entries(value).toSorted(([a], [b]) => byCodeUnit(a, b)))
 const json = (value) => JSON.stringify(value, null, 2) + "\n"
 
 rmSync(catalog, { recursive: true, force: true })

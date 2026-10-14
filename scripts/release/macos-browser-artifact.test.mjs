@@ -131,6 +131,11 @@ test("split app verification checks signatures and timestamps on every remaining
   )
 })
 
+const compileUniversal = (...args) =>
+  execFileSync("xcrun", ["clang", "-arch", "arm64", "-arch", "x86_64", ...args], {
+    stdio: "pipe"
+  })
+
 test(
   "real universal Mach-O fixtures catch missing startup linkage and ad-hoc distribution signatures",
   { skip: process.platform !== "darwin" },
@@ -141,11 +146,7 @@ test(
     await writeFile(mainSource, "int main(void) { return 0; }\n")
     await writeFile(librarySource, "int fixture(void) { return 1; }\n")
     const library = join(frameworks, storage)
-    const compile = (...args) =>
-      execFileSync("xcrun", ["clang", "-arch", "arm64", "-arch", "x86_64", ...args], {
-        stdio: "pipe"
-      })
-    compile("-dynamiclib", librarySource, "-Wl,-install_name," + loadPath, "-o", library)
+    compileUniversal("-dynamiclib", librarySource, "-Wl,-install_name," + loadPath, "-o", library)
     const binaries = [join(app, "Contents/MacOS/Codevisor")]
     for (const suffix of chromiumHelperSuffixes) {
       const name = `Codevisor Browser Helper${suffix}`
@@ -153,7 +154,7 @@ test(
     }
     for (const binary of binaries) {
       await mkdir(join(binary, ".."), { recursive: true })
-      compile(mainSource, "-Wl,-needed_library," + library, "-o", binary)
+      compileUniversal(mainSource, "-Wl,-needed_library," + library, "-o", binary)
     }
     await signEmbeddedLibraries(app, "-")
     for (const binary of [...binaries].toReversed()) {
@@ -172,7 +173,7 @@ test(
       }),
       /code failed to satisfy specified code requirement/
     )
-    compile(mainSource, "-o", binaries[0])
+    compileUniversal(mainSource, "-o", binaries[0])
     assert.throws(() => verifyBrowserLinkage(app, arches), /must load.*at startup/)
   }
 )

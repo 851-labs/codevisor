@@ -104,6 +104,16 @@ describe("hub presence", () => {
   })
 })
 
+const infoOnlyLocalServer = (method: string, path: string) => {
+  expect(method).toBe("GET")
+  expect(path).toBe("/v1/info")
+  return {
+    status: 200,
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "http-vps" })
+  }
+}
+
 describe("hub relay", () => {
   it("relays sealed channel traffic app↔machine without reading it", async () => {
     const token = await devLogin()
@@ -275,16 +285,6 @@ describe("hub relay", () => {
     const machine = await connectMachine(token, "http-vps")
     const app = await connectApp(token)
 
-    const localServer = (method: string, path: string) => {
-      expect(method).toBe("GET")
-      expect(path).toBe("/v1/info")
-      return {
-        status: 200,
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name: "http-vps" })
-      }
-    }
-
     const channel = openChannel(app.keys.secretKey, machine.keys.publicKey)
     const openPayload = {
       channelType: "http",
@@ -321,7 +321,7 @@ describe("hub relay", () => {
       kind: "end"
     })
 
-    const response = localServer(request.params.method, request.params.path)
+    const response = infoOnlyLocalServer(request.params.method, request.params.path)
     const answer = (seq: number, value: unknown): void =>
       sendRelay(
         machine.socket,

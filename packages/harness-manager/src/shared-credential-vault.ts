@@ -131,8 +131,8 @@ export const makeSharedCredentialVault = (config: SharedCredentialVaultConfig) =
     reference: SharedCredentialReference,
     rejectedAccessToken?: string
   ): Promise<SharedTokenBundle> => {
-    const held = local(reference, rejectedAccessToken)
-    if (held !== undefined) return held
+    const fresh = local(reference, rejectedAccessToken)
+    if (fresh !== undefined) return fresh
     let state
     try {
       await recover(reference)

@@ -88,9 +88,11 @@ export const snapshotPage = async (
       const value = node.value?.value
       lines.push(
         `${"  ".repeat(depth)}- ${role}${quoted(name)}` +
-          `${ref === undefined ? "" : ` [ref=${ref}]`}` +
-          `${value === undefined || value === "" ? "" : ` [value=${JSON.stringify(String(value).slice(0, 300))}]`}` +
-          `${flags.length === 0 ? "" : ` [${flags.join(", ")}]`}`
+          (ref === undefined ? "" : ` [ref=${ref}]`) +
+          (value === undefined || value === ""
+            ? ""
+            : ` [value=${JSON.stringify(String(value).slice(0, 300))}]`) +
+          (flags.length === 0 ? "" : ` [${flags.join(", ")}]`)
       )
     }
     for (const childId of node.childIds ?? []) {

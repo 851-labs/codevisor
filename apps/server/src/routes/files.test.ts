@@ -246,7 +246,10 @@ describe("file routes", () => {
     expect(
       (
         await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
-          body: JSON.stringify({ attachments: Array(11).fill(pngRef), text: "too many" }),
+          body: JSON.stringify({
+            attachments: Array.from({ length: 11 }, () => pngRef),
+            text: "too many"
+          }),
           method: "POST"
         })
       ).status

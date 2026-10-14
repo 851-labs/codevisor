@@ -31,6 +31,11 @@ const machines = async (session: string): Promise<CloudMachinePresence[]> => {
   return ((await response.json()) as { machines: CloudMachinePresence[] }).machines
 }
 
+const inviteCount = (): Promise<number> =>
+  env.DB.prepare("SELECT COUNT(*) AS count FROM machine_invite")
+    .first<{ count: number }>()
+    .then((row) => row?.count ?? 0)
+
 describe("machine invites", () => {
   it("lets a machine add a new machine that joins with its own credential", async () => {
     const session = await devLogin()
@@ -95,16 +100,12 @@ describe("machine invites", () => {
   it("mints as many invites as asked, keeping only live ones", async () => {
     const session = await devLogin()
     const inviter = await connectMachine(session, "mac-studio")
-    const invites = (): Promise<number> =>
-      env.DB.prepare("SELECT COUNT(*) AS count FROM machine_invite")
-        .first<{ count: number }>()
-        .then((row) => row?.count ?? 0)
     for (let index = 0; index < 25; index += 1) await inviteToken(inviter.apiKey)
-    expect(await invites()).toBeGreaterThanOrEqual(25)
+    expect(await inviteCount()).toBeGreaterThanOrEqual(25)
 
     vi.setSystemTime(Date.now() + 11 * 60 * 1000)
     const live = await inviteToken(inviter.apiKey)
-    expect(await invites()).toBe(1)
+    expect(await inviteCount()).toBe(1)
     expect((await redeem(live)).status).toBe(200)
   })
 })

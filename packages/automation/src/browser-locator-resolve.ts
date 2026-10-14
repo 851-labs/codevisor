@@ -215,7 +215,7 @@ const callBackendNodePredicate = async (
   const objectId = resolved.object.objectId
   if (objectId === undefined) return false
   try {
-    return evaluatedValue<boolean>(
+    return evaluatedValue(
       await runtime.connection.send(
         "Runtime.callFunctionOn",
         {
@@ -226,7 +226,7 @@ const callBackendNodePredicate = async (
         },
         page.sessionId
       )
-    )
+    ) as boolean
   } finally {
     await runtime.connection
       .send("Runtime.releaseObject", { objectId }, page.sessionId)

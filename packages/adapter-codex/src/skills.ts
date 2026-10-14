@@ -28,7 +28,7 @@ const SCOPE_SOURCES: Readonly<Record<string, SessionSkillSource>> = {
   user: "user"
 }
 
-const text = (value: unknown): string | undefined =>
+const trimmedText = (value: unknown): string | undefined =>
   typeof value === "string" && value.trim() !== "" ? value.trim() : undefined
 
 export interface CodexSkill extends SessionSkill {
@@ -41,15 +41,17 @@ export const codexSkillsFrom = (response: unknown): ReadonlyArray<CodexSkill> =>
   const skills = entry !== undefined && Array.isArray(entry.skills) ? entry.skills : []
   return skills.flatMap((skill): Array<CodexSkill> => {
     if (!isRecord(skill) || skill.enabled === false) return []
-    const name = text(skill.name)
-    const path = text(skill.path)
+    const name = trimmedText(skill.name)
+    const path = trimmedText(skill.path)
     if (name === undefined || path === undefined) return []
     if (skill.scope === "system" || DISABLED_SKILL_NAMES.has(name)) return []
-    const pluginId = text(skill.pluginId)
+    const pluginId = trimmedText(skill.pluginId)
     if (pluginId === DISABLED_CODEX_PLUGIN) return []
     const ui = isRecord(skill.interface) ? skill.interface : {}
     const description =
-      text(ui.shortDescription) ?? text(skill.shortDescription) ?? text(skill.description)
+      trimmedText(ui.shortDescription) ??
+      trimmedText(skill.shortDescription) ??
+      trimmedText(skill.description)
     const source =
       pluginId === undefined
         ? typeof skill.scope === "string"

@@ -83,7 +83,7 @@ const mergeClassSource = (
     ...(await localProviders()),
     ...Object.entries((await readJsonFile(await pathFor())) ?? {})
       .filter(([, value]) => !travels(credentialType(value)))
-      .map(([id]) => id)
+      .map(([provider]) => provider)
   ],
   read: async (sharedContent) => {
     const current = await readJsonFile(await pathFor())
@@ -91,29 +91,29 @@ const mergeClassSource = (
     const local = new Set(await localProviders())
     const subset = Object.fromEntries(
       Object.entries(current).filter(
-        ([id, value]) => !local.has(id) && travels(credentialType(value))
+        ([provider, value]) => !local.has(provider) && travels(credentialType(value))
       )
     )
     const shared =
       sharedContent === undefined ? {} : (JSON.parse(sharedContent) as Record<string, unknown>)
-    for (const [id, value] of Object.entries(current)) {
-      if ((local.has(id) || !travels(credentialType(value))) && id in shared)
-        subset[id] = shared[id]
+    for (const [provider, value] of Object.entries(current)) {
+      if ((local.has(provider) || !travels(credentialType(value))) && provider in shared)
+        subset[provider] = shared[provider]
     }
-    for (const id of local) if (id in shared) subset[id] = shared[id]
+    for (const provider of local) if (provider in shared) subset[provider] = shared[provider]
     return canonicalCredentialJson(subset)
   },
   apply: async (content) => {
     const incoming = JSON.parse(content) as Record<string, unknown>
     const local = new Set(await localProviders())
-    for (const id of local) delete incoming[id]
+    for (const provider of local) delete incoming[provider]
     const path = await pathFor()
     await withFileLock(path, async () => {
       /* v8 ignore next */
       const current = (await readJsonFile(path)) ?? {}
       const preserved = Object.fromEntries(
         Object.entries(current).filter(
-          ([id, value]) => local.has(id) || !travels(credentialType(value))
+          ([provider, value]) => local.has(provider) || !travels(credentialType(value))
         )
       )
       await atomicWriteJson(path, { ...incoming, ...preserved })

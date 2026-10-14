@@ -83,7 +83,7 @@ const step = (name: string, check: () => Check) => {
   } catch (error) {
     result = { ok: false, detail: errorMessage(error) }
   }
-  const entry = { name, ok: Boolean(result.ok), detail: result.detail ?? "" }
+  const entry = { name, ok: result.ok, detail: result.detail ?? "" }
   steps.push(entry)
   process.stdout.write(
     `${entry.ok ? "✔" : "✘"} ${name}${entry.detail ? ` — ${entry.detail}` : ""}\n`

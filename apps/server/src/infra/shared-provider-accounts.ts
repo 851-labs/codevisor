@@ -243,7 +243,9 @@ export const makeSharedProviderAccounts = (options: {
       const configured = new Set(
         (await store.records(harness, profile)).map((row) => row.providerId)
       )
-      return (await store.knownProviders(harness, profile)).filter((id) => !configured.has(id))
+      return (await store.knownProviders(harness, profile)).filter(
+        (providerId) => !configured.has(providerId)
+      )
     },
     remove: async (harness: ProviderOAuthHarness, id: string, provider: string, shared = false) =>
       store.remove(harness, await profileId(harness, id), provider, shared),

@@ -41,7 +41,7 @@ export const handleMessage = (
       if (message.isSynthetic === true && attachSkillText(session, content)) break
       for (const block of content) {
         if (isRecord(block) && block.type === "tool_result") {
-          const toolUseId = String(block.tool_use_id)
+          const toolUseId = block.tool_use_id
           session.openToolCalls.delete(toolUseId)
           const accumulator = session.accumulators.get(toolUseId)
           const taskToolUse = session.taskToolUses.get(toolUseId)

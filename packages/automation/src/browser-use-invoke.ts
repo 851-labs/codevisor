@@ -328,10 +328,7 @@ export const makeBrowserToolInvoker = (state: BrowserToolSessionState) => {
         return properties
       }
       const send = (method: string, params: Readonly<Record<string, unknown>>) =>
-        active.connection.send<Readonly<Record<string, unknown>>>(
-          `Codevisor.tabGroups.${method}`,
-          params
-        )
+        active.connection.send(`Codevisor.tabGroups.${method}`, params)
       switch (action) {
         case "list":
           return jsonResult(await send("list", {}))

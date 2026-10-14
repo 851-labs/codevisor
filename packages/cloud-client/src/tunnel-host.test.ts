@@ -160,28 +160,29 @@ describe("tunnelSocket", () => {
   })
 })
 
+const admissionSetup = (vouched: CloudVouchedDevice[] = []) => {
+  const keys = makePeerKeyPinStore({})
+  const endpoints = makePeerKeyPinStore({})
+  const admit = admitTunnelHello(
+    { keys, endpoints },
+    () => new Map(vouched.map((entry) => [entry.deviceId, entry]))
+  )
+  return { keys, endpoints, admit }
+}
+
 describe("admitTunnelHello", () => {
   const device = { deviceId: "app-1", publicKey: "x25519-key" }
   const voucher: CloudVouchedDevice = { ...device, endpointId: "e1" }
-  const setup = (vouched: CloudVouchedDevice[] = []) => {
-    const keys = makePeerKeyPinStore({})
-    const endpoints = makePeerKeyPinStore({})
-    const admit = admitTunnelHello(
-      { keys, endpoints },
-      () => new Map(vouched.map((entry) => [entry.deviceId, entry]))
-    )
-    return { keys, endpoints, admit }
-  }
 
   it("admits a vouched first contact and pins both identities", () => {
-    const { keys, endpoints, admit } = setup([voucher])
+    const { keys, endpoints, admit } = admissionSetup([voucher])
     expect(admit(device, { endpointId: "e1" })).toBe(true)
     expect(keys.get("app-1")).toBe("x25519-key")
     expect(endpoints.get("app-1")).toBe("e1")
   })
 
   it("keeps admitting a pinned device after the hub stops vouching", () => {
-    const { admit } = setup([voucher])
+    const { admit } = admissionSetup([voucher])
     expect(admit(device, { endpointId: "e1" })).toBe(true)
     const later = admitTunnelHello(
       {
@@ -194,47 +195,48 @@ describe("admitTunnelHello", () => {
   })
 
   it("refuses unknown devices, missing endpoints and any identity mismatch", () => {
-    expect(setup().admit(device, { endpointId: "e1" })).toBe(false)
-    expect(setup([voucher]).admit(device, {})).toBe(false)
-    expect(setup([voucher]).admit(device, { endpointId: "other" })).toBe(false)
-    expect(setup([{ ...voucher, publicKey: "other" }]).admit(device, { endpointId: "e1" })).toBe(
-      false
-    )
+    expect(admissionSetup().admit(device, { endpointId: "e1" })).toBe(false)
+    expect(admissionSetup([voucher]).admit(device, {})).toBe(false)
+    expect(admissionSetup([voucher]).admit(device, { endpointId: "other" })).toBe(false)
+    expect(
+      admissionSetup([{ ...voucher, publicKey: "other" }]).admit(device, { endpointId: "e1" })
+    ).toBe(false)
 
-    const pinned = setup([voucher])
+    const pinned = admissionSetup([voucher])
     pinned.admit(device, { endpointId: "e1" })
     expect(pinned.admit({ ...device, publicKey: "swapped" }, { endpointId: "e1" })).toBe(false)
     expect(pinned.admit(device, { endpointId: "e2" })).toBe(false)
   })
 })
 
+const tunnelSetup = () => {
+  const endpoints: FakeEndpoint[] = []
+  const bindOptions: EndpointOptions[] = []
+  const accepted = new Pending<{ endpointId?: string }>()
+  const media: TunnelConnection[] = []
+  const addrs = new Pending<unknown>()
+  const logs: string[] = []
+  const tunnel = new MachineTunnel({
+    bind: async (options) => {
+      bindOptions.push(options)
+      const endpoint = new FakeEndpoint()
+      endpoints.push(endpoint)
+      return endpoint as unknown as TunnelEndpoint
+    },
+    secretKeyHex: "11".repeat(32),
+    host: { accept: (_socket, peer) => accepted.push(peer ?? {}) },
+    onAddr: (addr) => addrs.push(addr),
+    onMedia: (conn) => media.push(conn),
+    log: (line) => logs.push(line)
+  })
+  return { tunnel, endpoints, bindOptions, accepted, media, addrs, logs }
+}
+
 describe("MachineTunnel", () => {
   const relays = [{ url: "https://relay-a.test", quicPort: 7842 }]
-  const setup = () => {
-    const endpoints: FakeEndpoint[] = []
-    const bindOptions: EndpointOptions[] = []
-    const accepted = new Pending<{ endpointId?: string }>()
-    const media: TunnelConnection[] = []
-    const addrs = new Pending<unknown>()
-    const logs: string[] = []
-    const tunnel = new MachineTunnel({
-      bind: async (options) => {
-        bindOptions.push(options)
-        const endpoint = new FakeEndpoint()
-        endpoints.push(endpoint)
-        return endpoint as unknown as TunnelEndpoint
-      },
-      secretKeyHex: "11".repeat(32),
-      host: { accept: (_socket, peer) => accepted.push(peer ?? {}) },
-      onAddr: (addr) => addrs.push(addr),
-      onMedia: (conn) => media.push(conn),
-      log: (line) => logs.push(line)
-    })
-    return { tunnel, endpoints, bindOptions, accepted, media, addrs, logs }
-  }
 
   it("binds once per relay map and rebinds when it changes", async () => {
-    const { tunnel, endpoints, bindOptions } = setup()
+    const { tunnel, endpoints, bindOptions } = tunnelSetup()
     await tunnel.configure({ relays: [], enabled: false })
     expect(endpoints).toHaveLength(0)
 
@@ -263,7 +265,7 @@ describe("MachineTunnel", () => {
   })
 
   it("publishes every address change to the hub", async () => {
-    const { tunnel, endpoints, addrs } = setup()
+    const { tunnel, endpoints, addrs } = tunnelSetup()
     await tunnel.configure({ relays, enabled: true })
     const endpoint = endpoints[0]!
     endpoint.addrs.push({ value: { endpointId: "a".repeat(64), relayUrl: null, directAddrs: [] } })
@@ -283,7 +285,7 @@ describe("MachineTunnel", () => {
   })
 
   it("routes channel connections to the host with the verified endpoint id", async () => {
-    const { tunnel, endpoints, accepted, media, logs } = setup()
+    const { tunnel, endpoints, accepted, media, logs } = tunnelSetup()
     await tunnel.configure({ relays, enabled: true })
     const endpoint = endpoints[0]!
     const unsupported = connection("other/1")
@@ -363,7 +365,7 @@ describe("MachineTunnel", () => {
   })
 
   it("the latest same-tick configuration owns the only bound endpoint", async () => {
-    const { tunnel, endpoints, bindOptions } = setup()
+    const { tunnel, endpoints, bindOptions } = tunnelSetup()
     try {
       await Promise.all([
         tunnel.configure({ relays, enabled: true }),
@@ -380,7 +382,7 @@ describe("MachineTunnel", () => {
   })
 
   it("stop invalidates a configuration before teardown resumes", async () => {
-    const { tunnel, endpoints } = setup()
+    const { tunnel, endpoints } = tunnelSetup()
     const configured = tunnel.configure({ relays, enabled: true })
     await tunnel.stop()
     await configured

@@ -309,51 +309,51 @@ describe("plugin update states", () => {
   })
 })
 
-describe("prepared plugin update plans", () => {
-  const setup = () => {
-    const currentManifest = manifest("acme.plugin", "1.0.0", {
-      panes: [
-        { path: "/main/", title: "Old", type: "main" },
-        { path: "/gone/", title: "Gone", type: "gone" }
-      ],
-      requirements: { executables: [{ name: "node" }] },
-      setup: [{ argv: ["npm", "install"] }],
-      tools: [
-        { description: "Old", name: "shared", path: "/old" },
-        { description: "Gone", name: "gone", path: "/gone" }
-      ]
-    })
-    const plugin = installed({ id: "acme.plugin", repo: "acme/plugin", version: "1.0.0" })
-    const nextManifest = manifest("acme.plugin", "2.0.0", {
-      ageRating: 18,
-      panes: [
-        { path: "/main/", title: "New", type: "main" },
-        { path: "/new/", title: "New", type: "new" }
-      ],
-      setup: [{ argv: ["npm", "ci"] }],
-      tools: [
-        { description: "New", name: "shared", path: "/new" },
-        { description: "New", name: "new", path: "/new" }
-      ]
-    })
-    const harness = installerHarness(currentManifest, nextManifest)
-    let time = Date.parse("2026-08-23T00:00:00.000Z")
-    let sequence = 0
-    const updates = makePluginUpdates({
-      codevisorVersion: "1.0.0",
-      createPlanId: () => `plan-${++sequence}`,
-      fetchRegistry: async () => index([entry("acme.plugin", "2.0.0")]),
-      installer: harness.installer,
-      listInstalled: () => [plugin],
-      now: () => time,
-      planTtlMs: 1_000,
-      platform: "darwin"
-    })
-    return { harness, plugin, setTime: (value: number) => (time = value), updates }
-  }
+const updatePlanSetup = () => {
+  const currentManifest = manifest("acme.plugin", "1.0.0", {
+    panes: [
+      { path: "/main/", title: "Old", type: "main" },
+      { path: "/gone/", title: "Gone", type: "gone" }
+    ],
+    requirements: { executables: [{ name: "node" }] },
+    setup: [{ argv: ["npm", "install"] }],
+    tools: [
+      { description: "Old", name: "shared", path: "/old" },
+      { description: "Gone", name: "gone", path: "/gone" }
+    ]
+  })
+  const plugin = installed({ id: "acme.plugin", repo: "acme/plugin", version: "1.0.0" })
+  const nextManifest = manifest("acme.plugin", "2.0.0", {
+    ageRating: 18,
+    panes: [
+      { path: "/main/", title: "New", type: "main" },
+      { path: "/new/", title: "New", type: "new" }
+    ],
+    setup: [{ argv: ["npm", "ci"] }],
+    tools: [
+      { description: "New", name: "shared", path: "/new" },
+      { description: "New", name: "new", path: "/new" }
+    ]
+  })
+  const harness = installerHarness(currentManifest, nextManifest)
+  let time = Date.parse("2026-08-23T00:00:00.000Z")
+  let sequence = 0
+  const updates = makePluginUpdates({
+    codevisorVersion: "1.0.0",
+    createPlanId: () => `plan-${++sequence}`,
+    fetchRegistry: async () => index([entry("acme.plugin", "2.0.0")]),
+    installer: harness.installer,
+    listInstalled: () => [plugin],
+    now: () => time,
+    planTtlMs: 1_000,
+    platform: "darwin"
+  })
+  return { harness, plugin, setTime: (value: number) => (time = value), updates }
+}
 
+describe("prepared plugin update plans", () => {
   it("prepares an exact commit and describes command, pane, and tool changes", async () => {
-    const { harness, updates } = setup()
+    const { harness, updates } = updatePlanSetup()
     const plan = await updates.prepare("acme.plugin")
     expect(harness.prepared[0]).toEqual({
       expectedPluginId: "acme.plugin",
@@ -379,7 +379,7 @@ describe("prepared plugin update plans", () => {
   })
 
   it("replaces an older plan for the same plugin", async () => {
-    const { harness, updates } = setup()
+    const { harness, updates } = updatePlanSetup()
     await updates.prepare("acme.plugin")
     const second = await updates.prepare("acme.plugin")
     expect(second.planId).toBe("plan-2")
@@ -415,7 +415,7 @@ describe("prepared plugin update plans", () => {
   })
 
   it("rejects missing, current, and registry-inconsistent candidates", async () => {
-    const { harness, updates } = setup()
+    const { harness, updates } = updatePlanSetup()
     await expect(updates.prepare("missing.plugin")).rejects.toThrow(/not installed/)
 
     const current = makePluginUpdates({
@@ -441,7 +441,7 @@ describe("prepared plugin update plans", () => {
   })
 
   it("applies plans once and discards bytes after success or failure", async () => {
-    const { harness, updates } = setup()
+    const { harness, updates } = updatePlanSetup()
     const plan = await updates.prepare("acme.plugin")
     await expect(updates.apply("other.plugin", plan.planId)).rejects.toThrow(/missing or expired/)
     await expect(updates.apply("acme.plugin", plan.planId)).resolves.toMatchObject({
@@ -460,7 +460,7 @@ describe("prepared plugin update plans", () => {
   })
 
   it("expires plans deterministically during the next operation", async () => {
-    const { harness, setTime, updates } = setup()
+    const { harness, setTime, updates } = updatePlanSetup()
     const plan = await updates.prepare("acme.plugin")
     setTime(Date.parse("2026-08-23T00:00:01.001Z"))
     await updates.list()

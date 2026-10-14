@@ -31,7 +31,10 @@ test("every Swift suite that changes the global executor is isolated", () => {
       /\b(?:TestStore|TestStoreOf|withMainSerialExecutor)\b/.test(readFileSync(path, "utf8"))
     )
     .map((path) => basename(path, ".swift"))
-  assert.deepEqual(suites.toSorted(), [...mainSerialExecutorSuites].toSorted())
+  assert.deepEqual(
+    suites.toSorted((a, b) => a.localeCompare(b)),
+    [...mainSerialExecutorSuites].toSorted((a, b) => a.localeCompare(b))
+  )
 })
 
 test("Swift tests use Swift Testing, because swift:test runs them without XCTest", () => {

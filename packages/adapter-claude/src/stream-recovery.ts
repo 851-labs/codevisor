@@ -33,7 +33,7 @@ export const resumeSessionAfterStreamDeath = async (
   void cancelClaudePendingQuestions(session)
   if (session.backgroundTasks.size > 0) {
     session.backgroundTasks.clear()
-    emitBackgroundTasks(session)
+    void emitBackgroundTasks(session)
   }
   const {
     extraArgs: startArgs,

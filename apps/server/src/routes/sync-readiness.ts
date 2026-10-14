@@ -151,6 +151,7 @@ export const makeAuthSyncRefreshScheduler = (
   let running: Promise<void> | undefined
 
   const drain = async (): Promise<void> => {
+    // oxlint-disable-next-line no-unmodified-loop-condition
     while (!closed && requested) {
       requested = false
       await Promise.all([

@@ -31,12 +31,7 @@ const resolveBackendElement = async (
       page.sessionId
     )
     await delay(50)
-    const state = evaluatedValue<{
-      connected: boolean
-      visible: boolean
-      disabled: boolean
-      hit: boolean
-    }>(
+    const state = evaluatedValue(
       await runtime.connection.send(
         "Runtime.callFunctionOn",
         {
@@ -47,7 +42,12 @@ const resolveBackendElement = async (
         },
         page.sessionId
       )
-    )
+    ) as {
+      connected: boolean
+      visible: boolean
+      disabled: boolean
+      hit: boolean
+    }
     if (!state.connected) throw new Error(`${targetLabel} detached`)
     if (!state.visible) throw new Error(`${targetLabel} is not visible after scrolling`)
     if (requireActionable && state.disabled) throw new Error(`${targetLabel} is disabled`)
@@ -219,7 +219,7 @@ export const callLocatorFunction = async <T>(
   const objectId = resolved.object.objectId
   if (objectId === undefined) throw new Error("Playwright locator is no longer attached")
   try {
-    return evaluatedValue<T>(
+    return evaluatedValue(
       await runtime.connection.send(
         "Runtime.callFunctionOn",
         {
@@ -230,7 +230,7 @@ export const callLocatorFunction = async <T>(
         },
         page.sessionId
       )
-    )
+    ) as T
   } finally {
     await runtime.connection
       .send("Runtime.releaseObject", { objectId }, page.sessionId)
@@ -283,7 +283,7 @@ export const evaluateAllLocators = async <T>(
       page.sessionId
     )
     objectIds.push(root.result.objectId)
-    return evaluatedValue<T>(
+    return evaluatedValue(
       await runtime.connection.send(
         "Runtime.callFunctionOn",
         {
@@ -295,7 +295,7 @@ export const evaluateAllLocators = async <T>(
         },
         page.sessionId
       )
-    )
+    ) as T
   } finally {
     await Promise.all(
       objectIds.map((objectId) =>

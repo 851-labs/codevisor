@@ -215,15 +215,15 @@ describe("detectInstallOrigin", () => {
   })
 
   it("uses the real filesystem resolver and process HOME by default", () => {
-    const home = realpathSync(mkdtempSync(join(tmpdir(), "codevisor-updater-home-")))
+    const realHome = realpathSync(mkdtempSync(join(tmpdir(), "codevisor-updater-home-")))
     try {
-      vi.stubEnv("HOME", home)
-      mkdirSync(join(home, ".tool", "bin"), { recursive: true })
-      writeFileSync(join(home, ".tool", "bin", "tool"), "")
-      mkdirSync(join(home, "bin"))
-      symlinkSync(join(home, ".tool", "bin", "tool"), join(home, "bin", "tool"))
+      vi.stubEnv("HOME", realHome)
+      mkdirSync(join(realHome, ".tool", "bin"), { recursive: true })
+      writeFileSync(join(realHome, ".tool", "bin", "tool"), "")
+      mkdirSync(join(realHome, "bin"))
+      symlinkSync(join(realHome, ".tool", "bin", "tool"), join(realHome, "bin", "tool"))
 
-      expect(detectInstallOrigin(join(home, "bin", "tool"))).toBe("curl")
+      expect(detectInstallOrigin(join(realHome, "bin", "tool"))).toBe("curl")
 
       vi.stubEnv("HOME", undefined)
       expect(detectInstallOrigin("/srv/.tool/bin/tool", { realpath: (path) => path })).toBe(
@@ -231,7 +231,7 @@ describe("detectInstallOrigin", () => {
       )
     } finally {
       vi.unstubAllEnvs()
-      rmSync(home, { force: true, recursive: true })
+      rmSync(realHome, { force: true, recursive: true })
     }
   })
 
@@ -277,10 +277,7 @@ describe("detectBrewPackage", () => {
     ).toBeUndefined()
   })
 
-  it("resolves real symlinks by default and tolerates missing paths", async () => {
-    const { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } = await import("node:fs")
-    const { tmpdir } = await import("node:os")
-    const { join } = await import("node:path")
+  it("resolves real symlinks by default and tolerates missing paths", () => {
     const dir = mkdtempSync(join(tmpdir(), "codevisor-brew-"))
     try {
       const cellarBinary = join(dir, "Cellar/tool/1.0.0/bin/tool")

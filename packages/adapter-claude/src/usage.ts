@@ -171,27 +171,28 @@ export const claudeContextUsageFromAssistant = (
   }
 }
 
+const contextWindowOf = (entry: unknown): number | undefined => {
+  if (!isRecord(entry)) return undefined
+  const candidate = entry.contextWindow
+  return typeof candidate === "number" && Number.isFinite(candidate) && candidate > 0
+    ? candidate
+    : undefined
+}
+
 export const claudeContextWindowFrom = (
   value: unknown,
   latestModel: string | undefined,
   configuredModel: string
 ): number | undefined => {
   if (!isRecord(value)) return undefined
-  const contextWindow = (entry: unknown): number | undefined => {
-    if (!isRecord(entry)) return undefined
-    const candidate = entry.contextWindow
-    return typeof candidate === "number" && Number.isFinite(candidate) && candidate > 0
-      ? candidate
-      : undefined
-  }
   for (const model of [latestModel, configuredModel]) {
     if (model === undefined || model === "") continue
-    const matched = contextWindow(value[model])
+    const matched = contextWindowOf(value[model])
     if (matched !== undefined) return matched
   }
   const available = new Set(
     Object.values(value)
-      .map(contextWindow)
+      .map(contextWindowOf)
       .filter((size) => size !== undefined)
   )
   return available.size === 1 ? available.values().next().value : undefined

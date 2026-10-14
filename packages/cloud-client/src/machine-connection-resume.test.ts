@@ -15,20 +15,20 @@ import {
 } from "./machine-connection-test-support.js"
 import type { Harness } from "./machine-connection-test-support.js"
 
-describe("session resume", () => {
-  const connectResumable = (h: Harness, token: string): FakeSocket => {
-    h.connection.start()
-    const socket = h.sockets.at(-1)!
-    socket.onopen?.()
-    socket.receive({
-      t: "welcome",
-      protocol: CLOUD_PROTOCOL_VERSION,
-      connectionId: "conn-m",
-      resume: token
-    })
-    return socket
-  }
+const connectResumable = (h: Harness, token: string): FakeSocket => {
+  h.connection.start()
+  const socket = h.sockets.at(-1)!
+  socket.onopen?.()
+  socket.receive({
+    t: "welcome",
+    protocol: CLOUD_PROTOCOL_VERSION,
+    connectionId: "conn-m",
+    resume: token
+  })
+  return socket
+}
 
+describe("session resume", () => {
   it("holds channels across a resumed reconnect and replays retained frames in order", () => {
     const h = harness()
     const socket = connectResumable(h, "tok-1")

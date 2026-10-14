@@ -11,6 +11,21 @@ import {
   systemMessage
 } from "./test-support.js"
 
+const startTool = (id: string, name: string, index: number) =>
+  streamEvent({
+    content_block: { id, name, type: "tool_use" },
+    index,
+    type: "content_block_start"
+  })
+
+const taskStarted = (toolUseId: string) =>
+  systemMessage("task_started", {
+    description: "Analyze commits",
+    subagent_type: "general-purpose",
+    task_id: "agent-1",
+    tool_use_id: toolUseId
+  })
+
 describe("Claude subagent follow-ups", () => {
   it("marks a message to an existing agent as a follow-up, not a new agent", async () => {
     const fake = new FakeQuery()
@@ -23,19 +38,6 @@ describe("Claude subagent follow-ups", () => {
     fake.push(initMessage())
     await createPromise
 
-    const startTool = (id: string, name: string, index: number) =>
-      streamEvent({
-        content_block: { id, name, type: "tool_use" },
-        index,
-        type: "content_block_start"
-      })
-    const taskStarted = (toolUseId: string) =>
-      systemMessage("task_started", {
-        description: "Analyze commits",
-        subagent_type: "general-purpose",
-        task_id: "agent-1",
-        tool_use_id: toolUseId
-      })
     fake.push(startTool("toolu-spawn", "Agent", 0))
     fake.push(taskStarted("toolu-spawn"))
     fake.push(startTool("toolu-follow-up", "SendMessage", 1))

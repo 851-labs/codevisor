@@ -97,7 +97,7 @@ export const projectChatEvent = (
   event: SessionEventRow
 ): string | undefined => {
   const payload = jsonRecord(JSON.parse(event.payload))
-  if (payload === undefined) return
+  if (payload === undefined) return undefined
   const sessionId = event.session_id
   let itemId: string | undefined
 
@@ -130,13 +130,11 @@ export const insertSessionEvent = (
     readonly chat_item_id?: string | null
   }
 ): SessionEventRow => {
-  const revision = Number(
-    (
-      sqlite
-        .prepare("update sessions set revision = revision + 1 where id = ? returning revision")
-        .get(row.session_id) as { revision: number }
-    ).revision
-  )
+  const revision = (
+    sqlite
+      .prepare("update sessions set revision = revision + 1 where id = ? returning revision")
+      .get(row.session_id) as { revision: number }
+  ).revision
   const event: SessionEventRow = {
     ...row,
     revision,

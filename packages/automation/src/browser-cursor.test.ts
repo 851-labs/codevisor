@@ -1,4 +1,4 @@
-import { runInNewContext } from "node:vm"
+import { runInNewContext, runInThisContext } from "node:vm"
 
 import { parseExpression } from "@babel/parser"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -39,9 +39,7 @@ describe("browser cursor presentation", () => {
     expect(() => parseExpression(pointerOverlaySource)).not.toThrow()
     expect(pointerOverlaySource).not.toContain("import(")
     expect(pointerOverlaySource).not.toContain("innerHTML")
-    const overlay = new Function(`return (${pointerOverlaySource})`)() as (
-      command: unknown
-    ) => unknown
+    const overlay = runInThisContext(`(${pointerOverlaySource})`) as (command: unknown) => unknown
     expect(overlay({ kind: "move", session: "a", x: 1, y: 2 })).toEqual({
       duration: 0,
       visible: false
@@ -55,7 +53,7 @@ describe("browser cursor presentation", () => {
       [session, cursor],
       ["other", { ...cursor, session: "other" }]
     ])
-    const host = { __codevisorPointer: { version: 1, cursors } }
+    const host = { codevisorPointer: { version: 1, cursors } }
     runInNewContext(pointerOverlayExpression({ kind: "hide", session }), {
       document: { documentElement: {}, getElementById: () => host },
       setTimeout: vi.fn()
