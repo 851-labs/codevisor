@@ -344,9 +344,10 @@ export interface CodevisorDatabaseService extends SessionStateService {
   readonly saveNativeMcpRemoval: (
     request: SaveNativeMcpRemovalRequest
   ) => Effect.Effect<NativeMcpRemovalRecord, DatabaseError>
-  readonly listNativeMcpRemovals: (
-    includeRestored?: boolean
-  ) => Effect.Effect<ReadonlyArray<NativeMcpRemovalRecord>, DatabaseError>
+  readonly listNativeMcpRemovals: () => Effect.Effect<
+    ReadonlyArray<NativeMcpRemovalRecord>,
+    DatabaseError
+  >
   readonly markNativeMcpRemovalRestored: (id: string) => Effect.Effect<void, DatabaseError>
   readonly listHarnessAccounts: (
     harnessId: string

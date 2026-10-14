@@ -192,14 +192,12 @@ export const makeMcpService = (
             .get(id) as NativeMcpRemovalRow
         )
       }),
-    listNativeMcpRemovals: (includeRestored) =>
+    listNativeMcpRemovals: () =>
       attempt("listNativeMcpRemovals", () =>
         (
           sqlite
             .prepare(
-              includeRestored === true
-                ? "select * from native_mcp_removals order by removed_at desc"
-                : "select * from native_mcp_removals where restored_at is null order by removed_at desc"
+              "select * from native_mcp_removals where restored_at is null order by removed_at desc"
             )
             .all() as ReadonlyArray<NativeMcpRemovalRow>
         ).map(nativeMcpRemovalFromRow)

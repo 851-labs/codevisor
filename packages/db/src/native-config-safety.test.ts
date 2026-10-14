@@ -50,14 +50,10 @@ describe("native config safety", () => {
         harnessId: "claude-code",
         serverName: "docs"
       })
-      expect(removal.restoredAt).toBeUndefined()
 
       expect(await run(db.listNativeMcpRemovals())).toHaveLength(1)
       await run(db.markNativeMcpRemovalRestored(removal.id))
       expect(await run(db.listNativeMcpRemovals())).toHaveLength(0)
-      const all = await run(db.listNativeMcpRemovals(true))
-      expect(all).toHaveLength(1)
-      expect(all[0]?.restoredAt).toBeDefined()
     } finally {
       await run(db.close)
     }

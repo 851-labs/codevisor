@@ -3,18 +3,13 @@ import { join } from "node:path"
 
 import { describe, expect, it } from "vitest"
 
-import {
-  managedRepoPath,
-  managedReposRoot,
-  scratchWorkspacePath,
-  scratchWorkspacesRoot
-} from "./index.js"
+import { managedRepoPath, scratchWorkspacePath, scratchWorkspacesRoot } from "./index.js"
 
 describe("@codevisor/db", () => {
   it("derives managed repo paths from the canonical repos root", () => {
     const previous = process.env["CODEVISOR_REPOS_ROOT"]
     delete process.env["CODEVISOR_REPOS_ROOT"]
-    expect(managedReposRoot()).toBe(join(homedir(), ".codevisor", "repos"))
+    expect(managedRepoPath("my-repo")).toBe(join(homedir(), ".codevisor", "repos", "my-repo"))
     process.env["CODEVISOR_REPOS_ROOT"] = "/tmp/custom-repos"
     expect(managedRepoPath("my-repo")).toBe("/tmp/custom-repos/my-repo")
     if (previous === undefined) {
