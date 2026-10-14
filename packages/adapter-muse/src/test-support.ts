@@ -51,13 +51,11 @@ export const session = (fields: Record<string, unknown> = {}) => ({
   ...fields
 })
 
-type Reply = unknown | Error | ((params: Record<string, unknown>) => unknown)
-
 export class FakeMuseClient implements MuseClient {
   readonly requests: Array<{ method: string; params: Record<string, unknown> }> = []
   readonly notified: Array<string> = []
   closed = false
-  replies: Record<string, Reply> = {
+  replies: Record<string, unknown> = {
     initialize: {
       serverInfo: { name: "muse", version: "1.4.7" },
       schema: { version: 1, fingerprint: TESTED_SCHEMA_FINGERPRINT },

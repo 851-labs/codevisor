@@ -46,7 +46,11 @@
       "error",
       {
         "allowForKnownSafeCalls": [
-          { "from": "package", "name": ["test", "describe"], "package": "node:test" }
+          {
+            "from": "package",
+            "name": ["test", "describe"],
+            "package": "node:test"
+          }
         ]
       }
     ]
@@ -150,30 +154,6 @@
     },
     {
       "files": [
-        "apps/server/src/infra/cloud-proxy-handlers.ts",
-        "apps/server/src/infra/machine-enrollment.ts",
-        "apps/server/src/routes/sync-event-socket.ts",
-        "apps/server/src/routes/sync-readiness.ts",
-        "apps/server/src/terminal-proxy.ts"
-      ],
-      "rules": {
-        "no-unmodified-loop-condition": "off"
-      }
-    },
-    {
-      "files": ["apps/server/src/routes/shared-harness-accounts.ts"],
-      "rules": {
-        "no-unused-vars": "off"
-      }
-    },
-    {
-      "files": ["apps/server/src/routes/sync.ts", "scripts/release/app-store-connect.test.mjs"],
-      "rules": {
-        "typescript/await-thenable": "off"
-      }
-    },
-    {
-      "files": [
         "apps/screen-sharing-rig/scripts/screen-sharing-rig.ts",
         "apps/server/src/infra/shared-accounts.ts",
         "apps/server/src/routes/file-documents.ts",
@@ -261,68 +241,6 @@
       }
     },
     {
-      "files": ["packages/adapter-claude/src/turn-lifecycle.ts"],
-      "rules": {
-        "typescript/no-duplicate-type-constituents": "off"
-      }
-    },
-    {
-      "files": ["packages/automation/src/browser-cursor.test.ts"],
-      "rules": {
-        "typescript/no-implied-eval": "off"
-      }
-    },
-    {
-      "files": [
-        "apps/cloud/src/pages/auth-navigation.ts",
-        "apps/server/src/test-support.ts",
-        "packages/automation/src/browser-key-description.ts",
-        "packages/db/src/transcript-import-upgrade.test.ts"
-      ],
-      "rules": {
-        "typescript/no-misused-spread": "off"
-      }
-    },
-    {
-      "files": [
-        "packages/adapter-muse/src/test-support.ts",
-        "packages/db/src/service.ts",
-        "packages/mcp/src/mcp-http-transport.ts"
-      ],
-      "rules": {
-        "typescript/no-redundant-type-constituents": "off"
-      }
-    },
-    {
-      "files": [
-        "apps/cloud/src/hub-tunnel-events.ts",
-        "apps/server/src/cli.ts",
-        "apps/server/src/infra/harness-preferences.ts",
-        "packages/adapter-claude/src/result-resolution.ts",
-        "packages/mcp/src/mcp-gateway.ts",
-        "packages/mcp/src/native-mcp-edits.ts"
-      ],
-      "rules": {
-        "typescript/no-unnecessary-boolean-literal-compare": "off"
-      }
-    },
-    {
-      "files": [
-        "packages/adapter-claude/src/start-session.ts",
-        "packages/agent-runtime/src/process-failure.test.ts",
-        "packages/automation/src/browser-snapshot.ts"
-      ],
-      "rules": {
-        "typescript/no-unnecessary-template-expression": "off"
-      }
-    },
-    {
-      "files": ["packages/automation/src/browser-use-invoke.ts"],
-      "rules": {
-        "typescript/no-unnecessary-type-arguments": "off"
-      }
-    },
-    {
       "files": [
         "apps/cloud/src/credential-routes.ts",
         "apps/cloud/src/index.ts",
@@ -398,38 +316,6 @@
       ],
       "rules": {
         "typescript/no-unnecessary-type-assertion": "off"
-      }
-    },
-    {
-      "files": [
-        "apps/screen-sharing-rig/scripts/vnc-tophat.ts",
-        "apps/server/src/routes/screen-sharing-vnc-scale.ts",
-        "packages/adapter-claude/src/messages.ts",
-        "packages/adapter-claude/src/stream-events.ts",
-        "packages/automation/src/browser-use-invoke-page.ts",
-        "packages/db/src/data-upgrades.ts",
-        "packages/db/src/event-projection.ts",
-        "packages/db/src/files-service.ts",
-        "packages/db/src/navigation-service.ts",
-        "packages/db/src/transcript-pages.ts",
-        "packages/db/src/transcript-state-upgrade.ts"
-      ],
-      "rules": {
-        "typescript/no-unnecessary-type-conversion": "off"
-      }
-    },
-    {
-      "files": [
-        "apps/screen-sharing-rig/scripts/screen-sharing-rig.ts",
-        "packages/api/src/cloud-protocol.ts",
-        "packages/automation/src/browser-cdp.ts",
-        "packages/automation/src/browser-improvements.chrome.test.ts",
-        "packages/automation/src/browser-tab-cleanup.chrome.test.ts",
-        "packages/db/src/browser-state-service.ts",
-        "packages/mcp/src/mcp-http-transport.ts"
-      ],
-      "rules": {
-        "typescript/no-unnecessary-type-parameters": "off"
       }
     },
     {
@@ -586,12 +472,6 @@
       ],
       "rules": {
         "unicorn/consistent-function-scoping": "off"
-      }
-    },
-    {
-      "files": ["apps/server/src/routes/files.test.ts"],
-      "rules": {
-        "unicorn/no-array-fill-with-reference-type": "off"
       }
     }
   ]

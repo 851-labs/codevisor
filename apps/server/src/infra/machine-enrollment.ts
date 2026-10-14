@@ -149,6 +149,7 @@ export const makeMachineEnrollment = (options: MachineEnrollmentOptions): Machin
     const selfDeviceId = cloud.deviceId()
     const deadline = now() + APPEAR_TIMEOUT_MS
     let joined: CloudMachinePresence | undefined
+    // oxlint-disable-next-line no-unmodified-loop-condition
     while (signal?.aborted !== true) {
       joined = (cloud.machines() ?? []).find(
         (presence) => !before.has(presence.deviceId) && presence.addedBy?.deviceId === selfDeviceId

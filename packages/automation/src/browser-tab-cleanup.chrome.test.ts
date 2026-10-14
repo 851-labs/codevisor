@@ -8,16 +8,16 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 import { makeBrowserUseProvider } from "./browser-use-provider.js"
 
-const value = <T = unknown>(result: CallToolResult): T => {
+const value = (result: CallToolResult): unknown => {
   const message = result.content
     .filter((content) => content.type === "text")
     .map((content) => content.text)
     .join("\n")
   if (result.isError) throw new Error(message)
   try {
-    return JSON.parse(message) as T
+    return JSON.parse(message)
   } catch {
-    return message as T
+    return message
   }
 }
 
@@ -116,9 +116,9 @@ describe("Browser live preview across tabs", () => {
     try {
       subscription.watch(800)
       value(await provider.invoke(context, "use_backend", { backend: "managed" }))
-      const opened = value<{ tabs: ReadonlyArray<{ id: string; selected: boolean }> }>(
+      const opened = value(
         await provider.invoke(context, "tabs", { action: "new", url: `${origin}/` })
-      )
+      ) as { tabs: ReadonlyArray<{ id: string; selected: boolean }> }
       const first = opened.tabs.find((tab) => tab.selected)!.id
       const second = shows("active:Second")
       value(await provider.invoke(context, "tabs", { action: "new", url: `${origin}/second` }))
@@ -138,8 +138,10 @@ describe("Browser tab cleanup", () => {
   it("starts with no page and leaves no agent tab or popup after the turn", async () => {
     const context = { sessionId: "cleanup", projectId: "cleanup" }
     const tabs = async () =>
-      value<{ tabs: ReadonlyArray<{ url: string }> }>(
-        await provider.invoke(context, "tabs", { action: "list" })
+      (
+        value(await provider.invoke(context, "tabs", { action: "list" })) as {
+          tabs: ReadonlyArray<{ url: string }>
+        }
       ).tabs
     value(await provider.invoke(context, "use_backend", { backend: "managed" }))
     expect(await tabs()).toEqual([])

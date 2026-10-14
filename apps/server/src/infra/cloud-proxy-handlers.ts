@@ -30,6 +30,7 @@ export const streamedRequestBody = (grantCredit: (sealedBytes: number) => void) 
   const stream = new ReadableStream<Uint8Array>(
     {
       pull: async (controller) => {
+        // oxlint-disable-next-line no-unmodified-loop-condition
         while (queued.length === 0 && !ended && failure === undefined) {
           await new Promise<void>((resolve) => (wake = resolve))
         }

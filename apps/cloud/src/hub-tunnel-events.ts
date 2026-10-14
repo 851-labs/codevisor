@@ -58,7 +58,7 @@ export const onMachineTunnelAddr = (
   machine: Pick<SocketAttachment, "helloDone" | "deviceId">,
   tunnel: CloudTunnelInfo
 ): void => {
-  if (machine.helloDone !== true) return
+  if (!machine.helloDone) return
   const deviceId = machine.deviceId!
   if (!storeMachineTunnelAddr(sql, deviceId, tunnel)) return
   const row = machineRow(sql, deviceId)

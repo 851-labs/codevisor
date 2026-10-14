@@ -106,7 +106,7 @@ export const makeFilesService = (
         readonly storage_state: FileStorageState
         readonly count: number
       }>
-      for (const row of rows) counts[row.storage_state] = Number(row.count)
+      for (const row of rows) counts[row.storage_state] = row.count
       return counts
     }),
     markFileStorageDual: (id) =>

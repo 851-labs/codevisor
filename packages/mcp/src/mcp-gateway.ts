@@ -382,7 +382,7 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
         const result = await skillsToolResult(await sessionSkills(projectId, sessionId), name)
         await reportSkillRead(runtime.sink, sessionId, {
           ...(name === undefined || name.trim() === "" ? {} : { name: name.trim() }),
-          ok: result.isError !== true
+          ok: !result.isError
         })
         return {
           ...(result.isError ? { isError: true } : {}),

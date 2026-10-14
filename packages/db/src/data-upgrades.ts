@@ -59,23 +59,20 @@ const runCanonicalChatBackfill = (
     return
   }
 
-  const transcriptTotal = Number(
-    (sqlite.prepare("select count(*) as count from transcript_items").get() as { count: number })
-      .count
-  )
-  const eventTotal = Number(
-    (
-      sqlite
-        .prepare(
-          `select count(*) as count from events
+  const transcriptTotal = (
+    sqlite.prepare("select count(*) as count from transcript_items").get() as { count: number }
+  ).count
+  const eventTotal = (
+    sqlite
+      .prepare(
+        `select count(*) as count from events
            where exists (select 1 from sessions where sessions.id = events.subject_id)`
-        )
-        .get() as { count: number }
-    ).count
-  )
-  const sessionTotal = Number(
-    (sqlite.prepare("select count(*) as count from sessions").get() as { count: number }).count
-  )
+      )
+      .get() as { count: number }
+  ).count
+  const sessionTotal = (
+    sqlite.prepare("select count(*) as count from sessions").get() as { count: number }
+  ).count
   const total = Math.max(1, transcriptTotal + eventTotal + sessionTotal)
   let completed = Math.min(existing?.completed ?? 0, total)
   let eventCursor = Number(existing?.cursor ?? 0)
@@ -235,34 +232,29 @@ const runCanonicalChatBackfill = (
       checkpoint(1)
     }
 
-    const missingTranscript = Number(
-      (
-        sqlite
-          .prepare(
-            `select count(*) as count from transcript_items
+    const missingTranscript = (
+      sqlite
+        .prepare(
+          `select count(*) as count from transcript_items
              left join chat_items on chat_items.id = transcript_items.id
              where chat_items.id is null`
-          )
-          .get() as { count: number }
-      ).count
-    )
-    const missingEvents = Number(
-      (
-        sqlite
-          .prepare(
-            `select count(*) as count from events
+        )
+        .get() as { count: number }
+    ).count
+    const missingEvents = (
+      sqlite
+        .prepare(
+          `select count(*) as count from events
              join sessions on sessions.id = events.subject_id
              left join session_events on session_events.global_event_id = events.id
              where session_events.global_event_id is null`
-          )
-          .get() as { count: number }
-      ).count
-    )
-    const mismatchedTranscript = Number(
-      (
-        sqlite
-          .prepare(
-            `select count(*) as count from transcript_items legacy
+        )
+        .get() as { count: number }
+    ).count
+    const mismatchedTranscript = (
+      sqlite
+        .prepare(
+          `select count(*) as count from transcript_items legacy
              join chat_items item on item.id = legacy.id
              left join chat_parts text_part
                on text_part.item_id = item.id and text_part.kind = 'text'
@@ -274,10 +266,9 @@ const runCanonicalChatBackfill = (
                 or coalesce(text_part.text, '') != legacy.text
                 or coalesce(plan_part.text, '') != coalesce(legacy.plan_document, '')
                 or coalesce(item.attachments, '') != coalesce(legacy.attachments, '')`
-          )
-          .get() as { count: number }
-      ).count
-    )
+        )
+        .get() as { count: number }
+    ).count
     if (missingTranscript !== 0 || missingEvents !== 0 || mismatchedTranscript !== 0) {
       throw new Error(
         `Canonical chat verification failed: ${missingTranscript} transcript items missing, ${mismatchedTranscript} differ, and ${missingEvents} session events are missing`

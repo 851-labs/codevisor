@@ -32,7 +32,7 @@ export const invokePageTools = async (
         const value = await active.connection.send<{ text?: string }>(
           "Codevisor.clipboard.readText"
         )
-        return jsonResult({ text: String(value.text ?? "") })
+        return jsonResult({ text: value.text ?? "" })
       }
       await grantClipboardPermissions(active, page)
       const value = await evaluateReadOnly<string>(

@@ -155,7 +155,7 @@ const applyStreamDelta = (
       subjectId: session.key
     })
   } else if (delta.type === "input_json_delta") {
-    const toolUseId = String(event.index !== undefined ? findAccumulatorId(session, event) : "")
+    const toolUseId = event.index !== undefined ? findAccumulatorId(session, event) : ""
     const accumulator = session.accumulators.get(toolUseId)
     if (accumulator !== undefined) {
       accumulator.json += String(delta.partial_json ?? "")

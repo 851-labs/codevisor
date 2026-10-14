@@ -110,18 +110,18 @@ function runPlan(plan: Plan): void {
   for (const [commandName, ...args] of plan) run(commandName, args)
 }
 
-function readJSON<T>(path: string): T {
-  return JSON.parse(readFileSync(path, "utf8")) as T
+function readJSON(path: string): unknown {
+  return JSON.parse(readFileSync(path, "utf8"))
 }
 function readLocalConfig(): RigConfiguration {
   if (!existsSync(localConfigPath))
     throw new Error(`No rig on this Mac yet: ${localConfigPath}. Run install first.`)
-  return readJSON<RigConfiguration>(localConfigPath)
+  return readJSON(localConfigPath) as RigConfiguration
 }
 function readDeployRecord(): DeployRecord {
   if (!existsSync(deployRecordPath))
     throw new Error(`No deploy record: ${deployRecordPath}. Run install first.`)
-  return readJSON<DeployRecord>(deployRecordPath)
+  return readJSON(deployRecordPath) as DeployRecord
 }
 
 async function build({ debug = false, install = true } = {}): Promise<string> {

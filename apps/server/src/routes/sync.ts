@@ -130,7 +130,9 @@ export const routeSync = async (
       await services.sharedAccounts?.reconcileRemote()
       const signedIn = harnessesSignedInBy(result.changed)
       if (signedIn.length > 0)
-        void Promise.allSettled(signedIn.map((harnessId) => services.auth?.refresh(harnessId)))
+        void Promise.allSettled(
+          signedIn.map(async (harnessId) => services.auth?.refresh(harnessId))
+        )
           .then(() => refreshHarnessReadiness(services, config, fanout, [], result.changed))
           .catch(swallowError)
     }

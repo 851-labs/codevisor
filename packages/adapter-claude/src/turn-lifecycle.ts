@@ -23,9 +23,9 @@ export const refreshClaudeSessionTitle = async (session: ClaudeSession): Promise
 export const finishActiveTurn = (
   session: ClaudeSession,
   stopReason: string,
-  stopDetail?: string | undefined,
-  retryable?: boolean | undefined,
-  stopKind?: "usageLimit" | undefined
+  stopDetail?: string,
+  retryable?: boolean,
+  stopKind?: "usageLimit"
 ): Promise<void> => {
   const completion = session.turnCompletion
   if (!session.turnActive) return completion?.promise ?? Promise.resolve()

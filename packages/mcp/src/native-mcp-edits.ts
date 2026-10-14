@@ -53,7 +53,7 @@ const entryFor = (
 ): Record<string, unknown> | undefined => {
   const parsed = parseNativeConfig(content, spec.format)
   const servers = getNestedValue(parsed, spec.key)
-  if (servers === null || (typeof servers === "object") === false || Array.isArray(servers)) {
+  if (servers === null || typeof servers !== "object" || Array.isArray(servers)) {
     return undefined
   }
   const entry = (servers as Record<string, unknown>)[serverName]

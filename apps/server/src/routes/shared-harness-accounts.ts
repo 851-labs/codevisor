@@ -109,23 +109,21 @@ export const routeSharedHarnessAccounts = async (
       const configured = await shared.providers.configured(harnessId, accountId, true)
       if (harnessId === "pi") {
         if (!auth.piProviders) throw new HttpFailure(501, "Pi authentication unavailable")
-        const providers = (await auth.piProviders()).map(({ credentialType: _, ...provider }) => ({
+        const providers = (await auth.piProviders()).map((provider) => ({
           ...provider,
-          ...(configured.includes(provider.id) ? { credentialType: "oauth" } : {})
+          credentialType: configured.includes(provider.id) ? "oauth" : undefined
         }))
         writeJson(response, 200, { piProviders: providers })
       } else {
         if (!auth.openCodeProviders)
           throw new HttpFailure(501, "OpenCode authentication unavailable")
-        const providers = (await auth.openCodeProviders(accountId)).map(
-          ({ credentialType: _, ...provider }) => ({
-            ...provider,
-            methods: provider.methods.filter(
-              (method) => method.type !== "oauth" || providerOAuthSupported("opencode", provider.id)
-            ),
-            ...(configured.includes(provider.id) ? { credentialType: "oauth" } : {})
-          })
-        )
+        const providers = (await auth.openCodeProviders(accountId)).map((provider) => ({
+          ...provider,
+          methods: provider.methods.filter(
+            (method) => method.type !== "oauth" || providerOAuthSupported("opencode", provider.id)
+          ),
+          credentialType: configured.includes(provider.id) ? "oauth" : undefined
+        }))
         writeJson(response, 200, { openCodeProviders: providers })
       }
     } else if (input.action === "login") {
