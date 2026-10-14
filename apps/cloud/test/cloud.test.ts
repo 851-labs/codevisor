@@ -166,7 +166,6 @@ describe("auth", () => {
 
 describe("direct GitHub sign-in", () => {
   it("redirects straight to GitHub with state cookies when configured", async () => {
-    const { default: worker } = await import("../src/index.js")
     const githubEnv = {
       ...env,
       GITHUB_CLIENT_ID: "Iv23test",
@@ -201,7 +200,6 @@ describe("direct GitHub sign-in", () => {
 
 describe("dev auth gating", () => {
   it("hides dev login when DEV_AUTH is not enabled", async () => {
-    const { default: worker } = await import("../src/index.js")
     const { DEV_AUTH: _devAuth, ...prodEnv } = { ...env, BETTER_AUTH_SECRET: "x".repeat(40) }
     const response = await worker.fetch(
       new Request(`${BASE}/dev/login`, { method: "POST" }),

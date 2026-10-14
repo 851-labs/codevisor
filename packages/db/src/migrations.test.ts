@@ -156,13 +156,13 @@ describe("@codevisor/db", () => {
       expect(event.id).toBe(1)
       expect(event).toMatchObject({ subjectRevision: 1 })
       expect(event.globalEventId).toBeUndefined()
-      expect(listEvents(filename).filter((event) => event.kind !== "navigation.changed")).toEqual(
+      expect(listEvents(filename).filter((logged) => logged.kind !== "navigation.changed")).toEqual(
         []
       )
       expect((await run(db.getSessionDetail(firstSession.id))).eventCursor).toBe(1)
       await run(db.appendEvent("session.output", "other-subject", { text: "elsewhere" }))
       expect(
-        listEvents(filename).filter((event) => event.kind !== "navigation.changed")
+        listEvents(filename).filter((logged) => logged.kind !== "navigation.changed")
       ).toMatchObject([{ kind: "session.output", payload: { text: "elsewhere" } }])
       expect(listSubjectEvents(filename, firstSession.id)).toMatchObject([
         { id: 1, kind: "session.output", payload: { text: "chunk", index: 1 } }

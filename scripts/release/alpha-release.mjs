@@ -20,45 +20,47 @@ export function alphaTag({ version, build }) {
   return `v${version}-alpha.${build}`
 }
 
-export function verifyAlphaProvenance(run, provenance, repository) {
-  assertSuccessfulBuildRun(run, repository)
+export function verifyAlphaProvenance(workflowRun, provenance, repository) {
+  assertSuccessfulBuildRun(workflowRun, repository)
   const build = String(provenance.build_number ?? "")
-  assertMatchingAlphaProvenance(run, provenance, build)
+  assertMatchingAlphaProvenance(workflowRun, provenance, build)
   const identity = {
     version: provenance.version,
     build,
     source_sha: provenance.source_sha,
-    run_id: String(run.id),
+    run_id: String(workflowRun.id),
     ghostty_stamp: provenance.ghostty_stamp
   }
   return { ...identity, tag: alphaTag(identity) }
 }
 
-function assertSuccessfulBuildRun(run, repository) {
+function assertSuccessfulBuildRun(workflowRun, repository) {
   if (
-    run.repository?.full_name !== repository ||
-    run.head_repository?.full_name !== repository ||
-    run.path !== BUILD_WORKFLOW ||
-    run.head_branch !== "main" ||
-    !["push", "workflow_dispatch"].includes(run.event) ||
-    run.status !== "completed" ||
-    run.conclusion !== "success"
+    workflowRun.repository?.full_name !== repository ||
+    workflowRun.head_repository?.full_name !== repository ||
+    workflowRun.path !== BUILD_WORKFLOW ||
+    workflowRun.head_branch !== "main" ||
+    !["push", "workflow_dispatch"].includes(workflowRun.event) ||
+    workflowRun.status !== "completed" ||
+    workflowRun.conclusion !== "success"
   )
-    throw new Error(`Run ${run.id} is not a successful Build run on this repository's main.`)
+    throw new Error(
+      `Run ${workflowRun.id} is not a successful Build run on this repository's main.`
+    )
 }
 
-function assertMatchingAlphaProvenance(run, provenance, build) {
+function assertMatchingAlphaProvenance(workflowRun, provenance, build) {
   if (
     provenance.channel !== "alpha" ||
     !/^\d+\.\d+\.\d+$/.test(provenance.version ?? "") ||
     !/^[1-9]\d*$/.test(build) ||
-    build !== String(alphaBuildNumber(run.run_number)) ||
-    String(provenance.run_id) !== String(run.id) ||
+    build !== String(alphaBuildNumber(workflowRun.run_number)) ||
+    String(provenance.run_id) !== String(workflowRun.id) ||
     !/^[0-9a-f]{40}$/.test(provenance.source_sha ?? "") ||
-    provenance.source_sha !== run.head_sha ||
+    provenance.source_sha !== workflowRun.head_sha ||
     !/^[0-9a-f]{40}-[0-9a-f]{16}$/.test(provenance.ghostty_stamp ?? "")
   )
-    throw new Error(`The provenance of run ${run.id} does not match the run.`)
+    throw new Error(`The provenance of run ${workflowRun.id} does not match the run.`)
 }
 
 export function releaseAssetNames({ ghostty_stamp }) {

@@ -144,8 +144,10 @@ export const migrateLinuxDataLayout = async (options: MigrationOptions): Promise
   const target = dirname(options.layout.databasePath)
   const journalPath = join(dirname(target), "linux-data-migration.json")
   const journal = JSON.stringify({ version: 1, source, target })
-  const sourceStat = await statIfPresent(source)
-  if (sourceStat === undefined && (await statIfPresent(journalPath)) === undefined) {
+  if (
+    (await statIfPresent(source)) === undefined &&
+    (await statIfPresent(journalPath)) === undefined
+  ) {
     await updateService(options, source)
     return
   }

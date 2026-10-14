@@ -33,7 +33,7 @@ describe("pi source", () => {
       ["pi-auth", join(home, ".pi", "agent", "auth.json"), "api_key"],
       ["opencode-auth", join(home, ".local", "share", "opencode", "auth.json"), "api"]
     ]) {
-      const source = sources.find((source) => source.id === id)!
+      const source = sources.find((candidate) => candidate.id === id)!
       await mkdir(join(path!, ".."), { recursive: true })
       await writeFile(path!, JSON.stringify({ openai: { type, key: "machine-key" } }))
       const shared = JSON.stringify({ openai: { type, key: "shared-key" } })

@@ -152,21 +152,21 @@ export const makeMcpServerOperations = (
     await builtinsReady
     const current = await record(id)
     if (!current.canEdit) {
-      const unsupported = Object.keys(request).filter((key) => key !== "enabled")
+      const unsupported = Object.keys(request).filter((field) => field !== "enabled")
       if (unsupported.length > 0) throw new Error(`${current.name} is managed by Codevisor`)
       const enabled = request.enabled ?? current.enabled
-      const state = builtinProviderState(current.id as BuiltinMcpId, enabled)
+      const providerState = builtinProviderState(current.id as BuiltinMcpId, enabled)
       const saved = await saveRecord(current, {
         enabled,
-        connectionState: state.connectionState,
-        ...(state.detail === undefined ? {} : { detail: state.detail })
+        connectionState: providerState.connectionState,
+        ...(providerState.detail === undefined ? {} : { detail: providerState.detail })
       })
       const provider = automationProviders.get(saved.id)!
       if (!saved.enabled) {
         await provider.close()
-      } else if (saved.id === "browser" && state.connectionState === "needsSetup") {
+      } else if (saved.id === "browser" && providerState.connectionState === "needsSetup") {
         void connect(saved.id).catch(() => undefined)
-      } else if (state.connectionState !== "unavailable") {
+      } else if (providerState.connectionState !== "unavailable") {
         await connect(saved.id).catch(() => undefined)
       }
       await refreshGatewayInventories()

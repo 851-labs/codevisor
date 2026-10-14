@@ -197,10 +197,10 @@ export const makeSharedAccounts = (options: {
           if (bundle)
             await importBundle(bundle, rows.find((row) => row.profileKind === "default")?.id)
           for (const row of rows.filter(
-            (row) =>
-              row.profileKind === "managed" &&
-              !row.id.startsWith("shared-") &&
-              !localState.isCapturingLogin(row.id)
+            (candidate) =>
+              candidate.profileKind === "managed" &&
+              !candidate.id.startsWith("shared-") &&
+              !localState.isCapturingLogin(candidate.id)
           )) {
             if (await localState.hasAlias(row.id)) continue
             if ((await localState.loginTarget(row.id)) !== undefined) {

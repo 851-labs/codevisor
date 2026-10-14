@@ -193,8 +193,8 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
       return contextFor(account)
     },
     activeAccountContext: async (harnessId) => {
-      const accounts = await run(config.db.listHarnessAccounts(harnessId))
-      const account = accounts.find((candidate) => candidate.isActive) ?? accounts[0]
+      const harnessAccounts = await run(config.db.listHarnessAccounts(harnessId))
+      const account = harnessAccounts.find((candidate) => candidate.isActive) ?? harnessAccounts[0]
       if (account === undefined) return undefined
       const shared = await config.sharedAccounts?.()?.context(account.id)
       if (shared !== undefined) {

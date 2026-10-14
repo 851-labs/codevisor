@@ -253,7 +253,7 @@ export const makeGrokBuildExtension: AcpStdioExtensionFactory = ({ emit, enqueue
             const sessionId = subagents.sessionOf(params)
             if (sessionId !== undefined && subagents.isChildSession(sessionId)) return
             emitAll(emit, events)
-            const mapped = grokGoalNotification(params, (sessionId) => goals.get(sessionId))
+            const mapped = grokGoalNotification(params, (goalSessionId) => goals.get(goalSessionId))
             if (mapped === undefined) return
             if (mapped.goal === undefined) goals.delete(mapped.sessionId)
             else goals.set(mapped.sessionId, mapped.goal)

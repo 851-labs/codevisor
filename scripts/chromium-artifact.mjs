@@ -3,7 +3,7 @@ import { createHash } from "node:crypto"
 import { createReadStream } from "node:fs"
 import { access, mkdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
-import { join, resolve } from "node:path"
+import { join, resolve as resolvePath } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { withArtifactLock } from "./artifact-lock.mjs"
@@ -205,9 +205,9 @@ export async function ensureChromium(
     }
   }
 }
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && resolvePath(process.argv[1]) === fileURLToPath(import.meta.url)) {
   await ensureChromium(
-    resolve(fileURLToPath(new URL("..", import.meta.url))),
+    resolvePath(fileURLToPath(new URL("..", import.meta.url))),
     process.env,
     process.argv.slice(2).length ? process.argv.slice(2) : undefined
   )

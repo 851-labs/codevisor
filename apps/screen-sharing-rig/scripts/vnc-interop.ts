@@ -116,10 +116,12 @@ try {
 }
 process.exit(status)
 
-async function waitForReady(container: string, deadlineMs = 30_000): Promise<void> {
+async function waitForReady(containerName: string, deadlineMs = 30_000): Promise<void> {
   const started = Date.now()
   while (Date.now() - started < deadlineMs) {
-    if (docker(["logs", container], { allowFailure: true }).stdout.includes("vnc-interop: ready"))
+    if (
+      docker(["logs", containerName], { allowFailure: true }).stdout.includes("vnc-interop: ready")
+    )
       return
     await new Promise((resolve) => setTimeout(resolve, 200))
   }

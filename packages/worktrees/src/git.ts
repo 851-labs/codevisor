@@ -1,7 +1,7 @@
 import { execFile, spawn } from "node:child_process"
 import { realpathSync } from "node:fs"
 import { readFile } from "node:fs/promises"
-import { join, resolve } from "node:path"
+import { join, resolve as resolvePath } from "node:path"
 
 import type { BranchDiffTotals } from "@codevisor/api"
 
@@ -337,7 +337,7 @@ const canonicalPath = (candidate: string): string => {
   try {
     return realpathSync(candidate)
   } catch {
-    return resolve(candidate)
+    return resolvePath(candidate)
   }
 }
 

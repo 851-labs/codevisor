@@ -69,9 +69,9 @@ async function measureClockOffset(
   for (let index = 0; index < 40; index += 1) {
     const sent = Date.now() / 1000
     ssh.stdin.write("x\n")
-    const host = Number(await next())
+    const hostTime = Number(await next())
     const received = Date.now() / 1000
-    if (index >= 3) samples.push({ sent, host, received })
+    if (index >= 3) samples.push({ sent, host: hostTime, received })
   }
   ssh.stdin.end()
   const offset = clockOffset(samples)

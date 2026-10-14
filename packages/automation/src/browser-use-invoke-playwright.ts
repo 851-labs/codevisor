@@ -413,8 +413,8 @@ export const invokePlaywrightTools = async (
         )
       })
     case "playwright.waitFor": {
-      const state = stringArgument(args, "state")
-      if (!["attached", "detached", "visible", "hidden"].includes(state)) {
+      const targetState = stringArgument(args, "state")
+      if (!["attached", "detached", "visible", "hidden"].includes(targetState)) {
         throw new Error("state must be attached, detached, visible, or hidden")
       }
       const timeoutMs = Math.max(0, Math.min(30_000, Number(args.timeoutMs ?? 30_000)))
@@ -422,22 +422,22 @@ export const invokePlaywrightTools = async (
       while (true) {
         const ids = await locatorBackendNodeIds(active, page, args.locator)
         const satisfied =
-          state === "attached"
+          targetState === "attached"
             ? ids.length > 0
-            : state === "detached"
+            : targetState === "detached"
               ? ids.length === 0
-              : state === "visible"
+              : targetState === "visible"
                 ? ids.length === 1 && (await locatorIsVisible(active, page, args.locator))
                 : ids.length === 0 ||
                   (ids.length === 1 && !(await locatorIsVisible(active, page, args.locator)))
-        if (satisfied) return jsonResult({ state, matched: true })
+        if (satisfied) return jsonResult({ state: targetState, matched: true })
         if (ids.length > 1) {
           throw new Error(
             `Playwright strict mode violation: locator resolved to ${ids.length} elements`
           )
         }
         if (Date.now() >= deadline) {
-          throw new Error(`Timed out waiting for locator to become ${state}`)
+          throw new Error(`Timed out waiting for locator to become ${targetState}`)
         }
         await delay(100)
       }

@@ -132,7 +132,7 @@ function stage(identifier, builds, licenseText) {
   const resources = mac ? join(staged, "Versions/A/Resources") : staged
   if (mac) {
     const headers = join(paths[0], "gen/sdk/WebRTC.framework/Headers")
-    for (const file of readdirSync(headers).filter((file) => file.endsWith(".h"))) {
+    for (const file of readdirSync(headers).filter((entry) => entry.endsWith(".h"))) {
       cpSync(join(headers, file), join(staged, "Versions/A/Headers", file))
     }
     const nested = join(staged, "Versions/A/Versions")

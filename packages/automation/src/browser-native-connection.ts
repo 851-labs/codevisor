@@ -65,18 +65,18 @@ export const connectNativeBrowser = async (
   let reason = "This session is not open in the Codevisor app on the server machine."
   try {
     const socket = await new Promise<Socket>((resolve, reject) => {
-      const socket = createConnection(nativeBrowserSocketPath(dataDir))
+      const pending = createConnection(nativeBrowserSocketPath(dataDir))
       const timer = setTimeout(() => {
-        socket.destroy()
+        pending.destroy()
         reject(new Error("Native browser connection timed out"))
       }, 1500)
-      socket.once("error", (error) => {
+      pending.once("error", (error) => {
         clearTimeout(timer)
         reject(error)
       })
-      socket.once("connect", () => {
+      pending.once("connect", () => {
         clearTimeout(timer)
-        resolve(socket)
+        resolve(pending)
       })
     })
     connection = CdpConnection.fromSocket(new NativeSocket(socket))

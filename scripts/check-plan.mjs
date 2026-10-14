@@ -40,7 +40,11 @@ const turboStep = (name) => ({
     })
     if (inputs.length === 0) return undefined
     const sorted = [...names].toSorted()
-    return { inputs, args: sorted.map((name) => `--filter=...${name}`), reason: sorted.join(", ") }
+    return {
+      inputs,
+      args: sorted.map((workspaceName) => `--filter=...${workspaceName}`),
+      reason: sorted.join(", ")
+    }
   }
 })
 

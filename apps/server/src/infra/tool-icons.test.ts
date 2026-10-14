@@ -275,10 +275,10 @@ describe("site icons", () => {
   it("still answers when the cache directory can't be written", async () => {
     const dir = await mkdtemp(join(tmpdir(), "tool-icons-blocked-"))
     directories.push(dir)
-    const blocked = join(dir, "file")
-    await writeFile(blocked, "")
+    const fileInPlaceOfDir = join(dir, "file")
+    await writeFile(fileInPlaceOfDir, "")
     const { fetchImpl } = fakeFetch({ "https://linear.app/favicon.ico": image(ICO) })
-    const icons = makeToolIconStore({ dir: blocked, fetchImpl })
+    const icons = makeToolIconStore({ dir: fileInPlaceOfDir, fetchImpl })
     expect((await icons.site("https://linear.app", "light"))?.contentType).toBe("image/x-icon")
   })
 

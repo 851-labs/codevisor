@@ -74,7 +74,9 @@ export const makeSharedProviderStore = (options: {
       if (record && providerSlot(record.harnessId, record.profileId, record.providerId) === slot)
         return record
     }
-    const entry = (await store.entries()).find((entry) => entry.key === slot && !entry.deleted)
+    const entry = (await store.entries()).find(
+      (candidate) => candidate.key === slot && !candidate.deleted
+    )
     const record = providerRecord(entry?.value)
     return record && providerSlot(record.harnessId, record.profileId, record.providerId) === slot
       ? record

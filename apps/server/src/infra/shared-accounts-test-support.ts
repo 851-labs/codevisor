@@ -65,9 +65,9 @@ export const fleet = () => {
       subscribe: () => () => {},
       refresh: async () => {},
       decorateHarnessesFromStoredState: async (harnesses: ReadonlyArray<unknown>) => harnesses,
-      beginLogin: vi.fn(async (id: string) => ({
+      beginLogin: vi.fn(async (accountId: string) => ({
         id: "flow",
-        accountId: id,
+        accountId,
         kind: "complete" as const
       })),
       answerLogin: vi.fn(async () => ({

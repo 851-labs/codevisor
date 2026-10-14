@@ -178,7 +178,6 @@ describe("well-known skill sources", () => {
 
   it("imports v0.2.0 skill-md and tar.gz archive artifacts with digest checks", async () => {
     const home = makeHome()
-    const { execSync } = await import("node:child_process")
     const { createHash } = await import("node:crypto")
     const artifactSource = join(home, "artifact-src")
     writeSkill(join(artifactSource, "archived"), { description: "From archive", name: "Archived" })
@@ -271,7 +270,6 @@ describe("well-known skill sources", () => {
 
   it("tolerates malformed indexes, bad entries, and broken archives", async () => {
     const home = makeHome()
-    const { execSync } = await import("node:child_process")
     const { createHash } = await import("node:crypto")
     const zipSource = join(home, "zip-src")
     writeSkill(join(zipSource, "zipped"), { description: "From zip", name: "Zipped" })

@@ -239,8 +239,8 @@ describe("gateway machines and execution annotations", () => {
         error: expect.stringContaining("boom")
       })
 
-      const skillReports = async (args: Record<string, unknown>) => {
-        await client.callTool({ name: "skills", arguments: args })
+      const skillReports = async (skillArguments: Record<string, unknown>) => {
+        await client.callTool({ name: "skills", arguments: skillArguments })
         return events.at(-1)!.payload
       }
       expect(await skillReports({ name: " execute " })).toEqual({

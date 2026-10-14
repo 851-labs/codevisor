@@ -79,11 +79,8 @@ afterAll(async () => {
 
 const it = baseIt.extend<{
   browser: {
-    provider: ReturnType<typeof makeBrowserUseProvider>
     context: { sessionId: string; projectId: string }
-    origin: string
     cell: (code: string) => Promise<unknown>
-    cdp: ReturnType<typeof observeCdp>
     slowResponse: Promise<ServerResponse>
   }
 }>({
@@ -96,7 +93,7 @@ const it = baseIt.extend<{
       await cell(
         `var first = await browser.tabs.new(); await first.playwright.expectNavigation(() => first.goto(${JSON.stringify(origin)}), {waitUntil: 'domcontentloaded'})`
       )
-      await use({ provider, context, origin, cell, cdp, slowResponse: slow.promise })
+      await use({ context, cell, slowResponse: slow.promise })
     } finally {
       await provider.closeSession(context.sessionId)
     }
@@ -131,7 +128,7 @@ describe("Browser session reliability", () => {
   })
 
   it("observes same-document navigation after arming before the action", async ({
-    browser: { cell, origin }
+    browser: { cell }
   }) => {
     await cell(
       "await first.playwright.expectNavigation(() => first.playwright.locator('#push').click(), {waitUntil: 'commit'})"
@@ -140,7 +137,7 @@ describe("Browser session reliability", () => {
   })
 
   it("observes network request completion through real CDP events", async ({
-    browser: { cell, cdp, slowResponse }
+    browser: { cell, slowResponse }
   }) => {
     let requestId: unknown
     const requested = cdp.event("Network.requestWillBeSent", (params) => {
@@ -186,7 +183,7 @@ describe("Browser session reliability", () => {
   })
 
   it("exports real files using the binary attachment contract", async ({
-    browser: { cell, provider, context, origin }
+    browser: { cell, context }
   }) => {
     const result = await provider.invoke(context, "content.export", {
       format: "markdown",
@@ -197,7 +194,7 @@ describe("Browser session reliability", () => {
     expect(result.content.some((c) => c.type === "resource")).toBe(true)
   })
 
-  it("supports nested frames", async ({ browser: { cell, origin } }) => {
+  it("supports nested frames", async ({ browser: { cell } }) => {
     await cell(
       `await first.playwright.expectNavigation(() => first.goto(${JSON.stringify(origin + "/frames")}), {waitUntil: 'load'})`
     )
@@ -208,7 +205,7 @@ describe("Browser session reliability", () => {
     ).toBe("Nested content")
   })
 
-  it("supports cross-origin frames", async ({ browser: { cell, origin } }) => {
+  it("supports cross-origin frames", async ({ browser: { cell } }) => {
     await cell(
       `await first.playwright.expectNavigation(() => first.goto(${JSON.stringify(origin + "/cross")}), {waitUntil: 'load'})`
     )

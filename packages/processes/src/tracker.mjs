@@ -93,15 +93,17 @@ export async function trackProcessTree(pid, options = {}) {
   /** @type {Promise<void> | undefined} */
   let stopping
   return {
-    /** @param {{graceMs?: number, includeRoot?: boolean}} [options] */
-    stop: (options = {}) => {
+    /** @param {{graceMs?: number, includeRoot?: boolean}} [stopOptions] */
+    stop: (stopOptions = {}) => {
       stopping ??= (async () => {
         dispose()
         await polling
         await capture()
         await stop(
-          [...known.values()].filter((entry) => options.includeRoot !== false || entry.pid !== pid),
-          options
+          [...known.values()].filter(
+            (entry) => stopOptions.includeRoot !== false || entry.pid !== pid
+          ),
+          stopOptions
         )
       })().catch((error) => {
         stopping = undefined

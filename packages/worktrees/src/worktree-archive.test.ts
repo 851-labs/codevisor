@@ -108,7 +108,7 @@ describe("worktree archive snapshots", () => {
     expect(existsSync(join(restorePath, "secret.env"))).toBe(false)
     expect(existsSync(join(restorePath, "node_modules"))).toBe(false)
     expect(snapshot.ignoredPaths).toContain("secret.env")
-    expect(snapshot.ignoredPaths.some((path) => path.includes("node_modules"))).toBe(false)
+    expect(snapshot.ignoredPaths.some((ignored) => ignored.includes("node_modules"))).toBe(false)
   })
 
   it("suffixes the name when the original was reclaimed while archived", async () => {

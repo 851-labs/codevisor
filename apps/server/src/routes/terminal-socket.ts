@@ -37,14 +37,14 @@ export interface TerminalSocketLike {
 }
 
 export interface TerminalSocketTimers {
-  readonly immediate: (run: () => void) => void
-  readonly timeout: (run: () => void, ms: number) => void
+  readonly immediate: (task: () => void) => void
+  readonly timeout: (task: () => void, ms: number) => void
 }
 
 const realTimers: TerminalSocketTimers = {
-  immediate: (run) => setImmediate(run),
-  timeout: (run, ms) => {
-    setTimeout(run, ms)
+  immediate: (task) => setImmediate(task),
+  timeout: (task, ms) => {
+    setTimeout(task, ms)
   }
 }
 
@@ -100,12 +100,12 @@ export class TerminalSocketSender {
     if (this.flushScheduled) return
     this.flushScheduled = true
     const timers = this.options.timers ?? realTimers
-    const run = (): void => {
+    const flushBatch = (): void => {
       this.flushScheduled = false
       this.flush()
     }
-    if (this.delayMs === 0) timers.immediate(run)
-    else timers.timeout(run, this.delayMs)
+    if (this.delayMs === 0) timers.immediate(flushBatch)
+    else timers.timeout(flushBatch, this.delayMs)
   }
 
   private flush(): void {

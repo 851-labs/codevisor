@@ -24,7 +24,11 @@ const fixture = async () => {
   cleanups.push(() => rm(dataDir, { recursive: true, force: true }))
   const db = await run(makeDatabase({ filename: join(dataDir, "db.sqlite"), serverId: "test" }))
   cleanups.push(() => run(db.close))
-  const deps = { dataDir, db, removeAccount: (id: string) => run(db.removeHarnessAccount(id)) }
+  const deps = {
+    dataDir,
+    db,
+    removeAccount: (accountId: string) => run(db.removeHarnessAccount(accountId))
+  }
   return {
     ...deps,
     reconcile: (content?: string) => reconcileSharedOpenCodeProfiles(deps, content)
