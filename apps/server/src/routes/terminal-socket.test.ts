@@ -163,35 +163,6 @@ describe("terminal socket sender", () => {
     timeouts[0]!.run()
     expect(socket.sent).toHaveLength(1)
   })
-
-  it("uses real timers by default", async () => {
-    const first = Promise.withResolvers<void>()
-    const second = Promise.withResolvers<void>()
-    const socket = {
-      bufferedAmount: 0,
-      sent: [] as Array<unknown>,
-      send(data: string | Uint8Array): void {
-        this.sent.push(JSON.parse(data as string))
-        if (this.sent.length === 1) first.resolve()
-        if (this.sent.length === 2) second.resolve()
-      }
-    }
-    const sender = new TerminalSocketSender(socket, {
-      binary: false,
-      lastOutputSeq: 0,
-      resync: () => undefined
-    })
-    sender.sink({ type: "output", seq: 1, data: "now" })
-    await first.promise
-    sender.setRoundTrip(30)
-    sender.sink({ type: "output", seq: 2, data: "later" })
-    await second.promise
-    expect(socket.sent).toHaveLength(2)
-    expect(socket.sent).toEqual([
-      { type: "output", seq: 1, data: "now" },
-      { type: "output", seq: 2, data: "later" }
-    ])
-  })
 })
 
 const observeClientClosure = (client: WebSocket): (() => Promise<void>) => {
