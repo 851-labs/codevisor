@@ -13,9 +13,13 @@
       let window = NSWindow(
         contentRect: NSRect(x: 0, y: 0, width: 340, height: 80),
         styleMask: [.borderless], backing: .buffered, defer: false)
+      window.isReleasedWhenClosed = false
       let container = Autocomplete.InputCapsuleView(metrics: .xcodeMenu, showsCheckmarks: false, showsIcons: false)
       window.contentView = container
-      defer { window.contentView = nil }
+      defer {
+        window.contentView = nil
+        window.close()
+      }
       let icon = try #require(container.subviews.compactMap { $0 as? NSImageView }.first)
       let field = container.searchField
       for fontSize in [13.0, 24, 36, 18, 13] {
