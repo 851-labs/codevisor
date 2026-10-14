@@ -23,15 +23,44 @@ const freshManifest = {
 }
 
 describe("manager install pipeline", () => {
-  it("wires protocol v2 version and argv execution into the installer", async () => {
-    const spawn = fakeSpawn()
+  it("gates protocol v2 installs on the Codevisor version and runs them through argv", async () => {
+    const v2Manifest = {
+      ...freshManifest,
+      minCodevisorVersion: "1.0.0",
+      protocolVersion: 2,
+      run: { argv: ["node", "server.js"] },
+      setup: [{ argv: ["npm", "ci"] }]
+    }
+    const server = fakeSpawn()
+    const spawned: Array<ReadonlyArray<string>> = []
     const { manager } = makeManager({
+      clone: async (url, _ref, destination) => {
+        await cp(url, destination, { recursive: true })
+        return { resolvedCommit: "a".repeat(40) }
+      },
       codevisorVersion: "1.0.0",
-      spawnArgv: (_argv, options) => spawn.spawnShell("unused", options)
+      spawnArgv: (argv, options) => {
+        spawned.push(argv)
+        if (argv[0] === "node") return server.spawnShell(argv.join(" "), options)
+        const exitListeners: Array<(message: string, exitCode?: number | null) => void> = []
+        setImmediate(() => {
+          for (const listener of exitListeners) listener("exited with code 0", 0)
+        })
+        return { kill: () => undefined, onExit: (listener) => exitListeners.push(listener), pid: 7 }
+      }
     })
-    await expect(manager.list()).resolves.toMatchObject({
-      plugins: [expect.objectContaining({ id: "owner.example" })]
-    })
+
+    await expect(
+      manager.importRemote({ source: makeFixture({ ...v2Manifest, minCodevisorVersion: "1.1.0" }) })
+    ).rejects.toThrow(/requires Codevisor 1\.1\.0 or newer; this server is 1\.0\.0/)
+    expect(spawned).toEqual([])
+
+    const imported = await manager.importRemote({ source: makeFixture(v2Manifest) })
+    expect(imported.state).toBe("running")
+    expect(spawned).toEqual([
+      ["npm", "ci"],
+      ["node", "server.js"]
+    ])
   })
 
   it("discovers, imports, and removes a plugin through the facade", async () => {
