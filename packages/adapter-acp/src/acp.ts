@@ -18,7 +18,6 @@ export {
   type AcpSetConfigOptionContext
 } from "./sdk-connection.js"
 export {
-  makeStdioAcpConnector,
   makeStdioAcpConnectorWithOptions,
   type AcpStdioExtension,
   type AcpStdioExtensionContext,

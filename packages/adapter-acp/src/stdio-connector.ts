@@ -295,8 +295,6 @@ export const makeStdioAcpConnectorWithOptions = (
     })
 })
 
-export const makeStdioAcpConnector = (): AcpConnector => makeStdioAcpConnectorWithOptions()
-
 const promiseWithTimeout = <A>(
   promise: Promise<A>,
   timeoutMs: number,
