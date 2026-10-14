@@ -39,8 +39,9 @@ export const insertSessionRow = (
       `insert into sessions (
             id, project_id, server_id, harness_id, harness_account_id, agent_session_id,
             title, origin, worktree_name, workspace_id, created_at, updated_at,
-            sidebar_state, sidebar_state_changed_at, parent_session_id, labels
-          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?, ?, ?)`
+            sidebar_state, sidebar_state_changed_at, parent_session_id, labels,
+            config_selections
+          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?, ?, ?, ?)`
     )
     .run(
       id,
@@ -57,7 +58,8 @@ export const insertSessionRow = (
       request.updatedAt ?? null,
       request.updatedAt ?? request.createdAt ?? now,
       request.parentSessionId == null ? null : canonicalUuid(request.parentSessionId),
-      serializeLabels(request.labels)
+      serializeLabels(request.labels),
+      JSON.stringify(request.configSelections ?? {})
     )
   return getSession(id)
 }

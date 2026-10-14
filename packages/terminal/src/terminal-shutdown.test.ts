@@ -5,20 +5,24 @@ import { run } from "./test-support.js"
 
 describe("terminal shutdown", () => {
   it("normalizes failures while replaying a terminal to a disconnected client", async () => {
-    for (const failure of [new Error("disconnected"), "disconnected"]) {
+    for (const failure of [
+      new Error("disconnected"),
+      "disconnected",
+      { toString: () => "disconnected" }
+    ]) {
       const manager = makeTerminalManager()
       const terminal = manager.registerExternalTerminal(
         { sessionId: "replay" },
         { kill: () => {}, write: () => {}, resize: () => {} }
       )
       terminal.output("buffered")
-      await expect(
-        run(
-          manager.connectTerminal(terminal.terminalId, 0, () => {
-            throw failure
-          })
-        )
-      ).rejects.toThrow("disconnected")
+      const error = await run(
+        manager.connectTerminal(terminal.terminalId, 0, () => {
+          throw failure
+        })
+      ).catch((cause: unknown) => cause)
+      expect(error).toBeInstanceOf(TerminalError)
+      expect(error).toMatchObject({ operation: "connectTerminal", message: "disconnected" })
     }
   })
   it("awaits cleanup, deduplicates concurrent closes, and blocks restart while stopping", async () => {

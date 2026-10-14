@@ -41,7 +41,7 @@ export const codevisorSessionApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   ),
   apiTool(
     "sessions.create",
-    "Create a Codevisor coding-agent session in the background. Without workspaceId, the chat gets its own new workspace so it appears in the sidebar; pass an existing workspaceId to add it to that workspace instead. parentSessionId links the new session to the one creating it (defaults to the calling session), and labels (string key/value pairs) let you find it again with sessions.list after your context is compacted. Native sidebars synchronize the new chat without changing the user's selection. Use clients.navigate only when asked to show it.",
+    "Create a Codevisor coding-agent session in the background. Without workspaceId, the chat gets its own new workspace so it appears in the sidebar; pass an existing workspaceId to add it to that workspace instead. parentSessionId links the new session to the one creating it (defaults to the calling session), and labels (string key/value pairs) let you find it again with sessions.list after your context is compacted. The chat starts on your model, reasoning, and speed when it runs your harness; configSelections (picker config id to value, such as model) picks others. Native sidebars synchronize the new chat without changing the user's selection. Use clients.navigate only when asked to show it.",
     "POST",
     "/v1/sessions",
     { body: CreateSessionRequest }

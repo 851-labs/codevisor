@@ -5,13 +5,6 @@ export interface SessionActivityController {
   readonly stop: () => void
 }
 
-export interface ActiveWorkSleepInhibitorOptions {
-  readonly platform?: NodeJS.Platform
-  readonly processId?: number
-  readonly spawnCaffeinate?: (processId: number) => ChildProcess
-  readonly log?: (message: string) => void
-}
-
 /// Prevents idle system sleep only while at least one locally hosted agent
 /// turn is active. `-w` also guarantees the assertion disappears if the
 /// server crashes instead of reaching `stop()`.
@@ -20,8 +13,7 @@ export class ActiveWorkSleepInhibitor implements SessionActivityController {
   private assertionProcess: ChildProcess | undefined
 
   constructor(
-    private readonly processId: number,
-    private readonly spawnCaffeinate: (processId: number) => ChildProcess,
+    private readonly spawnCaffeinate: () => ChildProcess,
     private readonly log: (message: string) => void
   ) {}
 
@@ -48,7 +40,7 @@ export class ActiveWorkSleepInhibitor implements SessionActivityController {
 
     let child: ChildProcess
     try {
-      child = this.spawnCaffeinate(this.processId)
+      child = this.spawnCaffeinate()
     } catch (cause) {
       this.log(
         `Active-work sleep assertion failed: ${cause instanceof Error ? cause.message : String(cause)}`
@@ -82,20 +74,11 @@ export class ActiveWorkSleepInhibitor implements SessionActivityController {
 }
 
 export const makeActiveWorkSleepInhibitor = (
-  options: ActiveWorkSleepInhibitorOptions = {}
+  platform: NodeJS.Platform = process.platform
 ): SessionActivityController | undefined => {
-  const platform = options.platform ?? process.platform
   if (platform !== "darwin") return undefined
-  const processId = options.processId ?? process.pid
-  const spawnCaffeinate =
-    options.spawnCaffeinate ??
-    ((ownerProcessId: number) =>
-      spawn("/usr/bin/caffeinate", ["-i", "-w", String(ownerProcessId)], {
-        stdio: "ignore"
-      }))
   return new ActiveWorkSleepInhibitor(
-    processId,
-    spawnCaffeinate,
-    options.log ?? ((message) => console.error(message))
+    () => spawn("/usr/bin/caffeinate", ["-i", "-w", String(process.pid)], { stdio: "ignore" }),
+    (message) => console.error(message)
   )
 }

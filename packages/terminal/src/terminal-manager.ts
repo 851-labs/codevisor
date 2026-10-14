@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 
-import { Context, Effect, Layer } from "effect"
+import { Effect } from "effect"
 
 import {
   isDuplicateClientFrame,
@@ -23,13 +23,6 @@ import { makeTerminalTitles } from "./terminal-titles.js"
 import type { TerminalManagerConfig, TerminalManagerService } from "./types.js"
 import { TerminalError } from "./types.js"
 import { createVtTerminal } from "./vt/ghostty-vt.js"
-
-export class TerminalManager extends Context.Service<TerminalManager, TerminalManagerService>()(
-  "@codevisor/terminal/TerminalManager"
-) {
-  static readonly layer = (config: TerminalManagerConfig = {}): Layer.Layer<TerminalManager> =>
-    Layer.succeed(TerminalManager, TerminalManager.of(makeTerminalManager(config)))
-}
 
 /// Screen size for pipe-fed external processes, which have no PTY size of
 /// their own until a client resizes the terminal.
@@ -214,8 +207,7 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
           removed: false,
           nextOutputSeq: 1,
           closed: exitedBeforeRegistration,
-          external: false,
-          endsWithProcess: false
+          external: false
         }
         runningTerminal = terminal
         for (const frame of pendingFrames) {
@@ -356,7 +348,7 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
       // Exited session shells are never restored to a session, so persisting
       // them would only carry dead scrollback across restarts forever.
       terminals: [...terminals.values()]
-        .filter((terminal) => !terminal.endsWithProcess && (terminal.external || !terminal.closed))
+        .filter((terminal) => terminal.external || !terminal.closed)
         .map(snapshotEntry)
     }),
     readScreen: (terminalId, format) =>
@@ -390,8 +382,7 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
           removed: false,
           nextOutputSeq: entry.nextOutputSeq,
           closed: true,
-          external: entry.external,
-          endsWithProcess: false
+          external: entry.external
         }
         restoreEntry(terminal, entry)
         // The process died with the previous server; terminals that were
@@ -424,8 +415,7 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
         removed: false,
         nextOutputSeq: 1,
         closed: false,
-        external: true,
-        endsWithProcess: config.endsWithProcess === true
+        external: true
       }
       // A re-registration under the same key replaces the previous terminal
       // (e.g. an agent restarting its dev server): drop the stale one so the
@@ -452,10 +442,6 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
             terminal,
             exitCode === undefined ? { type: "exit" } : { type: "exit", exitCode }
           )
-          if (terminal.endsWithProcess) {
-            dropTerminal(terminal)
-            clearSessionMapping(terminal)
-          }
         },
         remove: () => {
           dropTerminal(terminal)

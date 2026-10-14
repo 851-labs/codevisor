@@ -37,6 +37,30 @@ export const resolveSessionAccount = async (
   return { accountContext, harnessAccountId: payload.harnessAccountId ?? accountContext?.id }
 }
 
+/// The picks a new chat starts with: its own, else its parent's when both
+/// run the same harness, so a chat an agent creates runs (and its picker
+/// shows) the model the agent itself runs. Parent picks its runtime no
+/// longer offers stay behind: the parent is not running them.
+export const withStartPicks = async (
+  services: CodevisorServerServices,
+  payload: CreateSessionRequest
+): Promise<CreateSessionRequest> => {
+  if (payload.configSelections !== undefined || payload.parentSessionId === undefined) {
+    return payload
+  }
+  const parent = await run(services.db.getSessionSummary(payload.parentSessionId)).catch(
+    () => undefined
+  )
+  if (parent === undefined || parent.harnessId !== payload.harnessId) return payload
+  const unavailable = parent.unavailableConfigSelections ?? {}
+  const inherited = Object.entries(parent.configSelections ?? {}).filter(
+    ([configId, value]) => unavailable[configId] !== value
+  )
+  return inherited.length === 0
+    ? payload
+    : { ...payload, configSelections: Object.fromEntries(inherited) }
+}
+
 /// Starts (or adopts) the provider session behind a Codevisor session row.
 /// The session id is known up front so the standing event sink can bind to
 /// it before the agent session exists. Deferred agents start on first use.
@@ -61,7 +85,10 @@ export const startSessionAgent = async (
             cwd,
             sink,
             accountContext,
-            toolGateway
+            toolGateway,
+            payload.configSelections === undefined
+              ? undefined
+              : { configSelections: payload.configSelections }
           )
         )))
 }

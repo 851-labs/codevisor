@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto"
 import type { IncomingMessage, ServerResponse } from "node:http"
 
-import { CreateWorkspaceRequest as CreateWorkspaceRequestSchema } from "@codevisor/api"
+import {
+  CreateWorkspaceRequest as CreateWorkspaceRequestSchema,
+  type CreateSessionRequest
+} from "@codevisor/api"
 
 import {
   appendAndPublish,
@@ -14,7 +17,7 @@ import {
   type CodevisorServerServices,
   type EventFanout
 } from "../server-context.js"
-import { resolveSessionAccount, startSessionAgent } from "./session-creation.js"
+import { resolveSessionAccount, startSessionAgent, withStartPicks } from "./session-creation.js"
 import { findSession, resolveSessionCwdOrFail } from "./session-workspace.js"
 
 /// POST /v1/workspaces — a workspace born around its first chat. The
@@ -43,8 +46,13 @@ export const routeWorkspaceCreate = async (
   const workspaceId = payload.workspace.id.toLowerCase()
   const sessionId = (payload.session.id ?? randomUUID()).toLowerCase()
   const existing = await findSession(services.db, sessionId)
-  let sessionPayload = { ...payload.session, id: sessionId, projectId: project.id }
+  let sessionPayload: CreateSessionRequest = {
+    ...payload.session,
+    id: sessionId,
+    projectId: project.id
+  }
   if (existing === undefined) {
+    sessionPayload = await withStartPicks(services, sessionPayload)
     const cwd = await resolveSessionCwdOrFail(
       services,
       config.id,
@@ -61,7 +69,7 @@ export const routeWorkspaceCreate = async (
       config.id,
       sessionId,
       project,
-      payload.session,
+      sessionPayload,
       cwd,
       accountContext
     )

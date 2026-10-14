@@ -39,7 +39,6 @@ const fixture = () => {
     stdin,
     stdout,
     stderr,
-    pid: 123,
     onExit: (handler) => {
       exit = handler
     },

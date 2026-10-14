@@ -132,41 +132,6 @@ describe("@codevisor/terminal terminal manager external terminals", () => {
     ).toBe(replacement.terminalId)
   })
 
-  it("removes a terminal that ends with its process at exit and never persists it", async () => {
-    const manager = makeTerminalManager({ spawner: makeSpawner() })
-    const attachable = (sessionId: string) =>
-      run(manager.createTerminal({ sessionId, cwd: "/", cols: 1, rows: 1, attachOnly: true })).then(
-        () => true,
-        () => false
-      )
-    const command = manager.registerExternalTerminal(
-      { sessionId: "agent:bg:build", endsWithProcess: true },
-      new FakeProcess()
-    )
-    const kept = manager.registerExternalTerminal({ sessionId: "plugin:x" }, new FakeProcess())
-    const frames: Array<string> = []
-    await run(
-      manager.connectTerminal(command.terminalId, 0, (frame) => {
-        if (frame.type !== "size") frames.push(frame.type)
-      })
-    )
-    command.output("compiling")
-    // Even while it runs, it is not carried across a restart.
-    expect(manager.snapshotTerminals().terminals.map((entry) => entry.sessionId)).toEqual([
-      "plugin:x"
-    ])
-
-    // A watching client still sees the exit before the terminal goes away.
-    command.exit(0)
-    kept.exit(0)
-    expect(frames).toEqual(["output", "exit"])
-    expect(await attachable("agent:bg:build")).toBe(false)
-    expect(await attachable("plugin:x")).toBe(true)
-    // Removing it again, as a caller may after exit, is harmless.
-    command.remove()
-    expect(await attachable("plugin:x")).toBe(true)
-  })
-
   it("closes every terminal under a session-key prefix", async () => {
     const spawner = makeSpawner()
     const manager = makeTerminalManager({ spawner })
@@ -216,29 +181,5 @@ describe("@codevisor/terminal terminal manager external terminals", () => {
     expect(rest).toEqual([])
     expect(resync).toMatchObject({ type: "output", seq: 40, reset: true })
     expect(resync?.type === "output" && resync.data.startsWith("\u001bc")).toBe(true)
-  })
-
-  it("wraps non-Error process failures as terminal errors", async () => {
-    const spawner = makeSpawner((_request, handlers) => {
-      handlers.onOutput("boot")
-    })
-    const manager = makeTerminalManager({ spawner })
-    const terminal = await run(
-      manager.createTerminal({
-        sessionId: "session-4",
-        cwd: "/tmp/project",
-        cols: 80,
-        rows: 24
-      })
-    )
-    const cause: unknown = { reason: "sink failure" }
-
-    await expect(
-      run(
-        manager.connectTerminal(terminal.terminalId, 0, () => {
-          throw cause
-        })
-      )
-    ).rejects.toBeInstanceOf(TerminalError)
   })
 })

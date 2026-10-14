@@ -12,7 +12,6 @@ import type { TerminalManagerConfig, TerminalSpawnRequest } from "./types.js"
 
 interface LaunchDefaults {
   readonly env: NodeJS.ProcessEnv
-  readonly terminfoDirectory: string
   readonly defaultShell: string
   readonly platform: NodeJS.Platform
   readonly terminalName: string
@@ -21,12 +20,11 @@ interface LaunchDefaults {
 
 const captureDefaults = (config: TerminalManagerConfig): LaunchDefaults => {
   const env = config.env ?? process.env
-  const terminfoDirectory = config.terminfoDirectory ?? BUNDLED_GHOSTTY_TERMINFO_DIRECTORY
   const defaultShell = resolveDefaultShell(config, env)
   const platform = config.platform ?? process.platform
   const terminalName = resolveTerminalName(platform)
   const ghosttyResources = config.ghosttyResourcesDirectory ?? BUNDLED_GHOSTTY_RESOURCES_DIRECTORY
-  return { env, terminfoDirectory, defaultShell, platform, terminalName, ghosttyResources }
+  return { env, defaultShell, platform, terminalName, ghosttyResources }
 }
 
 const prepareEnvironment = (
@@ -44,7 +42,7 @@ const prepareEnvironment = (
     TERM_PROGRAM: "ghostty"
   }
   if (defaults.terminalName === GHOSTTY_TERM) {
-    env.TERMINFO = defaults.terminfoDirectory
+    env.TERMINFO = BUNDLED_GHOSTTY_TERMINFO_DIRECTORY
   } else {
     // An inherited Ghostty-only TERMINFO masks the host's standard
     // xterm-256color database for shells such as Zsh.
