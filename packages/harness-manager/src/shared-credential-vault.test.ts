@@ -191,7 +191,7 @@ describe("encrypted shared credential vault", () => {
     expect(coordinate).not.toHaveBeenCalled()
   })
 
-  it("forces refresh on rejection, but accepts a newer token another machine already published", async () => {
+  it("forces refresh on rejection, then serves the replacement for the same stale token without rotating again", async () => {
     const f = fixture()
     const vault = makeSharedCredentialVault(f.config)
     const ref = await vault.create({ ...original, expiresAt: refreshed.expiresAt })

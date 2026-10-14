@@ -215,7 +215,7 @@ describe("harness lifecycle update detection", () => {
     })
   })
 
-  it("skips app-bundle checks off darwin and harnesses without sources", async () => {
+  it("skips app-bundle checks off darwin", async () => {
     const db = await makeDb()
     const definition: HarnessDefinition = {
       detectBinaries: ["codex"],
