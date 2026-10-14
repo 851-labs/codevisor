@@ -23,6 +23,15 @@ struct InlineMarkdownTests {
     #expect(attributed.runs.contains { $0.inlinePresentationIntent?.contains(.lineBreak) == true })
   }
 
+  @Test("Renders inline code")
+  func code() {
+    let attributed = inline("call `foo()` now")
+    let hasCode = attributed.runs.contains { run in
+      run.inlinePresentationIntent?.contains(.code) == true
+    }
+    #expect(hasCode)
+  }
+
   @Test("Themed inline code gets chip-tagged runs with padding spaces")
   func codeChip() {
     let attributed = inline("call `foo()` now", theme: .default)
@@ -83,11 +92,9 @@ struct InlineMarkdownTests {
     #expect(attributed.runs.allSatisfy { $0.link == nil })
   }
 
-  private func inline(_ markdown: String) -> AttributedString {
-    InlineMarkdown.attributedString(from: MarkdownParser().parseInline(markdown))
-  }
-
-  private func inline(_ markdown: String, theme: MarkdownTheme) -> AttributedString {
-    InlineMarkdown.attributedString(from: MarkdownParser().parseInline(markdown), theme: theme)
+  private func inline(_ markdown: String, theme: MarkdownTheme? = nil) -> AttributedString {
+    let text = MarkdownParser().parseInline(markdown)
+    guard let theme else { return InlineMarkdown.attributedString(from: text) }
+    return InlineMarkdown.attributedString(from: text, theme: theme)
   }
 }
