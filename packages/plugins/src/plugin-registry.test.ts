@@ -2,7 +2,6 @@ import type { PluginRegistryIndex } from "@codevisor/api"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import {
-  DEFAULT_PLUGIN_REGISTRY_URL,
   filterPluginRegistryIndex,
   makePluginRegistryClient,
   PLUGIN_REGISTRY_CACHE_TTL_MS,
@@ -62,7 +61,7 @@ describe("resolvePluginRegistryUrl", () => {
     expect(resolvePluginRegistryUrl({ CODEVISOR_DEV_CLOUD_URL: "http://127.0.0.1:8787/" })).toBe(
       "http://127.0.0.1:8787"
     )
-    expect(resolvePluginRegistryUrl({})).toBe(DEFAULT_PLUGIN_REGISTRY_URL)
+    expect(resolvePluginRegistryUrl({})).toBe("https://cloud.codevisor.dev")
   })
 })
 
