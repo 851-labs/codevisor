@@ -156,12 +156,26 @@ export class GrokSubagents {
     childId: string,
     update: JsonRecord
   ): ReadonlyArray<RuntimeEvent> {
+    const task = this.taskForSpawn(sessionId, childId, update)
+    if (task === undefined) return []
+    const resumedFrom = string(update.resumed_from)
+    const child = this.link(task, childId, resumedFrom)
+    return [
+      this.event(child.rootSessionId, { _meta: subagentMeta(child), toolCallId: child.callId })
+    ]
+  }
+
+  private taskForSpawn(
+    sessionId: string,
+    childId: string,
+    update: JsonRecord
+  ): GrokTask | undefined {
     const description = string(update.description)
     const subagentType = string(update.subagent_type)
     const open = [...this.tasks.values()].filter(
       (task) => task.sessionId === sessionId && task.childId === undefined
     )
-    const task =
+    return (
       [...this.tasks.values()].find((candidate) => candidate.childId === childId) ??
       open.find(
         (candidate) =>
@@ -170,12 +184,7 @@ export class GrokSubagents {
       ) ??
       open.find((candidate) => candidate.description === description) ??
       open[0]
-    if (task === undefined) return []
-    const resumedFrom = string(update.resumed_from)
-    const child = this.link(task, childId, resumedFrom)
-    return [
-      this.event(child.rootSessionId, { _meta: subagentMeta(child), toolCallId: child.callId })
-    ]
+    )
   }
 
   private link(task: GrokTask, childId: string, resumedFrom?: string): GrokChild {
