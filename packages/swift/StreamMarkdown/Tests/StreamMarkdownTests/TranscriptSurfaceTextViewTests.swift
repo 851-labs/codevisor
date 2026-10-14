@@ -84,6 +84,7 @@ struct TranscriptSurfaceTextViewTests {
       backing: .buffered,
       defer: false
     )
+    window.isReleasedWhenClosed = false
     let host = SelectionHost(frame: window.contentView!.bounds)
     window.contentView!.addSubview(host)
     let surface = RecordingSurface(frame: host.bounds)
@@ -98,6 +99,10 @@ struct TranscriptSurfaceTextViewTests {
   @Test("A right click with a transcript selection shows its menu and keeps the selection")
   func rightClickKeepsTranscriptSelection() {
     let fixture = makeFixture()
+    defer {
+      fixture.window.contentView = nil
+      fixture.window.close()
+    }
     let nativeSelection = fixture.surface.selectedRange()
     let click = fixture.click(.rightMouseDown)
 
@@ -114,6 +119,10 @@ struct TranscriptSurfaceTextViewTests {
   @Test("A control click behaves like a right click")
   func controlClickKeepsTranscriptSelection() {
     let fixture = makeFixture()
+    defer {
+      fixture.window.contentView = nil
+      fixture.window.close()
+    }
 
     fixture.surface.mouseDown(with: fixture.click(.leftMouseDown, modifiers: .control))
 
@@ -125,6 +134,10 @@ struct TranscriptSurfaceTextViewTests {
   @Test("Without a transcript selection the surface keeps its native menu")
   func rightClickWithoutSelectionIsNative() {
     let fixture = makeFixture()
+    defer {
+      fixture.window.contentView = nil
+      fixture.window.close()
+    }
     fixture.host.hasSelection = false
     fixture.host.clearCount = 0
 
@@ -138,6 +151,10 @@ struct TranscriptSurfaceTextViewTests {
   @Test("A right click on a link stays with the native link menu")
   func rightClickOnLinkIsNative() {
     let fixture = makeFixture()
+    defer {
+      fixture.window.contentView = nil
+      fixture.window.close()
+    }
     fixture.surface.textStorage?.addAttribute(
       .link,
       value: URL(string: "https://example.com")!,
