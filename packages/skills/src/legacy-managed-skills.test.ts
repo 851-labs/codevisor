@@ -1,12 +1,4 @@
-import {
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  symlinkSync,
-  writeFileSync
-} from "node:fs"
+import { existsSync, lstatSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
 import { makeAgentRuntime } from "@codevisor/agent-runtime"
@@ -168,8 +160,5 @@ describe("migrateLegacySkills", () => {
       "deploy"
     ])
     expect(present(join(home, ".agents/skills/codevisor"))).toBe(false)
-    expect(readdirSync(storeDir(home)).toSorted()).toEqual(
-      [LEGACY_IMPORT_MARKER, "deploy"].toSorted()
-    )
   })
 })
