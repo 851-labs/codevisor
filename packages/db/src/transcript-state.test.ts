@@ -1,4 +1,4 @@
-import type { TranscriptBodyPage } from "@codevisor/api"
+import type { SessionSummary, TranscriptBodyPage } from "@codevisor/api"
 import Database from "better-sqlite3"
 import { describe, expect, it } from "vitest"
 
@@ -12,127 +12,141 @@ const live = (event: { payload: unknown }) => payload(event).statePosition
 describe("persisted transcript state", () => {
   it("pages Unicode text and merged tool state after the source events are unavailable", async () => {
     const filename = tempDatabase()
+    let session: SessionSummary
+    let text: string
     const db = await run(makeDatabase({ filename, serverId: "local" }))
-    const project = await run(db.createProject({ folderPath: "/tmp/state-pages" }))
-    const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
-    const text = "a".repeat(8191) + "😀" + "b".repeat(60_000)
-    await run(db.appendEvent("session.updated", session.id, { turnState: "started" }))
-    for (const chunk of [text.slice(0, 9000), text.slice(9000)]) {
+    try {
+      const project = await run(db.createProject({ folderPath: "/tmp/state-pages" }))
+      session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+      text = "a".repeat(8191) + "😀" + "b".repeat(60_000)
+      await run(db.appendEvent("session.updated", session.id, { turnState: "started" }))
+      for (const chunk of [text.slice(0, 9000), text.slice(9000)]) {
+        await run(
+          db.appendEvent("session.output", session.id, {
+            sessionUpdate: "agent_message_chunk",
+            messageId: "answer",
+            content: { type: "text", text: chunk }
+          })
+        )
+      }
       await run(
         db.appendEvent("session.output", session.id, {
-          sessionUpdate: "agent_message_chunk",
-          messageId: "answer",
-          content: { type: "text", text: chunk }
+          sessionUpdate: "tool_call",
+          toolCallId: "read",
+          title: "Read file",
+          rawInput: { path: "notes.txt" },
+          status: "in_progress"
         })
       )
-    }
-    await run(
-      db.appendEvent("session.output", session.id, {
+      await run(
+        db.appendEvent("session.output", session.id, {
+          sessionUpdate: "tool_call_update",
+          toolCallId: "read",
+          status: "completed",
+          rawOutput: { text: "preserved output" }
+        })
+      )
+      await run(db.appendEvent("session.updated", session.id, { turnState: "ended" }))
+      const page = await run(db.getTranscriptPage(session.id, undefined, 8))
+      const itemId = page.items[0]!.id
+      expect(page.items[0]!.textResource?.fields[0]).toMatchObject({
+        pageCount: 9,
+        sizeBytes: text.length * 2
+      })
+      const raw = new Database(filename)
+      try {
+        raw.exec("delete from session_events")
+      } finally {
+        raw.close()
+      }
+      const details = (await run(db.getTranscriptItemDetails(session.id, itemId)))!
+      expect(Buffer.byteLength(JSON.stringify(details))).toBeLessThan(100 * 1024)
+      expect(details.entries[0]!.payload).toMatchObject({
+        sessionUpdate: "agent_message_patch",
+        offset: 0,
+        text: text.slice(0, 24_000),
+        detailResource: { entryKey: "message::answer", itemId }
+      })
+      expect(details.entries[1]!.payload).toMatchObject({
         sessionUpdate: "tool_call",
         toolCallId: "read",
         title: "Read file",
+        isSnapshot: true,
         rawInput: { path: "notes.txt" },
-        status: "in_progress"
-      })
-    )
-    await run(
-      db.appendEvent("session.output", session.id, {
-        sessionUpdate: "tool_call_update",
-        toolCallId: "read",
         status: "completed",
         rawOutput: { text: "preserved output" }
       })
-    )
-    await run(db.appendEvent("session.updated", session.id, { turnState: "ended" }))
-    const page = await run(db.getTranscriptPage(session.id, undefined, 8))
-    const itemId = page.items[0]!.id
-    expect(page.items[0]!.textResource?.fields[0]).toMatchObject({
-      pageCount: 9,
-      sizeBytes: text.length * 2
-    })
-    const raw = new Database(filename)
-    raw.exec("delete from session_events")
-    raw.close()
-    const details = (await run(db.getTranscriptItemDetails(session.id, itemId)))!
-    expect(Buffer.byteLength(JSON.stringify(details))).toBeLessThan(100 * 1024)
-    expect(details.entries[0]!.payload).toMatchObject({
-      sessionUpdate: "agent_message_patch",
-      offset: 0,
-      text: text.slice(0, 24_000),
-      detailResource: { entryKey: "message::answer", itemId }
-    })
-    expect(details.entries[1]!.payload).toMatchObject({
-      sessionUpdate: "tool_call",
-      toolCallId: "read",
-      title: "Read file",
-      isSnapshot: true,
-      rawInput: { path: "notes.txt" },
-      status: "completed",
-      rawOutput: { text: "preserved output" }
-    })
-    let position: number | undefined = 0
-    let reconstructed = ""
-    do {
-      const body: TranscriptBodyPage = (await run(
-        db.getTranscriptBodyPage(session.id, itemId, "message::answer", "text", position)
-      ))!
-      reconstructed += body.text
-      position = body.nextPosition
-    } while (position !== undefined)
-    expect(reconstructed).toBe(text)
-    await run(db.close)
+      let position: number | undefined = 0
+      let reconstructed = ""
+      do {
+        const body: TranscriptBodyPage = (await run(
+          db.getTranscriptBodyPage(session.id, itemId, "message::answer", "text", position)
+        ))!
+        reconstructed += body.text
+        position = body.nextPosition
+      } while (position !== undefined)
+      expect(reconstructed).toBe(text)
+    } finally {
+      await run(db.close)
+    }
     const restarted = await run(makeDatabase({ filename, serverId: "local" }))
-    expect((await run(restarted.getTranscriptPage(session.id, undefined, 8))).items[0]!.text).toBe(
-      text.slice(0, 24_000)
-    )
-    await run(restarted.close)
+    try {
+      expect(
+        (await run(restarted.getTranscriptPage(session.id, undefined, 8))).items[0]!.text
+      ).toBe(text.slice(0, 24_000))
+    } finally {
+      await run(restarted.close)
+    }
   })
 
   it("positions answered questions between the tool calls around them", async () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
-    const project = await run(db.createProject({ folderPath: "/tmp/question-order" }))
-    const session = await run(db.createSession({ projectId: project.id, harnessId: "claude" }))
-    const questions = [{ id: "a", question: "Pick one", options: [{ label: "A" }] }]
-    const tool = (toolCallId: string) =>
-      run(
+    try {
+      const project = await run(db.createProject({ folderPath: "/tmp/question-order" }))
+      const session = await run(db.createSession({ projectId: project.id, harnessId: "claude" }))
+      const questions = [{ id: "a", question: "Pick one", options: [{ label: "A" }] }]
+      const tool = (toolCallId: string) =>
+        run(
+          db.appendEvent("session.output", session.id, {
+            sessionUpdate: "tool_call",
+            toolCallId,
+            title: toolCallId,
+            status: "completed"
+          })
+        )
+      await run(db.appendEvent("session.updated", session.id, { turnState: "started" }))
+      const before = await tool("before")
+      await run(
         db.appendEvent("session.output", session.id, {
-          sessionUpdate: "tool_call",
-          toolCallId,
-          title: toolCallId,
-          status: "completed"
+          sessionUpdate: "question",
+          questionId: "q",
+          questions
         })
       )
-    await run(db.appendEvent("session.updated", session.id, { turnState: "started" }))
-    const before = await tool("before")
-    await run(
-      db.appendEvent("session.output", session.id, {
-        sessionUpdate: "question",
-        questionId: "q",
-        questions
-      })
-    )
-    const resolved = await run(
-      db.appendEvent("session.output", session.id, {
-        sessionUpdate: "question_resolved",
-        questionId: "q",
-        outcome: "answered",
-        questions,
-        answers: { a: { answers: ["A"] } }
-      })
-    )
-    const after = await tool("after")
-    await run(db.appendEvent("session.updated", session.id, { turnState: "ended" }))
+      const resolved = await run(
+        db.appendEvent("session.output", session.id, {
+          sessionUpdate: "question_resolved",
+          questionId: "q",
+          outcome: "answered",
+          questions,
+          answers: { a: { answers: ["A"] } }
+        })
+      )
+      const after = await tool("after")
+      await run(db.appendEvent("session.updated", session.id, { turnState: "ended" }))
 
-    expect(live(resolved)).toBeGreaterThan(live(before))
-    expect(live(resolved)).toBeLessThan(live(after))
+      expect(live(resolved)).toBeGreaterThan(live(before))
+      expect(live(resolved)).toBeLessThan(live(after))
 
-    const page = await run(db.getTranscriptPage(session.id, undefined, 8))
-    const details = (await run(db.getTranscriptItemDetails(session.id, page.items[0]!.id)))!
-    const restored = details.entries.find(
-      (entry) => payload(entry).sessionUpdate === "question_resolved"
-    )!
-    expect(payload(restored).statePosition).toBe(live(resolved))
-    await run(db.close)
+      const page = await run(db.getTranscriptPage(session.id, undefined, 8))
+      const details = (await run(db.getTranscriptItemDetails(session.id, page.items[0]!.id)))!
+      const restored = details.entries.find(
+        (entry) => payload(entry).sessionUpdate === "question_resolved"
+      )!
+      expect(payload(restored).statePosition).toBe(live(resolved))
+    } finally {
+      await run(db.close)
+    }
   })
 
   it("resumes a committed migration batch without duplicating text", async () => {
