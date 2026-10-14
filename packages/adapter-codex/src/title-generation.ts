@@ -178,7 +178,7 @@ export class CodexTitleGenerator {
   }
 }
 
-export const parseGeneratedTitle = (response: string | undefined): string | undefined => {
+const parseGeneratedTitle = (response: string | undefined): string | undefined => {
   if (response === undefined) return undefined
   try {
     const value: unknown = JSON.parse(response)
