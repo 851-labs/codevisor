@@ -269,11 +269,26 @@ describe("gateway exchange over a scripted channel", () => {
     expect(await failure(pending)).toMatchObject({ phase: "in-flight", reason: "protocol-error" })
   })
 
-  it("uses a real timer by default and clears it once settled", async () => {
-    const { channel } = scripted()
-    const pending = requestOverGatewayChannel(() => channel, "{}")
-    channel.onData?.({ kind: "end", status: 204 })
-    expect(await pending).toEqual({ status: 204, body: "" })
+  it("defaults to the global timer and clears it on acceptance or settling", async () => {
+    vi.useFakeTimers()
+    try {
+      const accepted = scripted()
+      const streamed = requestOverGatewayChannel(() => accepted.channel, "{}")
+      expect(vi.getTimerCount()).toBe(1)
+      accepted.channel.onData?.({ kind: "accepted" })
+      expect(vi.getTimerCount()).toBe(0)
+      accepted.channel.onData?.({ kind: "end", status: 200 })
+      expect(await streamed).toEqual({ status: 200, body: "" })
+
+      const ended = scripted()
+      const pending = requestOverGatewayChannel(() => ended.channel, "{}")
+      expect(vi.getTimerCount()).toBe(1)
+      ended.channel.onData?.({ kind: "end", status: 204 })
+      expect(await pending).toEqual({ status: 204, body: "" })
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("maps non-Error open failures", async () => {
