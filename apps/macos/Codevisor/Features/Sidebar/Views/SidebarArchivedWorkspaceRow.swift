@@ -5,7 +5,6 @@ import SwiftUI
 /// restoring, since restoring also brings back its worktree.
 struct SidebarArchivedWorkspaceRow: View {
   let name: String
-  let subtitle: String?
   let icon: SidebarWorkspaceIcon
   let store: SessionStore?
   let isReordering: Bool
@@ -17,7 +16,7 @@ struct SidebarArchivedWorkspaceRow: View {
   var body: some View {
     HoverableRow(isHoverEnabled: !isReordering) { isHovered in
       HStack(spacing: 7) {
-        SidebarWorkspaceRowLabel(name: name, subtitle: subtitle, icon: icon, store: store)
+        SidebarWorkspaceRowLabel(name: name, icon: icon, store: store)
           .foregroundStyle(.secondary)
           .opacity(0.8)
           .padding(.vertical, 5)

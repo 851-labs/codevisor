@@ -1,5 +1,6 @@
 import SwiftUI
 import CodevisorCore
+import CodevisorUI
 
 /// Each workspace is one sidebar row; its tabs live in the strip above the
 /// workspace's content. Clicking a row opens the workspace on its selected
@@ -12,11 +13,11 @@ extension SidebarView {
     let id = workspace.id
     return SidebarWorkspaceRow(
       name: workspace.name,
-      subtitle: rowSubtitle(for: workspace),
       icon: icon(for: item),
       store: store,
       updatedAt: rowDetails.contains(.updated) ? lastUpdated(item.workspace) : nil,
       pullRequest: rowDetails.contains(.pullRequest) ? store?.pullRequests.byWorkspace[id] : nil,
+      machine: rowDetails.contains(.machine) ? rowMachine(for: workspace) : nil,
       isSelected: routesSelectedSession(workspace),
       isReordering: isReordering,
       onActivate: { activateWorkspace(item) },
@@ -48,31 +49,15 @@ extension SidebarView {
     return machine.map { $0.isLocal ? "This Mac" : $0.name }
   }
 
-  /// A row's second line: its project, worktree, and machine, leaving out
-  /// whatever its group heading already says and anything that repeats the
-  /// workspace's own name (workspaces are often named after either). A
-  /// pinned row sits outside its project and machine, so it names both. A
-  /// project folder spans machines, so its rows name theirs when there is
-  /// more than one to tell apart.
-  func rowSubtitle(for workspace: Workspace) -> String? {
-    let projectName = list.projects.first {
-      $0.serverId == workspace.serverId && $0.id == workspace.projectId
-    }?.name
-    let heading = isPinned(workspace) ? .flat : grouping
-    let candidates: [String?] = [
-      heading == .project ? nil : projectName,
-      workspace.worktreeName,
-      heading == .flat || (heading == .project && environment.machines.allMachines.count > 1)
-        ? machineName(forServer: workspace.serverId) : nil,
-    ]
-    var parts: [String] = []
-    for candidate in candidates {
-      guard let candidate, !candidate.isEmpty, candidate != workspace.name, !parts.contains(candidate) else {
-        continue
-      }
-      parts.append(candidate)
-    }
-    return parts.isEmpty ? nil : parts.joined(separator: " · ")
+  /// The workspace's machine for its row's glyph. Nil when its group
+  /// heading already names the machine (grouped by machine, unless pinned)
+  /// or the machine is unknown.
+  func rowMachine(for workspace: Workspace) -> SidebarRowMachine? {
+    guard grouping != .machine || isPinned(workspace),
+      let machine = environment.machines.machine(for: workspace.serverId),
+      let name = machineName(forServer: workspace.serverId)
+    else { return nil }
+    return SidebarRowMachine(name: name, systemImage: EntitySystemSymbol.machine(machine))
   }
 
   /// Restarts the PR refresh loop when badges are turned on or off, or the

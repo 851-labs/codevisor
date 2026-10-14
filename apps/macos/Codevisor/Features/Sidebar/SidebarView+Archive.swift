@@ -54,28 +54,11 @@ extension SidebarView {
     let listItem = SidebarWorkspaceListItem(workspace: workspace, routingSession: routingSession(for: item))
     return SidebarArchivedWorkspaceRow(
       name: workspace.name,
-      subtitle: archivedSubtitle(for: workspace),
       icon: icon(for: listItem),
       store: store,
       isReordering: isReordering,
       onRequestRestore: { restoringWorkspace = workspace },
       onRestore: { environment.unarchiveWorkspace(workspace) }
     )
-  }
-
-  /// Archived rows sit outside every group, so they name their project and
-  /// machine like a flat row.
-  private func archivedSubtitle(for workspace: Workspace) -> String? {
-    let projectName = list.projects.first {
-      $0.serverId == workspace.serverId && $0.id == workspace.projectId
-    }?.name
-    var parts: [String] = []
-    for candidate in [projectName, workspace.worktreeName, machineName(forServer: workspace.serverId)] {
-      guard let candidate, !candidate.isEmpty, candidate != workspace.name, !parts.contains(candidate) else {
-        continue
-      }
-      parts.append(candidate)
-    }
-    return parts.isEmpty ? nil : parts.joined(separator: " · ")
   }
 }

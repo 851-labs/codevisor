@@ -3,13 +3,12 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// One workspace in the sidebar, on two lines: its name over where it runs
-/// (project, worktree, machine), with its chat's icon centered across both.
-/// Its tabs live in the strip above the workspace's content.
+/// One workspace in the sidebar: its chat's icon and name, then the
+/// properties the Properties menu turns on (its pull request, its machine,
+/// when it last changed). Its tabs live in the strip above the workspace's
+/// content.
 struct SidebarWorkspaceRow: View {
   let name: String
-  /// The second line. Nil keeps the row to one line.
-  let subtitle: String?
   let icon: SidebarWorkspaceIcon
   let store: SessionStore?
   /// When the workspace last changed, shown as an elapsed time. Nil hides
@@ -18,6 +17,8 @@ struct SidebarWorkspaceRow: View {
   /// The workspace branch's pull request, shown as a badge that opens it.
   /// Nil hides it.
   var pullRequest: ServerGitPullRequest? = nil
+  /// The machine the workspace runs on, shown as its glyph. Nil hides it.
+  var machine: SidebarRowMachine? = nil
   let isSelected: Bool
   let isReordering: Bool
   let onActivate: () -> Void
@@ -38,7 +39,7 @@ struct SidebarWorkspaceRow: View {
       isHoverForced: false
     ) { isHovered in
       HStack(spacing: 7) {
-        SidebarWorkspaceRowLabel(name: name, subtitle: subtitle, icon: icon, store: store)
+        SidebarWorkspaceRowLabel(name: name, icon: icon, store: store)
           .padding(.vertical, 5)
           .contentShape(Rectangle())
           // Only the label activates on pointer-down. The archive button is
@@ -67,6 +68,14 @@ struct SidebarWorkspaceRow: View {
           }
         if let pullRequest {
           SidebarPullRequestBadge(pullRequest: pullRequest)
+        }
+        if let machine {
+          Image(systemName: machine.systemImage)
+            .font(.system(size: SidebarRowIcon.size, weight: SidebarRowIcon.weight))
+            .foregroundStyle(.secondary)
+            .frame(width: 18, height: 18)
+            .help(machine.name)
+            .accessibilityLabel("On \(machine.name)")
         }
         // One trailing slot: the archive button on hover, else the elapsed
         // time. Sharing the slot keeps the label from re-truncating on hover.
@@ -121,11 +130,10 @@ struct SidebarWorkspaceRow: View {
   }
 }
 
-/// The row's icon, name, and context line, shared with the reorder ghost so
-/// the lifted row and its stand-in never drift apart in style.
+/// The row's icon and name, shared with the reorder ghost so the lifted row
+/// and its stand-in never drift apart in style.
 struct SidebarWorkspaceRowLabel: View {
   let name: String
-  let subtitle: String?
   let icon: SidebarWorkspaceIcon
   let store: SessionStore?
 
@@ -134,24 +142,15 @@ struct SidebarWorkspaceRowLabel: View {
   }
 
   var body: some View {
-    // The icon sits centered across both lines.
     HStack(spacing: 7) {
       leadingIcon
-      VStack(alignment: .leading, spacing: 1) {
-        Text(Self.title(for: name))
-          .lineLimit(1)
-          .truncationMode(.middle)
-        if let subtitle {
-          Text(subtitle)
-            .font(.caption2)
-            .foregroundStyle(.tertiary)
-            .lineLimit(1)
-        }
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
+      Text(Self.title(for: name))
+        .lineLimit(1)
+        .truncationMode(.middle)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
     // Native sidebar rows keep the label color whether or not they are
-    // selected; only the glyph and the context line read as secondary.
+    // selected; only the glyph reads as secondary.
     .foregroundStyle(.primary)
     .accessibilityElement(children: .combine)
   }
@@ -173,6 +172,13 @@ struct SidebarWorkspaceRowLabel: View {
         .foregroundStyle(.secondary)
     }
   }
+}
+
+/// A workspace's machine as its row shows it: the machine's glyph, named
+/// in the tooltip.
+struct SidebarRowMachine: Equatable {
+  let name: String
+  let systemImage: String
 }
 
 /// What a workspace row's icon shows: one of its chats (the chat's status,
