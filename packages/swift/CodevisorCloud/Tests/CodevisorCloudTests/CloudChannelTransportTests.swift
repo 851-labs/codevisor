@@ -30,7 +30,7 @@ struct CloudChannelTransportTests {
     }
   }
 
-  private final class StubTransport: CloudChannelTransport, @unchecked Sendable {
+  private final class StubTransport: CloudChannelTransport, Sendable {
     let machineDeviceId = "stub-machine"
     let host = StubChannelHost()
     let opened = TestSignal()

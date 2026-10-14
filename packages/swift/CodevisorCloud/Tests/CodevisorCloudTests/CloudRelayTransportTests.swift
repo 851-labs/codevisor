@@ -65,6 +65,7 @@ struct CloudRelayTransportTests {
     #expect(response.statusCode == 200)
     #expect(response.value(forHTTPHeaderField: "Content-Type") == "application/json")
     #expect(data == responseBody)
+    #expect(scriptedMachine.completedRequests.count == 1)
     let received = try #require(scriptedMachine.completedRequests.first)
     #expect(received.method == "POST")
     #expect(received.path == "/v1/health?probe=1")
