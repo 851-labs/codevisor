@@ -19,8 +19,9 @@ struct SidebarGroupRow: View {
         Button(action: onToggle) {
           HStack(spacing: 7) {
             ZStack {
-              // The rows' glyph size and outline: palette mode with a clear
-              // second layer drops the display's translucent screen.
+              // The rows' leading glyph size, as an outline: palette mode
+              // with a clear second layer drops the display's translucent
+              // screen.
               Image(systemName: systemImage)
                 .font(.system(size: SidebarRowIcon.size, weight: SidebarRowIcon.weight))
                 .symbolRenderingMode(.palette)
