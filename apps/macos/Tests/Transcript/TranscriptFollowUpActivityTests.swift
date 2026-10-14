@@ -282,6 +282,7 @@ private final class ProjectionFixture {
     window = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: 100, height: 100),
       styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
     window.contentView = host
     layout()
   }
@@ -300,6 +301,7 @@ private final class ProjectionFixture {
     controller.presentationClock.unregisterDriver(token)
     frameContinuation.finish()
     publicationContinuation.finish()
+    window.close()
   }
 }
 
@@ -338,6 +340,7 @@ private final class ActivityFixture {
     controller.model = model
     view = VirtualizedTranscriptScrollView(frame: NSRect(x: 0, y: 0, width: 900, height: 500))
     window = NSWindow(contentRect: view.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
     window.appearance = NSAppearance(named: .aqua)
     window.contentView = view
     view.layoutSubtreeIfNeeded()
@@ -441,6 +444,7 @@ private final class ActivityFixture {
     view.prepareForDismantle()
     window.contentView = nil
     sendCompletionContinuation.finish()
+    window.close()
   }
 
   private static func conversation(_ item: ConversationItem) -> AnyView {
