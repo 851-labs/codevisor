@@ -88,6 +88,11 @@ it("honors cancellation while waiting for approval", async () => {
   await expect(pending).rejects.toThrow()
   expect(request).toHaveBeenCalledTimes(1)
 })
+it("refuses a rejected device-code request before notifying the UI", async () => {
+  const f = fixture([Response.json(device, { status: 404 })])
+  await expect(f.run()).rejects.toThrow("Couldn't start")
+  expect(f.notify).not.toHaveBeenCalled()
+})
 it.each([
   null,
   [],

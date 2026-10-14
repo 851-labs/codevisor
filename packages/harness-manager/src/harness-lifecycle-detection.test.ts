@@ -2,6 +2,7 @@ import type { HarnessDefinition } from "@codevisor/agent-runtime"
 import type { FetchLike } from "@codevisor/updater"
 import { afterEach, describe, expect, it } from "vitest"
 
+import { appBundlePath } from "./harness-lifecycle-support.js"
 import {
   cleanupLifecycleTests,
   makeDb,
@@ -249,5 +250,12 @@ describe("harness lifecycle update detection", () => {
       realpath: (path) => path
     })
     await expect(lifecycle.checkForUpdates(true)).resolves.toEqual([])
+  })
+
+  it("derives the bundle path from the binary path", () => {
+    expect(appBundlePath("/Applications/ChatGPT.app/Contents/Resources/codex")).toBe(
+      "/Applications/ChatGPT.app"
+    )
+    expect(appBundlePath("/usr/local/bin/codex")).toBeUndefined()
   })
 })
