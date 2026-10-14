@@ -1,4 +1,4 @@
-// Native pieces of the Codevisor tunnel (docs/plans/codevisor-tunnel.md):
+// Native pieces of the Codevisor tunnel:
 //
 // - the Node addon (`packages/net/native/<platform>-<arch>/codevisor_net.node`)
 //   built from packages/net with cargo, cached per source stamp;

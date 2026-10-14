@@ -1,6 +1,6 @@
 # Tunnel relays
 
-The Codevisor tunnel's relays (see [the plan](../../docs/plans/codevisor-tunnel.md)).
+The Codevisor tunnel's relays.
 Devices connect to each other directly whenever they can. The relays do two
 things:
 

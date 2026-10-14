@@ -6,7 +6,7 @@ import Testing
 
 @testable import CodevisorCloud
 
-/// The app side of the tunnel control plane (docs/plans/codevisor-tunnel.md):
+/// The app side of the tunnel control plane:
 /// the device's derived tunnel identity, its registration in hello, and the
 /// relay config each welcome delivers. The tunnel data path itself is covered
 /// by packages/net and scripts/net-e2e.mjs.

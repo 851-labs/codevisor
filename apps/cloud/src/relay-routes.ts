@@ -6,7 +6,7 @@ import { tunnelEndpoint } from "./db/schema.js"
 import type { CloudEnv } from "./env.js"
 import { isEndpointId } from "./hub-tunnel.js"
 
-/// Tunnel relay access control (docs/plans/codevisor-tunnel.md). Our relays
+/// Tunnel relay access control. Our relays
 /// run iroh-relay with `access.http`: for every client they POST here with
 /// the client's hex endpoint id, and admit it only on `200 true`. The pinned
 /// v1.2.0 binary names the header `X-Iroh-NodeId` (observed on the wire);

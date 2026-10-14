@@ -117,7 +117,7 @@ let package = Package(
     .target(
       name: "CGVirtualDisplayPrivate", path: "CGVirtualDisplayPrivate", publicHeadersPath: "include",
       cSettings: strictCSettings, linkerSettings: [.linkedFramework("CoreGraphics")]),
-    // MARK: CodevisorNet (the peer-to-peer tunnel, docs/plans/codevisor-tunnel.md): the Rust core
+    // MARK: CodevisorNet (the peer-to-peer tunnel): the Rust core
     // (packages/net) as a static xcframework, linked from the shared artifact cache by
     // `node scripts/net-artifact.mjs ensure-swift`, plus its uniffi-generated Swift bindings. The
     // bindings are generated code (refreshed by the same command, committed so CI detects drift), so

@@ -3,7 +3,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 /// Typed surface of the native tunnel addon (packages/net/crates/
-/// codevisor-net-node). See docs/plans/codevisor-tunnel.md.
+/// codevisor-net-node).
 
 export const ALPN_CHANNELS = "codevisor/channels/1"
 export const ALPN_MEDIA = "codevisor/media/1"

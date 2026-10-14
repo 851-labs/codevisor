@@ -1,5 +1,5 @@
 #!/bin/sh
-# The one place iroh-relay's config is written (docs/plans/codevisor-tunnel.md).
+# The one place iroh-relay's config is written.
 # Production (entrypoint.sh on Fly), CI smoke tests and `bun run dev`
 # (scripts/dev-net.mjs) all run it; only the environment differs.
 #

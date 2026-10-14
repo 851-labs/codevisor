@@ -2,7 +2,7 @@ import CodevisorClient
 import Foundation
 import Observation
 
-/// Keeps one tunnel pipe per account machine (docs/plans/codevisor-tunnel.md):
+/// Keeps one tunnel pipe per account machine:
 /// dialed by the machine's key, direct when the network allows and through
 /// our relays when it doesn't. The tunnel is the app's only data path to its
 /// machines; the cloud hub only introduces devices (presence, addresses).

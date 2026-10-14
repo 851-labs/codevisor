@@ -1,6 +1,6 @@
 // Renders apps/relay/fly/<id>.toml for every relay in relays.json — one Fly
-// app per relay instance, so each has its own stable address
-// (docs/plans/codevisor-tunnel.md). The files are checked in for review;
+// app per relay instance, so each has its own stable address.
+// The files are checked in for review;
 // `--check` fails when they drift from relays.json (CI).
 import { readFile, readdir, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"

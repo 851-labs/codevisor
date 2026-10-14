@@ -35,8 +35,8 @@ public protocol CloudMachineProviding: AnyObject {
   /// sign-in still registers.
   func registerLocalMachineIfNeeded()
   func prepareAccountSync(on client: any CodevisorServerClienting, machineId: String) async -> Bool
-  /// A screen-sharing media route over the tunnel to this machine
-  /// (docs/plans/codevisor-tunnel.md); nil when there is no tunnel to it.
+  /// A screen-sharing media route over the tunnel to this machine;
+  /// nil when there is no tunnel to it.
   func tunnelMediaRoute(for machine: CloudMachine) async -> CloudTunnelMediaRoute?
   /// Registers a machine the app reaches directly (a retired, directly
   /// paired machine, through `client`) on the signed-in account, named

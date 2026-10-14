@@ -1,7 +1,7 @@
 name: Deploy relays
 
 # Tunnel relays on Fly.io, one app per relay instance
-# (docs/plans/codevisor-tunnel.md, apps/relay/README.md).
+# (apps/relay/README.md).
 on:
   push:
     branches: [main]

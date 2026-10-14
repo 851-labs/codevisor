@@ -2,8 +2,8 @@ import Foundation
 import Synchronization
 
 /// The app's update channel, as the cloud hub needs it at every hello: the hub
-/// turns the tunnel on for devices on the Alpha channel only
-/// (docs/plans/codevisor-tunnel.md). The app sets it from its Alpha-updates
+/// turns the tunnel on for devices on the Alpha channel only.
+/// The app sets it from its Alpha-updates
 /// preference; a change applies on the hub connection's next hello.
 public final class CloudReleaseChannel: Sendable {
   public static let shared = CloudReleaseChannel()

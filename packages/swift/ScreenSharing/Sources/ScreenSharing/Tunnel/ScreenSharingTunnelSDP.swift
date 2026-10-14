@@ -1,7 +1,7 @@
 import Foundation
 
-/// SDP edits for screen-sharing media over the Codevisor tunnel
-/// (docs/plans/codevisor-tunnel.md). The viewer's WebRTC stack keeps its own
+/// SDP edits for screen-sharing media over the Codevisor tunnel.
+/// The viewer's WebRTC stack keeps its own
 /// ICE, DTLS and RTP; it just sees one remote candidate — the local end of a
 /// tunnel media flow — instead of the host's real addresses. The machine
 /// forwards that flow to the host's own candidate, so ICE completes over the

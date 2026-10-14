@@ -37,7 +37,7 @@ public struct CloudMachine: Codable, Identifiable, Equatable, Sendable {
   public var appVersion: String?
   public var publicKey: String
   /// The machine's tunnel endpoint and last reported addresses; absent for
-  /// machines that predate the tunnel (docs/plans/codevisor-tunnel.md).
+  /// machines that predate the tunnel.
   public var tunnel: CloudTunnelInfo?
   public var online: Bool
   /// ISO timestamp of the last connect/disconnect the hub observed.

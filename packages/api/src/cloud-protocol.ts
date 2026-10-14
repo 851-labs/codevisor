@@ -20,7 +20,7 @@ export * from "./cloud-tunnel-protocol.js"
 ///   small JSON header plus the raw ciphertext payload. No base64, no JSON
 ///   escaping of bulk bytes — see `encodeRelayEnvelopes`.
 ///
-/// Design invariants (see docs/cloud.md):
+/// Design invariants:
 /// - The hub is a dumb router: it understands hello/presence and rewrites
 ///   addressing on relay envelope headers, but never parses payloads —
 ///   content is end-to-end encrypted between devices and never readable
@@ -54,8 +54,8 @@ export const CloudDeviceInfo = Schema.Struct({
   /// device runs, so peers list hub presence under the same id the machine
   /// reports in /v1/info. Absent on older servers.
   serverId: Schema.optional(Schema.String),
-  /// Hex Ed25519 id of the device's tunnel endpoint (docs/plans/
-  /// codevisor-tunnel.md). Absent on devices that predate the tunnel.
+  /// Hex Ed25519 id of the device's tunnel endpoint.
+  /// Absent on devices that predate the tunnel.
   tunnelEndpointId: Schema.optional(Schema.String),
   /// The device's update channel. The hub turns the tunnel on for Alpha
   /// devices only (development builds report Alpha). Absent means stable.

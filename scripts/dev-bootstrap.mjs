@@ -8,7 +8,7 @@ import { ensureSwiftFramework } from "./net-artifact.mjs"
 export async function bootstrapDevelopment(repoRoot, options = {}) {
   await run("bun", ["install", "--frozen-lockfile"], repoRoot, options.environment)
   // Both apps link CodevisorNet (packages/swift), so SwiftPM needs the tunnel
-  // xcframework before it resolves the package (docs/plans/codevisor-tunnel.md).
+  // xcframework before it resolves the package.
   await ensureSwiftFramework(options.environment)
   if (options.ghostty === true) await ensureNativeFrameworks(repoRoot, options)
   // The iOS app's terminal (packages/ghostty-terminal) links GhosttyKit too,

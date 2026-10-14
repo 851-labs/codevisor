@@ -8,7 +8,7 @@ import { relayMap, tunnelRollout, tunnelScopedDevice } from "../src/hub-tunnel.j
 import { registerTunnelEndpoint } from "../src/relay-routes.js"
 import { authed, BASE, connectApp, connectMachine, devLogin } from "./cloud-test-support.js"
 
-// The hub's tunnel control plane (docs/plans/codevisor-tunnel.md): it
+// The hub's tunnel control plane: it
 // introduces devices (endpoint ids, addresses, vouched app keys) and gates
 // our relays; it never carries tunnel traffic.
 

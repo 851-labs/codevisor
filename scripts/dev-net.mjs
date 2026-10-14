@@ -1,4 +1,4 @@
-// Local tunnel relays for `bun run dev` (docs/plans/codevisor-tunnel.md).
+// Local tunnel relays for `bun run dev`.
 //
 // Two iroh-relay processes run from the same pinned binary as production
 // (scripts/net-build.lock.json), configured by the same

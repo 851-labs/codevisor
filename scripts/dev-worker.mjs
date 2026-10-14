@@ -163,7 +163,7 @@ const [containerContext] = await Promise.all([
       })
 ])
 
-// Local tunnel relays (docs/plans/codevisor-tunnel.md): same binary and config
+// Local tunnel relays: same binary and config
 // renderer as production, per-worktree ports and dev CA.
 const net = await prepareDevNet({
   instanceHash,

@@ -192,7 +192,7 @@ jobs:
           path: packages/net/target
           key: ${{ steps.net-cargo-key.outputs.key }}
 
-  # The tunnel (docs/plans/codevisor-tunnel.md): Rust unit + integration tests.
+  # The tunnel: Rust unit + integration tests.
   net-test:
     needs: metadata
     runs-on: ubuntu-24.04

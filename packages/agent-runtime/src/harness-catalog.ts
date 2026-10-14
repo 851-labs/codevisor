@@ -10,7 +10,6 @@ import { executableHarness } from "./harness-catalog-support.js"
 import type { HarnessDefinition } from "./types.js"
 
 // Install commands and ACP launch arguments audited against upstream on 2026-09-13.
-// Sources, registry revision, and exclusions: docs/harness-catalog-audit.md.
 /// Where both OpenCode installers put the binary. They add it to PATH only
 /// in ~/.bashrc, which a login shell may never read.
 export const OPENCODE_INSTALL_PATH = "~/.opencode/bin/opencode"

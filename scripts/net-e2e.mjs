@@ -1,4 +1,4 @@
-// Multi-process tunnel test (docs/plans/codevisor-tunnel.md): real wrangler
+// Multi-process tunnel test: real wrangler
 // (local D1 + Durable Objects), two real relays launched exactly like
 // `bun run dev` (scripts/dev-net.mjs), two real servers, and a headless app
 // that dials the machines through the tunnel and makes sealed HTTP calls.

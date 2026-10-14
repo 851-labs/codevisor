@@ -1,4 +1,4 @@
-# The Codevisor tunnel relay (docs/plans/codevisor-tunnel.md): the pinned
+# The Codevisor tunnel relay: the pinned
 # iroh-relay binary, certbot for Let's Encrypt HTTP-01, and our port-80 router.
 FROM debian:bookworm-slim
 

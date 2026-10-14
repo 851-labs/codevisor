@@ -11,7 +11,7 @@ import type { DirectChannelHost, PipePeer } from "./direct-channel-host.js"
 import type { CloudSocket } from "./machine-socket.js"
 import type { PeerKeyPinStore } from "./peer-pins.js"
 
-/// The machine side of the tunnel (docs/plans/codevisor-tunnel.md): one iroh
+/// The machine side of the tunnel: one iroh
 /// endpoint that apps dial by key, directly or through our relays. Each
 /// `codevisor/channels/1` connection carries the existing sealed channel
 /// protocol on one message stream, handed to the same DirectChannelHost the

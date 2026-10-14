@@ -2,7 +2,6 @@ import { executableHarness } from "./harness-catalog-support.js"
 import type { HarnessDefinition } from "./types.js"
 
 // Reviewed against ACP's agent directory and registry on 2026-09-13.
-// docs/harness-catalog-audit.md records sources and integration limitations.
 const npmHarness = (
   id: string,
   name: string,
