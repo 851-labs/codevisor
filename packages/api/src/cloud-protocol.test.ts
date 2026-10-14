@@ -233,5 +233,18 @@ describe("relay envelopes (binary)", () => {
       frame
     })
     expect(parseMachineOutboundRelayHeader({ frame })).toBeUndefined()
+    expect(parseMachineOutboundRelayHeader({ peerId: "conn-1", frame: { t: "data" } })).toBe(
+      undefined
+    )
+  })
+
+  it("derives a machine header's direction from its address, never from the wire", () => {
+    const frame = frames[1]!
+    expect(
+      parseMachineOutboundRelayHeader({ machineId: "m-2", direction: "answer", frame })
+    ).toMatchObject({ direction: "open", machineId: "m-2" })
+    expect(
+      parseMachineOutboundRelayHeader({ peerId: "conn-1", direction: "open", frame })
+    ).toMatchObject({ direction: "answer", peerId: "conn-1" })
   })
 })
