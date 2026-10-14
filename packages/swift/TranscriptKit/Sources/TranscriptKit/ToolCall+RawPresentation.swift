@@ -104,9 +104,6 @@ public extension ToolCall {
     }
     return sections
   }
-}
-
-public extension ToolCall {
   /// The full command or script a shell call ran, as a terminal would echo
   /// it. Harnesses report it as `command` (or `cmd`): a string, or an argv
   /// array. A login-shell wrapper (`/bin/zsh -lc '…'`) is unwrapped to the
