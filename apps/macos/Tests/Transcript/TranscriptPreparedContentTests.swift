@@ -5,7 +5,7 @@ import SwiftUI
 import Testing
 @testable import TranscriptSurface
 
-@Suite("Native prepared content", .serialized)
+@Suite("Native prepared content", .serialized, .timeLimit(.minutes(1)))
 @MainActor
 struct TranscriptPreparedContentTests {
   @Observable
