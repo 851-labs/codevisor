@@ -99,7 +99,8 @@ extension PaneGroupModel {
 
   func canClose(id: UUID) -> Bool {
     guard state.canClosePane(id: id),
-      let descriptor = state.panes.first(where: { $0.id == id })
+      let descriptor = state.panes.first(where: { $0.id == id }),
+      isWorkspaceFinalPane?(descriptor) != true
     else { return false }
     switch descriptor.kind {
     case .newTab where state.panes.count == 1:
@@ -117,18 +118,10 @@ extension PaneGroupModel {
     let closing = pane(for: descriptor)
     live[id] = nil
     presentedPaneIDs.remove(id)
-    let replacement =
-      shouldReplaceClosedPaneWithNewTab?(descriptor) == true
-      ? state.replacePaneWithNewTab(id: id)
-      : nil
-    if replacement != nil {
-      if activateRemainingPane { requestBackgroundFocus?() }
-    } else {
-      state.closePane(id: id)
-    }
+    state.closePane(id: id)
     persist()
     Task { await closing.willDelete() }
-    onPaneRemoved?(descriptor, replacement)
+    onPaneRemoved?(descriptor)
     onPaneClosed?(descriptor)
     if activateRemainingPane, let selected = selectedPane {
       selected.visibilityChanged(true)

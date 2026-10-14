@@ -193,6 +193,10 @@ extension SessionContainerView {
   func closeLeaf(_ leafId: UUID) {
     let model = configuredCenterModel(leafId: leafId)
     guard let pane = model.state.selectedPane else { return }
+    guard model.isWorkspaceFinalPane?(pane) != true else {
+      confirmClosingWindow()
+      return
+    }
     store.confirmClosingWorkingChats([pane], serverId: selectedWorkspace.serverId) {
       guard model.state.panes.contains(where: { $0.id == pane.id }) else { return }
       let workspace = selectedWorkspace

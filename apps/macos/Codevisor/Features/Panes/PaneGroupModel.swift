@@ -41,8 +41,8 @@ final class PaneGroupModel: Identifiable {
   @ObservationIgnored var onPaneWillClose: ((PaneDescriptorState) -> Void)?
   @ObservationIgnored var onPaneClosed: ((PaneDescriptorState) -> Void)?
   @ObservationIgnored var onPaneChanged: ((PaneDescriptorState) -> Void)?
-  @ObservationIgnored var onPaneRemoved: ((PaneDescriptorState, PaneDescriptorState?) -> Void)?
-  @ObservationIgnored var shouldReplaceClosedPaneWithNewTab: ((PaneDescriptorState) -> Bool)?
+  @ObservationIgnored var onPaneRemoved: ((PaneDescriptorState) -> Void)?
+  @ObservationIgnored var isWorkspaceFinalPane: ((PaneDescriptorState) -> Bool)?
   @ObservationIgnored var canDissolve: (() -> Bool)?
   @ObservationIgnored var onActivated: (() -> Void)?
   @ObservationIgnored var isFocusCurrent: (() -> Bool)?

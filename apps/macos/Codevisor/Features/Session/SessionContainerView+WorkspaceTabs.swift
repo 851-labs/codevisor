@@ -96,6 +96,10 @@ extension SessionContainerView {
   func closeCenterTab(_ tabId: UUID) {
     let workspace = selectedWorkspace
     guard let tab = workspace.centerTabs.first(where: { $0.id == tabId }) else { return }
+    guard workspace.centerTabs.count > 1 else {
+      confirmClosingWindow()
+      return
+    }
     let panes = tab.root.allGroups.flatMap { configuredCenterModel(leafId: $0.id).state.panes }
     store.confirmClosingWorkingChats(panes, serverId: workspace.serverId) {
       closeCenterTabNow(tabId)
@@ -126,6 +130,18 @@ extension SessionContainerView {
     liveCenterTree = workspace.centerTree
     if closesSelectedTab {
       activateLeaf(workspace.selectedCenterTab?.activeLeafId)
+    }
+  }
+
+  func confirmClosingWindow() {
+    guard let window = NSApp.keyWindow else { return }
+    let alert = NSAlert()
+    alert.messageText = "Close this window?"
+    alert.informativeText = "Are you sure you want to close this window?"
+    alert.addButton(withTitle: "Close")
+    alert.addButton(withTitle: "Cancel")
+    alert.beginSheetModal(for: window) { response in
+      if response == .alertFirstButtonReturn { window.performClose(nil) }
     }
   }
 }

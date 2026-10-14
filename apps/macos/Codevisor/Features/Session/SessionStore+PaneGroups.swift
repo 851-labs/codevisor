@@ -153,7 +153,7 @@ extension SessionStore {
       )
     }
     let workspaceId = workspace.id
-    model.shouldReplaceClosedPaneWithNewTab = { [weak environment] pane in
+    model.isWorkspaceFinalPane = { [weak environment] pane in
       guard let liveWorkspace = environment?.workspaces.workspace(id: workspaceId) else {
         return false
       }
@@ -163,12 +163,11 @@ extension SessionStore {
         }
       return panes.count == 1 && panes[0].id == pane.id
     }
-    model.onPaneRemoved = { [weak environment] pane, replacement in
+    model.onPaneRemoved = { [weak environment] pane in
       guard let environment, pane.kind != .subagent else { return }
       environment.workspaceSync.deletePane(
         id: pane.id,
         workspaceId: workspaceId,
-        optimisticReplacement: replacement,
         client: environment.machines.client(for: serverId)
       )
     }
