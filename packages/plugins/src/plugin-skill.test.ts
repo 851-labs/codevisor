@@ -55,12 +55,12 @@ describe("pluginAuthoringSkill", () => {
 
   it("resolves the real packaged skill with default seams", () => {
     const spec = pluginAuthoringSkill({ workingDirectory: join(process.cwd(), "..", "..") })
-    expect(spec.path.endsWith(join("create-codevisor-plugin", "SKILL.md"))).toBe(true)
+    expect(spec.path.endsWith(join(PLUGIN_AUTHORING_SKILL_DIRECTORY, "SKILL.md"))).toBe(true)
   })
 
   it("defaults the working directory to the process cwd", () => {
     const spec = pluginAuthoringSkill({ moduleDirectory: join(process.cwd(), "src") })
-    expect(spec.path.endsWith(join("create-codevisor-plugin", "SKILL.md"))).toBe(true)
+    expect(spec.path.endsWith(join(PLUGIN_AUTHORING_SKILL_DIRECTORY, "SKILL.md"))).toBe(true)
   })
 
   it("throws a typed error when the packaged skill is missing", () => {

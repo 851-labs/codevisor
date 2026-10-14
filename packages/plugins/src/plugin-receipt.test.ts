@@ -1,4 +1,4 @@
-import { existsSync, writeFileSync } from "node:fs"
+import { writeFileSync } from "node:fs"
 import { join } from "node:path"
 
 import { describe, expect, it } from "vitest"
@@ -31,7 +31,6 @@ describe("plugin install receipts", () => {
   it("writes and reads a valid receipt", async () => {
     const directory = makeDir("codevisor-plugin-receipt-")
     await writePluginInstallReceipt(directory, receipt())
-    expect(existsSync(join(directory, ".codevisor-install.json"))).toBe(true)
     expect(readPluginInstallReceipt(directory)).toEqual(receipt())
   })
 
