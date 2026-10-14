@@ -3,6 +3,7 @@ import SwiftUI
 enum ShortcutID: String, CaseIterable, Identifiable, Sendable {
   case newChat
   case newProject
+  case archiveWorkspace
 
   case newTab
   case closeSplit
@@ -103,6 +104,10 @@ enum ShortcutCatalog {
       ShortcutDefinition(.newChat, "New Chat", ShortcutCombo("n", .command), category: .chats)
     case .newProject:
       ShortcutDefinition(.newProject, "New Project…", ShortcutCombo("n", [.command, .shift]), category: .chats)
+    case .archiveWorkspace:
+      ShortcutDefinition(
+        .archiveWorkspace, "Archive Workspace", ShortcutCombo("a", [.command, .shift]), category: .chats,
+        context: "Archives the workspace on screen")
 
     case .newTab:
       ShortcutDefinition(.newTab, "New Tab", ShortcutCombo("t", .command), category: .tabsAndSplits)

@@ -210,16 +210,21 @@ extension SidebarView {
     }
   }
 
+  func archiveSelectedWorkspace() {
+    let workspaceId: UUID? =
+      switch selection {
+      case let .session(_, sessionId): environment.workspaces.workspaceId(forSession: sessionId)
+      case let .workspace(_, id): id
+      case .archivedWorkspace, .newChat, .none: nil
+      }
+    guard let workspace = workspaceId.flatMap({ environment.workspaces.workspace(id: $0) }),
+      !workspace.isArchived
+    else { return }
+    archiveWorkspace(workspace)
+  }
+
   private func archiveWorkspace(_ workspace: Workspace) {
-    let selectionLeaves: Bool
-    if case let .session(serverId, sessionId) = selection,
-      serverId == workspace.serverId,
-      environment.workspaces.workspaceId(forSession: sessionId) == workspace.id
-    {
-      selectionLeaves = true
-    } else {
-      selectionLeaves = false
-    }
+    let selectionLeaves = routesSelectedSession(workspace)
     environment.archiveWorkspace(workspace)
     pinnedWorkspaceIDs.removeAll { $0 == workspace.id.uuidString }
     if selectionLeaves {

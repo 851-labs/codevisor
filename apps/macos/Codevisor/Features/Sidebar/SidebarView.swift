@@ -261,7 +261,8 @@ struct SidebarView: View {
           ? SidebarActions(
             newChat: { selection = .newChat(nil) },
             newProject: { startAddProject() },
-            stepWorkspace: { stepWorkspace($0) }
+            stepWorkspace: { stepWorkspace($0) },
+            archiveWorkspace: { archiveSelectedWorkspace() }
           )
           : nil
       )

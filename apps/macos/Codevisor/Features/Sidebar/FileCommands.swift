@@ -12,6 +12,7 @@ struct SidebarActions: Equatable {
   let newProject: @MainActor () -> Void
   var stepWorkspace: (@MainActor (Int) -> Void)? = nil
   var stepTab: (@MainActor (Int) -> Void)? = nil
+  var archiveWorkspace: (@MainActor () -> Void)? = nil
 
   static func == (lhs: SidebarActions, rhs: SidebarActions) -> Bool { true }
 }
@@ -70,6 +71,7 @@ struct FileCommands: Commands {
 
       CloseWindowMenuItem()
       CloseTabMenuItems()
+      ArchiveWorkspaceMenuItem()
     }
     CommandGroup(after: .newItem) {
       if let file {
@@ -130,6 +132,15 @@ private struct NewChatMenuItem: View {
       composerFocus?.focus()
     }
     .disabled(actions == nil)
+  }
+}
+
+private struct ArchiveWorkspaceMenuItem: View {
+  @FocusedValue(\.sidebarActions) private var actions
+
+  var body: some View {
+    ShortcutButton(.archiveWorkspace) { actions?.archiveWorkspace?() }
+      .disabled(actions?.archiveWorkspace == nil)
   }
 }
 
