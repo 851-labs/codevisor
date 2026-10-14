@@ -17,6 +17,8 @@ const clock = () => {
 
 afterEach(() => vi.useRealTimers())
 
+const observeNothing = async () => reply("")
+
 describe("Computer Use waits", () => {
   it("waits for a menu using accessibility-only reads and captures one final screenshot", async () => {
     const calls: Record<string, unknown>[] = []
@@ -51,7 +53,6 @@ describe("Computer Use waits", () => {
     expect(computerUseState(timed)).toMatchObject({ matched: false, text: "Current state" })
   })
   it("rejects invalid conditions and propagates observation failures", async () => {
-    const observe = async () => reply("")
     for (const args of [
       { app: "a" },
       { text: "" },
@@ -59,7 +60,7 @@ describe("Computer Use waits", () => {
       { text: "x", timeout_ms: -1 },
       { text: "x", state: "maybe" }
     ]) {
-      await expect(waitForComputerState(args, observe, clock())).rejects.toThrow()
+      await expect(waitForComputerState(args, observeNothing, clock())).rejects.toThrow()
     }
     await expect(
       waitForComputerState(

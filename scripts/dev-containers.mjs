@@ -33,29 +33,31 @@ const tryEngine = async (binary, args, options) => {
   }
 }
 
+const appleContainerEngine = async () => {
+  const version = await tryEngine("container", ["--version"])
+  if (version === undefined) return undefined
+  const match = /version (\d+)\./.exec(version)
+  if (match === null || Number(match[1]) < 1) {
+    console.warn(
+      `Apple container CLI ${version.trim()} is too old for dev containers; install 1.x: brew install container`
+    )
+    return undefined
+  }
+  if ((await tryEngine("container", ["system", "start"])) === undefined) return undefined
+  return "apple"
+}
+
+const dockerEngine = async () =>
+  (await tryEngine("docker", ["version", "--format", "{{.Server.Version}}"])) === undefined
+    ? undefined
+    : "docker"
+
 export async function resolveContainerEngine(preference) {
   const wanted = preference ?? process.env.CODEVISOR_DEV_CONTAINER_ENGINE ?? "auto"
   if (wanted === "none") return undefined
-  const apple = async () => {
-    const version = await tryEngine("container", ["--version"])
-    if (version === undefined) return undefined
-    const match = /version (\d+)\./.exec(version)
-    if (match === null || Number(match[1]) < 1) {
-      console.warn(
-        `Apple container CLI ${version.trim()} is too old for dev containers; install 1.x: brew install container`
-      )
-      return undefined
-    }
-    if ((await tryEngine("container", ["system", "start"])) === undefined) return undefined
-    return "apple"
-  }
-  const docker = async () =>
-    (await tryEngine("docker", ["version", "--format", "{{.Server.Version}}"])) === undefined
-      ? undefined
-      : "docker"
-  if (wanted === "apple") return await apple()
-  if (wanted === "docker") return await docker()
-  return (await apple()) ?? (await docker())
+  if (wanted === "apple") return await appleContainerEngine()
+  if (wanted === "docker") return await dockerEngine()
+  return (await appleContainerEngine()) ?? (await dockerEngine())
 }
 
 const WORKTREE_LABEL = "dev.codevisor.worktree"

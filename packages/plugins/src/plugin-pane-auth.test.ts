@@ -12,6 +12,8 @@ import {
 
 const scope = { paneId: "pane-1", paneType: "main", pluginId: "owner.example" }
 
+const signPayload = (secret: string) => createHmac("sha256", secret).update("payload").digest("hex")
+
 describe("makePaneTokenStore", () => {
   it("issues tokens that verify for the owning plugin", () => {
     const store = makePaneTokenStore()
@@ -71,9 +73,8 @@ describe("makePaneTokenStore", () => {
   it("signs context with a per-plugin key that other plugins cannot verify", () => {
     const store = makePaneTokenStore()
     const signature = store.signContext("owner.example", "payload")
-    const sign = (secret: string) => createHmac("sha256", secret).update("payload").digest("hex")
-    expect(sign(store.contextSecret("owner.example"))).toBe(signature)
-    expect(sign(store.contextSecret("owner.other"))).not.toBe(signature)
+    expect(signPayload(store.contextSecret("owner.example"))).toBe(signature)
+    expect(signPayload(store.contextSecret("owner.other"))).not.toBe(signature)
     expect(store.contextSecret("owner.example")).toBe(store.contextSecret("owner.example"))
   })
 })

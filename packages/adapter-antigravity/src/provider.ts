@@ -40,6 +40,26 @@ export interface AntigravityProviderConfig {
   readonly overlays?: string
 }
 
+const antigravitySessionHandle = (chat: AgyChat): AgentSessionHandle => ({
+  prompt: (input) => adapterPromise("prompt", () => chat.prompt(input)),
+  cancel: adapterPromise("cancel", async () => {
+    await chat.cancel()
+    return { runtimeState: "reusable" as const }
+  }),
+  setMode: (modeId) =>
+    adapterPromise("setMode", () =>
+      Promise.reject(new Error(`Antigravity has no mode named ${modeId}`))
+    ),
+  setConfigOption: (configId, value) =>
+    adapterPromise("setConfigOption", () => chat.setConfigOption(configId, value)),
+  close: Effect.sync(() => chat.close())
+})
+
+const createdSession = (chat: AgyChat) => ({
+  handle: antigravitySessionHandle(chat),
+  metadata: { sessionId: chat.key, configOptions: chat.configOptions() }
+})
+
 export const makeAntigravityProvider = (
   environment: ProviderEnvironment,
   config: AntigravityProviderConfig = {}
@@ -153,26 +173,6 @@ export const makeAntigravityProvider = (
     })
   }
 
-  const handleFor = (chat: AgyChat): AgentSessionHandle => ({
-    prompt: (input) => adapterPromise("prompt", () => chat.prompt(input)),
-    cancel: adapterPromise("cancel", async () => {
-      await chat.cancel()
-      return { runtimeState: "reusable" as const }
-    }),
-    setMode: (modeId) =>
-      adapterPromise("setMode", () =>
-        Promise.reject(new Error(`Antigravity has no mode named ${modeId}`))
-      ),
-    setConfigOption: (configId, value) =>
-      adapterPromise("setConfigOption", () => chat.setConfigOption(configId, value)),
-    close: Effect.sync(() => chat.close())
-  })
-
-  const created = (chat: AgyChat) => ({
-    handle: handleFor(chat),
-    metadata: { sessionId: chat.key, configOptions: chat.configOptions() }
-  })
-
   return {
     id: "antigravity",
     readiness: (definition) =>
@@ -181,12 +181,12 @@ export const makeAntigravityProvider = (
         : { state: "ready" },
     createSession: (definition, cwd, emit, account, toolGateway) =>
       adapterPromise("createSession", async () =>
-        created(await start(definition, cwd, emit, account, toolGateway))
+        createdSession(await start(definition, cwd, emit, account, toolGateway))
       ),
     loadSession: (definition, agentSessionId, cwd, emit, account, toolGateway) =>
       adapterPromise("loadSession", async () => {
         const chat = await start(definition, cwd, emit, account, toolGateway, agentSessionId)
-        return { ...created(chat), sessionId: chat.key }
+        return { ...createdSession(chat), sessionId: chat.key }
       }),
     listAgentSessions: async (_definition, account) => {
       const root = launchFor(account).geminiDir ?? join(home(), ".gemini")

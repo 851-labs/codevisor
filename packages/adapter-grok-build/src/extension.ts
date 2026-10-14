@@ -217,20 +217,22 @@ export const makeGrokBuildExtension: AcpStdioExtensionFactory = ({ emit, enqueue
   const normalizer = new GrokStreamNormalizer()
   const subagents = new GrokSubagents()
 
+  const planApproval = ({ params }: { readonly params: unknown }) => {
+    const question = grokPlanApprovalQuestion(params)
+    return question === undefined
+      ? Promise.resolve({ outcome: "cancelled" as const })
+      : enqueueQuestion(question)
+  }
+
+  const askUserQuestion = ({ params }: { readonly params: unknown }) => {
+    const question = grokAskUserQuestion(params)
+    return question === undefined
+      ? Promise.resolve({ outcome: "cancelled" as const })
+      : enqueueQuestion(question)
+  }
+
   return {
     configureClientApp: (app) => {
-      const planApproval = ({ params }: { readonly params: unknown }) => {
-        const question = grokPlanApprovalQuestion(params)
-        return question === undefined
-          ? Promise.resolve({ outcome: "cancelled" as const })
-          : enqueueQuestion(question)
-      }
-      const askUserQuestion = ({ params }: { readonly params: unknown }) => {
-        const question = grokAskUserQuestion(params)
-        return question === undefined
-          ? Promise.resolve({ outcome: "cancelled" as const })
-          : enqueueQuestion(question)
-      }
       for (const method of ["_x.ai/exit_plan_mode", "x.ai/exit_plan_mode"]) {
         app.onRequest<unknown, GrokPlanApprovalResponse>(method, (params) => params, planApproval)
       }

@@ -27,15 +27,15 @@ describe("discovery", () => {
   })
 })
 
-describe("iOS universal links", () => {
-  const aasa = (overrides: Partial<CloudEnv>) =>
-    worker.fetch(new Request(`${BASE}/.well-known/apple-app-site-association`), {
-      ...(env as CloudEnv),
-      ...overrides
-    })
+const fetchAppSiteAssociation = (overrides: Partial<CloudEnv>) =>
+  worker.fetch(new Request(`${BASE}/.well-known/apple-app-site-association`), {
+    ...(env as CloudEnv),
+    ...overrides
+  })
 
+describe("iOS universal links", () => {
   it("routes the device-approval page into the instance's iOS app", async () => {
-    const response = await aasa({
+    const response = await fetchAppSiteAssociation({
       APPLE_TEAM_ID: "TEAM123",
       APPLE_NATIVE_CLIENT_ID: "com.example.ios"
     })
@@ -49,7 +49,12 @@ describe("iOS universal links", () => {
 
   it("is absent on instances without an iOS app configured", async () => {
     expect(
-      (await aasa({ APPLE_TEAM_ID: "", APPLE_NATIVE_CLIENT_ID: "com.example.ios" })).status
+      (
+        await fetchAppSiteAssociation({
+          APPLE_TEAM_ID: "",
+          APPLE_NATIVE_CLIENT_ID: "com.example.ios"
+        })
+      ).status
     ).toBe(404)
   })
 })
@@ -225,6 +230,12 @@ describe("machine credential probe", () => {
   })
 })
 
+const deleteMachineSelf = (headers: Record<string, string>) =>
+  SELF.fetch(`${BASE}/api/machine/self`, { method: "DELETE", headers })
+
+const fetchMachineCredential = (apiKey: string) =>
+  SELF.fetch(`${BASE}/api/machine/credential`, { headers: { "x-api-key": apiKey } })
+
 describe("machine self-removal", () => {
   it("lets a machine remove itself with its own api key", async () => {
     const token = await devLogin()
@@ -236,23 +247,19 @@ describe("machine self-removal", () => {
         (m) => m.deviceId
       )
     }
-    const removeSelf = (headers: Record<string, string>) =>
-      SELF.fetch(`${BASE}/api/machine/self`, { method: "DELETE", headers })
 
-    expect((await removeSelf({})).status).toBe(401)
-    expect((await removeSelf({ "x-api-key": "not-a-key" })).status).toBe(401)
-    expect((await removeSelf(authed(token))).status).toBe(401)
+    expect((await deleteMachineSelf({})).status).toBe(401)
+    expect((await deleteMachineSelf({ "x-api-key": "not-a-key" })).status).toBe(401)
+    expect((await deleteMachineSelf(authed(token))).status).toBe(401)
     expect(await listed()).toContain(machine.deviceId)
 
-    const removed = await removeSelf({ "x-api-key": machine.apiKey })
+    const removed = await deleteMachineSelf({ "x-api-key": machine.apiKey })
     expect(removed.status).toBe(200)
     expect(await listed()).not.toContain(machine.deviceId)
     expect(await listed()).toContain(sibling.deviceId)
-    const probe = (apiKey: string) =>
-      SELF.fetch(`${BASE}/api/machine/credential`, { headers: { "x-api-key": apiKey } })
-    expect((await probe(machine.apiKey)).status).toBe(401)
-    expect((await probe(sibling.apiKey)).status).toBe(200)
-    expect((await removeSelf({ "x-api-key": machine.apiKey })).status).toBe(401)
+    expect((await fetchMachineCredential(machine.apiKey)).status).toBe(401)
+    expect((await fetchMachineCredential(sibling.apiKey)).status).toBe(200)
+    expect((await deleteMachineSelf({ "x-api-key": machine.apiKey })).status).toBe(401)
     const appRemoval = await SELF.fetch(`${BASE}/api/machines/${machine.deviceId}`, {
       method: "DELETE",
       headers: authed(token)

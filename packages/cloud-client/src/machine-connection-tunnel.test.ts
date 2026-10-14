@@ -34,6 +34,9 @@ const tunnelConnection = (releaseChannel?: () => "stable" | "alpha" | undefined)
   return { connection, socket, headers, configs, peers }
 }
 
+const helloReleaseChannel = (socket: FakeSocket) =>
+  (socket.sent[0] as Extract<MachineToHub, { t: "hello" }>).device.releaseChannel
+
 describe("tunnel control plane on the machine connection", () => {
   it("registers the endpoint in the connect headers and hello", () => {
     const { socket, headers } = tunnelConnection()
@@ -46,11 +49,9 @@ describe("tunnel control plane on the machine connection", () => {
   })
 
   it("reports the machine's release channel in each hello, when it knows it", () => {
-    const hello = (socket: FakeSocket) =>
-      (socket.sent[0] as Extract<MachineToHub, { t: "hello" }>).device.releaseChannel
-    expect(hello(tunnelConnection(() => "alpha").socket)).toBe("alpha")
-    expect(hello(tunnelConnection(() => undefined).socket)).toBeUndefined()
-    expect(hello(tunnelConnection().socket)).toBeUndefined()
+    expect(helloReleaseChannel(tunnelConnection(() => "alpha").socket)).toBe("alpha")
+    expect(helloReleaseChannel(tunnelConnection(() => undefined).socket)).toBeUndefined()
+    expect(helloReleaseChannel(tunnelConnection().socket)).toBeUndefined()
   })
 
   it("surfaces each welcome's relay map and rollout", () => {

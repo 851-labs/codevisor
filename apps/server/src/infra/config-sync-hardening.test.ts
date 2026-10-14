@@ -37,6 +37,12 @@ const oauthMaterial = (token: string, savedAt: number) =>
     tokensSavedAt: savedAt
   })
 
+const scopedEnvelopeOwner = async (machine: Machine) => {
+  const entries = await run(machine.db.getSyncEntries(MCPS_SYNC_NAMESPACE))
+  const scoped = entries.find((entry) => entry.key === "Scoped")
+  return (scoped!.value as { oauth?: { owner?: string } }).oauth?.owner
+}
+
 describe("config sync hardening", () => {
   it(
     "three machines racing edits on skewed clocks converge without oscillating",
@@ -180,13 +186,8 @@ describe("config sync hardening", () => {
       await reconcileMcps(a)
       await reconcileMcps(b)
 
-      const envelopeOwner = async (machine: Machine) => {
-        const entries = await run(machine.db.getSyncEntries(MCPS_SYNC_NAMESPACE))
-        const scoped = entries.find((entry) => entry.key === "Scoped")
-        return (scoped!.value as { oauth?: { owner?: string } }).oauth?.owner
-      }
-      const ownerOnA = await envelopeOwner(a)
-      const ownerOnB = await envelopeOwner(b)
+      const ownerOnA = await scopedEnvelopeOwner(a)
+      const ownerOnB = await scopedEnvelopeOwner(b)
       expect(ownerOnA).toBe(ownerOnB)
       expect(["hard-oauth-a", "hard-oauth-b"]).toContain(ownerOnA)
       const stateA = await a.mcp.oauthSyncState((await serverNamed(a, "Scoped")).id)

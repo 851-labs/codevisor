@@ -84,6 +84,35 @@ const summarize = (peer: Peer): MachineSummary => ({
   ...(peer.presence.addedBy === undefined ? {} : { addedBy: peer.presence.addedBy.name })
 })
 
+const machineUnavailable = (
+  target: { readonly id: string; readonly name: string },
+  phase: "before-send" | "in-flight",
+  message: string,
+  lastSeen: string | undefined
+): CodeExecutionToolError =>
+  toolError(message, "machine_unavailable", {
+    machineId: target.id,
+    name: target.name,
+    lastSeen: lastSeen ?? null,
+    phase
+  })
+
+const interpretPeerAnswer = (peer: Peer, answer: GatewayExchange): unknown => {
+  const parsed = parseJson(answer.body)
+  if (answer.status >= 200 && answer.status < 300 && isRecord(parsed) && "result" in parsed) {
+    return parsed.result
+  }
+  if (isRecord(parsed) && isRecord(parsed.error) && typeof parsed.error.message === "string") {
+    throw toolError(
+      parsed.error.message,
+      typeof parsed.error.code === "string" ? parsed.error.code : undefined,
+      isRecord(parsed.error.details) ? parsed.error.details : undefined
+    )
+  }
+  const detail = isRecord(parsed) && typeof parsed.error === "string" ? `: ${parsed.error}` : ""
+  throw toolError(`${peer.name} answered HTTP ${answer.status}${detail}`)
+}
+
 export const makeMachineLink = (options: MachineLinkOptions): MachineLink => {
   const { cloud, now, self } = options
 
@@ -108,35 +137,6 @@ export const makeMachineLink = (options: MachineLinkOptions): MachineLink => {
     return all.find((candidate) => candidate.name.toLowerCase() === lowered)
   }
 
-  const unavailable = (
-    target: { readonly id: string; readonly name: string },
-    phase: "before-send" | "in-flight",
-    message: string,
-    lastSeen: string | undefined
-  ): CodeExecutionToolError =>
-    toolError(message, "machine_unavailable", {
-      machineId: target.id,
-      name: target.name,
-      lastSeen: lastSeen ?? null,
-      phase
-    })
-
-  const interpret = (peer: Peer, answer: GatewayExchange): unknown => {
-    const parsed = parseJson(answer.body)
-    if (answer.status >= 200 && answer.status < 300 && isRecord(parsed) && "result" in parsed) {
-      return parsed.result
-    }
-    if (isRecord(parsed) && isRecord(parsed.error) && typeof parsed.error.message === "string") {
-      throw toolError(
-        parsed.error.message,
-        typeof parsed.error.code === "string" ? parsed.error.code : undefined,
-        isRecord(parsed.error.details) ? parsed.error.details : undefined
-      )
-    }
-    const detail = isRecord(parsed) && typeof parsed.error === "string" ? `: ${parsed.error}` : ""
-    throw toolError(`${peer.name} answered HTTP ${answer.status}${detail}`)
-  }
-
   const viaCloud = async (
     peer: Peer,
     body: string,
@@ -147,7 +147,7 @@ export const makeMachineLink = (options: MachineLinkOptions): MachineLink => {
     } catch (cause) {
       if (!(cause instanceof GatewayChannelError)) throw cause
       if (cause.phase === "in-flight") {
-        throw unavailable(
+        throw machineUnavailable(
           peer,
           "in-flight",
           `Lost connection to ${peer.name} mid-call; the tool may or may not have completed`,
@@ -175,7 +175,7 @@ export const makeMachineLink = (options: MachineLinkOptions): MachineLink => {
         throw toolError(`${self.name()} is the current machine; call its tools directly`)
       }
       if (peer === undefined) {
-        throw unavailable(
+        throw machineUnavailable(
           { id: machine, name: machine },
           "before-send",
           `No machine "${machine}" on this account`,
@@ -183,17 +183,17 @@ export const makeMachineLink = (options: MachineLinkOptions): MachineLink => {
         )
       }
       const answer = await viaCloud(peer, JSON.stringify({ path, args, origin }), signal)
-      if (typeof answer !== "string") return interpret(peer, answer)
+      if (typeof answer !== "string") return interpretPeerAnswer(peer, answer)
       const lastSeen = peer.presence.lastSeenAt
       if (answer === "unsupported") {
-        throw unavailable(
+        throw machineUnavailable(
           peer,
           "before-send",
           `${peer.name} runs a Codevisor version that can't take calls from other machines; update it`,
           lastSeen
         )
       }
-      throw unavailable(
+      throw machineUnavailable(
         peer,
         "before-send",
         `${peer.name} is offline (last seen ${relativeAge(lastSeen, now())})`,

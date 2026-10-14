@@ -15,12 +15,21 @@ import {
 
 afterEach(cleanupSkillsTests)
 
-describe("importRemote", () => {
-  const managerWithClone = (
-    home: string,
-    clone: (url: string, ref: string | undefined, destination: string) => Promise<void>
-  ): SkillStore => manager(home, { clone })
+const managerWithClone = (
+  home: string,
+  clone: (url: string, ref: string | undefined, destination: string) => Promise<void>
+): SkillStore => manager(home, { clone })
 
+const cloneConflictingDeploy = async (
+  _url: string,
+  _ref: string | undefined,
+  destination: string
+) => {
+  writeSkill(join(destination, "deploy"), { body: "different", name: "Deploy" })
+  writeSkill(join(destination, "review"), { name: "Review" })
+}
+
+describe("importRemote", () => {
   it("imports every skill found in a cloned repo", async () => {
     const home = makeHome()
     const calls: Array<[string, string | undefined]> = []
@@ -75,14 +84,12 @@ describe("importRemote", () => {
   it("skips existing skills and fails only when nothing was imported", async () => {
     const home = makeHome()
     writeSkill(join(home, "store/deploy"), { name: "Deploy" })
-    const clone = async (_url: string, _ref: string | undefined, destination: string) => {
-      writeSkill(join(destination, "deploy"), { body: "different", name: "Deploy" })
-      writeSkill(join(destination, "review"), { name: "Review" })
-    }
-    const scan = await managerWithClone(home, clone).importRemote({ source: "o/r" })
+    const scan = await managerWithClone(home, cloneConflictingDeploy).importRemote({
+      source: "o/r"
+    })
     expect(scan.skills.map((skill) => skill.directoryName).toSorted()).toEqual(["deploy", "review"])
     await expect(
-      managerWithClone(home, clone).importRemote({ source: "o/r" })
+      managerWithClone(home, cloneConflictingDeploy).importRemote({ source: "o/r" })
     ).rejects.toMatchObject({ code: "conflict" })
   })
 
@@ -361,18 +368,14 @@ describe("well-known skill sources", () => {
   })
 })
 
-describe("remote discovery and selective import", () => {
-  const cloneWithTwoSkills = async (
-    _url: string,
-    _ref: string | undefined,
-    destination: string
-  ) => {
-    writeSkill(join(destination, "skills/deploy"), { description: "Deploys", name: "Deploy" })
-    writeSkill(join(destination, "skills/review"), { description: "Reviews", name: "Review" })
-    mkdirSync(join(destination, "skills/plain"), { recursive: true })
-    writeFileSync(join(destination, "skills/plain/SKILL.md"), "---\n- broken\n---\n")
-  }
+const cloneWithTwoSkills = async (_url: string, _ref: string | undefined, destination: string) => {
+  writeSkill(join(destination, "skills/deploy"), { description: "Deploys", name: "Deploy" })
+  writeSkill(join(destination, "skills/review"), { description: "Reviews", name: "Review" })
+  mkdirSync(join(destination, "skills/plain"), { recursive: true })
+  writeFileSync(join(destination, "skills/plain/SKILL.md"), "---\n- broken\n---\n")
+}
 
+describe("remote discovery and selective import", () => {
   it("lists a source's skills with existence flags without importing", async () => {
     const home = makeHome()
     writeSkill(join(home, "store/deploy"), { name: "Deploy" })

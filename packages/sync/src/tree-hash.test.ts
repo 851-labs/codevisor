@@ -7,6 +7,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import { treeHash } from "./tree-hash.js"
 
+const makeSkill = (base: string): void => {
+  mkdirSync(join(base, "references"), { recursive: true })
+  writeFileSync(join(base, "SKILL.md"), "---\nname: demo\n---\nbody\n")
+  writeFileSync(join(base, "references", "notes.md"), "notes\n")
+  symlinkSync("SKILL.md", join(base, "alias.md"))
+}
+
 describe("treeHash", () => {
   let root: string
 
@@ -17,13 +24,6 @@ describe("treeHash", () => {
   afterEach(() => {
     rmSync(root, { recursive: true, force: true })
   })
-
-  const makeSkill = (base: string): void => {
-    mkdirSync(join(base, "references"), { recursive: true })
-    writeFileSync(join(base, "SKILL.md"), "---\nname: demo\n---\nbody\n")
-    writeFileSync(join(base, "references", "notes.md"), "notes\n")
-    symlinkSync("SKILL.md", join(base, "alias.md"))
-  }
 
   it("is identical for identical trees, regardless of timestamps", async () => {
     const a = join(root, "a")

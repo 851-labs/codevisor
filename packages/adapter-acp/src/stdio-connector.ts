@@ -10,6 +10,7 @@ import {
   summarizeProcessFailure,
   type AgentSessionMetadata,
   type QuestionAnswer,
+  type RuntimeEmit,
   type RuntimeEvent
 } from "@codevisor/agent-runtime"
 import { trackProcessTree } from "@codevisor/processes"
@@ -55,6 +56,12 @@ export interface StdioAcpConnectorOptions {
 }
 
 /* v8 ignore start */
+const ignoringEmitFailures =
+  (emit: RuntimeEmit) =>
+  (event: RuntimeEvent): void => {
+    void emit(event).catch(() => undefined)
+  }
+
 export const makeStdioAcpConnectorWithOptions = (
   options: StdioAcpConnectorOptions = {}
 ): AcpConnector => ({
@@ -78,9 +85,7 @@ export const makeStdioAcpConnectorWithOptions = (
       const stderr = captureStderr(child)
       const pendingQuestions = new Map<string, PendingAcpQuestion>()
       const permissions = makeAcpPermissionPolicy()
-      const safeEmit = (event: RuntimeEvent): void => {
-        void emit(event).catch(() => undefined)
-      }
+      const safeEmit = ignoringEmitFailures(emit)
       const emitQuestionResolved = (
         questionId: string,
         pending: PendingAcpQuestion,

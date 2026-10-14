@@ -28,6 +28,9 @@ test("signature checks cover embedded code inside out without following symlinks
   assert.ok(paths.indexOf(framework) < paths.indexOf(extension))
 })
 
+const xmlPlist = (value) =>
+  execFileSync("plutil", ["-convert", "xml1", "-o", "-", "-"], { input: JSON.stringify(value) })
+
 test(
   "archive preparation attaches Apple sign-in before distribution export",
   { skip: process.platform !== "darwin" },
@@ -39,11 +42,9 @@ test(
     const executable = join(app, "Contents/MacOS/Fixture")
     await copyFile("/usr/bin/true", executable)
     execFileSync("codesign", ["--remove-signature", executable])
-    const plist = (value) =>
-      execFileSync("plutil", ["-convert", "xml1", "-o", "-", "-"], { input: JSON.stringify(value) })
     await writeFile(
       join(app, "Contents/Info.plist"),
-      plist({
+      xmlPlist({
         CFBundleIdentifier: "com.example.codevisor.signing-test",
         CFBundleExecutable: "Fixture",
         CFBundlePackageType: "APPL"
@@ -51,7 +52,7 @@ test(
     )
     const entitlements = join(root, "Fixture.entitlements")
     const required = { "com.apple.developer.applesignin": ["Default"] }
-    await writeFile(entitlements, plist(required))
+    await writeFile(entitlements, xmlPlist(required))
     await prepareEmbeddedCode(app, entitlements)
     execFileSync("codesign", ["--verify", "--strict", app])
     const actual = execFileSync("codesign", ["--display", "--entitlements", "-", "--xml", app])

@@ -34,6 +34,19 @@ const immediately = async () => undefined
 const never = () => new Promise<void>(() => undefined)
 const statusPath = "/api/integration/openai/connect/oauth/con_1"
 
+const signInOutcome = async (answers: (path: string) => unknown, capture?: () => Promise<void>) => {
+  const logins = makeOpenCode2Logins({ wait: immediately })
+  const h = hold((path) => (path.endsWith("/connect/oauth") ? { data: attempt } : answers(path)))
+  const flow = await logins.begin(h.hold, "/home", {
+    accountId: "default",
+    providerId: "openai",
+    methodId: "chatgpt-browser",
+    ...(capture ? { capture } : {})
+  })
+  await h.released
+  return logins.flow(flow.id)
+}
+
 describe("OpenCode 2 sign-in", () => {
   it("relays OpenCode's sign-in, then captures the credential it saved", async () => {
     const statuses = ["pending", "complete"]
@@ -93,37 +106,23 @@ describe("OpenCode 2 sign-in", () => {
   })
 
   it("ends a sign-in that OpenCode reports failed, expired, or saved nothing for, with a reason", async () => {
-    const run = async (answers: (path: string) => unknown, capture?: () => Promise<void>) => {
-      const logins = makeOpenCode2Logins({ wait: immediately })
-      const h = hold((path) =>
-        path.endsWith("/connect/oauth") ? { data: attempt } : answers(path)
-      )
-      const flow = await logins.begin(h.hold, "/home", {
-        accountId: "default",
-        providerId: "openai",
-        methodId: "chatgpt-browser",
-        ...(capture ? { capture } : {})
-      })
-      await h.released
-      return logins.flow(flow.id)
-    }
-    expect(await run(() => ({ data: { status: "expired" } }))).toMatchObject({
+    expect(await signInOutcome(() => ({ data: { status: "expired" } }))).toMatchObject({
       state: "error",
       error: "Sign-in timed out. Try again."
     })
     expect(
-      await run(() => ({ data: { status: "failed", message: "access_denied" } }))
+      await signInOutcome(() => ({ data: { status: "failed", message: "access_denied" } }))
     ).toMatchObject({
       error: "access_denied"
     })
-    expect(await run(() => ({ data: { status: "failed" } }))).toMatchObject({
+    expect(await signInOutcome(() => ({ data: { status: "failed" } }))).toMatchObject({
       error: "Sign-in failed."
     })
-    expect(await run(() => new Error("connection reset"))).toMatchObject({
+    expect(await signInOutcome(() => new Error("connection reset"))).toMatchObject({
       error: "connection reset"
     })
     expect(
-      await run(
+      await signInOutcome(
         (path) => (path === statusPath ? { data: { status: "complete" } } : { data: [] }),
         async () => undefined
       )
@@ -131,7 +130,9 @@ describe("OpenCode 2 sign-in", () => {
       state: "error",
       error: "OpenCode finished signing in but saved no credential."
     })
-    expect(await run(() => ({ data: { status: "complete" } }))).toMatchObject({ state: "complete" })
+    expect(await signInOutcome(() => ({ data: { status: "complete" } }))).toMatchObject({
+      state: "complete"
+    })
   })
 
   it("saves an API key directly and gives the server back", async () => {

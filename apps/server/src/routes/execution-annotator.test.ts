@@ -48,6 +48,22 @@ const fixture = () => {
   }
 }
 
+const callUpdateWithInput = (input: unknown) =>
+  output({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "call-1",
+    title: "codevisor.execute",
+    rawInput: input
+  })
+
+const numberedCall = (index: number, rawInput?: unknown) =>
+  output({
+    sessionUpdate: "tool_call",
+    toolCallId: `call-${index}`,
+    title: "codevisor.execute",
+    ...(rawInput === undefined ? {} : { rawInput })
+  })
+
 describe("ExecutionAnnotator", () => {
   it("attaches gateway state to the Codex row that carried the same arguments", () => {
     const f = fixture()
@@ -140,15 +156,8 @@ describe("ExecutionAnnotator", () => {
     for (let index = 0; index <= 16; index += 1) {
       f.annotate(gateway(running, { ...args, code: `code ${index}` }))
     }
-    const call = (index: number) =>
-      output({
-        sessionUpdate: "tool_call",
-        toolCallId: `call-${index}`,
-        title: "codevisor.execute",
-        rawInput: { ...args, code: `code ${index}` }
-      })
-    expect(f.annotate(call(0))).toHaveLength(1)
-    expect(f.annotate(call(16))).toHaveLength(2)
+    expect(f.annotate(numberedCall(0, { ...args, code: "code 0" }))).toHaveLength(1)
+    expect(f.annotate(numberedCall(16, { ...args, code: "code 16" }))).toHaveLength(2)
   })
 
   it("merges execution state into the harness's own _meta in both directions", () => {
@@ -224,51 +233,44 @@ describe("ExecutionAnnotator", () => {
 
   it("re-correlates when the harness revises a call's arguments", () => {
     const f = fixture()
-    const call = (input: unknown) =>
-      output({
-        sessionUpdate: "tool_call_update",
-        toolCallId: "call-1",
-        title: "codevisor.execute",
-        rawInput: input
-      })
-    f.annotate(call({ ...args, code: "draft" }))
-    f.annotate(call(args))
+    f.annotate(callUpdateWithInput({ ...args, code: "draft" }))
+    f.annotate(callUpdateWithInput(args))
     expect(f.annotate(gateway(running, { ...args, code: "draft" }))).toEqual([])
     expect(f.annotate(gateway(running))).toHaveLength(1)
   })
 
   it("forgets the oldest calls beyond its per-session bound and everything at session end", () => {
     const f = fixture()
-    const call = (index: number, rawInput?: unknown) =>
-      output({
-        sessionUpdate: "tool_call",
-        toolCallId: `call-${index}`,
-        title: "codevisor.execute",
-        ...(rawInput === undefined ? {} : { rawInput })
-      })
-    f.annotate(call(0, args))
-    f.annotate(call(1, { ...args, code: "second" }))
-    for (let index = 2; index <= 65; index += 1) f.annotate(call(index))
+    f.annotate(numberedCall(0, args))
+    f.annotate(numberedCall(1, { ...args, code: "second" }))
+    for (let index = 2; index <= 65; index += 1) f.annotate(numberedCall(index))
     expect(f.annotate(gateway(running))).toEqual([])
-    f.annotate(call(66, { ...args, code: "latest" }))
+    f.annotate(numberedCall(66, { ...args, code: "latest" }))
     expect(f.annotate(gateway(running, { ...args, code: "latest" }))).toHaveLength(1)
     f.annotator.endSession("session")
     expect(f.annotate(gateway(running, { ...args, code: "latest" }))).toEqual([])
   })
 })
 
+const codeModeRow = (fields: Record<string, unknown>) =>
+  output({ toolCallId: "oc-1", title: "execute", ...fields })
+
+const skillReadOutput = (skill: unknown) => output({ kind: "codevisor_skill", skill })
+
 describe("ExecutionAnnotator with OpenCode's Code Mode", () => {
-  const host = (fields: Record<string, unknown>) =>
-    output({ toolCallId: "oc-1", title: "execute", ...fields })
   const labeled: CodevisorExecutionState = { ...running, description: args.description }
 
   it("attaches the gateway's runs to the Code Mode row that ran them", () => {
     const f = fixture()
-    const started = host({ sessionUpdate: "tool_call", status: "pending", rawInput: {} })
+    const started = codeModeRow({ sessionUpdate: "tool_call", status: "pending", rawInput: {} })
     expect(f.annotate(started)).toEqual([started])
     expect(f.annotate(gateway(labeled))).toEqual([])
     const code = { code: "await tools.codevisor.execute({ description, code })" }
-    const runs = host({ sessionUpdate: "tool_call_update", status: "in_progress", rawInput: code })
+    const runs = codeModeRow({
+      sessionUpdate: "tool_call_update",
+      status: "in_progress",
+      rawInput: code
+    })
     expect(payloads(f.annotate(runs))).toEqual([
       runs.payload,
       {
@@ -297,7 +299,7 @@ describe("ExecutionAnnotator with OpenCode's Code Mode", () => {
     expect(
       payloads(
         f.annotate(
-          host({
+          codeModeRow({
             sessionUpdate: "tool_call_update",
             status: "in_progress",
             rawInput: code,
@@ -315,27 +317,28 @@ describe("ExecutionAnnotator with OpenCode's Code Mode", () => {
         _meta: { opencode: 1, codevisorExecution: done }
       }
     ])
-    f.annotate(host({ sessionUpdate: "tool_call_update", status: "completed" }))
+    f.annotate(codeModeRow({ sessionUpdate: "tool_call_update", status: "completed" }))
     expect(f.annotate(gateway(running, { description: "Later", code: "x" }))).toEqual([])
   })
 
   it("labels a Code Mode row with the gateway skill it read", () => {
     const f = fixture()
-    const skillRead = (skill: unknown) => output({ kind: "codevisor_skill", skill })
     const read = { name: "execute", ok: true }
-    expect(f.annotate(skillRead(read))).toEqual([])
-    f.annotate(host({ sessionUpdate: "tool_call", status: "pending", rawInput: {} }))
-    expect(f.annotate(skillRead(read))).toEqual([])
+    expect(f.annotate(skillReadOutput(read))).toEqual([])
+    f.annotate(codeModeRow({ sessionUpdate: "tool_call", status: "pending", rawInput: {} }))
+    expect(f.annotate(skillReadOutput(read))).toEqual([])
     const code = { code: 'await tools.codevisor.skills({ name: "execute" })' }
-    f.annotate(host({ sessionUpdate: "tool_call_update", status: "in_progress", rawInput: code }))
-    expect(payloads(f.annotate(skillRead(read)))).toEqual([
+    f.annotate(
+      codeModeRow({ sessionUpdate: "tool_call_update", status: "in_progress", rawInput: code })
+    )
+    expect(payloads(f.annotate(skillReadOutput(read)))).toEqual([
       { sessionUpdate: "tool_call_update", toolCallId: "oc-1", _meta: { codevisorSkill: read } }
     ])
-    expect(f.annotate(skillRead("not a read"))).toEqual([])
+    expect(f.annotate(skillReadOutput("not a read"))).toEqual([])
     expect(
       payloads(
         f.annotate(
-          host({
+          codeModeRow({
             sessionUpdate: "tool_call_update",
             status: "completed",
             _meta: { codevisorSkill: "stale" }
@@ -355,15 +358,17 @@ describe("ExecutionAnnotator with OpenCode's Code Mode", () => {
 
   it("leaves a Code Mode row alone when the gateway isn't involved", () => {
     const f = fixture()
-    const update = host({
+    const update = codeModeRow({
       sessionUpdate: "tool_call_update",
       status: "in_progress",
       rawInput: { code: "1 + 1" }
     })
-    expect(f.annotate(host({ sessionUpdate: "tool_call", status: "pending" }))).toHaveLength(1)
+    expect(f.annotate(codeModeRow({ sessionUpdate: "tool_call", status: "pending" }))).toHaveLength(
+      1
+    )
     expect(f.annotate(update)).toEqual([update])
     expect(f.annotate(update)).toEqual([update])
-    const failed = host({ sessionUpdate: "tool_call_update", status: "failed" })
+    const failed = codeModeRow({ sessionUpdate: "tool_call_update", status: "failed" })
     expect(f.annotate(failed)).toEqual([failed])
   })
 })
