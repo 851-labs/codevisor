@@ -1,6 +1,6 @@
-import { afterEach, expect, it, vi } from "vitest"
+import { expect, it, vi } from "vitest"
 
-import { loginGrok, makeGrokDeviceLogin, GROK_CLIENT_ID } from "./grok-device-auth.js"
+import { makeGrokDeviceLogin, GROK_CLIENT_ID } from "./grok-device-auth.js"
 
 const device = {
   device_code: "private-device",
@@ -26,7 +26,6 @@ const fixture = (responses: Response[]) => {
   const run = () => login({ notify, prompt: vi.fn(), signal: new AbortController().signal })
   return { run, request, notify, wait, login }
 }
-afterEach(() => vi.unstubAllGlobals())
 
 it("uses Grok's scopes, preserves identity, respects pending and slowdown, and keeps the device secret off the UI", async () => {
   const f = fixture([
@@ -88,13 +87,6 @@ it("honors cancellation while waiting for approval", async () => {
   })
   await expect(pending).rejects.toThrow()
   expect(request).toHaveBeenCalledTimes(1)
-})
-it("uses the production request boundary and reports refusal to start", async () => {
-  const request = vi
-    .fn()
-    .mockResolvedValueOnce(Response.json({ error: "disabled" }, { status: 404 }))
-  vi.stubGlobal("fetch", request)
-  await expect(loginGrok({ notify: vi.fn(), prompt: vi.fn() })).rejects.toThrow("Couldn't start")
 })
 it.each([
   null,

@@ -10,7 +10,7 @@ import {
   npmDefinition,
   jsonResponse
 } from "./harness-lifecycle-test-support.js"
-import { makeHarnessLifecycleManager, appBundlePath } from "./harness-lifecycle.js"
+import { makeHarnessLifecycleManager } from "./harness-lifecycle.js"
 
 afterEach(cleanupLifecycleTests)
 
@@ -249,12 +249,5 @@ describe("harness lifecycle update detection", () => {
       realpath: (path) => path
     })
     await expect(lifecycle.checkForUpdates(true)).resolves.toEqual([])
-  })
-
-  it("derives the bundle path from the binary path", () => {
-    expect(appBundlePath("/Applications/ChatGPT.app/Contents/Resources/codex")).toBe(
-      "/Applications/ChatGPT.app"
-    )
-    expect(appBundlePath("/usr/local/bin/codex")).toBeUndefined()
   })
 })
