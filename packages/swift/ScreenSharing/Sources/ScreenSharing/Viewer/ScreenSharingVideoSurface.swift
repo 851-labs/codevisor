@@ -196,6 +196,10 @@
       needsLayout = true
       reportSize()
     }
+    public override func viewDidMoveToWindow() {
+      super.viewDidMoveToWindow()
+      input.windowChanged()
+    }
     public func stop() { input.end(); metal.stop() }
     public override var acceptsFirstResponder: Bool { true }
     public override func becomeFirstResponder() -> Bool {

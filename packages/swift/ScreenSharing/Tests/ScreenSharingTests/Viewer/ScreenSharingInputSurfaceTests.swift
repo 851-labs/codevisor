@@ -290,6 +290,18 @@ struct ScreenSharingInputSurfaceTests {
     #expect(fixture.events.last == .key(code: 12, down: true, repeatKey: false, modifiers: 0))
   }
 
+  @Test func aGrantBeforeTheVideoIsInAWindowStartsSuspendedAndResumesOnceShown() throws {
+    let fixture = try InputSurfaceFixture(inWindow: false)
+    defer { fixture.close() }
+    #expect(fixture.controlling && fixture.input.active && !fixture.input.isLive)
+    fixture.window.contentView?.addSubview(fixture.view)
+    #expect(fixture.window.makeFirstResponder(fixture.view))
+    fixture.input.windowChanged()
+    #expect(fixture.input.isLive)
+    #expect(fixture.keyboard.send(.keyDown, try fixture.systemKey(code: 12)))
+    #expect(fixture.events.last == .key(code: 12, down: true, repeatKey: false, modifiers: 0))
+  }
+
   @Test func returningWithAnotherResponderStaysSuspended() throws {
     let fixture = try InputSurfaceFixture()
     defer { fixture.close() }
@@ -357,15 +369,15 @@ private final class InputSurfaceFixture {
     input.end()
   }
 
-  init(keyboardStarts: Bool = true, windowIsKey: Bool = true, videoFocused: Bool = true) throws {
+  init(keyboardStarts: Bool = true, windowIsKey: Bool = true, videoFocused: Bool = true, inWindow: Bool = true) throws {
     _ = NSApplication.shared
     window = InputTestWindow(
       contentRect: .init(x: 0, y: 0, width: 640, height: 540), styleMask: .borderless, backing: .buffered, defer: false)
     window.key = windowIsKey
     window.isReleasedWhenClosed = false
-    window.contentView?.addSubview(view)
+    if inWindow { window.contentView?.addSubview(view) }
     window.contentView?.addSubview(sidebar)
-    #expect(window.makeFirstResponder(videoFocused ? view : sidebar))
+    #expect(window.makeFirstResponder(videoFocused && inWindow ? view : sidebar))
     keyboard.starts = keyboardStarts
     input = ScreenSharingInputSurface(
       view: view, notificationCenter: notifications, keyboardCapture: keyboard,

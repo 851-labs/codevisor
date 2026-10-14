@@ -19,6 +19,7 @@
     var onKeyboardReturned: (() -> Void)?
     private var monitor: Any?
     private var observers: [NSObjectProtocol] = []
+    private var windowObservers: [NSObjectProtocol] = []
     private var motionTask: Task<Void, Never>?
     private var pendingMotion: ScreenSharingInputEvent?
     private var buttons = Set<UInt8>()
@@ -55,7 +56,7 @@
     func begin() -> Bool {
       guard !active else { return true }
       failureMessage = nil
-      guard let view, let window = view.window else {
+      guard let view else {
         failureMessage = "Focus this window and request control again."
         return false
       }
@@ -69,7 +70,7 @@
         }
       )
       active = true
-      inputFocused = window.isKeyWindow && applicationIsActive() && window.firstResponder === view
+      attachWindow()
       view.controlCursorChanged()
       monitor = NSEvent.addLocalMonitorForEvents(
         matching: [.keyDown, .keyUp, .flagsChanged, .leftMouseDown, .rightMouseDown, .otherMouseDown]
@@ -85,13 +86,9 @@
       }
       observers = [
         notificationCenter.addObserver(
-          forName: NSWindow.didResignKeyNotification, object: window, queue: .main, using: suspend),
-        notificationCenter.addObserver(
           forName: NSApplication.didResignActiveNotification, object: nil, queue: .main, using: suspend),
         notificationCenter.addObserver(
           forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main, using: suspend),
-        notificationCenter.addObserver(
-          forName: NSWindow.didBecomeKeyNotification, object: window, queue: .main, using: resume),
         notificationCenter.addObserver(
           forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main, using: resume),
         notificationCenter.addObserver(
@@ -106,6 +103,29 @@
       return true
     }
 
+    func windowChanged() {
+      guard active else { return }
+      attachWindow()
+    }
+
+    private func attachWindow() {
+      for observer in windowObservers { notificationCenter.removeObserver(observer) }
+      windowObservers = []
+      guard let view, let window = view.window else {
+        suspend()
+        return
+      }
+      windowObservers = [
+        notificationCenter.addObserver(forName: NSWindow.didResignKeyNotification, object: window, queue: .main) {
+          [weak self] _ in MainActor.assumeIsolated { self?.suspend() }
+        },
+        notificationCenter.addObserver(forName: NSWindow.didBecomeKeyNotification, object: window, queue: .main) {
+          [weak self] _ in MainActor.assumeIsolated { self?.resumeIfFocused() }
+        },
+      ]
+      if window.isKeyWindow, applicationIsActive(), window.firstResponder === view { resume() } else { suspend() }
+    }
+
     func end() {
       active = false
       inputFocused = false
@@ -114,8 +134,8 @@
       view?.controlCursorChanged()
       if let monitor { NSEvent.removeMonitor(monitor) }
       monitor = nil
-      for observer in observers { notificationCenter.removeObserver(observer) }
-      observers = []; motionTask?.cancel(); motionTask = nil
+      for observer in observers + windowObservers { notificationCenter.removeObserver(observer) }
+      observers = []; windowObservers = []; motionTask?.cancel(); motionTask = nil
       pendingMotion = nil; buttons = []; keys = []; textKeys = []; modifiers = 0; scroll = .init(); lastPointer = nil
     }
 
