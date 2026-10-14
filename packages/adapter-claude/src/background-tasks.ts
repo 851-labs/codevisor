@@ -54,7 +54,7 @@ export const handleSystemMessage = (
     case "task_started": {
       if (message.skip_transcript === true) {
         session.hiddenBackgroundTaskIds.add(message.task_id)
-        if (removeBackgroundTask(session, message.task_id)) emitBackgroundTasks(session)
+        if (removeBackgroundTask(session, message.task_id)) void emitBackgroundTasks(session)
         break
       }
       const toolUseId = message.tool_use_id ?? forkedCommandRowId(session, message.task_id)
@@ -65,7 +65,7 @@ export const handleSystemMessage = (
         taskType: message.subagent_type !== undefined ? "subagent" : (message.task_type ?? "task"),
         ...(toolUseId === undefined ? {} : { toolUseId })
       })
-      emitBackgroundTasks(session)
+      void emitBackgroundTasks(session)
       if (message.subagent_type !== undefined && message.tool_use_id !== undefined) {
         const subagent = { codevisorSubagent: { taskId: message.task_id } }
         void session.emit({
@@ -94,7 +94,7 @@ export const handleSystemMessage = (
       if (entry === undefined || message.summary === undefined) break
       if (entry.description === message.summary) break
       entry.description = message.summary
-      emitBackgroundTasks(session)
+      void emitBackgroundTasks(session)
       break
     }
     case "task_updated": {
@@ -111,14 +111,14 @@ export const handleSystemMessage = (
         if (status !== undefined) entry.status = status
         if (message.patch.description !== undefined) entry.description = message.patch.description
       }
-      emitBackgroundTasks(session)
+      void emitBackgroundTasks(session)
       break
     }
     case "task_notification": {
       finishForkedCommand(session, message.task_id, message.status)
       session.hiddenBackgroundTaskIds.delete(message.task_id)
       if (removeBackgroundTask(session, message.task_id)) {
-        emitBackgroundTasks(session)
+        void emitBackgroundTasks(session)
       }
       break
     }
@@ -169,7 +169,7 @@ const replaceBackgroundTasks = (
   }
   session.backgroundTasks.clear()
   for (const [id, task] of next) session.backgroundTasks.set(id, task)
-  emitBackgroundTasks(session)
+  void emitBackgroundTasks(session)
 }
 
 const removeBackgroundTask = (session: ClaudeSession, taskId: string): boolean => {

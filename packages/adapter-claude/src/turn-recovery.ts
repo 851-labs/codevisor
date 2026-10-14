@@ -182,7 +182,7 @@ export const handleResult = (
       }
     })
   }
-  cancelClaudePendingQuestions(session)
+  void cancelClaudePendingQuestions(session)
   settleForkedCommands(session)
   if (!isTaskNotification) settleGoalOnTurnEnd(session, message)
   void refreshClaudeSessionTitle(session)

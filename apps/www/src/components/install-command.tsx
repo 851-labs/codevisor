@@ -24,14 +24,17 @@ export function InstallCommand({ placement }: { placement: InstallPlacement }) {
   const tab = TABS.find((t) => t.id === active) ?? TABS[0]
 
   const copy = () => {
-    navigator.clipboard.writeText(tab.command).then(() => {
-      captureAnalytics({
-        name: "www install command copied",
-        properties: { method: tab.id, placement }
+    void navigator.clipboard
+      .writeText(tab.command)
+      .then(() => {
+        captureAnalytics({
+          name: "www install command copied",
+          properties: { method: tab.id, placement }
+        })
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1600)
       })
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1600)
-    })
+      .catch(() => undefined)
   }
 
   return (

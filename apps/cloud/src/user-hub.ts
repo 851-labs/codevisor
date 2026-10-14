@@ -53,16 +53,18 @@ export class UserHub extends DurableObject<CloudEnv> {
       ctx.storage.sql,
       Number(env.RESUME_GRACE_MS ?? "") || DEFAULT_RESUME_GRACE_MS
     )
-    ctx.blockConcurrencyWhile(async () => {
-      this.#accountDeleted = (await ctx.storage.get<boolean>("account_deleted")) === true
-      const version = (await ctx.storage.get<number>("schema_version")) ?? 0
-      for (let step = version; step < HUB_MIGRATIONS.length; step += 1) {
-        ctx.storage.sql.exec(HUB_MIGRATIONS[step]!)
-      }
-      if (version !== HUB_MIGRATIONS.length) {
-        await ctx.storage.put("schema_version", HUB_MIGRATIONS.length)
-      }
-    })
+    void ctx
+      .blockConcurrencyWhile(async () => {
+        this.#accountDeleted = (await ctx.storage.get<boolean>("account_deleted")) === true
+        const version = (await ctx.storage.get<number>("schema_version")) ?? 0
+        for (let step = version; step < HUB_MIGRATIONS.length; step += 1) {
+          ctx.storage.sql.exec(HUB_MIGRATIONS[step]!)
+        }
+        if (version !== HUB_MIGRATIONS.length) {
+          await ctx.storage.put("schema_version", HUB_MIGRATIONS.length)
+        }
+      })
+      .catch((cause: unknown) => console.error("hub storage setup failed", cause))
     ctx.setWebSocketAutoResponse(
       new WebSocketRequestResponsePair(
         encodeCloudFrame({ t: "ping" }),

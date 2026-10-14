@@ -41,7 +41,15 @@
     "unicorn/require-module-specifiers": "error",
     "no-await-in-loop": "off",
     "oxc/no-map-spread": "off",
-    "codevisor/no-comments": "error"
+    "codevisor/no-comments": "error",
+    "typescript/no-floating-promises": [
+      "error",
+      {
+        "allowForKnownSafeCalls": [
+          { "from": "package", "name": ["test", "describe"], "package": "node:test" }
+        ]
+      }
+    ]
   },
   "jsPlugins": ["./scripts/lint/no-comments.mjs"],
   "overrides": [
@@ -256,62 +264,6 @@
       "files": ["packages/adapter-claude/src/turn-lifecycle.ts"],
       "rules": {
         "typescript/no-duplicate-type-constituents": "off"
-      }
-    },
-    {
-      "files": [
-        "apps/cloud/src/user-hub.ts",
-        "apps/screen-sharing-rig/scripts/screen-sharing-bundle.test.ts",
-        "apps/screen-sharing-rig/scripts/screen-sharing-rig-lib.test.ts",
-        "apps/screen-sharing-rig/scripts/vnc-frame-clock-lib.test.ts",
-        "apps/screen-sharing-rig/scripts/vnc-interop-lib.test.ts",
-        "apps/screen-sharing-rig/scripts/vnc-tophat-lib.test.ts",
-        "apps/server/test/browser-extension-background.test.ts",
-        "apps/www/src/components/install-command.tsx",
-        "packages/adapter-claude/src/background-tasks.ts",
-        "packages/adapter-claude/src/start-session.ts",
-        "packages/adapter-claude/src/stream-recovery.ts",
-        "packages/adapter-claude/src/turn-recovery.ts",
-        "packages/adapter-grok-build/src/extension.ts",
-        "packages/harness-manager/src/antigravity-auth.test.ts",
-        "scripts/apfs-clone.test.mjs",
-        "scripts/artifact-lock.test.mjs",
-        "scripts/check-comments.test.mjs",
-        "scripts/check-plan.test.mjs",
-        "scripts/chromium-keychain.test.mjs",
-        "scripts/dev-arguments.test.mjs",
-        "scripts/dev-container-natives.test.mjs",
-        "scripts/dev-containers.test.mjs",
-        "scripts/dev-instance.test.mjs",
-        "scripts/dev-ios-target.test.mjs",
-        "scripts/dev-layout.test.mjs",
-        "scripts/dev-macos-reuse.test.mjs",
-        "scripts/dev-net.test.mjs",
-        "scripts/dev-runtime.test.mjs",
-        "scripts/ghostty-artifact.test.mjs",
-        "scripts/ios-simulator-state.test.mjs",
-        "scripts/net-artifact-rust.test.mjs",
-        "scripts/release/alpha-release.test.mjs",
-        "scripts/release/app-store-connect.test.mjs",
-        "scripts/release/build-macos-xcode.test.mjs",
-        "scripts/release/install.test.mjs",
-        "scripts/release/ios-code-signing.test.mjs",
-        "scripts/release/ios-testflight-config.test.mjs",
-        "scripts/release/macos-browser-artifact.test.mjs",
-        "scripts/release/publish-browser-extension.test.mjs",
-        "scripts/release/testflight-release.test.mjs",
-        "scripts/release/update-feeds.test.mjs",
-        "scripts/screenshots-ios.test.mjs",
-        "scripts/screenshots.test.mjs",
-        "scripts/swift-artifacts.test.mjs",
-        "scripts/test-swift.test.mjs",
-        "scripts/transcript-performance-summary.test.mjs",
-        "scripts/typecheck-isolation.test.mjs",
-        "scripts/xcode-window.test.mjs",
-        "scripts/xcodebuild.test.mjs"
-      ],
-      "rules": {
-        "typescript/no-floating-promises": "off"
       }
     },
     {

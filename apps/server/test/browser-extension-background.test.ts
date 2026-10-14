@@ -48,13 +48,13 @@ class FakeWebSocket {
   }
 
   error() {
-    this.emit("error")
+    return this.emit("error")
   }
 
-  close() {
+  async close() {
     if (this.readyState === FakeWebSocket.CLOSED) return
     this.readyState = FakeWebSocket.CLOSED
-    this.emit("close")
+    await this.emit("close")
   }
 
   private async emit(type: string) {
@@ -151,7 +151,7 @@ describe("browser extension background connection", () => {
     expect(importScripts).toHaveBeenCalledWith("tab-groups.js")
     expect(FakeWebSocket.instances).toHaveLength(1)
     const first = FakeWebSocket.instances[0]!
-    first.error()
+    await first.error()
     await retryScheduled.promise
 
     expect(alarms.create).toHaveBeenCalledOnce()
