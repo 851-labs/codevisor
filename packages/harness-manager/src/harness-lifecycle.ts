@@ -11,7 +11,6 @@ import type {
 import { makeHarnessUninstall } from "./harness-lifecycle-uninstall.js"
 import { makeHarnessUpdateGate } from "./harness-lifecycle-updates.js"
 
-export { appBundlePath } from "./harness-lifecycle-support.js"
 export type {
   HarnessLifecycleEvent,
   HarnessLifecycleManager,
