@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process"
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import { makeGitRepo } from "./git-test-support.js"
 import { addWorktree, listCodevisorWorktreeBranchNames, runGit } from "./git.js"
@@ -345,5 +345,47 @@ describe("meaningfulIgnoredPaths", () => {
         "coverage/"
       ])
     ).toEqual([".env", "src/generated.local.json"])
+  })
+})
+
+describe("restoreWorktree git environment", () => {
+  it("runs every git command with the caller's environment", async () => {
+    const callerEnv = { ...process.env }
+    const { repo, root } = makeRepo()
+    const kept = await makeDirtyWorktree(repo, root, "ramen")
+    const keptSnapshot = await archive(repo, kept, "wt-12", "ramen")
+    await addWorktree(repo, join(root, "squat-1"), "codevisor/ramen")
+    await addWorktree(repo, join(root, "squat-2"), "codevisor/ramen-2")
+    const lost = await makeDirtyWorktree(repo, root, "pho")
+    const lostSnapshot = await archive(repo, lost, "wt-13", "pho")
+    await deleteSnapshot(repo, "wt-13")
+    git(repo, "update-ref", "refs/remotes/origin/main", "main")
+
+    vi.stubEnv("PATH", "")
+    try {
+      const restored = await restoreWorktree({
+        repoDir: repo,
+        worktreePathFor: (name) => join(root, name),
+        originalName: "ramen",
+        parentSha: keptSnapshot.parentSha,
+        snapshotRef: keptSnapshot.snapshotRef,
+        takenNames: new Set(),
+        env: callerEnv
+      })
+      const fresh = await restoreWorktree({
+        repoDir: repo,
+        worktreePathFor: (name) => join(root, name),
+        originalName: "pho",
+        parentSha: lostSnapshot.parentSha,
+        snapshotRef: lostSnapshot.snapshotRef,
+        takenNames: new Set(),
+        env: callerEnv
+      })
+      expect(restored).toMatchObject({ name: "ramen-3", restoredFromSnapshot: true })
+      expect(fresh).toMatchObject({ name: "pho", restoredFromSnapshot: false })
+      expect(existsSync(join(root, "pho", ".gitignore"))).toBe(false)
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 })

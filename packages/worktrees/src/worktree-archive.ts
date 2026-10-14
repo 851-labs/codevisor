@@ -236,7 +236,7 @@ export interface RestoreResult {
 export const restoreWorktree = async (request: RestoreRequest): Promise<RestoreResult> => {
   const { repoDir, worktreePathFor, originalName, parentSha, snapshotRef, env } = request
 
-  const branchNames = await listCodevisorWorktreeBranchNames(repoDir).catch(
+  const branchNames = await listCodevisorWorktreeBranchNames(repoDir, env).catch(
     /* v8 ignore next */
     () => [] as ReadonlyArray<string>
   )
@@ -249,7 +249,9 @@ export const restoreWorktree = async (request: RestoreRequest): Promise<RestoreR
   const path = worktreePathFor(name)
 
   const hasSnapshot = await snapshotExists(repoDir, snapshotRef, env)
-  const startPoint = hasSnapshot ? parentSha : ((await worktreeStartPoint(repoDir)) ?? parentSha)
+  const startPoint = hasSnapshot
+    ? parentSha
+    : ((await worktreeStartPoint(repoDir, undefined, env)) ?? parentSha)
 
   try {
     await addWorktree(repoDir, path, branch, request.onOutput, startPoint, env)
