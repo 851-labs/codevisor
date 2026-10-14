@@ -84,8 +84,12 @@ struct ScreenSharingWireFormatTests {
   @Test func anEnvelopeFromAnotherProtocolVersionIsRefused() throws {
     let clipboard = try Self.rewrite(ScreenSharingClipboardMessage.read(id: UUID()).encoded()) { $0["version"] = 2 }
     expectInvalid("Unsupported clipboard protocol.") { try ScreenSharingClipboardMessage.decode(clipboard) }
-    let control = try Self.rewrite(ScreenSharingControlMessage.release(lease: UUID()).encoded()) { $0["version"] = 0 }
-    expectInvalid("Unsupported control protocol.") { try ScreenSharingControlMessage.decode(control) }
+    for version in [0, 2] {
+      let control = try Self.rewrite(ScreenSharingControlMessage.release(lease: UUID()).encoded()) {
+        $0["version"] = version
+      }
+      expectInvalid("Unsupported control protocol.") { try ScreenSharingControlMessage.decode(control) }
+    }
   }
 
   @Test func aMessageLargerThanTheChannelIsRefusedByBothEnds() throws {
@@ -127,8 +131,10 @@ struct ScreenSharingWireFormatTests {
     .button(.init(x: 0, y: 0), button: 3, down: true, clicks: 1, modifiers: 0),
     .button(.init(x: 0, y: 0), button: 0, down: true, clicks: 0, modifiers: 0),
     .scroll(.init(x: 0, y: 0), x: 4097, y: 0, modifiers: 0),
+    .scroll(.init(x: 0, y: 0), x: .min, y: 0, modifiers: 0),
     .key(code: 127, down: true, repeatKey: false, modifiers: 0),
     .text(""),
+    .text(String(repeating: "x", count: 1025)),
   ])
   func anInputEventOutsideItsRangeIsRefusedOnDecode(_ event: ScreenSharingInputEvent) throws {
     #expect(!event.isValid)

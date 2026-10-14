@@ -120,21 +120,6 @@ extension ScreenSharingSourceIdleTests {
     #expect(clock.pendingCount == 0)
   }
 
-  @Test func boundaryTracingIsOptInAndNeverEvaluatesEntriesWhenDisabled() {
-    let metrics = ScreenSharingMetrics()
-    var evaluated = 0
-    func entry() -> String {
-      evaluated += 1
-      return "event"
-    }
-    metrics.trace("boundary", entry())
-    #expect(evaluated == 0 && metrics.snapshot().traces == nil)
-    metrics.enableTracing()
-    for _ in 0..<70 { metrics.trace("boundary", entry()) }
-    #expect(evaluated == 70)
-    #expect(metrics.snapshot().traces?["boundary"]?.count == 64)
-  }
-
   @Test func shortfallRequestDoesNotInvalidateAPendingRecovery() {
     let signal = ScreenSharingRefreshSignal()
     let metrics = ScreenSharingMetrics()

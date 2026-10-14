@@ -7,6 +7,8 @@ struct ScreenSharingDiagnosticProfileParsingTests {
   @Test(arguments: [
     " ", "\t", "\n", "paced15-worker\n", "paced15-worker\t", "\"paced15-worker\"", "'paced15-worker'",
     "paced15-worker=1", "paced15_worker", "paced15-worker,paced15-worker", "yes", "0", "none",
+    "paced15", "paced15-worker ", " paced15-worker", "Paced15-Worker", "PACED15-WORKER", "1", "true", "off",
+    "default", "paced35-worker",
   ])
   func aValueThatIsNotTheExactNameFailsAndSaysWhatToDoInstead(_ raw: String) throws {
     let environment = [ScreenSharingDiagnosticProfile.environmentKey: raw]
@@ -27,6 +29,13 @@ struct ScreenSharingDiagnosticProfileParsingTests {
   func aLookalikeKeyLeavesTheProfileOff(_ key: String) throws {
     let environment = [key: ScreenSharingDiagnosticProfile.paced15WorkerName, "PATH": "/usr/bin"]
     #expect(try ScreenSharingDiagnosticProfile.resolve(environment: environment) == nil)
+  }
+
+  @Test func anAbsentOrEmptyVariableLeavesTheProfileOff() throws {
+    #expect(try ScreenSharingDiagnosticProfile.resolve(environment: [:]) == nil)
+    #expect(
+      try ScreenSharingDiagnosticProfile.resolve(environment: [ScreenSharingDiagnosticProfile.environmentKey: ""])
+        == nil)
   }
 
   @Test func theOneKnownNameSelectsTheProfileWhateverElseTheEnvironmentHolds() throws {

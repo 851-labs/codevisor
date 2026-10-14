@@ -45,11 +45,6 @@ public final class ScreenSharingAudioJitterBuffer: @unchecked Sendable {
     set { lock.withLockUnchecked { target = newValue } }
   }
 
-  public var bufferedFrames: Int { lock.withLockUnchecked { writeIndex - readIndex } }
-  public var underruns: Int { lock.withLockUnchecked { underrunCount } }
-  public var lostPackets: Int { lock.withLockUnchecked { lostCount } }
-  public var droppedFrames: Int { lock.withLockUnchecked { droppedCount } }
-
   public struct Statistics: Sendable, Equatable {
     public var buffered: Int
     public var underruns: Int
