@@ -239,8 +239,8 @@ describe("Antigravity sign-in", () => {
   it("cancels an attempt by closing agy", async () => {
     const { auth, tty } = setup()
     const flow = await auth.begin(account())
-    auth.cancel(flow.id)
-    auth.cancel("unknown")
+    await auth.cancel(flow.id)
+    await auth.cancel("unknown")
     expect(tty.opened[0]!.killed).toBe(true)
     expect(auth.owns(flow.id)).toBe(false)
   })

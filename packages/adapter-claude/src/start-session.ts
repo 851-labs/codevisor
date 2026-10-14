@@ -266,7 +266,7 @@ export const makeStartSession = (deps: StartSessionDeps) => {
       turnId: randomUUID()
     }
     session = created
-    emitBackgroundTasks(created)
+    void emitBackgroundTasks(created)
 
     const resumeAfterStreamDeath = (): Promise<boolean> =>
       resumeSessionAfterStreamDeath(created, {

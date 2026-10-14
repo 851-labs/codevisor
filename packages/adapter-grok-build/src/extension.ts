@@ -152,7 +152,7 @@ const extendGrokConnection = (
           update.tokenBudget === undefined || update.tokenBudget === null
             ? ""
             : ` --budget ${update.tokenBudget}`
-        runGoalPrompt(sessionId, `/goal ${objective}${budget}`, true)
+        void runGoalPrompt(sessionId, `/goal ${objective}${budget}`, true)
         return goal
       }
 
@@ -180,7 +180,7 @@ const extendGrokConnection = (
           updatedAt: new Date().toISOString()
         }
         goals.set(sessionId, goal)
-        runGoalPrompt(sessionId, "/goal resume", true)
+        void runGoalPrompt(sessionId, "/goal resume", true)
         return goal
       }
       throw new Error(`Unsupported Grok goal status: ${update.status ?? "unchanged"}`)
