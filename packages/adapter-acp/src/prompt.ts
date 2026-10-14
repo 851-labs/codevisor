@@ -7,7 +7,6 @@ export interface AcpPromptCapabilities {
   readonly image?: boolean
 }
 
-/* v8 ignore start */
 export const acpPrompt = (
   input: PromptInput,
   capabilities: AcpPromptCapabilities
@@ -36,4 +35,3 @@ export const acpPrompt = (
   }
   return blocks
 }
-/* v8 ignore stop */

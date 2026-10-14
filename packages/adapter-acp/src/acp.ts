@@ -8,7 +8,6 @@ export { type ConfigureAcpClientApp } from "./client-app.js"
 export { runtimeEventFromNotification } from "./notifications.js"
 export { turnLifecycleEvent } from "./internal.js"
 export { makeAcpProvider, type AcpLaunchContext, type AcpProviderConfig } from "./provider.js"
-export { type AcpPromptCapabilities } from "./prompt.js"
 export { type AcpMappedQuestion } from "./questions.js"
 export {
   type AcpConnectionExtensionContext,

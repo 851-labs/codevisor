@@ -5,7 +5,7 @@ import { acpClientCapabilities } from "./connection.js"
 import { runtimeEventFromNotification } from "./notifications.js"
 import { acpPermissionOutcome, acpPermissionQuestion } from "./questions.js"
 
-describe("@codevisor/agent-runtime", () => {
+describe("ACP mapping", () => {
   it("advertises only provider-neutral ACP client capabilities", () => {
     expect(acpClientCapabilities()).toEqual({
       plan: {},
