@@ -31,6 +31,7 @@ describe("harness routes", () => {
       ["POST", "/v1/harnesses/auth/refresh"],
       ["DELETE", "/v1/harnesses/codex/accounts/account-1/login/flow-1"],
       ["POST", "/v1/harnesses/codex/accounts/account-1/login"],
+      ["POST", "/v1/harnesses/codex/accounts/account-1/login/flow-1/answer"],
       ["POST", "/v1/harnesses/codex/accounts/account-1/auth/probe"],
       ["PATCH", "/v1/harnesses/codex/accounts/account-1"],
       ["GET", "/v1/harnesses/codex/accounts"],
@@ -48,7 +49,8 @@ describe("harness routes", () => {
             method,
             ...(method === "PATCH" || method === "POST" ? { body: JSON.stringify({}) } : {})
           })
-        ).status
+        ).status,
+        `${method} ${path}`
       ).toBe(501)
     }
   })
