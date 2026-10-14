@@ -31,9 +31,15 @@ public final class SimulatorPaneModel {
 
   public var onPreferencesChanged: ((SimulatorPanePreferences) -> Void)?
 
-  @ObservationIgnored let client: any CodevisorServerClienting
+  static let hiddenGrace: Duration = .seconds(300)
+
+  @ObservationIgnored let screenFeed = SimulatorScreenFeed()
+
+  @ObservationIgnored let client: any SimulatorClienting
   @ObservationIgnored private let makeConnection: @MainActor (_ udid: String) -> any SimulatorConnection
+  @ObservationIgnored private let clock: any Clock<Duration>
   @ObservationIgnored private var visible = false
+  @ObservationIgnored private var lingering: Task<Void, Never>?
   @ObservationIgnored private var poller: Task<Void, Never>?
   @ObservationIgnored private var loadingType: String?
 
@@ -46,14 +52,16 @@ public final class SimulatorPaneModel {
       SimulatorStreamConnection(
         udid: udid, client: client, workspaceId: workspaceId, paneId: paneId, openTunnel: openTunnel)
     }
+    clock = ContinuousClock()
     udid = preferences?.udid
   }
 
   init(
-    client: any CodevisorServerClienting, preferences: SimulatorPanePreferences?,
+    client: any SimulatorClienting, preferences: SimulatorPanePreferences?, clock: any Clock<Duration>,
     makeConnection: @escaping @MainActor (_ udid: String) -> any SimulatorConnection
   ) {
     self.client = client
+    self.clock = clock
     self.makeConnection = makeConnection
     udid = preferences?.udid
   }
@@ -86,6 +94,8 @@ public final class SimulatorPaneModel {
   public func appeared() {
     guard !visible else { return }
     visible = true
+    lingering?.cancel()
+    lingering = nil
     startPolling()
     syncStream()
   }
@@ -95,15 +105,23 @@ public final class SimulatorPaneModel {
     visible = false
     poller?.cancel()
     poller = nil
-    syncStream()
+    guard connection != nil else { return }
+    lingering = Task { [weak self, clock] in
+      guard (try? await clock.sleep(for: Self.hiddenGrace)) != nil else { return }
+      self?.lingeringExpired()
+    }
   }
 
   public func closed() {
     visible = false
     poller?.cancel()
     poller = nil
-    connection?.stop()
-    connection = nil
+    stopStream()
+  }
+
+  private func lingeringExpired() {
+    guard !visible else { return }
+    stopStream()
   }
 
   public func applyPreferences(_ preferences: SimulatorPanePreferences) {
@@ -144,8 +162,7 @@ public final class SimulatorPaneModel {
   }
 
   private func deviceChanged() {
-    connection?.stop()
-    connection = nil
+    stopStream()
     deviceType = nil
     settings = nil
     Task {
@@ -174,20 +191,25 @@ public final class SimulatorPaneModel {
   }
 
   private func syncStream() {
-    let wanted = visible && device?.isBooted == true
-    if wanted, connection == nil, let udid {
+    let running = device?.isBooted == true
+    if visible, running, connection == nil, let udid {
       let connection = makeConnection(udid)
       self.connection = connection
       connection.start()
-    } else if !wanted, let connection {
-      connection.stop()
-      self.connection = nil
+    } else if !running || !(visible || lingering != nil) {
+      stopStream()
     }
   }
 
-  public func reconnect() {
+  private func stopStream() {
+    lingering?.cancel()
+    lingering = nil
     connection?.stop()
     connection = nil
+  }
+
+  public func reconnect() {
+    stopStream()
     syncStream()
   }
 
@@ -200,10 +222,7 @@ public final class SimulatorPaneModel {
       case .restart: "Restarting…"
       case .delete: "Deleting…"
       }
-    if action != .boot {
-      connection?.stop()
-      connection = nil
-    }
+    if action != .boot { stopStream() }
     Task {
       defer { activity = nil }
       do {
@@ -230,10 +249,7 @@ public final class SimulatorPaneModel {
 
   public func delete(_ udids: Set<String>) {
     for udid in udids where !deleting.contains(udid) {
-      if udid == self.udid {
-        connection?.stop()
-        connection = nil
-      }
+      if udid == self.udid { stopStream() }
       deleting.insert(udid)
       Task {
         defer { deleting.remove(udid) }

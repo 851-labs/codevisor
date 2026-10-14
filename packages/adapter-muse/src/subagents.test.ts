@@ -40,9 +40,9 @@ const setup = (intervalMs = 1000) => {
   let gate: Promise<void> | undefined
   const page = async (sessionId: string, cursor: string | undefined): Promise<ViewPage> => {
     calls.push({ sessionId, cursor })
+    const all = views.get(sessionId) ?? []
     await gate
     if (failure) throw failure
-    const all = views.get(sessionId) ?? []
     const start =
       cursor === undefined ? 0 : all.findIndex((entry) => entry.params.viewCursor === cursor) + 1
     const events = all.slice(start, start + 2)
@@ -154,7 +154,8 @@ describe("Muse subagents", () => {
     f.subagents.observe(agent())
     f.append(CHILD, read(1, "inProgress"))
     f.subagents.observe(agent({ revision: 3, controlStatus: "resultReady" }))
-    await vi.advanceTimersByTimeAsync(0)
+    expect(f.calls).toEqual([{ sessionId: CHILD, cursor: undefined }])
+    await f.subagents.drain()
     expect(f.threads()).toEqual([["tool_call", "agent-1", "in_progress"]])
     const calls = f.calls.length
     f.subagents.observe(agent({ revision: 4, controlStatus: "resultReady" }))
@@ -170,8 +171,9 @@ describe("Muse subagents", () => {
     await vi.advanceTimersByTimeAsync(1000)
     f.append(CHILD, read(1, "inProgress"), read(2, "completed"))
     f.subagents.observe(agent({ revision: 3, controlStatus: "closed" }))
+    const drained = f.subagents.drain()
     release()
-    await vi.advanceTimersByTimeAsync(0)
+    await drained
     expect(f.threads()).toEqual([
       ["tool_call", "agent-1", "in_progress"],
       ["tool_call_update", "agent-1", "completed"]
@@ -183,7 +185,8 @@ describe("Muse subagents", () => {
     f.subagents.observe(agent())
     f.append(CHILD, read(1, "inProgress"), read(2, "completed"))
     f.subagents.observe(agent({ revision: 3, controlStatus: "resultReady" }))
-    await vi.advanceTimersByTimeAsync(0)
+    expect(f.calls).toEqual([{ sessionId: CHILD, cursor: undefined }])
+    await f.subagents.drain()
     f.subagents.observe(agent({ revision: 4 }), () => "agent-1:2")
     f.subagents.observe(agent({ itemId: "agent-2", childSessionId: "child-2" }))
     f.append(CHILD, read(3, "inProgress", "r2"))
