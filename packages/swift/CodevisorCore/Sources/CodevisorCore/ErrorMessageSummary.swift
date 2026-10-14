@@ -25,7 +25,15 @@ public struct ErrorMessageSummary: Equatable, Sendable {
     guard let stop = message.rangeOfCharacter(from: CharacterSet(charactersIn: "\n{[")) else {
       return capped(message)
     }
-    var line = String(message[..<stop.lowerBound]).trimmingCharacters(in: .whitespaces)
+    let line = Self.withoutDumpLabel(
+      String(message[..<stop.lowerBound]).trimmingCharacters(in: .whitespaces))
+    // Nothing before the dump: show the start of the message itself.
+    return capped(line.isEmpty ? message.replacingOccurrences(of: "\n", with: " ") : line)
+  }
+
+  /// Drops the label or punctuation immediately introducing the dumped details.
+  private static func withoutDumpLabel(_ prefix: String) -> String {
+    var line = prefix
     if line.hasSuffix(":") {
       line = String(line.dropLast()).trimmingCharacters(in: .whitespaces)
       // "Type validation failed: Value" — a one-word label names the dump.
@@ -36,8 +44,7 @@ public struct ErrorMessageSummary: Equatable, Sendable {
     } else if line.hasSuffix(".") || line.hasSuffix(",") {
       line = String(line.dropLast())
     }
-    // Nothing before the dump: show the start of the message itself.
-    return capped(line.isEmpty ? message.replacingOccurrences(of: "\n", with: " ") : line)
+    return line
   }
 
   private static func capped(_ line: String) -> String {
