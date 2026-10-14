@@ -228,7 +228,7 @@ extension SidebarView {
     environment.archiveWorkspace(workspace)
     pinnedWorkspaceIDs.removeAll { $0 == workspace.id.uuidString }
     if selectionLeaves {
-      selectNextChat(serverId: workspace.serverId)
+      selectNextChat(serverId: workspace.serverId, leaving: workspace.id)
     }
   }
 
