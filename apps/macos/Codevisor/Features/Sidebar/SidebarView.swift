@@ -129,11 +129,11 @@ struct SidebarView: View {
     }
     .pickerStyle(.menu)
     Menu {
-      ForEach(SidebarRowDetail.subtitleDetails) { detail in
+      ForEach(SidebarRowDetail.trailingDetails) { detail in
         rowDetailToggle(detail)
       }
       Divider()
-      ForEach(SidebarRowDetail.trailingDetails) { detail in
+      ForEach(SidebarRowDetail.subtitleDetails) { detail in
         rowDetailToggle(detail)
       }
     } label: {
