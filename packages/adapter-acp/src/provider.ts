@@ -25,7 +25,7 @@ import { Effect } from "effect"
 
 import type { AcpAgentConnection, AcpConnector } from "./connection.js"
 import { turnLifecycleEvent } from "./internal.js"
-import { makeStdioAcpConnector } from "./stdio-connector.js"
+import { makeStdioAcpConnectorWithOptions } from "./stdio-connector.js"
 
 interface ResolvedLaunch {
   readonly command: string
@@ -128,7 +128,7 @@ export const makeAcpProvider = (
   environment: ProviderEnvironment,
   config: AcpProviderConfig = {}
 ): AgentProvider => {
-  const connector = config.connector ?? makeStdioAcpConnector()
+  const connector = config.connector ?? makeStdioAcpConnectorWithOptions()
   const launchEnv = config.launchEnv ?? ((env: NodeJS.ProcessEnv) => env)
 
   const connect = (

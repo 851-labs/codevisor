@@ -295,9 +295,6 @@ export const makeStdioAcpConnectorWithOptions = (
     })
 })
 
-export const makeStdioAcpConnector = (connectTimeoutMs = 10_000): AcpConnector =>
-  makeStdioAcpConnectorWithOptions({ connectTimeoutMs })
-
 const promiseWithTimeout = <A>(
   promise: Promise<A>,
   timeoutMs: number,
@@ -324,8 +321,6 @@ const processGroupTerminator = (child: ChildProcessWithoutNullStreams): (() => P
     await (await tree).stop()
   }
 }
-
-export const stdioAcpConnector: AcpConnector = makeStdioAcpConnector()
 
 const settleStderr = (child: ChildProcessWithoutNullStreams, timeoutMs = 250): Promise<void> =>
   new Promise((resolve) => {

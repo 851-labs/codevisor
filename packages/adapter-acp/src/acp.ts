@@ -1,7 +1,6 @@
 export { normalizeAcpConfigOptions, normalizeModeState } from "./config-options.js"
 export {
   acpClientCapabilities,
-  acpProtocolVersion,
   type AcpAgentConnection,
   type AcpConnector,
   type AcpHarnessLaunchRequest
@@ -19,9 +18,7 @@ export {
   type AcpSetConfigOptionContext
 } from "./sdk-connection.js"
 export {
-  makeStdioAcpConnector,
   makeStdioAcpConnectorWithOptions,
-  stdioAcpConnector,
   type AcpStdioExtension,
   type AcpStdioExtensionContext,
   type AcpStdioExtensionFactory,

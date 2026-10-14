@@ -12,8 +12,6 @@ import type {
 import type { SessionGoal } from "@codevisor/api"
 import { Effect } from "effect"
 
-export const acpProtocolVersion = acp.PROTOCOL_VERSION
-
 export const acpClientCapabilities = (): acp.ClientCapabilities => ({
   plan: {},
   terminal: false
