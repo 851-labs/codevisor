@@ -48,12 +48,19 @@ describe("workspace cleanup coordination", () => {
     await entered.promise
     const next = vi.fn(async () => "restored")
     const second = withWorktreeLifecycle(services, "worktree", next)
-    expect(next).not.toHaveBeenCalled()
-    expect(await withWorktreeLifecycle(services, "another", async () => "independent")).toBe(
-      "independent"
-    )
-    gate.resolve()
-    await failed
+    try {
+      expect(next).not.toHaveBeenCalled()
+      expect(await withWorktreeLifecycle(services, "another", async () => "independent")).toBe(
+        "independent"
+      )
+    } finally {
+      gate.resolve()
+      try {
+        await failed
+      } finally {
+        await second
+      }
+    }
     expect(await second).toBe("restored")
   })
 })
