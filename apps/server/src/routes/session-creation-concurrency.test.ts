@@ -5,8 +5,8 @@ import { join } from "node:path"
 import { Effect } from "effect"
 import { expect, it, vi } from "vitest"
 
-import { defaultServerConfig, makeEventFanout, type RouteState } from "../server.js"
-import { idleRestartCoordinator, makeServices, run, tempDirs } from "../test-support.js"
+import { defaultServerConfig, makeEventFanout } from "../server.js"
+import { idleRouteState, makeServices, run, tempDirs } from "../test-support.js"
 import { createSessionIfMissing } from "./session-workspace.js"
 
 it.each(["project lookup", "agent creation"])(
@@ -18,18 +18,7 @@ it.each(["project lookup", "agent creation"])(
     tempDirs.push(folder)
     const project = await run(services.db.createProject({ folderPath: folder }))
     const fanout = await run(makeEventFanout)
-    const state: RouteState = {
-      activePromptSessions: new Set(),
-      promptTurnReleases: new Map(),
-      activeTurnSessions: new Set(),
-      gatedSessions: new Map(),
-      pendingPromptActions: new Set(),
-      pendingSessionCreates: new Map(),
-      turnHeldSessions: new Set(),
-      updateSignature: {},
-      restartHeldSessions: new Set(),
-      restart: idleRestartCoordinator()
-    }
+    const state = idleRouteState()
     const entered = Promise.withResolvers<void>()
     const release = Promise.withResolvers<void>()
     const joined = Promise.withResolvers<void>()

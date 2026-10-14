@@ -10,12 +10,7 @@ import {
 } from "./restart-drain.js"
 import { resumeSessionsAfterRestart } from "./restart-resume.js"
 import { makeEventFanout } from "./server-context.js"
-import {
-  archiveSessionViaWorkspace,
-  idleRestartCoordinator,
-  makeServices,
-  run
-} from "./test-support.js"
+import { archiveSessionViaWorkspace, idleRouteState, makeServices, run } from "./test-support.js"
 
 const makeHarness = async () => {
   const { agents, services } = await makeServices("server-a")
@@ -345,15 +340,7 @@ describe("restart coordinator", () => {
     const resumed = await resumeSessionsAfterRestart(
       harness.services,
       harness.fanout,
-      {
-        ...harness.turns,
-        gatedSessions: new Map(),
-        pendingPromptActions: new Set(),
-        pendingSessionCreates: new Map(),
-        turnHeldSessions: new Set(),
-        updateSignature: {},
-        restart: idleRestartCoordinator()
-      },
+      { ...idleRouteState(), ...harness.turns },
       "server-a",
       harness.snapshot,
       (line) => harness.logs.push(line)
