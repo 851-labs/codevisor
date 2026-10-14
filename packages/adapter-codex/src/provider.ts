@@ -88,7 +88,7 @@ export const makeCodexProvider = (
     toolGateway?: ToolGatewayConfig
   ): Promise<CodexClient> => {
     const command = locateCodex(definition)
-    const parentEnv = { ...environment.env }
+    const parentEnv = { ...(await environment.envFor(cwd)) }
     if (account?.oauth) delete parentEnv.OPENAI_API_KEY
     const client = await connector({
       command,

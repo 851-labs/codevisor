@@ -211,11 +211,14 @@ export const runServe = (
     const { cloudControl, machine, machineLink, machineEnrollment } = yield* Effect.promise(() =>
       startMachineNetwork({ databasePath, port, serverId, machineName, version, db })
     )
-    const shellEnv = makeShellEnvCache(() => resolveShellEnv())
+    const shellEnv = makeShellEnvCache((directory) =>
+      resolveShellEnv(directory === undefined ? {} : { cwd: directory })
+    )
     const gitEnvironment = shellEnv.current()
     const agents = makeAgentRuntime({
       providerFactories: agentProviderFactories,
-      resolveEnv: shellEnv.refresh
+      resolveEnv: shellEnv.refresh,
+      resolveDirectoryEnv: shellEnv.forDirectory
     })
     const sessionActivity = makeActiveWorkSleepInhibitor()
     let sharedAccounts: SharedAccounts | undefined
@@ -322,7 +325,8 @@ export const runServe = (
         agents,
         attachments,
         db,
-        resolveGitEnvironment: () => gitEnvironment,
+        resolveGitEnvironment: (directory) =>
+          directory === undefined ? gitEnvironment : shellEnv.forDirectory(directory),
         terminal,
         ...(auth === undefined ? {} : { auth }),
         ...(sharedAccounts === undefined ? {} : { sharedAccounts }),

@@ -31,6 +31,7 @@ export const makeOpenCodeProvider = (
     get env() {
       return environment.env
     },
+    envFor: environment.envFor,
     executableExists: environment.executableExists,
     locateExecutable: (name, env) =>
       (OPENCODE_NAMES.has(name) ? locateOpenCode(env) : undefined) ??

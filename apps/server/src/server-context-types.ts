@@ -113,7 +113,7 @@ export interface CodevisorServerServices {
   readonly attachments: AttachmentStore
   readonly agents: AgentRuntimeService
   readonly terminal: TerminalManagerService
-  readonly resolveGitEnvironment?: () => Promise<NodeJS.ProcessEnv>
+  readonly resolveGitEnvironment?: (directory?: string) => Promise<NodeJS.ProcessEnv>
   readonly auth?: HarnessAuthManager
   readonly sharedAccounts?: SharedAccounts
   readonly credentialFerry?: ReadonlyArray<CredentialSource>

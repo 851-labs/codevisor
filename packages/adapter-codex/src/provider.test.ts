@@ -89,6 +89,7 @@ describe("CodexProvider", () => {
     expect(provider.readiness(definition)).toEqual({ state: "ready" })
     const missing = makeCodexProvider({
       env: {},
+      envFor: () => Promise.resolve({}),
       executableExists: () => false,
       locateExecutable: () => undefined
     })
@@ -104,6 +105,7 @@ describe("CodexProvider", () => {
     const withFallback: HarnessDefinition = { ...definition, fallbackPaths: [bundled] }
     const installed: ProviderEnvironment = {
       env: { PATH: "/bin" },
+      envFor: () => Promise.resolve(installed.env),
       executableExists: (name) => name === "codex" || name === bundled,
       locateExecutable: (name) => (name === "codex" ? cli : name === bundled ? bundled : undefined)
     }
@@ -133,6 +135,7 @@ describe("CodexProvider", () => {
     const withFallback: HarnessDefinition = { ...definition, fallbackPaths: [bundled] }
     const installed: ProviderEnvironment = {
       env: { PATH: "/bin" },
+      envFor: () => Promise.resolve(installed.env),
       executableExists: (name) => name === "codex" || name === bundled,
       locateExecutable: (name) => (name === "codex" ? cli : name === bundled ? bundled : undefined)
     }
@@ -160,6 +163,7 @@ describe("CodexProvider", () => {
     const bundled = "/Applications/Codex.app/Contents/Resources/codex"
     const appOnly: ProviderEnvironment = {
       env: { PATH: "/bin" },
+      envFor: () => Promise.resolve(appOnly.env),
       executableExists: (name) => name === bundled,
       locateExecutable: (name) => (name === bundled ? bundled : undefined)
     }

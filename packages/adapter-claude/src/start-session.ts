@@ -89,7 +89,7 @@ export const makeStartSession = (deps: StartSessionDeps) => {
     const input = new InputQueue()
     const abort = new AbortController()
     const accountEnv = Object.fromEntries(
-      Object.entries(environment.env).filter(
+      Object.entries(await environment.envFor(cwd)).filter(
         (entry): entry is [string, string] => typeof entry[1] === "string"
       )
     )

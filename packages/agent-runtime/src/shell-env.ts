@@ -10,9 +10,11 @@ export interface ShellEnvOptions {
     shell: string,
     args: ReadonlyArray<string>,
     timeoutMs: number,
-    env: NodeJS.ProcessEnv
+    env: NodeJS.ProcessEnv,
+    cwd?: string
   ) => Promise<string>
   readonly timeoutMs?: number
+  readonly cwd?: string
   readonly userShell?: () => string | undefined
   readonly executableExists?: (path: string) => boolean
   readonly listDirectory?: (path: string) => ReadonlyArray<string>
@@ -87,10 +89,11 @@ export const runShellCommand = (
   shell: string,
   args: ReadonlyArray<string>,
   timeoutMs: number,
-  env: NodeJS.ProcessEnv = process.env
+  env: NodeJS.ProcessEnv = process.env,
+  cwd?: string
 ): Promise<string> =>
   new Promise<string>((resolve, reject) => {
-    execFile(shell, [...args], { env, timeout: timeoutMs }, (error, stdout) => {
+    execFile(shell, [...args], { cwd, env, timeout: timeoutMs }, (error, stdout) => {
       if (error === null) {
         resolve(stdout)
       } else {
@@ -161,7 +164,7 @@ export const resolveShellEnv = async (
   let probed: ReadonlyArray<string> = []
   if (shell !== undefined) {
     try {
-      const output = await runShell(shell, ["-ilc", "/usr/bin/env"], timeoutMs, env)
+      const output = await runShell(shell, ["-ilc", "/usr/bin/env"], timeoutMs, env, options.cwd)
       probed = splitPath(pathFromEnvOutput(output))
     } catch {}
   }
@@ -176,8 +179,33 @@ export const resolveShellEnv = async (
   }
 }
 
-export const makeShellEnvCache = (resolve: () => Promise<NodeJS.ProcessEnv>) => {
+export const makeShellEnvCache = (resolve: (directory?: string) => Promise<NodeJS.ProcessEnv>) => {
   let latest: Promise<NodeJS.ProcessEnv> | undefined
-  const refresh = () => (latest = resolve())
-  return { refresh, current: () => latest ?? refresh() }
+  const directories = new Map<string, NodeJS.ProcessEnv>()
+  const probing = new Map<string, Promise<NodeJS.ProcessEnv>>()
+  const probe = (directory: string): Promise<NodeJS.ProcessEnv> => {
+    const pending = probing.get(directory)
+    if (pending !== undefined) return pending
+    const next = resolve(directory)
+      .then((env) => {
+        directories.set(directory, env)
+        return env
+      })
+      .finally(() => probing.delete(directory))
+    probing.set(directory, next)
+    return next
+  }
+  const refresh = () => {
+    directories.clear()
+    return (latest = resolve())
+  }
+  return {
+    refresh,
+    current: () => latest ?? refresh(),
+    forDirectory: (directory: string): Promise<NodeJS.ProcessEnv> => {
+      const known = directories.get(directory)
+      const next = probe(directory)
+      return known === undefined ? next : Promise.resolve(known)
+    }
+  }
 }

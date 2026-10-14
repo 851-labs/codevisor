@@ -1,5 +1,5 @@
 import * as childProcess from "node:child_process"
-import { mkdtempSync, rmSync } from "node:fs"
+import { mkdtempSync, realpathSync, rmSync } from "node:fs"
 import * as os from "node:os"
 import { join } from "node:path"
 
@@ -51,10 +51,13 @@ describe("resolveShellEnv", () => {
     })
 
     expect(resolved.HOME).toBe("/home/test user")
-    expect(runShell).toHaveBeenCalledWith("/bin/sh", ["-ilc", "/usr/bin/env"], 5000, {
-      ...base,
-      HOME: "/home/test user"
-    })
+    expect(runShell).toHaveBeenCalledWith(
+      "/bin/sh",
+      ["-ilc", "/usr/bin/env"],
+      5000,
+      { ...base, HOME: "/home/test user" },
+      undefined
+    )
     expect(resolved.PATH).toContain("/home/test user/.local/bin")
     expect(base.HOME).toBe(home)
   })
@@ -297,6 +300,13 @@ describe("resolveShellEnv", () => {
 })
 
 describe("runShellCommand", () => {
+  it("starts the shell in the requested directory", async () => {
+    const directory = mkdtempSync(join(os.tmpdir(), "shell-env-cwd-"))
+    onTestFinished(() => rmSync(directory, { recursive: true }))
+    const printed = await runShellCommand("/bin/sh", ["-c", "pwd -P"], 5000, process.env, directory)
+    expect(printed.trim()).toBe(realpathSync(directory))
+  })
+
   it("exports the supplied HOME to child scripts", async () => {
     await expect(
       runShellCommand("/bin/sh", ["-uc", 'printf "%s" "$HOME"'], 5000, {
@@ -349,5 +359,56 @@ describe("makeShellEnvCache", () => {
     expect((await cache.refresh()).PATH).toBe("/probe-2")
     expect((await cache.current()).PATH).toBe("/probe-2")
     expect(probes).toBe(2)
+  })
+
+  it("probes each directory in that directory, sharing one in-flight probe per directory", async () => {
+    const probed: Array<string | undefined> = []
+    const cache = makeShellEnvCache(async (directory) => {
+      probed.push(directory)
+      return { PATH: `${directory ?? "~"}/bin` }
+    })
+    const [first, second, other] = await Promise.all([
+      cache.forDirectory("/repo-a"),
+      cache.forDirectory("/repo-a"),
+      cache.forDirectory("/repo-b")
+    ])
+    expect([first.PATH, second.PATH, other.PATH]).toEqual([
+      "/repo-a/bin",
+      "/repo-a/bin",
+      "/repo-b/bin"
+    ])
+    expect(probed).toEqual(["/repo-a", "/repo-b"])
+  })
+
+  it("serves a known directory without waiting and gives the next reader a re-probed version", async () => {
+    const probes: Array<{
+      settled: Promise<NodeJS.ProcessEnv>
+      finish: (version: string) => void
+    }> = []
+    const cache = makeShellEnvCache(() => {
+      const { promise, resolve } = Promise.withResolvers<NodeJS.ProcessEnv>()
+      probes.push({
+        settled: promise,
+        finish: (version) => resolve({ PATH: `/node/${version}/bin` })
+      })
+      return promise
+    })
+    const firstRead = cache.forDirectory("/repo")
+    probes[0]!.finish("v22")
+    expect((await firstRead).PATH).toBe("/node/v22/bin")
+
+    expect((await cache.forDirectory("/repo")).PATH).toBe("/node/v22/bin")
+    expect(probes).toHaveLength(2)
+    probes[1]!.finish("v24")
+    await probes[1]!.settled
+    expect((await cache.forDirectory("/repo")).PATH).toBe("/node/v24/bin")
+  })
+
+  it("re-probes directories after a refresh", async () => {
+    let probes = 0
+    const cache = makeShellEnvCache(async (directory) => ({ PATH: `${directory}-${++probes}` }))
+    expect((await cache.forDirectory("/repo")).PATH).toBe("/repo-1")
+    await cache.refresh()
+    expect((await cache.forDirectory("/repo")).PATH).toBe("/repo-3")
   })
 })

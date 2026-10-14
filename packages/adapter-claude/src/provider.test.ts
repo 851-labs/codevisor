@@ -312,6 +312,7 @@ describe("ClaudeProvider", () => {
     expect(provider.readiness(definition)).toEqual({ state: "ready" })
     const missing = makeClaudeProvider({
       env: {},
+      envFor: () => Promise.resolve({}),
       executableExists: () => false,
       locateExecutable: () => undefined
     })

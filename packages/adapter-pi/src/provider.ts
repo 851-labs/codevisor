@@ -71,7 +71,11 @@ export const makePiProvider = (
         ...(resume === undefined ? [] : ["--session", resume])
       ],
       cwd,
-      env: { ...withoutEnv(environment.env, account?.unsetEnv), ...account?.env, ...gateway?.env }
+      env: {
+        ...withoutEnv(await environment.envFor(cwd), account?.unsetEnv),
+        ...account?.env,
+        ...gateway?.env
+      }
     })
     return startPiSession(client, emit)
   }

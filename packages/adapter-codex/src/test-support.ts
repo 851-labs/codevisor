@@ -21,6 +21,7 @@ export const definition: HarnessDefinition = {
 
 export const environment: ProviderEnvironment = {
   env: { PATH: "/bin" },
+  envFor: () => Promise.resolve(environment.env),
   executableExists: (name) => name === "codex",
   locateExecutable: (name) => (name === "codex" ? "/bin/codex" : undefined)
 }
