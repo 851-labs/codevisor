@@ -52,10 +52,6 @@ final class NavigationOutboxExecutor {
     }
   }
 
-  func resumeAll() {
-    for machineId in Set(outbox.entries.map(\.machineId)) { resume(machineId: machineId) }
-  }
-
   /// Waits for a machine's pump to go idle (tests and pull to refresh).
   func idle(machineId: String) async {
     await pumps[machineId]?.value

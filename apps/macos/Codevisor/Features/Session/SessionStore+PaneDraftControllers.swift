@@ -6,12 +6,6 @@ import ACPKit
 // MARK: - PaneDraftControllers
 
 extension SessionStore {
-  /// The live draft selected in an unbound chat pane. Split/tab inheritance
-  /// uses this when the focused pane has no eager session record.
-  func paneDraftController(forPane paneId: UUID) -> SessionController? {
-    paneDrafts[paneId]
-  }
-
   /// Resolves an eagerly-created unsent session back to the pane that owns
   /// its draft controller.
   func paneDraftLocation(
