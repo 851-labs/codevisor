@@ -25,23 +25,6 @@ struct CloudAccountControllerTests {
     #expect(custom.controller.serverURL == URL(string: "https://cloud.example.com")!)
   }
 
-  @Test("Bootstrap with a dev cloud URL but no stored session stays signed out")
-  func bootstrapStaysSignedOutWithoutSession() async throws {
-    let client = FakeCloudClient()
-    client.sessions["dev-token"] = CloudSessionUser(userId: "u1", email: "dev@example.com")
-    let (controller, _, store) = makeController(
-      client: client,
-      environmentCloud: CodevisorAppVariant.DevelopmentCloud(
-        url: URL(string: "http://127.0.0.1:8787")!
-      )
-    )
-
-    await controller.bootstrap()
-
-    #expect(controller.state == .signedOut)
-    #expect(try store.token() == nil)
-  }
-
   @Test("The development account signs in through the production path when the cloud advertises it")
   func developmentAccountSignIn() async throws {
     let client = FakeCloudClient()

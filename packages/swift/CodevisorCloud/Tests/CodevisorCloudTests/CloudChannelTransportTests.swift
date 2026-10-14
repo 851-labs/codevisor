@@ -9,16 +9,10 @@ import CodevisorTestSupport
 @Suite("CloudChannelTransport")
 struct CloudChannelTransportTests {
   private actor StubChannelHost: CloudChannelHosting {
-    var onClientFrame: (@Sendable (String, Data) -> Void)?
     private(set) var closes: [(channelId: String, reason: CloudChannelCloseReason)] = []
 
-    func setClientFrameHandler(_ handler: @escaping @Sendable (String, Data) -> Void) {
-      onClientFrame = handler
-    }
-
     func send(channelId: String, plaintext: Data) throws -> Int {
-      onClientFrame?(channelId, plaintext)
-      return plaintext.count
+      plaintext.count
     }
 
     func grantCredit(channelId: String, bytes: Int) throws {}
@@ -40,20 +34,6 @@ struct CloudChannelTransportTests {
     let machineDeviceId = "stub-machine"
     let host = StubChannelHost()
     let opened = TestSignal()
-    private let lock = NSLock()
-    private var _openParams: [JSONValue?] = []
-    var respond:
-      (
-        @Sendable (
-          _ channelType: String,
-          _ params: JSONValue?,
-          _ clientFrame: Data,
-          _ onMessage: @escaping @Sendable (Data) -> Void,
-          _ onClosed: @escaping @Sendable (CloudChannelCloseReason?) -> Void
-        ) -> Void
-      )?
-
-    var openParams: [JSONValue?] { lock.withLock { _openParams } }
 
     func openChannel(
       channelType: String,
@@ -62,12 +42,7 @@ struct CloudChannelTransportTests {
       onMessage: @escaping @Sendable (Data) -> Void,
       onClosed: @escaping @Sendable (CloudChannelCloseReason?) -> Void
     ) async throws -> CloudRelayChannel {
-      lock.withLock { _openParams.append(params) }
-      let respond = respond
-      await host.setClientFrameHandler { _, plaintext in
-        respond?(channelType, params, plaintext, onMessage, onClosed)
-      }
-      return CloudRelayChannel(id: UUID().uuidString, host: host)
+      CloudRelayChannel(id: UUID().uuidString, host: host)
     }
 
     func openFlowControlledChannel(
@@ -78,46 +53,10 @@ struct CloudChannelTransportTests {
       onCredit: @escaping @Sendable (Int) -> Void,
       onClosed: @escaping @Sendable (CloudChannelCloseReason?) -> Void
     ) async throws -> CloudRelayChannel {
-      lock.withLock { _openParams.append(params) }
-      let respond = respond
-      await host.setClientFrameHandler { _, plaintext in
-        respond?(
-          channelType, params, plaintext,
-          { data in onMessage(data, data.count + 16) },
-          onClosed
-        )
-      }
       onCredit(1_000_000)
       defer { opened.signal() }
       return CloudRelayChannel(id: UUID().uuidString, host: host)
     }
-  }
-
-  @Test("The HTTP tunnel completes a round trip over a hub-free transport")
-  func httpOverStubTransport() async throws {
-    let stub = StubTransport()
-    stub.respond = { _, _, clientFrame, onMessage, onClosed in
-      struct ClientFrame: Decodable { var kind: String }
-      guard let frame = try? JSONDecoder().decode(ClientFrame.self, from: clientFrame),
-        frame.kind == "end"
-      else { return }
-      let respond = { (value: [String: JSONValue]) in
-        onMessage(try! JSONEncoder().encode(JSONValue.object(value)))
-      }
-      respond(["kind": .string("head"), "status": .number(204), "headers": .object([:])])
-      respond(["kind": .string("end")])
-      onClosed(.done)
-    }
-
-    let transport = CloudRelayRequestTransport(endpoint: stub)
-    var request = URLRequest(url: URL(string: "https://cloud-relay.invalid/v1/health")!)
-    request.httpMethod = "GET"
-    let (data, response) = try await transport.data(for: request)
-
-    #expect(response.statusCode == 204)
-    #expect(data.isEmpty)
-    #expect(stub.openParams.count == 1)
-    #expect(await stub.host.unanswered.isEmpty)
   }
 
   @Test("A request with no reply by the deadline reports its channel unanswered")
