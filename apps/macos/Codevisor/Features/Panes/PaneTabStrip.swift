@@ -205,8 +205,10 @@ struct PaneTabStrip: View {
             transaction.animation = nil
           }
         }
+        // `.subviews` drops only this drag; `.none` would also drop the
+        // tab's own tap.
         .highPriorityGesture(
-          reorderGesture(for: item.id, slotWidth: slotWidth), including: onMove == nil ? .none : .all
+          reorderGesture(for: item.id, slotWidth: slotWidth), including: onMove == nil ? .subviews : .all
         )
         .transition(.asymmetric(insertion: .identity, removal: .opacity))
         .modifier(PaneTabContextMenu(id: item.id, onRename: onRename))

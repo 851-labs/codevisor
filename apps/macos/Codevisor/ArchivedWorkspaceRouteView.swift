@@ -15,8 +15,9 @@ struct ArchivedWorkspaceRouteView: View {
   let serverId: String
   let workspaceId: UUID
   /// The workspace stopped being archived: restored from its sidebar row
-  /// or on another device. The caller moves the selection to the live workspace.
-  let onRestored: (Workspace) -> Void
+  /// or on another device. The caller moves the selection to the live
+  /// workspace, on the tab on screen here (nil: the one it last showed).
+  let onRestored: (Workspace, _ tabId: UUID?) -> Void
   /// The tab shown; nil starts on the tab the workspace last showed.
   @State private var selectedTabId: UUID?
   @State private var focus = TerminalFocusController()
@@ -38,7 +39,7 @@ struct ArchivedWorkspaceRouteView: View {
       }
     }
     .onChange(of: workspace?.isArchived, initial: true) { _, isArchived in
-      if isArchived == false, let workspace { onRestored(workspace) }
+      if isArchived == false, let workspace { onRestored(workspace, selectedTabId) }
     }
   }
 
@@ -68,9 +69,9 @@ struct ArchivedWorkspaceRouteView: View {
   }
 
   /// The pane the tab last showed: its active split's selected pane, else
-  /// its first.
+  /// its first split's, as the live strip names it.
   private func selectedPane(of tab: WorkspaceTab) -> PaneDescriptorState? {
-    tab.root.group(id: tab.activeLeafId)?.selectedPane ?? tab.root.allGroups.first?.state.panes.first
+    tab.root.group(id: tab.activeLeafId)?.selectedPane ?? tab.root.allGroups.first?.state.selectedPane
   }
 
   private func tabItem(_ tab: WorkspaceTab, in workspace: Workspace) -> PaneTabStripItem {

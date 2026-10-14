@@ -405,29 +405,37 @@ struct RootView: View {
       store: store,
       serverId: serverId,
       workspaceId: workspaceId,
-      onRestored: { workspace in
+      onRestored: { workspace, tabId in
         // The route reports for the workspace it shows; a stale report from
         // a route being replaced must not act on the new selection.
         guard selection == .archivedWorkspace(serverId: serverId, id: workspaceId) else { return }
-        openRestoredWorkspace(workspace)
+        openRestoredWorkspace(workspace, tabId: tabId)
       }
     )
   }
 
-  /// Leaves the read-only view for the live workspace, on the tab it last
-  /// showed: through that tab's chat when it has one, else the workspace.
-  private func openRestoredWorkspace(_ workspace: Workspace) {
-    let chat = workspace.selectedCenterTab.flatMap { tab in
-      tab.root.allGroups.flatMap(\.state.panes).lazy
-        .filter { $0.kind == .chat }
-        .compactMap { $0.chatSessionId.flatMap { environment.projectList.session($0, serverId: workspace.serverId) } }
-        .first
+  /// Leaves the read-only view for the live workspace, on the tab it was
+  /// showing -- opened the way the sidebar opens a tab: through the tab's
+  /// chat when it has one, else the workspace, with its layout untouched.
+  private func openRestoredWorkspace(_ workspace: Workspace, tabId: UUID?) {
+    let fallback = SidebarSelection.workspace(serverId: workspace.serverId, id: workspace.id)
+    guard
+      let tab = workspace.centerTabs.first(where: { $0.id == tabId })
+        ?? workspace.selectedCenterTab ?? workspace.centerTabs.first,
+      store?.selectDestination(.tab(tab.id), in: workspace.id) == true
+    else {
+      selection = fallback
+      return
     }
-    if let chat {
-      store?.selectChat(chat)
-      selection = .session(serverId: chat.serverId, id: chat.id)
-    } else {
-      selection = .workspace(serverId: workspace.serverId, id: workspace.id)
+    let route = workspace.selectionRoute(
+      activatedChatSessionId: environment.projectList.routableChat(in: tab, serverId: workspace.serverId)?.id,
+      routingSessionId: nil,
+      selectionAlreadyRoutesWorkspace: false
+    )
+    switch route {
+    case let .session(serverId, id): selection = .session(serverId: serverId, id: id)
+    case let .workspace(serverId, id): selection = .workspace(serverId: serverId, id: id)
+    case nil: selection = fallback
     }
   }
 

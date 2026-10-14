@@ -230,16 +230,9 @@ extension SidebarView {
     }
   }
 
-  /// The live chat a tab can route through: its selected pane's chat first,
-  /// else any chat pane inside the tab's splits.
+  /// The live chat a tab can route through.
   func routableChat(in tab: WorkspaceTab, serverId: String) -> ChatSession? {
-    let selected = tab.root.group(id: tab.activeLeafId)?.selectedPane.map { [$0] } ?? []
-    let panes = selected + tab.root.allGroups.flatMap(\.state.panes)
-    for pane in panes where pane.kind == .chat {
-      guard let id = pane.chatSessionId, let session = list.session(id, serverId: serverId) else { continue }
-      return session
-    }
-    return nil
+    list.routableChat(in: tab, serverId: serverId)
   }
 
   /// Applies the resolved route. A nil route means the current selection
@@ -290,4 +283,18 @@ extension SidebarView {
     }
   }
 
+}
+
+extension ProjectListModel {
+  /// The live chat a tab can route through: its selected pane's chat first,
+  /// else any chat pane inside the tab's splits.
+  func routableChat(in tab: WorkspaceTab, serverId: String) -> ChatSession? {
+    let selected = tab.root.group(id: tab.activeLeafId)?.selectedPane.map { [$0] } ?? []
+    let panes = selected + tab.root.allGroups.flatMap(\.state.panes)
+    for pane in panes where pane.kind == .chat {
+      guard let id = pane.chatSessionId, let session = session(id, serverId: serverId) else { continue }
+      return session
+    }
+    return nil
+  }
 }
