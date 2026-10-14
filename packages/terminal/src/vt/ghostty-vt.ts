@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url"
 /// scripts/build-ghostty-vt-wasm.sh. Parsing runs in wasm so the server needs
 /// no per-platform native build, and a parser fault cannot take the process
 /// down with it.
-export const GHOSTTY_VT_WASM_PATH = fileURLToPath(
+const GHOSTTY_VT_WASM_PATH = fileURLToPath(
   new URL("../../resources/ghostty-vt.wasm", import.meta.url)
 )
 
@@ -103,9 +103,6 @@ export interface VtState {
 export interface VtTerminalOptions {
   readonly cols: number
   readonly rows: number
-  /// Scrollback retained for reconstruction (libghostty prunes by page, so
-  /// slightly more survives).
-  readonly scrollbackLines?: number
   /// Replies the terminal generates for queries it parsed (device
   /// attributes, cursor position reports, color queries).
   readonly onReply?: (reply: Uint8Array) => void
@@ -126,7 +123,9 @@ export interface VtTerminal {
   free(): void
 }
 
-export const DEFAULT_SCROLLBACK_LINES = 10_000
+/// Scrollback retained for reconstruction (libghostty prunes by page, so
+/// slightly more survives).
+const SCROLLBACK_LINES = 10_000
 /// Continuation tracking bound: an unfinished sequence longer than this (an
 /// enormous OSC 52 paste mid-stream) is dropped from reconstruction.
 const CONTINUATION_MAX_BYTES = 64 * 1024
@@ -381,10 +380,10 @@ class GhosttyVt {
 
 let shared: GhosttyVt | undefined
 
-/// Loads the wasm module once per process. `bytes` is injectable so tests
-/// and packaging checks can load a specific build.
-export const loadGhosttyVt = (bytes?: Uint8Array<ArrayBuffer>): void => {
-  shared = new GhosttyVt(bytes ?? readFileSync(GHOSTTY_VT_WASM_PATH))
+/// Loads the wasm module once per process. Tests call it again to reset the
+/// shared instance after exhausting its memory.
+export const loadGhosttyVt = (): void => {
+  shared = new GhosttyVt(readFileSync(GHOSTTY_VT_WASM_PATH))
 }
 
 const ghostty = (): GhosttyVt => {
@@ -398,7 +397,7 @@ export const createVtTerminal = (options: VtTerminalOptions): VtTerminal => {
   const terminal = vt.takeOpaque("terminal_new", (slot) =>
     exports.ghostty_terminal_new(0, slot, options.cols, options.rows)
   )
-  vt.setSize(terminal, "SCROLLBACK_MAX_LINES", options.scrollbackLines ?? DEFAULT_SCROLLBACK_LINES)
+  vt.setSize(terminal, "SCROLLBACK_MAX_LINES", SCROLLBACK_LINES)
   vt.setSize(terminal, "CONTINUATION_MAX_BYTES", CONTINUATION_MAX_BYTES)
   const handle = vt.allocateHandle()
   if (options.onReply !== undefined) vt.registerReplies(terminal, handle, options.onReply)
