@@ -92,6 +92,7 @@ describe("@codevisor/db", () => {
       expect(renamed.isArchived).toBe(true)
       expect(renamed.archivedAt).toBe(archived.archivedAt)
 
+      vi.setSystemTime(new Date("2026-07-03T00:00:00.000Z"))
       const again = await run(db.updateWorkspace(workspace.id, { isArchived: true }))
       expect(again.isArchived).toBe(true)
       expect(again.archivedAt).toBe(archived.archivedAt)
