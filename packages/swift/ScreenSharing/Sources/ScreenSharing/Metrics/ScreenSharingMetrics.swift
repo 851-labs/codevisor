@@ -32,10 +32,9 @@ public final class ScreenSharingMetrics: @unchecked Sendable {
   public func counters() -> [String: Int] { lock.withLock { counterValues } }
 
   public func enableTracing() { lock.withLock { tracing = true } }
-  public var isTracing: Bool { lock.withLock { tracing } }
 
   public func trace(_ name: String, _ entry: @autoclosure () -> String) {
-    guard isTracing else { return }
+    guard lock.withLock({ tracing }) else { return }
     let value = entry()
     lock.withLock {
       if traces[name, default: []].count == traceCapacity { traces[name]?.removeFirst() }

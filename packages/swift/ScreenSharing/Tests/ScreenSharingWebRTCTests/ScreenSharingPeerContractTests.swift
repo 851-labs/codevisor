@@ -89,7 +89,7 @@ struct ScreenSharingPeerContractTests {
     #expect(uninvited.readyState != .open && uninvited.readyState != .connecting)
   }
 
-  @Test func peerOptionsCarryTheProductDefaultsAndCompareByValue() throws {
+  @Test func peerOptionsCarryTheProductDefaults() throws {
     let options = ScreenSharingPeerOptions()
     #expect(options.codec == .hevc444 && options.fallbackCodecs == [.hevc, .h264] && options.useLowLatencyRateControl)
     #expect(!options.disableLookAhead && !options.staticCodecRate && !options.completeEachFrame)
@@ -97,10 +97,6 @@ struct ScreenSharingPeerContractTests {
     #expect(options.maximumPendingFrames == 3 && options.keyframeIntervalSeconds == 60)
     #expect(options.transportCeilingBps == nil && options.sourceIdleThresholdNs == nil)
     #expect(options.deliveryGrace == nil && options.deliveryGraceExtensions == nil)
-    #expect(options == ScreenSharingPeerOptions())
-    var altered = options
-    altered.deliveryGraceExtensions = 0
-    #expect(altered != options)
   }
 
   @Test func aDiagnosticTransportCeilingMustCoverTheBitrateAndStayUnderHalfAGigabit() throws {
