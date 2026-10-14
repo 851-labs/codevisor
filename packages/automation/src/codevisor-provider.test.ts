@@ -35,14 +35,13 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-const publishedTools = makeCodevisorProvider(
-  () => "http://unused",
-  async () => "unused"
-).tools
-
 describe("Codevisor MCP provider", () => {
   it("publishes a unique, resource-oriented tool contract", async () => {
-    const names = publishedTools.map((tool) => tool.name)
+    const { tools } = makeCodevisorProvider(
+      () => "http://unused",
+      async () => "unused"
+    )
+    const names = tools.map((tool) => tool.name)
     expect(new Set(names).size).toBe(names.length)
     expect(names).toEqual(
       expect.arrayContaining([
@@ -65,18 +64,18 @@ describe("Codevisor MCP provider", () => {
       ])
     )
 
-    const worktree = publishedTools.find((tool) => tool.name === "worktrees.create")!
+    const worktree = tools.find((tool) => tool.name === "worktrees.create")!
     expect(worktree.inputSchema).toMatchObject({
       properties: { projectId: { type: "string" }, id: { anyOf: expect.any(Array) } }
     })
     expect(worktree.inputSchema.required).toBeUndefined()
-    const transcript = publishedTools.find((tool) => tool.name === "sessions.transcript")!
+    const transcript = tools.find((tool) => tool.name === "sessions.transcript")!
     expect(transcript.inputSchema).toMatchObject({
       properties: {
         sessionId: { description: "Session id. Defaults to the calling session." }
       }
     })
-    const capabilities = publishedTools.find((tool) => tool.name === "server.capabilities")!
+    const capabilities = tools.find((tool) => tool.name === "server.capabilities")!
     expect(capabilities.inputSchema).toMatchObject({
       properties: {
         cwd: { description: "Working directory used to resolve harness capabilities." }
@@ -232,12 +231,6 @@ describe("Codevisor MCP provider", () => {
   })
 
   it("gates consent-marked tools on an explicit confirm argument", async () => {
-    const install = publishedTools.find((tool) => tool.name === "plugins.install")!
-    expect(install.inputSchema.required).toContain("confirm")
-    expect(install.inputSchema).toMatchObject({
-      properties: { source: { type: "string" }, confirm: { type: "boolean" } }
-    })
-
     const requests: Array<{ url: URL; init: RequestInit }> = []
     stubFetch((url, init) => {
       requests.push({ url, init })
@@ -247,6 +240,11 @@ describe("Codevisor MCP provider", () => {
       () => "http://localhost:43210",
       async () => "stable-token"
     )
+    const install = provider.tools.find((tool) => tool.name === "plugins.install")!
+    expect(install.inputSchema.required).toContain("confirm")
+    expect(install.inputSchema).toMatchObject({
+      properties: { source: { type: "string" }, confirm: { type: "boolean" } }
+    })
 
     await expect(
       provider.invoke(callingContext, "plugins.install", { source: "owner/repo" })
