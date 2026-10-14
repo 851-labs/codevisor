@@ -224,9 +224,9 @@ export const parseMachineOutboundRelayHeader = (
   value: unknown
 ): MachineOutboundRelayHeader | undefined => {
   const answer = parseAddressedHeader<MachineRelayHeader>(value, "peerId")
-  if (answer !== undefined) return { direction: "answer", ...answer }
+  if (answer !== undefined) return { ...answer, direction: "answer" }
   const opened = parseAppRelayHeader(value)
-  return opened === undefined ? undefined : { direction: "open", ...opened }
+  return opened === undefined ? undefined : { ...opened, direction: "open" }
 }
 
 export const AppHello = Schema.Struct({
