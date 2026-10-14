@@ -1,6 +1,5 @@
 import SwiftUI
 import CodevisorCore
-import CodevisorUI
 
 /// Each workspace is one sidebar row; its tabs live in the strip above the
 /// workspace's content. Clicking a row opens the workspace on its selected
@@ -57,7 +56,8 @@ extension SidebarView {
       let machine = environment.machines.machine(for: workspace.serverId),
       let name = machineName(forServer: workspace.serverId)
     else { return nil }
-    return SidebarRowMachine(name: name, systemImage: EntitySystemSymbol.machine(machine))
+    // Outline glyphs, matching the row's other line icons.
+    return SidebarRowMachine(name: name, systemImage: machine.isLocal ? "display" : "cloud")
   }
 
   /// Restarts the PR refresh loop when badges are turned on or off, or the
