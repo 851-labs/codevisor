@@ -1,7 +1,6 @@
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { webSearchSources } from "./claude.js"
 import {
   definition,
   FakeQuery,
@@ -11,6 +10,7 @@ import {
   run,
   streamEvent
 } from "./test-support.js"
+import { webSearchSources } from "./tool-presentation.js"
 
 describe("ClaudeProvider", () => {
   afterEach(() => {
