@@ -5,7 +5,7 @@ import { join } from "node:path"
 
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { credentialFerrySources, canonicalCredentialJson } from "./credential-ferry.js"
+import { credentialFerrySources } from "./credential-ferry.js"
 
 const roots: string[] = []
 afterEach(() => {
@@ -65,9 +65,9 @@ describe("pi source", () => {
     const source = byId["pi-auth"]!
     expect(source.tombstoneOnAbsence).toBe(false)
     const published = await source.read()
-    expect(published).toBe(canonicalCredentialJson({ openai: { type: "api_key", key: "sk-1" } }))
+    expect(published).toBe('{"openai":{"type":"api_key","key":"sk-1"}}')
 
-    await source.apply(canonicalCredentialJson({ groq: { type: "api_key", key: "sk-2" } }))
+    await source.apply(JSON.stringify({ groq: { type: "api_key", key: "sk-2" } }))
     const merged = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>
     expect(Object.keys(merged).toSorted()).toEqual(["anthropic", "groq"])
     expect(merged.anthropic).toMatchObject({ type: "oauth", refresh: "r" })
@@ -78,7 +78,7 @@ describe("pi source", () => {
     const { home, byId } = await makeSources()
     const source = byId["pi-auth"]!
     expect(await source.read()).toBeUndefined()
-    await source.apply(canonicalCredentialJson({ openai: { type: "api_key", key: "sk-9" } }))
+    await source.apply(JSON.stringify({ openai: { type: "api_key", key: "sk-9" } }))
     const written = JSON.parse(
       await readFile(join(home, ".pi", "agent", "auth.json"), "utf8")
     ) as Record<string, unknown>
@@ -98,7 +98,7 @@ describe("opencode source", () => {
       path,
       JSON.stringify({ anthropic: oauth, openai: { type: "api", key: "local-key" } })
     )
-    const shared = canonicalCredentialJson({ anthropic: { type: "api", key: "shared-key" } })
+    const shared = JSON.stringify({ anthropic: { type: "api", key: "shared-key" } })
     expect(await source.localOverrides!()).toEqual(["anthropic"])
     expect(JSON.parse((await source.read(shared))!)).toEqual({
       anthropic: { type: "api", key: "shared-key" },
@@ -139,19 +139,19 @@ describe("codex source", () => {
     expect(await source.localOverrides!()).toEqual([])
 
     await mkdir(join(home, ".codex"), { recursive: true })
-    await writeFile(path, JSON.stringify({ OPENAI_API_KEY: "sk-c" }))
-    expect(await source.read()).toBe(canonicalCredentialJson({ OPENAI_API_KEY: "sk-c" }))
+    await writeFile(path, JSON.stringify({ OPENAI_API_KEY: "sk-c", auth_mode: "apikey" }))
+    expect(await source.read()).toBe('{"auth_mode":"apikey","OPENAI_API_KEY":"sk-c"}')
 
     await writeFile(path, JSON.stringify({ tokens: { access_token: "a" }, last_refresh: "t" }))
     expect(await source.localOverrides!()).toEqual(["*"])
     expect(await source.read()).toBeUndefined()
-    await source.apply(canonicalCredentialJson({ OPENAI_API_KEY: "ferried" }))
+    await source.apply(JSON.stringify({ OPENAI_API_KEY: "ferried" }))
     expect(JSON.parse(await readFile(path, "utf8"))).toHaveProperty("tokens")
     await source.applyDelete!()
     expect(JSON.parse(await readFile(path, "utf8"))).toHaveProperty("tokens")
 
     await writeFile(path, JSON.stringify({ OPENAI_API_KEY: "old" }))
-    await source.apply(canonicalCredentialJson({ OPENAI_API_KEY: "ferried" }))
+    await source.apply(JSON.stringify({ OPENAI_API_KEY: "ferried" }))
     expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ OPENAI_API_KEY: "ferried" })
     await source.applyDelete!()
     expect(await source.read()).toBeUndefined()
@@ -235,10 +235,10 @@ describe("hostile files and path variants", () => {
       JSON.stringify({ openai: { type: "api_key", key: "sk-custom" }, junk: "not-an-object" })
     )
     expect(await byId["pi-auth"]!.read()).toBe(
-      canonicalCredentialJson({ openai: { type: "api_key", key: "sk-custom" } })
+      JSON.stringify({ openai: { type: "api_key", key: "sk-custom" } })
     )
-    await byId["pi-auth"]!.apply(canonicalCredentialJson({ a: { type: "api_key", key: "1" } }))
-    await byId["pi-auth"]!.apply(canonicalCredentialJson({ a: { type: "api_key", key: "2" } }))
+    await byId["pi-auth"]!.apply(JSON.stringify({ a: { type: "api_key", key: "1" } }))
+    await byId["pi-auth"]!.apply(JSON.stringify({ a: { type: "api_key", key: "2" } }))
 
     await mkdir(join(home, "custom-codex"), { recursive: true })
     await writeFile(join(home, "custom-codex", "auth.json"), JSON.stringify(["an", "array"]))
@@ -267,7 +267,7 @@ describe("hostile files and path variants", () => {
         resolveEnv: () => Promise.resolve({ HOME: lockedHome, PI_CODING_AGENT_DIR: lockedDir })
       }).find((source) => source.id === "pi-auth")!
       await expect(
-        locked.apply(canonicalCredentialJson({ a: { type: "api_key", key: "x" } }))
+        locked.apply(JSON.stringify({ a: { type: "api_key", key: "x" } }))
       ).rejects.toMatchObject({ code: "EACCES" })
     } finally {
       await chmodDir(lockedDir, 0o700)
