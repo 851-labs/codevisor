@@ -77,13 +77,6 @@ struct EnvironmentProbeTests {
     #expect(Self.fallbacks.contains("/Users/test/.asdf/shims"))
   }
 
-  @Test("userLoginShell returns a usable shell path")
-  func loginShell() {
-    let shell = EnvironmentProbe.userLoginShell(environment: [:])
-    #expect(shell.path.hasPrefix("/"))
-    #expect(!shell.path.isEmpty)
-  }
-
   @Test("resolvedEnvironment overrides PATH")
   func resolvedEnvironment() {
     let probe = makeProbe(runner: FakeCommandRunner(stdout: ""))

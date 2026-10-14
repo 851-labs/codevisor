@@ -22,16 +22,14 @@ public struct EnvironmentProbe: Sendable {
     ]
   }
 
-  public static func userLoginShell(
-    environment: [String: String] = ProcessInfo.processInfo.environment
-  ) -> URL {
+  public static func userLoginShell() -> URL {
     if let passwd = getpwuid(getuid()), let shell = passwd.pointee.pw_shell {
       let path = String(cString: shell)
       if !path.isEmpty {
         return URL(fileURLWithPath: path)
       }
     }
-    if let shell = environment["SHELL"], !shell.isEmpty {
+    if let shell = ProcessInfo.processInfo.environment["SHELL"], !shell.isEmpty {
       return URL(fileURLWithPath: shell)
     }
     return URL(fileURLWithPath: "/bin/zsh")

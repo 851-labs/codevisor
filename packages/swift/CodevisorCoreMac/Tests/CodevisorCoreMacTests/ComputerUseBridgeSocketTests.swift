@@ -30,6 +30,13 @@ struct ComputerUseBridgeSocketTests {
         #expect(String(describing: error).contains("foreground_reason"))
       }
     }
+    let unknown: [String: Any] = ["app": "No app should be resolved", "delivery_mode": "invalid", "key": "Return"]
+    do {
+      _ = try bridge.handle(["type": "tool", "sessionId": "intent", "tool": "press_key", "arguments": unknown])
+      Issue.record("An unknown delivery mode must be rejected before app lookup or permission prompting")
+    } catch {
+      #expect(String(describing: error).contains("deliveryMode must be background or foreground"))
+    }
   }
 
   @Test("Starts a discoverable socket for deeply nested development data")
