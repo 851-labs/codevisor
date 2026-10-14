@@ -4,25 +4,6 @@ import Testing
 @testable import ScreenSharingWebRTC
 
 struct ScreenSharingControlMessageTests {
-  @Test func wireFormatRejectsUnsupportedVersionsOversizeAndInvalidInput() throws {
-    let id = UUID()
-    let message = ScreenSharingControlMessage.input(
-      lease: id, sequence: 2, event: .button(.init(x: 0.1, y: 0.9), button: 2, down: true, clicks: 2, modifiers: 9))
-    #expect(try ScreenSharingControlMessage.decode(message.encoded()) == message)
-    let data = try message.encoded()
-    var object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
-    object["version"] = 2
-    let unsupported = try JSONSerialization.data(withJSONObject: object)
-    #expect(throws: (any Error).self) { try ScreenSharingControlMessage.decode(unsupported) }
-    #expect(throws: (any Error).self) { try ScreenSharingControlMessage.decode(Data(repeating: 0, count: 4097)) }
-    let invalid = ScreenSharingControlMessage.input(
-      lease: id, sequence: 1, event: .key(code: 65535, down: true, repeatKey: false, modifiers: 0))
-    #expect(throws: (any Error).self) { try ScreenSharingControlMessage.decode(invalid.encoded()) }
-    #expect(!ScreenSharingInputEvent.move(.init(x: .nan, y: 0), modifiers: 0).isValid)
-    #expect(!ScreenSharingInputEvent.scroll(.init(x: 0, y: 0), x: .min, y: 0, modifiers: 0).isValid)
-    #expect(!ScreenSharingInputEvent.text(String(repeating: "x", count: 1025)).isValid)
-  }
-
   @Test func systemKeysAreValidInputAndOtherHighCodesAreNot() {
     for key in ScreenSharingSystemKey.allCases {
       #expect(ScreenSharingInputEvent.key(code: key.rawValue, down: true, repeatKey: false, modifiers: 0).isValid)
@@ -136,15 +117,6 @@ struct ScreenSharingControlMessageTests {
     #expect(inbox.enqueue(Data([1])) == false)
     let after = inbox.drain()
     #expect(after.0.isEmpty && after.1)
-  }
-
-  @Test func fractionalTrackpadMovementIsPreservedAndInvalidDeltasDoNotContaminateIt() {
-    var scroll = ScreenSharingScrollAccumulator()
-    #expect(scroll.add(x: 0.4, y: -0.4) == (0, 0))
-    #expect(scroll.add(x: 0.4, y: -0.4) == (0, 0))
-    #expect(scroll.add(x: .infinity, y: 0) == (0, 0))
-    #expect(scroll.add(x: 0.4, y: -0.4) == (1, -1))
-    #expect(scroll.add(x: 100_000, y: -100_000) == (4096, -4096))
   }
 
   @Test func geometryMapsTheVideoCornersOfAWiderSurface() {

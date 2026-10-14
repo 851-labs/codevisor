@@ -5,8 +5,8 @@ import { join } from "node:path"
 import { Effect } from "effect"
 import { expect, it, vi } from "vitest"
 
-import { makeEventFanout, type RouteState } from "../server.js"
-import { idleRestartCoordinator, makeServices, run, tempDirs } from "../test-support.js"
+import { makeEventFanout } from "../server.js"
+import { idleRouteState, makeServices, run, tempDirs } from "../test-support.js"
 import { drainPromptQueue } from "./prompt-queue.js"
 
 it.each([false, true])(
@@ -21,18 +21,7 @@ it.each([false, true])(
     )
     const queued = await run(services.db.createPromptQueueItem(session.id, "Hello"))
     const fanout = await run(makeEventFanout)
-    const state: RouteState = {
-      activePromptSessions: new Set(),
-      promptTurnReleases: new Map(),
-      activeTurnSessions: new Set(),
-      gatedSessions: new Map(),
-      pendingPromptActions: new Set(),
-      pendingSessionCreates: new Map(),
-      turnHeldSessions: new Set(),
-      updateSignature: {},
-      restartHeldSessions: new Set(),
-      restart: idleRestartCoordinator()
-    }
+    const state = idleRouteState()
     const entered = Promise.withResolvers<void>()
     const release = Promise.withResolvers<void>()
     const create = agents.createAgentSession

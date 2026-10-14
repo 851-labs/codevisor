@@ -15,16 +15,13 @@ export const defaultInstallFsOperations: InstallFsOperations = {
   removeRecursive: (path) => rmSync(path, { recursive: true, force: true })
 }
 
-export const resolveInstallRoot = (
-  entrypoint: string | undefined,
-  exists: (path: string) => boolean = existsSync
-): string | undefined => {
+export const resolveInstallRoot = (entrypoint: string | undefined): string | undefined => {
   if (entrypoint === undefined || entrypoint.length === 0) {
     return undefined
   }
   const root = dirname(entrypoint)
   const marks = [join(root, "VERSION"), join(root, "main.js"), join(root, "bin", "node")]
-  return marks.every((mark) => exists(mark)) ? root : undefined
+  return marks.every((mark) => existsSync(mark)) ? root : undefined
 }
 
 export type RestartPlan =

@@ -127,12 +127,11 @@ export const serverReleaseFromManifest = (
 }
 
 export const fetchStableServerRelease = async (options: {
-  readonly manifestURL?: string | undefined
   readonly target: string
   readonly fetch?: typeof globalThis.fetch | undefined
 }): Promise<ServerRelease | undefined> => {
   const fetcher = options.fetch ?? globalThis.fetch
-  const response = await fetcher(options.manifestURL ?? DEFAULT_STABLE_SERVER_MANIFEST_URL, {
+  const response = await fetcher(DEFAULT_STABLE_SERVER_MANIFEST_URL, {
     headers: { "cache-control": "no-cache" },
     signal: AbortSignal.timeout(10_000)
   })
@@ -143,12 +142,11 @@ export const fetchStableServerRelease = async (options: {
 }
 
 export const fetchAlphaServerRelease = async (options: {
-  readonly manifestURL?: string | undefined
   readonly target: string
   readonly fetch?: typeof globalThis.fetch | undefined
 }): Promise<ServerRelease | undefined> => {
   const fetcher = options.fetch ?? globalThis.fetch
-  const response = await fetcher(options.manifestURL ?? DEFAULT_ALPHA_SERVER_MANIFEST_URL, {
+  const response = await fetcher(DEFAULT_ALPHA_SERVER_MANIFEST_URL, {
     headers: { "cache-control": "no-cache" },
     signal: AbortSignal.timeout(10_000)
   })
@@ -183,24 +181,20 @@ export const fetchLegacyServerRelease = async (options: {
 
 export const fetchLatestServerRelease = async (options: {
   readonly channel?: ServerUpdateChannel | undefined
-  readonly manifestURL?: string | undefined
-  readonly alphaManifestURL?: string | undefined
-  readonly repository?: string
-  readonly legacyBaseURL?: string
+  readonly repository: string
+  readonly legacyBaseURL: string
   readonly target: string
   readonly fetch?: typeof globalThis.fetch | undefined
 }): Promise<ServerRelease | undefined> => {
   const alphaRelease =
     options.channel === "alpha"
       ? await fetchAlphaServerRelease({
-          manifestURL: options.alphaManifestURL,
           target: options.target,
           fetch: options.fetch
         }).catch(() => undefined)
       : undefined
   try {
     const release = await fetchStableServerRelease({
-      manifestURL: options.manifestURL,
       target: options.target,
       fetch: options.fetch
     })
@@ -213,14 +207,14 @@ export const fetchLatestServerRelease = async (options: {
   if (alphaRelease !== undefined) return alphaRelease
   try {
     const release = await fetchLatestGitHubServerRelease({
-      repository: options.repository ?? DEFAULT_GITHUB_REPOSITORY,
+      repository: options.repository,
       target: options.target,
       fetch: options.fetch
     })
     if (release !== undefined) return release
   } catch {}
   return fetchLegacyServerRelease({
-    baseURL: options.legacyBaseURL ?? DEFAULT_LEGACY_RELEASE_BASE_URL,
+    baseURL: options.legacyBaseURL,
     target: options.target,
     fetch: options.fetch
   })

@@ -6,8 +6,8 @@ import { Effect } from "effect"
 import { expect, it, vi } from "vitest"
 
 import { forgetRetiredSessionTurn } from "../server-workspace-effects.js"
-import { makeEventFanout, type RouteState } from "../server.js"
-import { idleRestartCoordinator, makeServices, run, tempDirs } from "../test-support.js"
+import { makeEventFanout } from "../server.js"
+import { idleRouteState, makeServices, run, tempDirs } from "../test-support.js"
 import { drainPromptQueue, reconcileStaleStreamingTurns } from "./prompt-queue.js"
 import { applySessionConfigPick } from "./session-config.js"
 import { ensureAgentSessionFor } from "./session-workspace.js"
@@ -25,18 +25,7 @@ const setup = async () => {
     })
   )
   const fanout = await run(makeEventFanout)
-  const state: RouteState = {
-    activePromptSessions: new Set(),
-    promptTurnReleases: new Map(),
-    activeTurnSessions: new Set(),
-    gatedSessions: new Map(),
-    pendingPromptActions: new Set(),
-    pendingSessionCreates: new Map(),
-    turnHeldSessions: new Set(),
-    updateSignature: {},
-    restartHeldSessions: new Set(),
-    restart: idleRestartCoordinator()
-  }
+  const state = idleRouteState()
   return { ...fixture, session, fanout, state }
 }
 

@@ -53,26 +53,26 @@ struct ScreenSharingAudioTests {
     #expect(Self.pull(buffer, frames: 5) == [Float](repeating: 0, count: 10), "10 of 20 frames: still filling")
     Self.push(buffer, 1, 2)
     #expect(Self.pull(buffer, frames: 5) == [Float](repeating: 1, count: 10))
-    #expect(buffer.bufferedFrames == 15)
+    #expect(buffer.statistics.buffered == 15)
   }
 
   @Test func aLostPacketIsSilenceAndALateOneIsDropped() {
     let buffer = ScreenSharingAudioJitterBuffer(targetFrames: 1, slackFrames: 100)
     Self.push(buffer, 0, 1)
     Self.push(buffer, 2, 3)
-    #expect(buffer.lostPackets == 1 && buffer.bufferedFrames == 30)
+    #expect(buffer.statistics == .init(buffered: 30, underruns: 0, lost: 1, dropped: 0))
     Self.push(buffer, 1, 2)
-    #expect(buffer.bufferedFrames == 30, "packet 1 arrived after 2 and is dropped")
+    #expect(buffer.statistics.buffered == 30, "packet 1 arrived after 2 and is dropped")
     #expect(Self.pull(buffer, frames: 30) == Self.packet(1) + Self.packet(0) + Self.packet(3))
   }
 
   @Test func itDropsTheOldestWhenTooFarBehindAndRefillsAfterAnUnderrun() {
     let buffer = ScreenSharingAudioJitterBuffer(targetFrames: 10, slackFrames: 10)
     for sequence in 0..<3 { Self.push(buffer, UInt32(sequence), Float(sequence)) }
-    #expect(buffer.bufferedFrames == 20 && buffer.droppedFrames == 10, "at most target + slack")
+    #expect(buffer.statistics == .init(buffered: 20, underruns: 0, lost: 0, dropped: 10), "at most target + slack")
     #expect(Self.pull(buffer, frames: 10) == Self.packet(1))
     #expect(Self.pull(buffer, frames: 15) == Self.packet(2) + Self.packet(0, frames: 5), "short: padded with silence")
-    #expect(buffer.underruns == 1)
+    #expect(buffer.statistics.underruns == 1)
     Self.push(buffer, 3, 4, frames: 5)
     #expect(Self.pull(buffer, frames: 5) == [Float](repeating: 0, count: 10), "refilling to the target again")
   }
@@ -80,18 +80,18 @@ struct ScreenSharingAudioTests {
   @Test func aBufferThatRanAheadCatchesUpATenthAtATime() {
     let buffer = ScreenSharingAudioJitterBuffer(targetFrames: 10, slackFrames: 1_000, drainFrames: 5)
     for sequence in 0..<10 { Self.push(buffer, UInt32(sequence), Float(sequence)) }
-    #expect(buffer.bufferedFrames == 100)
+    #expect(buffer.statistics.buffered == 100)
     _ = Self.pull(buffer, frames: 20)
-    #expect(buffer.bufferedFrames == 78 && buffer.droppedFrames == 2)
+    #expect(buffer.statistics == .init(buffered: 78, underruns: 0, lost: 0, dropped: 2))
     for _ in 0..<5 { _ = Self.pull(buffer, frames: 10) }
-    #expect(buffer.bufferedFrames == 23, "one frame skipped per pull of 10 while still over")
+    #expect(buffer.statistics.buffered == 23, "one frame skipped per pull of 10 while still over")
   }
 
   @Test func sequenceNumbersWrap() {
     let buffer = ScreenSharingAudioJitterBuffer(targetFrames: 1, slackFrames: 100)
     Self.push(buffer, .max, 1)
     Self.push(buffer, 0, 2)
-    #expect(buffer.lostPackets == 0 && buffer.bufferedFrames == 20)
+    #expect(buffer.statistics == .init(buffered: 20, underruns: 0, lost: 0, dropped: 0))
   }
 
   @Test func theRingKeepsOrderAndChannelsAcrossItsEnd() {
@@ -103,13 +103,13 @@ struct ScreenSharingAudioTests {
       expected = (0..<10).flatMap { _ in [Float(sequence + 1), -Float(sequence + 1)] }
       #expect(pulled == expected, "packet \(sequence) after \(sequence * 10) frames through a 25-frame ring")
     }
-    #expect(buffer.droppedFrames == 0 && buffer.underruns == 0)
+    #expect(buffer.statistics == .init(buffered: 0, underruns: 0, lost: 0, dropped: 0))
   }
 
   @Test func aFullRingDropsTheOldestInsteadOfGrowing() {
     let buffer = ScreenSharingAudioJitterBuffer(targetFrames: 5, slackFrames: 1_000, capacityFrames: 30)
     for sequence in 0..<5 { Self.push(buffer, UInt32(sequence), Float(sequence)) }
-    #expect(buffer.bufferedFrames == 30 && buffer.droppedFrames == 20)
+    #expect(buffer.statistics == .init(buffered: 30, underruns: 0, lost: 0, dropped: 20))
     #expect(Self.pull(buffer, frames: 30) == Self.packet(2) + Self.packet(3) + Self.packet(4))
   }
 

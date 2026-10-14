@@ -1,25 +1,16 @@
-import Foundation
 import ScreenSharingRigKit
 import Testing
 
 struct RigVNCSignInSettingsTests {
-  final class MemoryStore: RigSecretStore, @unchecked Sendable {
-    private let lock = NSLock()
-    private var secrets: [String: String] = [:]
-    func read(_ account: String) -> String? { lock.withLock { secrets[account] } }
-    func save(_ secret: String, for account: String) throws { lock.withLock { secrets[account] = secret } }
-    func delete(_ account: String) { _ = lock.withLock { secrets.removeValue(forKey: account) } }
-  }
-
   @Test func theSheetSeesTheUserNameAndWhetherAPasswordIsSaved() throws {
-    let store = MemoryStore()
+    let store = RigMemorySecretStore()
     #expect(RigVNCSignIn.saved(machineId: "m", store: store) == ("", false))
     try store.save(RigVNCCredential(username: "tuftlord", password: "pw").encoded, for: "m")
     #expect(RigVNCSignIn.saved(machineId: "m", store: store) == ("tuftlord", true))
   }
 
   @Test func forgettingRemovesTheCredential() throws {
-    let store = MemoryStore()
+    let store = RigMemorySecretStore()
     #expect(try !RigVNCSignIn.update(machineId: "m", userName: nil, password: .forget, store: store))
     try store.save("pw", for: "m")
     #expect(try RigVNCSignIn.update(machineId: "m", userName: nil, password: .forget, store: store))
@@ -27,7 +18,7 @@ struct RigVNCSignInSettingsTests {
   }
 
   @Test func aNewPasswordKeepsOrReplacesTheUserName() throws {
-    let store = MemoryStore()
+    let store = RigMemorySecretStore()
     try store.save(RigVNCCredential(username: "tuftlord", password: "old").encoded, for: "m")
     #expect(try RigVNCSignIn.update(machineId: "m", userName: nil, password: .replace("new"), store: store))
     #expect(store.read("m").map(RigVNCCredential.decode) == RigVNCCredential(username: "tuftlord", password: "new"))
@@ -36,7 +27,7 @@ struct RigVNCSignInSettingsTests {
   }
 
   @Test func aNewUserNameAloneRewritesOnlyASavedCredential() throws {
-    let store = MemoryStore()
+    let store = RigMemorySecretStore()
     #expect(try !RigVNCSignIn.update(machineId: "m", userName: "admin", password: .keep, store: store))
     #expect(store.read("m") == nil)
     try store.save(RigVNCCredential(username: "tuftlord", password: "pw").encoded, for: "m")

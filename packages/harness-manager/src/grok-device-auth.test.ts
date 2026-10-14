@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest"
 
-import { makeGrokDeviceLogin, GROK_CLIENT_ID } from "./grok-device-auth.js"
+import { makeGrokDeviceLogin } from "./grok-device-auth.js"
 
 const device = {
   device_code: "private-device",
@@ -52,7 +52,7 @@ it("uses Grok's scopes, preserves identity, respects pending and slowdown, and k
   })
   const start = f.request.mock.calls[0]![1]!
   const fields = start.body as URLSearchParams
-  expect(fields.get("client_id")).toBe(GROK_CLIENT_ID)
+  expect(fields.get("client_id")).toBe("b1a00492-073a-47ea-816f-4c329264a828")
   expect(fields.get("referrer")).toBe("grok-build")
   expect(fields.get("scope")).toContain("workspaces:write")
   expect(fields.get("scope")).toContain("conversations:read")

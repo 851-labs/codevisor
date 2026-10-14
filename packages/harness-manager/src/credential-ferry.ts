@@ -20,7 +20,7 @@ export interface CredentialFerryConfig {
   readonly localProviders?: (harness: "pi" | "opencode") => Promise<ReadonlyArray<string>>
 }
 
-export const canonicalCredentialJson = (value: Record<string, unknown>): string =>
+const canonicalCredentialJson = (value: Record<string, unknown>): string =>
   JSON.stringify(
     Object.fromEntries(Object.entries(value).toSorted(([a], [b]) => a.localeCompare(b)))
   )

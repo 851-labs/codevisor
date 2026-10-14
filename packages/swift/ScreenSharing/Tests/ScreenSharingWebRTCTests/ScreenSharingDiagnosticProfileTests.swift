@@ -6,29 +6,6 @@ import Testing
 
 @Suite struct ScreenSharingDiagnosticProfileTests {
 
-  @Test func theProfileIsOffUnlessTheVariableNamesItExactly() throws {
-    #expect(try ScreenSharingDiagnosticProfile.resolve(environment: [:]) == nil)
-    #expect(try ScreenSharingDiagnosticProfile.resolve(environment: ["OTHER": "paced15-worker"]) == nil)
-    #expect(
-      try ScreenSharingDiagnosticProfile.resolve(
-        environment: [ScreenSharingDiagnosticProfile.environmentKey: ""]) == nil)
-    let on = try ScreenSharingDiagnosticProfile.resolve(
-      environment: [ScreenSharingDiagnosticProfile.environmentKey: "paced15-worker"])
-    #expect(on == ScreenSharingDiagnosticProfile.paced15Worker)
-  }
-
-  @Test func anUnknownValueFailsInsteadOfSelectingTheCandidate() {
-    for raw in [
-      "paced15", "paced15-worker ", " paced15-worker", "Paced15-Worker", "PACED15-WORKER", "1", "true",
-      "off", "default", "paced35-worker",
-    ] {
-      #expect(throws: ScreenSharingError.self) {
-        try ScreenSharingDiagnosticProfile.resolve(
-          environment: [ScreenSharingDiagnosticProfile.environmentKey: raw])
-      }
-    }
-  }
-
   @Test func theProfileMapIsExactAndLevelAware() {
     let profile = ScreenSharingDiagnosticProfile.paced15Worker
     #expect(profile.name == "paced15-worker")

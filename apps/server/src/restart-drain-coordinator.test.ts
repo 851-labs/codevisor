@@ -10,22 +10,12 @@ import {
 } from "./restart-drain.js"
 import { resumeSessionsAfterRestart } from "./restart-resume.js"
 import { makeEventFanout } from "./server-context.js"
-import {
-  archiveSessionViaWorkspace,
-  idleRestartCoordinator,
-  makeServices,
-  run
-} from "./test-support.js"
+import { archiveSessionViaWorkspace, idleRouteState, makeServices, run } from "./test-support.js"
 
 const makeHarness = async () => {
   const { agents, services } = await makeServices("server-a")
   const fanout = await run(makeEventFanout)
-  const turns = {
-    activePromptSessions: new Set<string>(),
-    promptTurnReleases: new Map<string, () => void>(),
-    activeTurnSessions: new Set<string>(),
-    restartHeldSessions: new Set<string>()
-  }
+  const turns = idleRouteState()
   const snapshot = makeMemoryRestartSnapshotStore()
   const logs: Array<string> = []
   const redrained: Array<string> = []
@@ -345,15 +335,7 @@ describe("restart coordinator", () => {
     const resumed = await resumeSessionsAfterRestart(
       harness.services,
       harness.fanout,
-      {
-        ...harness.turns,
-        gatedSessions: new Map(),
-        pendingPromptActions: new Set(),
-        pendingSessionCreates: new Map(),
-        turnHeldSessions: new Set(),
-        updateSignature: {},
-        restart: idleRestartCoordinator()
-      },
+      harness.turns,
       "server-a",
       harness.snapshot,
       (line) => harness.logs.push(line)
