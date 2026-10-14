@@ -99,9 +99,7 @@ export const sanitizeRequestHeaders = (headers: Record<string, string>): Record<
   return sanitized
 }
 
-export const sanitizeResponseHeaders = (
-  headers: Iterable<[string, string]>
-): Record<string, string> => {
+const sanitizeResponseHeaders = (headers: Iterable<[string, string]>): Record<string, string> => {
   const sanitized: Record<string, string> = {}
   for (const [name, value] of headers) {
     const lower = name.toLowerCase()

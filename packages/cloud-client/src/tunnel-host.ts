@@ -127,10 +127,6 @@ export class MachineTunnel {
 
   constructor(private readonly options: MachineTunnelOptions) {}
 
-  get endpoint(): TunnelEndpoint | undefined {
-    return this.#endpoint
-  }
-
   async configure(config: { relays: readonly CloudRelayInfo[]; enabled: boolean }): Promise<void> {
     if (!config.enabled) {
       await this.stop()

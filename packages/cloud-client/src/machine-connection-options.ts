@@ -1,4 +1,4 @@
-import type { CloudMachinePresence, CloudRelayInfo, CloudVouchedDevice } from "@codevisor/api"
+import type { CloudRelayInfo, CloudVouchedDevice } from "@codevisor/api"
 
 import type { ChannelHandler } from "./incoming-channel.js"
 import type { MachineCredentials } from "./login.js"
@@ -30,7 +30,6 @@ export interface MachineConnectionOptions {
   onDisconnect?: (reason: MachineDisconnectReason) => void
   peerKeyPins?: PeerKeyPinStore
   onPeerKeyMismatch?: (info: { deviceId: string; pinned: string; presented: string }) => void
-  onMachinesChanged?: (machines: ReadonlyArray<CloudMachinePresence>) => void
   relayCoalesceMs?: number
   compressPayload?: (bytes: Uint8Array) => Uint8Array | undefined
   decompressPayload?: (bytes: Uint8Array) => Uint8Array

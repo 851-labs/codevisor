@@ -6,7 +6,6 @@ import {
   encodeRelayEnvelopes
 } from "@codevisor/api"
 import type {
-  CloudMachinePresence,
   HubToMachine,
   MachineRelayHeader,
   MachineToHub,
@@ -130,7 +129,6 @@ export const harness = (
     handlers?: Record<string, (channel: IncomingChannel) => void>
     credentials?: typeof credentials
     device?: { name: string; os?: string; appVersion?: string; serverId?: string }
-    onMachinesChanged?: (machines: ReadonlyArray<CloudMachinePresence>) => void
     peerKeyPins?: PeerKeyPinStore
     onPeerKeyMismatch?: (info: { deviceId: string; pinned: string; presented: string }) => void
     relayCoalesceMs?: number
@@ -149,9 +147,6 @@ export const harness = (
   const welcomes: { resumed: boolean; replayedFrames: number }[] = []
   const connection = new CloudMachineConnection({
     credentials: overrides.credentials ?? credentials,
-    ...(overrides.onMachinesChanged === undefined
-      ? {}
-      : { onMachinesChanged: overrides.onMachinesChanged }),
     device: overrides.device ?? { name: "vps", os: "linux", appVersion: "1.0.0" },
     socketFactory: (url, requestHeaders) => {
       urls.push(url)
