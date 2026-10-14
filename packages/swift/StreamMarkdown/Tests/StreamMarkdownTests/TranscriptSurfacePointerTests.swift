@@ -19,6 +19,11 @@ struct TranscriptSurfacePointerTests {
       backing: .buffered,
       defer: false
     )
+    window.isReleasedWhenClosed = false
+    defer {
+      window.contentView = nil
+      window.close()
+    }
     let view = SelectableTextKitView()
     view.setContent(text)
     view.setFrameSize(NSSize(width: 320, height: view.contentHeight(forWidth: 320)))
