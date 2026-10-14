@@ -29,10 +29,11 @@ struct ScreenSharingDataChannelTests {
     private(set) var viewerAvailability: [Bool] = []
     private(set) var hostAvailability: [Bool] = []
 
-    init() async throws {
+    init(holdPoison: DispatchSemaphore? = nil) async throws {
       harness = try await ScreenSharingPeerLoopbackTests.Harness()
       let decode: @Sendable (Data) throws -> Data = { data in
         guard data.first != poisonByte else {
+          holdPoison?.wait()
           throw ScreenSharingError.invalid("Undecodable packet.")
         }
         return data
@@ -134,16 +135,26 @@ struct ScreenSharingDataChannelTests {
   }
 
   @Test func aPacketThatCannotBeDecodedClosesTheReceivingChannelAndDropsTheRest() async throws {
-    let pair = try await Pair()
-    defer { pair.close() }
+    let releaseDecode = DispatchSemaphore(value: 0)
+    let pair = try await Pair(holdPoison: releaseDecode)
+    defer {
+      releaseDecode.signal()
+      pair.close()
+    }
     try await pair.open()
     #expect(pair.host.send(Data([1])))
     await pair.delivered.wait()
 
-    // The whole batch containing the bad packet is abandoned, so the trailing
-    // good packet is never delivered either.
+    // Both sends reach the carrier before decoding the bad packet can close it;
+    // the trailing good packet must still never be delivered.
     #expect(pair.host.send(Data([poisonByte, 1])))
     #expect(pair.host.send(Data([2])))
+    await withCheckedContinuation { continuation in
+      let sent = DispatchGroup()
+      pair.host.afterQueuedWork(in: sent)
+      sent.notify(queue: .main) { continuation.resume() }
+    }
+    releaseDecode.signal()
     await pair.viewerClosed.wait()
     #expect(pair.received == [Data([1])])
     #expect(!pair.viewer.isAvailable && pair.viewerAvailability == [true, false])
