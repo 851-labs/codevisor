@@ -15,7 +15,7 @@
       --pace: scene frames per second, like a real app (default 60); 0 plays a frame per request
       (the server then offers no continuous updates, so the client keeps requesting).
       --out writes bench.json and bench.md; --baseline compares and exits 1 on a regression
-      beyond the noise band. Prefer `bun run vnc:bench`, which builds in release mode.
+      beyond the noise band. Build in release mode for meaningful numbers.
       """
 
     static func main(arguments: [String]) {
