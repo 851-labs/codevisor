@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import { DatabaseError, makeDatabase } from "./index.js"
 import { run, tempDatabase } from "./test-support.js"
@@ -73,42 +73,33 @@ describe("@codevisor/db", () => {
     await run(db.close)
   })
 
-  it("preserves untouched workspace fields and the original archived moment", async () => {
+  it("keeps untouched fields and the original archived moment across edits and re-archiving", async () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
-    const project = await run(db.createProject({ folderPath: "/tmp/ws-partial" }))
-    const workspace = await run(
-      db.upsertWorkspace({ projectId: project.id, name: "pinned", hasCustomName: true })
-    )
-    await run(db.updateWorkspace(workspace.id, { isArchived: true }))
-    const firstStamp = (await run(db.listWorkspaces)).find(
-      (candidate) => candidate.id === workspace.id
-    )?.archivedAt
+    vi.useFakeTimers({ toFake: ["Date"] })
+    try {
+      vi.setSystemTime(new Date("2026-07-01T00:00:00.000Z"))
+      const project = await run(db.createProject({ folderPath: "/tmp/ws-partial" }))
+      const workspace = await run(
+        db.upsertWorkspace({ projectId: project.id, name: "pinned", hasCustomName: true })
+      )
+      const archived = await run(db.updateWorkspace(workspace.id, { isArchived: true }))
+      expect(archived.archivedAt).toBe("2026-07-01T00:00:00.000Z")
 
-    const renamed = await run(db.updateWorkspace(workspace.id, { name: "still pinned" }))
+      vi.setSystemTime(new Date("2026-07-02T00:00:00.000Z"))
+      const renamed = await run(db.updateWorkspace(workspace.id, { name: "still pinned" }))
+      expect(renamed.name).toBe("still pinned")
+      expect(renamed.hasCustomName).toBe(true)
+      expect(renamed.isArchived).toBe(true)
+      expect(renamed.archivedAt).toBe(archived.archivedAt)
 
-    expect(renamed.name).toBe("still pinned")
-    expect(renamed.hasCustomName).toBe(true)
-    expect(renamed.isArchived).toBe(true)
-    expect(renamed.archivedAt).toBe(firstStamp)
-    await run(db.close)
-  })
-
-  it("re-archiving an already archived workspace keeps its original moment", async () => {
-    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
-    const project = await run(db.createProject({ folderPath: "/tmp/ws-rearchive" }))
-    const workspace = await run(
-      db.upsertWorkspace({ projectId: project.id, name: "feature", hasCustomName: false })
-    )
-    await run(db.updateWorkspace(workspace.id, { isArchived: true }))
-    const first = (await run(db.listWorkspaces)).find(
-      (candidate) => candidate.id === workspace.id
-    )?.archivedAt
-
-    const again = await run(db.updateWorkspace(workspace.id, { isArchived: true }))
-
-    expect(again.isArchived).toBe(true)
-    expect(again.archivedAt).toBe(first)
-    await run(db.close)
+      vi.setSystemTime(new Date("2026-07-03T00:00:00.000Z"))
+      const again = await run(db.updateWorkspace(workspace.id, { isArchived: true }))
+      expect(again.isArchived).toBe(true)
+      expect(again.archivedAt).toBe(archived.archivedAt)
+    } finally {
+      vi.useRealTimers()
+      await run(db.close)
+    }
   })
 
   it("rejects updating a workspace that does not exist", async () => {
