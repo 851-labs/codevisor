@@ -51,7 +51,7 @@ struct NavigatorTabBar: View {
         .overlay(alignment: .topTrailing) {
           if let count = badges[tab], count > 0 {
             Text(count > 99 ? "99+" : "\(count)")
-              .font(.system(size: 9, weight: .semibold).monospacedDigit())
+              .font(.system(size: Typography.IconSize.compact, weight: .semibold).monospacedDigit())
               .foregroundStyle(.white)
               .padding(.horizontal, 4)
               .frame(minWidth: 14, minHeight: 14)
