@@ -35,9 +35,11 @@ extension SidebarView {
           }
         }
         if items.count > archivedVisibleCount {
-          // A row like New chat's, revealing the next page.
+          // A row like New chat's, revealing the next page; its title
+          // reads as secondary, an affordance rather than a workspace.
           SidebarActionRow(
-            title: "Show More", systemImage: "ellipsis", isSelected: false, isHoverEnabled: !isReordering
+            title: "Show More", systemImage: "ellipsis", isSelected: false, isHoverEnabled: !isReordering,
+            titleStyle: .secondary
           ) {
             withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) {
               archivedVisibleCount += archivedPageSize
