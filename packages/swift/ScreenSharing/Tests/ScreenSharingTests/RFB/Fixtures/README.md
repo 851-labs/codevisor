@@ -1,8 +1,7 @@
 # RFB recordings
 
 Real servers' bytes, replayed by `RFBRecordingTests` with no server
-(docs/plans/vnc-validation.md: behaviour seen only on a real server becomes
-an L1 fixture). Each file is an `RFBRecording` (JSON): `source`, the
+(behaviour seen only on a real server becomes an L1 fixture). Each file is an `RFBRecording` (JSON): `source`, the
 framebuffer size after the handshake, the bytes the client read (base64
 chunks) and the `expected` outcome of replaying them (updates, SHA-256 of the
 final framebuffer's colour bytes, and the pseudo-rectangles and events in

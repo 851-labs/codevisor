@@ -1,5 +1,5 @@
 // Pure helpers for `bun run vnc:validate` (apps/screen-sharing-rig/scripts/vnc-validate.ts): the one
-// gate every VNC change passes (docs/plans/vnc-validation.md).
+// gate every VNC change passes.
 
 export const defaults: { swiftFilter: string; benchArgs: string[]; machines: string } = {
   // Every VNC-touching Swift suite: RFB/VNC protocol and sessions, the

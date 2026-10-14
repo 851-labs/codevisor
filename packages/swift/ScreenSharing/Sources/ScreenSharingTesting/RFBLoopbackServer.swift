@@ -20,9 +20,8 @@ struct OrderedEncodings {
 /// echo, and a log of every client message. One client at a time. Its own
 /// target so product modules never link it.
 ///
-/// It is the reference implementation VNC features are validated against
-/// (docs/plans/vnc-validation.md): a feature adds its server side here in the
-/// same change, and `implementedEncodings` must cover everything the client
+/// It is the reference implementation VNC features are validated against: a
+/// feature adds its server side here in the same change, and `implementedEncodings` must cover everything the client
 /// advertises.
 public final class RFBLoopbackServer: @unchecked Sendable {
   /// Every encoding and pseudo-encoding this server can send.

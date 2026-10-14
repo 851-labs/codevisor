@@ -3,8 +3,7 @@ import Testing
 @testable import ScreenSharing
 
 /// Runs only against a real server named by the environment: `bun run
-/// vnc:interop` (a pinned TigerVNC container, docs/plans/vnc-validation.md
-/// layer L3) or a tunnel to a test box (`VNC_TEST_HOST=127.0.0.1
+/// vnc:interop` (a pinned TigerVNC container, VNC validation layer L3) or a tunnel to a test box (`VNC_TEST_HOST=127.0.0.1
 /// VNC_TEST_PORT=5901 VNC_TEST_PASSWORD=codevisor`). Reports the handshake,
 /// the first update and the timing, so a stall can be placed.
 /// Serialized: the tests share one desktop, and one of them resizes it.

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Builds codevisor-server from this working tree on a Linux box that was set
-# up with the public installer, and swaps it into /opt/codevisor there
-# (docs/plans/screen-sharing-vps.md, stage 5). The box builds natively: the
+# up with the public installer, and swaps it into /opt/codevisor there. The box builds natively: the
 # release runtime compiles Node addons, so it cannot be cross-built here.
 #
 #   scripts/deploy-dev-server.sh root@HOST

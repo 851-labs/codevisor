@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Screen Sharing rig CLI: build, install a host/viewer pair, deploy, inspect.
-// See docs/plans/screen-sharing-rig.md. `bun run screen-sharing:rig --help`.
+// See apps/screen-sharing-rig/README.md. `bun run screen-sharing:rig --help`.
 import { spawnSync } from "node:child_process"
 import { randomBytes } from "node:crypto"
 import {

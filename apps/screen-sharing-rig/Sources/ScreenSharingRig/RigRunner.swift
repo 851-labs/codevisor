@@ -111,7 +111,6 @@
 
   /// Resident host or viewer. Host and viewer flows live in their own
   /// extensions; this file owns state and the shared telemetry tick.
-  /// See docs/plans/screen-sharing-rig.md.
   @MainActor
   final class RigRunner: NSObject, NSWindowDelegate {
     struct Sampling {

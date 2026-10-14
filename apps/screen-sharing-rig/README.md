@@ -1,6 +1,6 @@
 # Screen Sharing rig
 
-A two-Mac development loop for the native screen-sharing engine: one resident host process and one resident viewer process, signed with a stable identity, deployed with one command, showing live numbers. It is a consumer of `ScreenSharing` and `ScreenSharingWebRTC`, never shipped, and never installed on a user's machine. Design and status: [docs/plans/screen-sharing-rig.md](../../../docs/plans/screen-sharing-rig.md).
+A two-Mac development loop for the native screen-sharing engine: one resident host process and one resident viewer process, signed with a stable identity, deployed with one command, showing live numbers. It is a consumer of `ScreenSharing` and `ScreenSharingWebRTC`, never shipped, and never installed on a user's machine.
 
 ## Layout
 
@@ -31,7 +31,7 @@ bun run screen-sharing:rig stop --all
 swift run --package-path apps/screen-sharing-rig screen-sharing-rig vnc-server --port 5901 --password secret --size 1280x800
 ```
 
-The Loopback VNC server tab runs `RFBLoopbackServer`, the reference server VNC changes are validated against (`docs/plans/vnc-validation.md`): its Content menu plays the animated desktop or any deterministic `RFBLoopbackScene` (idle, typing, scroll, windowDrag, photo, resize), and "Echo pointer input" answers each pointer event with a marker whose colour encodes its sequence.
+The Loopback VNC server tab runs `RFBLoopbackServer`, the reference server VNC changes are validated against: its Content menu plays the animated desktop or any deterministic `RFBLoopbackScene` (idle, typing, scroll, windowDrag, photo, resize), and "Echo pointer input" answers each pointer event with a marker whose colour encodes its sequence.
 
 The probe, the single-process capture → encode → WebRTC → decode → render diagnostic, is command-line only: `--loopback` (default) or `--send`/`--receive` across two Macs with offer/answer files, ending in a JSON report.
 
@@ -44,7 +44,7 @@ The app has one window, whatever started it. Launched without arguments (`open -
 
 Machines are listed in `RigMachine.catalog`: Codevisor servers (today: Contabo VPS over Tailscale) and VNC servers reached directly (today: tuftlord's macOS Screen Sharing, which needs "VNC viewers may control screen with password" on), plus "Loopback server" while the Loopback VNC server scenario is serving (its View button selects it). A direct VNC machine's password is never in source: the rig asks for it in place of the video, keeps it in the login Keychain (`com.codevisor.ScreenSharingRig.vnc-password`, per machine id) once the server accepts it, forgets it when the server rejects it, and View → Forget Password clears it. A server machine uses the product's `.native` backend; the loopback server, a plain VNC server with no Codevisor server in front, uses the product's `.vnc` backend, so it gets the same toolbar and control lease and its input log shows exactly what the product's control path sends. Selecting one runs the product's own Screen Sharing feature against it: the `ScreenSharingViewer` store over its `.native` backend, exactly as the app's pane builds it, so discovery, the control lease, clipboard and diagnostics are the product's. The window's native toolbar carries the product's View/Control switch, display menu, clipboard menu and Connection Details (`Shell/RigScreenSharingToolbar.swift` mirrors `apps/macos/.../ScreenSharingToolbar.swift`; keep them in step). The bearer token comes from `ssh <target> codevisor token` the first time (and again after a 401) and is kept in the login Keychain under `com.codevisor.ScreenSharingRig.machine-token`.
 
-`vnc-server` is a standalone VNC server on 127.0.0.1 with an animated desktop (RFB 3.8, VNC Authentication or `--no-password`, ZRLE or `--encoding raw`). It prints the keys, button changes and clipboard text the viewer sends. It is the tophat target for the app's VNC viewer (`docs/plans/vnc-viewer.md`): open a Screen Sharing pane, enter `127.0.0.1`, port `5901` and the password under "VNC server".
+`vnc-server` is a standalone VNC server on 127.0.0.1 with an animated desktop (RFB 3.8, VNC Authentication or `--no-password`, ZRLE or `--encoding raw`). It prints the keys, button changes and clipboard text the viewer sends. It is the tophat target for the app's VNC viewer: open a Screen Sharing pane, enter `127.0.0.1`, port `5901` and the password under "VNC server".
 
 `install` configures this Mac as the viewer and the SSH target as the host, writes both `rig.json` files and LaunchAgents (`com.codevisor.screen-sharing-rig`, GUI session, restarted only on abnormal exit), builds, pushes and starts both. `deploy` rebuilds and restarts both; run `install` again if the executable name or ports change. The host never builds: both Macs are Apple silicon and the bundle is `rsync`ed.
 

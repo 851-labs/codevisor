@@ -12,7 +12,7 @@
   /// `ProbeCommand`). `screen-sharing-rig vnc-server …`: a loopback VNC server
   /// for the VNC viewer (see `VNCServerCommand`). `screen-sharing-rig
   /// vnc-bench …`: the VNC benchmark (see `VNCBenchCommand`). A consumer of the media
-  /// package, not part of it; see docs/plans/screen-sharing-rig.md.
+  /// package, not part of it; see apps/screen-sharing-rig/README.md.
   @main
   @MainActor
   struct ScreenSharingRigApp {

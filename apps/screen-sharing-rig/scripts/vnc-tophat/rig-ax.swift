@@ -1,5 +1,5 @@
 // Drives the Screen Sharing rig through the Accessibility API for
-// `bun run vnc:tophat` (docs/plans/vnc-validation.md, layer L4). It never
+// `bun run vnc:tophat` (VNC validation layer L4). It never
 // moves the pointer or types; presses and selections are AX actions, so the
 // rig can stay in the background. Compiled and cached by apps/screen-sharing-rig/scripts/vnc-tophat.ts.
 //
