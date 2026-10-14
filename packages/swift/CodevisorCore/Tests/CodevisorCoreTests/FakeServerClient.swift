@@ -104,8 +104,6 @@ actor FakeServerClient: CodevisorServerClienting {
     fatalError("unused")
   }
 
-  func issuePairingToken() async throws -> ServerPairingToken { fatalError("unused") }
-
   func capabilities(cwd: String) async throws -> ServerCapabilities { ServerCapabilities(harnesses: []) }
 
   func listHarnesses() async throws -> [ServerHarness] { [] }

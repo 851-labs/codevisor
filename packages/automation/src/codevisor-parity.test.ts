@@ -2,7 +2,7 @@ import { endpoints } from "@codevisor/api"
 import { describe, expect, it, vi, afterEach } from "vitest"
 
 import { CODEVISOR_API_TOOLS } from "./codevisor-api-tools.js"
-import { codevisorTools, makeCodevisorProvider } from "./codevisor-provider.js"
+import { makeCodevisorProvider } from "./codevisor-provider.js"
 
 describe("Codevisor native action parity", () => {
   afterEach(() => vi.unstubAllGlobals())
@@ -117,7 +117,7 @@ describe("Codevisor native action parity", () => {
     await provider.invoke(context, "clients.layout", { clientId: "client", ...selectedTab })
     expect(bodies).toEqual([page, layout, window, backgroundTab, selectedTab])
 
-    const tool = codevisorTools.find((tool) => tool.name === "clients.layout")!
+    const tool = provider.tools.find((tool) => tool.name === "clients.layout")!
     expect(tool.inputSchema.required).not.toContain("focus")
     expect(tool.inputSchema.properties?.focus).toMatchObject({
       description: expect.stringContaining("Defaults to false")

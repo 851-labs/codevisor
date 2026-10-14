@@ -20,13 +20,12 @@ export interface BrowserPreviewSubscription {
 }
 
 export interface BrowserPreviewsOptions {
-  readonly idleMs?: number
   readonly setTimer?: (callback: () => void, ms: number) => unknown
   readonly clearTimer?: (timer: unknown) => void
   readonly now?: () => number
 }
 
-export const BROWSER_PREVIEW_IDLE_MS = 60_000
+const IDLE_MS = 60_000
 const MIN_DIMENSION = 320
 const MAX_DIMENSION = 1920
 const DEFAULT_DIMENSION = 1280
@@ -90,7 +89,6 @@ const stopStream = async (entry: Session): Promise<void> => {
 }
 
 export const makeBrowserPreviews = (options: BrowserPreviewsOptions = {}) => {
-  const idleMs = options.idleMs ?? BROWSER_PREVIEW_IDLE_MS
   const setTimer = options.setTimer ?? ((callback, ms) => setTimeout(callback, ms).unref())
   const clearTimer = options.clearTimer ?? ((timer) => clearTimeout(timer as NodeJS.Timeout))
   const now = options.now ?? Date.now
@@ -252,7 +250,7 @@ export const makeBrowserPreviews = (options: BrowserPreviewsOptions = {}) => {
         entry.idleTimer = undefined
         publish(entry, { state: "idle" })
         void reconcile(entry)
-      }, idleMs)
+      }, IDLE_MS)
       publish(entry, { state: "active" })
       follow(entry, runtime, targetId)
       refreshInfo(entry)

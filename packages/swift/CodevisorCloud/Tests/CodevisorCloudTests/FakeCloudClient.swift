@@ -192,7 +192,6 @@ final class FakeLocalServerClient: CodevisorServerClienting, @unchecked Sendable
     )
   }
 
-  func issuePairingToken() async throws -> ServerPairingToken { fatalError("unused") }
   func capabilities(cwd: String) async throws -> ServerCapabilities {
     ServerCapabilities(harnesses: [])
   }

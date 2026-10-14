@@ -322,5 +322,3 @@ export const makeCodevisorProvider = (
   closeSession: async () => undefined,
   close: async () => undefined
 })
-
-export const codevisorTools = tools

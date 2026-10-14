@@ -203,10 +203,13 @@ describe("@codevisor/agent-runtime", () => {
     void connection.emit(conversationEvent(sessionId, "assistant", "one"))
     void connection.emit(conversationEvent(sessionId, "assistant", "two"))
     const delivered = connection.emit(conversationEvent(sessionId, "assistant", "three"))
-    await entered.promise
-    expect(seen).toEqual([])
-    release.resolve()
-    await delivered
+    try {
+      await entered.promise
+      expect(seen).toEqual([])
+    } finally {
+      release.resolve()
+      await delivered
+    }
 
     expect(seen).toEqual(["one", "two", "three"])
   })

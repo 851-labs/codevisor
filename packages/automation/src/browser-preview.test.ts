@@ -252,7 +252,10 @@ describe("Browser live preview", () => {
     await previews.activity("chat", chrome.runtime, "tab-1")
     expect(clock.count()).toBe(2)
 
-    clock.fire()
+    clock.advance(59_999)
+    expect(watcher.statuses.at(-1)?.state).toBe("active")
+    clock.advance(1)
+    expect(watcher.statuses.at(-1)?.state).toBe("idle")
     await previews.finish("other")
     await previews.activity("chat", chrome.runtime, "tab-1")
     const states = watcher.statuses.map((status) => status.state)
