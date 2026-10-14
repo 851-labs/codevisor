@@ -125,9 +125,10 @@ describe("header sanitization", () => {
         ["Content-Encoding", "gzip"],
         ["Content-Length", "5"],
         ["Transfer-Encoding", "chunked"],
-        ["ETag", '"abc"']
+        ["ETag", '"abc"'],
+        ["X-Custom", "kept"]
       ])
-    ).toEqual({ kind: "head", status: 204, headers: { etag: '"abc"' } })
+    ).toEqual({ kind: "head", status: 204, headers: { etag: '"abc"', "x-custom": "kept" } })
   })
 })
 

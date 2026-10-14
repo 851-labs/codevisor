@@ -256,6 +256,10 @@ describe("MachineTunnel", () => {
 
     await tunnel.configure({ relays, enabled: false })
     expect(endpoints[1]!.closed).toBe(true)
+
+    await tunnel.configure({ relays: [{ url: "https://relay-b.test" }], enabled: true })
+    expect(endpoints).toHaveLength(3)
+    expect(endpoints[2]!.closed).toBe(false)
   })
 
   it("publishes every address change to the hub", async () => {
@@ -333,12 +337,15 @@ describe("MachineTunnel", () => {
       bindStarted = resolve
     })
     const endpoint = new FakeEndpoint()
+    let binds = 0
     const tunnel = new MachineTunnel({
       bind: () =>
-        new Promise((resolve) => {
-          release = () => resolve(endpoint as unknown as TunnelEndpoint)
-          bindStarted()
-        }),
+        binds++ === 0
+          ? new Promise((resolve) => {
+              release = () => resolve(endpoint as unknown as TunnelEndpoint)
+              bindStarted()
+            })
+          : Promise.resolve(new FakeEndpoint() as unknown as TunnelEndpoint),
       secretKeyHex: "22".repeat(32),
       host: { accept: vi.fn() },
       onAddr: vi.fn()
@@ -349,6 +356,10 @@ describe("MachineTunnel", () => {
     release()
     await configuring
     expect(endpoint.closed).toBe(true)
+
+    await tunnel.configure({ relays, enabled: true })
+    expect(binds).toBe(2)
+    await tunnel.stop()
   })
 
   it("the latest same-tick configuration owns the only bound endpoint", async () => {
