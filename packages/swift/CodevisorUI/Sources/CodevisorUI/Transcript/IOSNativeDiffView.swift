@@ -4,22 +4,13 @@
   import TranscriptKit
   import UIKit
 
-  /// A complete file diff rendered by one UIKit/TextKit surface. The outer
-  /// scroll view owns both axes, while the text view remains selectable.
-  /// Line numbers and change markers live in a gutter that stays put while
-  /// long lines scroll sideways beneath it, as in GitHub's mobile review.
   struct IOSNativeDiffView: UIViewRepresentable {
     let rows: [LineDiff.Row]
     let highlights: [Int: AttributedString]
     let theme: Theme
     let revision: String
-    /// The tallest the diff shows before scrolling inside itself. Nil grows
-    /// to the full diff so an enclosing scroll view owns vertical scrolling
-    /// (the Review pane); transcript cards keep the bounded viewport.
     var maximumHeight: CGFloat? = DiffViewportMetrics.maximumHeight
-    /// Gutter width floor, so separately rendered hunks of one file align.
     var lineNumberDigits = 2
-    /// Scrolls this hunk sideways together with the rest of its file.
     var scrollSync: DiffScrollSync?
 
     func makeUIView(context _: Context) -> IOSNativeDiffScrollView {
@@ -64,14 +55,11 @@
   final class IOSNativeDiffScrollView: UIScrollView {
     private(set) var diffTextView: IOSNativeDiffTextView
     private let gutterView = IOSNativeDiffGutterView()
-    /// Hides code left of the pinned gutter's right edge, so scrolled text
-    /// disappears under the gutter instead of showing through it.
     private let codeMask = CALayer()
     private(set) var contentFittingSize = CGSize(width: 1, height: 1)
     private var renderedRevision: String?
     private var renderedTheme: Theme?
     var maximumHeight: CGFloat? = DiffViewportMetrics.maximumHeight
-    /// Gutter width floor, so separately rendered hunks of one file align.
     var lineNumberDigits = 2
     var scrollSync: DiffScrollSync? {
       didSet {
@@ -172,8 +160,6 @@
           height: visibleContentHeight
         )
       )
-      // A hunk appearing mid-scroll (an expanded fold) joins at the file's
-      // current offset.
       if let offset = scrollSync?.offset, offset > 0 { applySyncedOffset(offset) }
       invalidateIntrinsicContentSize()
       setNeedsLayout()
@@ -189,9 +175,6 @@
     override func layoutSubviews() {
       super.layoutSubviews()
       guard bounds.width > 0 else { return }
-      // Scrolling lays the view out on every step: share the reader's
-      // offset with the file's other hunks. Only the reader's own scrolls
-      // count; layout clamping or following the group must not broadcast.
       if isTracking || isDragging || isDecelerating {
         scrollSync?.report(offset: contentOffset.x, from: self)
       }
@@ -208,8 +191,6 @@
         return super.gestureRecognizerShouldBegin(gestureRecognizer)
       }
 
-      // A slow, deliberate pan starts with almost no velocity; fall back to
-      // how far it has moved so a sideways drag still reads as horizontal.
       var velocity = panGestureRecognizer.velocity(in: self)
       if abs(velocity.x) < 1, abs(velocity.y) < 1 {
         velocity = panGestureRecognizer.translation(in: self)
@@ -238,8 +219,6 @@
     }
 
     private func fitDocument(toViewportSize viewportSize: CGSize) {
-      // Every hunk of a file is as wide as its widest, so they can scroll
-      // together to any offset.
       let contentWidth = max(contentFittingSize.width, scrollSync?.sharedContentWidth ?? 0)
       let documentSize = CGSize(
         width: max(viewportSize.width, contentWidth),
@@ -272,8 +251,6 @@
       pinGutter()
     }
 
-    /// Keeps the gutter at the visible left edge. Runs from `layoutSubviews`,
-    /// which a scroll view gets on every scroll step.
     private func pinGutter() {
       let gutterWidth = diffTextView.gutterWidth
       let height = diffTextView.bounds.height
@@ -383,7 +360,6 @@
       setNeedsDisplay()
     }
 
-    /// The pinned gutter's width: everything left of the code.
     var gutterWidth: CGFloat { metrics.textInset - metrics.gutterSpacing }
 
     override func draw(_ rect: CGRect) {
@@ -391,11 +367,6 @@
       super.draw(rect)
     }
 
-    /// The area a row's fill covers: its line box, except that the first
-    /// and last rows reach the view's edges. TextKit can measure the text a
-    /// little taller than the rows, and that slack must take the edge row's
-    /// color: a trailing addition stays green to the bottom, an unchanged
-    /// last line stays clear.
     func rowFillRect(at index: Int) -> CGRect? {
       guard var rect = rowRect(at: index) else { return nil }
       if index == 0 {
@@ -433,7 +404,6 @@
       }
     }
 
-    /// The row indices a vertical band of the view touches.
     func rowRange(in dirtyRect: CGRect) -> ClosedRange<Int>? {
       guard !rows.isEmpty else { return nil }
       let contentMinY = max(0, dirtyRect.minY - metrics.verticalPadding)
@@ -455,9 +425,6 @@
   struct IOSNativeDiffMetrics {
     let font: UIFont
     let rowHeight: CGFloat
-    /// Breathing room above the first row and below the last. The edge
-    /// rows' fills extend through it (see `rowFillRect`), so a changed first
-    /// or last line is tinted to the card's edge.
     let verticalPadding: CGFloat = 6
     let horizontalPadding: CGFloat = 8
     let gutterSpacing: CGFloat = 6
@@ -479,8 +446,6 @@
       gutterWidth = CGFloat(digits) * digitWidth
     }
 
-    /// One number column on iPhone, where width is scarce: the new line
-    /// number, or the old one for a removed line.
     var textInset: CGFloat {
       horizontalPadding + gutterWidth + gutterSpacing + markerWidth + gutterSpacing + gutterSpacing
     }
@@ -510,7 +475,6 @@
     let removedForeground: UIColor
     let addedBackground: UIColor
     let removedBackground: UIColor
-    /// The gutter's own faint band, so numbers read as chrome, not code.
     let gutterBackground: UIColor
 
     init(theme: Theme) {

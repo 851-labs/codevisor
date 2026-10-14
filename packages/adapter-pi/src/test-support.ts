@@ -33,8 +33,6 @@ export const claude = {
   contextWindow: 200_000
 }
 
-/// A scripted Pi: answers commands from `replies` (data, or an Error to
-/// fail), records what it was sent, and lets a test push events.
 export class FakePiClient implements PiClient {
   readonly commands: Array<{ type: string; fields: Record<string, unknown> }> = []
   readonly responses: Array<Record<string, unknown>> = []
@@ -111,6 +109,5 @@ export const setup = (config: PiProviderConfig = {}) => {
   return { client, spawned, events, provider, emit }
 }
 
-/// The payloads of emitted events, for compact assertions.
 export const payloads = (events: ReadonlyArray<RuntimeEvent>) =>
   events.map((event) => event.payload as Record<string, unknown>)

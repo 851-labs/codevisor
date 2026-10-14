@@ -7,13 +7,7 @@ export interface AcpPromptCapabilities {
   readonly image?: boolean
 }
 
-/* v8 ignore start -- stdio ACP adapter is exercised by integration/packaging smoke tests. */
-/// Builds the session/prompt content blocks. Every attachment is surfaced as a
-/// `resource_link` — the ACP baseline that all agents must support — pointing
-/// at its materialized temp file, so any harness (opencode included) can read
-/// it from disk. Images are ALSO embedded inline as base64 (as the server sized them) when
-/// the harness declared image support, so multimodal agents see the pixels directly.
-/// Exported for unit tests — the live wiring runs inside the stdio SDK connection.
+/* v8 ignore start */
 export const acpPrompt = (
   input: PromptInput,
   capabilities: AcpPromptCapabilities

@@ -7,11 +7,6 @@ import { output, parseArgs, textContent, toolStatus, type Edge, type MappedEvent
 export { subagentFinished, subagentTitle } from "./agents.js"
 export type { MappedEvent } from "./rows.js"
 
-/// Maps MSP's item stream (`item/started|updated|completed` carrying the
-/// whole item, `item/delta` appending to one of its fields) onto Codevisor
-/// transcript events.
-
-/// Muse's built-in tools, as Codevisor's tool kinds.
 export const museToolKind = (tool: string): string => {
   switch (tool) {
     case "read_file":
@@ -37,13 +32,9 @@ export const museToolKind = (tool: string): string => {
   }
 }
 
-/// Tool calls that only carry plumbing the transcript shows another way:
-/// todos arrive as `session/todoListChanged`, questions as `userInput/request`,
-/// and subagents as their own `subagent` items.
 const hiddenTool = (tool: string): boolean =>
   tool === "write_todos" || tool === "request_user_input" || tool.startsWith("subagent_")
 
-/// What the call acts on: the command, file, query or address.
 export const museToolTitle = (tool: string, args: Record<string, unknown>): string =>
   text(args.description) ??
   text(args.command) ??
@@ -53,8 +44,6 @@ export const museToolTitle = (tool: string, args: Record<string, unknown>): stri
   text(args.url) ??
   tool
 
-/// `bash` reports a JSON envelope once it settles; its output and exit code
-/// are the parts worth showing.
 const shellResult = (visible: string | undefined) => {
   if (visible === undefined || !visible.startsWith("{")) return { output: visible }
   const envelope = parseArgs(visible)
@@ -64,8 +53,6 @@ const shellResult = (visible: string | undefined) => {
   }
 }
 
-/// A write's or edit's diff, from the arguments the model wrote; Muse's own
-/// counts (`patchSummary`) are authoritative for the stats.
 const fileChange = (item: MuseItem, args: Record<string, unknown>) => {
   const path = text(args.path)
   if (path === undefined) return {}
@@ -92,26 +79,19 @@ const fileChange = (item: MuseItem, args: Record<string, unknown>) => {
 
 const OUTPUT_TAIL = 64 * 1024
 
-/// Item kinds shown as tool-call rows.
 const ROWS = new Set(["toolCall", "subagent", "webSearch", "skillRead", "compaction"])
 
 export interface MuseItemMapper {
   readonly item: (item: MuseItem, edge: Edge) => Array<MappedEvent>
-  /// The row a subagent's work streams under now: its spawn row, or the chip
-  /// of the run a later turn's message started.
   readonly runRow: (subagentItemId: string) => string
   readonly delta: (itemId: string, field: string, delta: string) => Array<MappedEvent>
 }
 
-/// `scope` names the session the items belong to: subagent ids are only
-/// unique within it.
 export const makeMuseItemMapper = (scope: () => string = () => ""): MuseItemMapper => {
   const revisions = new Map<string, number>()
-  /// Text already streamed per item, so a completed item only adds the rest.
   const streamed = new Map<string, string>()
   const outputs = new Map<string, string>()
   const thoughts = new Set<string>()
-  /// Tool rows the transcript shows; output deltas for anything else drop.
   const tools = new Set<string>()
   const agents = makeAgentRows(scope, tools)
   const message = (item: MuseItem): Array<MappedEvent> => {
@@ -129,8 +109,6 @@ export const makeMuseItemMapper = (scope: () => string = () => ""): MuseItemMapp
   }
 
   const reasoning = (item: MuseItem): Array<MappedEvent> => {
-    // Summaries stream as deltas; a reasoning item that never streamed
-    // (resumed, or a provider without summaries) still shows its text.
     if (item.status === "inProgress" || thoughts.has(item.itemId)) return []
     thoughts.add(item.itemId)
     const full = item.summary?.join("\n\n") || item.text
@@ -191,7 +169,6 @@ export const makeMuseItemMapper = (scope: () => string = () => ""): MuseItemMapp
     ]
   }
 
-  /// A one-shot row for an action Muse reports as its own item kind.
   const action = (item: MuseItem, edge: Edge, kind: string, title: string): Array<MappedEvent> =>
     edge === "started"
       ? [
@@ -232,8 +209,6 @@ export const makeMuseItemMapper = (scope: () => string = () => ""): MuseItemMapp
   return {
     runRow: agents.runRow,
     item: (item, edge) => {
-      // Replace-iff-higher: replays and re-issued frames are no-ops. A
-      // completed item may arrive without its start (single-shot kinds).
       const previous = revisions.get(item.itemId)
       if (previous !== undefined && item.revision <= previous) return []
       revisions.set(item.itemId, item.revision)
@@ -254,12 +229,9 @@ export const makeMuseItemMapper = (scope: () => string = () => ""): MuseItemMapp
           case "compaction":
             return compaction(item, phase)
           default:
-            // userMessage echoes the prompt; reminders, hooks and workflows
-            // are Muse's own housekeeping.
             return []
         }
       }
-      // A first sighting of a settled row opens it before settling it.
       return previous === undefined && edge !== "started" && ROWS.has(item.kind)
         ? [...events("started"), ...events(edge)]
         : events(edge)
@@ -283,8 +255,6 @@ export const makeMuseItemMapper = (scope: () => string = () => ""): MuseItemMapp
         ]
       }
       if (field === "output" && tools.has(itemId)) {
-        // Each update carries the whole output so far; a long-running
-        // command keeps its newest tail, as Muse's own view does.
         const accumulated = ((outputs.get(itemId) ?? "") + delta).slice(-OUTPUT_TAIL)
         outputs.set(itemId, accumulated)
         return [

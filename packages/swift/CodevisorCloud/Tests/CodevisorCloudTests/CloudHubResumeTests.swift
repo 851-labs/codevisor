@@ -4,8 +4,6 @@ import Testing
 import CodevisorClient
 @testable import CodevisorCloud
 
-/// Session resume, app side: a reconnect offers the last welcome's resume
-/// token so the hub keeps this device's session identity across the gap.
 @Suite("CloudHubConnection resume")
 struct CloudHubResumeTests {
   @Test("A reconnect offers the last welcome's resume token and keeps the session")
@@ -36,7 +34,6 @@ struct CloudHubResumeTests {
     #expect(scripted.helloResumeTokens.count == 2)
     #expect(scripted.helloResumeTokens.first == .some(nil))
     #expect(scripted.helloResumeTokens.last??.isEmpty == false)
-    // The hub honoured the token: same session identity, no fresh start.
     #expect(await hub.lastConnectionId == firstConnection)
     await hub.shutdown()
   }

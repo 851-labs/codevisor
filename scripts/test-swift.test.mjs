@@ -11,8 +11,6 @@ import {
   runSwiftTests
 } from "./test-swift.mjs"
 
-// packages/swift links the macOS transcript tests in; the walk below does not
-// follow symlinks, so their folder is listed too.
 const testRoots = ["../packages/swift", "../apps/macos/Tests/Transcript"].map((path) =>
   fileURLToPath(new URL(path, import.meta.url))
 )
@@ -37,7 +35,6 @@ test("every Swift suite that changes the global executor is isolated", () => {
 })
 
 test("Swift tests use Swift Testing, because swift:test runs them without XCTest", () => {
-  // An XCTest case would build and pass without ever running.
   const rig = fileURLToPath(new URL("../apps/screen-sharing-rig/Tests", import.meta.url))
   const xcTests = [...testRoots, rig]
     .flatMap(testSources)
@@ -45,7 +42,6 @@ test("Swift tests use Swift Testing, because swift:test runs them without XCTest
   assert.deepEqual(xcTests, [])
 })
 
-// Records every Swift command and test-bundle run, failing the `failAt`th.
 const recorder = (failAt = 0, status = 17) => {
   const calls = []
   const step = () => (calls.length === failAt ? status : 0)
@@ -68,7 +64,6 @@ test("test selections are complementary and unrelated suites cannot enter the is
   assert.equal(await runSwiftTests(["--build-system", "native"], { run, runBundles }), 0)
   const [build, bundles, isolated, rig] = calls
   assert.equal(calls.length, 4)
-  // One build serves both packages/swift passes.
   assert.deepEqual(build.slice(0, 2), ["build", "--build-tests"])
   assert.ok(build.includes("--build-system"))
   assert.equal(bundles[bundles.indexOf("--skip") + 1], mainSerialExecutorFilter)

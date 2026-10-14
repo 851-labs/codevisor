@@ -3,13 +3,6 @@ import CodevisorTheming
 import CodevisorUI
 import SwiftUI
 
-// MARK: - Machines
-
-/// Machine management: the machines on the Codevisor Cloud account (never
-/// the on-device "local" pseudo-machine — this client has no local server),
-/// as a flat list — rename and disconnect live on the rows. There is no
-/// per-machine page and no selection affordance: the fleet is always
-/// connected, and which machine the app points at follows the chat you open.
 struct MachinesSettingsScreen: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.theme) private var theme
@@ -93,8 +86,6 @@ struct MachinesSettingsScreen: View {
     removingCloudMachine = cloudMachine(for: machine)
   }
 
-  /// The status dot and how the machine is reached, as one `Text` so the
-  /// list styles it as the row's subtitle.
   private func connectionText(_ connection: MachineConnectionPresentation) -> Text {
     let dot = Text(Image(systemName: "circlebadge.fill"))
       .font(.caption2)
@@ -102,8 +93,6 @@ struct MachinesSettingsScreen: View {
     return Text("\(dot) \(connection.label())")
   }
 
-  /// Reachability and sync failures must remain visible even when the cloud
-  /// roster says the host is online.
   private func machineRow(_ machine: CodevisorMachine) -> some View {
     let presence = cloudMachine(for: machine)
     let connection = MachineConnectionPresentation(
@@ -114,8 +103,6 @@ struct MachinesSettingsScreen: View {
       cloud: presence.map { CloudMachineReach(presence: $0, pipes: cloud.directPaths) }
     )
     let keyChanged = presence.map { cloud.machinesWithChangedKeys.contains($0.deviceId) } ?? false
-    // The status rides under the name as the label's subtitle rather than
-    // trailing it, so long names don't wrap against it.
     return Label {
       Text(machine.name)
       if keyChanged {
@@ -169,8 +156,6 @@ struct MachinesSettingsScreen: View {
       }
       .accessibilityLabel("Rename")
     }
-    // Anchored to this row so an iPad popover points at the machine it
-    // asks about rather than the middle of the screen.
     .confirmationDialog(
       "Disconnect “\(removingCloudMachine?.name ?? "")”?",
       isPresented: Binding(

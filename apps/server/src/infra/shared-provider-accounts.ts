@@ -75,8 +75,6 @@ export const makeSharedProviderAccounts = (options: {
           }
         | undefined
       if (previous?.fingerprint === fingerprint) continue
-      // Discovery never takes refresh ownership from an independently running
-      // terminal. The originating CLI's refreshed access token is published.
       const sameSource =
         previous &&
         previous.organizationId === bundle.organizationId &&
@@ -91,9 +89,6 @@ export const makeSharedProviderAccounts = (options: {
             ...bundle,
             subject: previous.subject
           })
-        // An old terminal's background rotation must not undo a selection made
-        // in Codevisor. Opaque external credentials follow the original source
-        // slot; their changing refresh-token hash is not a new account.
         await store.setLocal(sourceKey, { ...previous, fingerprint })
       } else {
         await store.save({ ...bundle, harnessId: harness }, profile, false, false)
@@ -122,9 +117,7 @@ export const makeSharedProviderAccounts = (options: {
       for (const [harness, profile] of sources) {
         try {
           await discover(harness, profile)
-        } catch {
-          /* A damaged or unavailable local source must not block the other providers. */
-        }
+        } catch {}
       }
     })().finally(() => {
       reconciling = undefined

@@ -28,7 +28,7 @@
     "test": "turbo run test --concurrency=4",
     "test:coverage": "turbo run test:coverage --concurrency=4",
     "test:chrome": "turbo run test:chrome",
-    "check:js": "bun run format:check && bun run lint && bun run ratchet:check && bun run boundaries && bun run typecheck && bun run test:coverage && bun run dev:scripts:test && bun run release:scripts:test",
+    "check:js": "bun run format:check && bun run lint && bun run comments:check && bun run ratchet:check && bun run boundaries && bun run typecheck && bun run test:coverage && bun run dev:scripts:test && bun run release:scripts:test",
     "check": "node scripts/check.mjs",
     "check:all": "node scripts/check.mjs --all",
     "dev:web": "bun run --cwd apps/www dev",
@@ -55,6 +55,7 @@
     "swift:format:check": "scripts/swift-format.sh check",
     "boundaries": "turbo boundaries",
     "ratchet:check": "node scripts/check-size-ratchet.mjs",
+    "comments:check": "node scripts/check-comments.mjs",
     "ios-simulator": "bun scripts/ios-simulator.mjs"
   },
   "devDependencies": {

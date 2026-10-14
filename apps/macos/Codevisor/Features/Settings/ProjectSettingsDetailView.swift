@@ -3,9 +3,6 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// One project's settings. A project checked out on several machines is
-/// still one project: each setting applies to every checkout, and the
-/// machines only appear as the places it lives.
 struct ProjectSettingsDetailView: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.theme) private var theme
@@ -37,7 +34,6 @@ struct ProjectSettingsDetailView: View {
     }
     .settingsPaneFormStyle(theme)
     .navigationTitle(group?.name ?? "Project")
-    // Reload as checkouts come and go or their machines come online.
     .task(id: branchSources) { await loadBranches() }
     .confirmationDialog(
       "Delete “\(group?.name ?? "Project")”?",
@@ -49,13 +45,10 @@ struct ProjectSettingsDetailView: View {
       Button("Delete Project and Files", role: .destructive) { delete(group, deletingFiles: true) }
       Button("Cancel", role: .cancel) {}
     }
-    // One project, one base branch: bring along any checkout that differs.
     .task(id: group?.id) {
       if let group { environment.projectList.alignWorktreeBase(for: group) }
     }
   }
-
-  // MARK: Sections
 
   private func repository(of group: ProjectGroup) -> String? {
     group.primary.repoUrl ?? group.repoKey
@@ -121,8 +114,6 @@ struct ProjectSettingsDetailView: View {
     }
   }
 
-  // MARK: Actions
-
   private var branchSources: [String] {
     (group?.members ?? []).filter(\.isGitRepository).map {
       "\($0.serverId)|\($0.id.uuidString)|\(isReady($0.serverId))"
@@ -132,7 +123,6 @@ struct ProjectSettingsDetailView: View {
   private func loadBranches() async {
     guard let group else { return }
     let checkouts = group.members.filter(\.isGitRepository)
-    // Offline machines are skipped, not reported as failures.
     var clients: [String: any CodevisorServerClienting] = [:]
     for project in checkouts where isReady(project.serverId) {
       clients[project.serverId] = environment.machines.client(for: project.serverId)
@@ -157,8 +147,6 @@ struct ProjectSettingsDetailView: View {
   }
 }
 
-/// A searchable pop-up of every remote branch any checkout can start
-/// worktrees from. Choosing one applies it to every machine at once.
 private struct ProjectBaseBranchMenu: View {
   @Environment(AppEnvironment.self) private var environment
   let group: ProjectGroup
@@ -178,8 +166,6 @@ private struct ProjectBaseBranchMenu: View {
     let listed = branches.branches.map {
       Choice(base: $0.worktreeBase, isDefault: $0.isDefault, isAvailable: true)
     }
-    // Keep the saved branch visible (and checked) even when no machine
-    // lists it right now.
     guard !listed.contains(where: { $0.base == current }), !branches.isLoading else {
       return listed
     }

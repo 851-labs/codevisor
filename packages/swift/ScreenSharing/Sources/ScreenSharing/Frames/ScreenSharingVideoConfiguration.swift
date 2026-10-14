@@ -39,21 +39,12 @@ public struct ScreenSharingVideoConfiguration: Sendable, Equatable, Codable {
   }
 }
 
-/// Immutable ownership of a decoded CVPixelBuffer; retaining it prevents its
-/// pool from recycling the storage before Metal has finished reading it.
 public struct ScreenSharingVideoFrame: @unchecked Sendable {
   public let pixelBuffer: CVPixelBuffer
   public let timestampNs: Int64
   public let rtpTimestamp: UInt32
-  /// Receiver-local Core Animation clock, recorded at the native RTC renderer.
-  /// Never compare this with a sender timestamp or a remote clock.
   public let receivedAtSeconds: Double?
-  /// Content identity: the capture timestamp of the buffer's content. Equal to
-  /// `timestampNs` for a fresh capture, retained across refreshes, carried
-  /// in-band to the viewer. Compare only with host values.
   public let sourceTimestampNs: Int64?
-  /// Receiver-only diagnostic identity read from the decoded buffer's audit
-  /// attachment at the RTC renderer callback; nil whenever the audit is off.
   public let deliveryAuditIdentity: ScreenSharingFrameDeliveryAudit.Identity?
 
   public init(
@@ -77,7 +68,6 @@ public struct ScreenSharingEncodedFrame: Sendable {
   public let width: Int
   public let height: Int
   public let isKeyFrame: Bool
-  /// Content identity written into the frame's marker.
   public var sourceTimestampNs: Int64? = nil
 
   package init(
@@ -94,8 +84,6 @@ public struct ScreenSharingEncodedFrame: Sendable {
   }
 }
 
-/// A one-element mailbox. A slow renderer retains the newest frame, never an
-/// unbounded backlog. GPU in-flight ownership is managed by the renderer.
 public final class ScreenSharingFrameMailbox: @unchecked Sendable {
   private let lock = NSLock()
   private var frame: ScreenSharingVideoFrame?
@@ -104,9 +92,6 @@ public final class ScreenSharingFrameMailbox: @unchecked Sendable {
 
   public init() {}
 
-  /// Newest-frame policy unchanged: returns the frame that was replaced (if
-  /// any) so a receiver-only audit can record the replacement; callers that
-  /// ignore it drop it exactly as before.
   @discardableResult
   public func put(_ value: ScreenSharingVideoFrame) -> ScreenSharingVideoFrame? {
     let (notify, replaced) = lock.withLock {
@@ -119,7 +104,6 @@ public final class ScreenSharingFrameMailbox: @unchecked Sendable {
     return replaced
   }
 
-  /// Notify only the empty-to-full transition, bounding scheduled render work.
   public func onFrameAvailable(_ callback: (@Sendable () -> Void)?) {
     let occupied = lock.withLock {
       onAvailable = callback; return frame != nil
@@ -136,6 +120,5 @@ public final class ScreenSharingFrameMailbox: @unchecked Sendable {
 
   public func clear() { lock.withLock { frame = nil } }
   public var droppedFrames: Int { lock.withLock { replacements } }
-  /// Non-mutating ownership observation (diagnostic).
   public var isHolding: Bool { lock.withLock { frame != nil } }
 }

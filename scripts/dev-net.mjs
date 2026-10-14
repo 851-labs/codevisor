@@ -1,11 +1,3 @@
-// Local tunnel relays for `bun run dev` (docs/plans/codevisor-tunnel.md).
-//
-// Two iroh-relay processes run from the same pinned binary as production
-// (scripts/net-build.lock.json), configured by the same
-// apps/relay/render-config.sh, each behind the same port-80 router. The
-// only differences from production are configuration: per-worktree ports,
-// a per-worktree dev CA instead of Let's Encrypt, and relay access checked
-// against the local wrangler instead of cloud.codevisor.dev.
 import { spawn } from "node:child_process"
 import { createHash } from "node:crypto"
 import { access, copyFile, mkdir, readFile, writeFile } from "node:fs/promises"
@@ -19,7 +11,6 @@ import { delay, isPortAvailable } from "./dev-shared.mjs"
 const repoRootOf = () => join(dirname(fileURLToPath(import.meta.url)), "..")
 
 const RELAYS = 2
-/// Per relay: https, QAD (udp), router http, relay-internal http, metrics.
 const PORTS_PER_RELAY = 5
 
 const exists = (path) =>
@@ -28,10 +19,6 @@ const exists = (path) =>
     () => false
   )
 
-/// The host address every dev device can reach the relays at. Apple
-/// `container` machines reach the host at the vmnet gateway, which is also
-/// one of the host's own addresses; Docker containers can't reach the host's
-/// loopback, so they get the host's LAN address. Same-host mode: loopback.
 export function devRelayHost({ containerEngine, containerHostAddress }) {
   if (containerEngine === "apple" && containerHostAddress) return containerHostAddress
   if (containerEngine === "docker") {
@@ -44,7 +31,6 @@ export function devRelayHost({ containerEngine, containerHostAddress }) {
   return "127.0.0.1"
 }
 
-/// Stable per-worktree ports (30000–39999), scanning forward when taken.
 export async function resolveDevNet({ instanceHash, netRoot, relayHost }) {
   const slots = 1000 / RELAYS
   let slot = Number.parseInt(instanceHash.slice(0, 8), 16) % slots
@@ -75,7 +61,6 @@ export async function resolveDevNet({ instanceHash, netRoot, relayHost }) {
   throw new Error("No free port range for the dev tunnel relays")
 }
 
-/// The relay map the local cloud hands to devices (RELAY_MAP).
 export const devRelayMap = (net) =>
   net.relays.map((relay) => ({ url: relay.url, quicPort: relay.ports.quic }))
 
@@ -96,20 +81,13 @@ function run(command, args, options = {}) {
   })
 }
 
-/// Every signature uses SHA-256 explicitly: macOS's /usr/bin/openssl is
-/// LibreSSL, which still signs `x509 -req` with SHA-1 by default, and the
-/// tunnel's TLS (rustls/webpki) rejects SHA-1 certificates outright.
 const certificateDigest = "-sha256"
 
-/// A per-worktree CA plus one relay certificate for every name devices use.
-/// Regenerated only when the name set or the signing digest changes.
 export async function ensureDevCertificates(net) {
   const names = [...new Set(["localhost", "127.0.0.1", "::1", net.relayHost])]
   const dir = net.netRoot
   await mkdir(dir, { recursive: true })
   const namesFile = join(dir, "cert-names.json")
-  // Recording the digest beside the names regenerates certificates an
-  // earlier run signed with SHA-1.
   const fingerprint = JSON.stringify({ names, digest: certificateDigest })
   const current = await readFile(namesFile, "utf8").catch(() => "")
   if (current === fingerprint && (await exists(join(dir, "relay.key")))) return
@@ -188,7 +166,6 @@ export async function ensureDevCertificates(net) {
   await writeFile(namesFile, fingerprint)
 }
 
-/// Starts both relays (router + iroh-relay each). Returns the processes.
 export async function startDevRelays({ net, repoRoot, relayBinary, cloudPort, containerized }) {
   const bind = containerized ? "0.0.0.0" : "127.0.0.1"
   const processes = []
@@ -243,11 +220,6 @@ export async function startDevRelays({ net, repoRoot, relayBinary, cloudPort, co
   return processes
 }
 
-/// One relay /healthz probe over dev-CA TLS. Always settles, and within
-/// `timeoutMs`: Bun (which runs the dev scripts) emits only "close" — not
-/// "error" — when a timed-out request is destroyed, so a probe that waited
-/// for "error" never settled against an address that swallows packets,
-/// hanging the whole dev runner.
 export const relayHealthy = (url, ca, timeoutMs = 1000) =>
   new Promise((resolve) => {
     let settled = false
@@ -267,8 +239,6 @@ export const relayHealthy = (url, ca, timeoutMs = 1000) =>
         settle(response.statusCode === 200)
       })
     } catch {
-      // Some runtimes validate TLS options up front and throw (an unreadable
-      // CA, for one): that relay is simply not healthy yet.
       settle(false)
       return
     }
@@ -286,15 +256,8 @@ const routerHealthy = (relay, timeoutMs = 1000) =>
     () => false
   )
 
-/// Where the host checks a relay: always loopback. In container mode the
-/// relay also listens on the container-facing address (`relay.url`), but that
-/// address only exists on the host while a container network is up — and the
-/// containers start after this check. Loopback proves the same process is
-/// serving, and the dev certificate covers 127.0.0.1.
 export const relayHealthUrl = (relay) => `https://127.0.0.1:${relay.ports.https}`
 
-/// Waits (bounded) until every relay answers /healthz over dev-CA TLS and its
-/// port-80 router forwards captive-portal probes.
 export async function waitForDevRelays(
   net,
   { attempts = 80, intervalMs = 250, probeTimeoutMs } = {}
@@ -313,8 +276,6 @@ export async function waitForDevRelays(
   return false
 }
 
-/// Everything before launch: ports, dev CA, the pinned relay binary, and (for
-/// containerized dev remotes) the Linux tunnel addon.
 export async function prepareDevNet({ instanceHash, netRoot, containerContext }) {
   const { ensureLinuxNodeAddon, ensureNodeAddon, ensureRelayBinary } =
     await import("./net-artifact.mjs")
@@ -326,8 +287,6 @@ export async function prepareDevNet({ instanceHash, netRoot, containerContext })
   await ensureDevCertificates(net)
   await ensureNodeAddon()
   if (containerContext !== undefined) {
-    // The container workspace was synced before this build, so install the
-    // Linux addon into the synced copy too (where the containers load it).
     const addon = await ensureLinuxNodeAddon(containerContext.engine)
     const target = join(containerContext.appRoot, relative(repoRootOf(addon), addon))
     await mkdir(dirname(target), { recursive: true })
@@ -336,8 +295,6 @@ export async function prepareDevNet({ instanceHash, netRoot, containerContext })
   return { ...net, relayBinary: await ensureRelayBinary() }
 }
 
-/// Starts the relays and waits for them. Non-fatal like the rest of the
-/// cloud piece: without relays the tunnel still connects directly.
 export async function launchDevNet({ net, repoRoot, cloudPort, containerized }) {
   const processes = await startDevRelays({
     net,
@@ -354,10 +311,6 @@ export async function launchDevNet({ net, repoRoot, cloudPort, containerized }) 
   return processes
 }
 
-/// Trust for the dev CA. Host processes and the apps read the file (a PEM
-/// can't travel through `open --env`, which escapes its newlines); machines
-/// that may run in a container, which can't see host paths, also get it
-/// inline (an unreadable file is skipped there).
 export const devNetEnvironment = async (net, { inline = false } = {}) => ({
   CODEVISOR_NET_CA_FILE: net.caFile,
   ...(inline ? { CODEVISOR_NET_CA_PEM: await readFile(net.caFile, "utf8") } : {})

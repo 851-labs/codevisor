@@ -33,8 +33,6 @@ struct NavigationPresentationTests {
     let stillCatchingUp = [Self.machine("Mac", cached: true, state: .current), Self.machine("Box", state: .catchingUp)]
     #expect(
       NavigationPresentation.launch(machines: stillCatchingUp, roster: .verified, hasVisibleContent: false) == .loading)
-    // Records that show nothing (every workspace archived) still leave the
-    // screen empty once everyone has answered.
     let oneHasContent = [
       Self.machine("Mac", cached: true, empty: false, state: .current),
       Self.machine("Box", cached: true, state: .current),

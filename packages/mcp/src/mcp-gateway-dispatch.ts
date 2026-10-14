@@ -21,24 +21,14 @@ import {
 } from "./mcp-sandbox-results.js"
 import { errorMessage, run, type UpstreamConnection } from "./mcp-support.js"
 
-/// Gateway dispatch, split out of mcp-gateway: one tool call routed to the
-/// catalog, a plugin, a built-in automation provider, an upstream MCP
-/// server, or (for machine-targeted sandbox calls) another machine.
-
 export interface GatewayInvokeOptions {
-  /// Collects artifacts across one execution; a fresh one per call otherwise.
   readonly artifacts?: SandboxArtifactCollector
   readonly signal?: AbortSignal
-  /// Fires when the call reaches Browser Use.
   readonly onBrowser?: () => void
-  /// Fires with the page a Browser Use call left its tab on.
   readonly onBrowserPage?: (url: string) => void
-  /// Fires with each app a Computer Use call observed.
   readonly onComputerApp?: (app: ComputerUseApp) => void
 }
 
-/// Keeps a tool failure's code and details (machine_unavailable and friends)
-/// so the sandbox can rethrow it as a named error class.
 export const gatewayToolError = (cause: unknown): CodeExecutionToolError => {
   if (cause instanceof CodeExecutionToolError) return cause
   const { code, details } =
@@ -83,8 +73,6 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
     selfMachine
   } = deps
 
-  /// Invokes one plugin tool, resolving the calling session's cwd so plugins
-  /// can scope per-project state.
   const invokePluginTool = async (
     sessionId: string,
     name: string,
@@ -106,9 +94,7 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
     args: Readonly<Record<string, unknown>>,
     collector?: SandboxArtifactCollector,
     remote?: GatewayOrigin,
-    /// Hears the page each nested browser action (a `browser.js` cell's) leaves its tab on.
     onPage?: (url: string) => void,
-    /// Hears each app a Computer Use call (or a `computer.js` cell's) observes.
     onApp?: (app: ComputerUseApp) => void
   ): Promise<CallToolResult> => {
     if (provider.id !== "browser" && provider.id !== "computer" && provider.id !== "codevisor") {
@@ -217,10 +203,6 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
   const isRemoteOrigin = (origin: GatewayOrigin | undefined): origin is GatewayOrigin =>
     origin !== undefined && origin.machineId !== selfMachine.id
 
-  /// One gateway tool call: catalog search/describe, plugin tools, built-in
-  /// automation providers, and upstream MCP servers. Calls whose origin is
-  /// another machine run under a synthetic session key so browser tabs and
-  /// recordings stay scoped to the calling chat.
   const invokeGatewayTool = async (
     ctx: GatewayCallContext,
     path: string,
@@ -233,7 +215,6 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
         ? ctx.sessionId
         : `remote:${remote.machineId}:${remote.sessionId ?? "none"}`
     if (scopeKey === undefined) throw new Error("Gateway calls need a calling session")
-    // Session and project settings only exist for chats on this machine.
     const sessionId = remote === undefined ? ctx.sessionId : undefined
     const projectId = remote === undefined ? ctx.projectId : undefined
     const artifacts = options.artifacts ?? newArtifactCollector()
@@ -311,12 +292,8 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
   ): Promise<unknown> =>
     invokeGatewayTool({ origin }, path, args, signal === undefined ? {} : { signal })
 
-  /// Machines whose browser a chat here drove, per chat. That machine scopes
-  /// the tabs to this chat, so only this machine's turn end can close them.
   const remoteBrowserUse = new Map<string, Map<string, GatewayOrigin>>()
 
-  /// Closes the tabs a chat's turn opened on other machines' browsers. Best
-  /// effort: an unreachable machine keeps its tabs, as it would its own.
   const finishRemoteBrowserTurn = async (sessionId: string): Promise<void> => {
     const machines = remoteBrowserUse.get(sessionId)
     if (machines === undefined || config.remoteInvoker === undefined) return
@@ -329,8 +306,6 @@ export const makeGatewayDispatch = (deps: GatewayDispatchDeps) => {
     )
   }
 
-  /// Sends a sandbox call to another machine through the server's machine
-  /// link. Without one, the machine is unreachable before anything is sent.
   const invokeOnMachine = (
     target: { readonly machine: string; readonly machineName?: string },
     path: string,

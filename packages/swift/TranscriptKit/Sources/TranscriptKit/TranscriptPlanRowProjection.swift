@@ -45,10 +45,6 @@ enum TranscriptPlanRowProjection {
           content: .markdownChunk(projected),
           estimatedHeight: projected.estimatedHeight + (projected.isLastInDocument ? 12 : 0),
           measurementRevision: projected.measurementRevision,
-          // Rows inside the card sit flush so the card reads as one
-          // surface. The card's last row ends the response the way final
-          // text does: whatever follows (a user message, or the work that
-          // resumes after approval) gets ordinary transcript spacing.
           spacingAfter: projected.isLastInDocument ? nil : 0
         ))
     }

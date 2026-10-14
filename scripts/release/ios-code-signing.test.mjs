@@ -28,7 +28,6 @@ test("signature checks cover embedded code inside out without following symlinks
   assert.ok(paths.indexOf(framework) < paths.indexOf(extension))
 })
 
-// codesign is a macOS boundary; the release itself also runs on macOS.
 test(
   "archive preparation attaches Apple sign-in before distribution export",
   { skip: process.platform !== "darwin" },

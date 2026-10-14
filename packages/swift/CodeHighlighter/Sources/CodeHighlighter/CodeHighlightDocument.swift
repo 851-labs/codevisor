@@ -1,7 +1,5 @@
 import Foundation
 
-/// A document-scoped actor owns all mutable C objects. Edits are processed in
-/// order; callers acknowledge only revisions actually applied to their view.
 public actor CodeHighlightDocument {
   public struct Edit: Sendable {
     public let range: NSRange
@@ -25,8 +23,6 @@ public actor CodeHighlightDocument {
 
   public struct Update: Sendable {
     public let revision: Int
-    /// Reset syntax attributes in this range before applying spans, including
-    /// formerly highlighted text that no longer matches any query.
     public let invalidatedRange: NSRange
     public let spans: [Span]
   }
@@ -76,8 +72,6 @@ public actor CodeHighlightDocument {
     }
     currentRevision = revision
     let fullRange = NSRange(location: 0, length: document.text.count)
-    // Replacing native text storage discards attributes outside the text diff.
-    // Repaint them while retaining the incremental parser and its syntax tree.
     if forceFullHighlight { invalidated = fullRange }
     let range = invalidated.map { NSIntersectionRange($0, fullRange) } ?? NSRange(location: 0, length: 0)
     let syntax = range.length > 0 ? try document.spans(in: range) : []
@@ -89,8 +83,6 @@ public actor CodeHighlightDocument {
     if revision == currentRevision { invalidated = nil }
   }
 
-  /// Completed code blocks need a snapshot, even if the streaming caller already
-  /// acknowledged an earlier partial update.
   func snapshot(source: String, themeJSON: String, revision: Int) throws -> [Span] {
     invalidated = NSRange(location: 0, length: max(document?.text.count ?? 0, source.utf16.count))
     return try update(source: source, themeJSON: themeJSON, revision: revision).spans

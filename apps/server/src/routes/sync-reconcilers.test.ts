@@ -38,18 +38,15 @@ describe("configMutationNamespace", () => {
     expect(configMutationNamespace("POST", "/v1/plugins/import-remote")).toBe("plugins")
     expect(configMutationNamespace("DELETE", "/v1/plugins/acme.tunes")).toBe("plugins")
 
-    // Reads never trigger, whatever the path.
     expect(configMutationNamespace("GET", "/v1/mcps")).toBeUndefined()
     expect(configMutationNamespace("HEAD", "/v1/skills")).toBeUndefined()
     expect(configMutationNamespace("OPTIONS", "/v1/plugins")).toBeUndefined()
     expect(configMutationNamespace(undefined, "/v1/mcps")).toBeUndefined()
 
-    // Chatty plugin surfaces are excluded: pane proxies, tokens, tools.
     expect(configMutationNamespace("POST", "/v1/plugins/x/app/api")).toBeUndefined()
     expect(configMutationNamespace("POST", "/v1/plugins/x/panes/p/token")).toBeUndefined()
     expect(configMutationNamespace("POST", "/v1/plugins/x/tools/run")).toBeUndefined()
 
-    // Unrelated mutations never trigger.
     expect(configMutationNamespace("POST", "/v1/sessions")).toBeUndefined()
   })
 })
@@ -75,7 +72,6 @@ describe("runBackgroundSyncReconcile", () => {
   it("ignores a legacy opt-out, skips absent services, and swallows failures", async () => {
     const fanout = await run(makeEventFanout)
 
-    // Sync has no opt-out: a stored pre-removal `local.sync` flag is inert.
     const { services: legacy } = await makeServices("server-bg-legacy")
     await run(
       legacy.db.mergeSyncEntries("local.sync", [
@@ -98,12 +94,10 @@ describe("runBackgroundSyncReconcile", () => {
       "Replicated"
     ])
 
-    // A plane without its backing services is a silent no-op.
     const { services: bare } = await makeServices("server-bg-bare")
     await runBackgroundSyncReconcile(bare, config, fanout, "skills")
     expect(await run(bare.db.getSyncEntries("codevisor-skills"))).toEqual([])
 
-    // A reconcile that throws never escapes the hook.
     const { services: broken } = await makeServices("server-bg-broken")
     const throwing = {
       ...broken,
@@ -140,8 +134,6 @@ describe("runBackgroundSyncReconcile", () => {
   it("fires end to end from a config mutation over HTTP", async () => {
     const { services } = await makeServices("server-bg-http")
     const fanout = await run(makeEventFanout)
-    // Seeded without HTTP, so only a mutation-triggered pass can publish it.
-    // A pass fired by the rejected POST would publish it alone, first.
     await services.mcp?.create({
       authType: "none",
       enabled: false,
@@ -158,7 +150,6 @@ describe("runBackgroundSyncReconcile", () => {
     })
     const server = await startWithApp(services, fanout)
 
-    // A rejected mutation must not reconcile.
     const rejected = await jsonRequest(server, "/v1/mcps", {
       body: JSON.stringify({ nope: true }),
       method: "POST"
@@ -177,8 +168,6 @@ describe("runBackgroundSyncReconcile", () => {
     })
     expect(created.status).toBeLessThan(300)
 
-    // The response-finish hook runs in the background; the replica entry
-    // appears without any client calling a reconcile route.
     expect(await reconciled.promise).toEqual(["Imported", "Seeded"])
     unsubscribe()
   })
@@ -189,13 +178,11 @@ describe("refreshMcpReadiness", () => {
     const fanout = await run(makeEventFanout)
     const { services } = await makeServices("server-x")
 
-    // No MCP manager: nothing to derive, nothing published.
     const { mcp: omitted, ...withoutMcp } = services
     void omitted
     await refreshMcpReadiness(withoutMcp, config, fanout)
     expect(await run(services.db.getSyncEntries("mcp-readiness"))).toEqual([])
 
-    // A failing manager never breaks the pass that triggered the refresh.
     const poisoned = {
       ...services,
       mcp: { list: () => Promise.reject(new Error("boom")) }
@@ -266,8 +253,6 @@ describe("refreshPluginReadiness", () => {
     const fanout = await run(makeEventFanout)
     const { services } = await makeServices("server-pr")
 
-    // A managed install with provenance, one disabled sibling, and a
-    // linked dev plugin that never syncs.
     const managedPath = await mkdtemp(join(tmpdir(), "codevisor-pr-"))
     await writePluginInstallReceipt(managedPath, {
       installedAt: "2026-01-01T00:00:00.000Z",
@@ -288,8 +273,6 @@ describe("refreshPluginReadiness", () => {
       })
     } as unknown as Parameters<typeof refreshPluginReadiness>[3]
 
-    // Fleet-desired plugins this machine lacks: one plain, one blocked by
-    // the pass, one tombstoned (skipped).
     await run(
       services.db.mergeSyncEntries("plugins", [
         {
@@ -329,7 +312,6 @@ describe("refreshPluginReadiness", () => {
     })
     expect(byId["fleet.gone"]).toBeUndefined()
 
-    // A failing manager never breaks the pass that triggered the refresh.
     const poisoned = {
       list: () => Promise.reject(new Error("boom"))
     } as unknown as typeof manager
@@ -359,7 +341,6 @@ describe("republishAccountsRoster", () => {
     const value = entries[0]?.value as { accounts: Array<{ authState: string }> }
     expect(value.accounts[0]?.authState).toBe("authenticated")
 
-    // Unchanged state republishes nothing; a failure never throws.
     await republishAccountsRoster(services, config, fanout)
     expect(await run(services.db.getSyncEntries("harness-accounts"))).toHaveLength(1)
     const poisoned = {
@@ -406,8 +387,6 @@ describe("credentials plane", () => {
       }
     } as unknown as typeof services
 
-    // Seed a fleet value so the pass APPLIES (covering the probe hook);
-    // the unmapped source applies too but probes nothing.
     await run(
       withFerry.db.mergeSyncEntries("harness-credentials", [
         {
@@ -442,10 +421,6 @@ describe("credentials plane", () => {
     expect(refreshed.toSorted()).toEqual(["opencode", "pi"])
     expect(contents.get("pi-auth")).toContain("fleet")
 
-    // The harnesses trigger re-runs the ferry: a local edit publishes into
-    // the replica without any credentials-specific mutation hook. (No auth
-    // service here — the real harnesses pass runs, and the probe hook's
-    // optional chain takes its absent side.)
     const withFerryNoAuth = {
       ...services,
       credentialFerry: ferrySources

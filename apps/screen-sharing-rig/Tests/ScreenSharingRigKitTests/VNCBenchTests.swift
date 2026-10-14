@@ -3,8 +3,6 @@ import Testing
 
 @testable import ScreenSharingRigKit
 
-/// The pure half of `vnc-bench` (851-2310): statistics, aggregation across
-/// runs, the noise band and the baseline comparison.
 struct VNCBenchTests {
   @Test func percentilesUseNearestRank() {
     let values: [Double] = [5, 1, 4, 2, 3]
@@ -23,7 +21,6 @@ struct VNCBenchTests {
     let result = VNCBenchCase(scene: "scroll", profile: "wan150", runs: runs)
     #expect(result.median[.updatesPerSecond] == 100)
     #expect(result.median[.updateLatencyP95Ms] == 11)
-    // Largest relative distance of a run from the median.
     #expect(result.spread[.updatesPerSecond] == 0.1)
     #expect(abs(try #require(result.spread[.updateLatencyP95Ms]) - 1.0 / 11) < 1e-9)
   }
@@ -37,7 +34,6 @@ struct VNCBenchTests {
       return VNCBenchReport(machine: .init(model: "Mac16,5", system: "27.2", power: "AC"), build: "x", cases: [result])
     }
     let baseline = report(100, latency: 20, mbps: 5, spread: 0.02)
-    // Within max(spread, 10 %): no verdict either way.
     #expect(
       VNCBenchComparison(baseline: baseline, current: report(92, latency: 20.9, mbps: 9, spread: 0.02)).regressions
         .isEmpty)
@@ -46,7 +42,6 @@ struct VNCBenchTests {
     let better = VNCBenchComparison(baseline: baseline, current: report(150, latency: 10, mbps: 1, spread: 0.02))
     #expect(better.regressions.isEmpty)
     #expect(better.rows.filter { $0.verdict == .improved }.map(\.metric) == [.updatesPerSecond, .updateLatencyP95Ms])
-    // A noisy baseline widens the band.
     let noisy = report(100, latency: 20, mbps: 5, spread: 0.3)
     #expect(
       VNCBenchComparison(baseline: noisy, current: report(80, latency: 25, mbps: 5, spread: 0.02)).regressions.isEmpty)
@@ -122,8 +117,6 @@ struct VNCBenchTests {
     #expect(throws: (any Error).self) { try VNCBenchOptions(arguments: ["--pace", "999"]) }
   }
 
-  /// 851-2336: `--pace 0` plays a frame per request, so its server must not offer
-  /// continuous updates (the client would stop requesting and the run would hang).
   @Test func requestDrivenScenesGetARequestOnlyServer() {
     let paced = VNCBenchServer.arguments(scene: "typing", echo: false, seed: 1, pace: 60, width: 640, height: 480)
     #expect(paced.contains("--scene-fps") && !paced.contains("--requested-only"))

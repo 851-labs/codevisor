@@ -17,9 +17,6 @@ const projectSessionPlan = (
   sessionId: string
 ): void => {
   const sessionPlan = sessionPlanFromPayload(payload)
-  // A malformed provider update must not erase the last valid checklist.
-  // Empty and fully completed plans are valid snapshots and stay durable;
-  // clients apply their own visibility rule.
   if (sessionPlan !== undefined) {
     sqlite
       .prepare("update sessions set session_plan = ? where id = ?")
@@ -107,10 +104,6 @@ export const projectSessionEventState = (
   payload: JsonRecord,
   sessionId: string
 ): void => {
-  // A question is session-level blocking state, not merely transcript detail.
-  // Keep a single current-state projection in the same transaction as the
-  // append so reconnect snapshots cannot advance past the event while losing
-  // the question needed to release the provider's pending continuation.
   const update = typeof payload.sessionUpdate === "string" ? payload.sessionUpdate : undefined
   if (event.kind === "session.output" && update === "plan") {
     projectSessionPlan(sqlite, payload, sessionId)

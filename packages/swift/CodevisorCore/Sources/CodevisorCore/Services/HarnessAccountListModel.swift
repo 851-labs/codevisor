@@ -1,7 +1,6 @@
 import Foundation
 import Observation
 
-/// Keeps background account refreshes from replacing a newer user action.
 @MainActor @Observable public final class HarnessAccountListModel {
   public var accounts: [ServerHarnessAccount] = []
   public private(set) var hasLoaded = false

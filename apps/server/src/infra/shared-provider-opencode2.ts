@@ -15,18 +15,11 @@ import type { SharedCredentialVault, SharedTokenBundle } from "@codevisor/harnes
 
 import type { SharedProviderStore } from "./shared-provider-store.js"
 
-/// OpenCode 2 keeps credentials in its own database, so a shared profile's
-/// sign-ins are seeded there (into an isolated data directory) instead of
-/// written to auth.json.
-
 export interface OpenCode2Deps {
-  /// OpenCode's major version as the given environment resolves `opencode`.
   readonly majorVersion: (env: NodeJS.ProcessEnv) => Promise<number | undefined>
   readonly syncCredentials: ReturnType<typeof makeOpenCode2Accounts>["syncCredentials"]
 }
 
-/// The `opencode` binary an environment runs: the newest installed, as
-/// OpenCode's chats run.
 const locateOpenCode = makeOpenCodeLocator()
 
 export const makeOpenCode2Deps = (): OpenCode2Deps => {
@@ -41,17 +34,12 @@ export const makeOpenCode2Deps = (): OpenCode2Deps => {
   }
 }
 
-/// Providers whose refresh goes through Codevisor's plugin, and so need a
-/// broker capability in place of their refresh token.
 export const refreshedThroughCodevisor = (providerId: string): boolean =>
   OPENCODE_MANAGED_METHODS.some(([integrationID]) => integrationID === providerId)
 
 const text = (value: unknown): string | undefined =>
   typeof value === "string" && value.length > 0 ? value : undefined
 
-/// The credential OpenCode 2 stores for one shared sign-in, or undefined for
-/// a provider it can't take. `capability` replaces the refresh token for a
-/// provider Codevisor refreshes.
 export const seededOAuthCredential = (
   token: SharedTokenBundle,
   capability: string | undefined
@@ -72,8 +60,6 @@ export const seededOAuthCredential = (
     }
   })
   if (token.providerId?.startsWith("github-copilot")) {
-    // Copilot's stored GitHub token is long-lived: OpenCode exchanges it
-    // itself and never refreshes it.
     const enterpriseUrl = text(native.enterpriseUrl)
     return oauth("device", token.accessToken, enterpriseUrl ? { enterpriseUrl } : {})
   }
@@ -87,7 +73,6 @@ export const seededOAuthCredential = (
   return oauth("device", refresh, {})
 }
 
-/// API keys from the profile's credential document, as OpenCode 2 keys.
 export const seededKeyCredentials = (
   document: Readonly<Record<string, unknown>>
 ): Array<SeededOpenCodeCredential> =>
@@ -104,15 +89,9 @@ export const seededKeyCredentials = (
       : []
   })
 
-/// Builds a shared profile's OpenCode 2 runtime: an isolated data directory
-/// whose database holds the shared sign-ins, refreshed through Codevisor's
-/// plugin. Seeding replaces them with current tokens on every session, so
-/// none is near expiry while OpenCode starts (its built-in sign-ins resolve
-/// their credentials before plugins load).
 export const makeOpenCode2Materializer =
   (deps: {
     readonly vault: SharedCredentialVault
-    /// The token service the plugin refreshes through.
     readonly url: string
     readonly capabilityFor: (
       profile: string,
@@ -148,7 +127,6 @@ export const makeOpenCode2Materializer =
     }
     const seeded = seededKeyCredentials(document)
     for (const row of rows) {
-      // An unavailable provider is left out; OpenCode asks to sign in.
       const token = await deps.vault.token(row.credential).catch(() => undefined)
       if (!token) continue
       const cap = refreshedThroughCodevisor(row.providerId)

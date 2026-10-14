@@ -1,11 +1,7 @@
 import Foundation
 import Network
 
-/// Literal loopback destinations bypass WebKit proxies. A .localhost alias
-/// still has localhost secure-context semantics, but uses the configured proxy.
 enum BrowserAddress {
-  /// Keep the actual origin recognizable while omitting navigation details.
-  /// Never reduce a hostname to its last two labels (for example, co.uk).
   static func display(_ url: URL) -> String {
     BrowserLocation.display(url)
   }

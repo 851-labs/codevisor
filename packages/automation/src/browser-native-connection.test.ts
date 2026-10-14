@@ -17,7 +17,6 @@ class Wire extends EventEmitter {
     const result = this.reply(packet)
     if (result !== undefined) {
       const data = JSON.stringify({ id: packet.id, result }) + "\n"
-      // Fragmented frames must survive the Unix stream boundary.
       this.emit("data", data.slice(0, 7))
       this.emit("data", data.slice(7))
     }

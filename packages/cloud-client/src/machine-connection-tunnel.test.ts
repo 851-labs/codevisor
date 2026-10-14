@@ -5,9 +5,6 @@ import { describe, expect, it, vi } from "vitest"
 import { CloudMachineConnection } from "./index.js"
 import { credentials, FakeSocket } from "./machine-connection-test-support.js"
 
-// The machine's hub connection as the tunnel's control plane: registering the
-// endpoint, receiving relay config and vouched devices, reporting addresses.
-
 const endpointId = "a".repeat(64)
 
 const tunnelConnection = (releaseChannel?: () => "stable" | "alpha" | undefined) => {
@@ -66,7 +63,6 @@ describe("tunnel control plane on the machine connection", () => {
       relays,
       tunnel: "on"
     })
-    // An older hub sends neither field: no relays, tunnel off.
     socket.receive({ t: "welcome", protocol: CLOUD_PROTOCOL_VERSION, connectionId: "c2" })
     expect(configs).toEqual([
       { relays, enabled: true },

@@ -3,9 +3,6 @@ import Metal
 import Testing
 @testable import ScreenSharing
 
-/// The encoder's pixel-format gate and plane binding, without a drawable: a
-/// decoder's biplanar output and a framebuffer backend's BGRA output both bind,
-/// anything else is refused before any GPU work is queued.
 @MainActor
 struct ScreenSharingMetalEncoderTests {
   @Test func bgraBindsOnePlaneOnItsOwnPipeline() throws {
@@ -28,7 +25,6 @@ struct ScreenSharingMetalEncoderTests {
     guard case .biplanar(let y, let uv, let range) = textures.planes else {
       Issue.record("Expected biplanar planes"); return
     }
-    // 10-bit planes (HDR, 851-2380) are bound as 16-bit normalized samples.
     let wide = ScreenSharingDynamicRange(pixelFormat: format) == .high
     #expect(CVMetalTextureGetTexture(y)?.pixelFormat == (wide ? .r16Unorm : .r8Unorm))
     #expect(CVMetalTextureGetTexture(uv)?.pixelFormat == (wide ? .rg16Unorm : .rg8Unorm))

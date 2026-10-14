@@ -1,8 +1,6 @@
 import CodevisorUI
 import SwiftUI
 
-/// The primary action shared by every composer state. Keeping the visual
-/// treatment here makes question submission track ordinary prompt submission.
 struct ComposerSubmitButton: View {
   @Environment(\.theme) private var theme
   let systemImage: String
@@ -39,8 +37,6 @@ struct ComposerSubmitButton: View {
         .foregroundStyle(isEnabled ? Color.white : Color.secondary.opacity(0.75))
         .background(
           Circle().fill(
-            // The primary action carries the app's accent on both
-            // platforms; hover deepens it slightly.
             isEnabled
               ? AnyShapeStyle(theme.accent.opacity(isHovered ? 1 : 0.9))
               : AnyShapeStyle(Color.secondary.opacity(0.16))

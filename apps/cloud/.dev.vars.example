@@ -1,25 +1,2 @@
-# Optional: real GitHub sign-in in local cloud dev. Without this file, dev
-# login (DEV_AUTH) covers everything except the real OAuth redirect dance.
-#
-# EASY MODE — run once, everything below happens automatically:
-#   bun run setup:github-oauth
-#
-# Manual mode: create a GitHub App (or classic OAuth app) at
-# https://github.com/settings/apps with callback URL
-# http://localhost:8787/api/auth/callback/github (GitHub Apps also need
-# Account Permissions → Email addresses → Read-only), then copy this file to
-# .dev.vars (gitignored) in your MAIN clone — every worktree's `bun run dev`
-# reads the main clone's copy automatically (a worktree-local .dev.vars takes
-# precedence if you need one to differ).
-# `bun run dev` normally assigns each worktree its own deterministic cloud
-# port. To test this real OAuth callback in one worktree, launch that worktree
-# with CODEVISOR_DEV_CLOUD_PORT=8787. Other worktrees continue to use their own
-# ports and the built-in development account.
 GITHUB_CLIENT_ID=your-client-id
 GITHUB_CLIENT_SECRET=your-client-secret
-
-# Optional: email/password signup, verification codes, and password reset.
-# Use a sending-only Resend key restricted to your verified sender domain.
-# Put these in .env.local so the dev runner does not pass the key as a CLI argument.
-# RESEND_API_KEY=your-resend-sending-key
-# AUTH_EMAIL_FROM=Codevisor <noreply@auth.codevisor.dev>

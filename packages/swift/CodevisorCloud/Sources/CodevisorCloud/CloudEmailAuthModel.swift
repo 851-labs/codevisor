@@ -1,7 +1,6 @@
 import Foundation
 import Observation
 
-/// Shared native form state. Passwords and codes live only for the lifetime of the sheet.
 @MainActor
 @Observable
 public final class CloudEmailAuthModel {
@@ -94,7 +93,6 @@ public final class CloudEmailAuthModel {
           try await cloud.authenticateEmail(.resendVerification(email: normalizedEmail), context: context)
         }
       case .signUp:
-        // A failed delivery may leave a pending account. Keep the code screen available for resending.
         do {
           try await cloud.authenticateEmail(.signUp(email: normalizedEmail, password: password), context: context)
         } catch CloudAccountClientError.emailDeliveryFailed {

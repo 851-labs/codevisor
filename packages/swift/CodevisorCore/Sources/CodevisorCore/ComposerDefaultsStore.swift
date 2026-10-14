@@ -1,13 +1,5 @@
 import Foundation
 
-/// Persists the explicit choices of New Chat composers, per machine.
-///
-/// One machine-scoped profile drives every unsent composer on that machine
-/// — the standalone New Chat page and new chat tabs/splits inside a
-/// workspace alike: project, per-project worktree choice, harness, and
-/// per-harness model/reasoning/speed values. Only explicit picks in a
-/// draft composer write here. Existing chats own their configuration on
-/// the server and never read or write this store.
 @MainActor
 public final class ComposerDefaultsStore {
   nonisolated private static let schemaVersion = 6
@@ -25,26 +17,14 @@ public final class ComposerDefaultsStore {
 
   fileprivate struct MachineDefaults: Codable, Sendable {
     var lastHarnessId: String?
-    /// The project used by the last standalone New Chat page on this
-    /// machine. UUIDs that no longer exist are ignored by callers.
     var lastProjectId: UUID?
-    /// Legacy machine-wide worktree choice. Read only as the fallback for
-    /// projects without their own record in `worktreeByProject`.
     var newWorkspaceInWorktree: Bool?
-    /// Config option selections keyed by harness id, then option id.
-    /// Keeping every harness here is important: changing harnesses should
-    /// restore that harness's own model/reasoning/speed selections.
     var configSelections: [String: [String: String]] = [:]
-    /// The worktree-vs-project-directory choice last made for each project
-    /// (keyed by project UUID string).
     var worktreeByProject: [String: Bool]?
   }
 
   private struct Defaults: Codable, Sendable {
     var version = ComposerDefaultsStore.schemaVersion
-    /// The machine targeted by the standalone New Chat composer most
-    /// recently. Navigation never writes this; explicit composer project
-    /// choices and successful first sends do.
     var lastNewWorkspaceServerId: String?
     var machines: [String: MachineDefaults] = [:]
   }
@@ -60,9 +40,6 @@ public final class ComposerDefaultsStore {
   private var batchNeedsImmediatePersistence = false
 
   public init(store: any PersistenceStore, key: String = "composer-defaults") {
-    // A previous live instance may still have a coalesced snapshot on the
-    // shared encode queue (tests and in-process environment replacement do
-    // this routinely). Preserve the repository read-your-writes contract.
     PersistenceEncoding.drain()
     self.store = store
     self.key = key
@@ -98,12 +75,10 @@ public final class ComposerDefaultsStore {
     handleCorruptPayload(store: store, key: key, data: data, error: error)
   }
 
-  /// The harness a new composer on this machine should start with.
   public func lastHarnessId(for scope: Scope) -> String? {
     defaults.machines[scope.serverId]?.lastHarnessId
   }
 
-  /// The remembered option ids and values for one harness on this machine.
   public func configSelections(
     forHarness harnessId: String,
     in scope: Scope
@@ -111,12 +86,10 @@ public final class ComposerDefaultsStore {
     defaults.machines[scope.serverId]?.configSelections[harnessId] ?? [:]
   }
 
-  /// Records an explicit harness picker action immediately.
   public func rememberHarnessSelection(serverId: String, harnessId: String?) {
     rememberHarnessSelection(in: .newWorkspace(serverId: serverId), harnessId: harnessId)
   }
 
-  /// Records an explicit harness picker action in the machine profile.
   public func rememberHarnessSelection(in scope: Scope, harnessId: String?) {
     guard let harnessId, !harnessId.isEmpty else { return }
     var machine = defaults.machines[scope.serverId] ?? MachineDefaults()
@@ -125,13 +98,10 @@ public final class ComposerDefaultsStore {
     persist()
   }
 
-  /// The project used by the last standalone New Chat page on this machine.
   public func lastProjectId(forServer serverId: String) -> UUID? {
     defaults.machines[serverId]?.lastProjectId
   }
 
-  /// The standalone New Chat composer's last explicit machine target.
-  /// This is a composer preference, not application navigation state.
   public var lastNewWorkspaceServerId: String? {
     defaults.lastNewWorkspaceServerId
   }
@@ -149,9 +119,6 @@ public final class ComposerDefaultsStore {
     persist()
   }
 
-  /// Whether a New Chat composer targeting this project should start in a
-  /// fresh git worktree: the project's own last choice, else the legacy
-  /// machine-wide choice, else the project directory.
   public func prefersWorktreeForNewWorkspaces(forServer serverId: String, projectId: UUID) -> Bool {
     let machine = defaults.machines[serverId]
     return machine?.worktreeByProject?[projectId.uuidString]
@@ -159,8 +126,6 @@ public final class ComposerDefaultsStore {
       ?? false
   }
 
-  /// Records the worktree choice made for one project, so choosing that
-  /// project again restores it.
   public func rememberNewWorkspaceWorktreePreference(
     serverId: String,
     projectId: UUID,
@@ -174,16 +139,12 @@ public final class ComposerDefaultsStore {
     persist()
   }
 
-  /// Merges explicit picker changes into the machine profile. Missing ids
-  /// are retained because some options (notably speed) disappear
-  /// temporarily when the selected model does not support them.
   public func rememberConfigSelections(
     in scope: Scope,
     harnessId: String?,
     configValues: [String: String]
   ) {
     guard let harnessId, !harnessId.isEmpty else { return }
-    // "" means unknown/unselected; it is never a remembered choice.
     let configValues = configValues.filter { !$0.value.isEmpty }
     guard !configValues.isEmpty else { return }
     var machine = defaults.machines[scope.serverId] ?? MachineDefaults()
@@ -194,9 +155,6 @@ public final class ComposerDefaultsStore {
     persist()
   }
 
-  /// One-time backfill for clients that predate standalone-page project
-  /// memory. Existing explicit choices always win. Chat configuration is
-  /// deliberately not backfilled: an existing chat's values are its own.
   public func backfillNewWorkspaceDefaults(
     serverId: String,
     projectId: UUID,
@@ -217,10 +175,6 @@ public final class ComposerDefaultsStore {
     persist()
   }
 
-  /// Groups a logical UI transaction into one encoded persistence snapshot.
-  /// First-send promotion updates the project and worktree choices
-  /// together; writing each intermediate shape wastes several
-  /// main-run-loop-adjacent SQLite transactions and has no durability value.
   public func performPersistenceBatch(
     flushImmediately: Bool = false,
     _ updates: () -> Void
@@ -239,8 +193,6 @@ public final class ComposerDefaultsStore {
     updates()
   }
 
-  /// Clears remembered selections and the migration safety copy (used by
-  /// "Delete all data").
   public func clear() {
     defaults = Defaults()
     for backupKey in [migrationBackupKey] + retiredBackupKeys {
@@ -268,8 +220,6 @@ public final class ComposerDefaultsStore {
     PersistenceEncoding.drain()
   }
 
-  /// Forces the latest in-memory defaults through the background encoder.
-  /// Intended for tests and explicit lifecycle barriers, not hot UI paths.
   public func flushPendingWrites() {
     persist(immediately: true)
     PersistenceEncoding.drain()
@@ -308,10 +258,6 @@ public final class ComposerDefaultsStore {
       ?? decodeV1Defaults(data, using: decoder)
   }
 
-  // V4 and V5 share the machine shape; V5 added the standalone page's
-  // machine. Both also carried workspace-scoped "last focused chat"
-  // profiles, which V6 retires: new tabs and splits now start from the
-  // machine's New Chat defaults.
   private static func decodeV4V5Defaults(
     _ data: Data,
     using decoder: JSONDecoder
@@ -379,15 +325,12 @@ public final class ComposerDefaultsStore {
     return nil
   }
 
-  /// V4 introduced project/worktree memory and workspace-scoped profiles;
-  /// V5 added the standalone page's machine. Workspace profiles are dropped.
   private struct DefaultsV4V5: Decodable {
     var version: Int?
     var lastNewWorkspaceServerId: String?
     fileprivate var machines: [String: MachineDefaults]
   }
 
-  /// The format shipped immediately before workspace-scoped inheritance.
   private struct DefaultsV3: Decodable {
     var version: Int?
     var machines: [String: MachineDefaultsV3]
@@ -399,20 +342,16 @@ public final class ComposerDefaultsStore {
     var configSelections: [String: [String: String]]?
   }
 
-  /// V2 also carried workspace snapshots, which are no longer used.
   private struct ScopedDefaultsV2: Decodable {
     var machines: [String: MachineDefaultsV2]
   }
 
   private struct MachineDefaultsV2: Decodable {
     var lastHarnessId: String?
-    /// Legacy field, decode-only: run location is no longer remembered.
     var runInWorktree: Bool?
     var configSelections: [String: [String: String]]?
   }
 
-  /// The flat pre-machine-scoping payload. All fields remain optional so a
-  /// partial legacy file still migrates rather than being quarantined.
   private struct FlatDefaultsV1: Decodable {
     var lastHarnessId: String?
     var runInWorktree: Bool?

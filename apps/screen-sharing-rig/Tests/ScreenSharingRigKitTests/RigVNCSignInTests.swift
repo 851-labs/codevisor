@@ -5,7 +5,6 @@ import Testing
 @testable import ScreenSharingRigKit
 
 struct RigVNCSignInTests {
-  /// Records the passwords handshakes were tried with; rejects all but `accepts` (and `user`, if set).
   final class Server: @unchecked Sendable {
     let accepts: String
     let user: String?
@@ -111,8 +110,6 @@ struct RigVNCSignInTests {
     #expect(store.read("mac") == nil)
   }
 
-  // MARK: Account sign-in (851-2342)
-
   @Test func aMacAccountIsTriedStoredAndReadBack() async throws {
     let server = Server(accepts: "correct horse", user: "alex")
     let store = RigMemorySecretStore()
@@ -120,13 +117,11 @@ struct RigVNCSignInTests {
     let account = RigVNCCredential(username: "alex", password: "correct horse")
     #expect(try await signIn(typed: typed, store: store, server: server) == .signedIn(account))
     #expect(server.usernames == ["alex"])
-    // Stored as JSON, and the next connection uses it without asking.
     #expect(store.read("mac")?.hasPrefix("{") == true)
     #expect(try await signIn(store: store, server: server) == .signedIn(account))
   }
 
   @Test func credentialsEncodeCompatibly() {
-    // A password alone is stored as itself, as before this change: older entries read unchanged.
     #expect(RigVNCCredential(password: "make0405").encoded == "make0405")
     #expect(RigVNCCredential.decode("make0405") == RigVNCCredential(password: "make0405"))
     #expect(RigVNCCredential.decode("{not json") == RigVNCCredential(password: "{not json"))

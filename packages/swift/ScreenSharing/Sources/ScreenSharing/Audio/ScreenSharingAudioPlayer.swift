@@ -1,13 +1,6 @@
 import AVFoundation
 import os
 
-/// The viewer's side: decodes packets into the jitter buffer and plays it through the default
-/// output. `setTargetDelay` lets the session keep the sound as late as the picture.
-///
-/// Nothing here runs on the main thread: `receive` decodes on the player's own serial queue (into
-/// buffers allocated once), the engine is started, stopped and adjusted on another, and the
-/// device's render thread only pulls from the real-time-safe jitter buffer. Every method may be
-/// called from any thread.
 public final class ScreenSharingAudioPlayer: Sendable {
   private let buffer: ScreenSharingAudioJitterBuffer
   private let decoding: Decoding
@@ -29,22 +22,16 @@ public final class ScreenSharingAudioPlayer: Sendable {
     buffer.targetFrames = Int(min(0.4, max(0.02, seconds)) * ScreenSharingAudioFormat.sampleRate)
   }
 
-  /// Starts the output on the engine's queue; `failed` runs there if the device can't start.
   public func start(failed: @escaping @Sendable (any Error) -> Void = { _ in }) { output.start(failed: failed) }
 
-  /// Output level, 0…1 (the rig's measuring viewer plays at 0).
   public func setVolume(_ volume: Float) { output.setVolume(volume) }
 
-  /// Stops the output on the engine's queue; the caller doesn't wait for the device.
   public func stop() { output.stop() }
 
-  /// Decodes one packet into the buffer, on the decoding queue, in the order packets arrive.
   public func receive(_ packet: ScreenSharingAudioPacket) { decoding.receive(packet) }
 
-  /// Returns once every packet received before this call is in the jitter buffer.
   public func decoded() async { await decoding.drain() }
 
-  /// Owns the Opus converter and its two reusable buffers; confined to `queue`.
   private final class Decoding: @unchecked Sendable {
     private let queue = DispatchQueue(label: "codevisor.screen-sharing.audio-decode", qos: .userInteractive)
     private let decoder: AVAudioConverter
@@ -95,8 +82,6 @@ public final class ScreenSharingAudioPlayer: Sendable {
     }
   }
 
-  /// Owns the engine; confined to `queue`. Starting and stopping the device can take a long
-  /// while (it may wait for the audio server), so neither runs on the caller's thread.
   private final class Output: @unchecked Sendable {
     private let queue = DispatchQueue(label: "codevisor.screen-sharing.audio-output", qos: .userInitiated)
     private let engine = AVAudioEngine()
@@ -112,7 +97,6 @@ public final class ScreenSharingAudioPlayer: Sendable {
         let format = AVAudioFormat(
           commonFormat: .pcmFormatFloat32, sampleRate: ScreenSharingAudioFormat.sampleRate, channels: 2,
           interleaved: false)!
-        // The render block: no allocation, no lock held beyond one bounded copy, no Swift runtime calls.
         let node = AVAudioSourceNode(format: format) { _, _, frameCount, audioBufferList -> OSStatus in
           let list = UnsafeMutableAudioBufferListPointer(audioBufferList)
           guard list.count > 0, let left = list[0].mData?.assumingMemoryBound(to: Float.self) else { return noErr }

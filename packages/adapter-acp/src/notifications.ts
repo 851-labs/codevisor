@@ -4,9 +4,6 @@ import type { DiffStat } from "@codevisor/api"
 
 import { normalizeAcpConfigOptions } from "./config-options.js"
 
-/// `config_option_update` is the live mirror of `session/new.configOptions`.
-/// Run the same label canonicalization here so streamed thought-level names
-/// stay concise ("High", not "High Effort") for every ACP agent.
 const withNormalizedConfigOptions = (
   update: acp.SessionNotification["update"]
 ): Record<string, unknown> => {
@@ -20,7 +17,7 @@ const withNormalizedConfigOptions = (
   }
 }
 
-/* v8 ignore start -- stdio ACP adapter is exercised by integration/packaging smoke tests. */
+/* v8 ignore start */
 export const runtimeEventFromNotification = (
   notification: acp.SessionNotification
 ): RuntimeEvent => {
@@ -59,8 +56,6 @@ export const runtimeEventFromNotification = (
   }
 }
 
-/// ACP adapters deliver diffs only at completion; attach the added/removed
-/// line counts so clients can render the +N/−N header without re-diffing.
 const withDiffStats = (update: { readonly content?: unknown }): Record<string, unknown> => {
   const content = update.content
   if (!Array.isArray(content)) {

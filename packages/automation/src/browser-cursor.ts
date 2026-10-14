@@ -6,34 +6,15 @@ import {
   type PointerReply
 } from "./browser-cursor-overlay.js"
 
-/**
- * Browser Use cursor presentation.
- *
- * Computer Use draws an animated pointer over native apps so a person can follow what an agent is
- * doing. Browser Use has no native window to draw into: both the managed Chromium and the user's
- * Chrome (through the relay extension) are only reachable over CDP. So the pointer is drawn by
- * the page itself. Every pointer action evaluates a self-contained script in the tab that owns a
- * fixed, pointer-events-free overlay and animates an arrow to the action point. The server waits
- * for the arc to land before dispatching the trusted CDP mouse event, then asks for the click
- * pulse afterwards, mirroring the ordering ComputerUsePresentation uses on macOS.
- *
- * Everything here is cosmetic. Any failure to draw is swallowed so it can never break an action.
- */
-
 export interface BrowserCursor {
-  /** Animate the pointer to a viewport point and resolve once it has arrived. */
   readonly move: (x: number, y: number) => Promise<void>
-  /** Reposition the pointer immediately, for following a drag path. */
   readonly track: (x: number, y: number) => Promise<void>
-  /** Play the click pulse at a viewport point. */
   readonly pulse: (x: number, y: number) => Promise<void>
 }
 
 export interface BrowserCursorIdentity {
-  /** Short opaque id used to key the pointer inside the page. */
   readonly session: string
   readonly color: number
-  /** Which side of the straight line the travel arc bulges toward. */
   readonly side: 1 | -1
 }
 
@@ -57,10 +38,6 @@ const fnv1a = (text: string): number => {
   return hash >>> 0
 }
 
-/**
- * Deterministic per-session palette slot, probing forward past colors that concurrently active
- * sessions already own so two agents on the same page never share a pointer color.
- */
 export const cursorColorIndex = (
   sessionKey: string,
   taken: ReadonlySet<number>,
@@ -83,9 +60,7 @@ const isPointerReply = (value: unknown): value is PointerReply =>
   typeof (value as { duration?: unknown }).duration === "number" &&
   typeof (value as { visible?: unknown }).visible === "boolean"
 
-/** Longest the server will pace an action behind the cursor before proceeding regardless. */
 const MAX_WAIT_MS = 700
-/** How long to wait for the page to acknowledge a draw command before proceeding without it. */
 const ACKNOWLEDGE_TIMEOUT_MS = 1_500
 
 export const makeBrowserCursor = (
@@ -97,7 +72,6 @@ export const makeBrowserCursor = (
   const send = async (
     command: Omit<PointerCommand, "session" | "color" | "side">
   ): Promise<PointerReply | undefined> => {
-    // A modal JavaScript dialog suspends Runtime.evaluate; drawing would hang the action.
     if (!enabled || runtime.dialogs.has(page.sessionId)) return undefined
     try {
       const response = await Promise.race([

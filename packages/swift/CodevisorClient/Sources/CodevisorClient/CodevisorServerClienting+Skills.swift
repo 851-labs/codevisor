@@ -1,14 +1,10 @@
 import Foundation
 
-/// Defaults for clients without skill management: an empty list and
-/// explicit failures for unsupported operations.
 public extension CodevisorServerClienting {
   func listSkills() async throws -> ServerSkillsList {
     ServerSkillsList()
   }
 
-  /// Answers like a server that predates the endpoint, so callers fall
-  /// back to `listSkills()`.
   func composerSkills(projectId: UUID?, sessionId: UUID?) async throws -> [ServerComposerSkill] {
     throw CodevisorServerClientError.httpStatus(404, "")
   }

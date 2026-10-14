@@ -1,6 +1,5 @@
 import SwiftUI
 
-/// The quiet secondary action used to move within a composer flow.
 struct ComposerNavigationButton: View {
   let systemImage: String
   let help: String

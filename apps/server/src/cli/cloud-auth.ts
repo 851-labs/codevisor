@@ -17,26 +17,15 @@ import {
 import { renderQr } from "./qr.js"
 import { resolvePort, type CliDeps, type CommandOptions } from "./support.js"
 
-/// `codevisor auth …` — connect this machine to a Codevisor Cloud account via
-/// the RFC 8628 device flow, so it appears in the user's apps automatically
-/// and joins the account's config sync.
-/// Pure logic against CliDeps (+ an injectable fetch); wiring lives in cli.ts.
-
 const DEFAULT_CLOUD_URL = "https://cloud.codevisor.dev"
 
 export interface CloudAuthOptions extends CommandOptions {
-  /// Base URL of the cloud instance (self-hosted or dev); defaults to the
-  /// hosted instance, overridable via CODEVISOR_CLOUD_URL.
   readonly server?: string
   readonly fetchImpl?: FetchLike
   readonly machineName?: string
-  /// A one-time invite from another machine on the account
-  /// (`codevisor machines invite`): joins without a person approving.
   readonly inviteCode?: string
 }
 
-/// The absolute approval URL with the code filled in, so opening it (or
-/// scanning it with the Codevisor app) skips typing the code.
 const approvalUrl = (grant: DeviceCodeGrant, serverUrl: string): string => {
   const url = new URL(grant.verificationUriComplete ?? grant.verificationUri, `${serverUrl}/`)
   if (!url.searchParams.has("user_code")) url.searchParams.set("user_code", grant.userCode)
@@ -49,8 +38,6 @@ const resolveServer = (deps: CliDeps, options: CloudAuthOptions): string =>
 const resolveFetch = (options: CloudAuthOptions): FetchLike =>
   options.fetchImpl ?? ((input, init) => globalThis.fetch(input, init))
 
-/// Hands the invite to the running server, which redeems it for this
-/// machine's own credential and connects; succeeds once the relay is up.
 const joinWithInvite = async (
   deps: CliDeps,
   port: number,
@@ -106,8 +93,6 @@ export const authLoginCommand = async (
     deps.log(`Logging this machine in to ${instance.instance} (${serverUrl})`)
     const grant = await requestDeviceCode(fetchImpl, serverUrl)
     const approval = approvalUrl(grant, serverUrl)
-    // The link comes last: in a short terminal it stays on screen, and the
-    // QR code is a scroll up.
     deps.log("")
     deps.log("Scan to log in with the Codevisor app on your phone:")
     deps.log("")
@@ -212,7 +197,6 @@ export const authLogoutCommand = async (
     }
     const response = await deps.fetchJson(`${cloudUrl(port)}/disconnect`, {
       method: "POST",
-      // The server waits a bounded time for the cloud before disconnecting.
       timeoutMs: 30_000
     })
     if (response?.status !== 200)

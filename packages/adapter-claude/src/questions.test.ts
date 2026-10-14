@@ -43,7 +43,6 @@ describe("ClaudeProvider", () => {
     )
     await expect(decision).resolves.toEqual({ behavior: "allow", updatedInput: toolInput })
 
-    // Deny (and dismissal) reject the tool.
     const denied = fake.options!.canUseTool!("Edit", { file_path: "/tmp/a" } as never, {} as never)
     await fake.drain()
     const deniedAsk = events.at(-1)?.payload as Record<string, unknown>
@@ -71,12 +70,9 @@ describe("ClaudeProvider", () => {
     const created = await createPromise
     const log = vi.spyOn(console, "error").mockImplementation(() => {})
 
-    // Full access is acknowledged to the SDK explicitly, as it requires.
     expect(fake.options?.allowDangerouslySkipPermissions).toBe(true)
     expect(created.metadata.modes?.currentModeId).toBe("bypassPermissions")
 
-    // The CLI's Bash safety checks (e.g. variable loops in a subagent) still
-    // reach canUseTool under bypass; full access answers them without a prompt.
     const toolInput = { command: 'for f in a b; do grep -n "$f" .; done' }
     const eventsBefore = events.length
     await expect(
@@ -93,7 +89,6 @@ describe("ClaudeProvider", () => {
     expect(log).toHaveBeenCalledWith(expect.stringContaining("agent=a120e6ad"))
     expect(log).toHaveBeenCalledWith(expect.stringContaining("variable loop"))
 
-    // Questions and plan approvals are still the human's to answer.
     const question = fake.options!.canUseTool!(
       "AskUserQuestion",
       { questions: [{ header: "Scope", question: "Which?", options: [{ label: "A" }] }] } as never,
@@ -109,7 +104,6 @@ describe("ClaudeProvider", () => {
     )
     await expect(question).resolves.toMatchObject({ behavior: "deny" })
 
-    // Leaving full access restores the prompt.
     await run(created.handle.setMode!("acceptEdits"))
     expect(fake.permissionModes).toEqual(["acceptEdits"])
     expect(events.at(-1)?.payload).toMatchObject({ modeId: "acceptEdits" })
@@ -144,7 +138,6 @@ describe("ClaudeProvider", () => {
     await fake.drain()
     const asked = events.at(-1)?.payload as Record<string, unknown>
     expect(asked).toMatchObject({ sessionUpdate: "question" })
-    // No "message" line — the plan itself rides a separate plan_document.
     expect(asked.message).toBeUndefined()
     expect(asked.questions).toEqual([
       {
@@ -166,7 +159,6 @@ describe("ClaudeProvider", () => {
     )
     await expect(decision).resolves.toEqual({ behavior: "allow", updatedInput: toolInput })
 
-    // Keeping planning denies the tool with a message that nudges more planning.
     const kept = fake.options!.canUseTool!("ExitPlanMode", toolInput as never, {} as never)
     await fake.drain()
     const keptAsk = events.at(-1)?.payload as Record<string, unknown>
@@ -181,7 +173,6 @@ describe("ClaudeProvider", () => {
       message: "The user wants to keep refining the plan. Stay in plan mode and continue planning."
     })
 
-    // Feedback sent with "Keep planning" reaches the model.
     const refined = fake.options!.canUseTool!("ExitPlanMode", toolInput as never, {} as never)
     await fake.drain()
     const refinedAsk = events.at(-1)?.payload as Record<string, unknown>
@@ -247,9 +238,6 @@ describe("ClaudeProvider", () => {
         outcome: "answered"
       })
     )
-    // A bare note is the answer (the "Other" path); a note alongside labels
-    // supplements them; keys are the question text (the SDK tool reads them
-    // back that way).
     await expect(decision).resolves.toEqual({
       behavior: "allow",
       updatedInput: {
@@ -265,7 +253,6 @@ describe("ClaudeProvider", () => {
       questionId,
       sessionUpdate: "question_resolved"
     })
-    // No tool_call lifecycle leaked for the question tool.
     expect(
       events.filter((event) => {
         const payload = event.payload as Record<string, unknown>
@@ -301,7 +288,6 @@ describe("ClaudeProvider", () => {
       message: "User dismissed the question without answering."
     })
 
-    // Unknown ids fail; malformed inputs pass straight through as allow.
     await expect(
       run(created.handle.answerQuestion!("nope", { outcome: "answered" }))
     ).rejects.toThrow("No pending question")

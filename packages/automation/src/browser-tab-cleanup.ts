@@ -6,7 +6,6 @@ import { serializedBrowserOperation } from "./browser-runtime-lifecycle.js"
 import { runtimeKey } from "./browser-use-invoke.js"
 import type { BrowserBackend } from "./browser-use-provider-types.js"
 
-/// The tabs each session controls, keyed `${runtimeKey}:${sessionId}`.
 export type SessionTargets = Map<string, Map<string, "created" | "claimed">>
 
 type FinalizeTabs = (
@@ -17,8 +16,6 @@ type FinalizeTabs = (
   backend: BrowserBackend
 ) => Promise<CallToolResult>
 
-/// A page an agent's tab opens (window.open, target=_blank) is the agent's
-/// too, so turn-end cleanup closes it with the tab that opened it.
 export const trackPopups = (
   sessionTargets: SessionTargets,
   key: string,
@@ -44,9 +41,6 @@ export const trackPopups = (
   )
 }
 
-/// Turn-end cleanup on every backend the session opened tabs on, not only its
-/// current one: switching backends mid-turn must not strand the first's tabs.
-/// One backend failing doesn't skip the others; the first failure is rethrown.
 export const finishSessionTabs = async (
   context: AutomationProviderContext,
   sessionTargets: SessionTargets,

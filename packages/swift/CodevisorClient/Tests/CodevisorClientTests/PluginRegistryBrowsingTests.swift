@@ -47,9 +47,7 @@ struct PluginRegistryBrowsingTests {
         "acme.git-diff", "beta.notes",
       ])
     #expect(PluginRegistryBrowsing.filter(entries, query: "GIT").map(\.id) == ["acme.git-diff"])
-    // "viewer" only appears in the description.
     #expect(PluginRegistryBrowsing.filter(entries, query: "viewer").map(\.id) == ["acme.git-diff"])
-    // "notes-plugin" only appears in the repo; the entry has no description.
     #expect(
       PluginRegistryBrowsing.filter(entries, query: "notes-PLUGIN").map(\.id) == [
         "beta.notes"

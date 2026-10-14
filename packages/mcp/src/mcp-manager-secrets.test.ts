@@ -63,8 +63,6 @@ describe("MCP manager secrets and replication", () => {
       transport: "http",
       url: "https://example.test/mcp"
     })
-    // The enabled wish is the caller's; needing authorization is reported
-    // through connection state rather than by overriding it.
     expect(oauthConfigured).toMatchObject({
       authType: "oauth",
       connectionState: "needsAuthorization",
@@ -80,8 +78,6 @@ describe("MCP manager secrets and replication", () => {
       name: "Disconnected",
       transport: "stdio"
     })
-    // Enabling answers before the upstream handshake settles; the failure
-    // lands on the record shortly after.
     const enabling = await manager.update(disconnected.id, { enabled: true })
     expect(enabling.enabled).toBe(true)
     expect(await connectionStateSettles(manager, disconnected.id, "error")).toBe("error")
@@ -175,7 +171,6 @@ describe("MCP manager secrets and replication", () => {
     expect(await manager.staticSecrets(stdio.id)).toEqual({})
     await manager.update(stdio.id, { env: { D: "4" } })
     expect(await manager.staticSecrets(stdio.id)).toEqual({ env: { D: "4" } })
-    // A bare server has nothing, and a cleared bearer normalizes to absent.
     expect(await manager.staticSecrets(bare.id)).toEqual({})
     await manager.update(full.id, { bearerToken: "" })
     expect((await manager.staticSecrets(full.id)).bearerToken).toBeUndefined()
@@ -191,7 +186,6 @@ describe("MCP manager secrets and replication", () => {
       url: "https://oauth-sync.example.com/mcp"
     })
 
-    // No tokens yet (and non-oauth servers never participate at all).
     expect(await manager.oauthSyncState(server.id)).toBeUndefined()
     const plain = await manager.create({
       authType: "none",
@@ -202,8 +196,6 @@ describe("MCP manager secrets and replication", () => {
     })
     expect(await manager.oauthSyncState(plain.id)).toBeUndefined()
 
-    // Importing material with OURSELVES as owner models an authorize here
-    // (test manager's serverId is "test"): the sync state is exposed.
     const material = JSON.stringify({
       tokens: { access_token: "at-1", refresh_token: "rt-1", token_type: "bearer" },
       tokensSavedAt: 1_111
@@ -214,8 +206,6 @@ describe("MCP manager secrets and replication", () => {
     expect(owned?.rotatedAtMs).toBe(1_111)
     expect(JSON.parse(owned?.material ?? "{}").tokens.access_token).toBe("at-1")
 
-    // Another machine rotates and takes ownership: we become a mirror —
-    // the material stays visible (with its owner) but is not ours.
     const rotated = JSON.stringify({
       tokens: { access_token: "at-2", refresh_token: "rt-2", token_type: "bearer" },
       tokensSavedAt: 2_222
@@ -225,7 +215,6 @@ describe("MCP manager secrets and replication", () => {
     expect(mirrored?.owner).toBe("other-machine")
     expect(JSON.parse(mirrored?.material ?? "{}").tokens.access_token).toBe("at-2")
 
-    // Identical re-imports and junk are silent no-ops.
     await manager.importOAuthMaterial(server.id, { owner: "other-machine", material: rotated })
     await manager.importOAuthMaterial(server.id, { owner: "other-machine", material: "not json" })
     await manager.importOAuthMaterial(server.id, { owner: "other-machine", material: "null" })

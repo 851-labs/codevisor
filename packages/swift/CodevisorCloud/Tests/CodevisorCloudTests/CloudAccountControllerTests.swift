@@ -57,12 +57,10 @@ struct CloudAccountControllerTests {
 
     await controller.signInWithDevelopmentAccount()
 
-    // A real session, stored and loaded exactly like a browser sign-in.
     #expect(controller.state == .signedIn(userEmail: "dev@example.com"))
     #expect(try store.token() == "dev-token")
     #expect(controller.machines.map(\.deviceId) == ["dev-1"])
 
-    // Hosted instances never advertise dev auth: no button, no action.
     let hosted = FakeCloudClient()
     hosted.discoverResult = .success(
       CloudInstanceInfo(service: "codevisor-cloud", instance: "Hosted", authProviders: ["github"])
@@ -76,9 +74,6 @@ struct CloudAccountControllerTests {
 
   @Test("Signing in connects the hub by itself, so the tunnel gets its config")
   func signInConnectsHub() async throws {
-    // Nothing opens hub-relay channels anymore, so nothing would start the
-    // hub lazily: without this the app never learns its tunnel config and
-    // can reach no machine at all.
     let hub = ScriptedCloudHub(machines: [])
     let client = FakeCloudClient()
     client.verifyResult = .success("t")
@@ -96,8 +91,6 @@ struct CloudAccountControllerTests {
     #expect(localServer.connects.count == 1)
     #expect(localServer.connects.first?.serverURL == controller.serverURL)
     #expect(localServer.connects.first?.sessionToken == "dev-token")
-    // The successful registration re-refreshes the account machine list
-    // so the new machine shows up everywhere immediately.
     #expect(client.machineTokens.count >= 2)
   }
 
@@ -129,7 +122,6 @@ struct CloudAccountControllerTests {
     let localServer = FakeLocalServerClient()
     localServer.connectError = ServerStartingUp()
     controller.localServerClient = localServer
-    // Signed in the production way: a stored session validated at boot.
     try store.saveToken("dev-token")
     await controller.bootstrap()
     await awaitLocalRegistration(controller)
@@ -148,7 +140,7 @@ struct CloudAccountControllerTests {
       CloudInstanceInfo(service: "codevisor-cloud", instance: "Dev", authProviders: ["dev"])
     )
     let (controller, _, _) = makeController(client: devOnly)
-    #expect(controller.supportsGitHubSignIn)  // unknown yet → assume GitHub
+    #expect(controller.supportsGitHubSignIn)
     await controller.bootstrap()
     #expect(!controller.supportsGitHubSignIn)
 
@@ -164,7 +156,6 @@ struct CloudAccountControllerTests {
     await hosted.bootstrap()
     #expect(hosted.supportsGitHubSignIn)
 
-    // Discovery failure keeps the assume-GitHub default.
     let offline = CloudAccountController(
       clientFactory: { _ in OfflineCloudClient() },
       credentialStore: InMemoryCloudCredentialStore(),
@@ -208,10 +199,6 @@ struct CloudAccountControllerTests {
 
   @Test("Bootstrap keeps the token when the server is unreachable")
   func bootstrapKeepsTokenOnNetworkFailure() async throws {
-    // session(token:) returning nil means "server answered: no session"
-    // and clears; a thrown error means "couldn't ask" and must not.
-    // An offline launch also stays signed in (with an unverified, empty
-    // roster) and schedules a retry instead of stranding the user.
     let store = InMemoryCloudCredentialStore(token: "kept")
     let clock = TestClock()
     let controller = CloudAccountController(
@@ -339,7 +326,6 @@ struct CloudAccountControllerTests {
     #expect(controller.state == .signedOut)
     #expect(try store.token() == nil)
 
-    // Clearing restores the default instance.
     try await controller.setCustomServer(nil)
     #expect(try store.serverURL() == nil)
   }
@@ -361,8 +347,6 @@ struct CloudAccountControllerTests {
     )
   }
 
-  // MARK: - Machine key pinning (TOFU)
-
   @Test("Machine keys are pinned on first sight")
   func machineKeysPinnedOnFirstSight() async throws {
     let (controller, _, store) = await makeSignedIn(machines: [
@@ -380,8 +364,6 @@ struct CloudAccountControllerTests {
       testMachine("m1"), testMachine("m2"),
     ])
 
-    // The hub now presents a different key for m1 — a substitution unless
-    // the user says otherwise.
     let swapped = testMachine("m1", publicKey: "pk_attacker")
     client.machinesResult = .success([swapped, testMachine("m2")])
     await controller.refreshMachines()
@@ -389,7 +371,6 @@ struct CloudAccountControllerTests {
     #expect(controller.machinesWithChangedKeys == ["m1"])
     #expect(controller.relayServerConfig(for: swapped) == nil)
     #expect(controller.loopbackBaseURL(for: swapped) == nil)
-    // The pin itself is untouched, and the unchanged machine is unaffected.
     #expect(try store.pinnedMachineKeys()["m1"] == "pk_m1")
     #expect(controller.relayServerConfig(for: testMachine("m2")) != nil)
   }
@@ -421,15 +402,12 @@ struct CloudAccountControllerTests {
     let (controller, _, _) = makeController(client: client, directPaths: makePathController(script: script))
     await controller.completeSignIn(ott: "ott")
 
-    // Built at launch, before the roster lists the machine (a chat holds
-    // its client this long): fails as unreachable for now.
     let transport = controller.machineTransport(forDeviceId: "m1")
     await #expect(throws: MachineUnreachableError.self) {
       _ = try await transport.openChannel(
         channelType: "test", params: nil, compressed: false, onMessage: { _ in }, onClosed: { _ in })
     }
 
-    // The roster arrives and pins the key: the same transport now reaches it.
     client.machinesResult = .success([
       testMachine("m1", publicKey: scripted.machine.publicKey, tunnelEndpoint: "endpoint")
     ])
@@ -447,7 +425,6 @@ struct CloudAccountControllerTests {
     await controller.remove(deviceId: "m1")
     #expect(try store.pinnedMachineKeys()["m1"] == nil)
 
-    // The device id returns with a different key: first sight again.
     let readded = testMachine("m1", publicKey: "pk_fresh")
     client.machinesResult = .success([readded])
     await controller.refreshMachines()

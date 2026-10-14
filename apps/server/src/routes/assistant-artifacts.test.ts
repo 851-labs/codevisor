@@ -164,7 +164,6 @@ describe("assistant artifact promotion", () => {
     const session = await run(
       services.db.createSession({ projectId: project.id, harnessId: "codex" })
     )
-    // Both an Error and a raw thrown value are reported without blocking the turn end.
     for (const failure of [new Error("transcript unavailable"), "transcript unavailable"]) {
       const failing = {
         ...services,

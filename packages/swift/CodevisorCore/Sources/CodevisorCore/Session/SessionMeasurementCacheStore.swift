@@ -1,8 +1,3 @@
-/// Revision-keyed settled-row measurements retained across transcript mounts.
-///
-/// The store owns LRU bookkeeping and keeps the currently publishable settled
-/// snapshot aligned with the active width/layout key. Dictionary snapshots are
-/// copy-on-write, so publishing scroll state stays cheap.
 public struct SessionMeasurementCacheStore {
   private let maximumCacheCount: Int
   private var storage: [SessionMeasurementCacheKey: [String: SessionMeasuredRow]] = [:]
@@ -34,7 +29,6 @@ public struct SessionMeasurementCacheStore {
     settledRows = [:]
   }
 
-  /// Makes a width/layout key current and returns its retained measurements.
   @discardableResult
   public mutating func activate(
     _ key: SessionMeasurementCacheKey

@@ -107,7 +107,6 @@ const mergeSessionMetadata = (
   payload: JsonRecord,
   update: string | undefined
 ): void => {
-  // Metadata has its own current-state namespace; it never creates an empty turn.
   const key = update ?? event.kind
   const old = db
     .prepare("select payload from session_state where session_id = ? and state_key = ?")
@@ -277,8 +276,6 @@ const projectTranscriptCompaction = (
   }
 }
 
-/** Fold provider updates into independently addressable transcript entities.
- * Called in the same transaction as the session revision and journal append. */
 export const projectTranscriptState = (
   db: Database.Database,
   event: SessionEventRow,
@@ -303,7 +300,7 @@ export const projectTranscriptState = (
     return
   }
   db.prepare("delete from transcript_heads where item_id = ? and parent_id = ?").run(itemId, parent)
-  if (update === "agent_thought_chunk") return // Thinking is transient activity, not visible transcript text.
+  if (update === "agent_thought_chunk") return
   if (update === "tool_call" || update === "tool_call_update") {
     mergeTranscriptTool(db, event, itemId, payload, parent)
   } else if (update === "plan_document" && typeof payload.markdown === "string") {
@@ -312,7 +309,6 @@ export const projectTranscriptState = (
   } else if (update === "context_compaction") {
     projectTranscriptCompaction(db, event, itemId, payload, parent)
   } else if (update === "question" || update === "question_resolved") {
-    // Resolution is applied after the original question when hydrating a turn.
     save(db, event, itemId, `${update}:${payload.questionId}`, "question", parent, payload)
   } else if (update !== undefined) {
     save(db, event, itemId, update, update, parent, payload)

@@ -2,10 +2,6 @@ import CodevisorClient
 import Foundation
 import Observation
 
-/// The cloud account feature's brain: sign-in state, the machine list, and
-/// custom-server selection. All networking goes through `clientFactory` so
-/// tests can inject a fake client; the session token and custom server URL
-/// live in the injected `CloudCredentialStore`.
 @MainActor
 @Observable
 public final class CloudAccountController {
@@ -13,33 +9,14 @@ public final class CloudAccountController {
 
   public internal(set) var state: CloudAccountState = .signedOut
   public internal(set) var machines: [CloudMachine] = []
-  /// Machines whose presented public key conflicts with the TOFU pin taken
-  /// on first sight. Relay channels to them are refused (`relayServerConfig`
-  /// and the loopback bridge return nil) until the user explicitly re-trusts
-  /// via `trustChangedMachineKey` — the hub is not trusted for key
-  /// continuity, so a silent key swap here would defeat the end-to-end
-  /// encryption. UI surfaces these as "machine key changed".
   public private(set) var machinesWithChangedKeys: Set<String> = []
-  /// False until the app has checked any persisted account session and, when
-  /// valid, loaded its first machine snapshot — possibly the cached roster,
-  /// see `isRosterVerified`. Callers must not interpret an empty `machines`
-  /// array as an authoritative "no machines" result before this becomes true.
   public internal(set) var hasCompletedBootstrap = false
-  /// False until a machine list fetched from the network in this process
-  /// succeeds. Launch may publish a cached roster first; anything that would
-  /// delete data for machines missing from `machines` (dead-record pruning)
-  /// must wait for this, because a stale cache is not proof of absence.
   public internal(set) var isRosterVerified = false
   public var lastError: String?
   public internal(set) var linkedProviders: Set<CloudSignInProvider>?
   var authenticationRevision: UInt64 = 0
-  /// Auth providers the current server advertises (/.well-known/codevisor).
-  /// nil until discovery answers — treat unknown as "assume GitHub" so the
-  /// hosted instance's button never flickers away on a slow network.
   public internal(set) var authProviders: [String]?
 
-  /// Whether to offer the GitHub sign-in button: true when the server
-  /// advertises it, or while its capabilities are still unknown.
   public var supportsGitHubSignIn: Bool {
     authProviders?.contains("github") ?? true
   }
@@ -48,10 +25,6 @@ public final class CloudAccountController {
     authProviders?.contains("apple") == true
   }
 
-  /// The cloud instance itself advertises dev auth (`authProviders`
-  /// contains "dev") — the local dev Worker does, hosted instances never.
-  /// A user-chosen custom server hides it: they are talking to their own
-  /// instance, not the dev one.
   public var developmentAccountAvailable: Bool {
     authProviders?.contains("dev") == true && customServerURL == nil
   }
@@ -64,65 +37,30 @@ public final class CloudAccountController {
   let machineKeyPins: CloudMachineKeyPinCache
   private let environmentCloud: CodevisorAppVariant.DevelopmentCloud?
   private let hubConnectionFactory: HubConnectionFactory
-  /// The account's one relay connection, created lazily while signed in and
-  /// torn down on sign-out / server switch.
   @ObservationIgnored private var hub: CloudHubConnection?
-  /// Direct LAN pipes per machine, probed after each refresh. Channel opens
-  /// go through `SwitchingChannelTransport`, which prefers a live verified
-  /// direct pipe and falls back to the relay.
   public let directPaths: CloudDirectPathController
   private let loopbackPool = CloudLoopbackBridgePool()
-  /// Fired after a local sign-out (including a revoked session detected by
-  /// refreshMachines) so the machine list can drop cloud selections.
   @ObservationIgnored public var onSignedOut: (() -> Void)?
-  /// Fired after the machine list refreshes, so consumers deduplicating
-  /// against it (MachineController.allMachines) can reconcile selections.
   @ObservationIgnored public var onMachinesRefreshed: (() -> Void)?
-  /// Fired after the embedded server's cloud identity is known, before a
-  /// refreshed roster is published. Consumers use this as an identity
-  /// barrier so the local machine's relay twin can never begin navigation
-  /// sync under a second fleet id.
   @ObservationIgnored public var onLocalMachineRegistrationResolved: ((String) -> Void)?
-  /// The embedded local server's client, when this platform runs one
-  /// (macOS). While signed in, the account controller registers that server
-  /// on the account via its /v1/cloud routes so this machine appears on the
-  /// user's other devices without a separate `codevisor auth login` — and
-  /// tears the registration down again on sign-out (app-managed ones only).
   @ObservationIgnored public var localServerClient: (any CodevisorServerClienting)?
   struct LocalRegistrationResolution: Sendable {
     let deviceId: String
     let didConnect: Bool
   }
 
-  /// Reentrancy guard for registration: one probe/connect in flight at a
-  /// time; failed attempts retry on the next refresh. Internal so tests can
-  /// await completion.
   @ObservationIgnored var accountSyncRegistrations: [String: Task<Bool, Never>] = [:]
   @ObservationIgnored var localRegistrationTask: Task<LocalRegistrationResolution?, Never>?
-  /// The best-effort sign-out deregistration, kept so tests can await it.
   @ObservationIgnored var localDeregistrationTask: Task<Void, Never>?
-  /// A debounced roster refresh triggered by a hub presence push whose view
-  /// disagrees with `machines`. Coalesces bursts (a welcome delivers the
-  /// whole fleet) into one REST fetch.
   @ObservationIgnored private let presenceSleep: @Sendable (Duration) async throws -> Void
   @ObservationIgnored var presenceRefreshTask: Task<Void, Never>?
-  /// Session validation runs off the launch path when a cached roster is
-  /// shown. `validationTask` is the attempt in flight; `validationRetryTask`
-  /// is the backoff sleep before the next one, kept separate so a
-  /// foreground retry can skip the wait without cancelling live requests.
-  /// A `Clock`, not a sleep closure: a captured async sleep closure called
-  /// from a Task corrupts the task allocator in SwiftPM's test runner (it
-  /// aborted the Intel CI run in `swift_task_dealloc`).
   @ObservationIgnored let retryClock: any Clock<Duration>
   @ObservationIgnored var validationTask: Task<Void, Never>?
   @ObservationIgnored var validationRetryTask: Task<Void, Never>?
   @ObservationIgnored var validationGeneration: UInt64 = 0
   @ObservationIgnored var validationFailures = 0
-  /// The stored session token and custom server, cached (see
-  /// CloudAccountController+Credentials).
   @ObservationIgnored var cachedCredentials: StoredCredentials?
   @ObservationIgnored var credentialWriteGeneration: UInt64 = 0
-  /// Observed: views that show the server or account re-render on change.
   var credentialRevision: UInt64 = 0
 
   public init(
@@ -146,8 +84,6 @@ public final class CloudAccountController {
     self.directPaths = directPaths ?? CloudDirectPathController(credentialStore: credentialStore)
   }
 
-  /// A user-entered custom server wins, then the dev cloud from `bun run
-  /// dev`, then the hosted default instance.
   public var serverURL: URL {
     customServerURL ?? environmentCloud?.url ?? Self.defaultServerURL
   }
@@ -156,10 +92,6 @@ public final class CloudAccountController {
     clientFactory(serverURL)
   }
 
-  /// Asks the current server which sign-in providers it offers, so the UI
-  /// only shows buttons that can work (a dev instance without GitHub
-  /// credentials advertises ["dev"] only). Best-effort: unreachable keeps
-  /// the previous answer (or the assume-GitHub default).
   public func refreshAuthProviders() async {
     do {
       authProviders = try await client.discover().authProviders
@@ -168,26 +100,17 @@ public final class CloudAccountController {
     }
   }
 
-  /// Finishes the browser flow: exchanges the handoff's one-time token for
-  /// a session token, stores it, and loads the account's machines.
   public func completeSignIn(ott: String) async {
     let client = client
     await adoptSession { try await client.verifyOneTimeToken(ott) }
   }
 
-  /// Dev-only: signs in as the cloud's seeded development user. Only the
-  /// credential's origin differs from the browser flow — the session is
-  /// real and everything after it (storage, machine list, local machine
-  /// registration) is the production path.
   public func signInWithDevelopmentAccount() async {
     guard developmentAccountAvailable else { return }
     let client = client
     await adoptSession { try await client.developmentLogin() }
   }
 
-  /// The one sign-in completion: obtain a session token, store it, load
-  /// the account. Every sign-in flow funnels through here so they cannot
-  /// diverge.
   func adoptSession(_ obtainToken: () async throws -> String) async {
     authenticationRevision &+= 1
     let revision = authenticationRevision
@@ -195,8 +118,6 @@ public final class CloudAccountController {
     state = .validating
     linkedProviders = nil
     lastError = nil
-    // A new session may belong to a different account: whatever roster was
-    // on screen is no longer vouched for until this session's fetch lands.
     cancelSessionValidation()
     isRosterVerified = false
     let client = client
@@ -210,8 +131,6 @@ public final class CloudAccountController {
       guard authenticationRevision == revision, serverURL == server, storedToken == token else { return }
       state = .signedIn(userEmail: user?.email)
       if case let .failed(error) = await performMachineRefresh(), !Self.isSessionRejection(error) {
-        // Signed in but the first fetch hit a transient failure: keep
-        // retrying so the machine list fills in without user action.
         scheduleSessionValidationRetry()
       }
     } catch {
@@ -222,17 +141,10 @@ public final class CloudAccountController {
     }
   }
 
-  /// The user signed out: the token is cleared (a custom server choice is
-  /// kept), the machine list emptied, the relay connection torn down, and a
-  /// local machine this app registered is taken off the account with it.
   public func signOut() {
     endSession(deregisterLocalMachine: true)
   }
 
-  /// The cloud ended the session without the user signing out (revoked
-  /// elsewhere, or unused past its lifetime). The app signs out, but the
-  /// local machine keeps its own credential and stays on the account:
-  /// only an explicit sign-out removes it.
   func sessionEnded() {
     endSession(deregisterLocalMachine: false)
   }
@@ -241,17 +153,11 @@ public final class CloudAccountController {
     authenticationRevision &+= 1
     linkedProviders = nil
     lastError = nil
-    // Capture before the token is cleared: deregistering this machine
-    // needs the session to revoke its api key on the account.
     let token = storedToken
     let localClient = localServerClient
     let accountClient = client
     clearSessionCredential()
     discardSessionRosterAndTransports()
-    // Best-effort: a registration this app created follows the user's
-    // sign-out, so signing out disconnects the local machine and revokes
-    // its credential. CLI (`codevisor auth login`) and dev-provisioned
-    // registrations are external — leave them alone.
     if deregisterLocalMachine, let localClient {
       scheduleLocalMachineDeregistration(token: token, localClient: localClient, accountClient: accountClient)
     }
@@ -274,8 +180,6 @@ public final class CloudAccountController {
     cancelSessionValidation()
     isRosterVerified = false
     credentialStore.clearRoster()
-    // Pins survive sign-out (continuity knowledge belongs to the device,
-    // not the session); only the visible flags reset with the list.
     machinesWithChangedKeys = []
     state = .signedOut
     machineKeyPins.invalidate()
@@ -312,9 +216,6 @@ public final class CloudAccountController {
     }
   }
 
-  /// A hub owns an immutable snapshot of the account credentials. Replacing
-  /// a token therefore replaces the hub too; otherwise a reconnect could
-  /// keep authenticating with the previous account's cached session.
   private func discardHubForCredentialChange() async {
     machineKeyPins.invalidate()
     stopAllLoopbackBridges()
@@ -330,9 +231,6 @@ public final class CloudAccountController {
     await performMachineRefresh()
   }
 
-  /// The one writer of `machines` from the network. Returns how the attempt
-  /// ended so session validation can tell a verified roster from a
-  /// transient failure worth retrying.
   @discardableResult
   func performMachineRefresh() async -> MachineRefreshOutcome {
     guard state.isSignedIn, let token = storedToken else { return .skipped }
@@ -352,10 +250,6 @@ public final class CloudAccountController {
           do {
             refreshedMachines = try await accountClient.machines(token: token)
           } catch {
-            // The first roster is still authoritative. Identity
-            // resolution already prevents the newly registered
-            // local twin from joining the fleet until a later
-            // refresh sees it.
             Log.cloud.debug(
               "Post-registration machine refresh failed: \(String(describing: error), privacy: .public)"
             )
@@ -369,9 +263,6 @@ public final class CloudAccountController {
       machines = refreshedMachines
       didVerifyRoster()
       if let hub {
-        // Feed the authoritative REST snapshot back into the hub's
-        // presence view. This heals a missed/reordered presence frame
-        // without replacing an otherwise healthy hub connection.
         await hub.reconcileAuthoritativeMachines(refreshedMachines)
       }
       #if DEBUG || NAVIGATION_DIAGNOSTICS
@@ -393,20 +284,12 @@ public final class CloudAccountController {
       Log.cloud.error("Cloud machine refresh failed: \(String(describing: error), privacy: .public)")
       lastError = error.localizedDescription
       if case CloudAccountClientError.httpStatus(401) = error {
-        // The session was revoked elsewhere — reflect it instead of
-        // showing a stale signed-in pane forever.
         sessionEnded()
       }
       return .failed(error)
     }
   }
 
-  /// Registers the machine this app runs on with the signed-in account, so
-  /// it appears on the user's other devices without `codevisor auth login`.
-  /// No-ops while signed out, on platforms without an embedded server
-  /// (iOS), when the local server is unreachable (it retries on the next
-  /// machine refresh), or when the machine already holds a registration —
-  /// its own from a prior sign-in, the CLI, or dev auto-provisioning.
   public func registerLocalMachineIfNeeded() {
     guard state.isSignedIn, let token = storedToken, let localClient = localServerClient else {
       return
@@ -426,7 +309,6 @@ public final class CloudAccountController {
     }
   }
 
-  /// Optimistically renames, then confirms against the server.
   public func rename(deviceId: String, name: String) async {
     let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty, let token = storedToken else { return }
@@ -442,13 +324,11 @@ public final class CloudAccountController {
     await refreshMachines()
   }
 
-  /// Optimistically removes, then confirms against the server.
   public func remove(deviceId: String) async {
     guard let token = storedToken else { return }
     machines.removeAll { $0.deviceId == deviceId }
     stopLoopbackBridge(deviceId: deviceId)
     directPaths.drop(deviceId: deviceId)
-    // A removed machine's pin goes with it: re-adding is a fresh pairing.
     removeMachineKeyPin(deviceId: deviceId)
     do {
       try await client.removeMachine(deviceId: deviceId, token: token)
@@ -459,10 +339,6 @@ public final class CloudAccountController {
     await refreshMachines()
   }
 
-  /// Points the app at a self-hosted instance (nil restores the default).
-  /// The server is validated via its discovery document before anything is
-  /// saved; switching servers always signs out of the previous session —
-  /// its token means nothing on the new instance.
   public func setCustomServer(_ url: URL?) async throws {
     guard let url else {
       signOut()
@@ -477,20 +353,14 @@ public final class CloudAccountController {
     signOut()
     try saveCustomServerURL(url)
     authProviders = info.authProviders
-    // A different instance has a different device-id namespace.
     try clearMachineKeyPins()
   }
 
-  /// The account's hub connection (presence and tunnel config), created on
-  /// first use while signed in. One connection serves every cloud machine.
   public func hubConnection() -> CloudHubConnection? {
     guard state.isSignedIn else { return nil }
     if let hub { return hub }
     let hub = hubConnectionFactory(serverURL, credentialStore)
     self.hub = hub
-    // Presence pushed by the hub keeps the UI roster live: a machine
-    // signed in on another device appears here the moment it connects,
-    // instead of waiting for the next foreground or a settings poll.
     Task { [weak self] in
       guard let self else { return }
       await hub.setMachinesChangedHandler { [weak self] transportMachines in
@@ -506,21 +376,11 @@ public final class CloudAccountController {
           self.directPaths.configureTunnel(config)
         }
       }
-      // Connect now, handlers first. Nothing else starts the hub anymore:
-      // it used to connect lazily on the first hub-relay channel open, and
-      // the apps no longer open any (they reach machines over the tunnel,
-      // which needs the welcome's tunnel config to exist at all).
       await hub.connect()
     }
     return hub
   }
 
-  /// Compares the hub's live presence view against the UI roster and, on
-  /// disagreement (an unknown machine appeared, or an online flag flipped),
-  /// schedules one authoritative refresh. Deliberately refresh-based: the
-  /// REST fetch stays the single writer of `machines`, so key pinning, twin
-  /// dedup, and direct-path reconciliation keep their one home in
-  /// `refreshMachines()` — the push is only a trigger, never a source.
   func reconcilePresence(with transportMachines: [CloudMachine]) {
     guard state.isSignedIn else { return }
     guard presenceDiffers(from: transportMachines) else { return }
@@ -535,9 +395,6 @@ public final class CloudAccountController {
   }
 
   private func presenceDiffers(from transportMachines: [CloudMachine]) -> Bool {
-    // What a presence push can change that the app acts on: online state,
-    // and the tunnel address it dials (a machine can stay online while its
-    // server restarts onto a new tunnel endpoint).
     func reach(_ machine: CloudMachine) -> String {
       "\(machine.online)|\(machine.tunnel?.endpointId ?? "")"
     }
@@ -545,35 +402,18 @@ public final class CloudAccountController {
       machines.map { ($0.deviceId, reach($0)) },
       uniquingKeysWith: { first, _ in first }
     )
-    // `known[...]` is nil for an unknown device, which never equals a
-    // String — one comparison covers "new machine" and "changed".
     return transportMachines.contains(where: { known[$0.deviceId] != reach($0) })
   }
 
-  /// Replaces an existing hub socket after the app returns to the
-  /// foreground, and re-dials the tunnel pipes so channel owners reopen from
-  /// their durable cursors; the account refresh keeps machine-list presence
-  /// in step with the new hub welcome.
   public func reconnectHub() async {
     guard state.isSignedIn else { return }
-    // Every transport is suspect at this point (suspension, network
-    // handoff), including the tunnel pipes: a half-open pipe is
-    // caught by its own heartbeat within ~15s, but recovery requests
-    // race that detection and burn their full timeout against a dead
-    // socket — one such timeout is enough to fail the selected machine.
-    // Re-dial every pipe now, on an endpoint told the network changed.
-    // The machines stay known, so this doesn't wait on the refresh below.
     directPaths.networkChanged()
     if let hub {
       await hub.reconnect()
     }
     await refreshMachines()
-    // Chat recovery should not wait for a raw-socket probe to time out.
-    // Each machine's pool coalesces overlapping foreground/pane checks.
     Task { [weak self] in await self?.recoverLoopbackBridges() }
   }
-
-  // MARK: - Loopback bridges
 
   private func stopLoopbackBridge(deviceId: String) {
     loopbackPool.remove(deviceId)
@@ -592,7 +432,6 @@ public final class CloudAccountController {
     }
   }
 
-  /// Drops bridges for machines that no longer exist on the account.
   private func pruneLoopbackBridges() {
     let known = Set(machines.map(\.deviceId))
     for deviceId in loopbackPool.machineIds where !known.contains(deviceId) {
@@ -601,12 +440,7 @@ public final class CloudAccountController {
   }
 }
 
-// MARK: - Machine key pinning (TOFU)
-
 extension CloudAccountController {
-  /// Reconciles the machine list against the pinned keys: unknown machines
-  /// are pinned on first sight; a machine whose presented key conflicts with
-  /// its pin is flagged and cut off from relay channels until re-trusted.
   func reconcileMachineKeyPins(_ machines: [CloudMachine]) throws {
     guard var pins = machineKeyPins.pins else { throw CancellationError() }
     var changed = Set<String>()
@@ -634,16 +468,11 @@ extension CloudAccountController {
     }
   }
 
-  /// Read-only verification against the prepared snapshot. Unknown or changed
-  /// keys cannot open channels; first-sight pinning belongs to roster refresh.
   func verifiedMachineKey(for machine: CloudMachine) -> String? {
     guard let pinned = machineKeyPins.pins?[machine.deviceId] else { return nil }
     return pinned == machine.publicKey ? machine.publicKey : nil
   }
 
-  /// Explicit user consent to a machine's new key — the "key changed, trust
-  /// anyway" action. Re-pins to the currently presented key and lifts the
-  /// channel refusal. Never called automatically.
   public func trustChangedMachineKey(deviceId: String) {
     guard let machine = machines.first(where: { $0.deviceId == deviceId }) else { return }
     guard var pins = machineKeyPins.pins else { return }
@@ -678,11 +507,6 @@ extension CloudAccountController {
   }
 }
 
-// MARK: - CloudMachineProviding
-
-/// Cloud machines join the unified machine list: MachineController reads the
-/// account's machines here and asks for relay-backed server configs when one
-/// is selected.
 extension CloudAccountController: CloudMachineProviding {
   public var isCloudSignedIn: Bool { state.isSignedIn }
 
@@ -691,14 +515,9 @@ extension CloudAccountController: CloudMachineProviding {
   public var isCloudRosterVerified: Bool { isRosterVerified }
 
   public func relayServerConfig(for machine: CloudMachine) -> CodevisorServerConfig? {
-    // TOFU: no relay config for a machine whose key conflicts with its
-    // pin — every channel would be opened against the imposter key.
     guard hubConnection() != nil, verifiedMachineKey(for: machine) != nil else {
       return nil
     }
-    // The transports tunnel in-process; the baseURL matters only to
-    // consumers that dial a real socket (plugin and browser panes), so
-    // it becomes the machine's real loopback address once bridged.
     return tunnelServerConfig(
       deviceId: machine.deviceId,
       baseURL: loopbackBaseURL(for: machine) ?? CodevisorMachine.cloudPlaceholderBaseURL)

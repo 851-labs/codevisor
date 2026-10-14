@@ -48,11 +48,9 @@ struct ComputerUseLivePreviewHostTests {
     world.access = false
     let denied = await host.handle(world.request(.capabilities))
     #expect(denied.status == "permission-required")
-    // No permission says nothing about whether the agent is controlling an app.
     #expect(Self.viewerSeesActivity(denied) == nil)
   }
 
-  /// How a closed remote preview's watcher reads the reply.
   private static func viewerSeesActivity(_ reply: ServerScreenSharingReply) -> Bool? {
     ComputerUseLivePreview.remoteActivityIsActive(reply: reply, target: target)
   }
@@ -149,8 +147,6 @@ struct ComputerUseLivePreviewHostTests {
     #expect(world.peers.isEmpty)
   }
 
-  /// A peer is built off the main thread, so the host can shut down while one is being built:
-  /// the late peer is closed and never answers or receives frames.
   @Test("Closes a peer that finishes building after shutdown")
   func shutdownWhileBuilding() async {
     let world = World()
@@ -172,7 +168,6 @@ private final class World {
   var access = true
   var activityState: ComputerUseLivePreview.State?
   var clock: TimeInterval = 100
-  /// When set, building a peer waits for it (after signalling `peerRequested`).
   var peerGate: TestSignal?
   let peerRequested = TestSignal()
   var peers: [FakePeer] = []

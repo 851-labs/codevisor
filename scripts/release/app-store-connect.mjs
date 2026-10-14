@@ -32,9 +32,7 @@ export class AppStoreConnectError extends Error {
     try {
       const errors = JSON.parse(details)?.errors
       if (Array.isArray(errors)) this.errors = errors
-    } catch {
-      // Apple can return a non-JSON error body; retain it in the message.
-    }
+    } catch {}
   }
 }
 
@@ -221,8 +219,6 @@ export async function assignBuildToGroup(
         })
         accepted = true
       } catch (error) {
-        // A newly processed build may not yet be visible to the assignment endpoint.
-        // Retry only Apple's NOT_FOUND response naming this exact build.
         if (
           !(error instanceof AppStoreConnectError) ||
           error.status !== 404 ||
@@ -250,8 +246,6 @@ export async function assignBuildToGroup(
 }
 
 export async function deliverInternalBuild(client, build, upload, options = {}) {
-  // A retry may follow a successful upload whose processing outlasted the job.
-  // Resume that build instead of uploading the same version/build number again.
   if (!(await findBuild(client, build))) await upload()
   const processed = await waitForBuild(client, build, options)
   const group = await internalGroup(client, build.appId, options.groupName ?? "Alpha")

@@ -7,15 +7,12 @@ import {
   type CodevisorSkillRead
 } from "@codevisor/api"
 
-/// How each harness names the gateway's `execute` tool on its tool rows.
 const executeToolTitles = new Set([
   "mcp__codevisor__execute",
   "codevisor.execute",
   "codevisor_execute",
   "codevisor__execute"
 ])
-/// A gateway event can outrun the harness event that carries the arguments.
-/// Only the latest state per execution is kept, and only briefly.
 const pendingTtlMs = 30_000
 const maxPendingPerSession = 16
 const maxTrackedCallsPerSession = 64
@@ -23,18 +20,11 @@ const settledStatuses = new Set(["in_progress", "completed", "failed"])
 
 interface TrackedCall {
   title?: string
-  /// A harness's own code tool (OpenCode's Code Mode `execute`), which runs
-  /// the gateway from inside its script: its arguments are the harness's
-  /// code, never the gateway's, so gateway runs attach to it while it runs.
   host?: boolean
-  /// The host is running its code: gateway runs now come from it.
   hostRunning?: boolean
   parentToolCallId?: string
-  /// The harness's own `_meta`, kept so annotations merge into it instead of
-  /// replacing it (the transcript projection replaces top-level fields).
   meta?: Record<string, unknown>
   execution?: CodevisorExecutionState
-  /// The gateway skill a host read, when it read one.
   skill?: CodevisorSkillRead
   argsHash?: string
 }
@@ -50,16 +40,11 @@ interface SessionState {
   readonly pending: Map<string, PendingExecution>
 }
 
-/// Attaches the gateway's live execution state (status, nested calls, error)
-/// to the harness tool row that ran it. The gateway never learns the
-/// harness's tool call id, so both sides hash the same `execute` arguments.
 export class ExecutionAnnotator {
   private readonly sessions = new Map<string, SessionState>()
 
   constructor(private readonly now: () => number = Date.now) {}
 
-  /// The events to materialize, in order, in place of `event`. Gateway
-  /// events become `tool_call_update`s for the correlated row, or nothing.
   annotate(sessionId: string, event: RuntimeEvent): ReadonlyArray<RuntimeEvent> {
     const payload = isRecord(event.payload) ? event.payload : {}
     if (payload.kind === "codevisor_execution") {
@@ -75,7 +60,6 @@ export class ExecutionAnnotator {
     return [event]
   }
 
-  /// Forgets a session's correlations once its turn is over.
   endSession(sessionId: string): void {
     this.sessions.delete(sessionId)
   }
@@ -163,8 +147,6 @@ export class ExecutionAnnotator {
     return [published, annotation(event, toolCallId, tracked, pending.execution)]
   }
 
-  /// A host's own update. Once it runs code, gateway runs that arrived
-  /// before it did are its own.
   private receiveHostCall(
     state: SessionState,
     event: RuntimeEvent,
@@ -199,8 +181,6 @@ export class ExecutionAnnotator {
     return [published, annotation(event, toolCallId, tracked, waiting.at(-1)![1].execution)]
   }
 
-  /// A gateway skill read. Harnesses that call `skills` directly show its
-  /// arguments themselves; only a read from inside a host needs the label.
   private receiveSkillRead(
     sessionId: string,
     event: RuntimeEvent,
@@ -214,8 +194,6 @@ export class ExecutionAnnotator {
     return [annotationEvent(event, toolCallId, tracked)]
   }
 
-  /// The running host a gateway run with no row of its own came from: the
-  /// most recent one, since a harness runs one tool call at a time.
   private adoptByHost(state: SessionState, argsHash: string): string | undefined {
     const running = runningHost(state)
     if (running === undefined) return undefined
@@ -240,12 +218,9 @@ export class ExecutionAnnotator {
   }
 }
 
-/// The most recent host running its code: a harness runs one tool call at a
-/// time, so a gateway call with no row of its own came from it.
 const runningHost = (state: SessionState): [string, TrackedCall] | undefined =>
   [...state.calls].findLast(([, call]) => call.hostRunning === true)
 
-/// The harness's own `_meta` with what the gateway reported for the row.
 const annotatedMeta = (tracked: TrackedCall): Record<string, unknown> => ({
   ...tracked.meta,
   ...(tracked.execution === undefined ? {} : { codevisorExecution: tracked.execution }),
@@ -262,7 +237,6 @@ const annotationEvent = (
   payload: {
     sessionUpdate: "tool_call_update",
     toolCallId,
-    // Keeps subagent rows attached to their parent in the projection.
     ...(tracked.parentToolCallId === undefined
       ? {}
       : { parentToolCallId: tracked.parentToolCallId }),
@@ -282,12 +256,8 @@ const annotation = (
 
 const isExecuteTitle = (title: string): boolean => executeToolTitles.has(title.trim().toLowerCase())
 
-/// OpenCode 2 names its Code Mode tool plain `execute`; the gateway's own
-/// tool always carries its server's name.
 const isHostTitle = (title: string): boolean => title.trim().toLowerCase() === "execute"
 
-/// Claude streams tool input, so a partial input is not hashed until the
-/// call is running or both fields the gateway requires are present.
 const executionArgsHash = (payload: Record<string, unknown>): string | undefined => {
   const input = payload.rawInput
   if (!isRecord(input) || typeof input.code !== "string") return undefined

@@ -11,7 +11,6 @@ import {
 
 describe("@codevisor/agent-runtime", () => {
   it("advertises only provider-neutral ACP client capabilities", () => {
-    // Agents run their own shell commands, as under their own UIs.
     expect(acpClientCapabilities()).toEqual({
       plan: {},
       terminal: false
@@ -187,7 +186,6 @@ describe("@codevisor/agent-runtime", () => {
     expect(acpPermissionOutcome(optionIds, { outcome: "cancelled" })).toEqual({
       outcome: { outcome: "cancelled" }
     })
-    // Unknown labels degrade to cancelled rather than guessing.
     expect(
       acpPermissionOutcome(optionIds, {
         answers: { permission: { answers: ["Nonsense"] } },
@@ -195,11 +193,8 @@ describe("@codevisor/agent-runtime", () => {
       })
     ).toEqual({ outcome: { outcome: "cancelled" } })
 
-    // Requests without options (or malformed ones) auto-cancel.
     expect(acpPermissionQuestion({ options: [], sessionId: "s" })).toBeUndefined()
     expect(acpPermissionQuestion("nope")).toBeUndefined()
-    // Non-plan tool calls carry no plan document and fall back to a generic
-    // question when untitled.
     const generic = acpPermissionQuestion({
       options: [{ kind: "allow_once", name: "Allow", optionId: "ok" }],
       sessionId: "s",
@@ -229,7 +224,6 @@ describe("@codevisor/agent-runtime", () => {
       "fullAccess",
       undefined
     ])
-    // Descriptions still pass through untouched.
     expect(state.availableModes[1]?.description).toBe("think first")
   })
 })

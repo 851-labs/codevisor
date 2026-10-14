@@ -2,8 +2,6 @@ import Foundation
 import Observation
 import Sentry
 
-/// The complete allowlist for handled errors sent to Sentry. Callers cannot
-/// pass arbitrary strings, errors, URLs, or payloads into remote diagnostics.
 public enum DiagnosticIssueName: String, Sendable, CaseIterable {
   case corruptPersistedData = "corrupt_persisted_data"
   case dataDirectoryUnavailable = "data_directory_unavailable"
@@ -23,11 +21,6 @@ public enum DiagnosticIssueName: String, Sendable, CaseIterable {
   }
 }
 
-/// Consent-gated native crash reporting and allowlisted handled-error capture.
-///
-/// Release builds initialize Sentry only after the persisted preference is
-/// enabled. Debug builds additionally require `CODEVISOR_ENABLE_DIAGNOSTICS=1`,
-/// so ordinary development and tests never contact Sentry.
 @MainActor
 @Observable
 public final class DiagnosticsClient {
@@ -49,8 +42,6 @@ public final class DiagnosticsClient {
 
   private init() {}
 
-  /// Reads the public ingestion DSN embedded by the app target. An opted-out
-  /// launch does not initialize Sentry or create its cache directory.
   public func configureFromMainBundle(enabled: Bool) {
     guard dsn == nil else {
       setEnabled(enabled)
@@ -74,8 +65,6 @@ public final class DiagnosticsClient {
     setEnabled(enabled)
   }
 
-  /// Applies the app preference immediately. Revocation closes every Sentry
-  /// integration and removes locally queued diagnostic state.
   public func setEnabled(_ enabled: Bool) {
     consentGate.setEnabled(enabled)
     guard dsn != nil else { return }
@@ -87,8 +76,6 @@ public final class DiagnosticsClient {
     }
   }
 
-  /// Sends a fixed issue name and a capture-site stack trace. User-facing
-  /// titles, underlying Error values, paths, and log messages are excluded.
   public func capture(_ issue: DiagnosticIssueName) {
     guard consentGate.isEnabled, sdkIsSetUp else { return }
     SentrySDK.capture(message: issue.rawValue) { scope in
@@ -98,8 +85,6 @@ public final class DiagnosticsClient {
     }
   }
 
-  /// Keeps only coarse, allowlisted sync context on the crash scope. Event
-  /// payloads, machine ids, hostnames, and breadcrumbs remain excluded.
   func noteSyncEvent(machineIsLocal: Bool, kind: String) {
     guard consentGate.isEnabled, sdkIsSetUp, Self.allowedSyncEventKinds.contains(kind)
     else { return }
@@ -122,13 +107,8 @@ public final class DiagnosticsClient {
     options.sampleRate = 1
     options.shutdownTimeInterval = 0
 
-    // Crash stacks and explicit handled issues only. These defaults are
-    // repeated deliberately so an SDK upgrade cannot quietly broaden the
-    // data surface.
     options.enableCrashHandler = true
     #if os(macOS)
-      // macOS-only Sentry option; iOS reports uncaught exceptions through
-      // the crash handler itself.
       options.enableUncaughtNSExceptionReporting = false
     #endif
     options.enableSigtermReporting = false
@@ -180,8 +160,6 @@ public final class DiagnosticsClient {
   }
 }
 
-/// A lock-backed consent bit because Sentry can invoke filters on background
-/// queues while the public client remains main-actor isolated.
 private final class DiagnosticsConsentGate: @unchecked Sendable {
   private let lock = NSLock()
   private var enabled = false
@@ -225,9 +203,6 @@ enum DiagnosticsPrivacyFilter {
     }
 
     for exception in event.exceptions ?? [] {
-      // Exception values can contain assertions, paths, server bodies,
-      // or other user-controlled text. The fixed type plus stack is
-      // sufficient for grouping and diagnosis.
       exception.value = nil
       sanitize(exception.stacktrace)
     }

@@ -49,7 +49,7 @@ export class NodeStreamableHttpTransport implements Transport {
     const sessionId = response.headers.get("mcp-session-id")
     if (sessionId !== null) this.sessionId = sessionId
     if (!response.ok) {
-      /* v8 ignore next -- standard Fetch responses expose a readable error body. */
+      /* v8 ignore next */
       const detail = await response.text().catch(() => response.statusText)
       throw new Error(`Streamable HTTP error ${response.status}: ${detail}`)
     }
@@ -57,7 +57,7 @@ export class NodeStreamableHttpTransport implements Transport {
       await response.body?.cancel()
       return
     }
-    /* v8 ignore next -- Fetch normalizes a content type for non-empty response bodies. */
+    /* v8 ignore next */
     const contentType = response.headers.get("content-type") ?? ""
     if (contentType.includes("application/json")) {
       this.dispatch(await response.json())
@@ -108,7 +108,7 @@ export class NodeStreamableHttpTransport implements Transport {
       const chunk = await reader.read()
       pending += decoder.decode(chunk.value, { stream: !chunk.done })
       const blocks = pending.split(/\r?\n\r?\n/)
-      /* v8 ignore next -- split always leaves a final string while the stream is open. */
+      /* v8 ignore next */
       pending = chunk.done ? "" : (blocks.pop() ?? "")
       for (const block of blocks) {
         const decoded = messageFromSseBlock(block)
@@ -117,7 +117,7 @@ export class NodeStreamableHttpTransport implements Transport {
           continue
         }
         this.dispatch(decoded)
-        /* v8 ignore next -- batched SSE responses are optional and JSON batches are covered above. */
+        /* v8 ignore next */
         const messages = Array.isArray(decoded) ? decoded : [decoded]
         if (
           stopAfterId !== undefined &&
@@ -129,7 +129,7 @@ export class NodeStreamableHttpTransport implements Transport {
               (message as { id?: unknown }).id === stopAfterId
           )
         ) {
-          /* v8 ignore next -- cancellation is best-effort after the matching response arrived. */
+          /* v8 ignore next */
           await reader.cancel().catch(() => undefined)
           return
         }

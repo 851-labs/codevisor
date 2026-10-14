@@ -24,8 +24,6 @@ afterEach(cleanupLifecycleTests)
 describe("harness lifecycle bundled desktop apps", () => {
   it("reports and updates the bundled desktop app for dual installs", async () => {
     const db = await makeDb()
-    // A fake app bundle with an executable CLI inside, so the fallback-path
-    // probe (accessSync X_OK) finds it like the real ChatGPT.app copy.
     const appDir = mkdtempSync(join(tmpdir(), "codevisor-app-"))
     directories.push(appDir)
     const bundle = join(appDir, "FakeChat.app")
@@ -61,7 +59,6 @@ describe("harness lifecycle bundled desktop apps", () => {
     const lifecycle = makeHarnessLifecycleManager({
       agents: {
         catalog: [definition],
-        // Primary install is the user's own CLI — NOT the bundle.
         discoverHarnesses: Effect.succeed([
           harness("fake-cli", "/Users/dev/.local/bin/fake-cli", "1.0.0")
         ]),

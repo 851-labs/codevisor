@@ -20,13 +20,9 @@ public final class BrowserPaneModel: NSObject {
   public private(set) var errorMessage: String?
   private(set) var pageAppearance = BrowserPageAppearance()
   @ObservationIgnored public var onNavigate: ((String, String) -> Void)?
-  /// The page area's width from SwiftUI layout. A navigation picks the
-  /// mobile or desktop site by width, and the web view is created (and its
-  /// first page requested) before it has a size of its own.
   @ObservationIgnored public var viewportWidth: CGFloat = 0 {
     didSet { reloadIfContentModeWasGuessed() }
   }
-  /// The committed page was requested with no width to go by.
   @ObservationIgnored private var contentModeWasGuessed = false
   @ObservationIgnored public var onFaviconChange: ((CGImage?) -> Void)?
   @ObservationIgnored public var onOpenLink: ((URL) -> Void)?
@@ -94,12 +90,9 @@ public final class BrowserPaneModel: NSObject {
     load(address: requestedURL.absoluteString, adoptShared: true)
   }
 
-  /// Use WebKit's supplied process/data-store configuration so the new pane is
-  /// still the real popup, including its opener, POST data and pending load.
   public func adoptPopup(configuration: WKWebViewConfiguration) -> WKWebView {
     let scripts = configuration.userContentController.userScripts
     let content = WKUserContentController()
-    // The child must not send navigation messages to its parent's pane model.
     for script in scripts { content.addUserScript(script) }
     configuration.userContentController = content
     let view = WKWebView(frame: .zero, configuration: configuration)
@@ -279,8 +272,6 @@ public final class BrowserPaneModel: NSObject {
     guard let webView else { return }
     pageAppearance = BrowserPageAppearance(background: webView.underPageBackgroundColor, theme: webView.themeColor)
     #if os(iOS)
-      // Do not assign underPageBackgroundColor: that would override WebKit's
-      // automatic updates when the page's CSS or color scheme changes.
       webView.scrollView.backgroundColor = webView.underPageBackgroundColor
     #endif
   }
@@ -320,8 +311,6 @@ public final class BrowserPaneModel: NSObject {
     }
   }
 
-  /// Refresh the shared proxy even for healthy pages, without reloading
-  /// their documents. Failed GETs can resume after a connection revision.
   public func connectionDidChange() async {
     guard webView != nil, connectionTask == nil else { return }
     let generation = loadGeneration
@@ -392,15 +381,10 @@ extension BrowserPaneModel: RetainedBrowserPage {
 }
 
 extension BrowserPaneModel {
-  /// As Safari does in a narrow window: the mobile site where a desktop
-  /// page wouldn't fit (a split, a compact iPad window, a phone), WebKit's
-  /// own choice otherwise (the desktop site on iPad).
   static func contentMode(forWidth width: CGFloat) -> WKWebpagePreferences.ContentMode {
     width > 0 && width < 700 ? .mobile : .recommended
   }
 
-  /// A first page requested before any width was known gets one reload
-  /// once the pane turns out to be narrow.
   private func reloadIfContentModeWasGuessed() {
     guard contentModeWasGuessed, viewportWidth > 0 else { return }
     contentModeWasGuessed = false
@@ -410,14 +394,11 @@ extension BrowserPaneModel {
 }
 
 extension BrowserPaneModel: WKNavigationDelegate {
-  /// WebKit calls this variant when implemented; it adds the content mode
-  /// to the policy decided below.
   public func webView(
     _ webView: WKWebView, decidePolicyFor action: WKNavigationAction, preferences: WKWebpagePreferences
   ) async -> (WKNavigationActionPolicy, WKWebpagePreferences) {
     let policy = await self.webView(webView, decidePolicyFor: action)
     #if os(iOS)
-      // macOS keeps WebKit's desktop default in every pane size.
       if policy == .allow, action.targetFrame?.isMainFrame == true {
         let width = webView.bounds.width > 0 ? webView.bounds.width : viewportWidth
         contentModeWasGuessed = width <= 0
@@ -438,8 +419,6 @@ extension BrowserPaneModel: WKNavigationDelegate {
       webView.load(request)
       return .cancel
     }
-    // Native rules cover subresources; top-level loads use the navigation delegate.
-    // Custom schemes never escape to another app and bypass the machine route.
     return ["http", "https", "about", "blob", "data"].contains(scheme) ? .allow : .cancel
   }
 
@@ -467,8 +446,6 @@ extension BrowserPaneModel: WKNavigationDelegate {
     failed(error, provisional: false)
   }
   public func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-    // A discarded background process restores lazily on the next pane entry.
-    // An active crash keeps the existing explicit Retry UI to avoid a crash loop.
     if isVisible {
       errorMessage = "This page was closed to free memory. Reload to continue."
       isLoading = false

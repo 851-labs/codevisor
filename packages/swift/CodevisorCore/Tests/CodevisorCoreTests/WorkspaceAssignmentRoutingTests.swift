@@ -3,10 +3,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// How `ensureWorkspace` honors the server's session→workspace assignment:
-/// the server's index wins, a known assigned workspace is joined, and only a
-/// chat nobody placed gets a draft -- under the server's identity when the
-/// server already named it.
 @MainActor
 @Suite("Workspace assignment routing")
 struct WorkspaceAssignmentRoutingTests {
@@ -29,7 +25,6 @@ struct WorkspaceAssignmentRoutingTests {
     )
   }
 
-  /// A server workspace holding one chat, installed from a snapshot.
   private func serverWorkspace(
     serverId: String = "local", chat: UUID = UUID(), isArchived: Bool = false
   ) -> (Workspace, ChatSession) {
@@ -55,9 +50,7 @@ struct WorkspaceAssignmentRoutingTests {
     #expect(resolved.isServerSynced)
     #expect(repository.loadAll().count == 1)
     #expect(navigation.store.layouts.drafts.isEmpty)
-    // Joining never steals the user's place in the host workspace.
     #expect(resolved.selectedCenterTabId == selectedTab)
-    // The chat's pane arrives with the server's copy of the assignment.
     var assigned = serverSession(from: ChatSession(id: newcomer.sessionId, projectId: projectId))
     assigned.workspaceId = host.id.uuidString
     let pane = ServerWorkspacePane(
@@ -101,7 +94,6 @@ struct WorkspaceAssignmentRoutingTests {
     let intoRemote = repository.ensureWorkspace(
       for: seed(initialName: "B", root: "/tmp/remote", assignedWorkspaceId: remote.id), legacyGroups: nil)
 
-    // Reopening a chat in an archived workspace is the caller's revival.
     #expect(intoArchived.id == archived.id)
     #expect(intoRemote.id != remote.id)
     #expect(intoRemote.isDraft)
@@ -116,7 +108,6 @@ struct WorkspaceAssignmentRoutingTests {
     let repository = navigation.workspaces
     let (host, hostChat) = serverWorkspace()
     await navigation.install(sessions: [hostChat], workspaces: [host])
-    // The chat arrived before its assignment was known: a draft was made.
     let raced = seed(root: "/tmp/roquefort")
     let draft = repository.ensureWorkspace(for: raced, legacyGroups: nil)
     #expect(draft.isDraft)

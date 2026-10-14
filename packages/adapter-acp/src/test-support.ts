@@ -18,10 +18,6 @@ import {
   type AcpHarnessLaunchRequest
 } from "./index.js"
 
-/// The pre-extraction runtime accepted `connector` directly and always
-/// registered the acp/claude/codex providers. These tests exercise the runtime
-/// *through* real adapters, so this shim recreates that wiring via the
-/// providerFactories composition the app uses.
 export interface AcpRuntimeTestConfig extends AgentRuntimeConfig {
   readonly connector?: AcpConnector
 }

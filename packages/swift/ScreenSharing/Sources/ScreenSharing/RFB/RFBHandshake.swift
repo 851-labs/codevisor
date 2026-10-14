@@ -1,7 +1,5 @@
 import Foundation
 
-/// ProtocolVersion, security negotiation, authentication, ClientInit and
-/// ServerInit — the part of a connection before any framebuffer traffic.
 public enum RFBHandshake {
   public struct Outcome: Sendable, Equatable {
     public var version: RFBProtocolVersion
@@ -9,10 +7,6 @@ public enum RFBHandshake {
     public var parameters: RFBServerParameters
   }
 
-  /// Negotiates the newest of 3.3/3.7/3.8 the server supports (Apple's
-  /// 3.889 counts as 3.8), picks Apple's account sign-in (type 30, 851-2341)
-  /// when a username is given and offered, else VNC Authentication when a
-  /// password is given and offered, otherwise None, and returns the ServerInit.
   public static func perform(
     stream: RFBInputStream, transport: any RFBTransport, password: String?, username: String? = nil,
     shared: Bool = true

@@ -1,7 +1,5 @@
 import Foundation
 
-/// Stop-and-wait acknowledgments admit only one 2 KiB clipboard chunk at a time.
-/// An explicit read authorizes exactly one incoming transfer on a viewer.
 @MainActor
 public final class ScreenSharingClipboardTransfer {
   public var onFinished: ((String?) -> Void)?

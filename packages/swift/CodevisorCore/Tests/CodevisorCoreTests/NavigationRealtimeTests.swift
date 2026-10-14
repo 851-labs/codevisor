@@ -4,10 +4,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// Live `navigation.changed` deltas against this device's own waiting
-/// changes: a delta moves the cached server state forward in one step, and
-/// the outbox's requests stay laid over it until the server's copy carries
-/// them.
 @MainActor
 @Suite(.timeLimit(.minutes(1)))
 struct NavigationRealtimeTests {
@@ -28,7 +24,6 @@ struct NavigationRealtimeTests {
     #expect(fixture.sync.revision != revision)
     #expect(fixture.store.eventCursor(for: fixture.serverId) == 2)
 
-    // Restoring it is the same single step.
     record.isArchived = false
     record.archivedAt = nil
     _ = await fixture.store.apply(.fixture(cursor: 3, workspaces: [record]), machineId: fixture.serverId)
@@ -80,7 +75,6 @@ struct NavigationRealtimeTests {
   @Test("An accepted rename is not clobbered by an earlier delta and retires with the delta that carries it")
   func acceptedRenameRetiresAtItsCursor() async throws {
     let fixture = await WorkspaceSyncFixture(connected: true)
-    // Another device changed the workspace first; its event is still on its way.
     var archived = try fixture.serverRecord(fixture.workspace.id)
     archived.isArchived = true
     let earlier = fixture.server.commit(workspaces: [archived])
@@ -97,7 +91,6 @@ struct NavigationRealtimeTests {
     }
     #expect(cursor == earlier + 1)
 
-    // The earlier event carries the workspace with its old name.
     await fixture.server.deliverNext(to: fixture.store, machineId: fixture.serverId)
     #expect(fixture.store.eventCursor(for: fixture.serverId) == earlier)
     #expect(fixture.current?.name == "Renamed here")
@@ -121,19 +114,15 @@ struct NavigationRealtimeTests {
       legacyGroups: nil)
     #expect(draft.isDraft)
     let chatTabId = try #require(draft.tabId(containingChat: sessionId))
-    // The user opens a terminal beside the chat before its first message.
     let terminal = PaneDescriptorState(id: UUID(), kind: .terminal, name: "Terminal", terminalKey: "draft-shell")
     let terminalTab = WorkspaceTab(root: .leaf(PaneGroupState(panes: [terminal], selectedPaneId: terminal.id)))
     draft.centerTabs.append(terminalTab)
     fixture.repository.save(draft)
     fixture.sync.publishPane(terminal, workspaceId: draft.id)
     await fixture.flush()
-    // Held: the server has no workspace to put it in yet.
     #expect(fixture.server.requests.isEmpty)
     #expect(fixture.store.pendingIntents.count == 1)
 
-    // Opening the chat creates the workspace and the chat's pane (keyed by
-    // the chat's id) on the server in one step.
     var workspaceRecord = WorkspaceSyncModel.serverWorkspace(from: draft)
     workspaceRecord.name = "Draft"
     var session = serverSession(
@@ -154,7 +143,6 @@ struct NavigationRealtimeTests {
     #expect(promoted.tabId(containingPane: terminal.id) == terminalTab.id)
     #expect(fixture.repository.workspaceId(forSession: sessionId) == draft.id)
 
-    // The held pane goes out now that the workspace exists.
     await fixture.store.executor.idle(machineId: fixture.serverId)
     #expect(fixture.server.requests == ["upsertPane:terminal"])
     await fixture.deliver()

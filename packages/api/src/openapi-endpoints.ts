@@ -1,6 +1,3 @@
-/// Every HTTP/WebSocket endpoint the server exposes, plus the per-endpoint
-/// metadata (summaries, success statuses) the OpenAPI builder reads.
-
 export const endpoints = [
   "GET /v1/clients",
   "GET /v1/clients/:clientId/context",

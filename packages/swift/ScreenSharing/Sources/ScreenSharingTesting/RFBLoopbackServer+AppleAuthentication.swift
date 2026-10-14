@@ -2,11 +2,7 @@ import CryptoKit
 import Foundation
 import ScreenSharing
 
-/// Apple's account sign-in (RFB security type 30, 851-2341), the reference
-/// server's side: a 1024-bit group, its public key, then the client's
-/// encrypted credentials checked against `configuration.account`.
 extension RFBLoopbackServer {
-  /// RFC 2409's 1024-bit MODP group (group 2), for the reference server's Apple sign-in.
   public static let appleAuthenticationPrime: [UInt8] = {
     let hex =
       "FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E088A67CC74020BBEA63B139B22514A08798E3404DD"
@@ -18,7 +14,6 @@ extension RFBLoopbackServer {
     }
   }()
 
-  /// Runs the exchange; false (after sending the failure) when the account doesn't match.
   func authenticateAppleAccount(
     stream: RFBInputStream, transport: RFBNetworkTransport, version: RFBProtocolVersion
   ) async throws -> Bool {

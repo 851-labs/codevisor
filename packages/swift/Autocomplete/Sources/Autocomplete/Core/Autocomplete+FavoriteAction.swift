@@ -1,5 +1,4 @@
 extension Autocomplete {
-  /// The shared label and glyph for a row's favorite toggle.
   enum FavoriteAction: Sendable, Hashable {
     case add
     case remove

@@ -1,9 +1,5 @@
 name: Publish Stable
 
-# Promotes a published Alpha prerelease to Stable without rebuilding: the same
-# notarized bytes get the vVERSION tag, the Stable Sparkle and server feeds,
-# and Homebrew. GitHub Latest moves only after everything verifies.
-
 on:
   workflow_dispatch:
     inputs:
@@ -23,7 +19,6 @@ permissions:
   actions: read
   contents: write
 
-# Shared with Publish Alpha's publish job: both rewrite the Sparkle appcast.
 concurrency:
   group: release-feeds
   cancel-in-progress: false
@@ -49,13 +44,12 @@ jobs:
       build: ${{ steps.alpha.outputs.build }}
       ghostty_stamp: ${{ steps.alpha.outputs.ghostty_stamp }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version-file: .node-version
-      # Without alpha_tag, promote the Alpha published for current main HEAD.
       - name: Verify the published Alpha
         id: alpha
         env:
@@ -89,14 +83,14 @@ jobs:
     needs: metadata
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ needs.metadata.outputs.source_sha }}
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version-file: .node-version
       - run: node scripts/release/build-browser-extension.mjs "${{ needs.metadata.outputs.version }}" dist/release
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: codevisor-browser-extension
           path: dist/release/Codevisor-Chrome-*
@@ -113,11 +107,10 @@ jobs:
       BUILD_NUMBER: ${{ needs.metadata.outputs.build }}
       GHOSTTY_STAMP: ${{ needs.metadata.outputs.ghostty_stamp }}
     steps:
-      # Release tooling runs from main; the shipped bytes come from the Alpha.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version-file: .node-version
       - name: Download the published Alpha's artifacts
@@ -127,7 +120,7 @@ jobs:
           mkdir -p dist/release
           gh release download "$ALPHA_TAG" --dir dist/release \
             --pattern '*.zip' --pattern '*.tar.gz' --pattern '*.dmg' --pattern '*.sha256'
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: codevisor-browser-extension
           path: dist/release
@@ -148,7 +141,6 @@ jobs:
             gh release edit "$TAG" --title "$TAG" \
               --notes-file dist/release/RELEASE_NOTES.md
           else
-            # Advance Latest only after feed publication and verification succeed.
             gh release create "$TAG" "${artifacts[@]}" \
               --verify-tag --title "$TAG" --notes-file dist/release/RELEASE_NOTES.md --latest=false
           fi

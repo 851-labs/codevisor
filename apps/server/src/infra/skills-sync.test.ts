@@ -57,14 +57,12 @@ describe("skills sync", () => {
     const a = { db: machineA.db, store: skillsA, blobs: blobsA, serverId: "server-a" }
     const b = { db: machineB.db, store: skillsB, blobs: blobsB, serverId: "server-b" }
 
-    // A creates a skill; the first pass publishes it and packs its blob.
     await skillsA.create({ name: "Deploy", description: "ship it" })
     const firstA = await reconcileSkills(a)
     expect(firstA.status.published).toEqual(["deploy"])
     const hash = (firstA.changedEntries[0]!.value as { hash: string }).hash
     expect(blobsA.has(hash)).toBe(true)
 
-    // Idempotent: a second pass changes nothing.
     expect((await reconcileSkills(a)).status).toEqual({
       published: [],
       applied: [],
@@ -73,8 +71,6 @@ describe("skills sync", () => {
       missingBlobs: []
     })
 
-    // B adopts the metadata but reports the blob missing until a client
-    // ferries it over — then applies for real.
     await run(machineB.db.mergeSyncEntries(SKILLS_SYNC_NAMESPACE, firstA.changedEntries))
     expect((await reconcileSkills(b)).status.missingBlobs).toEqual([
       { directoryName: "deploy", hash }
@@ -85,8 +81,6 @@ describe("skills sync", () => {
     expect(scanB.skills.map((skill) => skill.directoryName)).toEqual(["deploy"])
     expect(await skillTreeHash(scanB.skills[0]?.path ?? "")).toBe(hash)
 
-    // An edit on A republishes with a new hash; reverting the edit reuses
-    // the original blob (already stored) rather than re-packing.
     const scanA = await skillsA.list()
     const skillPathA = scanA.skills[0]?.path ?? ""
     writeFileSync(join(skillPathA, "extra.md"), "more\n")
@@ -95,15 +89,12 @@ describe("skills sync", () => {
     const editedHash = (editedA.changedEntries[0]!.value as { hash: string }).hash
     expect(editedHash).not.toBe(hash)
 
-    // B deletes the skill; the tombstone removes it from A.
     now.mockReturnValue(1_700_000_001_000)
     await skillsB.remove("deploy")
     const deletedB = await reconcileSkills(b)
     expect(deletedB.status.published).toEqual(["deploy"])
     await run(machineA.db.mergeSyncEntries(SKILLS_SYNC_NAMESPACE, deletedB.changedEntries))
     const removedA = await reconcileSkills(a)
-    // A's edit published BEFORE the tombstone arrived, but the tombstone's
-    // stamp is newer — last writer wins, and the local copy goes.
     expect(removedA.status.removed).toEqual(["deploy"])
     expect((await skillsA.list()).skills).toHaveLength(0)
   })
@@ -114,8 +105,6 @@ describe("skills sync", () => {
     const blobs = makeBlobs()
     const deps = { db: services.db, store: skills, blobs, serverId: "server-c" }
 
-    // A blob whose contents do not reproduce the claimed hash is removed
-    // and re-reported missing rather than unpacked into the store.
     const bogusDir = mkdtempSync(join(tmpdir(), "bogus-skill-"))
     tempDirs.push(bogusDir)
     writeFileSync(join(bogusDir, "SKILL.md"), "---\nname: bogus\n---\nbody\n")
@@ -128,13 +117,11 @@ describe("skills sync", () => {
           value: { hash: wrongHash, name: "bogus" },
           timestamp: { wallMs: 10, counter: 0, deviceId: "elsewhere" }
         },
-        // Malformed values never drive changes.
         {
           key: "junk",
           value: "not-an-object",
           timestamp: { wallMs: 10, counter: 0, deviceId: "elsewhere" }
         },
-        // A tombstone for a skill this machine never had is a no-op.
         {
           key: "ghost",
           value: null,
@@ -143,8 +130,6 @@ describe("skills sync", () => {
         }
       ])
     )
-    // A skill this machine once applied, deleted locally, whose replica
-    // entry is ALREADY a tombstone: nothing to republish.
     await run(
       services.db.mergeSyncEntries("local.skills-applied", [
         {
@@ -190,16 +175,10 @@ describe("skills sync", () => {
 
     expect(await verifySkillArchive(hash, bytes)).toBe(true)
     expect(await verifySkillArchive("a".repeat(64), bytes)).toBe(false)
-    // Bytes tar cannot unpack are rejected the same way.
     expect(await verifySkillArchive(hash, Buffer.from("not a tarball"))).toBe(false)
   })
 
   it("rejects a large upload tar stops reading without crashing the server", async () => {
-    // Whether a real tar stops reading early is implementation-specific
-    // (macOS bsdtar gives up on the first bad block; GNU tar skips through
-    // to the end looking for a header), so stand in a tar that exits without
-    // reading anything. The rest of the 4MB write then always meets a
-    // closed pipe; that EPIPE used to be uncaught and exit the server.
     const bin = mkdtempSync(join(tmpdir(), "codevisor-fake-tar-"))
     tempDirs.push(bin)
     writeFileSync(join(bin, "tar"), "#!/bin/sh\nexit 2\n", { mode: 0o755 })
@@ -213,9 +192,6 @@ describe("skills sync", () => {
   })
 
   it("rejects and repacks archives carrying macOS metadata junk", async () => {
-    // A synthetic tar with an AppleDouble companion — the shape macOS bsdtar
-    // used to produce and then HIDE from its own listings, while Linux
-    // extracted it as a real file and rejected the hash forever.
     const body = Buffer.from("junk")
     const tar = Buffer.concat([
       tarHeader("./SKILL.md", body.length),
@@ -228,9 +204,6 @@ describe("skills sync", () => {
     expect(archiveEntryNames(junkArchive)).toEqual(["./SKILL.md", "./._SKILL.md"])
     expect(await verifySkillArchive("f".repeat(64), junkArchive)).toBe(false)
 
-    // Parser edge cases: an empty size field reads as zero, bare-slash
-    // names are not junk, and junk-free bytes tar cannot unpack still fail
-    // verification through the unpack path.
     const emptySize = Buffer.alloc(512)
     emptySize.write("/", 0, "utf8")
     expect(archiveEntryNames(gzipSync(Buffer.concat([emptySize, Buffer.alloc(1024)])))).toEqual([
@@ -243,8 +216,6 @@ describe("skills sync", () => {
       )
     ).toBe(false)
 
-    // A donor with that archive cached repacks it even though its own
-    // platform tar would unpack it "clean".
     const { services } = await makeServices("server-j")
     const skills = makeSkills()
     const blobs = makeBlobs()
@@ -264,12 +235,8 @@ describe("skills sync", () => {
     await skills.create({ name: "Cached", description: "already packed" })
     const path = (await skills.list()).skills[0]?.path ?? ""
     const hash = await skillTreeHash(path)
-    // A cached archive that does not verify (e.g. packed with macOS
-    // AppleDouble junk before COPYFILE_DISABLE) is repacked in place —
-    // otherwise the donor serves rejected bytes under a correct id forever.
     blobs.write(hash, Buffer.from("not an archive"))
 
-    // A second skill whose cached archive is already good stays untouched.
     await skills.create({ name: "Prepacked", description: "good archive" })
     const prepackedPath =
       (await skills.list()).skills.find((skill) => skill.name === "Prepacked")?.path ?? ""
@@ -286,8 +253,6 @@ describe("skills sync", () => {
     expect(await verifySkillArchive(hash, await blobs.read(hash))).toBe(true)
     expect(await verifySkillArchive(prepackedHash, await blobs.read(prepackedHash))).toBe(true)
 
-    // Settled second pass: nothing republishes, and the verified blob is
-    // trusted without another unpack.
     const again = await reconcileSkills({
       db: services.db,
       store: skills,
@@ -296,7 +261,6 @@ describe("skills sync", () => {
     })
     expect(again.status.published).toEqual([])
 
-    // Verification cached earlier does not replace bytes missing from this store.
     blobs.remove(hash)
     expect(blobs.has(hash)).toBe(false)
     await reconcileSkills({ db: services.db, store: skills, blobs, serverId: "server-d" })
@@ -309,9 +273,6 @@ describe("skills sync", () => {
     const blobs = makeBlobs()
     const deps = { db: services.db, store: skills, blobs, serverId: "server-d" }
 
-    // Never-synced local skills: one colliding with the fleet, one whose
-    // content matches the fleet exactly, one the replica only remembers
-    // as a tombstone.
     await skills.create({ name: "Deploy", description: "local flavor" })
     await skills.create({ name: "Deploy 2", description: "same everywhere" })
     await skills.create({ name: "Ghost", description: "returns" })
@@ -341,9 +302,6 @@ describe("skills sync", () => {
 
     const result = await reconcileSkills(deps)
 
-    // The conflicting copy moved aside (deploy-2 is local and deploy-3 is
-    // taken in the replica, so deploy-4), the identical one was adopted in
-    // place, and the tombstoned name republished as a plain creation.
     expect(result.status.renamed).toEqual([{ from: "deploy", to: "deploy-4" }])
     expect([...result.status.published].toSorted()).toEqual(["deploy-4", "ghost"])
     expect(result.status.applied).toEqual([])
@@ -353,8 +311,6 @@ describe("skills sync", () => {
     ])
     const names = (await skills.list()).skills.map((s) => s.directoryName).toSorted()
     expect(names).toEqual(["deploy-2", "deploy-4", "ghost"])
-    // The renamed content survived intact and republished under its new
-    // name with the original tree hash.
     const republished = result.changedEntries.find((e) => e.key === "deploy-4")
     expect(await skillTreeHash(join(scan.dir, "deploy-4"))).toBe(
       (republished!.value as { hash: string }).hash

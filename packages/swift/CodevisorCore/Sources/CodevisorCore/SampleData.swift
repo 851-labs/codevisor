@@ -1,10 +1,7 @@
 import Foundation
 import ACPKit
 
-/// Sample data and preview factories for SwiftUI previews in the app target.
 public enum SampleData {
-  /// A representative conversation: a user prompt and a completed assistant
-  /// turn with intermediate text, two tool calls, and a final markdown answer.
   public static var conversation: [ConversationItem] {
     var turn = AssistantTurn(
       isGenerating: false,
@@ -67,7 +64,6 @@ public enum SampleData {
     ]
   }
 
-  /// Sample model, reasoning, and speed config options for composer previews.
   public static var configOptions: [SessionConfigOption] {
     [
       SessionConfigOption(
@@ -98,7 +94,6 @@ public enum SampleData {
     ]
   }
 
-  /// A turn mid-stream, showing the "Thinking…" state.
   public static var streamingConversation: [ConversationItem] {
     var turn = AssistantTurn(isGenerating: true, isThinking: true, startedAt: Date(timeIntervalSince1970: 0))
     TranscriptReducer.apply(
@@ -114,13 +109,10 @@ public enum SampleData {
 }
 
 public extension SessionModel {
-  /// Builds a `SessionModel` pre-seeded with a conversation for previews.
   @MainActor
   static func preview(
     conversation: [ConversationItem] = SampleData.conversation,
     isSending: Bool = false,
-    // Canonical ids so the composer's plan toggle finds a plan/build
-    // pair and shows up in previews.
     modeState: SessionModeState? = SessionModeState(
       currentModeId: "default",
       availableModes: [
@@ -143,8 +135,6 @@ public extension SessionModel {
   }
 }
 
-/// A signed-in account's fixed machine list, for previews and screenshots.
-/// Their clients come from the preview's injected transport factory.
 @MainActor
 final class PreviewCloudMachines: CloudMachineProviding {
   let cloudMachines: [CloudMachine]
@@ -158,9 +148,6 @@ final class PreviewCloudMachines: CloudMachineProviding {
   func relayServerConfig(for machine: CloudMachine) -> CodevisorServerConfig? { nil }
 }
 
-/// A no-op server client for previews and preview-backed tests: the event
-/// stream never yields and every write throws or drops, so nothing can reach
-/// a real server.
 struct PreviewServerClient: CodevisorServerClienting {
   func navigationSnapshot() async throws -> ServerNavigationSnapshot {
     ServerNavigationSnapshot(

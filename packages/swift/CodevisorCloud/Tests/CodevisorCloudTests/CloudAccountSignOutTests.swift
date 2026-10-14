@@ -5,8 +5,6 @@ import CodevisorClient
 import CodevisorProtocol
 @testable import CodevisorCloud
 
-/// Only the user's own sign-out takes this machine off the account; a
-/// session the cloud ends signs the app out and leaves the machine online.
 @MainActor
 @Suite("CloudAccountController sign-out")
 struct CloudAccountSignOutTests {
@@ -19,7 +17,6 @@ struct CloudAccountSignOutTests {
     await controller.localDeregistrationTask?.value
 
     #expect(localServer.disconnects == 1)
-    // The machine's api key is revoked with the pre-sign-out session.
     #expect(client.removals == ["local-device-1"])
   }
 
@@ -86,8 +83,6 @@ struct CloudAccountSignOutTests {
   }
 }
 
-/// Drains chained registration attempts (a successful connect re-refreshes
-/// the machine list, which re-probes and finds the registration in place).
 @MainActor
 func awaitLocalRegistration(_ controller: CloudAccountController) async {
   while let task = controller.localRegistrationTask {
@@ -95,8 +90,6 @@ func awaitLocalRegistration(_ controller: CloudAccountController) async {
   }
 }
 
-/// A controller signed in the production way — a stored session
-/// validated at boot — with a local server attached.
 @MainActor
 func makeSignedInWithLocalServer(
   registration: ServerCloudRegistration = ServerCloudRegistration(connected: false)

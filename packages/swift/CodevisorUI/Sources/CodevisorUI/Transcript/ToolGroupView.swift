@@ -21,9 +21,6 @@ public struct ToolGroupView: View {
   private var store: TranscriptDisclosureStore { disclosureStore ?? .previews }
 
   public var body: some View {
-    // A lone described workflow or skill read reads as its own row, not a
-    // group of one repeating its title: it draws, discloses, and shimmers
-    // exactly like any other call.
     if let solo = group.soloCall {
       ToolCallRow(call: solo, isTurnActive: isTurnActive)
     } else {
@@ -43,7 +40,6 @@ public struct ToolGroupView: View {
     )
 
     VStack(alignment: .leading, spacing: 0) {
-      // The label stands alone; the rows it opens carry their own icons.
       HStack(spacing: 6) {
         Text(header.title)
           .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
@@ -58,7 +54,6 @@ public struct ToolGroupView: View {
         let change = { disclosure.userToggled() }
         performAnchoredDisclosureChange?(change) ?? change()
       }
-      // One disclosure button for VoiceOver and other assistive input.
       .accessibilityElement(children: .combine)
       .accessibilityAddTraits(.isButton)
       .accessibilityAction {
@@ -78,8 +73,6 @@ public struct ToolGroupView: View {
   }
 }
 
-/// Collapsed live groups expose the latest call; opening or finishing the
-/// group restores its summary. The same activity bit controls the shimmer.
 struct ToolGroupHeaderPresentation {
   let title: String
   let isShimmering: Bool
@@ -96,9 +89,6 @@ struct ToolGroupHeaderPresentation {
 }
 
 extension ToolCallGroup {
-  /// The call when this group is a single described gateway workflow or a
-  /// single skill read, whose group label would only repeat the row's title,
-  /// so it renders as a plain row rather than a group holding one row.
   var soloCall: ToolCall? {
     guard calls.count == 1, let call = calls.first else { return nil }
     return call.integrationDescription != nil || call.codevisorGatewayOperation == .skills ? call : nil

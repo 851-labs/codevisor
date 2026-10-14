@@ -2,7 +2,6 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// Project selection commits directly from the menu, like the run-location picker.
 struct ComposerProjectMenu<MenuLabel: View>: View {
   @Environment(AppEnvironment.self) private var environment
 
@@ -76,8 +75,6 @@ struct ComposerProjectMenu<MenuLabel: View>: View {
     .task(id: serverId) { await load() }
     .sheet(isPresented: $showsProjectManagement) {
       ManageProjectsSheet(serverId: serverId, onDeleted: onProjectDeleted)
-        // The run-target bar makes its menus plain buttons; the sheet's
-        // own buttons keep the system style.
         .buttonStyle(.automatic)
     }
   }

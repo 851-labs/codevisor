@@ -1,9 +1,6 @@
 import Autocomplete
 import SwiftUI
 
-/// `Navigation` decides what arrows do at the edges and whether the first
-/// match is pre-highlighted. `.menu` is Xcode's picker; `.inline` is what an
-/// autocomplete under a text field wants so Return accepts immediately.
 struct NavigationStory: View {
   @State private var loop = true
   @State private var autoHighlight = true

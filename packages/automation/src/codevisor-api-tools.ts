@@ -13,9 +13,6 @@ export type {
   QueryParameter
 } from "./codevisor-api-tool-spec.js"
 
-/// The server-only Codevisor control plane. Every entry delegates to the same
-/// authenticated /v1 route used by native clients, so validation, durable
-/// events, idempotency, and lifecycle side effects have one implementation.
 export const CODEVISOR_API_TOOLS: ReadonlyArray<CodevisorApiToolSpec> = [
   ...codevisorServerApiTools,
   ...codevisorSessionApiTools,

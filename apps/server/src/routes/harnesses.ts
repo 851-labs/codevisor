@@ -72,9 +72,6 @@ export const routeHarnesses = async (
   return false
 }
 
-/// Every desired-state mutation on this machine writes the fleet catalog
-/// (the one document Settings renders) and publishes the change so open
-/// clients see the row move without waiting for a sync sweep.
 const writeHarnessCatalog = async (
   services: CodevisorServerServices,
   config: CodevisorServerConfig,
@@ -83,10 +80,8 @@ const writeHarnessCatalog = async (
   preference: { readonly enabled: boolean; readonly installed: boolean }
 ): Promise<void> => {
   const definition = services.agents.catalog.find((item) => item.id === harnessId)
-  /* v8 ignore next -- PATCH answers 404 and the lifecycle manager 409 for unknown ids before this runs. */
+  /* v8 ignore next */
   if (definition === undefined) throw new HttpFailure(404, "Harness not found")
-  // Every write stamps a fresh timestamp, so the merge always reports a
-  // change worth publishing.
   const changed = await setHarnessPreference(
     services.db,
     config.id,
@@ -109,8 +104,6 @@ const listHarnesses = async (
   return true
 }
 
-// Re-resolves the runtime's PATH (login-shell probe) before re-detecting,
-// so a CLI installed after server start is found without a restart.
 const rescanHarnesses = async (
   services: CodevisorServerServices,
   response: ServerResponse
@@ -120,10 +113,6 @@ const rescanHarnesses = async (
   return true
 }
 
-// Forced latest-version check, then the refreshed list (blocking rescan
-// pattern — checks are cheap fetches). An optional `harnessIds` body limits
-// the check to the harnesses the client lists; without it, every
-// installed harness is checked.
 const checkHarnessUpdates = async (
   services: CodevisorServerServices,
   request: IncomingMessage,
@@ -140,8 +129,6 @@ const checkHarnessUpdates = async (
   return true
 }
 
-// One-click install: 202-ack, work runs in the background, progress via
-// harness.lifecycle.updated events + the attachable output terminal.
 const installHarness = async (
   services: CodevisorServerServices,
   config: CodevisorServerConfig,
@@ -166,8 +153,6 @@ const installHarness = async (
   return true
 }
 
-// Dual-install: the bundled desktop app's version/update state, computed
-// on demand (detail sheet), and its explicit update action.
 const getBundledHarnessApp = async (
   services: CodevisorServerServices,
   response: ServerResponse,
@@ -197,8 +182,6 @@ const updateBundledHarnessApp = async (
   return true
 }
 
-// Pending-update controls: "Update Now" skips the idle wait; DELETE
-// disarms a queued update entirely.
 const applyPendingHarnessUpdate = async (
   services: CodevisorServerServices,
   response: ServerResponse,
@@ -229,7 +212,6 @@ const cancelPendingHarnessUpdate = async (
   return true
 }
 
-// One-click update for CLI harnesses (origin-matched vendor flow).
 const updateHarness = async (
   services: CodevisorServerServices,
   response: ServerResponse,
@@ -245,9 +227,6 @@ const updateHarness = async (
   return true
 }
 
-// Sessions from the harness's own on-disk store (run before/outside
-// Codevisor) — onboarding workspace suggestions and chat import read these,
-// NOT Codevisor's sessions table (empty on a fresh install by definition).
 const listHarnessAgentSessions = async (
   services: CodevisorServerServices,
   response: ServerResponse,
@@ -273,8 +252,6 @@ const updateHarnessPreference = async (
   const payload = await readSchema(request, UpdateHarnessRequestSchema)
   if (!services.agents.catalog.some((item) => item.id === harnessId))
     throw new HttpFailure(404, "Harness not found")
-  // Disabling never uninstalls: the row keeps `installed` as authored (or
-  // true when this machine is the one introducing it to the catalog).
   const current = (await run(services.db.getSyncEntries(HARNESSES_SYNC_NAMESPACE))).find(
     (entry) => entry.key === harnessId && !entry.deleted
   )

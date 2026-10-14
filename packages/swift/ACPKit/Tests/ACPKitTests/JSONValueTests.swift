@@ -44,7 +44,6 @@ struct JSONValueTests {
     #expect(JSONValue.number(7).intValue == 7)
     #expect(JSONValue.number(2.5).doubleValue == 2.5)
     #expect(JSONValue.bool(false).boolValue == false)
-    // Wrong-type accessors return nil.
     #expect(JSONValue.null.stringValue == nil)
     #expect(JSONValue.string("x").intValue == nil)
     #expect(JSONValue.string("x").doubleValue == nil)

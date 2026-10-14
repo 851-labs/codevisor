@@ -13,7 +13,6 @@ struct CloudDeflateTests {
 
   @Test("Inflates a raw-DEFLATE vector produced by node's deflateRawSync")
   func nodeVector() throws {
-    // Generated with node: deflateRawSync(Buffer.from(plain)).toString("base64")
     let plain =
       "compression vector: the quick brown fox jumps over the lazy dog, repeated. the quick brown fox jumps over the lazy dog."
     let deflatedBase64 =

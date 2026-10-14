@@ -3,9 +3,6 @@
   import SwiftUI
 
   extension Autocomplete {
-    /// The only AppKit scroll adaptation: native scroller size and the search
-    /// field's accessibility relationship to its results. Content geometry and
-    /// bounce behavior belong to the actual ScrollView.
     struct ScrollConfigurator: NSViewRepresentable {
       let usesMiniScroller: Bool
       let onResolve: (NSScrollView) -> Void

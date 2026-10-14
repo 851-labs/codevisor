@@ -15,15 +15,11 @@ import {
 } from "../server-context.js"
 import { SimulatorCommandError, SimulatorRequestError, type Simulators } from "../simulators.js"
 
-/// Whether this machine offers Simulator panes: Xcode's simulators work and
-/// the native app is running to stream them.
 export const simulatorsAvailable = async (config: CodevisorServerConfig): Promise<boolean> =>
   config.simulators !== undefined &&
   config.screenSharing !== undefined &&
   (await config.simulators.available())
 
-/// `/v1/simulators/*`: the device list, device types and chrome, and simctl
-/// actions. Video and input go through `/v1/screen-sharing`.
 export const routeSimulators = async (
   config: CodevisorServerConfig,
   request: IncomingMessage,
@@ -31,7 +27,6 @@ export const routeSimulators = async (
   url: URL
 ): Promise<boolean> => {
   if (url.pathname !== "/v1/simulators" && !url.pathname.startsWith("/v1/simulators/")) return false
-  // Machine authentication has already run. Websites cannot use loopback trust.
   if (request.headers.origin !== undefined || request.headers["sec-fetch-site"] !== undefined)
     throw new HttpFailure(403, "Native clients only")
   response.setHeader("Cache-Control", "no-store")
@@ -53,7 +48,6 @@ const handle = async (
   response: ServerResponse,
   url: URL
 ): Promise<boolean> => {
-  // A server request always has a method.
   const route = [request.method, url.pathname].join(" ")
   const query = (name: string): string => {
     const value = url.searchParams.get(name)

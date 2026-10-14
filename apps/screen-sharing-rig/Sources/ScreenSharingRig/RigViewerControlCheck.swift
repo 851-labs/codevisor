@@ -4,8 +4,6 @@
   import Foundation
   import ScreenSharingRigKit
 
-  /// Drives the viewer side of the product's control protocol once: request → grant → clicks → release →
-  /// revoked, with heartbeats, over the real encrypted data channel. It never captures local input.
   @MainActor
   final class RigViewerControlCheck {
     private let channel: ScreenSharingControlChannel
@@ -26,7 +24,6 @@
       self.request = request
     }
 
-    /// Runs the whole exchange; `responses` reads the host's workload counter before and after.
     func run(responses: () async -> Int?) async throws -> RigControlCheckResponse {
       defer { channel.onMessage = nil }
       channel.onMessage = { [weak self] message in self?.receive(message) }
@@ -34,8 +31,6 @@
         throw ScreenSharingError.unavailable("The control channel is not open.")
       }
       do {
-        // A plain Task inherits this class's main-actor isolation; the continuation is resumed by the
-        // grant, the denial, or this deadline, whichever comes first.
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
           granted = continuation
           grantDeadline = Task {

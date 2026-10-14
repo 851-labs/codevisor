@@ -4,13 +4,6 @@ import { dirname, join } from "node:path"
 
 import type { SharedTokenBundle } from "./shared-credential-types.js"
 
-/// Muse Code credentials Codevisor can share. On macOS Muse keeps its
-/// sign-in in the Keychain; a Codevisor-managed account instead runs Muse
-/// with its file backend in a config home of its own, so the sign-in is an
-/// `auth.json` Codevisor can seal into the vault and write on every machine.
-/// The file holds a long-lived token and no refresh token: nothing rotates,
-/// so machines never race to refresh it.
-
 export const MUSE_HARNESS_ID = "muse-code"
 
 const object = (value: unknown): Record<string, unknown> =>
@@ -20,20 +13,15 @@ const object = (value: unknown): Record<string, unknown> =>
 const string = (value: unknown): string | undefined =>
   typeof value === "string" && value.length > 0 ? value : undefined
 
-/// A managed account's `XDG_CONFIG_HOME`.
 export const museConfigHome = (profile: string): string => join(profile, "config")
 export const museAuthPath = (profile: string): string =>
   join(museConfigHome(profile), "muse", "auth.json")
 
-/// The environment that points Muse at a managed account's own credential
-/// file. `TBH_CREDENTIAL_BACKEND` is Muse's (undocumented) backend switch.
 export const museProfileEnv = (profile: string): Record<string, string> => ({
   XDG_CONFIG_HOME: museConfigHome(profile),
   TBH_CREDENTIAL_BACKEND: "file"
 })
 
-/// A file-backend `auth.json` as a vault bundle. The whole Meta entry rides
-/// along sealed, so another machine can write it back exactly.
 export const parseMuseAuth = (
   document: unknown,
   ownership: SharedTokenBundle["ownership"]
@@ -44,7 +32,6 @@ export const parseMuseAuth = (
   const email = string(meta.user_email)
   return {
     harnessId: MUSE_HARNESS_ID,
-    // The same Meta account signed in twice is one shared account.
     subject: `meta:${createHash("sha256")
       .update(email?.toLowerCase() ?? accessToken)
       .digest("hex")}`,
@@ -56,8 +43,6 @@ export const parseMuseAuth = (
   }
 }
 
-/// Writes a shared sign-in as the managed account's `auth.json`, readable by
-/// this user only and replaced atomically.
 export const writeMuseAuth = async (profile: string, bundle: SharedTokenBundle): Promise<void> => {
   const path = museAuthPath(profile)
   await mkdir(dirname(path), { recursive: true, mode: 0o700 })
@@ -93,9 +78,6 @@ const linkEntries = async (
   }
 }
 
-/// Muse's shell commands inherit `XDG_CONFIG_HOME`, so a managed config home
-/// links to everything in the user's own (`gh`, `git`, …) and to Muse's own
-/// settings, skills and trust. Only the credential stays the account's own.
 export const linkMuseConfigHome = async (
   profile: string,
   env: NodeJS.ProcessEnv

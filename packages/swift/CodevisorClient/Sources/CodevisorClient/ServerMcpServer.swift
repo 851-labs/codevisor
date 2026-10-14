@@ -36,13 +36,9 @@ public struct ServerBrowserUseConfiguration: Codable, Equatable, Sendable {
   public var chromeAvailable: Bool
   public var chromeConnected: Bool
   public var managedAvailable: Bool
-  /// Nil on servers that predate the field; treat as supported. False when
-  /// the server cannot launch local Chrome installation controls. Composer
-  /// setup may still hand the user off to Codevisor on that machine.
   public var extensionFlowSupported: Bool?
   public var developmentExtensionPath: String?
 
-  /// Whether clients can launch Chrome installation controls from this server.
   public var supportsExtensionFlow: Bool { extensionFlowSupported ?? true }
 
   public init(
@@ -81,13 +77,10 @@ public struct ServerMcpAuthDetection: Codable, Equatable, Sendable {
   public var suggestedName: String? = nil
 }
 
-/// An MCP server registered directly in a harness's own config file. Secret
-/// values never leave the server — only env/header names arrive for display.
 public struct ServerNativeMcpServer: Codable, Equatable, Identifiable, Sendable {
   public var harnessId: String
   public var harnessName: String
   public var serverName: String
-  /// "global" (user-level config) or "project" (committed file, read-only).
   public var scope: String
   public var configPath: String
   public var transport: String
@@ -96,7 +89,6 @@ public struct ServerNativeMcpServer: Codable, Equatable, Identifiable, Sendable 
   public var args: [String]
   public var envNames: [String]
   public var headerNames: [String]
-  /// Present only when the harness has a real per-server enable flag.
   public var enabled: Bool?
   public var supportsDisable: Bool
   public var supportsRemove: Bool
@@ -142,7 +134,6 @@ public struct ServerNativeMcpServer: Codable, Equatable, Identifiable, Sendable 
   }
 }
 
-/// One importable server, coalesced across every harness it was found in.
 public struct ServerNativeMcpImportCandidate: Codable, Equatable, Identifiable, Sendable {
   public var identity: String
   public var name: String
@@ -179,11 +170,9 @@ public struct ServerNativeMcpImportCandidate: Codable, Equatable, Identifiable, 
 public struct ServerNativeMcpHarnessServers: Codable, Equatable, Identifiable, Sendable {
   public var harnessId: String
   public var harnessName: String
-  /// SF Symbol from the harness catalog; nil from older servers.
   public var harnessSymbol: String?
   public var configPath: String
   public var exists: Bool
-  /// Per-harness read/parse failure, surfaced instead of failing the scan.
   public var error: String?
   public var servers: [ServerNativeMcpServer]
 
@@ -223,7 +212,6 @@ public struct ServerNativeMcpScan: Codable, Equatable, Sendable {
 
 public struct ServerNativeMcpImportOutcome: Codable, Equatable, Identifiable, Sendable {
   public var identity: String
-  /// imported | skipped | failed
   public var status: String
   public var serverId: String?
   public var serverName: String?
@@ -251,7 +239,6 @@ public struct ServerNativeMcpImportOutcome: Codable, Equatable, Identifiable, Se
 
 public struct ServerNativeMcpImportResult: Codable, Equatable, Sendable {
   public var outcomes: [ServerNativeMcpImportOutcome]
-  /// Post-import rescan for wholesale state replacement.
   public var scan: ServerNativeMcpScan
 
   public init(outcomes: [ServerNativeMcpImportOutcome] = [], scan: ServerNativeMcpScan = .init()) {
@@ -260,8 +247,6 @@ public struct ServerNativeMcpImportResult: Codable, Equatable, Sendable {
   }
 }
 
-/// A server entry Codevisor removed from a harness config file, parked so
-/// the removal can be undone.
 public struct ServerNativeMcpRemoval: Codable, Equatable, Identifiable, Sendable {
   public var id: String
   public var harnessId: String

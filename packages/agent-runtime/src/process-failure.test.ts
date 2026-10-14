@@ -45,7 +45,6 @@ describe("summarizeProcessFailure", () => {
     expect(minified.length).toBeGreaterThan(180)
     expect(summarizeProcessFailure(`${minified}\nError: real cause`, "FALLBACK")).toBe("real cause")
 
-    // A long, space-rich sentence is a real message, not source.
     const prose = `${"the harness could not start because a required component is missing ".repeat(3)}`
     expect(summarizeProcessFailure(prose, "FALLBACK")).toMatch(/^the harness could not start/)
   })
@@ -59,9 +58,6 @@ describe("summarizeProcessFailure", () => {
   })
 
   it("condenses a real crashed-CLI stderr tail into one sentence", () => {
-    // Shape of the captured tail when `cursor-agent` dies at startup because a
-    // native module is missing: minified source, the real error, then a deep
-    // webpack stack. Only the middle line is useful.
     const tail = [
       `!function(){"use strict";var e={9427:function(e,t,n){${"a".repeat(300)}}}();`,
       "Error: Failed to load native binding for darwin/arm64 (expected: ./merkle-tree-napi.darwin-arm64.node)",
@@ -89,7 +85,6 @@ describe("summarizeProcessFailure on macOS loader failures", () => {
     expect(summarizeProcessFailure(stderr, "pi exited")).toBe(
       "Library not loaded: /usr/local/opt/simdutf/lib/libsimdutf.34.dylib, needed by /usr/local/Cellar/node@22/22.22.2_2/bin/node"
     )
-    // Without the reference line, the library alone.
     expect(
       summarizeProcessFailure("dyld[1]: Library not loaded: /opt/lib/libx.dylib\n", "pi exited")
     ).toBe("Library not loaded: /opt/lib/libx.dylib")
@@ -116,9 +111,6 @@ describe("clampFailureDetail", () => {
 
 describe("whitespace classification", () => {
   it("counts tabs, not just spaces, when judging a long line", () => {
-    // Tab-delimited diagnostic output is prose, not bundle source. Scoring
-    // only spaces would rate this 0% whitespace and discard it as minified.
-    // Tabs must be interior — leading ones are trimmed before classification.
     const tabbed = "cause\tdetail\t".repeat(20)
     expect(tabbed.length).toBeGreaterThan(180)
     expect(summarizeProcessFailure(tabbed, "FALLBACK")).toMatch(/^cause detail/)

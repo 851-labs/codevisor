@@ -10,8 +10,6 @@
       case favorites
     }
 
-    /// Indirection for decorative IDs without string sentinels or collisions
-    /// with caller-provided values.
     struct NodeIDBox: Hashable { let value: AnyHashable }
     private struct RunID: Hashable { let index: Int }
 
@@ -177,8 +175,6 @@
       }
     }
 
-    /// Memoization only: never publishes during a view update. Search edits
-    /// reuse title measurements; a content/font/column change invalidates them.
     @MainActor
     final class Measurements {
       private var key: Key?

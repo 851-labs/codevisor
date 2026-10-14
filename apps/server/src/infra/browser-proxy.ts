@@ -32,9 +32,6 @@ export const browserProxyTarget = (authority: string | undefined) => {
   return { host, port }
 }
 
-/// A connection proxy, carried unchanged by the existing encrypted byte relay.
-/// Credentials authorize proxy requests and never enter a destination's byte stream.
-/// They live for this server process and are obtained through the authenticated API.
 export class BrowserProxy {
   readonly session = {
     username: "codevisor-browser",
@@ -115,8 +112,6 @@ export class BrowserProxy {
   handleConnect(request: IncomingMessage, socket: Socket, head: Buffer): void {
     socket.on("error", () => socket.destroy())
     socket.setTimeout(15_000, () => socket.destroy())
-    // CONNECT sockets bypass the ordinary HTTP request router, including its
-    // loopback auth exemption. Require the browser capability on every connection.
     if (!this.authorized(request)) {
       socket.end(
         'HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="Codevisor browser"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
@@ -128,8 +123,6 @@ export class BrowserProxy {
       socket.end("HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
       return
     }
-    // Never turn web content into a trusted loopback caller of our control API.
-    // Block the listener port for all hosts, including DNS aliases and rebinding.
     if (target.port === request.socket.localPort) {
       socket.end("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
       return

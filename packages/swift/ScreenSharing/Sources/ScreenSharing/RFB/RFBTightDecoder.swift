@@ -2,23 +2,12 @@ import CoreGraphics
 import Foundation
 import ImageIO
 
-/// Tight (encoding 7), 851-2313, for the client's 24-bit-depth format: fill,
-/// JPEG, and zlib "basic" rectangles with the copy, palette and gradient
-/// filters over four persistent zlib streams. Tight's TPIXEL is three bytes
-/// R, G, B (unlike ZRLE's CPIXEL, which follows the pixel format's byte
-/// order); the framebuffer is B, G, R, X.
-///
-/// One decoder per connection: the zlib streams persist across rectangles
-/// until the server resets them. Owned by the client's single read loop,
-/// like `RFBInputStream`, which is why it is unchecked.
 final class RFBTightDecoder: @unchecked Sendable {
   enum Filter: UInt8 { case copy = 0, palette = 1, gradient = 2 }
 
-  /// The largest JPEG or compressed payload accepted for one rectangle.
   static let maximumPayload = 64 << 20
   private var streams: [RFBZlibInflater?] = [nil, nil, nil, nil]
 
-  /// What the last rectangle was, for metrics and tests.
   private(set) var lastKind = ""
 
   func decode(_ rect: RFBRectangle, from stream: RFBInputStream, into framebuffer: RFBFramebuffer) async throws {
@@ -27,16 +16,16 @@ final class RFBTightDecoder: @unchecked Sendable {
     for index in 0..<4 where control & (1 << index) != 0 { streams[index] = nil }
     let type = control >> 4
     switch type {
-    case 8:  // fill
+    case 8:
       let rgb = try await stream.bytes(3)
       lastKind = "fill"
       try framebuffer.fill(rect, blue: rgb[2], green: rgb[1], red: rgb[0])
-    case 9:  // JPEG
+    case 9:
       let length = try await Self.compactLength(from: stream)
       guard length <= Self.maximumPayload else { throw RFBError.malformed("Tight JPEG of \(length) bytes") }
       lastKind = "jpeg"
       try framebuffer.fillRaw(rect, from: try Self.decodeJPEG(try await stream.bytes(length), rect: rect))
-    case 0...7:  // basic: bits 4–5 the stream, bit 6 an explicit filter
+    case 0...7:
       let streamID = Int(type & 3)
       let filter: Filter
       if type & 4 != 0 {
@@ -67,7 +56,6 @@ final class RFBTightDecoder: @unchecked Sendable {
     }
   }
 
-  /// Payloads under 12 bytes are sent raw; larger ones as a compact length and zlib data.
   private func data(_ size: Int, streamID: Int, stream: RFBInputStream) async throws -> [UInt8] {
     guard size >= 12 else { return try await stream.bytes(size) }
     let length = try await Self.compactLength(from: stream)
@@ -81,7 +69,6 @@ final class RFBTightDecoder: @unchecked Sendable {
     return inflated
   }
 
-  /// 1–3 bytes, 7 bits each, least significant first; the high bit continues.
   static func compactLength(from stream: RFBInputStream) async throws -> Int {
     var length = 0
     for shift in [0, 7, 14] {
@@ -104,8 +91,6 @@ final class RFBTightDecoder: @unchecked Sendable {
     return pixels
   }
 
-  /// The gradient filter: each component is its residual plus a prediction
-  /// from the left, above and above-left pixels, clamped to 0…255.
   static func ungradient(_ residuals: [UInt8], width: Int, height: Int) -> [UInt8] {
     var output = [UInt8](repeating: 0, count: residuals.count)
     for y in 0..<height {
@@ -149,7 +134,6 @@ final class RFBTightDecoder: @unchecked Sendable {
     return pixels
   }
 
-  /// Decodes a JPEG into BGRA the rectangle's size.
   static func decodeJPEG(_ data: [UInt8], rect: RFBRectangle) throws -> [UInt8] {
     guard let source = CGImageSourceCreateWithData(Data(data) as CFData, nil),
       let image = CGImageSourceCreateImageAtIndex(source, 0, nil)

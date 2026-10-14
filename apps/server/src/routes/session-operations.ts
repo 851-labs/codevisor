@@ -1,8 +1,5 @@
 import type { CodevisorServerServices } from "../server-context.js"
 
-// Initialization and picker changes share ownership: restoring a runtime must
-// finish before a newer pick is applied or persisted. Failed operations release
-// ownership too, and sessions on different servers remain independent.
 const operations = new WeakMap<CodevisorServerServices, Map<string, Promise<void>>>()
 
 export const withSessionMutation = <T>(

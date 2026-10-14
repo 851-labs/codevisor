@@ -2,8 +2,6 @@ import Foundation
 import MarkdownCore
 import SwiftUI
 
-/// A complete code-block snapshot. `id` remains stable while a streaming block
-/// grows so a native highlighter can reuse its previous lexical state.
 public struct CodeHighlightRequest: Sendable {
   public let id: String
   public let code: String
@@ -18,19 +16,11 @@ public struct CodeHighlightRequest: Sendable {
   }
 }
 
-/// Asynchronously turns a fenced code block into a syntax-highlighted
-/// attributed string, or nil to keep plain text. Injected by the host app; the
-/// markdown package itself remains independent of a highlighting engine.
 public typealias CodeHighlighting =
   @Sendable (_ request: CodeHighlightRequest) async -> AttributedString?
 
-/// Lets a host intercept links rendered by StreamMarkdown's native TextKit
-/// views. Returning `true` means the host handled the URL; returning `false`
-/// preserves the platform's normal URL-opening behavior.
 public struct MarkdownLinkAction: @unchecked Sendable {
   private let handler: @MainActor (URL) -> Bool
-  /// Host behavior for images the renderer draws inline. Nil treats an
-  /// image activation like any other link.
   public var images: MarkdownImageActions?
 
   public init(_ handler: @escaping @MainActor (URL) -> Bool, images: MarkdownImageActions? = nil) {
@@ -45,10 +35,6 @@ public struct MarkdownLinkAction: @unchecked Sendable {
 
   var linkHandler: @MainActor (URL) -> Bool { handler }
 
-  /// Activates a link. An inline image is a different affordance from a
-  /// text link to the same file — its primary activation previews — so
-  /// image activations go to the image handler first. `imagePreparing`
-  /// receives the host's preview work so the surface can show it loading.
   @MainActor
   public func activate(
     _ url: URL,
@@ -63,12 +49,7 @@ public struct MarkdownLinkAction: @unchecked Sendable {
   }
 }
 
-/// What the host does with an image rendered inline: the primary
-/// activation (a preview) and the secondary actions its menu offers.
 public struct MarkdownImageActions: @unchecked Sendable {
-  /// Starts a preview. Nil leaves the image to the link handler; otherwise
-  /// the task runs until the preview is showing (or has failed), and the
-  /// surface marks the image as loading meanwhile.
   public var open: @MainActor (URL) -> Task<Void, Never>?
   public var openInNewTab: (@MainActor (URL) -> Void)?
   public var copy: (@MainActor (URL) -> Void)?
@@ -84,38 +65,20 @@ public struct MarkdownImageActions: @unchecked Sendable {
   }
 }
 
-/// Visual styling for markdown rendering, injected through the environment so
-/// the host app can customize fonts, spacing, and colors.
 public struct MarkdownTheme: Sendable {
   public var bodyFont: Font
   public var codeFont: Font
-  /// Primary and secondary prose colors. Native TextKit views cannot inherit
-  /// SwiftUI's foreground-style environment, so the host supplies both
-  /// semantic colors explicitly with the rest of the markdown theme.
   public var textForeground: Color
   public var secondaryTextForeground: Color
-  /// Base foreground for fenced code. Highlighted tokens override this;
-  /// uncolored tokens inherit it.
   public var codeForeground: Color
-  /// Font for `` `inline code` `` chips: monospaced and a touch smaller
-  /// than the body text so chips sit flush in a line of prose.
   public var inlineCodeFont: Font
-  /// Line heights and the space between blocks, relative to the body font
-  /// size. Resolve to points with `blockGap(after:before:)` and friends.
   public var spacing: MarkdownSpacing
   public var codeBackground: Color
-  /// Background tint for `` `inline code` `` chips.
   public var inlineCodeBackground: Color
-  /// Corner radius of the rounded chip background painted behind
-  /// `` `inline code` `` runs (clamped to half the chip height at draw
-  /// time).
   public var inlineCodeCornerRadius: CGFloat
   public var quoteBarColor: Color
   public var tableBorderColor: Color
   public var codeHighlighter: CodeHighlighting?
-  /// A stable identity for the active highlight theme (e.g. its id).
-  /// Closures can't be compared, so code blocks watch this to know when a
-  /// theme switch requires re-highlighting.
   public var codeThemeKey: String
 
   public init(
@@ -152,10 +115,6 @@ public struct MarkdownTheme: Sendable {
 
   public static let `default` = MarkdownTheme()
 
-  /// Hash of every render-affecting field except the highlighter closure
-  /// (closures can't be compared; `codeThemeKey` stands in for it, by the
-  /// same contract code blocks rely on). Render memos key on this to
-  /// detect theme switches without making the whole theme Equatable.
   public var renderFingerprint: Int {
     var hasher = Hasher()
     hasher.combine(bodyFont)
@@ -192,25 +151,11 @@ private struct MarkdownLinkActionKey: EnvironmentKey {
 }
 
 public extension EnvironmentValues {
-  /// The horizontal padding the host lays around markdown content, which a
-  /// too-wide table's horizontal scroller may bleed through (iOS): the
-  /// table rests aligned with the text column, but its scroll viewport
-  /// extends `markdownTableBleed` points past each side, so scrolling
-  /// carries the table all the way to the screen edges instead of stopping
-  /// at the text gutter. Zero (the default) keeps tables inside the text
-  /// column. Text and every other block keep the host padding untouched.
   var markdownTableBleed: CGFloat {
     get { self[MarkdownTableBleedKey.self] }
     set { self[MarkdownTableBleedKey.self] = newValue }
   }
 
-  /// The farthest a wide table's scroll viewport may extend past the text
-  /// column on either side, on every platform. The transcript leaves this
-  /// unbounded so tables scroll to the window edges (macOS measures the
-  /// gutter, iOS uses `markdownTableBleed`). A bordered container that
-  /// hosts markdown — the proposed-plan card — caps it at its own inner
-  /// padding so a wide table scrolls inside the card instead of across its
-  /// border and out over the transcript gutter.
   var markdownTableBleedLimit: CGFloat {
     get { self[MarkdownTableBleedLimitKey.self] }
     set { self[MarkdownTableBleedLimitKey.self] = newValue }
@@ -220,7 +165,6 @@ public extension EnvironmentValues {
     get { self[MarkdownLinkActionKey.self] }
     set { self[MarkdownLinkActionKey.self] = newValue }
   }
-  /// The iOS table bleed after applying the enclosing container's limit.
   internal var resolvedMarkdownTableBleed: CGFloat {
     max(0, min(markdownTableBleed, markdownTableBleedLimit))
   }
@@ -231,14 +175,10 @@ public extension EnvironmentValues {
 }
 
 public extension View {
-  /// Sets the markdown theme for this view hierarchy.
   func markdownTheme(_ theme: MarkdownTheme) -> some View {
     environment(\.markdownTheme, theme)
   }
 
-  /// Handles Markdown links from both native TextKit surfaces and portable
-  /// SwiftUI text (used by iOS tables). Unhandled URLs continue to the
-  /// operating system.
   func markdownLinkHandler(
     _ handler: @escaping @MainActor (URL) -> Bool
   ) -> some View {
@@ -254,8 +194,6 @@ public extension View {
     )
   }
 
-  /// Gives inline images their own activation and menu, independent of
-  /// the link handler (either modifier may wrap the other).
   func markdownImageActions(_ actions: MarkdownImageActions) -> some View {
     let unhandled: @MainActor (URL) -> Bool = { _ in false }
     return transformEnvironment(\.markdownLinkAction) { action in

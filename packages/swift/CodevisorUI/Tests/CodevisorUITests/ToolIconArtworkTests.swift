@@ -4,7 +4,6 @@ import Testing
 
 @Suite("Tool icon artwork")
 struct ToolIconArtworkTests {
-  /// A 32px image: a filled disc of `ink` on transparency, or on `background`.
   private func mark(ink: CGFloat, background: CGFloat? = nil) throws -> CGImage {
     let context = try #require(
       CGContext(
@@ -24,7 +23,6 @@ struct ToolIconArtworkTests {
   func darkInk() throws {
     #expect(ToolIconImages.isDarkInk(try mark(ink: 0.1)))
     #expect(!ToolIconImages.isDarkInk(try mark(ink: 0.95)))
-    // Opaque artwork brings its own background, however dark.
     #expect(!ToolIconImages.isDarkInk(try mark(ink: 0.1, background: 0.05)))
   }
 }

@@ -1,6 +1,5 @@
 import MarkdownCore
 
-/// Namespace marking the MarkdownCore compatibility exports below.
 public enum MarkdownCoreExports {}
 
 public typealias ColumnAlignment = MarkdownCore.ColumnAlignment

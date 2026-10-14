@@ -6,8 +6,6 @@ import StreamMarkdown
 import SwiftUI
 import TranscriptKit
 
-// MARK: - Position
-
 extension VirtualizedTranscriptScrollView {
   func persistViewport() {
     guard !isDetaching, !isAwaitingWarmProjection,
@@ -16,10 +14,6 @@ extension VirtualizedTranscriptScrollView {
       republishLastStableScrollState()
       return
     }
-    // NSViewRepresentable calls this while the clip view still owns its
-    // live bounds. Capture the final compensated coordinate, including
-    // measurements learned since the user's last wheel event, before
-    // AppKit begins teardown.
     emitViewportSnapshot()
   }
 
@@ -33,17 +27,11 @@ extension VirtualizedTranscriptScrollView {
     let restoredRange = pendingInitialState?.virtualTranscript?.renderedWindow.flatMap {
       virtualLayout.renderedRange(anchorKey: $0.anchorKey, count: $0.count)
     }
-    // Mount the same neighborhood that was present when the coordinate was
-    // saved. Otherwise estimates can select a different part of the thread
-    // and the first measurement pass starts from the wrong content.
     updateMountedRows(rangeOverride: restoredRange)
 
     if let state = pendingInitialState, !state.isAtBottom {
       if let restoredTop = restoredViewportTop(from: state) {
         setViewportTop(restoredTop)
-        // Subsequent asynchronous measurements preserve the restored
-        // anchor from this resolved coordinate, not the stale fallback
-        // distance that preceded it.
         lockedRestoreDistance = currentDistanceFromBottom()
       } else {
         let maximumDistance = max(
@@ -66,8 +54,6 @@ extension VirtualizedTranscriptScrollView {
     initialPositionApplied = true
     pendingInitialState = nil
     updateMountedRows(rangeOverride: restoredRange)
-    // A saved target is already the authoritative persisted state. Do not
-    // replace it with a clamped/intermediate first-layout coordinate.
     if shouldPublishInitialPosition {
       emitViewportSnapshot()
     }
@@ -137,8 +123,6 @@ extension VirtualizedTranscriptScrollView {
       ) == .pinToBottom
     lastViewportSize = size
     if shouldPinResize, !followsLatest {
-      // Preserve a geometrically bottomed static viewport until the
-      // mounted rows have finished measuring at the new width as well.
       bottomJumpGate.begin()
     }
     if widthChanged {
@@ -187,14 +171,7 @@ extension VirtualizedTranscriptScrollView {
   }
 
   func viewportDidScroll() {
-    // AppKit can resize the clip view again after `viewWillMove(nil)`.
-    // That teardown geometry is not a user position and must never replace
-    // the valid snapshot captured immediately before detachment.
     guard !isDetaching, !isAwaitingWarmProjection else { return }
-    // AppKit posts bounds changes both during compensation and before our
-    // layout callback for a resize. Neither is user movement, even inside
-    // the recent-input window. Their owning transaction publishes the final
-    // geometry and reconciles mounted rows after compensation.
     if hasPendingViewportResize {
       needsLayout = true
       return
@@ -222,9 +199,6 @@ extension VirtualizedTranscriptScrollView {
     }
     lastObservedViewportTop = viewportTop
     if isDraggingScrollerKnob || isHandlingUserInput || isLiveScrolling {
-      // Native scrolling may deliver more bounds changes than the screen
-      // can present. Reconcile the virtual window once on the next real
-      // display frame; the prepared pixel runway covers that handoff.
       requestMountedRowsUpdate()
     } else {
       updateMountedRows()
@@ -234,10 +208,6 @@ extension VirtualizedTranscriptScrollView {
     let isRecentUserMovement =
       isHandlingUserInput || isLiveScrolling
       || ProcessInfo.processInfo.systemUptime <= userInputDeadline
-    // Only recent user movement can change follow intent. The short intent
-    // window still catches AppKit bounds notifications delivered after the
-    // wheel/key callback, while remount and remeasurement geometry cannot
-    // silently turn follow off.
     if !isApplyingPosition, isRecentUserMovement, !atBottom,
       distance > previousDistance + 0.5, followsLatest
     {
@@ -249,15 +219,8 @@ extension VirtualizedTranscriptScrollView {
     }
     publishCurrentViewportGeometry()
 
-    // Persist only while AppKit is dispatching an actual user scrolling
-    // event. Bounds changes also fire for document resize, restoration,
-    // and teardown; treating those as user position is what reset chats
-    // to the first row during navigation.
     if !isApplyingPosition, isHandlingUserInput || isLiveScrolling {
       lockedRestoreDistance = nil
-      // A live scroll (including knob tracking) publishes one exact
-      // snapshot in didEndLiveScroll. Rebuilding it for every bounds
-      // tick adds work without making restoration more accurate.
       if !isLiveScrolling {
         emitViewportSnapshot()
       }
@@ -343,8 +306,6 @@ extension VirtualizedTranscriptScrollView {
     presentInitialTranscript()
   }
 
-  /// Reveals the transcript document after its initial presentation gate
-  /// opens, whether through normal readiness or a first send's flight.
   func presentInitialTranscript() {
     applyPositionTransaction {
       if initialBottomPin.isActive {
@@ -417,8 +378,6 @@ extension VirtualizedTranscriptScrollView {
 
   func republishLastStableScrollState() {
     guard var state = lastStableScrollState else { return }
-    // Measurements learned after the last wheel event are still useful on
-    // the next mount, but they do not authorize a different position.
     state.measurementCaches = measurementCache.caches
     state.measurementCacheLRU = measurementCache.lru
     state.virtualTranscript = currentVirtualRestoreState(
@@ -438,13 +397,7 @@ extension VirtualizedTranscriptScrollView {
     }
     return SessionVirtualTranscriptRestoreState(
       measurementCacheKey: measurementCache.activeKey,
-      // Dictionary assignment is copy-on-write. Restore already ignores
-      // keys absent from the current transcript, so this keeps viewport
-      // snapshots O(mounted rows) instead of walking the full history.
       rowHeightsByKey: measurements.heightsByKey,
-      // The revision-carrying snapshot rides along (also copy-on-write)
-      // so restore can reject settled-row heights whose content changed
-      // while the pane was closed.
       settledRowsByKey: measurementCache.settledRows,
       renderedWindow: renderedWindow,
       viewportAnchor: viewportAnchor

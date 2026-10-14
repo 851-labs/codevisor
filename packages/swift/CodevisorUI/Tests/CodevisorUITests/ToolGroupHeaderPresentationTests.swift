@@ -99,7 +99,6 @@ struct ToolGroupHeaderPresentationTests {
     call.status = .completed
     #expect(call.displayTitle == "Reviewing open PRs")
 
-    // Two workflows stay a group, and an undescribed one keeps the old label.
     let pair = ToolCallGroup(calls: [
       call, ToolCall(toolCallId: "b", title: "mcp__codevisor__execute", status: .completed),
     ])
@@ -108,7 +107,6 @@ struct ToolGroupHeaderPresentationTests {
       ToolCall(toolCallId: "c", title: "mcp__codevisor__execute", status: .completed)
     ])
     #expect(legacy.soloCall == nil)
-    // A lone skill read is one row too, and so is a harness's own skill tool.
     #expect(
       ToolCallGroup(calls: [ToolCall(toolCallId: "s", title: "mcp__codevisor__skills", status: .completed)])
         .soloCall != nil)

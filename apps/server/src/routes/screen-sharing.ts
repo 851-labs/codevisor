@@ -16,17 +16,11 @@ const computerUsePrefix = "computer-use:"
 const computerUseTarget =
   /^computer-use:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-/**
- * A live view of the window a chat's agent controls through Computer Use,
- * addressed as `computer-use:<chat session id>` and viewed from that chat's
- * pane. Everything else addresses a display from a Screen Sharing pane.
- */
 const computerUseSessionId = (displayId: string | undefined): string | undefined =>
   displayId !== undefined && computerUseTarget.test(displayId)
     ? displayId.slice(computerUsePrefix.length).toLowerCase()
     : undefined
 
-/** An Apple simulator's screen, `simulator:<udid>`, viewed from a Simulator pane. */
 const simulatorTarget = /^simulator:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const isSimulatorTarget = (displayId: string | undefined): boolean =>
   displayId !== undefined && simulatorTarget.test(displayId)
@@ -44,7 +38,6 @@ export const routeScreenSharing = async (
   url: URL
 ): Promise<boolean> => {
   if (url.pathname !== "/v1/screen-sharing") return false
-  // Machine authentication has already run. Websites cannot use loopback trust.
   if (request.headers.origin !== undefined || request.headers["sec-fetch-site"] !== undefined)
     throw new HttpFailure(403, "Native clients only")
   if (request.method !== "POST") throw new HttpFailure(405, "Use POST for Screen Sharing")
@@ -108,12 +101,8 @@ export const routeScreenSharing = async (
   try {
     result = Schema.decodeUnknownSync(ScreenSharingReply)(await config.screenSharing(payload))
   } catch (cause) {
-    // Never expose helper paths, tokens, or SDP through a transport error: only
-    // the app's own known failures are told apart (851-2391).
     throw screenSharingHostFailure(cause)
   }
-  // Media over the tunnel: bridge the viewer's flow to the host's WebRTC
-  // socket. Best effort — without it the viewer keeps plain WebRTC ICE.
   if (payload.tunnelMedia !== undefined && result.answer !== undefined) {
     const bridged = await config.cloud?.bridgeTunnelMedia?.(payload.tunnelMedia, result.answer)
     if (bridged !== undefined) result = { ...result, tunnelMedia: bridged }
@@ -122,7 +111,6 @@ export const routeScreenSharing = async (
   return true
 }
 
-/** The viewer's message for a failed request to the host app. */
 export const screenSharingHostFailure = (cause: unknown): HttpFailure => {
   const message = cause instanceof Error ? cause.message : ""
   if (message === "Screen Sharing host timed out." || message === "Computer Use helper timed out")

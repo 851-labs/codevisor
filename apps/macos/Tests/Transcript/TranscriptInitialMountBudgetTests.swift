@@ -31,8 +31,6 @@ struct TranscriptInitialMountBudgetTests {
     try #require(view.mountedHosts.isEmpty)
     try #require(view.pendingMeasuredHeights.isEmpty)
 
-    // Screen changes replace the clock while its next callback is pending.
-    // No model event, measurement report, or scroll follows this handoff.
     view.reinstallPresentationFrameDriver()
 
     #expect(view.mountedRowsUpdateRequested)
@@ -57,8 +55,6 @@ struct TranscriptInitialMountBudgetTests {
     view.rowContent = { AnyView(Color.clear.frame(height: $0.estimatedHeight)) }
     _ = view.rowSet.replaceRows(rows)
     for row in rows { view.measurements.setExact(row.estimatedHeight, for: row.layoutKey) }
-    // The test owns frame delivery; this display link is never registered
-    // with a run loop. Mount counts cannot depend on scheduler timing.
     view.presentationDisplayLink = view.displayLink(
       target: view, selector: #selector(view.presentationDisplayLinkDidFire(_:)))
     return view
@@ -75,11 +71,9 @@ struct TranscriptInitialMountBudgetTests {
     #expect(view.mountedHosts.count == 2)
     #expect(!view.isInitialPresentationReady)
     #expect(view.mountedRowsUpdateRequested)
-    // Extra layout/readiness requests in the same frame cannot bypass it.
     view.updateMountedRows()
     view.updateInitialPresentationReadiness()
     #expect(view.mountedHosts.count == 2)
-    // The next display frame renews the allowance and resumes preparation.
     if let link = view.presentationDisplayLink {
       view.presentationDisplayLinkDidFire(link)
     }
@@ -112,8 +106,6 @@ struct TranscriptInitialMountBudgetTests {
   func visibleWindowKeepsCoverage() {
     let view = surface()
     defer { view.prepareForDismantle() }
-    // Initial presentation has already completed; the next layout models
-    // scrolling into loaded rows with no speculative mount budget left.
     _ = view.initialPresentationGate.resolve(
       isHydrating: false, requiredKeys: [], resolvedKeys: [], hasPendingMeasurements: false)
     view.remainingMountsThisFrame = 0

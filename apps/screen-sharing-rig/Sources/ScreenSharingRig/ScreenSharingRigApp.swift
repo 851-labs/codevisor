@@ -5,14 +5,6 @@
   import Foundation
   import ScreenSharingRigKit
 
-  /// `screen-sharing-rig` alone opens the scenario window (`RigShell`).
-  /// `screen-sharing-rig --config rig.json`: the resident host or viewer
-  /// process; the viewer opens the same window on its Native session scenario.
-  /// `screen-sharing-rig probe …`: the single-process diagnostic (see
-  /// `ProbeCommand`). `screen-sharing-rig vnc-server …`: a loopback VNC server
-  /// for the VNC viewer (see `VNCServerCommand`). `screen-sharing-rig
-  /// vnc-bench …`: the VNC benchmark (see `VNCBenchCommand`). A consumer of the media
-  /// package, not part of it; see apps/screen-sharing-rig/README.md.
   @main
   @MainActor
   struct ScreenSharingRigApp {
@@ -66,7 +58,6 @@
         }
         let path = (arguments[1] as NSString).expandingTildeInPath
         let configuration = try RigConfiguration.parse(try Data(contentsOf: URL(fileURLWithPath: path)))
-        // Process-global trials from rig.json's tuning; a change means a fresh process, which `rig tune` does.
         _ = try ScreenSharingFieldTrials.process.install(configuration.tuning.fieldTrialSelection)
         let runner = RigRunner(
           configuration: configuration, build: RigBuildInfo(infoDictionary: Bundle.main.infoDictionary))

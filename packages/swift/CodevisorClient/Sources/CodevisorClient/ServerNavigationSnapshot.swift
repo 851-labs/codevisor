@@ -1,6 +1,5 @@
 import Foundation
 
-/// All navigation state and its stream boundary from one database transaction.
 public struct ServerNavigationSnapshot: Codable, Equatable, Sendable {
   public var eventCursor: Int
   public var projects: [ServerProject]

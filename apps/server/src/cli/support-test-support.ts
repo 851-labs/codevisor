@@ -1,7 +1,5 @@
 import type { CliDeps, ExecResult } from "./support.js"
 
-/// A scripted fake of the CLI's process/exec/http world for the support tests.
-
 export interface FakeWorld {
   readonly deps: CliDeps
   readonly logs: string[]
@@ -11,14 +9,11 @@ export interface FakeWorld {
   readonly spawned: Array<{ args: ReadonlyArray<string>; logPath: string }>
   readonly files: Map<string, string>
   readonly signals: Array<{ pid: number; signal: string }>
-  /// How many times `METHOD url` was requested.
   readonly httpCalls: (key: string) => number
 }
 
 export interface FakeOptions {
-  /// Keyed by "command arg arg…" → result (or a queue of results).
   readonly exec?: Record<string, ExecResult>
-  /// Keyed by "METHOD url" → response bodies returned in order (last repeats).
   readonly http?: Record<string, ReadonlyArray<{ status: number; body?: unknown } | undefined>>
   readonly files?: Record<string, string>
   readonly alivePids?: ReadonlyArray<number>

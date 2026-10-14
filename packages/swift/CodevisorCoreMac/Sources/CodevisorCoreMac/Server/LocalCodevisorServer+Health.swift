@@ -3,9 +3,6 @@ import Foundation
 import Observation
 
 extension LocalCodevisorServer {
-  /// The version stamped into the bundled runtime next to its entrypoint.
-  /// Nil identifies development, where `bun run dev` intentionally owns the
-  /// standalone server and the native app joins it instead of replacing it.
   func bundledServerVersion() -> String? {
     guard let entrypoint else { return nil }
     let versionURL = entrypoint.deletingLastPathComponent().appendingPathComponent("VERSION")
@@ -13,7 +10,6 @@ extension LocalCodevisorServer {
     do {
       raw = try String(contentsOf: versionURL, encoding: .utf8)
     } catch {
-      // Expected in development runs, where no VERSION file is stamped.
       Log.server.debug(
         "No bundled server VERSION file: \(String(describing: error), privacy: .public)"
       )
@@ -40,8 +36,6 @@ extension LocalCodevisorServer {
     return true
   }
 
-  /// Stops a server owned by a previous app boot. The shutdown path first
-  /// uses the API, then the Process handle, then the confirmed port listener.
   func stopStaleServer() async -> Bool {
     await shutdown()
   }
@@ -53,7 +47,6 @@ extension LocalCodevisorServer {
       }
       return health.ok ? health : nil
     } catch {
-      // Expected when no server is running yet; launch follows.
       Log.server.debug(
         "Health probe failed: \(String(describing: error), privacy: .public)"
       )
@@ -61,14 +54,8 @@ extension LocalCodevisorServer {
     }
   }
 
-  /// The server binds every interface so paired remote clients can reach it;
-  /// only same-machine connections are exempt from its token auth. The app's
-  /// own client still talks to it over loopback (`config.baseURL`).
   static let bindHost = "0.0.0.0"
 
-  /// The server's advertised display name: the Mac's name, so a remote
-  /// client's machine list shows "George's MacBook Pro 0.2.0" rather than a
-  /// generic label.
   nonisolated static func serverDisplayName() -> String {
     CodevisorMachine.local.name
   }
@@ -87,11 +74,7 @@ extension LocalCodevisorServer {
     }
   }
 
-  /// Consecutive "no live process" answers from the job probe before a
-  /// managed server is declared dead: launchd needs a moment after
-  /// registration to spawn the job, and one probe can race that.
   static let deadJobProbeThreshold = 3
-  /// Health attempts between job probes and between progress log lines.
   static let healthProbeReportEvery = 8
 
   func waitUntilHealthy(
@@ -102,8 +85,6 @@ extension LocalCodevisorServer {
     jobProbe: (@MainActor () async -> Bool?)? = nil,
     scheduler: LocalServerScheduler = .continuous
   ) async -> LocalCodevisorServerState {
-    // Elapsed-time deadlines include request and launchd probe time. Only
-    // actual forward progress extends the short startup budget.
     let deadline = scheduler.now() + startupMaximumDuration
     var lastProgressAt = scheduler.now()
     var attempt = 0
@@ -164,7 +145,6 @@ extension LocalCodevisorServer {
           "Codevisor server exited before becoming ready (status \(process.terminationStatus)). See \(logURL.path)"
         )
       }
-      // Liveness helps explain failures; only checkpoints extend the budget.
       if attempt % Self.healthProbeReportEvery == 0 || attempt == attemptLimit {
         var jobNote = ""
         if let jobProbe {
@@ -199,7 +179,6 @@ extension LocalCodevisorServer {
     )
   }
 
-  /// Records a wait failure in the timeline and the observable state.
   private func fail(_ message: String) -> LocalCodevisorServerState {
     lifecycleLog.error("waitUntilHealthy: \(message)")
     state = .unavailable(message)
@@ -207,9 +186,6 @@ extension LocalCodevisorServer {
   }
 
   private func refreshDataUpgradeProgress(expectedBootId: String?) {
-    // A missing status file is the normal no-upgrade-running case (and
-    // this polls, so it stays unlogged); a file that exists but doesn't
-    // decode hides real upgrade progress.
     guard let expectedBootId, let data = try? Data(contentsOf: dataUpgradeStatusURL) else {
       dataUpgradeProgress = nil
       return

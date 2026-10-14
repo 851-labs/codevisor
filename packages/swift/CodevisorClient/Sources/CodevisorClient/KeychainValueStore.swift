@@ -1,10 +1,6 @@
 import Foundation
 import Security
 
-/// The Keychain services used by released builds are permanent identifiers:
-/// changing them would orphan credentials already stored by Alpha users.
-/// Development builds use a per-instance suffix so a differently signed dev
-/// app never asks macOS for access to an Alpha build's login-Keychain items.
 public enum KeychainCredentialServices {
   public static let productionMachine = "com.851labs.Codevisor.machine-token"
   public static let productionCloud = "com.851labs.Codevisor.cloud-session"
@@ -26,7 +22,6 @@ public enum KeychainCredentialServices {
     )
   }
 
-  /// Pure service-name resolution for deterministic tests.
   public static func scopedService(
     productionService: String,
     isDevelopment: Bool,
@@ -49,9 +44,6 @@ public enum KeychainCredentialServices {
   }
 }
 
-/// Injectable SecItem surface. Production calls Security.framework directly;
-/// tests use an in-memory implementation and never touch the developer's real
-/// Keychain.
 public struct KeychainOperations: @unchecked Sendable {
   public let copyMatching: ([String: Any]) -> (status: OSStatus, result: Any?)
   public let update: ([String: Any], [String: Any]) -> OSStatus
@@ -81,11 +73,6 @@ public struct KeychainStorageFailure: Error, Sendable {
   public let status: OSStatus
 }
 
-/// Shared string-value storage for both machine and cloud credentials.
-///
-/// Omitting `kSecUseDataProtectionKeychain` is intentional: macOS uses the
-/// classic login Keychain, which does not require a provisioning-profile
-/// access group, while iOS continues to use its normal platform Keychain.
 public final class KeychainValueStore: @unchecked Sendable {
   private let service: String
   private let operations: KeychainOperations
@@ -130,9 +117,6 @@ public final class KeychainValueStore: @unchecked Sendable {
     insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
     let insertStatus = operations.add(insert)
     if insertStatus == errSecSuccess { return }
-    // Another writer inserted the item between our update and add (two
-    // first-launch callers racing to store the same value). The item exists
-    // now, so this is an update, not a failure.
     guard insertStatus == errSecDuplicateItem else {
       throw KeychainStorageFailure(operation: "insert", status: insertStatus)
     }

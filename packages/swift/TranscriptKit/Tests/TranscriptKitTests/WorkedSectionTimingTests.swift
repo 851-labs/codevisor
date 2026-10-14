@@ -3,8 +3,6 @@ import Foundation
 import Testing
 @testable import TranscriptKit
 
-/// A plan splits one turn into two worked sections that read like two
-/// consecutive responses, each with its own "Worked for…" duration.
 @Suite("Worked section timing around a plan")
 struct WorkedSectionTimingTests {
   private let start = Date(timeIntervalSinceReferenceDate: 1_000)
@@ -71,7 +69,6 @@ struct WorkedSectionTimingTests {
     codex.endedAt = at(50)
     #expect(codex.workedSectionTitle(.planning, now: at(900)) == "Worked for 50s")
 
-    // Work followed the plan, so the turn's span cannot be attributed.
     var claude = codex
     claude.entries.append(.tool(ToolCall(toolCallId: "build", title: "Edit", kind: .edit)))
     #expect(claude.workedSectionTitle(.planning, now: at(900)) == "Worked")

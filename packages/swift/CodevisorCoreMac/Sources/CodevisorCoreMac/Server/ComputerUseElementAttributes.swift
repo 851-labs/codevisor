@@ -1,8 +1,6 @@
 import ApplicationServices
 import Foundation
 
-/// Fetch observation fields in one IPC request per element. Unsupported
-/// attributes are omitted; older providers can use individual reads.
 struct ComputerUseElementAttributes {
   private let values: [String: CFTypeRef]
   static let identityNames = [

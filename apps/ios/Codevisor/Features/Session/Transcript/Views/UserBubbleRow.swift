@@ -4,9 +4,6 @@ import SwiftUI
 import TranscriptKit
 import UIKit
 
-/// The trailing user bubble, with its attachment thumbnails above it as on
-/// macOS. Optimistic and settled messages both render through this one view
-/// under the same client-generated row identity.
 struct UserBubbleRow: View {
   @Environment(\.theme) private var theme
   @Environment(\.streamMarkdownTextLayoutWidth) private var rowLayoutWidth

@@ -1,8 +1,6 @@
 import Foundation
 import ScreenSharing
 
-/// The reference server's wire encoding of queued rectangles: Raw, CopyRect,
-/// ZRLE and the pseudo-encodings (cursor, pointer, sizes).
 extension RFBLoopbackServer {
   func encode(_ rectangles: [Rectangle]) throws -> [UInt8] {
     var writer = RFBByteWriter()
@@ -55,7 +53,6 @@ extension RFBLoopbackServer {
         for screen in result.screens { RFBScreenLayout.write(screen, into: &writer) }
       case .desktopSize(let width, let height):
         header(&writer, RFBRectangle(x: 0, y: 0, width: width, height: height), .desktopSize)
-        // A scene resizes and repaints before sending; resizing again would clear its content.
         if framebuffer.width != width || framebuffer.height != height {
           try framebuffer.resize(width: width, height: height)
         }
@@ -80,7 +77,6 @@ extension RFBLoopbackServer {
     return bytes
   }
 
-  /// Solid tiles where the tile is one colour, raw tiles otherwise.
   func zrleTiles(_ rect: RFBRectangle) -> [UInt8] {
     var bytes: [UInt8] = []
     var tileY = rect.y

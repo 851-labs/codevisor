@@ -8,14 +8,9 @@ import { relayMap, tunnelRollout, tunnelScopedDevice } from "../src/hub-tunnel.j
 import { registerTunnelEndpoint } from "../src/relay-routes.js"
 import { authed, BASE, connectApp, connectMachine, devLogin } from "./cloud-test-support.js"
 
-// The hub's tunnel control plane (docs/plans/codevisor-tunnel.md): it
-// introduces devices (endpoint ids, addresses, vouched app keys) and gates
-// our relays; it never carries tunnel traffic.
-
 const endpointId = (fill: string): string => fill.repeat(64)
 const alpha = { releaseChannel: "alpha" as const }
 
-/// Exactly what the pinned iroh-relay sends (captured from v1.2.0).
 const authorize = (endpoint: string, token = "relay-secret"): Promise<Response> =>
   SELF.fetch(`${BASE}/api/relay/authorize`, {
     method: "POST",
@@ -36,8 +31,6 @@ describe("tunnel control plane", () => {
     const app = await connectApp(token, alpha)
     expect(app.welcome).toMatchObject({ relays, tunnel: "on" })
 
-    // Machines get it whatever their channel (they keep serving the hub
-    // relay for older apps); so do tunnel-only apps.
     const stableMachine = await connectMachine(token, "Stable Machine", undefined, {
       releaseChannel: "stable"
     })
@@ -45,8 +38,6 @@ describe("tunnel control plane", () => {
     const tunnelApp = await connectApp(token, { releaseChannel: "stable", tunnelOnly: true })
     expect(tunnelApp.welcome).toMatchObject({ relays, tunnel: "on" })
 
-    // Stable apps that still carry the hub relay, and apps that predate
-    // these fields, keep the hub relay.
     const stable = await connectApp(token, { releaseChannel: "stable" })
     expect(stable.welcome).toMatchObject({ relays, tunnel: "off" })
     const legacy = await connectApp(token)
@@ -60,8 +51,6 @@ describe("tunnel control plane", () => {
     })
     expect(await machine.reader.next()).toMatchObject({ t: "peer-devices" })
     await connectApp(token, { tunnelEndpointId: endpointId("9"), releaseChannel: "stable" })
-    // The stable app's hello changed nothing for the machine: its next frame
-    // answers this ping.
     machine.socket.send(encodeCloudFrame({ t: "ping" }))
     expect(await machine.reader.next()).toEqual({ t: "pong" })
   })
@@ -86,7 +75,6 @@ describe("tunnel control plane", () => {
     expect(presence).toMatchObject({ t: "presence", machine: { deviceId: machine.deviceId } })
     expect(presence.t === "presence" ? presence.machine.tunnel : undefined).toEqual(reported)
 
-    // A report for some other endpoint is ignored; the stored address stays.
     machine.socket.send(
       encodeCloudFrame({
         t: "tunnel-addr",
@@ -117,8 +105,6 @@ describe("tunnel control plane", () => {
       endpointId: endpointId("d")
     })
 
-    // Legacy machines never receive tunnel frames: their next frame is the
-    // answer to this ping.
     legacyMachine.socket.send(encodeCloudFrame({ t: "ping" }))
     expect(await legacyMachine.reader.next()).toEqual({ t: "pong" })
   })
@@ -134,18 +120,15 @@ describe("tunnel control plane", () => {
     const admitted = await authorize(endpointId("f"))
     expect(admitted.status).toBe(200)
     expect(await admitted.text()).toBe("true")
-    // Either configured token works (rotation), a wrong one never does.
     expect(await (await authorize(endpointId("f"), "relay-next")).text()).toBe("true")
     expect((await authorize(endpointId("f"), "nope")).status).toBe(401)
     expect((await authorize("not-an-endpoint")).status).toBe(403)
-    // The header name iroh's docs use is accepted too.
     const documented = await SELF.fetch(`${BASE}/api/relay/authorize`, {
       method: "POST",
       headers: { authorization: "Bearer relay-secret", "x-iroh-endpoint-id": endpointId("f") }
     })
     expect(await documented.text()).toBe("true")
 
-    // Removing the machine revokes its relay access.
     const removed = await SELF.fetch(`${BASE}/api/machines/${machine.deviceId}`, {
       method: "DELETE",
       headers: authed(token)

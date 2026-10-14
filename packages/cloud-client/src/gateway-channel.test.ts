@@ -14,7 +14,6 @@ import { failure, gatewayRequest, pair, presence, timers } from "./machine-peers
 describe("gateway exchanges between machines", () => {
   it("reports undelivered and refused requests as before-send", async () => {
     const { a, b, hub } = pair({ b: { handlers: {} } })
-    // The target refuses (no handler for the type): the call never ran.
     expect((await failure(gatewayRequest(a, b, "{}"))).phase).toBe("before-send")
 
     hub.holding = true
@@ -43,7 +42,6 @@ describe("gateway exchanges between machines", () => {
       const offline = gatewayRequest(a, b, "{}")
       hub.flush()
       expect(handle).toHaveBeenCalledTimes(1)
-      // Notices about other machines or unknown channels leave it alone.
       a.socket.receive({ t: "machine-reset", machineId: "c" })
       a.socket.receive({
         t: "error",
@@ -68,17 +66,14 @@ describe("gateway exchanges between machines", () => {
       a.socket.receive({ t: "error", code: "machine-offline", message: "gone", machineId: "b" })
       expect((await failure(hubWide)).phase).toBe("in-flight")
 
-      // Our own relay socket drops with no session to resume.
       const lost = gatewayRequest(a, b, "{}")
       hub.flush()
       expect(handle).toHaveBeenCalledTimes(4)
       a.socket.onclose?.(1006)
       expect(await failure(lost)).toMatchObject({ phase: "in-flight", reason: "connection-lost" })
     } finally {
-      // Release every started handler, including when a loss assertion fails.
       for (const answer of answers) answer.resolve({ status: 200, body: "late" })
       await Promise.all(answers.map((answer) => answer.promise))
-      // The response continuations enqueue their frames before this delivery.
       hub.flush()
     }
   })
@@ -92,7 +87,6 @@ describe("gateway exchanges between machines", () => {
       resume: "token",
       machines: [presence(a), presence(b)]
     })
-    // Seal the request while the socket is away: it is retained.
     a.socket.onclose?.(1006)
     const pending = gatewayRequest(a, b, "held")
     a.h.reconnects.at(-1)!.callback()
@@ -165,8 +159,6 @@ describe("gateway exchanges between machines", () => {
         body: JSON.stringify({ error: { message } })
       })
     }
-    // Frames after the request's end are ignored: the target already runs
-    // the (empty) request it had.
     const early = await requestOverGatewayChannel(() => {
       const channel = a.h.connection.openChannel("b", GATEWAY_CHANNEL_TYPE)
       channel.send({ kind: "end" })
@@ -192,9 +184,6 @@ describe("gateway exchanges between machines", () => {
 })
 
 describe("gateway responder over a scripted channel", () => {
-  // An oversized request is refused without running the handler. Scripted
-  // rather than relayed: sealing a 32 MiB frame dominates the test's runtime
-  // under coverage and parallel load without adding anything to the contract.
   it("refuses a request that grows past the body cap", () => {
     const sent: unknown[] = []
     const closes: string[] = []
@@ -209,7 +198,6 @@ describe("gateway responder over a scripted channel", () => {
     channel.onData?.({ kind: "chunk", data: "x".repeat(MAX_GATEWAY_BODY_CHARS) }, 0)
     expect(closes).toEqual([])
     channel.onData?.({ kind: "chunk", data: "x" }, 0)
-    // Frames after the refusal are ignored.
     channel.onData?.({ kind: "end" }, 0)
     expect(closes).toEqual(["rejected"])
     expect(sent).toEqual([])
@@ -218,7 +206,6 @@ describe("gateway responder over a scripted channel", () => {
 })
 
 describe("gateway exchange over a scripted channel", () => {
-  /// A channel whose responder side the test scripts frame by frame.
   const scripted = () => {
     const sent: unknown[] = []
     const closes: string[] = []
@@ -269,11 +256,26 @@ describe("gateway exchange over a scripted channel", () => {
     expect(await failure(pending)).toMatchObject({ phase: "in-flight", reason: "protocol-error" })
   })
 
-  it("uses a real timer by default and clears it once settled", async () => {
-    const { channel } = scripted()
-    const pending = requestOverGatewayChannel(() => channel, "{}")
-    channel.onData?.({ kind: "end", status: 204 })
-    expect(await pending).toEqual({ status: 204, body: "" })
+  it("defaults to the global timer and clears it on acceptance or settling", async () => {
+    vi.useFakeTimers()
+    try {
+      const accepted = scripted()
+      const streamed = requestOverGatewayChannel(() => accepted.channel, "{}")
+      expect(vi.getTimerCount()).toBe(1)
+      accepted.channel.onData?.({ kind: "accepted" })
+      expect(vi.getTimerCount()).toBe(0)
+      accepted.channel.onData?.({ kind: "end", status: 200 })
+      expect(await streamed).toEqual({ status: 200, body: "" })
+
+      const ended = scripted()
+      const pending = requestOverGatewayChannel(() => ended.channel, "{}")
+      expect(vi.getTimerCount()).toBe(1)
+      ended.channel.onData?.({ kind: "end", status: 204 })
+      expect(await pending).toEqual({ status: 204, body: "" })
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("maps non-Error open failures", async () => {

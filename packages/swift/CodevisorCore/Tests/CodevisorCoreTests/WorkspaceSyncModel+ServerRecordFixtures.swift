@@ -2,8 +2,6 @@ import Foundation
 @testable import CodevisorCore
 
 extension WorkspaceSyncModel {
-  /// The record a machine holds for this workspace, as its navigation
-  /// snapshot and deltas carry it.
   nonisolated static func serverWorkspace(from workspace: Workspace) -> ServerWorkspace {
     ServerWorkspace(
       id: workspace.id.uuidString,

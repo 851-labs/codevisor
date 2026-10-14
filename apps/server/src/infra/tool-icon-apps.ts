@@ -4,12 +4,6 @@ import { tmpdir } from "node:os"
 import { extname, isAbsolute, join } from "node:path"
 import { promisify } from "node:util"
 
-/// A macOS app's icon for the transcript rows of Computer Use workflows:
-/// the `.app` the bridge reported when it is still the same bundle, else
-/// wherever Spotlight finds that bundle ID. Its `.icns` becomes a PNG via
-/// `sips`, which reads every size the format holds (sharp reads none).
-
-/// Runs a command without a shell and resolves with its standard output.
 export type RunCommand = (file: string, args: ReadonlyArray<string>) => Promise<string>
 
 export type AppIconLoader = (
@@ -17,7 +11,6 @@ export type AppIconLoader = (
   path: string | undefined
 ) => Promise<Uint8Array | undefined>
 
-/// Reverse-DNS only, so the Spotlight query can't be anything else.
 const BUNDLE_ID = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/
 
 const ICON_PIXELS = "128"
@@ -28,7 +21,7 @@ export const makeAppIconLoader = (
     readonly readFile?: (path: string) => Promise<Uint8Array>
   } = {}
 ): AppIconLoader => {
-  /* v8 ignore start -- production defaults; tests inject both. */
+  /* v8 ignore start */
   const run =
     deps.run ??
     (async (file: string, args: ReadonlyArray<string>) =>
@@ -45,7 +38,6 @@ export const makeAppIconLoader = (
   }
 
   const iconOf = async (app: string, bundleId: string): Promise<Uint8Array | undefined> => {
-    // The path came from a transcript: only the bundle it names counts.
     if ((await plistValue(app, "CFBundleIdentifier")) !== bundleId) return undefined
     const name = await plistValue(app, "CFBundleIconFile")
     if (name === undefined) return undefined

@@ -16,12 +16,6 @@ public protocol ClientDataResetting: Sendable {
 
 private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
-/// The one SQLite connection used by a native client installation.
-///
-/// The public repositories remain synchronous today, so the connection is
-/// serialized by a recursive lock. This also lets a transaction call the
-/// ordinary value helpers without deadlocking. WAL keeps readers cheap and
-/// all multi-row migration work uses explicit transactions.
 public final class ClientDatabase: @unchecked Sendable {
   public static let fileName = "client.sqlite"
 
@@ -285,8 +279,6 @@ public final class ClientDatabase: @unchecked Sendable {
     return result
   }
 
-  /// Every stored preference, read once at launch off the main thread so
-  /// `ClientPreferences` never has to query SQLite from a view.
   public func allPreferences() throws -> [String: Data] {
     try lock.withLock {
       let statement = try prepare("SELECT key, value FROM client_preferences")

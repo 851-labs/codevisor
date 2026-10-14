@@ -1,14 +1,9 @@
 // swift-tools-version: 6.2
 import PackageDescription
 
-// Every first-party target compiles with warnings as errors, so the pre-commit suite fails on
-// any new warning instead of letting them pile up.
 let strictSwiftSettings: [SwiftSetting] = [.swiftLanguageMode(.v6), .treatAllWarnings(as: .error)]
 let strictCSettings: [CSetting] = [.treatAllWarnings(as: .error)]
 
-// The screen-sharing development tools, never shipped: the two-Mac rig and, as the
-// `probe` subcommand, the single-process diagnostic. A consumer of the media package.
-// See README.md.
 let package = Package(
   name: "ScreenSharingRig",
   platforms: [.macOS("26.0")],
@@ -33,7 +28,6 @@ let package = Package(
       dependencies: [
         "ScreenSharingRigKit", .product(name: "CGVirtualDisplayPrivate", package: "CodevisorKit"),
         .product(name: "CodevisorClient", package: "CodevisorKit"),
-        // RFBWebSocketTransport: a machine's VNC display over its server's socket route, as the product opens it.
         .product(name: "CodevisorCoreMac", package: "CodevisorKit"),
         .product(name: "ScreenSharing", package: "CodevisorKit"),
         .product(name: "ScreenSharingWebRTC", package: "CodevisorKit"),
@@ -42,9 +36,6 @@ let package = Package(
       ],
       swiftSettings: strictSwiftSettings
     ),
-    // Diagnostics shared by the rig, its probe subcommand and their tests: workload window, painter,
-    // synthetic source, and experiment-only instrumentation (RTC event log, first-observation and
-    // interval records, encoder drop log, owned-window session) that product code never links.
     .target(
       name: "ScreenSharingDiagnostics",
       dependencies: [
@@ -65,7 +56,6 @@ let package = Package(
       name: "ScreenSharingRigKitTests",
       dependencies: ["ScreenSharingRigKit", .product(name: "CodevisorTestSupport", package: "CodevisorKit")],
       swiftSettings: strictSwiftSettings,
-      // SwiftPM's macOS test bundle loader needs the sibling binary framework.
       linkerSettings: [
         .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@loader_path/../../.."], .when(platforms: [.macOS]))
       ]

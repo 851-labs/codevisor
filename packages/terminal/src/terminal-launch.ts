@@ -31,9 +31,6 @@ const prepareEnvironment = (
   defaults: LaunchDefaults,
   envOverrides: NodeJS.ProcessEnv | undefined
 ): NodeJS.ProcessEnv => {
-  // Match Ghostty's launch environment on macOS. Linux uses the
-  // broadly recognized xterm-256color name so stock distro profiles
-  // enable colors without requiring Ghostty-specific TERM handling.
   const env: NodeJS.ProcessEnv = {
     ...defaults.env,
     ...envOverrides,
@@ -44,8 +41,6 @@ const prepareEnvironment = (
   if (defaults.terminalName === GHOSTTY_TERM) {
     env.TERMINFO = BUNDLED_GHOSTTY_TERMINFO_DIRECTORY
   } else {
-    // An inherited Ghostty-only TERMINFO masks the host's standard
-    // xterm-256color database for shells such as Zsh.
     delete env.TERMINFO
   }
   return env
@@ -70,7 +65,6 @@ const prepareLaunch = (
   return { ...request, shell, ...launch }
 }
 
-/// Captures manager launch defaults once while retaining the environment reference.
 export const makeTerminalLaunch = (config: TerminalManagerConfig) => {
   const defaults = captureDefaults(config)
   return (request: TerminalCreateRequest, envOverrides?: NodeJS.ProcessEnv): TerminalSpawnRequest =>

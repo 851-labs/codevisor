@@ -9,8 +9,6 @@ import { makeOpenCodeProvider } from "@codevisor/adapter-opencode"
 import { makePiProvider } from "@codevisor/adapter-pi"
 import type { ProviderFactory } from "@codevisor/agent-runtime"
 
-/// Every agent provider the server registers. Each harness's catalog entry
-/// names one of these; a harness whose provider is missing can't run.
 export const agentProviderFactories: ReadonlyArray<ProviderFactory> = [
   makeAcpProvider,
   makeAntigravityProvider,

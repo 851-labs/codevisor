@@ -136,7 +136,6 @@ describe("encrypted shared credential vault", () => {
     vault.invalidate()
     expect(await vault.token(ref)).toEqual(refreshed)
     expect(coordinate).toHaveBeenCalledTimes(1)
-    // A sign-out elsewhere is honored no later than the window.
     await f.coordinate("b")(ref.id, { action: "revoke" })
     expect(await vault.token(ref)).toEqual(refreshed)
     f.setTime(100_000 + 5 * 60_000)

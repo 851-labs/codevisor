@@ -100,7 +100,6 @@ describe("makePluginSupervisor", () => {
     await expect(supervisor.ensureRunning(plugin())).rejects.toThrow(
       "did not start listening on $PORT within 15000ms"
     )
-    // Probing continued until the readiness deadline, and not past it.
     expect(clock.now()).toBe(15_000)
     expect(supervisor.state("owner.example")).toBe("failed")
   })
@@ -258,7 +257,6 @@ describe("makePluginSupervisor", () => {
     const target = plugin()
     await supervisor.ensureRunning(target)
     supervisor.stop("owner.example")
-    // The old process's exit callback fires after stop() already cleared it.
     spawn.simulateExit("exited with code 0")
     expect(supervisor.state("owner.example")).toBe("stopped")
   })
@@ -294,8 +292,6 @@ describe("makePluginSupervisor", () => {
     const port = await supervisor.ensureRunning(target)
     const response = await fetch(`http://127.0.0.1:${port}/`)
     expect(await response.text()).toBe("ok")
-    // Both stdio streams ride the observability terminal, after the command
-    // header line.
     expect(target.manifest.protocolVersion).toBe(1)
     if (target.manifest.protocolVersion === 1) {
       expect(frames[0]).toContain(target.manifest.run.command)
@@ -363,8 +359,6 @@ describe("makePluginSupervisor", () => {
     expect(frames[0]).toBe("$ run-me\r\n")
     expect(frames).toContain("hello from plugin\n")
     expect(frames.at(-1)).toBe("[exit]")
-    // The terminal-facing process handle proxies onto the child; exercise its
-    // full surface (write/resize are deliberate no-ops for external procs).
     recordedProcess?.write("ignored")
     recordedProcess?.resize(80, 24)
     recordedProcess?.kill()

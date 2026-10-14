@@ -5,11 +5,6 @@
   @preconcurrency import ScreenCaptureKit
   import ScreenSharingRigKit
 
-  /// `screen-sharing-rig frame-clock`: the viewer side of the cross-app frame
-  /// clock (851-2358). Captures one window of each named app, and nothing else,
-  /// at up to 60 frames per second, reads the host page's strip in every frame
-  /// and reports what each viewer showed and how far each trails the others.
-  /// All windows share one capture clock (host time), so lags compare directly.
   enum FrameClockCommand {
     static let usage = """
       Usage: screen-sharing-rig frame-clock --app BUNDLE_ID [--app BUNDLE_ID …] [--seconds 20]
@@ -41,7 +36,6 @@
         }
       }
       guard !apps.isEmpty, seconds > 0 else { fail(usage) }
-      // ScreenCaptureKit needs the process's window-server connection, which AppKit sets up.
       NSApplication.shared.setActivationPolicy(.prohibited)
       Task {
         do {
@@ -56,8 +50,6 @@
       dispatchMain()
     }
 
-    /// `hostOffsetMs`: the host's clock minus this Mac's, for a host page counting wall-clock
-    /// frames (`?clock=epoch`); with it, each viewer's image age is reported too (851-2371).
     static func run(
       apps: [String], seconds: Double, out: URL?, hostOffsetMs: Double? = nil
     ) async throws
@@ -73,7 +65,6 @@
         else { throw Failure("no on-screen window of \(app)") }
         let filter = SCContentFilter(desktopIndependentWindow: window)
         let config = SCStreamConfiguration()
-        // One pixel per point: the strip's cells are tens of points wide, and two 60 fps captures stay cheap.
         config.width = Int(window.frame.width)
         config.height = Int(window.frame.height)
         config.pixelFormat = kCVPixelFormatType_32BGRA
@@ -88,8 +79,6 @@
         streams.append((app, stream, reader, window.frame.size, window.owningApplication?.processID))
       }
       for entry in streams { try await entry.stream.startCapture() }
-      // Measure `seconds` from when every window has read its first frame (after calibrating on
-      // the orange calibration strip: reload or click the host page any time after starting). Five minutes at most.
       let deadline = ContinuousClock.now.advanced(by: .seconds(300))
       while ContinuousClock.now < deadline, !streams.allSatisfy({ $0.reader.isCounting }) {
         try await Task.sleep(for: .milliseconds(250))
@@ -103,7 +92,6 @@
       }
       FileHandle.standardError.write(Data("frame-clock: every window calibrated; measuring \(seconds) s\n".utf8))
       for entry in streams { entry.reader.reset() }
-      // Capture timestamps are host-time seconds; this turns them into this Mac's wall time.
       let wallMinusCapture = Date().timeIntervalSince1970 - CMTimeGetSeconds(CMClockGetTime(CMClockGetHostTimeClock()))
       let bytesBefore = streams.map { $0.pid.flatMap(Self.bytesReceived) }
       let measured = ContinuousClock.now
@@ -174,7 +162,6 @@
       return result
     }
 
-    /// Bytes a process has received over the network (`nettop`), or nil if it can't be read.
     static func bytesReceived(pid: pid_t) -> Int? {
       let process = Process()
       process.executableURL = URL(fileURLWithPath: "/usr/bin/nettop")
@@ -185,7 +172,6 @@
       guard (try? process.run()) != nil else { return nil }
       let data = pipe.fileHandleForReading.readDataToEndOfFile()
       process.waitUntilExit()
-      // ",bytes_in," then "name.pid,<bytes>,"
       let lines = String(decoding: data, as: UTF8.self).split(separator: "\n")
       guard lines.count >= 2 else { return nil }
       let fields = lines[1].split(separator: ",", omittingEmptySubsequences: false)
@@ -203,7 +189,6 @@
     }
   }
 
-  /// One window's stream: finds the strip while it's orange, then reads every complete frame.
   final class FrameClockReader: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     struct Snapshot {
       var samples: [FrameClockTimeline.Sample]
@@ -240,7 +225,6 @@
         bytesPerRow: CVPixelBufferGetBytesPerRow(pixel),
         pixels: UnsafePointer(base.assumingMemoryBound(to: UInt8.self)))
       let time = CMTimeGetSeconds(buffer.presentationTimeStamp)
-      // Calibrate on the orange calibration strip (again, if the page is reloaded); read otherwise.
       if let found = image.locateStrip() {
         lock.withLock { strip = found }
         return
@@ -248,7 +232,6 @@
       guard let strip = lock.withLock({ strip }) else { return }
       let reading = FrameClock.read(image.cellAverages(in: strip))
       lock.withLock {
-        // Samples count from the first frame read: calibration isn't part of the measurement.
         if case .frame = reading { counting = true }
         if counting, samples.count < 100_000 { samples.append(.init(time: time, reading: reading)) }
       }
@@ -258,10 +241,8 @@
       lock.withLock { failure = error.localizedDescription }
     }
 
-    /// A frame has been read since calibrating.
     var isCounting: Bool { lock.withLock { counting } }
 
-    /// Starts the measurement over (keeping the calibration).
     func reset() { lock.withLock { samples = [] } }
 
     func finish() async -> Snapshot {

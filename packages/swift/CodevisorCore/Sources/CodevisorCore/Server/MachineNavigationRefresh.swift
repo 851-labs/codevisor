@@ -1,13 +1,6 @@
 import Foundation
 
 extension MachineController {
-  /// Refresh every machine concurrently, showing the native refresh control
-  /// until the machines that are answering have finished. Machines that are
-  /// offline or still connecting are refreshed too, but the gesture doesn't
-  /// wait for them -- it used to, which made every pull take the full five
-  /// seconds whenever one machine was away. Five seconds remains the cap.
-  /// Slow work continues under each machine's existing lifecycle, and a
-  /// later pull reuses work that is still in flight.
   public func refreshNavigation() async {
     await refreshNavigation(sleep: { try await Task.sleep(for: $0) })
   }
@@ -33,7 +26,6 @@ extension MachineController {
         try await sleep(.seconds(5))
         continuation.finish()
       } catch {
-        // Finishing early cancels only this presentation deadline.
       }
     }
     defer {
@@ -42,9 +34,6 @@ extension MachineController {
       for refresh in refreshes { refresh.removeObserver(id: observerID) }
     }
 
-    // AsyncStream cancellation ends this wait immediately, even if a shared
-    // preparation or snapshot ignores cancellation. A task-group race would
-    // still wait for its network child to exit before dismissing refresh.
     var remaining = refreshes.count
     for await _ in completions {
       remaining -= 1
@@ -68,7 +57,6 @@ extension MachineController {
       if let preparation = connection.preparationTask {
         await preparation.value
       } else if case .failed = connection.availability {
-        // Re-preparation clears the failed request gate before retrying.
         await self.prepareMachine(machineId)
       } else {
         await self.refreshNavigationState(for: machineId)
@@ -78,8 +66,6 @@ extension MachineController {
   }
 }
 
-/// One owned operation per machine, with removable completion observers.
-/// Repeated gestures cannot accumulate tasks waiting on a stuck request.
 @MainActor
 final class MachineNavigationRefresh {
   var task: Task<Void, Never>?

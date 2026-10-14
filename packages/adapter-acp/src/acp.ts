@@ -1,10 +1,6 @@
-/// Assembly surface for the ACP provider: the modules below were split out of
-/// the original monolithic acp.ts; everything previously public is re-exported
-/// here so index.ts and all consumers stay unchanged.
 export { normalizeAcpConfigOptions, normalizeModeState } from "./config-options.js"
 export {
   acpClientCapabilities,
-  acpProtocolVersion,
   type AcpAgentConnection,
   type AcpConnector,
   type AcpHarnessLaunchRequest
@@ -22,9 +18,7 @@ export {
   type AcpSetConfigOptionContext
 } from "./sdk-connection.js"
 export {
-  makeStdioAcpConnector,
   makeStdioAcpConnectorWithOptions,
-  stdioAcpConnector,
   type AcpStdioExtension,
   type AcpStdioExtensionContext,
   type AcpStdioExtensionFactory,

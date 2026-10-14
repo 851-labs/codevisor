@@ -48,8 +48,6 @@ struct CloudAuthenticationCoordinatorTests {
   }
 }
 
-// The SDK callback type has no Sendable annotation. Deliberately cross that
-// boundary as AuthenticationServices does, so an inferred actor check would trap.
 private struct LegacyCallback: @unchecked Sendable {
   let completion: ASWebAuthenticationSession.CompletionHandler
 }

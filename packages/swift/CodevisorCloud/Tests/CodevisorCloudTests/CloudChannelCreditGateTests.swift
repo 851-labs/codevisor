@@ -16,16 +16,16 @@ struct CloudChannelCreditGateTests {
     let waiting = TestSignal()
     let gate = CloudChannelCreditGate(onWait: { waiting.signal() })
     gate.add(100)
-    try await gate.consume(60)  // immediate: budget in hand
+    try await gate.consume(60)
 
     let waited = Task {
-      try await gate.consume(100)  // 40 remaining: must wait for grants
+      try await gate.consume(100)
       return true
     }
     await waiting.wait()
-    gate.add(30)  // 70 total: still short, keeps waiting
+    gate.add(30)
 
-    gate.add(30)  // 100: releases the waiter
+    gate.add(30)
     #expect(try await waited.value)
   }
 

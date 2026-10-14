@@ -1,7 +1,5 @@
 import type Database from "better-sqlite3"
 
-/** Invalidation and the metadata mutation commit together. A crash between a
- * route's write and publish cannot create an invisible navigation change. */
 export const installNavigationJournal = (db: Database.Database): void => {
   const tables: Record<string, readonly string[] | undefined> = {
     projects: undefined,

@@ -52,7 +52,6 @@ describe("Antigravity credentials", () => {
       email: "Dev@Example.com",
       credential: { document: document("1//r") }
     })
-    // The same account signed in again (another grant) is the same account.
     const again = parseAntigravityAuth(
       document("1//other", "ya29.b", { email: "dev@example.com" }),
       "managed"
@@ -82,7 +81,6 @@ describe("Antigravity credentials", () => {
     await writeAntigravityAuth(root, first)
     expect(JSON.parse(await readFile(path, "utf8"))).toEqual(document("1//r", "ya29.refreshed"))
 
-    // A different grant (a new sign-in) replaces it; so does a damaged file.
     await writeAntigravityAuth(root, parseAntigravityAuth(document("1//new"), "managed")!)
     expect(JSON.parse(await readFile(path, "utf8"))).toEqual(document("1//new"))
     await writeFile(path, "{broken")

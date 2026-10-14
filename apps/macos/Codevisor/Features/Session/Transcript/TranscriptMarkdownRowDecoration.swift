@@ -18,15 +18,11 @@ struct TranscriptMarkdownRowStyle {
 
   init(markdown: MarkdownTheme, appTheme: Theme) {
     self.markdown = markdown
-    // Same value the SwiftUI plan rows fill with (`theme.cardBackground`):
-    // a plan card is drawn row by row by whichever renderer mounted each
-    // row, so any difference here shows up as a visible seam.
     planBackground = appTheme.cardBackgroundNSColor
     planBorder = NSColor(appTheme.separator)
   }
 }
 
-/// Non-interactive structural chrome behind a native Markdown leaf.
 @MainActor
 final class TranscriptMarkdownRowDecoration: NSView {
   private var chunk: TranscriptMarkdownChunk?
@@ -64,8 +60,6 @@ final class TranscriptMarkdownRowDecoration: NSView {
     }
   }
 
-  /// A worked note's stretch of its section's timeline: the rail through
-  /// the row and, on its first row, the note's dot.
   private func drawTimeline(_ marks: TranscriptTimelineMarks) {
     let x = TranscriptTimelineMarks.railX
     let dotY = TranscriptTimelineMarks.nodeCenterY
@@ -142,7 +136,6 @@ final class TranscriptMarkdownRowDecoration: NSView {
       chunk.container == .planDocument && chunk.isLastInDocument
       ? TranscriptMarkdownRowLayout.planBottomInset
       : 0
-    // Structure starts where the row's content does, below its top gap.
     let top = chunk.topSpacing(in: style.markdown)
     if let context = NSGraphicsContext.current?.cgContext {
       let color = NSColor(style.markdown.quoteBarColor)

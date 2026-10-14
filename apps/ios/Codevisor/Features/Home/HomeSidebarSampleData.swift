@@ -2,17 +2,11 @@
   import Foundation
   import SwiftUI
 
-  /// A populated sidebar for previews and design review. Debug builds
-  /// launched with `CODEVISOR_SIDEBAR_SAMPLE=1` render it in place of the
-  /// fleet, so the layout can be judged without pairing a machine and
-  /// opening a dozen tabs by hand.
   enum HomeSidebarSampleData {
     static var isEnabled: Bool {
       ProcessInfo.processInfo.environment["CODEVISOR_SIDEBAR_SAMPLE"] == "1"
     }
 
-    /// Stateful fixture: the production reorder callback updates the same
-    /// section input that a saved workspace order would produce.
     struct Sidebar: View {
       @State private var sections =
         AppStoreScreenshotData.isEnabled

@@ -85,8 +85,6 @@ export const makeBrowserRuntimeFactory = (options: {
           backend === "builtin" ? "builtin" : profileKey(context)
         )
         mkdirSync(profileDir, { recursive: true, mode: 0o700 })
-        // Serialize access to the shared fallback profile so concurrent sessions
-        // connect to one process instead of racing Chromium's profile lock.
         const launch = () => launchManagedBrowser(executablePath, profileDir)
         const pendingLaunch = backend === "builtin" ? fallbackLaunch.then(launch, launch) : launch()
         if (backend === "builtin") fallbackLaunch = pendingLaunch.catch(() => undefined)
@@ -107,8 +105,6 @@ export const makeBrowserRuntimeFactory = (options: {
     } catch (cause) {
       await connection.close().catch(() => undefined)
       if (native) {
-        // Initialization has not executed a browser action, so fallback here
-        // cannot repeat a click or submit a form twice.
         fallbackReasons.set(
           context.sessionId,
           "The local built-in browser is not ready. Check the Codevisor app on this machine for a blocking dialog or browser error."
@@ -119,9 +115,6 @@ export const makeBrowserRuntimeFactory = (options: {
       processHandle?.kill("SIGTERM")
       throw cause
     }
-    // A browser an earlier server left running still holds that server's
-    // tabs, which nothing tracks anymore. Blank ones are pure leftovers;
-    // tabs showing a page may be ones the agent handed to the user.
     if (inherited) await closeBlankPages(connection)
     const active: BrowserRuntime = {
       connection,

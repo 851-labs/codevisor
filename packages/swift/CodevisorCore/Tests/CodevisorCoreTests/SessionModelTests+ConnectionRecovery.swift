@@ -58,8 +58,6 @@ extension SessionModelTests {
 
     #expect(model.errorMessage == nil)
     #expect(model.connectionRecoveryMessage == nil)
-    // A failed snapshot must immediately restore the cursor-backed stream
-    // while the safe GET retries independently in the background.
     await settleUntil {
       client.eventSinceValues.count + client.sessionEventSinceValues.count
         > subscriptionsBeforeRecovery
@@ -113,7 +111,6 @@ extension SessionModelTests {
     #expect(scheduler.requestedIntervals == [.milliseconds(20)])
     scheduler.advance()
     await settleUntil { model.connectionRecoveryMessage == "Reconnecting…" }
-    // Failure after failure it keeps retrying, still reconnecting, never an error.
     for _ in 0..<3 {
       await settleUntil { scheduler.pendingCount == 1 }
       scheduler.advance()

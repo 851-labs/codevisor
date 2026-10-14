@@ -23,10 +23,6 @@ import {
   type RawList
 } from "./simulator-parsing.js"
 
-/// Apple simulators on this Mac, read and changed through `xcrun simctl`.
-/// Nothing here needs the native app: video, input, rotation and posture go
-/// through the app's screen-sharing host instead.
-
 export interface SimulatorCommandResult {
   readonly stdout: Buffer
 }
@@ -41,8 +37,6 @@ export interface SimulatorEnvironment {
   readonly readFile: (path: string) => Promise<Buffer>
   readonly listDirectory: (path: string) => Promise<ReadonlyArray<string>>
   readonly isFile: (path: string) => Promise<boolean>
-  /// Runs `body` with a fresh directory that's removed afterwards (simctl writes screenshots
-  /// only to files).
   readonly withTemporaryDirectory: <T>(body: (directory: string) => Promise<T>) => Promise<T>
   readonly now: () => number
 }
@@ -87,8 +81,6 @@ export const systemSimulatorEnvironment: SimulatorEnvironment = {
 export { SimulatorCommandError, SimulatorRequestError }
 
 export interface Simulators {
-  /// Whether Xcode's simulators work here and the native app is running to
-  /// stream them. Cached; a failed probe is retried.
   readonly available: () => Promise<boolean>
   readonly list: () => Promise<SimulatorList>
   readonly deviceType: (identifier: string) => Promise<SimulatorDeviceTypeDetail>
@@ -135,7 +127,6 @@ const contentSizes = new Set<string>([
   "accessibility-extra-extra-extra-large"
 ])
 
-/// `nativeHost` says whether the app that streams simulators is running.
 export const makeSimulators = (
   environment: SimulatorEnvironment,
   nativeHost: () => boolean = () => true
@@ -186,7 +177,6 @@ export const makeSimulators = (
     }
   }
 
-  // Location isn't readable back from simctl; remember what this server set.
   const locations = new Map<string, SimulatorSettings["location"]>()
 
   const deviceSettings = makeSimulatorDeviceSettings(environment)
@@ -236,7 +226,6 @@ export const makeSimulators = (
       probing ??= (async () => {
         let value = false
         try {
-          // Command Line Tools alone have no simctl; a full Xcode lists runtimes.
           const list = parseSimulatorList(await rawList())
           value = list.runtimes.length > 0
         } catch {

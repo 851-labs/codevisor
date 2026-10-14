@@ -10,10 +10,8 @@ struct ComputerUseLivePreviewLayoutTests {
 
   @Test("Bottom corners clear the composer's visible top edge")
   func composerAwareInsets() {
-    // A 124 pt composer region is 100 pt of composer under 24 pt of padding.
     let insets = ComputerUseLivePreviewLayout.insets(composerHeight: 124)
     #expect(insets == ComputerUseLivePreviewInsets(top: 12, leading: 12, bottom: 112, trailing: 12))
-    // No composer: an ordinary margin.
     #expect(ComputerUseLivePreviewLayout.insets(composerHeight: 0).bottom == 12)
   }
 
@@ -41,13 +39,11 @@ struct ComputerUseLivePreviewLayoutTests {
       ComputerUseLivePreviewLayout.corner(
         projectedCenter: CGPoint(x: x, y: y), container: container, insets: insets)
     }
-    // The allowed area's middle is (500, 350): the composer shifts it up.
     #expect(corner(100, 100) == .topLeading)
     #expect(corner(900, 100) == .topTrailing)
     #expect(corner(100, 600) == .bottomLeading)
     #expect(corner(900, 600) == .bottomTrailing)
     #expect(corner(900, 360) == .bottomTrailing)
-    // A flick projects far past the pane but still picks the corner it aims at.
     #expect(corner(-4000, 5000) == .bottomLeading)
   }
 }

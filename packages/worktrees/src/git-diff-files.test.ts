@@ -3,8 +3,6 @@ import { describe, expect, it } from "vitest"
 import { gitBytes } from "./git-diff-files.js"
 import { GitError } from "./git.js"
 
-/// Far beyond any pipe buffer, so a git that stops reading always leaves the
-/// write failing with EPIPE rather than parked in the buffer.
 const flood = "0".repeat(8 * 1024 * 1024)
 
 describe("gitBytes", () => {

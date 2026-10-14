@@ -27,14 +27,11 @@ struct CodevisorServerClientBodyTests {
     func json(_ body: SetGoalBody) throws -> String {
       String(decoding: try JSONEncoder().encode(body), as: UTF8.self)
     }
-    // .keep omits the key entirely.
     let keep = try json(SetGoalBody(objective: "o", status: nil, tokenBudget: .keep, clientActionId: "a"))
     #expect(!keep.contains("tokenBudget"))
-    // .clear encodes a literal null.
     let clear = try json(SetGoalBody(objective: nil, status: nil, tokenBudget: .clear, clientActionId: "a"))
     #expect(clear.contains(#""tokenBudget":null"#))
     #expect(!clear.contains("objective"))
-    // .set encodes the number; status uses its raw wire string.
     let set = try json(SetGoalBody(objective: nil, status: .paused, tokenBudget: .set(50_000), clientActionId: "a"))
     #expect(set.contains(#""tokenBudget":50000"#))
     #expect(set.contains(#""status":"paused""#))

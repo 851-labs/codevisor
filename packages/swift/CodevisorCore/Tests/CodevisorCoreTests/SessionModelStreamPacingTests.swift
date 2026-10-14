@@ -4,7 +4,6 @@ import CodevisorTestSupport
 import ACPKit
 @testable import CodevisorCore
 
-/// Flush-batch coalescing helpers on the hottest path in the app.
 @MainActor
 @Suite("SessionModel stream pacing")
 struct SessionModelStreamPacingTests {

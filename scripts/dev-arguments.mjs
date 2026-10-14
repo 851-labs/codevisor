@@ -1,6 +1,3 @@
-/// Shared public argument surface for every native development runner.
-/// Platform-specific plumbing (currently dev.mjs's --no-ios) is supplied by
-/// the caller; container behavior and validation stay identical everywhere.
 export function parseDevelopmentRunnerArguments(arguments_, options = {}) {
   const allowedArguments = new Set(options.allowedArguments ?? [])
   const unknownArguments = arguments_.filter(
@@ -28,8 +25,6 @@ export function parseDevelopmentRunnerArguments(arguments_, options = {}) {
 
   return {
     containerEnginePreference,
-    // Containers are the default. Either spelling for an explicit opt-out
-    // wins even when a wrapper also supplied --containers.
     wantsContainers: !arguments_.includes("--no-containers") && containerEnginePreference !== "none"
   }
 }

@@ -6,8 +6,6 @@ import SwiftUI
 import TranscriptKit
 import UIKit
 
-// MARK: - DisclosureCollapse
-
 extension VirtualizedTranscriptScrollView {
   func performAnchoredDisclosureChange(
     in rowKey: String,

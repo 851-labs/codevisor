@@ -1,5 +1,3 @@
-// AppKit/TextKit table rendering; an iOS counterpart arrives with the
-// iOS transcript work.
 #if canImport(AppKit)
   import MarkdownCore
   import SwiftUI
@@ -7,24 +5,6 @@
     import AppKit
   #endif
 
-  /// Renders a GFM table.
-  ///
-  /// The table is drawn by an AppKit `NSTextView` backed by TextKit's
-  /// `NSTextTable`, rather than a SwiftUI `Grid` of separate `Text` views. On
-  /// macOS, `.textSelection` is scoped per `Text` and can never span two of
-  /// them, so a `Grid` can only ever offer per-cell selection. A single
-  /// `NSTextView` puts every cell in one text container, giving native
-  /// click-drag selection that spans any rows and columns, and ⌘C copies the
-  /// selection (as aligned tab/newline text — see `TableTextView`).
-  ///
-  /// The table fills the width it is actually given (see `TableTextView.layout`),
-  /// so while a message streams in it only grows *downward* and never jitters
-  /// sideways. When even its min-content column widths do not fit, it keeps
-  /// them and scrolls horizontally inside `TableScrollView` — the same
-  /// behaviour as the iOS renderer — instead of wrapping cells mid-word.
-  /// The rounded outer border comes from SwiftUI (TextKit block borders
-  /// are rectangular); TextKit draws the shaded header, the row hairlines, and
-  /// the cell text.
   struct MarkdownTableView: View {
     let headers: [MarkdownText]
     let alignments: [ColumnAlignment]
@@ -33,9 +13,6 @@
     @Environment(\.markdownTheme) private var theme
     @Environment(\.markdownImageLoader) private var imageLoader
     @State private var images = MarkdownTableImages()
-    /// Shares rendered widths between SwiftUI's measurement path and the
-    /// displayed AppKit view. Without this memo, a table was independently
-    /// constructed once by `sizeThatFits` and again by `TableTextView.layout`.
     @State private var renderMemo = MarkdownTableRenderMemo()
     @State private var usesPreparedLayout: Bool
 
@@ -71,9 +48,6 @@
     }
   }
 
-  /// The inputs needed to build a table. `contentKey` pre-hashes the potentially
-  /// large row matrix once when SwiftUI creates the view value; repeated TextKit
-  /// sizing probes then use an O(1) hash operation rather than walking every cell.
   struct TableModel: Equatable {
     let headers: [MarkdownText]
     let alignments: [ColumnAlignment]
@@ -123,31 +97,17 @@
     }
   }
 
-  // MARK: - NSViewRepresentable
-
-  /// Hosts a non-editable, selectable `NSTextView` that renders a markdown table.
-  ///
-  /// Sizing is split cleanly: the *display* is (re)built by the view's own
-  /// `layout()` at whatever width it is assigned, so it always fills its real
-  /// frame and is never disturbed by a measurement probe. `sizeThatFits` only
-  /// *measures* (on a scratch text stack) — importantly, its minimum-width probe
-  /// reports the table's true minimum, so the window stays freely resizable.
   struct SelectableTextTableView: NSViewRepresentable {
     let model: TableModel
     let renderMemo: MarkdownTableRenderMemo
     @Environment(\.markdownLinkAction) var linkAction
     @Environment(\.markdownTableBleedLimit) var bleedLimit
 
-    /// The floor a minimum-size probe reports, so a wide table never pins the
-    /// window's minimum width to its own content width.
     private static let minimumWidth: CGFloat = 180
 
     func makeCoordinator() -> MarkdownTextViewLinkCoordinator { .init() }
 
     func makeNSView(context: Context) -> TableBleedContainer {
-      // Build an explicit TextKit 1 stack: `NSTextTable` is a TextKit 1
-      // construct and does not lay out under an NSTextView's default
-      // TextKit 2 stack.
       let textStorage = NSTextStorage()
       let layoutManager = NSLayoutManager()
       textStorage.addLayoutManager(layoutManager)
@@ -163,7 +123,6 @@
       textView.isSelectable = true
       textView.drawsBackground = false
       textView.textContainerInset = .zero
-      // `TableScrollView` sizes the text view to the measured table height.
       textView.isVerticallyResizable = false
       textView.isHorizontallyResizable = false
       textView.focusRingType = .none
@@ -179,8 +138,6 @@
       return bleedContainer
     }
 
-    /// The width the table is laid out at: the granted width, or the
-    /// min-content width when that is wider (the host then scrolls).
     private func layoutWidth(for proposed: CGFloat) -> CGFloat {
       max(proposed, renderMemo.minimumWidth(for: model))
     }
@@ -189,34 +146,22 @@
       _ proposal: ProposedViewSize, nsView container: TableBleedContainer, context _: Context
     ) -> CGSize? {
       guard let proposed = proposal.width, proposed.isFinite else {
-        // Unspecified / infinite proposal: the ideal size at the current
-        // width (or a modest default before the view has one).
         let ideal = container.bounds.width > 1 ? container.bounds.width : 400
         return CGSize(
           width: ideal, height: renderMemo.size(for: model, width: layoutWidth(for: ideal)).height
         )
       }
       if proposed <= 1 {
-        // Minimum-size probe. Reporting the content width here is what
-        // previously pinned the window's minimum size and blocked
-        // resizing; a wide table scrolls instead, so report a floor.
         return CGSize(
           width: Self.minimumWidth,
           height: renderMemo.size(for: model, width: layoutWidth(for: Self.minimumWidth)).height
         )
       }
-      // A concrete width — fill it, laying out wider only when the
-      // min-content width demands it (that overflow scrolls).
       return CGSize(
         width: proposed, height: renderMemo.size(for: model, width: layoutWidth(for: proposed)).height)
     }
   }
 
-  // MARK: - Shared rendering and measurement
-
-  /// Per-mounted-table memo. It keeps the widths SwiftUI has already proposed
-  /// strongly reachable even if a very table-heavy transcript turns over the
-  /// bounded process cache between measurement and display.
   @MainActor
   final class MarkdownTableRenderMemo {
     private var contentKey: MarkdownTableRenderCache.ContentKey?
@@ -266,14 +211,6 @@
     }
   }
 
-  /// Bounded process cache for table preparation, rendered `NSTextTable`
-  /// strings, and TextKit measurements.
-  ///
-  /// A table is normally touched by three independent paths: SwiftUI's sizing
-  /// probes, the displayed `NSTextView`, and a later remount while scrolling.
-  /// Sharing the immutable result here means those paths do not each parse every
-  /// cell and recreate every `NSTextTableBlock`. One scratch TextKit stack also
-  /// replaces the previous scratch stack retained by every mounted table.
   @MainActor
   final class MarkdownTableRenderCache {
     final class ContentKey: Hashable {
@@ -324,9 +261,6 @@
       }
 
       func hash(into hasher: inout Hasher) {
-        // The full matrix was hashed once in init. Equality still compares
-        // the original values, so a digest collision can never reuse the
-        // wrong rendered table.
         hasher.combine(digest)
       }
     }
@@ -386,23 +320,16 @@
     private var preparedEntries: [ContentKey: PreparedEntry] = [:]
     private var renderEntries: [RenderKey: RenderedTable] = [:]
     private var cellEntries: [CellKey: CellEntry] = [:]
-    /// Cell churn can be much higher than whole-table churn while streaming.
-    /// Keep FIFO eviction O(1) amortized instead of scanning all 4K cells for
-    /// the least-recently-used entry on every miss past the bound.
     private var cellInsertionOrder: [CellKey] = []
     private var cellInsertionHead = 0
     private var accessClock: UInt64 = 0
 
-    /// A single reusable measurement stack for the whole process. Table
-    /// measurement runs on the main actor, so it is never accessed concurrently.
     private let measurementStorage = NSTextStorage()
     private let measurementLayoutManager = NSLayoutManager()
     private let measurementContainer = NSTextContainer(
       size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
     )
 
-    /// Regression seams used by tests to verify that equivalent requests reuse
-    /// work rather than silently rebuilding it.
     private(set) var preparationCount = 0
     private(set) var renderCount = 0
     private(set) var measurementCount = 0
@@ -425,8 +352,6 @@
       size(of: renderedTable(for: model, width: width))
     }
 
-    /// The table's min-content width: every column at its widest word plus
-    /// cell padding. Below this the host must scroll rather than wrap.
     func minimumWidth(for model: TableModel) -> CGFloat {
       MarkdownTableMetrics.minimumTableWidth(
         columnMinimumWidths: preparedTable(for: model).columnMinimumWidths

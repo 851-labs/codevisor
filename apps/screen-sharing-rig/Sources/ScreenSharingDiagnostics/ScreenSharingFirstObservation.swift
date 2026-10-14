@@ -2,14 +2,6 @@ import ScreenSharing
 import ScreenSharingWebRTC
 import Foundation
 
-/// Pure semantics for the owned-window diagnostic's observations. Platform
-/// neutral so they are testable; the probe supplies the measured values.
-
-/// First-observed delivery over the probe's measurement ticks (≈1 s). Each
-/// metric records the first tick at which its counter became non-zero, plus
-/// the initial and final values. Resolution is the tick, never a callback or
-/// presentation timestamp; a metric that never became non-zero stays
-/// explicitly "never observed". Bounded: one entry per metric, no history.
 package struct ScreenSharingFirstObservation: Sendable {
   package struct Metric: Equatable, Sendable {
     package var initialValue: Int?
@@ -28,8 +20,6 @@ package struct ScreenSharingFirstObservation: Sendable {
     for name in names { metrics[name] = Metric() }
   }
 
-  /// Records one tick of counter values. Returns the metric names that became
-  /// non-zero for the first time on this tick, in sorted-name order.
   @discardableResult
   package mutating func record(elapsedSeconds: Double, values: [String: Int]) -> [String] {
     let tick = ticks
@@ -51,7 +41,6 @@ package struct ScreenSharingFirstObservation: Sendable {
     return newlyObserved
   }
 
-  /// Serialisable summary with explicit never-observed values.
   package var summary: [String: [String: String]] {
     var result: [String: [String: String]] = [:]
     for (name, metric) in metrics {
@@ -68,9 +57,6 @@ package struct ScreenSharingFirstObservation: Sendable {
   }
 }
 
-/// Own-window geometry and identity records. Coordinates are kept in their
-/// native conventions; the one conversion is explicit about the display
-/// height it uses.
 package enum ScreenSharingOwnedWindowGeometry {
   package struct Rect: Equatable, Sendable {
     package var x: Double, y: Double, width: Double, height: Double
@@ -79,7 +65,6 @@ package enum ScreenSharingOwnedWindowGeometry {
     }
   }
 
-  /// A CGWindowList entry reduced to the fields the diagnostic persists.
   package struct WindowListEntry: Equatable, Sendable {
     package var number: UInt32
     package var ownerPID: Int32?
@@ -93,18 +78,10 @@ package enum ScreenSharingOwnedWindowGeometry {
     }
   }
 
-  /// Cocoa (origin bottom-left of the main display) → CG global top-left,
-  /// using the MAIN display's height (`CGDisplayBounds(CGMainDisplayID())`):
-  /// y' = mainDisplayHeight − (y + height). Only valid with that height.
   package static func cocoaToTopLeft(_ frame: Rect, mainDisplayHeight: Double) -> Rect {
     Rect(x: frame.x, y: mainDisplayHeight - (frame.y + frame.height), width: frame.width, height: frame.height)
   }
 
-  /// Exactly one entry with the own window number AND the own pid; every other
-  /// outcome is an explicit state, never a guess: the query itself unavailable
-  /// (nil), no entry with that number, an exact-number entry whose owner the
-  /// window server did not report, an exact-number entry owned by another pid,
-  /// or duplicates. Only a `found` entry's fields may be persisted.
   package enum Selection: Equatable, Sendable {
     case found(WindowListEntry)
     case queryUnavailable
@@ -125,12 +102,6 @@ package enum ScreenSharingOwnedWindowGeometry {
   }
 }
 
-/// Bounded record of the first AppKit draw-call start per marker code — the
-/// exact semantics the image-age analyzer consumes: one entry per code, kept
-/// only when the code differs from the previously recorded one (a repeated
-/// code, e.g. a frozen paused workload, is not re-recorded), at most `limit`
-/// entries with an explicit truncation flag. Draw-call starts are CPU timing,
-/// not presentation.
 package struct ScreenSharingDrawTimestampRecord: Sendable {
   package struct Sample: Equatable, Sendable {
     package let code: Int
@@ -148,7 +119,6 @@ package struct ScreenSharingDrawTimestampRecord: Sendable {
 
   package init(limit: Int = ScreenSharingDrawTimestampRecord.defaultLimit) { self.limit = max(1, limit) }
 
-  /// Records a draw start; returns true when a new entry was retained.
   @discardableResult
   package mutating func record(code: Int, startedAtSeconds: Double) -> Bool {
     guard samples.last?.code != code else { return false }

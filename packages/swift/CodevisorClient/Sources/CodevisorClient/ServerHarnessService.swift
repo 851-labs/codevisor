@@ -2,28 +2,14 @@ import ACPKit
 import CodevisorProtocol
 import Foundation
 
-/// Server-backed access to the harness catalog and importable sessions. The
-/// Codevisor server is the only agent backend; there is no in-process launch
-/// path.
 public protocol HarnessServicing: Sendable {
-  /// Harnesses that are enabled and ready to start a session. Best-effort:
-  /// an unreachable server reads as "none ready" (used by the importer).
   func readyHarnesses() async -> [ServerHarness]
-  /// The full catalog, including unavailable harnesses (for Settings and
-  /// onboarding). Throws when the server can't be reached so callers can
-  /// distinguish "unreachable" from "nothing installed".
   func allHarnesses() async throws -> [ServerHarness]
-  /// The full catalog after the server re-resolves its PATH — finds CLIs
-  /// installed after the server started. Throws like `allHarnesses()`.
   func rescanHarnesses() async throws -> [ServerHarness]
-  /// Importable sessions previously run by the given harness.
   func listSessions(forHarnessId harnessId: String) async throws -> [SessionInfo]
 }
 
 public extension HarnessServicing {
-  /// Default for fakes/preview services with a fixed catalog: rescanning
-  /// can't change anything, so it's a plain list. `ServerHarnessService`
-  /// overrides this with the server's PATH-refreshing endpoint.
   func rescanHarnesses() async throws -> [ServerHarness] {
     try await allHarnesses()
   }
@@ -38,12 +24,8 @@ public struct ServerHarnessService: HarnessServicing {
 
   public func readyHarnesses() async -> [ServerHarness] {
     do {
-      // Plain list on purpose: the picker path skips lifecycle
-      // decoration (update checks, install methods) to stay snappy.
       return try await client.listHarnesses().filter { $0.enabled && $0.isReady }
     } catch {
-      // Best-effort by contract: an unreachable server reads as "none
-      // ready", but the failure must stay diagnosable.
       Log.server.error(
         "Failed to list harnesses; treating as none ready: \(String(describing: error), privacy: .public)"
       )
@@ -60,10 +42,6 @@ public struct ServerHarnessService: HarnessServicing {
   }
 
   public func listSessions(forHarnessId harnessId: String) async throws -> [SessionInfo] {
-    // The harness's own on-disk sessions: the whole point of workspace
-    // suggestions and chat import is surfacing what the user did BEFORE
-    // Codevisor, which Codevisor's sessions table (used as a fallback for
-    // older servers below) cannot contain on a fresh install.
     do {
       return try await client.listAgentSessions(harnessId: harnessId)
     } catch CodevisorServerClientError.httpStatus(404, _) {
@@ -71,8 +49,6 @@ public struct ServerHarnessService: HarnessServicing {
     }
   }
 
-  /// Legacy fallback for servers without the agent-sessions endpoint:
-  /// Codevisor's own session records.
   private func codevisorSessions(forHarnessId harnessId: String) async throws -> [SessionInfo] {
     let projects = try await client.listProjects()
     let projectLocations = Dictionary(
@@ -81,8 +57,6 @@ public struct ServerHarnessService: HarnessServicing {
     return try await client.listSessions()
       .filter { $0.harnessId == harnessId }
       .compactMap { session in
-        // The server resolves cwd (project folder or worktree);
-        // fall back to the project's location on the session's server.
         let locationPath = projectLocations[session.projectId]?
           .first { $0.serverId == session.serverId }?.folderPath
         guard let cwd = session.cwd ?? locationPath else { return nil }

@@ -15,8 +15,6 @@ struct MachineControllerTests {
     #expect(projectList.selectedServerId == "local")
   }
 
-  /// A registry as released builds persisted it: directly paired remotes,
-  /// retired appearance metadata, and a selection.
   private func legacyRegistry(selecting selectedMachineId: String) -> Data {
     Data(
       """
@@ -46,7 +44,6 @@ struct MachineControllerTests {
 
     #expect(controller.machines == [.local])
     #expect(controller.selectedMachineId == "local")
-    // The retired record's cloud link no longer hides the account entry.
     #expect(controller.allMachines.map(\.id) == ["local", "cloud:dev-studio"])
   }
 

@@ -4,8 +4,6 @@ import StreamMarkdown
 import SwiftUI
 import UIKit
 
-/// Retained UIKit owner of the transcript and its row hosting controllers.
-/// Navigation containers attach this controller without rebuilding its rows.
 @MainActor
 final class TranscriptViewController: UIViewController {
   private let transcriptScrollView = VirtualizedTranscriptScrollView()

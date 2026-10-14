@@ -1,10 +1,7 @@
 import Foundation
 
-/// Where a session came from.
 public enum SessionOrigin: String, Sendable, Codable, Equatable {
-  /// Created inside Codevisor.
   case codevisor
-  /// Discovered in the harness via `session/list` (e.g. made in the CLI).
   case imported
 
   public init(from decoder: any Decoder) throws {
@@ -25,9 +22,6 @@ public enum SessionOrigin: String, Sendable, Codable, Equatable {
   }
 }
 
-/// The mutually exclusive state shown by native session sidebars. The
-/// timestamp paired with this value advances only when the visible state
-/// changes, keeping repeated output inside one state from reshuffling rows.
 public enum SessionSidebarState: String, Sendable, Codable, Equatable {
   case idle
   case inProgress
@@ -41,47 +35,23 @@ public enum SessionSidebarState: String, Sendable, Codable, Equatable {
   }
 }
 
-/// Codevisor's metadata overlay for a session. The harness is the source of truth
-/// for the transcript (restored via `session/load`); this stores only what
-/// Codevisor needs: the link to the agent session, grouping, archive state, and a
-/// cached title.
 public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
   public var id: UUID
   public var projectId: UUID
-  /// The Codevisor server that owns this session. Legacy/local sessions default
-  /// to "local"; remote servers provide their configured server id.
   public var serverId: String
-  /// The harness this session belongs to (e.g. "claude-code", "codex").
   public var harnessId: String
-  /// The harness account/profile pinned to this session.
   public var harnessAccountId: String?
-  /// The agent-side session id used to resume via `session/load`. Nil until a
-  /// brand-new session has been created with the agent.
   public var agentSessionId: String?
   public var title: String
   public var origin: SessionOrigin
-  /// Set when the session runs in a git worktree instead of the project
-  /// folder. The worktree lives at ~/codevisor/{projectId}/{worktreeName} on
-  /// the session's server.
   public var worktreeName: String?
-  /// The server-resolved working directory for the session (project folder
-  /// or worktree path). Nil for drafts that haven't been synced yet.
   public var cwd: String?
-  /// Last configuration values accepted for this chat. Option definitions
-  /// come from the harness cache/live runtime; these values let the composer
-  /// paint the chat's actual previous selections while reconnecting.
   public var configSelections: [String: String]?
-  /// Saved `configSelections` values the chat's runtime no longer offers
-  /// (for example, a withdrawn model). The composer asks the user to pick
-  /// a replacement instead of silently substituting one.
   public var unavailableConfigSelections: [String: String]?
   public var createdAt: Date
   public var updatedAt: Date?
   public var sidebarState: SessionSidebarState
   public var sidebarStateChangedAt: Date
-  /// Server-owned attention state shared by every client of this session.
-  /// `latestAttentionSequence` is a monotonic revision (every settled turn
-  /// advances it); unread = revision ahead of `lastSeenAttentionSequence`.
   public var latestAttentionSequence: Int
   public var lastSeenAttentionSequence: Int
   public var unreadCount: Int
@@ -90,10 +60,6 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
   public var actionRequiredKind: String?
   public var pendingPlanApproval: Bool
 
-  /// Whether the harness has created a resumable agent-side session.
-  /// Deferred server records use an empty string on the wire, while local
-  /// drafts use nil; presentation and connection code must treat both as
-  /// the same not-yet-started state.
   public var hasAgentSession: Bool {
     agentSessionId?.isEmpty == false
   }
@@ -154,11 +120,9 @@ public struct ChatSession: Identifiable, Sendable, Codable, Equatable {
     case sidebarState, sidebarStateChangedAt
     case latestAttentionSequence, lastSeenAttentionSequence, unreadCount, hasUnreadError
     case actionRequired, actionRequiredKind, pendingPlanApproval
-    /// Pre-rename persisted sessions used this key for `projectId`.
     case workspaceId
   }
 
-  // Custom decoding tolerates older persisted sessions missing newer fields.
   public init(from decoder: any Decoder) throws {
     let container = try decoder.container(keyedBy: Keys.self)
     id = try container.decode(UUID.self, forKey: .id)

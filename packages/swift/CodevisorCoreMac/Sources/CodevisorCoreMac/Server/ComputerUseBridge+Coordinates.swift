@@ -56,8 +56,6 @@ extension ComputerUseBridge {
       .map { stringAttribute(element, $0) ?? "" }.joined(separator: "\u{1f}")
   }
 
-  /// Resolve against the live window only after foreground activation. A moved
-  /// or resized window invalidates pixels; silently clamping them can hit its title bar.
   func screenPoint(
     window: AXUIElement, windowID: CGWindowID?, target: ElementRecord?,
     sessionID: String, arguments: [String: Any]
@@ -129,9 +127,6 @@ func computerUseScreenshotPoint(
   )
 }
 
-/// Mirrors a frame vertically inside its window. Some apps publish their
-/// content in view space (bottom-left origin) instead of screen space, so a
-/// control near the bottom is reported near the top; this is the correction.
 func computerUseMirroredFrame(_ frame: CGRect, in windowFrame: CGRect) -> CGRect {
   CGRect(
     x: frame.minX,
@@ -141,18 +136,11 @@ func computerUseMirroredFrame(_ frame: CGRect, in windowFrame: CGRect) -> CGRect
   )
 }
 
-/// Whether a window's contents are published upside down, decided by asking
-/// the system what is actually at each reported position. Only a decisive
-/// majority counts: apps whose hit-testing resolves to something else
-/// entirely (web views) score neither way and must be left alone rather than
-/// "corrected" into nonsense.
 func computerUseFramesAreFlipped(directHits: Int, mirroredHits: Int, samples: Int) -> Bool {
   guard samples >= 3, mirroredHits >= 3 else { return false }
   return mirroredHits > directHits * 2
 }
 
-/// A snapshot can only map screenshot coordinates onto the window it captured.
-/// Unknown window identity cannot authorize a coordinate mapping.
 func computerUseSnapshotMatchesWindow(
   snapshotWindowID: CGWindowID?,
   targetWindowID: CGWindowID?

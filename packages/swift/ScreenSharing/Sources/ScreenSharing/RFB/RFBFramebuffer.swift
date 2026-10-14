@@ -1,8 +1,5 @@
 import Foundation
 
-/// The client's copy of the remote screen, in `RFBPixelFormat.bgra32`. Written
-/// only by the client's read loop; the update callback may read it for the
-/// duration of the call, after which the next update may write again.
 public final class RFBFramebuffer: @unchecked Sendable {
   public static let maximumDimension = 16384
   public private(set) var width: Int
@@ -19,7 +16,6 @@ public final class RFBFramebuffer: @unchecked Sendable {
     pixels = [UInt8](repeating: 0, count: width * height * 4)
   }
 
-  /// DesktopSize: the content is undefined until the server repaints it.
   public func resize(width: Int, height: Int) throws {
     guard (1...Self.maximumDimension).contains(width), (1...Self.maximumDimension).contains(height) else {
       throw RFBError.malformed("framebuffer \(width) × \(height)")
@@ -37,7 +33,6 @@ public final class RFBFramebuffer: @unchecked Sendable {
     guard contains(rect) else { throw RFBError.malformed("rectangle \(rect) outside \(width) × \(height)") }
   }
 
-  /// Raw encoding: `bytes` holds `rect.width * rect.height` BGRA pixels, row-major.
   public func fillRaw(_ rect: RFBRectangle, from bytes: [UInt8]) throws {
     try validate(rect)
     guard bytes.count == rect.width * rect.height * 4 else { throw RFBError.malformed("raw rectangle size") }
@@ -53,7 +48,6 @@ public final class RFBFramebuffer: @unchecked Sendable {
     }
   }
 
-  /// CopyRect: the source and destination may overlap.
   public func copy(_ rect: RFBRectangle, fromX: Int, fromY: Int) throws {
     try validate(rect)
     try validate(RFBRectangle(x: fromX, y: fromY, width: rect.width, height: rect.height))
@@ -84,19 +78,16 @@ public final class RFBFramebuffer: @unchecked Sendable {
     }
   }
 
-  /// One pixel as (blue, green, red); tests and cursor logic.
   public func pixel(x: Int, y: Int) -> (blue: UInt8, green: UInt8, red: UInt8) {
     let index = (y * width + x) * 4
     return (pixels[index], pixels[index + 1], pixels[index + 2])
   }
 
-  /// Direct access for decoders: `body` receives the base pointer and the row stride in bytes.
   func withMutablePixels<T>(_ body: (UnsafeMutablePointer<UInt8>, Int) throws -> T) rethrows -> T {
     let stride = bytesPerRow
     return try pixels.withUnsafeMutableBufferPointer { try body($0.baseAddress!, stride) }
   }
 
-  /// Read access for consumers copying rows out (the pixel-buffer bridge).
   public func withPixels<T>(_ body: (UnsafeBufferPointer<UInt8>, _ bytesPerRow: Int) throws -> T) rethrows -> T {
     let stride = bytesPerRow
     return try pixels.withUnsafeBufferPointer { try body($0, stride) }

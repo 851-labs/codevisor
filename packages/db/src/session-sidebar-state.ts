@@ -3,15 +3,6 @@ import type Database from "better-sqlite3"
 
 import { backgroundTasksFromRaw } from "./event-payloads.js"
 
-/// Only work that verifiably completes AND re-invokes the agent holds a
-/// finished turn in `inProgress`: running subagents. Background shells and
-/// watchers (codex/acp `shell` tasks, Claude's
-/// `Monitor`/`local_bash`) deliberately do not — a dev server or a `tail -f`
-/// that never fires must not pin a chat in progress until its timeout. If
-/// one later re-invokes the agent, that continuation is its own turn and
-/// settles into one more unread revision. The native clients apply the same
-/// rule to the transcript's "Waiting on…" line
-/// (`SessionModel.waitingBackgroundTasks`), so the two surfaces agree.
 export const holdsInProgress = (task: BackgroundTask): boolean => task.taskType === "subagent"
 
 const readSidebarState = (sqlite: Database.Database, sessionId: string) => {
@@ -48,10 +39,6 @@ const readSidebarState = (sqlite: Database.Database, sessionId: string) => {
   }
 }
 
-/** Computes the one mutually exclusive state rendered by native sidebars.
- *  Precedence: actionRequired (errored, then waitingForUser) > inProgress >
- *  unread > idle. A parked finish (`pending_finish`) renders as inProgress so
- *  the settle grace never flashes idle between agent continuations. */
 const sidebarStateFromRow = (state: ReturnType<typeof readSidebarState>): SessionSidebarState => {
   if (state.errored === 1) return "errored"
   if (state.pending_question !== null || state.pending_plan_approval === 1) {
@@ -72,9 +59,6 @@ const sidebarStateFromRow = (state: ReturnType<typeof readSidebarState>): Sessio
   return "idle"
 }
 
-/** Advances the ordering clock only when the visible native-sidebar state
- *  actually changes. Callers run this in the same transaction as event
- *  projections, so a snapshot cannot expose the new state with an old clock. */
 export const projectSessionSidebarState = (
   sqlite: Database.Database,
   sessionId: string,

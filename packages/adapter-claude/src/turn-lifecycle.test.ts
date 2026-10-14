@@ -129,8 +129,6 @@ describe("ClaudeProvider", () => {
     fake.push(initMessage())
     const created = await createPromise
 
-    // The harness re-triggered itself off a finished background task: output
-    // begins with no prompt in flight, opening an agent-initiated turn.
     fake.push(streamEvent({ message: { id: "msg-bg" }, type: "message_start" }))
     fake.push(
       streamEvent({
@@ -141,8 +139,6 @@ describe("ClaudeProvider", () => {
     )
     await fake.drain()
 
-    // A user prompt lands mid-turn. It must neither bind to the live agent
-    // turn (whose result would resolve it prematurely) nor be pushed into it.
     let promptResolved = false
     const prompt = run(created.handle.prompt("follow-up")).then((result) => {
       promptResolved = true
@@ -151,8 +147,6 @@ describe("ClaudeProvider", () => {
     await fake.drain()
     expect(fake.userMessages).toHaveLength(0)
 
-    // The agent turn's own result closes only the agent turn, then the
-    // deferred prompt dispatches as its own user-initiated turn.
     fake.push({ ...resultMessage(), origin: { kind: "task-notification" } } as never)
     await fake.drain()
     expect(promptResolved).toBe(false)

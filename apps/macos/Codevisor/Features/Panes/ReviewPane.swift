@@ -22,15 +22,12 @@ final class ReviewPane: Pane {
   }
 
   func makeView() -> AnyView {
-    // The diff is read-only text with no first responder of its own, so a
-    // click anywhere in it activates the group.
     AnyView(
       ReviewPaneView(model: model)
         .simultaneousGesture(TapGesture().onEnded { [weak self] in self?.onFocusChanged?(true) }))
   }
 
   func focus() {}
-  // The view polls while mounted, so becoming visible needs no reload.
   func visibilityChanged(_ visible: Bool) {}
   func willDelete() async {}
   func detach() {}

@@ -26,8 +26,6 @@ func computerUseObservationValue(role: String, subrole: String?, value: Any?) ->
 }
 
 extension ComputerUseBridge {
-  /// Tracking menus can live outside AXWindow. Check the focused ancestor
-  /// chain and menu bar as well as the window; ignore unopened submenu trees.
   func openMenu(application: AXUIElement, window: AXUIElement) -> AXUIElement? {
     var focused = elementAttribute(application, kAXFocusedUIElementAttribute)
     for _ in 0..<12 {
@@ -36,8 +34,6 @@ extension ComputerUseBridge {
       focused = elementAttribute(element, kAXParentAttribute)
     }
     var remaining = 1_500
-    // AppKit may publish a tracking menu beside its windows, rather than
-    // beneath the originating control or the menu bar.
     for child in elementsAttribute(application, kAXChildrenAttribute) {
       if stringAttribute(child, kAXRoleAttribute) == "AXMenu", menuIsOpen(child) { return child }
     }

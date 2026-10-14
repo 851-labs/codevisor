@@ -1,8 +1,6 @@
 import CodevisorClient
 import Foundation
 
-/// Re-entering a pane adopts the last shared URL. A visible page never follows
-/// another client's navigation, and application focus does not count as entry.
 @MainActor
 public final class BrowserPaneSync {
   private let paneId: UUID
@@ -14,8 +12,6 @@ public final class BrowserPaneSync {
   private var cookieGeneration = 0
   public init(paneId: UUID, client: any BrowserStateClienting) { self.paneId = paneId; self.client = client }
 
-  /// The initial page load already uses these cookies, even if the pane has
-  /// not been displayed yet. Only subsequent cookie changes require a reload.
   public func recordLoadedCookies(_ cookies: BrowserCookieSync?) {
     cookieGeneration = cookies?.generation ?? 0
   }
@@ -25,7 +21,6 @@ public final class BrowserPaneSync {
     visible = value; activation += 1
     return value
   }
-  /// A local navigation wins over a delayed pane-entry reply.
   public func cancelActivation() { activation += 1 }
   public func activate(
     cookies: BrowserCookieSync?, currentURL: String?, fallbackURL: String?,
@@ -45,7 +40,6 @@ public final class BrowserPaneSync {
         load(target, target == currentURL)
       }
     } catch {
-      // Existing pages remain usable offline; the next actual pane entry retries.
       if currentURL == nil, let fallbackURL, visible, activation == token { load(fallbackURL, false) }
     }
   }

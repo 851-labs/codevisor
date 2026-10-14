@@ -10,7 +10,6 @@ import type { CliDeps } from "./support.js"
 
 type Answer = { status: number; body: unknown } | undefined
 
-/// A CLI world whose loopback server answers from `routes` ("METHOD path").
 const world = (routes: Record<string, Answer>) => {
   const logs: string[] = []
   const errors: string[] = []

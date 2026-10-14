@@ -6,18 +6,8 @@ import CodevisorTheming
 import SwiftUI
 import os
 
-// MARK: - Action dispatch
-
 extension CodevisorGhosttyApp {
 
-  /// Runs a libghostty action. NOT main-isolated: while most actions arrive
-  /// on the main thread (the app loop ticks there), the renderer thread
-  /// fires cell-size and progress-report actions during a live resize —
-  /// upstream Ghostty deliberately leaves this handler unisolated and hops
-  /// those to main. Each case therefore extracts its C payload
-  /// synchronously (the pointers die with the callback) and applies UI
-  /// state via `onMain`; the Bool (action supported?) is decided
-  /// synchronously from the tag and payload validity.
   nonisolated static func action(_ app: ghostty_app_t, target: ghostty_target_s, action: ghostty_action_s) -> Bool {
     switch target.tag {
     case GHOSTTY_TARGET_APP, GHOSTTY_TARGET_SURFACE:
@@ -124,7 +114,6 @@ extension CodevisorGhosttyApp {
       }
 
     case GHOSTTY_ACTION_CONFIG_CHANGE:
-      // The app takes the new config; a surface's is only announced.
       let host: CodevisorGhosttyApp?
       let surfaceView: Ghostty.SurfaceView?
       switch target.tag {
@@ -138,10 +127,6 @@ extension CodevisorGhosttyApp {
       default:
         return false
       }
-      // Clone the config so we own the memory (upstream L2194-2240) —
-      // synchronously: the source pointer dies with the callback. The clone
-      // is ours alone, so ownership moves with the hop to main, where it is
-      // wrapped (Ghostty.Config is main-actor state and frees it on deinit).
       nonisolated(unsafe) let clone = ghostty_config_clone(action.action.config_change.config)
       onMain {
         let config = Ghostty.Config(config: clone)
@@ -154,7 +139,6 @@ extension CodevisorGhosttyApp {
       }
 
     case GHOSTTY_ACTION_RELOAD_CONFIG:
-      // Rebuild our themed config (Codevisor has no on-disk user config flow).
       let host = hostApp(from: ghostty_app_userdata(app))
       onMain { host.reloadConfig() }
 
@@ -209,8 +193,6 @@ extension CodevisorGhosttyApp {
       }
 
     case GHOSTTY_ACTION_SECURE_INPUT:
-      // Surface-scoped secure input only (upstream L1575-1607); the
-      // app-target variant needs AppDelegate plumbing we don't have.
       guard let mode = Ghostty.SetSecureInput.from(action.action.secure_input) else { return false }
       guard let surfaceView = surfaceView(for: target) else { return false }
       let host = hostApp(from: ghostty_app_userdata(app))
@@ -224,29 +206,20 @@ extension CodevisorGhosttyApp {
       }
 
     case GHOSTTY_ACTION_SIZE_LIMIT:
-      // Accepted but nothing to do: Codevisor's panel controls sizing.
       break
 
     case GHOSTTY_ACTION_OPEN_URL:
-      // Cmd+click on a detected link (an auth flow's sign-in URL, a
-      // dev server address in a shell). Upstream also handles .html
-      // payloads by writing a temp file; Codevisor only opens real
-      // URLs and reports anything else unsupported.
       let payload = Ghostty.Action.OpenURL(c: action.action.open_url)
       guard payload.kind == .text, let url = URL(string: payload.url) else { return false }
       onMain { NSWorkspace.shared.open(url) }
 
     default:
-      // Window/tab/split/app-management actions Codevisor does not
-      // support (NEW_WINDOW, NEW_TAB, NEW_SPLIT, GOTO_*, TOGGLE_*,
-      // INSPECTOR, QUIT, OPEN_*, UNDO/REDO, search UI, ...).
       return false
     }
 
     return true
   }
 
-  /// Resolves the surface view for a surface-targeted action.
   nonisolated private static func surfaceView(for target: ghostty_target_s) -> Ghostty.SurfaceView? {
     guard target.tag == GHOSTTY_TARGET_SURFACE else { return nil }
     guard let surface = target.target.surface else { return nil }

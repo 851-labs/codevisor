@@ -3,8 +3,6 @@ import os
 
 private let log = Logger(subsystem: "com.851labs.codevisor", category: "highlighting")
 
-/// Snapshot adapter for chat and diffs over our document-scoped Tree-sitter
-/// engine. Native editors use CodeHighlightDocument's range updates directly.
 public actor CodeHighlighter {
   public struct Token: Sendable, Equatable, Codable {
     public let content: String

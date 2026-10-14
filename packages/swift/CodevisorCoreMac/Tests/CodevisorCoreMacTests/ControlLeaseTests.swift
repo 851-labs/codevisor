@@ -4,9 +4,6 @@ import Foundation
 import Testing
 @testable import CodevisorCoreMac
 
-/// The viewer's lease state machine over a scripted endpoint client: request
-/// gating on channel availability, denial, revocation, the grant deadline,
-/// heartbeats, and every path that gives control back.
 @MainActor
 struct ControlLeaseTests {
   private let endpoint = ScreenSharingViewerEndpoint.ID()
@@ -116,8 +113,6 @@ struct ControlLeaseTests {
       client.sendSucceeds = false
       await clock.advance(by: .seconds(1))
       await store.receive(\.heartbeatTick)
-      // The connection is going away: control pauses (no message, no release to the pane) and
-      // is asked for again on the next channel (851-2472).
       await store.receive(\.channelSendFailed) {
         $0.wantsControl = true
         $0.lease = nil
@@ -129,8 +124,6 @@ struct ControlLeaseTests {
     }
   }
 
-  /// 851-2470 / 2472: a held lease whose channel goes away (a reconnect) pauses instead of
-  /// releasing, and control is requested again as soon as a channel is back.
   @Test func controlHeldWhenTheChannelDropsIsRequestedAgainWhenItReturns() async {
     await withMainSerialExecutor {
       let client = FakeEndpointClient()
@@ -158,8 +151,6 @@ struct ControlLeaseTests {
     }
   }
 
-  /// A notice (system shortcuts staying on this Mac) shows while controlling and keeps control; one
-  /// arriving after control ended is dropped.
   @Test func anInputNoticeShowsWhileControllingWithoutGivingControlBack() async {
     await withMainSerialExecutor {
       let client = FakeEndpointClient()
@@ -257,7 +248,6 @@ struct ControlLeaseTests {
     }
   }
 
-  /// Available channel, request sent and granted with `lease`.
   private func makeControllingStore(
     _ client: FakeEndpointClient, clock: any Clock<Duration> = Clocks.TestClock()
   ) async -> TestStoreOf<ControlLease> {

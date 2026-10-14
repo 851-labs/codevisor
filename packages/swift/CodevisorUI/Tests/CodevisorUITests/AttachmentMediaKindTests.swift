@@ -4,8 +4,6 @@ import UniformTypeIdentifiers
 
 @testable import CodevisorUI
 
-/// Copy and share must describe the attachment they act on: a video copies
-/// as a video, a PDF as a PDF, and only real images copy as pictures.
 struct AttachmentMediaKindTests {
   @Test(arguments: [
     ("scratch/shot.png", AttachmentMediaKind.image, "Copy Image"),

@@ -2,9 +2,6 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// Two-stage install: enter a source, discover what it offers, then consent
-/// to the exact commands it will run. A registry selection auto-discovers,
-/// skipping the typing but never the consent.
 struct PluginInstallSheet: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.dismiss) private var dismiss
@@ -43,8 +40,6 @@ struct PluginInstallSheet: View {
   private var sheetContent: some View {
     VStack(spacing: 0) {
       Form {
-        // The source field only exists while typing one — once a
-        // plugin is found, the consent stage shows the plugin itself.
         if discovery == nil {
           Section {
             TextField(

@@ -5,9 +5,6 @@ import type Database from "better-sqlite3"
 import { nextPanePositionIn } from "./pane-position.js"
 import type { WorkspacePaneRow } from "./rows.js"
 
-/// Delete competing resource panes inside the caller's write transaction.
-/// Returns the tab slot of the pane it replaced in the target workspace, if
-/// any.
 export const discardConflictingPanes = (
   sqlite: Database.Database,
   paneId: string,
@@ -34,7 +31,6 @@ export const discardConflictingPanes = (
   return replaced?.position ?? undefined
 }
 
-/// Preserve terminal status only when the upsert keeps the same resource.
 const sameResource = `workspace_panes.resource_kind is excluded.resource_kind
   and lower(workspace_panes.resource_id) is lower(excluded.resource_id)`
 

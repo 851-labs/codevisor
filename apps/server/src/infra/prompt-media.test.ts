@@ -21,7 +21,6 @@ const fixture = (name: string, data: Buffer) => {
   return { path, sizeBytes: statSync(path).size }
 }
 
-/// Random pixels defeat compression, so the fixture's size is predictable.
 const noisePng = async (width: number, height: number): Promise<Buffer> => {
   const pixels = Buffer.alloc(width * height * 3)
   let seed = 7
@@ -62,12 +61,10 @@ describe("inlineSizing", () => {
     expect(Math.max(metadata.width, metadata.height)).toBeLessThanOrEqual(
       INLINE_IMAGE_MAX_DIMENSION
     )
-    // Aspect ratio survives the resize.
     expect(metadata.width / metadata.height).toBeCloseTo(2, 1)
   })
 
   it("sizes rotated photos by their displayed orientation", async () => {
-    // Stored landscape, displayed portrait (EXIF orientation 6).
     const stored = await sharp(await noisePng(3000, 1500))
       .jpeg({ quality: 100 })
       .withMetadata({ orientation: 6 })
@@ -91,7 +88,6 @@ describe("inlineSizing", () => {
     expect(await inlineSizing({ ...small, kind: "file", mimeType: "application/pdf" })).toEqual({
       inline: { data: Buffer.from("%PDF-1.4 tiny"), mimeType: "application/pdf" }
     })
-    // Only the size matters, so a sparse stand-in avoids writing 20 MB.
     expect(
       await inlineSizing({
         path: join(root, "never-read.pdf"),
@@ -103,7 +99,6 @@ describe("inlineSizing", () => {
   })
 
   it("never reads other files", async () => {
-    // The path does not exist: reading it would throw.
     expect(
       await inlineSizing({
         path: join(root, "missing.mp4"),

@@ -31,7 +31,6 @@ struct TranscriptWindowPlannerTests {
       distanceFromBottom: 0, viewportHeight: 200, runwayBefore: 300, runwayAfter: 300
     )
     #expect(range == expected)
-    // Bottom 200pt viewport + 300pt runway above = 5 rows of 100.
     #expect(range == 35..<40)
   }
 
@@ -56,7 +55,6 @@ struct TranscriptWindowPlannerTests {
       currentRange: 30..<40
     )
     #expect(range == expected)
-    // A non-contiguous current window is treated as none.
     let broken = planner.plannedRange(
       layout: l,
       distanceFromBottom: 0,

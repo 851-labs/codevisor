@@ -93,8 +93,6 @@ describe("git review routes", () => {
       expect(await review(query), query).toMatchObject({ status, body: { code } })
     }
 
-    // The snapshot is taken before the agent sees the prompt, so once the
-    // agent has it, "last turn" compares against the folder as it was then.
     await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
       body: JSON.stringify({ text: "edit notes" }),
       method: "POST"

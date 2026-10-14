@@ -9,8 +9,6 @@ class FaviconDownload final : public CefDownloadImageCallback {
 
   void Next() {
     if (!browser_->IsValid() || next_ >= urls_.size()) { completion_(nil); return; }
-    // Chromium applies its normal favicon cookie policy and cache. The icon
-    // is decoded and resized by Chromium rather than fetched via URLSession.
     browser_->GetHost()->DownloadImage(urls_[next_++], true, 32, false, this);
   }
 

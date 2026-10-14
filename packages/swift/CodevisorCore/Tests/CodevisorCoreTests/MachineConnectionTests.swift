@@ -5,8 +5,6 @@ import CodevisorTestSupport
 
 @testable import CodevisorCore
 
-/// Background machine connections: every registered machine keeps its own
-/// live event stream, independent of which machine is selected.
 @MainActor
 @Suite("MachineConnection streams")
 struct MachineConnectionTests {
@@ -77,14 +75,10 @@ struct MachineConnectionTests {
 
     await controller.connectMachine(remote.id)
 
-    // The machine was never selected, yet its chats are in the shared
-    // repositories — the flattened sidebar's precondition.
     #expect(
       projectList.sessions.contains {
         $0.serverId == remote.id && $0.id.uuidString == session.id
       })
-    // And it landed its own terminal sync state: fleet-aggregated UIs
-    // count every machine, not just the selected one.
     #expect(controller.navigationSyncStateByMachineId[remote.id] == .current)
   }
 
@@ -101,8 +95,6 @@ struct MachineConnectionTests {
 
     await controller.connectMachine(remote.id)
 
-    // Unreachable is an answer: the aggregation can count this machine
-    // as failed instead of waiting on it forever.
     guard case .stale = controller.navigationSyncStateByMachineId[remote.id] else {
       Issue.record(
         "Expected .stale, got \(String(describing: controller.navigationSyncStateByMachineId[remote.id]))")
@@ -126,7 +118,6 @@ struct MachineConnectionTests {
     #expect(controller.selectedMachineId == "local")
 
     await controller.connectMachine(remote.id)
-    // The subscription attaches inside the stream task; give it a beat.
     try await waitForSync { remoteFake.eventStreamSubscriberCount == 1 }
 
     let session = makeSession(id: UUID(), projectId: UUID(), serverId: remote.id)
@@ -140,8 +131,6 @@ struct MachineConnectionTests {
         $0.serverId == remote.id && $0.id.uuidString == session.id.uppercased()
       }
     }
-    // The selection never moved, and the background machine's row landed
-    // stamped with ITS server id.
     #expect(controller.selectedMachineId == "local")
     #expect(projectList.sessions.allSatisfy { $0.serverId == remote.id })
   }
@@ -205,8 +194,6 @@ struct MachineConnectionTests {
 
     await controller.updateServer(machineId: remote.id)
 
-    // The busy refusal lands on the REMOTE machine's phase; the selected
-    // machine's projection stays idle.
     if case .failed = controller.connection(for: remote.id).updatePhase {
     } else {
       Issue.record("Expected the remote machine's phase to be failed")
@@ -232,16 +219,12 @@ struct MachineConnectionTests {
     )
     defer { controller.stopEventSync() }
 
-    // Connect both so their reachability is known, then sweep.
     await controller.connectMachine(remoteA.id)
     await controller.connectMachine(remoteB.id)
     await controller.refreshServerUpdates()
 
     #expect(controller.serverUpdateInfo(for: remoteA.id)?.latestVersion == "0.2.0")
     #expect(controller.serverUpdateInfo(for: remoteB.id)?.latestVersion == "0.3.0")
-    // The periodic sweep reads each server's CACHED check — forcing is
-    // reserved for the user's explicit "Check Again", or every client
-    // would hammer the release origin on every pass.
     #expect(fakeA.updateInfoRefreshes.last == false)
     #expect(fakeB.updateInfoRefreshes.last == false)
   }

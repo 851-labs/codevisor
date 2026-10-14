@@ -1,28 +1,9 @@
 import { configDefaults, defineConfig } from "vitest/config"
 
-// Browser/Computer Use and code execution are integration boundaries over
-// Chrome CDP, WebSockets, QuickJS, and native desktop bridges (rationale
-// carried over from the repo root config when these lived in apps/server).
-// The browser-* modules split out of browser-use-provider — including the
-// per-family tool invokers and locator parse/resolve modules — and the code
-// executor's source-recovery module inherit that same integration-boundary
-// rationale. Focused tests still run for every adapter and gateway; the pure
-// tool surfaces (automation-provider, codevisor-provider, server-resources,
-// and every tool-definition table) stay at 100%.
 export default defineConfig({
   test: {
-    // Real-Chrome tests run separately (vitest.chrome.config.ts, `test:chrome`).
     exclude: [...configDefaults.exclude, "src/**/*.chrome.test.ts"],
-    // Each worker can run QuickJS alongside the other packages' suites.
-    // Bound this fan-out without serializing the tests.
     maxWorkers: 4,
-    // Browser Use and code-execution tests drive Chrome, WebSockets, and a
-    // QuickJS sandbox per test; on a loaded CI runner — where every
-    // package's suite runs in parallel — they need well past vitest's 5s default.
-    // afterEach hooks close those same real resources (e.g. the QuickJS pool
-    // teardown in computer-use-repl.test.ts): give hooks the same room, or
-    // cleanup alone can trip Vitest's 10s hook default under the exact
-    // contention that justifies the longer test budget above.
     testTimeout: 30_000,
     hookTimeout: 30_000,
     coverage: {
@@ -32,10 +13,7 @@ export default defineConfig({
         "**/dist/**",
         "**/*.test.ts",
         "src/browser-cdp-test-support.ts",
-        // Browser session adapters are covered with real Chromium and gateway fixtures.
         "src/browser-runtime-lifecycle.ts",
-        // Connection construction extracted from browser-use-provider; covered
-        // by native fallback fixtures and the real Chromium integration suite.
         "src/browser-runtime-factory.ts",
         "src/browser-content.ts",
         "src/browser-frame.ts",
@@ -62,8 +40,6 @@ export default defineConfig({
         "src/code-executor-source.ts",
         "src/code-executor.ts",
         "src/computer-use-provider.ts",
-        // Persistent desktop cells compile and execute code in QuickJS. Their
-        // sandbox API is covered by the REPL integration suite, like code-executor-source.
         "src/computer-use-repl-source.ts"
       ],
       provider: "v8",

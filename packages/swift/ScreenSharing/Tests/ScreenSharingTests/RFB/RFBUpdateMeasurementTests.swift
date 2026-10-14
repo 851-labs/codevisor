@@ -4,10 +4,7 @@ import Testing
 import ScreenSharingTesting
 @testable import ScreenSharing
 
-/// What each update costs on the wire and how long it took after its request
-/// (851-2309): the numbers VNC diagnostics and `vnc-bench` are built from.
 struct RFBUpdateMeasurementTests {
-  /// Instants handed out in order; the last one repeats.
   final class ScriptedNow: @unchecked Sendable {
     private let lock = NSLock()
     private let base = ContinuousClock.now
@@ -21,7 +18,6 @@ struct RFBUpdateMeasurementTests {
   @Test func anUpdateCarriesItsWireBytesAndItsLatencySinceTheRequest() async throws {
     let server = try await RFBLoopbackServer()
     defer { server.stop() }
-    // Request sent at 0 ms, update applied at 42 ms, next request at 50 ms.
     let now = ScriptedNow([.zero, .milliseconds(42), .milliseconds(50)])
     let client = try RFBClient(
       transport: try await RFBNetworkTransport.connect(host: "127.0.0.1", port: server.port), now: now.next)
@@ -34,7 +30,6 @@ struct RFBUpdateMeasurementTests {
     }
     var iterator = updates.makeAsyncIterator()
     let first = try #require(await iterator.next())
-    // Type, padding and count (4) + one rectangle header (12) + 64 × 48 raw BGRA pixels.
     #expect(first.byteCount == 4 + 12 + 64 * 48 * 4)
     #expect(first.latency == .milliseconds(42))
   }

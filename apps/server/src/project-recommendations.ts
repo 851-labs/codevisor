@@ -18,9 +18,6 @@ export interface ProjectRecommendationOptions {
   readonly temporaryDirectory?: string
 }
 
-/// Derives useful project roots from harness-owned sessions on this machine.
-/// Filesystem and Git metadata checks deliberately run beside those sessions;
-/// a remote app cannot safely validate these paths on its own device.
 export const recommendProjectsFromSessions = (
   sessions: ReadonlyArray<AgentSessionSummary>,
   options: ProjectRecommendationOptions = {}
@@ -54,11 +51,7 @@ const recommendationPath = (
 
   const linked = linkedWorktree(sessionPath)
   const isManaged = isPathInside(sessionPath, managedRoot)
-  // A linked checkout without a surviving primary checkout is temporary;
-  // never suggest the short-lived worktree itself.
   if (linked.isLinked && linked.root === undefined) return undefined
-  // Codevisor-managed worktrees are likewise suggestions only when their
-  // Git metadata leads back to a real checkout outside the managed root.
   if (isManaged && linked.root === undefined) return undefined
 
   const path = linked.root ?? sessionPath

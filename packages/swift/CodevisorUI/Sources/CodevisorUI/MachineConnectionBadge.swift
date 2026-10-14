@@ -1,8 +1,6 @@
 import CodevisorTheming
 import SwiftUI
 
-/// The Machines list's status: a green dot when connected, a gray one when not, a spinner while
-/// connecting, then how the machine is reached ("Peer-to-peer · 12 ms").
 public struct MachineConnectionBadge: View {
   @Environment(\.theme) private var theme
 

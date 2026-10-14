@@ -22,7 +22,6 @@ struct AssistantTurnBody: View {
   @State private var textAnimationPresentation = StreamingTextAnimationPresentation()
   @State private var hasAutoCollapsed: Bool
   let turn: AssistantTurn
-  /// Stable identity for the turn's disclosure keys (the message id).
   let turnId: UUID
   let isWaitingOnUser: Bool
   let waitingOnBackgroundTask: String?
@@ -64,8 +63,6 @@ struct AssistantTurnBody: View {
     store.isExpanded(key, default: !settled)
   }
 
-  /// A subagent that outlives its turn keeps the worked section open and
-  /// its shimmer running, exactly like macOS.
   private var hasRunningSubagent: Bool {
     turn.startedRunningSubagent(runningSubagentRuns)
   }
@@ -92,15 +89,11 @@ struct AssistantTurnBody: View {
         PlanDocumentView(markdown: planDocument)
       }
       if presentation.showsResultWork {
-        // Work after the plan. Restored history shows its header before
-        // details hydrate when the turn resumed after the plan.
         workedSection(
           items: turn.workedItemsAfterPlan,
           kind: .implementation
         )
       }
-      // The slot stays laid out (invisibly) across tool calls so the
-      // label toggling never changes the row's height.
       if presentation.showsActivity, activity.map({ !$0.followsResponse }) ?? turn.reservesActivitySlot {
         AssistantTurnActivitySlot(activity, turn: turn)
       }
@@ -218,7 +211,6 @@ struct AssistantTurnBody: View {
   @ViewBuilder
   private func turnErrorRow(_ message: String) -> some View {
     if turn.stopKind == "usageLimit" {
-      // Out of credits: the fix is a different account, not a retry.
       ChatErrorRow(
         message,
         actionTitle: "Switch Account",
@@ -260,7 +252,6 @@ struct AssistantTurnBody: View {
     }
   }
 
-  /// Inline images preview in Quick Look; their menu opens a tab or copies.
   private var imageActions: MarkdownImageActions {
     TranscriptMarkdownImageOpener.actions(
       quickLook: quickLook, attachmentImages: attachmentImages, openDocument: openFileDocument)
@@ -278,18 +269,12 @@ struct AssistantTurnBody: View {
     invalidateRowMeasurement?()
   }
 
-  /// A provider can retro-tag optimistic answer text as commentary when a
-  /// tool starts. Undo an early final collapse so live work is visible and
-  /// non-collapsible again.
   private func reopenForActiveWork() {
     hasAutoCollapsed = false
     for key in sectionKeys { store.setExpanded(key, true) }
     invalidateRowMeasurement?()
   }
 
-  /// One worked section: open with a live timer while streaming (not
-  /// user-collapsible, as on macOS), a tappable "Worked for Ns" summary
-  /// once settled.
   @ViewBuilder
   private func workedSection(
     items: [WorkedItem],
@@ -372,9 +357,6 @@ struct AssistantTurnBody: View {
     }
   }
 
-  /// "Working for 12s" while the section is live, "Worked for 12s" once it
-  /// settles. A plan splits the turn into two independently timed sections,
-  /// so the work after the plan reads like a second response.
   @ViewBuilder
   private func sectionLabel(_ kind: TranscriptWorkedSectionKind) -> some View {
     if turn.workedSectionTicks(kind) {

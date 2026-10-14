@@ -1,13 +1,4 @@
 #!/usr/bin/env node
-// The pre-commit suite. Runs only the checks the working tree's changes can
-// affect (see check-plan.mjs), in lanes that run side by side.
-//
-//   bun run check                  changes against HEAD, staged or not
-//   bun run check -- --base=main   everything this branch changed since main
-//   bun run check:all              every check
-//   bun run check -- --dry-run     print the plan without running it
-//
-// A check that already passed on identical inputs is skipped again.
 import { execFile, execFileSync, spawn } from "node:child_process"
 import { createHash } from "node:crypto"
 import {
@@ -50,7 +41,6 @@ function parseCheckArguments(argv) {
 
 const splitPaths = (output) => output.split("\0").filter(Boolean)
 
-/// Files that differ from `base` in the working tree, plus untracked files.
 function changedFiles(base) {
   return [
     ...new Set([
@@ -60,7 +50,6 @@ function changedFiles(base) {
   ].toSorted()
 }
 
-/// Repository-relative scripts `entries` import, followed transitively.
 function importClosure(entries) {
   const seen = new Set()
   const pending = [...entries]
@@ -84,7 +73,6 @@ async function swiftManifest(packagePath) {
     )
     return JSON.parse(stdout)
   } catch {
-    // Unreadable manifests make every packages/swift change count.
     return undefined
   }
 }
@@ -102,7 +90,6 @@ async function gatherContext(files) {
   const releaseScripts = readdirSync(join(repoRoot, "scripts/release"))
     .filter((name) => name.endsWith(".mjs"))
     .map((name) => `scripts/release/${name}`)
-  // Dumping manifests costs a second, so only when a Swift module may have changed.
   const swiftChanged = files.some((file) => file.startsWith("packages/swift/"))
   const [swiftPackage, rigPackage] = swiftChanged
     ? await Promise.all([swiftManifest("packages/swift"), swiftManifest("apps/screen-sharing-rig")])
@@ -125,7 +112,6 @@ async function gatherContext(files) {
   }
 }
 
-/// Folders packages/swift links in from elsewhere, as repository paths.
 function swiftPackageLinks() {
   const root = realpathSync(repoRoot)
   const links = []
@@ -147,8 +133,6 @@ function swiftPackageLinks() {
   return links
 }
 
-/// Identifies a check's exact inputs: its command, the base commit, and the
-/// content of every changed file it reads.
 function fingerprint(entry, baseCommit) {
   const contents = new Map(
     entry.inputs.map((path) => {
@@ -179,7 +163,6 @@ function runStep(entry) {
   const startedAt = performance.now()
   console.log(`→ ${entry.step.name} (${entry.reason})`)
   return new Promise((resolveStep) => {
-    // Its own process group, so a failure elsewhere can stop the whole tree.
     const child = spawn(command, args, {
       cwd: repoRoot,
       detached: true,
@@ -207,9 +190,7 @@ function stopRunning() {
   for (const child of running) {
     try {
       process.kill(-child.pid, "SIGTERM")
-    } catch {
-      // Already exited.
-    }
+    } catch {}
   }
 }
 
@@ -220,7 +201,6 @@ async function runLane(entries, results, state) {
       continue
     }
     const finished = await runStep(entry)
-    // A check stopped because another one failed did not fail itself.
     const result =
       finished.status !== "passed" && state.failed ? { ...finished, status: "cancelled" } : finished
     results.push(result)
@@ -289,7 +269,6 @@ async function main() {
       process.exit(code)
     })
   }
-  // Lanes run side by side; the checks within a lane run in order.
   await Promise.all(
     [...new Set(pending.map((entry) => entry.step.lane))].map((lane) =>
       runLane(
@@ -300,7 +279,6 @@ async function main() {
     )
   )
   for (const result of results) {
-    // Inputs edited while the check ran were not what it checked.
     if (
       result.status === "passed" &&
       result.key !== undefined &&

@@ -18,14 +18,10 @@ import { MUSE_HARNESS_ID } from "./muse-credentials.js"
 
 export { MUSE_HARNESS_ID }
 
-/// Muse Code sign-in through its own session host (`account/*`): a
-/// device-code handoff that works from a remote Codevisor server too, or a
-/// Meta API key Muse stores itself.
 export const makeMuseAuth = (
   core: HarnessAuthCore,
   probeAccount: (accountId: string, force: boolean) => Promise<HarnessAccount>,
   connector: MuseConnector = spawnMuseClient,
-  /// How long a device code stays open before Codevisor gives up on it.
   loginDeadlineMs = 10 * 60_000
 ) => {
   const logins = new Map<
@@ -50,9 +46,6 @@ export const makeMuseAuth = (
     return client
   }
 
-  /// Re-reads the account after Muse reports a sign-in, and makes it the
-  /// active one when it worked. With account sync on, the sign-in landed in
-  /// a fresh managed profile: sync captures its file into the shared vault.
   const signedIn = async (account: HarnessAccountRecord): Promise<boolean> => {
     const shared = core.config.sharedAccounts?.()
     if (shared) {
@@ -65,7 +58,6 @@ export const makeMuseAuth = (
     return ok
   }
 
-  /// Tells account sync, when it's on, that this sign-in didn't land.
   const loginFailed = async (accountId: string): Promise<void> => {
     await core.config.sharedAccounts?.()?.loginFailed(accountId)
   }
@@ -90,7 +82,6 @@ export const makeMuseAuth = (
     if (methodId === "apiKey") {
       const key = apiKey?.trim()
       if (key === undefined || key.length === 0) throw new Error("API key is required")
-      // A synced key is handed to Muse as META_API_KEY on every machine.
       const shared = core.config.sharedAccounts?.()
       if (shared) {
         await shared.saveApiKey(account.id, key)
@@ -123,9 +114,7 @@ export const makeMuseAuth = (
     void (async () => {
       const { outcome } = await Promise.race([login.completed, stopped.promise])
       clearTimeout(deadline)
-      // A cancelled flow was already settled by `cancel`.
       if (!logins.delete(id)) return
-      // Codevisor's own deadline: Muse is still waiting on the code.
       if (outcome === "expired") await cancelMuseLogin(client).catch(() => undefined)
       client.close()
       const success = await (

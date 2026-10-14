@@ -5,9 +5,6 @@ export interface SessionActivityController {
   readonly stop: () => void
 }
 
-/// Prevents idle system sleep only while at least one locally hosted agent
-/// turn is active. `-w` also guarantees the assertion disappears if the
-/// server crashes instead of reaching `stop()`.
 export class ActiveWorkSleepInhibitor implements SessionActivityController {
   private readonly activeSessionIds = new Set<string>()
   private assertionProcess: ChildProcess | undefined

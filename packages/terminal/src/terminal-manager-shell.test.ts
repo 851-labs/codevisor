@@ -35,9 +35,6 @@ describe("@codevisor/terminal terminal manager shell resolution", () => {
     })
     const terminfoDirectory = terminalEnv?.TERMINFO
     expect(terminfoDirectory).toBeTypeOf("string")
-    // Darwin's ncurses uses hexadecimal bucket names while Linux ncurses uses
-    // the terminal name's first character. Ship both so the same server
-    // package works on every supported host without distro-specific probing.
     expect(existsSync(join(terminfoDirectory!, "78", "xterm-ghostty"))).toBe(true)
     expect(existsSync(join(terminfoDirectory!, "67", "ghostty"))).toBe(true)
     expect(existsSync(join(terminfoDirectory!, "x", "xterm-ghostty"))).toBe(true)

@@ -12,15 +12,10 @@ export {
 
 export type MouseButton = "left" | "right" | "middle"
 
-/**
- * Where a session's pointer is and which buttons it holds, mirroring Playwright's `Mouse`, so
- * `move → down → move → up` sequences compose into real drags and `wheel` scrolls in place.
- */
 export interface PointerState {
   x: number
   y: number
   buttons: number
-  /** Keyboard modifier mask currently held through key_down, mirroring Playwright's `Keyboard`. */
   modifiers: number
 }
 
@@ -32,7 +27,6 @@ export const mouseButtonName = (value: unknown): MouseButton =>
 export const mouseButtonMask = (button: MouseButton): number =>
   button === "left" ? 1 : button === "right" ? 2 : 4
 
-/** The CDP `button` to report on a move while buttons are held; Chrome wants the primary one. */
 export const heldButtonName = (buttons: number): MouseButton | undefined =>
   (buttons & 1) !== 0
     ? "left"
@@ -47,11 +41,6 @@ export interface MouseDispatch {
   readonly completion: Promise<void>
 }
 
-/**
- * Dispatch one trusted mouse event, racing it against a modal JavaScript dialog. Chrome
- * deliberately keeps the input command pending while a dialog is open, so the event is reported
- * as delivered and the caller can let the next tool inspect and handle the dialog.
- */
 export const dispatchMouseEvent = async (
   runtime: BrowserRuntime,
   page: PageHandle,
@@ -94,7 +83,6 @@ export const dispatchClick = async (
   const dispatch = (params: Readonly<Record<string, unknown>>): Promise<MouseDispatch> =>
     dispatchMouseEvent(runtime, page, params)
 
-  // Let the presented pointer arrive before the trusted input lands, as Computer Use does.
   await cursor?.move(x, y)
   const moved = await dispatch({ type: "mouseMoved", x, y, modifiers })
   if (moved.dialogOpened) return

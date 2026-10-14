@@ -1,20 +1,14 @@
 import Foundation
 
-/// A line-based diff (Myers, via `CollectionDifference`) rendered in git hunk
-/// order: removals appear immediately before the additions that replaced them,
-/// with 1-based line numbers for both sides.
 public enum LineDiff {
   public struct Row: Sendable, Equatable, Identifiable {
     public enum Kind: Sendable, Equatable {
       case context, added, removed
     }
 
-    /// Ordinal within one computation — stable for SwiftUI identity.
     public let id: Int
     public let kind: Kind
-    /// 1-based line number in the old text; nil for added rows.
     public let oldLine: Int?
-    /// 1-based line number in the new text; nil for removed rows.
     public let newLine: Int?
     public let text: String
   }
@@ -32,8 +26,6 @@ public enum LineDiff {
   public static func rows(old: String?, new: String) -> [Row] {
     let oldLines = lines(of: old ?? "")
     let newLines = lines(of: new)
-    // Move inference is deliberately skipped: the UI presents pure
-    // adds/removes, and inferred moves would hide changed duplicates.
     let difference = newLines.difference(from: oldLines)
     var removalOffsets = Set<Int>()
     var insertionOffsets = Set<Int>()
@@ -48,8 +40,6 @@ public enum LineDiff {
     var oldIndex = 0
     var newIndex = 0
     while oldIndex < oldLines.count || newIndex < newLines.count {
-      // Emit the current hunk's removals first, then its additions —
-      // matching git's presentation of a replacement.
       while oldIndex < oldLines.count, removalOffsets.contains(oldIndex) {
         rows.append(
           Row(id: rows.count, kind: .removed, oldLine: oldIndex + 1, newLine: nil, text: oldLines[oldIndex]))
@@ -74,18 +64,12 @@ public enum LineDiff {
     return rows
   }
 
-  /// Strips the whitespace prefix shared by every non-blank line of both
-  /// texts, computed jointly so old/new stay column-aligned. Edit-tool
-  /// diffs are mid-file snippets that carry the source's full nesting —
-  /// dead space in a small card — so the diff left-aligns to the
-  /// shallowest line instead.
   public static func dedent(old: String?, new: String) -> (old: String?, new: String) {
     let prefix = commonIndent(of: lines(of: old ?? "") + lines(of: new))
     guard !prefix.isEmpty else { return (old, new) }
     return (old.map { strip(prefix, fromEachLineOf: $0) }, strip(prefix, fromEachLineOf: new))
   }
 
-  /// The longest run of leading spaces/tabs shared by all non-blank lines.
   private static func commonIndent(of lines: [String]) -> Substring {
     var common: Substring?
     for line in lines {
@@ -110,9 +94,6 @@ public enum LineDiff {
   private static func strip(_ prefix: Substring, fromEachLineOf text: String) -> String {
     text.components(separatedBy: "\n").map { line in
       if line.starts(with: prefix) { return String(line.dropFirst(prefix.count)) }
-      // Only whitespace-only lines can miss the shared prefix (it is
-      // common to every non-blank line); they carry nothing worth
-      // keeping indented.
       return line.allSatisfy(\.isWhitespace) ? "" : line
     }.joined(separator: "\n")
   }
@@ -125,7 +106,6 @@ public enum LineDiff {
   private static func lines(of text: String) -> [String] {
     if text.isEmpty { return [] }
     var lines = text.components(separatedBy: "\n")
-    // A trailing newline does not open a final empty line.
     if lines.last == "" { lines.removeLast() }
     return lines
   }

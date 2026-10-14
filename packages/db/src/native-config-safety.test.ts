@@ -16,7 +16,6 @@ describe("native config safety", () => {
           filePath: "/home/u/.claude.json"
         })
       )
-      // A second save must not replace the original pre-mutation snapshot.
       await run(
         db.saveNativeConfigBackup({
           backupPath: "/data/backups/later.json",
@@ -55,7 +54,6 @@ describe("native config safety", () => {
 
       expect(await run(db.listNativeMcpRemovals())).toHaveLength(1)
       await run(db.markNativeMcpRemovalRestored(removal.id))
-      // Restored entries drop out of the default listing but stay in history.
       expect(await run(db.listNativeMcpRemovals())).toHaveLength(0)
       const all = await run(db.listNativeMcpRemovals(true))
       expect(all).toHaveLength(1)
@@ -65,9 +63,6 @@ describe("native config safety", () => {
     }
   })
 
-  // UUIDs are case-insensitive identifiers, but Swift clients render them
-  // uppercase while Node renders them lowercase. A case-only difference must
-  // never split one chat into two rows (the duplicate-sidebar-entries bug).
   it("canonicalizes session ids to lowercase and matches either case", async () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     const project = await run(db.createProject({ name: "Case", folderPath: "/tmp/case" }))
@@ -80,7 +75,6 @@ describe("native config safety", () => {
     expect(created.id).toBe(lower)
     expect(created.projectId).toBe(project.id)
 
-    // Reads and writes resolve the same row regardless of the caller's casing.
     expect((await run(db.getSessionSummary(upper))).id).toBe(lower)
     const renamed = await run(db.updateSession(upper, { title: "Renamed" }))
     expect(renamed.title).toBe("Renamed")
@@ -100,11 +94,6 @@ describe("native config safety", () => {
     const project = await run(db.createProject({ name: "Twins", folderPath: "/tmp/twins" }))
     await run(db.close)
 
-    // Recreate the pre-migration damage directly: a remotely created
-    // lowercase session with a real transcript, an uppercase phantom fork of
-    // it (opened but never prompted), a second pair where both twins were
-    // prompted and genuinely forked, and a third pair where neither twin was
-    // prompted.
     const lowerA = "aaaaaaaa-1111-4111-8111-111111111111"
     const upperA = lowerA.toUpperCase()
     const lowerB = "bbbbbbbb-2222-4222-8222-222222222222"
@@ -172,10 +161,6 @@ describe("native config safety", () => {
     insertChatText.run("part-a", "item-a", "prompt A")
     insertChatText.run("part-b-original", "item-b-original", "original prompt B")
     insertChatText.run("part-b-fork", "item-b-fork", "fork prompt B")
-    // Re-arm the canonicalization migration so reopening the database runs it
-    // against the twin rows above. Migration 30 hides a fork by archiving it,
-    // which only exists before migration 50 moved archive state onto the
-    // workspace — so rewind both and let the real sequence replay.
     sqlite.exec(`
       alter table sessions add column is_archived integer not null default 0;
       alter table sessions add column archived_at text;
@@ -191,14 +176,10 @@ describe("native config safety", () => {
     const reopened = await run(makeDatabase({ filename, serverId: "local" }))
     const sessions = await run(reopened.listSessions)
 
-    // Pair A: the unprompted uppercase phantom was deleted outright.
     const pairA = sessions.filter((session) => session.id.toLowerCase() === lowerA)
     expect(pairA).toHaveLength(1)
     expect(pairA[0]).toMatchObject({ id: lowerA, title: "Original A" })
 
-    // Pair B: both twins were prompted, so the most recently active twin
-    // keeps the canonical id and the fork survives archived under a fresh
-    // lowercase id with its transcript intact.
     const canonicalB = sessions.find((session) => session.id === lowerB)
     expect(canonicalB).toMatchObject({ title: "Original B" })
     const forkB = sessions.find((session) => session.title === "Fork B" && session.id !== lowerB)
@@ -207,13 +188,10 @@ describe("native config safety", () => {
     const forkDetail = await run(reopened.getSessionDetail(forkB!.id))
     expect(forkDetail.conversation).toHaveLength(1)
 
-    // Pair C: neither twin has a transcript, so the most recently active row
-    // wins the canonical id and the older phantom is discarded.
     const pairC = sessions.filter((session) => session.id.toLowerCase() === lowerC)
     expect(pairC).toHaveLength(1)
     expect(pairC[0]).toMatchObject({ id: lowerC, title: "Newer C" })
 
-    // No case-twins remain anywhere, and ids are canonically lowercase.
     expect(sessions).toHaveLength(4)
     for (const session of sessions) {
       expect(session.id).toBe(session.id.toLowerCase())

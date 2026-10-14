@@ -1,8 +1,5 @@
 import Foundation
 
-/// Wrapper making pane-array decoding element-lenient: an element that fails
-/// to decode (a pane kind from a NEWER build) yields nil instead of throwing,
-/// so one unknown pane never nukes a whole persisted group.
 struct LenientPaneDescriptorState: Decodable {
   let pane: PaneDescriptorState?
 
@@ -12,9 +9,6 @@ struct LenientPaneDescriptorState: Decodable {
 }
 
 extension PaneGroupState {
-  /// Builds a plugin pane descriptor for `convertNewTabPane`. Nil when the
-  /// plugin identity is incomplete (a plugin pane without its plugin is
-  /// unrenderable).
   static func pluginPane(
     id: UUID,
     name: String?,

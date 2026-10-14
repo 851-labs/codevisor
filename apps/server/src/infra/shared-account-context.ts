@@ -10,8 +10,6 @@ import type { SharedHarnessAccount } from "./shared-account-store.js"
 import { antigravitySharedContext } from "./shared-antigravity.js"
 import { museSharedContext } from "./shared-muse.js"
 
-/// How a shared account runs on this machine: the profile its harness uses
-/// and the environment that hands it the synced sign-in.
 export const sharedAccountContext = async (
   deps: {
     readonly dataDir: string
@@ -19,7 +17,6 @@ export const sharedAccountContext = async (
     readonly environment: () => Promise<NodeJS.ProcessEnv>
     readonly token: (id: string, rejected?: string) => Promise<SharedTokenBundle>
     readonly gateway: { readonly register: (id: string, accessToken: string) => void }
-    /// The local row `id` names (the adopted original, for an alias).
     readonly record: (id: string) => Promise<HarnessAccountRecord | undefined>
   },
   account: SharedHarnessAccount,
@@ -27,10 +24,6 @@ export const sharedAccountContext = async (
   bundle: SharedTokenBundle
 ): Promise<HarnessAccountContext> => {
   let path = join(deps.dataDir, "harness-profiles", account.harnessId, account.id)
-  // Existing Codex threads stay in their original local profile. External
-  // token mode changes authentication in memory without moving transcripts.
-  // An adopted Antigravity account keeps its profile too: agy's
-  // conversations live in its data root.
   if ((account.harnessId === "codex" || account.harnessId === "antigravity") && id !== account.id) {
     const original = await deps.record(id)
     if (original?.profileKind === "managed")

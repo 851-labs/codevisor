@@ -4,12 +4,6 @@ import type { OpenCodeAuthFlow } from "@codevisor/api"
 
 import type { OpenCodeServer } from "./server.js"
 
-/// Sign-in flows against an OpenCode 2 server. OpenCode runs the OAuth
-/// exchange itself (it hosts the browser callback or polls the device code);
-/// Codevisor starts an attempt, relays its URL and instructions, and watches
-/// it until OpenCode stores the credential, which may then be captured.
-
-/// A server held for the flow's lifetime, handed back when it ends.
 export interface OpenCodeServerHold {
   readonly server: OpenCodeServer
   readonly release: () => void | Promise<void>
@@ -21,8 +15,6 @@ export interface OpenCode2LoginRequest {
   readonly methodId: string
   readonly inputs?: Readonly<Record<string, string>>
   readonly apiKey?: string
-  /// Takes the credential OpenCode stored (in auth.json's shape), e.g. into
-  /// Codevisor's vault. Without it the credential stays where it landed.
   readonly capture?: (credential: Record<string, unknown>) => Promise<void>
 }
 
@@ -42,9 +34,6 @@ interface Flow {
   ended: boolean
 }
 
-/// OpenCode 2 stores `{methodID, refresh, access, expires, metadata}`;
-/// Codevisor's shared-account parser reads auth.json's `{refresh, access,
-/// expires, accountId, enterpriseUrl}`.
 export const authFileCredential = (value: Record<string, unknown>): Record<string, unknown> => {
   const metadata = (value.metadata ?? {}) as Record<string, unknown>
   return {
@@ -59,7 +48,6 @@ export const authFileCredential = (value: Record<string, unknown>): Record<strin
 
 const message = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause))
 
-/// Settles a flow once, handing its server back.
 const finish = async (flow: Flow, value: OpenCodeAuthFlow) => {
   if (flow.ended) return
   flow.ended = true
@@ -69,7 +57,6 @@ const finish = async (flow: Flow, value: OpenCodeAuthFlow) => {
 
 export const makeOpenCode2Logins = (
   deps: {
-    /// Resolves after `ms`; injected so the polling cadence is testable.
     readonly wait?: (ms: number) => Promise<void>
     readonly pollMs?: number
   } = {}
@@ -134,8 +121,6 @@ export const makeOpenCode2Logins = (
       const base = { id, accountId: request.accountId, providerId: request.providerId }
       const integration = `/api/integration/${encodeURIComponent(request.providerId)}`
       try {
-        // A location loads its integrations lazily; connecting before they
-        // have loaded fails (OpenCode 2.0.24 answers 500).
         await hold.server.request("/api/integration", { location })
         if (request.apiKey !== undefined) {
           await hold.server.request(`${integration}/connect/key`, {
@@ -180,7 +165,6 @@ export const makeOpenCode2Logins = (
       }
     },
     flow: (flowId: string): OpenCodeAuthFlow | undefined => flows.get(flowId)?.value,
-    /// For a sign-in that ends with a pasted code.
     answer: async (flowId: string, code: string): Promise<OpenCodeAuthFlow | undefined> => {
       const flow = flows.get(flowId)
       if (flow === undefined || flow.ended) return flow?.value

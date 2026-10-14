@@ -1,8 +1,6 @@
 import CodevisorCore
 import SwiftUI
 
-/// The SwiftUI-side navigation expectations the diagnostics probe checks
-/// against UIKit. Split from `WorkspaceScreen` for the size ratchet.
 extension WorkspaceScreen {
   var navigationDiagnosticState: IOSNavigationDiagnosticState {
     let identifier = workspaceId ?? activeSessionId ?? draftPlaceholderId
@@ -28,8 +26,6 @@ extension WorkspaceScreen {
     } else {
       contentPhase = "non-chat"
     }
-    // A split detail has no back button and a depth of one; only the
-    // compact stack owns a native back.
     let hostedInSplitDetail = homeLayoutMode == .split && !isNewChatPresentation
     return IOSNavigationDiagnosticState(
       screen: "workspace",

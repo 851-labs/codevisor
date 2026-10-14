@@ -1,18 +1,6 @@
 #if canImport(AppKit)
   import AppKit
 
-  // MARK: - Bleed container
-
-  /// The transcript-facing host for a table. Like the iOS renderer, the
-  /// *bordered table* is what scrolls: the scroll viewport is widened past
-  /// the text column on both sides (the "bleed", measured from the row's
-  /// position inside the transcript) and the content is inset by the same
-  /// amount, so a fitting table rests exactly on the text column and an
-  /// overflowing one scrolls all the way to the transcript's edges.
-  ///
-  /// `bleedLimit` caps that reach for tables hosted inside a bordered
-  /// container (the proposed-plan card): the table then scrolls within the
-  /// container's own padding rather than past its border.
   final class TableBleedContainer: NSView {
     let scrollView: TableScrollView
     private(set) var bleed: CGFloat = 0
@@ -45,8 +33,6 @@
       scrollView.layoutSubtreeIfNeeded()
     }
 
-    /// Events over the widened viewport still belong to the table even
-    /// though it extends past this view's frame.
     override func hitTest(_ point: NSPoint) -> NSView? {
       guard let superview else { return nil }
       let local = convert(point, from: superview)
@@ -54,9 +40,6 @@
       return scrollView.hitTest(local)
     }
 
-    /// The symmetric distance to the nearest edge of the enclosing
-    /// transcript viewport — the transcript's own horizontal padding plus
-    /// any centering slack — capped to keep the table inside it.
     private func measuredBleed() -> CGFloat {
       var ancestor = superview
       while let view = ancestor {
@@ -73,12 +56,6 @@
     }
   }
 
-  // MARK: - Horizontal scroll host
-
-  /// Scrolls the bordered table sideways when its min-content width exceeds
-  /// the width the transcript grants. Vertical gestures are handed to the
-  /// transcript (see `TranscriptHorizontalScrollView`), so a pointer resting
-  /// on a table never freezes the conversation.
   final class TableScrollView: TranscriptHorizontalScrollView {
     let tableTextView: TableTextView
     private let document: TableDocumentView
@@ -105,15 +82,6 @@
 
     override func layout() {
       super.layout()
-      // The document rests on the text column (viewport minus the bleed
-      // insets) or grows to the table's min-content width, whichever is
-      // wider. The text view rebuilds its `NSTextTable` at that width.
-      //
-      // Its height is exactly the height the host measured for that width.
-      // A self-sizing text view grows in steps as lazy layout catches up and
-      // can settle a point taller than the measurement, which pushes the
-      // bordered document past the viewport: its bottom edge is clipped and
-      // the table scrolls vertically by that point.
       let columnWidth = contentView.bounds.width - contentInsets.left - contentInsets.right
       guard columnWidth > 0 else { return }
       let width = MarkdownTextTableGeometry.width(max(columnWidth, tableTextView.minimumTableWidth))
@@ -129,10 +97,6 @@
     }
   }
 
-  // MARK: - Document
-
-  /// The rounded, bordered table surface. It is the scroll document, so the
-  /// border travels with the table when it scrolls — as on iOS.
   final class TableDocumentView: NSView {
     private let tableTextView: TableTextView
 
@@ -155,8 +119,6 @@
 
     override var wantsUpdateLayer: Bool { true }
 
-    /// Held dynamic and resolved in `updateLayer()`: see the note on
-    /// `NativeMarkdownCodeBlockView.fillColor`.
     private var borderColor: NSColor = .separatorColor
 
     func setBorderColor(_ color: NSColor) {

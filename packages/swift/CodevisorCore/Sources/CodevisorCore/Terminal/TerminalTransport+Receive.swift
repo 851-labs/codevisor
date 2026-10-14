@@ -1,11 +1,6 @@
 import Foundation
 
 extension TerminalTransport {
-  /// Receives and decodes frames off the main actor (frames arrive at very
-  /// high frequency during builds and can be up to 8MB), including the
-  /// renderer's bytes, and queues them in receive order. The main actor
-  /// drains the queue in one hop however many frames arrived meanwhile;
-  /// see `TerminalInboundFrames`.
   nonisolated func receiveLoop(
     _ socket: any ServerWebSocketConnecting, into inbound: TerminalInboundFrames
   ) async {
@@ -39,8 +34,6 @@ extension TerminalTransport {
     return InboundTerminalFrame(frame: frame, output: output)
   }
 
-  /// Protocol 2 output: kind byte (1 output, 2 reset), sequence number as a
-  /// big-endian u64, then UTF-8 output.
   nonisolated private static func decodeBinaryOutput(_ data: Data) -> InboundTerminalFrame? {
     guard data.count >= 9 else { return nil }
     let start = data.startIndex

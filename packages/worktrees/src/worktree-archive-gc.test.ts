@@ -12,9 +12,6 @@ import {
   snapshotWorktree
 } from "./worktree-archive.js"
 
-/// The inputs a garbage-collection pass needs: which snapshot refs exist, and
-/// which worktree registrations git is still holding. Both are deliberately
-/// forgiving — housekeeping must never be the thing that fails a boot.
 describe("worktree archive garbage collection", () => {
   it("lists snapshot refs by worktree id and ignores repositories it cannot read", async () => {
     const { repo, root } = makeGitRepo(true)
@@ -27,14 +24,11 @@ describe("worktree archive garbage collection", () => {
     await addWorktree(repo, second, "codevisor/ramen")
     await snapshotWorktree(repo, second, "wt-ramen")
 
-    // Keyed by worktree id, never by name: archiving frees the name, so only
-    // the id can still identify a snapshot.
     expect([...(await listSnapshotRefWorktreeIds(repo))].toSorted()).toEqual([
       "wt-ramen",
       "wt-sushi"
     ])
 
-    // A path that is not a repository is not something to prune.
     expect(await listSnapshotRefWorktreeIds(testTempDir(join(root, "not-a-repo-")))).toEqual([])
   })
 
@@ -48,23 +42,17 @@ describe("worktree archive garbage collection", () => {
       )
     expect(await registrations()).toBe(true)
 
-    // The directory disappears without git being told — a crash between
-    // deleting files and recording the archive leaves exactly this.
     rmSync(path, { recursive: true, force: true })
     expect(await registrations()).toBe(true)
     await pruneWorktreeRegistrations(repo)
     expect(await registrations()).toBe(false)
 
-    // Housekeeping against a non-repository resolves rather than throwing.
     await expect(
       pruneWorktreeRegistrations(testTempDir(join(root, "not-a-repo-")))
     ).resolves.toBeUndefined()
   })
 
   it("leaves the snapshot ref behind when only the files are removed", async () => {
-    // `removeArchivedWorktreeFiles` is the destructive half on its own: the
-    // snapshot must survive it, because the caller records the archive between
-    // the two steps and an interruption has to stay recoverable.
     const { repo, root } = makeGitRepo(true)
     const path = join(root, "curry")
     await addWorktree(repo, path, "codevisor/curry")

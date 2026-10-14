@@ -148,8 +148,6 @@ describe("@codevisor/db", () => {
         (await run(db.bindSessionHarnessAccount(legacy.id, defaultAccount.id))).harnessAccountId
       ).toBe(defaultAccount.id)
 
-      // Moving session bindings to the selected account frees the old account
-      // for removal — the same removal that was refused above.
       await expect(
         run(db.rebindHarnessAccountSessions(managed.id, "missing"))
       ).rejects.toBeInstanceOf(DatabaseError)

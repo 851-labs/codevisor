@@ -1,15 +1,10 @@
 import Foundation
 
-/// What a settings list knows about a machine before reading its report.
-/// Shared by every fleet plane (harnesses, MCPs, plugins) so the pages
-/// resolve machines the same way.
 public struct FleetMachineInfo: Identifiable, Equatable, Sendable {
   public var id: String
   public var name: String
-  /// The key the machine's server writes its readiness under; nil until probed.
   public var syncKey: String?
   public var isReachable: Bool
-  /// The machine this client runs on: the cheapest one to ask anything.
   public var isLocal: Bool
 
   public init(id: String, name: String, syncKey: String?, isReachable: Bool, isLocal: Bool = false) {
@@ -20,8 +15,6 @@ public struct FleetMachineInfo: Identifiable, Equatable, Sendable {
     self.isLocal = isLocal
   }
 
-  /// Every machine the client knows, in list order — rows must not jump
-  /// while a fleet converges.
   @MainActor
   public static func all(_ machines: MachineController) -> [FleetMachineInfo] {
     machines.allMachines.map { machine in
@@ -35,14 +28,7 @@ public struct FleetMachineInfo: Identifiable, Equatable, Sendable {
   }
 }
 
-/// One entry on one machine, reduced to what the row actually renders. Each
-/// plane keeps its own state enum (the states genuinely differ: a plugin is
-/// never "signed out", an MCP is never "waiting to install") and maps it
-/// here, so the mark, the caption, and the details popover stay identical
-/// across every fleet page.
 public struct FleetRowStatus: Equatable, Sendable {
-  /// How much of the user's attention the row deserves. `quiet` renders no
-  /// mark at all — "off" and "unreachable" are facts, not problems.
   public enum Emphasis: Equatable, Sendable {
     case ready
     case busy
@@ -51,10 +37,7 @@ public struct FleetRowStatus: Equatable, Sendable {
   }
 
   public var emphasis: Emphasis
-  /// The short phrase the mark's tooltip and VoiceOver use ("Ready").
   public var label: String
-  /// The full failure text, when there is one. Every attention status has
-  /// one; its presence is what makes the row's mark open the details.
   public var reason: String?
 
   public init(emphasis: Emphasis, label: String, reason: String? = nil) {
@@ -74,9 +57,6 @@ public struct FleetRowStatus: Equatable, Sendable {
     FleetRowStatus(emphasis: .busy, label: label)
   }
 
-  /// A mark that asks for the user's attention always opens an explanation,
-  /// so the reason is required; a blank one falls back rather than opening
-  /// an empty popover.
   public static func attention(_ label: String, reason: String) -> FleetRowStatus {
     let reason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
     return FleetRowStatus(
@@ -87,16 +67,9 @@ public struct FleetRowStatus: Equatable, Sendable {
     FleetRowStatus(emphasis: .quiet, label: label)
   }
 
-  /// The two statuses every plane resolves before it ever reads a report.
   public static let unreachable = FleetRowStatus.quiet("Unreachable")
   public static let syncing = FleetRowStatus.busy("Syncing…")
 
   nonisolated public static let blockedFallbackReason = "Couldn’t sync this to the machine."
-  /// True when a folded single-machine row should render a mark at all.
-  /// With one machine there is nothing to compare against, so a check on
-  /// every row is just a column of green repeating "fine" — the same noise
-  /// a caption saying "available everywhere" would be. Only progress and
-  /// problems earn the space. Machine rows in a real fleet still show the
-  /// check, because there it distinguishes machines from each other.
   public var isWorthFoldingUp: Bool { emphasis != .ready && emphasis != .quiet }
 }

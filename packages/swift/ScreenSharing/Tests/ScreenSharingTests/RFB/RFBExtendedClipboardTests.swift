@@ -4,14 +4,10 @@ import Testing
 import ScreenSharingTesting
 @testable import ScreenSharing
 
-/// Extended Clipboard (0xC0A1E5CE), 851-2316: UTF-8 text through the
-/// caps / notify / request / provide handshake instead of Latin-1.
 @MainActor
 struct RFBExtendedClipboardTests {
   nonisolated static let text = "héllo — 日本語 😀\nline two"
   typealias Message = RFBExtendedClipboard.Message
-
-  // MARK: L1 — the codec
 
   @Test(arguments: [
     Message.caps(
@@ -33,9 +29,9 @@ struct RFBExtendedClipboardTests {
 
   @Test func malformedMessagesAreRejected() throws {
     #expect(throws: RFBError.self) { try RFBExtendedClipboard.decode([0, 0]) }
-    #expect(throws: RFBError.self) { try RFBExtendedClipboard.decode([0, 0, 0, 1]) }  // no action
-    #expect(throws: RFBError.self) { try RFBExtendedClipboard.decode([0x10, 0, 0, 1, 9, 9, 9]) }  // not zlib
-    #expect(throws: RFBError.self) { try RFBExtendedClipboard.decode([0x01, 0, 0, 1]) }  // caps without sizes
+    #expect(throws: RFBError.self) { try RFBExtendedClipboard.decode([0, 0, 0, 1]) }
+    #expect(throws: RFBError.self) { try RFBExtendedClipboard.decode([0x10, 0, 0, 1, 9, 9, 9]) }
+    #expect(throws: RFBError.self) { try RFBExtendedClipboard.decode([0x01, 0, 0, 1]) }
   }
 
   @Test func theClientMessageIsANegativeLengthCutText() async throws {
@@ -44,8 +40,6 @@ struct RFBExtendedClipboardTests {
     let stream = RFBInputStream(transport: ScriptedTransport(message.encoded))
     #expect(try await RFBClientMessage.read(from: stream) == message)
   }
-
-  // MARK: L2 — the session, driven like the product's clipboard menu
 
   final class Viewer {
     let server: RFBLoopbackServer
@@ -76,7 +70,6 @@ struct RFBExtendedClipboardTests {
   @Test func textReachesTheServerAsUTF8() async throws {
     let viewer = try await Viewer(extended: true)
     defer { viewer.stop() }
-    // The session answers the server's caps before anything else.
     #expect(
       await awaitPolled {
         viewer.server.received.contains { if case .extendedClipboard(.caps) = $0 { true } else { false } }
@@ -95,7 +88,6 @@ struct RFBExtendedClipboardTests {
         viewer.server.received.contains { if case .extendedClipboard(.caps) = $0 { true } else { false } }
       })
     viewer.server.setClipboard(Self.text)
-    // notify → the session requests at once → provide.
     #expect(
       await awaitPolled { viewer.session.metrics.snapshot().counters["vncExtendedClipboardMessages", default: 0] >= 3 })
     viewer.transfer.requestText()

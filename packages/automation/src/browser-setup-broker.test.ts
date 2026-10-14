@@ -141,9 +141,6 @@ describe("browser setup broker", () => {
       presentation: "browserExtensionSetup"
     })
 
-    // The client showing this question may be remote. Opening the same chat
-    // on the host machine and connecting Chrome resolves the held call for
-    // every client without invoking a setup action from this one.
     current.connect()
     await expect(resolving).resolves.toBe("extension")
     expect(current.preference()).toBe("chrome")

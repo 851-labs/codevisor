@@ -4,11 +4,6 @@ import StreamMarkdown
 import SwiftUI
 import UIKit
 
-/// The pre-chat setup sections shown after the first user message —
-/// "Setting up worktree…" / "Starting Claude Code…" — the iOS port of the
-/// macOS SessionSetupView: a live timer while running, "Set up worktree in
-/// 60s" when done, and an expandable body with the streamed setup logs or
-/// the failure message.
 struct SessionSetupView: View {
   let phases: [SessionSetupPhase]
 
@@ -30,8 +25,6 @@ private struct SessionSetupPhaseView: View {
 
   init(phase: SessionSetupPhase) {
     self.phase = phase
-    // A phase that already failed when the view mounts starts expanded so
-    // the error is visible immediately.
     let failed = phase.failureMessage != nil
     _isExpanded = State(initialValue: failed)
     _hasAutoExpandedFailure = State(initialValue: failed)
@@ -116,8 +109,6 @@ private struct SessionSetupPhaseView: View {
     }
   }
 
-  /// "Setting up worktree… 12s" (shimmering, live timer) while running;
-  /// "Set up worktree in 60s" once done; the failed title in warn color.
   @ViewBuilder
   private var label: some View {
     switch phase.outcome {

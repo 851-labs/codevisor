@@ -13,8 +13,6 @@ import {
   tempDirs
 } from "../test-support.js"
 
-/// DELETE /v1/plugins/:pluginId/link — detaching a linked dev checkout.
-
 describe("plugin unlink route", () => {
   it("unlinks the plugin and closes its panes like an uninstall", async () => {
     const { services } = await makeServices("server-a")
@@ -58,7 +56,6 @@ describe("plugin unlink route", () => {
     }>
     expect(panes.map((pane) => pane.id)).toEqual(["other-pane"])
 
-    // An unknown plugin is refused before anything is touched.
     const missing = await jsonRequest(server, "/v1/plugins/owner.ghost/link", {
       method: "DELETE"
     })

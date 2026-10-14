@@ -40,7 +40,6 @@ interface FakeMac {
   readonly created?: string
 }
 
-/// A Mac with one simulator, some DeviceKit files and device-type plists, recording each command.
 const fakeMac = (mac: FakeMac = {}) => {
   const commands: string[][] = []
   const reads: string[] = []
@@ -149,7 +148,6 @@ describe("simulator device types", () => {
       undefined,
       undefined
     ])
-    // Asked again, it comes from memory.
     const commands = mac.commands.length
     expect(await simulators.deviceType("phone")).toBe(detail)
     expect(mac.commands.length).toBe(commands)

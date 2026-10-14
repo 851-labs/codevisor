@@ -7,12 +7,6 @@ import { describe, expect, it, vi } from "vitest"
 
 import { wireCodexClient } from "./client.js"
 
-/// The transport seam is where write-after-exit bugs live: replies to
-/// approvals/questions settle on human timescales and routinely outlive the
-/// codex process. Before the lifecycle-gated transport, one late reply to a
-/// dead stdin was an unhandled stream 'error' — fatal to the WHOLE server
-/// process, not just the session. These tests drive exactly those races.
-
 interface FakeChild {
   readonly endpoint: StdioEndpoint
   readonly stdout: PassThrough
@@ -92,8 +86,6 @@ describe("codex client over the ndjson transport", () => {
   })
 
   it("skips a notification whose handler throws and keeps dispatching", ({ onTestFinished }) => {
-    // Notifications are handled inside the transport's stdout listener; a
-    // throw there used to be an uncaught exception that exited the server.
     const logged = vi.spyOn(console, "error").mockImplementation(() => undefined)
     onTestFinished(() => logged.mockRestore())
     const child = makeFakeChild()
@@ -155,9 +147,6 @@ describe("codex client over the ndjson transport", () => {
       `${JSON.stringify({ id: 5, method: "item/tool/requestUserInput", params: {} })}\n`
     )
     child.exit()
-    // The human's answer arrives after codex is gone: it must be discarded,
-    // not written into the dead pipe (which was an unhandled stream error
-    // fatal to the entire server).
     answer.resolve({ answers: {} })
     await answer.promise
     expect(child.frames()).toEqual([])
@@ -173,8 +162,6 @@ describe("codex client over the ndjson transport", () => {
     )
     client.close()
     expect(child.killed()).toBe(true)
-    // stdin.end() has run — an unguarded write here is exactly the historic
-    // write-after-end crash.
     answer.resolve({ decision: "accept" })
     await answer.promise
     expect(child.frames()).toEqual([])
@@ -215,7 +202,6 @@ describe("codex client over the ndjson transport", () => {
     )
     client.close()
     expect(signals[0]?.aborted).toBe(true)
-    // Routine teardown must not masquerade as a crash.
     expect(closeErrors).toEqual([])
   })
 
@@ -245,7 +231,6 @@ describe("codex client over the ndjson transport", () => {
     child.stdin.destroy(new Error("EPIPE"))
     await closed
     expect(closeErrors.map((error) => error.message)).toEqual(["EPIPE"])
-    // Later traffic is dropped, not thrown.
     client.notify("noop")
     await expect(client.request("turn/start")).rejects.toThrow(
       "codex app-server connection is closed"
@@ -260,7 +245,6 @@ describe("codex client over the ndjson transport", () => {
     const reply = client.request("turn/start")
     client.close()
     await expect(reply).rejects.toThrow("codex client closed")
-    // The kill-induced exit after close is expected teardown, not a crash.
     child.exit()
     expect(closeErrors).toEqual([])
     await expect(client.request("thread/list")).rejects.toThrow(

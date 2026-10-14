@@ -64,7 +64,3 @@ public enum RigHUDFormatter {
     value.map { String(format: "%.\(decimals)f", $0) } ?? "—"
   }
 }
-
-/// Appends one JSON line per sample to `<directory>/<role>.jsonl`, rotating
-/// to `.1` when the file would exceed the limit. Never contains SDP,
-/// addresses or credentials: samples carry only counters and rates.

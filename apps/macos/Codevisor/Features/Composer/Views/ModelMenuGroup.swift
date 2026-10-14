@@ -1,6 +1,5 @@
 import ACPKit
 
-/// Domain choices and persisted identity; filtering and grouping live in Autocomplete.
 struct ModelMenuGroup: Identifiable {
   let id: String
   let name: String

@@ -5,9 +5,7 @@ public struct ServerScreenSharingDisplay: Codable, Sendable, Equatable, Identifi
   public let name: String
   public let width: Int
   public let height: Int
-  /// UI scales `setScale` accepts (a VNC desktop the server can scale, 851-2339); nil when it can't.
   public var scales: [Int]?
-  /// The size the desktop was provisioned at, for a viewer that stops resizing it.
   public var defaultWidth: Int?
   public var defaultHeight: Int?
   public init(
@@ -19,7 +17,6 @@ public struct ServerScreenSharingDisplay: Codable, Sendable, Equatable, Identifi
   }
 }
 
-/// Ephemeral signaling only. Never persist this request or SDP in pane metadata.
 public struct ServerScreenSharingRequest: Codable, Sendable {
   public enum Operation: String, Codable, Sendable { case capabilities, start, restart, heartbeat, stop, setScale }
   public let version: Int
@@ -29,11 +26,7 @@ public struct ServerScreenSharingRequest: Codable, Sendable {
   public let viewerId: UUID
   public var displayId: String?
   public var offer: String?
-  /// `setScale`: the desktop's UI scale, 1 or 2 (851-2339).
   public var scale: Int?
-  /// Media over the Codevisor tunnel: the viewer's endpoint and the flow it
-  /// opened (docs/plans/codevisor-tunnel.md). The machine bridges the flow to
-  /// the host WebRTC's socket and says so in the reply.
   public var tunnelMedia: ServerScreenSharingTunnelMedia?
 
   public init(
@@ -53,12 +46,8 @@ public struct ServerScreenSharingReply: Codable, Sendable {
   public var displays: [ServerScreenSharingDisplay]
   public var answer: String?
   public var connectivity: ServerScreenSharingConnectivity?
-  /// "vnc" when the machine streams over the VNC socket route; absent or
-  /// "native" for WebRTC from the native helper.
   public var provider: String?
-  /// The VNC socket arbitrates control, one viewer at a time (851-2338).
   public var controlLease: Bool?
-  /// Present when the request's tunnel flow was bridged.
   public var tunnelMedia: ServerScreenSharingTunnelMediaBridge?
 
   public init(
@@ -81,7 +70,6 @@ public struct ServerScreenSharingTunnelMedia: Codable, Sendable, Equatable {
 
 public struct ServerScreenSharingTunnelMediaBridge: Codable, Sendable, Equatable {
   public let flowId: Int
-  /// Largest UDP payload the flow carries; RTP packets are capped by it.
   public let maxPayload: Int?
   public init(flowId: Int, maxPayload: Int? = nil) {
     self.flowId = flowId; self.maxPayload = maxPayload
@@ -110,7 +98,6 @@ extension CodevisorServerClient {
     try await send("/v1/screen-sharing", method: "POST", body: request)
   }
 
-  /// The RFB byte stream behind a "vnc:" display, over the machine-authenticated socket route.
   public func screenSharingVNCSocket(displayId: String) throws -> any ServerWebSocketConnecting {
     var query = URLComponents()
     query.queryItems = [URLQueryItem(name: "displayId", value: displayId)]
@@ -120,8 +107,6 @@ extension CodevisorServerClient {
     return webSocketTransport.connect(request, maximumMessageSize: 1 << 20)
   }
 
-  /// The tool a chat's agent touched last, and status changes and JPEG
-  /// frames of the tab it drives.
   public func livePreviewSocket(sessionId: UUID) throws -> any ServerWebSocketConnecting {
     var query = URLComponents()
     query.queryItems = [URLQueryItem(name: "sessionId", value: sessionId.uuidString.lowercased())]

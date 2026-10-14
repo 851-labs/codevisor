@@ -5,21 +5,15 @@ import ComposableArchitecture
 import ScreenSharing
 import SwiftUI
 
-/// Window toolbar controls borrow the selected pane's store; the pane owns
-/// the connection and control state across toolbar and menu updates.
-/// Controls that need a capability the connected backend lacks are not shown.
 struct ScreenSharingToolbar: ToolbarContent {
   @Bindable var store: StoreOf<ScreenSharingViewer>
-  /// The machine settings sheet behind the gear (851-2367).
   let settings: () -> ScreenSharingMachineSettings
   let applySettings: (ScreenSharingMachineSettingsChanges) -> Void
 
   var body: some ToolbarContent {
     ToolbarItem(id: "screenSharing.mode", placement: .principal) {
-      // Dynamic Resolution lives in the machine settings sheet.
       if store.endpoint?.supportsControl != false { controlActions }
     }
-    // Only where the buttons do something (a native Mac host), so no empty pill otherwise.
     if store.endpoint?.supportsSystemKeys == true {
       ForEach(ScreenSharingSystemKey.allCases, id: \.self) { key in
         ToolbarItem(id: "screenSharing.macControls.\(key.rawValue)", placement: .principal) {
@@ -60,8 +54,6 @@ struct ScreenSharingToolbar: ToolbarContent {
     }
   }
 
-  /// The connected display; choosing another reconnects to it and remembers the
-  /// choice. Hidden unless this Mac has more than one display to switch between.
   private var displayMenu: some View {
     Picker(
       "Display",

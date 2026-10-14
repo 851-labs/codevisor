@@ -1,13 +1,4 @@
 #!/usr/bin/env bash
-#
-# Builds libghostty-vt as WebAssembly for the server's terminal state
-# (packages/terminal/resources/ghostty-vt.wasm) from a pinned Ghostty
-# revision. The output is checked in; rerun this after bumping the pin and
-# commit both files.
-#
-# Requirements: Zig 0.16.0 on PATH (or ZIG=/path/to/zig), git.
-#
-# Usage: scripts/build-ghostty-vt-wasm.sh
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

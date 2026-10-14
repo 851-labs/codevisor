@@ -1,30 +1,11 @@
 import Foundation
 
-/// One change the user made to server-owned navigation state, waiting in the
-/// outbox until the server has it.
-///
-/// The device never edits its copy of server state. It records what the user
-/// asked for here, shows it on top of the cached server state until the
-/// server's own copy catches up (see `NavigationOverlay`), and sends it to the
-/// machine that owns the record (see `NavigationOutboxExecutor`). Every case
-/// maps to a request the server treats as idempotent, so resending one after
-/// an ambiguous failure is always safe.
 public enum NavigationIntent: Codable, Equatable, Sendable {
   case upsertProject(Project)
-  /// Deleting a project deletes its chats with it; the ids are the chats the
-  /// user saw at the time, so they disappear together. `deletesFiles` also
-  /// removes the project's folder on that machine (optional so entries
-  /// persisted before it existed still decode).
   case deleteProject(projectId: UUID, sessionIds: [UUID], deletesFiles: Bool? = nil)
-  /// The branch new worktrees start from. Nil restores the legacy default.
   case setProjectWorktreeBase(projectId: UUID, worktreeBase: ProjectWorktreeBase?)
-  /// Where new chats in the project start. Nil clears the choice.
   case setProjectDefaultRunLocation(projectId: UUID, location: ProjectRunLocation?)
   case upsertSession(ChatSession, workspaceId: UUID?)
-  /// A chat that opening it will create on the server (the new-chat composer
-  /// makes the chat before its first message). It is shown right away but
-  /// never sent: the open request carries it, and the entry leaves once the
-  /// server lists the chat.
   case expectSession(ChatSession)
   case renameSession(ChatSession)
   case deleteSession(sessionId: UUID)
@@ -32,20 +13,12 @@ public enum NavigationIntent: Codable, Equatable, Sendable {
   case markSessionUnread(sessionId: UUID)
   case renameWorkspace(workspaceId: UUID, name: String, hasCustomName: Bool)
   case setWorkspaceArchived(workspaceId: UUID, isArchived: Bool)
-  /// The latest move wins, like a rename. `expectedRevision` is the order
-  /// revision this device last saw; current servers ignore it, and it is
-  /// sent only because servers from before last-write-wins ordering require
-  /// the field.
   case reorderWorkspace(workspaceId: UUID, position: String, expectedRevision: Int)
-  /// Moves one tab in its workspace's shared tab order; the latest move wins.
   case movePane(paneId: UUID, workspaceId: UUID, position: String)
   case upsertPane(PaneDescriptorState, workspaceId: UUID)
   case closePane(paneId: UUID, workspaceId: UUID)
-  /// Turns a pane the server already lists into a chat, keeping its id.
   case promotePane(PaneDescriptorState, workspaceId: UUID, session: ChatSession)
 
-  /// A newer request with the same key replaces an older one that has not
-  /// been sent yet: only the latest name, order, or pane state matters.
   public var coalescingKey: String {
     switch self {
     case let .upsertProject(project): "project:\(project.id)"
@@ -67,9 +40,6 @@ public enum NavigationIntent: Codable, Equatable, Sendable {
     }
   }
 
-  /// The workspace this request needs to exist on the server first. Requests
-  /// for a workspace that is still a draft on this device wait until opening
-  /// its first chat creates it.
   public var workspaceId: UUID? {
     switch self {
     case let .upsertSession(_, workspaceId): workspaceId
@@ -83,19 +53,16 @@ public enum NavigationIntent: Codable, Equatable, Sendable {
     }
   }
 
-  /// Sent by something other than the outbox (see `expectSession`).
   var isSentElsewhere: Bool {
     if case .expectSession = self { return true }
     return false
   }
 
-  /// The chat an `expectSession` entry is waiting for the server to list.
   var expectedSessionId: UUID? {
     if case let .expectSession(session) = self { return session.id }
     return nil
   }
 
-  /// A delete that finds nothing to delete has already happened.
   var isRemoval: Bool {
     switch self {
     case .deleteProject, .deleteSession, .closePane: true
@@ -144,7 +111,6 @@ public enum NavigationIntent: Codable, Equatable, Sendable {
       _ = try await client.reorderWorkspace(
         id: workspaceId, position: position, expectedRevision: expectedRevision)
     case let .movePane(paneId, workspaceId, position):
-      // The tab may have closed since; its order no longer matters.
       try await Self.ignoringMissing {
         try await client.moveWorkspacePane(workspaceId: workspaceId, paneId: paneId, position: position)
       }
@@ -155,10 +121,6 @@ public enum NavigationIntent: Codable, Equatable, Sendable {
       _ = try await client.closeWorkspacePane(workspaceId: workspaceId, paneId: paneId)
     case let .promotePane(pane, workspaceId, session):
       let record = WorkspaceSyncModel.serverPane(from: pane, workspaceId: workspaceId, createdAt: Date())
-      // Only a pane the server already lists can be converted in place. A
-      // New Tab page never left this device, and an older server can't
-      // promote: both create the chat, list its pane, then assign it -- the
-      // order that never shows the chat twice.
       let promoted: Bool
       do {
         promoted = try await client.promoteWorkspacePaneToChat(record, session: session) != nil

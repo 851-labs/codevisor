@@ -4,10 +4,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// A machine found booting through a data upgrade by a client that did NOT
-/// ask for the update (a phone watching a Mac update itself): the probe
-/// tells it apart from "unreachable", Settings › Updates shows the migration
-/// live, and the preparation retry polls at a steady cadence until ready.
 @MainActor
 @Suite("MachineController data upgrades")
 struct MachineControllerDataUpgradeTests {
@@ -44,19 +40,13 @@ struct MachineControllerDataUpgradeTests {
     #expect(row.detailText == "Updating chat history 40%")
     #expect(row.machineId == remote.id)
 
-    // Not a failure streak: the retry waits one poll interval, not backoff.
     await clock.waitForSleep(.seconds(2))
     #expect(connection.preparationFailures == 0)
 
-    // The report is spent, so the next health answer is ready. The status
-    // probe (which clears the report) runs after the machine is marked
-    // ready, so wait for the probe's own result.
     clock.advance(by: .seconds(2))
     try await waitUntil { connection.status?.isReachable == true }
     #expect(controller.availability(for: remote.id) == .ready)
     #expect(connection.dataUpgradeProgress == nil)
-    // Without a migration the row depends on the release state, which the
-    // same probe reads next; it comes back as an ordinary idle row.
     try await waitUntil { connection.updateInfo != nil }
     #expect(center.components.first { $0.kind == .server }?.phase == .idle)
   }

@@ -1,8 +1,6 @@
 import CTreeSitter
 import Foundation
 
-/// UTF-16 storage matches Foundation ranges. Line starts are maintained on edits
-/// so translating an edit near EOF doesn't scan the entire preceding document.
 struct TreeSitterText {
   private(set) var units: [UInt16]
   private(set) var lines: [Int]
@@ -50,7 +48,6 @@ struct TreeSitterText {
     var prefix = 0
     while prefix < min(count, next.count), units[prefix] == next[prefix] { prefix += 1 }
     if prefix == count, prefix == next.count { return nil }
-    // Never cut between the halves of a surrogate pair.
     if prefix > 0, prefix < count, (0xDC00...0xDFFF).contains(units[prefix]) { prefix -= 1 }
     var suffix = 0
     while suffix < min(count, next.count) - prefix, units[count - suffix - 1] == next[next.count - suffix - 1] {

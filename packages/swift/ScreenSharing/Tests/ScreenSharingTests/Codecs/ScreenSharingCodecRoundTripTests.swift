@@ -5,16 +5,8 @@ import Foundation
 import Testing
 @testable import ScreenSharing
 
-/// The VideoToolbox pair over synthetic pictures: what the host encoded is what
-/// the viewer decodes, at the negotiated size, pixel format, identity and order.
-/// Encoder and decoder callbacks arrive on VideoToolbox's own queues, so every
-/// wait here is on the delivery signal those callbacks raise. The time limit is
-/// a deadlock guard for that hardware boundary, never an expected result: a
-/// codec that silently stops delivering must fail the suite rather than hang it.
 @Suite(.timeLimit(.minutes(1)))
 struct ScreenSharingCodecRoundTripTests {
-
-  // MARK: the codec table
 
   @Test func eachCodecNamesItsMediaTypeCaptureFormatAndDecodedFormat() {
     #expect(ScreenSharingVideoCodec.allCases == [.h264, .hevc, .hevc444])
@@ -27,15 +19,11 @@ struct ScreenSharingCodecRoundTripTests {
       #expect(codec.capturePixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
       #expect(codec.decodedPixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
     }
-    // Only Main444 captures BGRA: subsampling before the encoder would discard
-    // the chroma the 4:4:4 profile exists to keep.
     #expect(ScreenSharingVideoCodec.hevc444.capturePixelFormat == kCVPixelFormatType_32BGRA)
     #expect(ScreenSharingVideoCodec.hevc444.decodedPixelFormat == kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange)
     #expect(ScreenSharingVideoCodec(rawValue: "hevc444") == .hevc444)
     #expect(ScreenSharingVideoCodec(rawValue: "vp9") == nil)
   }
-
-  // MARK: encode to decode
 
   @Test(.enabled(if: CodecHardware.has(.h264), "No hardware H.264 encoder on this machine."))
   func h264FramesSurviveTheRoundTripWithTheirIdentityAndOrder() async throws {
@@ -50,17 +38,12 @@ struct ScreenSharingCodecRoundTripTests {
   @Test(.enabled(if: CodecHardware.has(.hevc444), "No hardware HEVC Main444 encoder on this machine."))
   func hevc444FramesSurviveTheRoundTripAtFullChroma() async throws {
     let harness = try await assertRoundTrip(.hevc444)
-    // The 4:4:4 claim is the reason this codec exists: a silent fallback to
-    // 4:2:0 or to 10 bits would otherwise decode perfectly well.
     let labels = harness.metrics.snapshot().labels
     #expect(labels["encodedChroma"] == "4:4:4" && labels["decodedChroma"] == "4:4:4")
     #expect(labels["encodedBitDepth"] == "8" && labels["decodedBitDepth"] == "8")
     #expect(labels["encodedHEVCProfileIDC"] == "4")
   }
 
-  /// HDR (851-2380): ScreenCaptureKit's 10-bit full-range 4:4:4 goes through Main 4:4:4 10 and
-  /// comes out as 10-bit 4:4:4, with its precision. The picture is a gentle ramp of 320 adjacent
-  /// 10-bit codes: 8 bits anywhere on the way would leave about 70 distinct levels.
   @Test(.enabled(if: CodecHardware.hasHighDynamicRange, "No hardware HEVC Main 4:4:4 10 encoder on this machine."))
   func hdrFramesKeepTheirTenBitsAndFullChroma() async throws {
     let harness = try CodecHarness(codec: .hevc444, width: 320, height: 192, dynamicRange: .high)
@@ -73,7 +56,6 @@ struct ScreenSharingCodecRoundTripTests {
     #expect(labels["encodedChroma"] == "4:4:4" && labels["decodedChroma"] == "4:4:4")
     #expect(labels["encodedBitDepth"] == "10" && labels["decodedBitDepth"] == "10")
     #expect(labels["encodedColor"] == "Display P3 primaries, PQ transfer")
-    // The decoder follows the stream back to 8 bits when the host stops sending HDR.
     try harness.restartEncoder(width: 320, height: 192, dynamicRange: .standard)
     let standard = try await harness.decode(harness.encode(index: 1, timestampNs: 33_333_333, identity: 8))
     #expect(standard.pixelFormat == kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange)
@@ -94,8 +76,6 @@ struct ScreenSharingCodecRoundTripTests {
   private func assertRoundTrip(_ codec: ScreenSharingVideoCodec) async throws -> CodecHarness {
     let harness = try CodecHarness(codec: codec, width: 320, height: 192)
     defer { harness.stop() }
-    // Identities are deliberately not the presentation timestamps: the viewer
-    // reads content identity from the in-band marker, never from frame counting.
     let identities: [Int64] = [1_726_100_000_000_000_001, 1_726_100_000_000_000_002, 1_726_100_000_000_000_003]
     var decoded: [CodecHarness.Decoded] = []
     for (index, identity) in identities.enumerated() {
@@ -112,10 +92,6 @@ struct ScreenSharingCodecRoundTripTests {
       #expect(frame.width == 320 && frame.height == 192)
       #expect(frame.pixelFormat == codec.decodedPixelFormat)
     }
-    // Structure, not pixels: these encoders are lossy and the hardware differs
-    // per machine. The source ramp spans the whole video-range luma scale, so
-    // the bright edge stays far above the dark one, and the ramp's direction
-    // flips with the input's — a stale, blank or reordered output cannot.
     for (index, frame) in decoded.enumerated() {
       let dark = index.isMultiple(of: 2) ? frame.leftLuma : frame.rightLuma
       let bright = index.isMultiple(of: 2) ? frame.rightLuma : frame.leftLuma
@@ -128,16 +104,12 @@ struct ScreenSharingCodecRoundTripTests {
     return harness
   }
 
-  // MARK: keyframes
-
   @Test(.enabled(if: CodecHardware.has(.h264), "No hardware H.264 encoder on this machine."))
   func anExplicitRequestProducesAKeyframeOnTheNextEncodeAndIsNotRepeated() async throws {
     let harness = try CodecHarness(codec: .h264, width: 320, height: 192)
     defer { harness.stop() }
     var keyFrames: [Bool] = []
     for index in 0..<4 {
-      // The third frame carries the request; the fourth proves a satisfied
-      // request is not still latched.
       let encoded = try await harness.encode(
         index: index, timestampNs: Int64(index) * 33_333_333, identity: Int64(index + 1), forceKeyFrame: index == 2)
       keyFrames.append(encoded.isKeyFrame)
@@ -147,7 +119,6 @@ struct ScreenSharingCodecRoundTripTests {
     let counters = harness.metrics.snapshot().counters
     #expect(counters["encoderKeyframeRequests"] == 1 && counters["encoderForcedKeyframesSubmitted"] == 1)
     #expect(counters["encodedKeyFrames"] == 2 && counters["encodedDeltaFrames"] == 2)
-    // One request, one forced output: nothing retried, nothing deferred.
     #expect(counters["encoderRetriedKeyframes"] == nil && counters["encoderDeferredKeyframeRequests"] == nil)
     #expect(counters["decodedKeyFrames"] == 2)
   }
@@ -163,8 +134,6 @@ struct ScreenSharingCodecRoundTripTests {
         forceKeyFrame: index == 1 || index == 2)
       keyFrames.append(encoded.isKeyFrame)
     }
-    // Two requests, two forced keyframes, and the unrequested frame after them
-    // is a delta: a request neither multiplies nor survives its own output.
     #expect(keyFrames == [true, true, true, false])
     let counters = harness.metrics.snapshot().counters
     #expect(counters["encoderKeyframeRequests"] == 2 && counters["encoderForcedKeyframesSubmitted"] == 2)
@@ -172,22 +141,17 @@ struct ScreenSharingCodecRoundTripTests {
     #expect(counters["encoderRetriedKeyframes"] == nil)
   }
 
-  // MARK: resolution changes
-
   @Test(.enabled(if: CodecHardware.has(.h264), "No hardware H.264 encoder on this machine."))
   func theDecoderFollowsAMidStreamResolutionChange() async throws {
     let harness = try CodecHarness(codec: .h264, width: 320, height: 192)
     defer { harness.stop() }
     let before = try await harness.decode(harness.encode(index: 0, timestampNs: 0, identity: 1))
     #expect(before.width == 320 && before.height == 192)
-    // The transport restarts the encoder for a new resolution and keeps the
-    // decoder: its session is rebuilt from the new keyframe's parameter sets.
     try harness.restartEncoder(width: 256, height: 160)
     let firstAfter = try await harness.encode(index: 0, timestampNs: 33_333_333, identity: 2)
     #expect(firstAfter.isKeyFrame && firstAfter.width == 256 && firstAfter.height == 160)
     let after = try await harness.decode(firstAfter)
     #expect(after.width == 256 && after.height == 160 && after.sourceTimestampNs == 2)
-    // The stream continues at the new size, off the new session's keyframe.
     let continued = try await harness.encode(index: 1, timestampNs: 66_666_666, identity: 3)
     #expect(!continued.isKeyFrame)
     let decoded = try await harness.decode(continued)
@@ -196,10 +160,6 @@ struct ScreenSharingCodecRoundTripTests {
   }
 }
 
-/// Hardware support differs per machine, and Main444 is absent on many. Creating
-/// a real session is the only reliable answer, so probe once per process and
-/// gate on the result: an unsupported codec reports a skip with its reason
-/// rather than a failure, and a supported one is never quietly passed over.
 private enum CodecHardware {
   static let encoders: Set<ScreenSharingVideoCodec> = Set(
     ScreenSharingVideoCodec.allCases.filter { codec in
@@ -223,8 +183,6 @@ private enum CodecHardware {
   }()
 }
 
-/// One encoder feeding one decoder. The logs are the only state shared with
-/// VideoToolbox's callback queues; the harness itself stays on the test's task.
 private final class CodecHarness {
   struct Decoded: Sendable {
     let width: Int
@@ -234,7 +192,6 @@ private final class CodecHarness {
     let sourceTimestampNs: Int64?
     let leftLuma: Double
     let rightLuma: Double
-    /// Distinct luma codes along the middle row, at the plane's own depth.
     let distinctLumaCodes: Int
   }
 
@@ -277,13 +234,9 @@ private final class CodecHarness {
   ) throws -> ScreenSharingEncoder {
     try ScreenSharingEncoder(
       configuration: configuration, metrics: metrics,
-      // Main444 refuses the low-latency rate control, which can reduce chroma.
       useLowLatencyRateControl: codec != .hevc444, codec: codec, dynamicRange: dynamicRange)
   }
 
-  /// Submits one picture and returns the frame the encoder's callback delivered.
-  /// Awaiting each output keeps admission, and so the whole run, free of any
-  /// dependence on VideoToolbox's completion timing.
   func encode(
     index: Int, timestampNs: Int64, identity: Int64, forceKeyFrame: Bool = false
   ) async throws
@@ -309,7 +262,6 @@ private final class CodecHarness {
     return decoded.frames[target - 1]
   }
 
-  /// WebRTC restarts the encoder for a new resolution and keeps the decoder.
   func restartEncoder(width: Int, height: Int, dynamicRange: ScreenSharingDynamicRange? = nil) throws {
     encoder.stop()
     configuration = try Self.configuration(width: width, height: height)
@@ -320,22 +272,17 @@ private final class CodecHarness {
     encoder.onFrame { encoded.record($0) }
   }
 
-  /// Both sessions drain their callbacks before returning, so no output can
-  /// arrive after a test has finished with the harness.
   func stop() {
     encoder.stop()
     decoder.stop()
   }
 
-  /// A horizontal luma ramp over the full video range, reversed on alternate
-  /// frames so a decoded picture can be matched to the input that produced it.
   static func picture(
     configuration: ScreenSharingVideoConfiguration, format: OSType, ascending: Bool
   ) throws
     -> CVPixelBuffer
   {
     var created: CVPixelBuffer?
-    // IOSurface backing is what makes the buffer usable by the hardware encoder.
     let attributes = [kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary] as CFDictionary
     #expect(
       CVPixelBufferCreate(nil, configuration.width, configuration.height, format, attributes, &created)
@@ -347,7 +294,6 @@ private final class CodecHarness {
     let height = configuration.height
     func level(_ column: Int) -> Int { (ascending ? column : width - 1 - column) * 255 / (width - 1) }
     if format == ScreenSharingDynamicRange.highCapturePixelFormat {
-      // Full-range 10-bit codes in the top of 16-bit words: one code per column from 360 up.
       for plane in 0..<2 {
         let base = try #require(CVPixelBufferGetBaseAddressOfPlane(buffer, plane)).assumingMemoryBound(to: UInt8.self)
         let stride = CVPixelBufferGetBytesPerRowOfPlane(buffer, plane)
@@ -371,7 +317,6 @@ private final class CodecHarness {
       let stride = CVPixelBufferGetBytesPerRow(buffer)
       for row in 0..<height {
         for column in 0..<width {
-          // Neutral grey, so BT.709 luma tracks the ramp exactly.
           let pixel = base + row * stride + column * 4
           let value = UInt8(level(column))
           pixel[0] = value
@@ -395,8 +340,6 @@ private final class CodecHarness {
     return buffer
   }
 
-  /// Mean luma of the outer eighth of each side of the picture, in 8-bit terms, and the distinct
-  /// luma codes along the middle row at the plane's own depth (8 or 10 bits).
   static func lumaEdges(_ buffer: CVPixelBuffer) -> (left: Double, right: Double, distinct: Int) {
     CVPixelBufferLockBaseAddress(buffer, .readOnly)
     defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
@@ -441,8 +384,6 @@ private final class CodecHarness {
     var count: Int { lock.withLock { items.count } }
   }
 
-  /// The decoded buffer is measured inside the callback: its pool can recycle
-  /// the storage once the frame is released, so nothing is read afterwards.
   private final class DecodedLog: @unchecked Sendable {
     private let lock = NSLock()
     private var items: [Decoded] = []

@@ -91,8 +91,6 @@ describe("prepared plugin update installation", () => {
     expect(readFileSync(join(world.root, "owner.example", "server.js"), "utf8")).toBe("1.0.0")
     expect(readFileSync(join(prepared.directory, "built.txt"), "utf8")).toBe("2.0.0")
 
-    // Mutating the source after review cannot affect apply: the plan owns its
-    // staged bytes and no clone occurs during this step.
     writeFileSync(join(source, "server.js"), "unreviewed")
     const applied = await world.installer.applyPreparedUpdate(prepared)
     expect(applied.version).toBe("2.0.0")

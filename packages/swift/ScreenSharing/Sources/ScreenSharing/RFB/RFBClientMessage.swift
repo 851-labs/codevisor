@@ -4,19 +4,12 @@ public enum RFBClientMessage: Sendable, Equatable {
   case setPixelFormat(RFBPixelFormat)
   case setEncodings([Int32])
   case framebufferUpdateRequest(incremental: Bool, RFBRectangle)
-  /// X11 keysym; see `RFBKeysym`.
   case keyEvent(keysym: UInt32, down: Bool)
-  /// Buttons 1–8 as bits 0–7; 4–7 carry scroll up/down/left/right as press-release pairs.
   case pointerEvent(buttons: UInt8, x: UInt16, y: UInt16)
-  /// Latin-1 text; other characters are replaced.
   case clientCutText(String)
-  /// ContinuousUpdates: the server pushes changes in `area` without requests (or stops).
   case enableContinuousUpdates(enable: Bool, RFBRectangle)
-  /// Fence: a request (`RFBFence.request` set) or the reply to one, with an opaque payload of up to 64 bytes.
   case fence(flags: UInt32, payload: [UInt8])
-  /// ExtendedDesktopSize: ask the server to resize the framebuffer to this layout.
   case setDesktopSize(width: Int, height: Int, screens: [RFBScreen])
-  /// Extended Clipboard: a ClientCutText with a negative length.
   case extendedClipboard(RFBExtendedClipboard.Message)
 
   public var encoded: [UInt8] {
@@ -52,14 +45,12 @@ public enum RFBClientMessage: Sendable, Equatable {
       writer.u8(UInt8(clamping: screens.count)); writer.pad(1)
       for screen in screens.prefix(255) { RFBScreenLayout.write(screen, into: &writer) }
     case .extendedClipboard(let message):
-      // zlib can't fail on an in-memory buffer of a valid size; an empty payload would be refused.
       let payload = (try? RFBExtendedClipboard.encode(message)) ?? []
       writer.u8(6); writer.pad(3); writer.s32(-Int32(clamping: payload.count)); writer.append(payload)
     }
     return writer.bytes
   }
 
-  /// The server side of the protocol, used by the loopback server.
   package static func read(from stream: RFBInputStream) async throws -> RFBClientMessage {
     switch try await stream.u8() {
     case 0:
@@ -110,7 +101,6 @@ public enum RFBClientMessage: Sendable, Equatable {
   }
 }
 
-/// ExtendedDesktopSize screens on the wire: id, x, y, width, height, flags (16 bytes).
 public enum RFBScreenLayout {
   public static func write(_ screen: RFBScreen, into writer: inout RFBByteWriter) {
     writer.u32(screen.id)
@@ -131,21 +121,14 @@ public enum RFBScreenLayout {
   }
 }
 
-/// The Fence extension's flags and wire format (same in both directions).
 public enum RFBFence {
-  /// Process every earlier message before this fence.
   public static let blockBefore: UInt32 = 1 << 0
-  /// Process no later message until this fence is handled.
   public static let blockAfter: UInt32 = 1 << 1
-  /// The message after this fence belongs with it.
   public static let syncNext: UInt32 = 1 << 2
-  /// A request the peer must answer with the same payload.
   public static let request: UInt32 = 1 << 31
-  /// The flags a reply may carry: the ones this client honours (it handles messages strictly in order).
   public static let understood: UInt32 = blockBefore | blockAfter | syncNext
   public static let maximumPayload = 64
 
-  /// Reads the body after the type byte: 3 bytes padding, flags, length, payload.
   package static func read(from stream: RFBInputStream) async throws -> (flags: UInt32, payload: [UInt8]) {
     try await stream.skip(3)
     let flags = try await stream.u32()
@@ -155,7 +138,6 @@ public enum RFBFence {
   }
 }
 
-/// RFB cut text is ISO 8859-1 with "\n" line endings.
 public enum RFBLatin1 {
   public static func encode(_ text: String) -> [UInt8] {
     text.replacingOccurrences(of: "\r\n", with: "\n").unicodeScalars.map {

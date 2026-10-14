@@ -96,7 +96,6 @@ describe("provider accounts across machines", () => {
     })
     await c.shared.providers.reconcile()
     expect(await c.shared.providers.configured("pi", "default")).toEqual([])
-    // Re-observing a disabled source also cannot recreate the deleted grant.
     await c.shared.providers.reconcile()
   })
 
@@ -202,7 +201,6 @@ describe("provider accounts across machines", () => {
       }
     }
     const context = await host.shared.providers.context(account("opencode"), base)
-    // Nothing is injected into OpenCode: its configuration passes through as is.
     expect(context.env!.OPENCODE_CONFIG_CONTENT).toBe(base.env.OPENCODE_CONFIG_CONTENT)
     const native = join(host.dataDir, ".local", "share", "opencode")
     expect(context.env!.OPENCODE_DB).toBe(join(native, "work.db"))
@@ -370,7 +368,6 @@ describe("provider accounts across machines", () => {
     const access = `header.${Buffer.from(JSON.stringify({ sub: "alice", next: true })).toString("base64url")}.signature`
     await atomicWriteJson(path, { anthropic: { ...credential(), access, expires: 7_200_000 } })
     await a.shared.providers.reconcile()
-    // B holds a still-valid mirror; the newer one is adopted at revalidation.
     vi.setSystemTime(Date.now() + 5 * 60_000)
     expect((await b.vault.token(row.credential)).accessToken).toBe(access)
     await atomicWriteJson(join(b.dataDir, ".pi", "agent", "auth.json"), {
@@ -469,9 +466,6 @@ describe("provider accounts across machines", () => {
     expect(runtime.env!.GROK_AUTH_PROVIDER_COMMAND).not.toContain("access")
     expect(JSON.stringify(runtime)).not.toContain("grok-refresh")
     expect(runtime.env!.GROK_HOME).toContain(host.dataDir)
-    // OAuth through the provider command: no inline credential and no API
-    // key may reach the process, not even as empty strings (Grok treats an
-    // empty `GROK_AUTH` as supplied and then refuses `session/new`).
     expect(runtime.env).not.toHaveProperty("GROK_AUTH")
     expect(runtime.env).not.toHaveProperty("XAI_API_KEY")
     expect(runtime.unsetEnv).toEqual(expect.arrayContaining(["GROK_AUTH", "XAI_API_KEY"]))

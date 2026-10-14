@@ -1,10 +1,8 @@
 #if !canImport(AppKit)
   import SwiftUI
 
-  /// A branch as `BranchPickerSheet` lists it.
   public struct BranchPickerItem: Identifiable, Hashable, Sendable {
     public let name: String
-    /// A short note under the name ("Default", "Currently unavailable").
     public let note: String?
     public var id: String { name }
 
@@ -14,7 +12,6 @@
     }
   }
 
-  /// A titled group of branches ("Local Branches", "Remote Branches").
   public struct BranchPickerSection: Identifiable, Sendable {
     public let title: String
     public let branches: [BranchPickerItem]
@@ -26,14 +23,10 @@
     }
   }
 
-  /// Base-branch selection on iPhone and iPad: a searchable, checkmarked
-  /// list in a sheet. Picking a row applies it and closes the sheet, so
-  /// nothing is ever pending. Shared by the review pane and project settings.
   public struct BranchPickerSheet: View {
     let sections: [BranchPickerSection]
     let selection: String?
     let isLoading: Bool
-    /// Shown when there is nothing to list and no search.
     let emptyMessage: String
     let onSelect: (String) -> Void
     let load: () async -> Void
@@ -80,11 +73,9 @@
         .navigationTitle("Base Branch")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $searchText, prompt: "Search branches")
-        // Branch names are case-sensitive identifiers, not prose.
         .textInputAutocapitalization(.never)
         .autocorrectionDisabled()
         .toolbar {
-          // Picking a row applies it immediately; this only closes the sheet.
           ToolbarItem(placement: .confirmationAction) {
             Button("Done") { dismiss() }
           }

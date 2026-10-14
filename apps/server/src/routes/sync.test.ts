@@ -29,13 +29,11 @@ describe("/v1/sync", () => {
     const { services } = await makeServices("server-sync")
     const server = await startWithApp(services)
 
-    // Empty replica to start.
     expect((await jsonRequest(server, "/v1/sync/settings")).body).toEqual({
       namespace: "settings",
       entries: []
     })
 
-    // First push lands and returns the merged document.
     const first = await jsonRequest(server, "/v1/sync/settings", {
       body: JSON.stringify({ entries: [entry("channel", "alpha", 10)] }),
       method: "PUT"
@@ -46,15 +44,12 @@ describe("/v1/sync", () => {
       entries: [entry("channel", "alpha", 10)]
     })
 
-    // An older concurrent write does NOT replace it — the PUT response is
-    // the pull that corrects the writer.
     const stale = await jsonRequest(server, "/v1/sync/settings", {
       body: JSON.stringify({ entries: [entry("channel", "stable", 5, "device-b")] }),
       method: "PUT"
     })
     expect(stale.body).toMatchObject({ entries: [entry("channel", "alpha", 10)] })
 
-    // Exactly ONE sync.changed published: the stale push emitted nothing.
     const events = (await readWebSocketEvents(server, 1, 0)) as Array<{
       readonly kind: string
       readonly payload: { readonly namespace?: string }
@@ -62,7 +57,6 @@ describe("/v1/sync", () => {
     expect(events[0]?.kind).toBe("sync.changed")
     expect(events[0]?.payload).toMatchObject({ namespace: "settings" })
 
-    // Invalid namespaces are refused, and only GET and PUT exist.
     expect((await jsonRequest(server, "/v1/sync/Bad%2FName")).status).toBe(400)
     expect((await jsonRequest(server, "/v1/sync/settings", { method: "POST" })).status).toBe(405)
   })
@@ -84,7 +78,6 @@ describe("/v1/sync", () => {
     expect(reconcile.status).toBe(200)
     expect(reconcile.body).toMatchObject({ published: ["deploy"], missingBlobs: [] })
 
-    // Idempotent: a second pass changes (and publishes) nothing.
     const again = await jsonRequest(server, "/v1/sync/skills/reconcile", { method: "POST" })
     expect(again.body).toMatchObject({ published: [], applied: [], removed: [] })
 
@@ -92,8 +85,6 @@ describe("/v1/sync", () => {
     const hash = (document.body as { entries: Array<{ value: { hash: string } }> }).entries[0]
       ?.value.hash as string
 
-    // GET serves the archive; bad ids, unknown blobs, and other methods
-    // are refused.
     const blob = await fetch(`${server.url}/v1/sync/blobs/${hash}`)
     expect(blob.status).toBe(200)
     const bytes = Buffer.from(await blob.arrayBuffer())
@@ -104,7 +95,6 @@ describe("/v1/sync", () => {
       405
     )
 
-    // PUT verifies the contents against the claimed id.
     const stored = await fetch(`${server.url}/v1/sync/blobs/${hash}`, {
       body: new Uint8Array(bytes),
       method: "PUT"
@@ -116,9 +106,6 @@ describe("/v1/sync", () => {
     })
     expect(mismatched.status).toBe(400)
 
-    // MCP reconcile and the roster publish ride the same surface: a real
-    // definition publishes (and emits sync.changed), and a repeat roster
-    // publish with nothing new stays silent.
     await services.mcp?.create({
       authType: "none",
       enabled: false,
@@ -129,7 +116,6 @@ describe("/v1/sync", () => {
     const mcpReconcile = await jsonRequest(server, "/v1/sync/mcps/reconcile", { method: "POST" })
     expect(mcpReconcile.status).toBe(200)
     expect(mcpReconcile.body).toMatchObject({ published: ["Synced"] })
-    // Idempotent: a second pass changes (and publishes) nothing.
     expect(
       (await jsonRequest(server, "/v1/sync/mcps/reconcile", { method: "POST" })).body
     ).toMatchObject({ published: [] })
@@ -143,7 +129,6 @@ describe("/v1/sync", () => {
 
   it("serves every sync surface regardless of a legacy participation flag", async () => {
     const { services } = await makeServices("server-optout")
-    // Machines that opted out before the opt-out was removed still sync.
     await run(services.db.mergeSyncEntries("local.sync", [entry("enabled", false, 1)]))
     const server = await startWithApp(services)
 
@@ -158,8 +143,6 @@ describe("/v1/sync", () => {
     const { services } = await makeServices("server-hsync")
     const server = await startWithApp(services)
 
-    // The harness this machine already runs (ready, enabled, nothing to sign
-    // in to) is promoted into the shared catalog.
     const first = await jsonRequest(server, "/v1/sync/harnesses/reconcile", { method: "POST" })
     expect(first.status).toBe(200)
     expect(first.body).toMatchObject({
@@ -175,8 +158,6 @@ describe("/v1/sync", () => {
       uninstall: false
     })
 
-    // A machine whose codex is NOT installed, told to install it, with no
-    // lifecycle manager: blocked, never failed.
     const { services: bare } = await makeServices("server-hsync-bare")
     await run(
       bare.db.mergeSyncEntries("harnesses", [
@@ -218,7 +199,6 @@ describe("/v1/sync", () => {
       })
     )
 
-    // With a lifecycle manager present, the same want starts a real install.
     const { services: installable } = await makeServices("server-hsync-install")
     await run(
       installable.db.mergeSyncEntries("harnesses", [
@@ -258,8 +238,6 @@ describe("/v1/sync", () => {
     expect(installing.body).toMatchObject({ installing: ["codex"] })
     expect(installs).toEqual(["codex"])
 
-    // Auth gating end to end: loggedOut blocks the enable; authenticated
-    // and notRequired both let it through.
     const reconcileWithAuth = async (state: string, serverId: string) => {
       const { services: base } = await makeServices(serverId)
       await run(base.db.setHarnessEnabled("codex", false))
@@ -305,8 +283,6 @@ describe("/v1/sync", () => {
           value: { enabled: true, source: "acme/tunes" },
           timestamp: { wallMs: 10, counter: 0, deviceId: "z" }
         },
-        // First contact for the locally-present plugin: the fleet's enabled
-        // state wins and applies through the manager.
         {
           key: "acme.paused",
           value: { enabled: true, source: "acme/paused" },
@@ -314,8 +290,6 @@ describe("/v1/sync", () => {
         }
       ])
     )
-    // One managed plugin with a registry receipt, one receiptless managed
-    // install, one linked dev plugin — only the first syncs.
     const receiptDir = mkdtempSync(join(tmpdir(), "plugin-receipt-"))
     const bareDir = mkdtempSync(join(tmpdir(), "plugin-bare-"))
     tempDirs.push(receiptDir, bareDir)
@@ -380,7 +354,6 @@ describe("/v1/sync", () => {
     expect(installs).toEqual(["acme/tunes"])
     expect(enables).toEqual([["acme.paused", true]])
 
-    // A fleet tombstone uninstalls through the manager on the next pass.
     await run(
       services.db.mergeSyncEntries("plugins", [
         {
@@ -394,7 +367,6 @@ describe("/v1/sync", () => {
     await jsonRequest(server, "/v1/sync/plugins/reconcile", { method: "POST" })
     expect(removals).toEqual(["acme.paused"])
 
-    // Without a plugin manager the surface answers 501.
     const { services: bare } = await makeServices("server-psync-bare")
     const bareServer = await startWithApp(bare)
     expect(

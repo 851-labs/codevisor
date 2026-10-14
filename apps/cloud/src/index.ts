@@ -25,15 +25,10 @@ import {
 import { HUB_DEVICE_ID_HEADER, HUB_KIND_HEADER, UserHub } from "./user-hub.js"
 import { CLOUD_VERSION } from "./version.js"
 
-// Note: the Worker entry module may only export handlers/DO classes — plain
-// value re-exports (strings, constants) crash workerd at startup.
 export { UserHub }
 
 type HonoEnv = { Bindings: CloudEnv }
 
-/// Every access passes a location hint derived from the caller's geolocation:
-/// hints only matter on the request that CREATES the hub (they are ignored
-/// afterward), so the first device to touch an account places its hub nearby.
 const hub = (env: CloudEnv, userId: string, cf: unknown): DurableObjectStub<UserHub> => {
   const locationHint = hubLocationHint(cf)
   return (env.USER_HUB as unknown as DurableObjectNamespace<UserHub>).getByName(
@@ -47,8 +42,6 @@ const sessionUserId = async (env: CloudEnv, headers: Headers): Promise<string | 
   return session?.user.id
 }
 
-/// Session lookup that also honours `?token=` — WebSocket clients that cannot
-/// set request headers (browsers) put their bearer token in the query string.
 const connectionUserId = async (env: CloudEnv, request: Request): Promise<string | undefined> => {
   const token = new URL(request.url).searchParams.get("token")
   const headers = new Headers(request.headers)
@@ -61,8 +54,6 @@ app.route("/", pluginModeration)
 app.route("/", credentialRoutes)
 app.route("/", relayRoutes)
 app.route("/", machineInviteRoutes)
-
-// -- Discovery & liveness ----------------------------------------------------
 
 app.get("/.well-known/codevisor", (c) =>
   c.json({
@@ -82,11 +73,6 @@ app.get("/.well-known/codevisor", (c) =>
 
 app.get("/health", (c) => c.json({ ok: true }))
 
-/// Universal links for the iOS app: the device-authorization page that
-/// `codevisor auth login` prints (and encodes as a QR code) opens in the app
-/// when it's installed, so a signed-in phone approves the machine in one tap.
-/// Without the app, the same URL is the web /device page. The app ID comes
-/// from the instance's Apple config, so self-hosters get their own (or none).
 app.get("/.well-known/apple-app-site-association", (c) => {
   const { APPLE_TEAM_ID: teamId, APPLE_NATIVE_CLIENT_ID: bundleId } = c.env
   if (!teamId || !bundleId) return c.notFound()
@@ -101,17 +87,12 @@ app.get("/.well-known/apple-app-site-association", (c) => {
   )
 })
 
-// -- Auth --------------------------------------------------------------------
-
 app.on(["GET", "POST"], "/api/auth/*", (c) => createAuth(c.env).handler(c.req.raw))
 
-/// Dev-only credential login. Creates the fixed dev user on first use and
-/// returns a bearer token (native/CLI path) while also setting the session
-/// cookie (browser path, so /device approval works in dev).
 app.post("/dev/login", async (c) => {
   if (!isDevAuthEnabled(c.env)) return c.notFound()
   const auth = createAuth({ ...c.env, RESEND_API_KEY: "" })
-  await auth.api.signUpEmail({ body: { ...DEV_USER } }).catch(() => undefined) // already exists
+  await auth.api.signUpEmail({ body: { ...DEV_USER } }).catch(() => undefined)
   const { headers, response } = await auth.api.signInEmail({
     body: { email: DEV_USER.email, password: DEV_USER.password },
     returnHeaders: true
@@ -122,16 +103,10 @@ app.post("/dev/login", async (c) => {
   return out
 })
 
-/// One-click sign-in for native apps: starts the social flow
-/// server-side and redirects to the provider's consent page.
-/// Must be a server redirect (not an app-side POST) because Better Auth's
-/// PKCE/state cookies have to land in the browser session that will hit the
-/// OAuth callback. Falls back to /login when the provider isn't configured.
 app.get("/login/:provider", async (c) => {
   const provider = c.req.param("provider")
   if (provider !== "github" && provider !== "apple") return c.notFound()
   const redirect = c.req.query("redirect") ?? "/auth/handoff"
-  // Relative paths only: this must never become an open redirect.
   if (!validAuthRedirect(redirect)) {
     return c.json({ error: "invalid redirect" }, 400)
   }
@@ -158,7 +133,6 @@ app.get("/login/:provider", async (c) => {
     return c.redirect(scheme ? errorCallbackURL : `/login?redirect=${encodeURIComponent(redirect)}`)
   }
   const out = c.redirect(response.url)
-  // Carry Better Auth's state/PKCE cookies into the browser session.
   for (const cookie of headers.getSetCookie()) out.headers.append("set-cookie", cookie)
   return out
 })
@@ -166,8 +140,6 @@ app.get("/login/:provider", async (c) => {
 app.get("/auth/connect/:provider", connectAccount)
 app.get("/account", nativeHandoff)
 app.get("/auth/error", nativeHandoff)
-
-// -- Machine registry (session-authenticated REST for apps) -------------------
 
 app.get("/api/machines", async (c) => {
   const userId = await sessionUserId(c.env, c.req.raw.headers)
@@ -190,8 +162,6 @@ app.post("/api/machines/:deviceId/rename", async (c) => {
   return renamed ? c.json({ ok: true }) : c.json({ error: "unknown machine" }, 404)
 })
 
-/// The device id a stored api-key metadata column names. Better Auth has
-/// written the column both once- and twice-JSON-encoded over its versions.
 const metadataDeviceId = (raw: string | null): string | undefined => {
   let value: unknown = raw
   for (let depth = 0; depth < 2 && typeof value === "string"; depth += 1) {
@@ -205,10 +175,6 @@ const metadataDeviceId = (raw: string | null): string | undefined => {
   return typeof deviceId === "string" ? deviceId : undefined
 }
 
-/// Disconnects a machine from an account: revokes its api keys (auth-side),
-/// revokes its relay access, and drops + forgets it on the hub
-/// (connection-side). False when the hub did not know the machine. Shared by
-/// the app's removal (session) and the machine's own logout (its api key).
 const removeMachine = async (
   env: CloudEnv,
   userId: string,
@@ -228,9 +194,6 @@ const removeMachine = async (
   return hub(env, userId, cf).removeMachine(deviceId)
 }
 
-/// Remove a machine from the account (the apps' machine list). Answers 404
-/// for a machine the account no longer has — e.g. one that already removed
-/// itself on `codevisor auth logout`.
 app.delete("/api/machines/:deviceId", async (c) => {
   const userId = await sessionUserId(c.env, c.req.raw.headers)
   if (userId === undefined) return c.json({ error: "unauthorized" }, 401)
@@ -238,8 +201,6 @@ app.delete("/api/machines/:deviceId", async (c) => {
   return removed ? c.json({ ok: true }) : c.json({ error: "unknown machine" }, 404)
 })
 
-/// A machine removing itself from its account (`codevisor auth logout`),
-/// authenticated by its own api key — the only credential a machine holds.
 app.delete("/api/machine/self", async (c) => {
   const machine = await verifyMachineKey(c.env, c.req.header("x-api-key"))
   if (machine === undefined) return c.json({ error: "invalid machine credential" }, 401)
@@ -247,9 +208,6 @@ app.delete("/api/machine/self", async (c) => {
   return c.json({ ok: true })
 })
 
-/// A machine removing another machine on its account (`codevisor machines
-/// remove`, the `machines_remove` tool). Authenticated by the caller's own
-/// api key; a machine removes itself with DELETE /api/machine/self instead.
 app.delete("/api/machine/peers/:deviceId", async (c) => {
   const machine = await verifyMachineKey(c.env, c.req.header("x-api-key"))
   if (machine === undefined) return c.json({ error: "invalid machine credential" }, 401)
@@ -261,9 +219,6 @@ app.delete("/api/machine/peers/:deviceId", async (c) => {
   return removed ? c.json({ ok: true }) : c.json({ error: "unknown machine" }, 404)
 })
 
-/// Cheap machine-credential probe: lets a machine confirm its stored api key
-/// is still valid without a WebSocket round trip (used by dev environments to
-/// self-heal after a local cloud reset, and handy for diagnostics anywhere).
 app.get("/api/machine/credential", async (c) => {
   const key = c.req.header("x-api-key")
   if (key === undefined) return c.json({ error: "missing x-api-key" }, 401)
@@ -271,10 +226,6 @@ app.get("/api/machine/credential", async (c) => {
   return verified.valid ? c.json({ ok: true }) : c.json({ error: "invalid credential" }, 401)
 })
 
-// -- Plugin registry (public read; guarded refresh; cron-refreshed) -----------
-
-/// The index rebuilds every ~15 minutes (wrangler.jsonc `triggers.crons`), so
-/// edge/client caches may serve it for a fraction of that and revalidate lazily.
 const PLUGIN_CACHE_CONTROL = "public, max-age=300, stale-while-revalidate=900"
 
 const pluginJson = (body: string): Response =>
@@ -287,12 +238,9 @@ const pluginJson = (body: string): Response =>
 
 app.get("/plugins/index.json", async (c) => {
   const raw = await c.env.PLUGIN_INDEX.get(PLUGIN_INDEX_KEY)
-  // Before the first poll completes, serve an honest empty index.
   return pluginJson(raw ?? JSON.stringify({ generatedAt: null, entries: [], rejected: [] }))
 })
 
-// Plugin ids are always `owner.name`, so the two-dot filename can never
-// collide with /plugins/index.json.
 app.get("/plugins/:file{[a-z0-9-]+\\.[a-z0-9-]+\\.json}", async (c) => {
   const id = c.req.param("file").slice(0, -".json".length)
   const raw = await c.env.PLUGIN_INDEX.get(pluginEntryKey(id))
@@ -300,10 +248,6 @@ app.get("/plugins/:file{[a-z0-9-]+\\.[a-z0-9-]+\\.json}", async (c) => {
   return pluginJson(raw)
 })
 
-/// Rebuilds the index outside the cron cadence (testing, ops). Guarded like
-/// the other non-user surfaces: dev-auth instances are open, deployed
-/// instances require the PLUGINS_REFRESH_TOKEN secret as a bearer token, and
-/// without that secret the route does not exist (mirrors /dev/login gating).
 app.post("/plugins/refresh", async (c) => {
   if (!isDevAuthEnabled(c.env)) {
     const expected = c.env.PLUGINS_REFRESH_TOKEN
@@ -320,8 +264,6 @@ app.post("/plugins/refresh", async (c) => {
   }
 })
 
-// -- Relay connection ---------------------------------------------------------
-
 app.get("/connect", async (c) => {
   if (c.req.header("Upgrade")?.toLowerCase() !== "websocket") {
     return c.json({ error: "websocket upgrade required" }, 426)
@@ -337,7 +279,6 @@ app.get("/connect", async (c) => {
     if (!verified.valid || verified.key === null || typeof metadata?.deviceId !== "string") {
       return c.json({ error: "invalid machine credential" }, 401)
     }
-    // references: "user" (the default), so referenceId is the owning user id.
     userId = verified.key.referenceId
     headers.set(HUB_KIND_HEADER, "machine")
     headers.set(HUB_DEVICE_ID_HEADER, metadata.deviceId)
@@ -347,8 +288,6 @@ app.get("/connect", async (c) => {
     if (sessionUser === undefined) return c.json({ error: "unauthorized" }, 401)
     userId = sessionUser
     headers.set(HUB_KIND_HEADER, "app")
-    // Apps name their device in hello; for relay access the account is what
-    // matters, so app endpoints register under a per-endpoint device key.
     deviceId = `app:${c.req.header(TUNNEL_ENDPOINT_HEADER) ?? ""}`
   }
   await registerTunnelEndpoint(c.env, {
@@ -360,18 +299,12 @@ app.get("/connect", async (c) => {
   return hub(c.env, userId, c.req.raw.cf).fetch(new Request(c.req.raw.url, { headers }))
 })
 
-// -- Pages (the only human-facing HTML in the system) -------------------------
-
 app.get("/", (c) => homePage(c))
 app.get("/login", (c) => loginPage(c))
 app.get("/dev-login", (c) => devLoginPage(c))
 app.get("/device", async (c) => devicePage(c))
 app.get("/auth/handoff", nativeHandoff)
 
-// -- Worker entry ---------------------------------------------------------------
-
-/// Modules-format handler: HTTP through the Hono app, plus the cron trigger
-/// that keeps the plugin index fresh (wrangler.jsonc `triggers.crons`).
 const worker = {
   fetch: app.fetch,
   scheduled: (_controller: ScheduledController, env: CloudEnv, ctx: ExecutionContext): void => {

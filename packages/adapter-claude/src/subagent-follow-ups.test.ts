@@ -11,10 +11,6 @@ import {
   systemMessage
 } from "./test-support.js"
 
-/// A message sent to an existing subagent (`SendMessage`) restarts its task
-/// under the follow-up's own tool call, while its thread keeps streaming
-/// under the call that spawned it. Both calls carry the agent's task id, so
-/// clients tie them together from stored transcript data alone.
 describe("Claude subagent follow-ups", () => {
   it("marks a message to an existing agent as a follow-up, not a new agent", async () => {
     const fake = new FakeQuery()

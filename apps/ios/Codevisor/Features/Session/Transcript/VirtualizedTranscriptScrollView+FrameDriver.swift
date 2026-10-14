@@ -6,8 +6,6 @@ import SwiftUI
 import TranscriptKit
 import UIKit
 
-// MARK: - FrameDriver
-
 extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
   func prepareForPresentationAttachment() {
     if initialPresentationGate.isReady, let state = lastStableScrollState {
@@ -23,12 +21,8 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
     activeRowsVersion = nil
   }
 
-  /// Pause native work without destroying the visible row window. The next
-  /// SwiftUI owner installs fresh callbacks before reconciling new content.
   func suspendPresentation() {
     if presentationRole == .foreground {
-      // Capture the live, post-measurement coordinate before UIKit
-      // starts changing bounds and safe-area geometry during teardown.
       emitViewportSnapshot()
     } else {
       republishLastStableScrollState()
@@ -37,9 +31,6 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
     uninstallPresentationDisplayLink()
     measurementCommitTask?.cancel()
     measurementCommitTask = nil
-    // Retained hosts may have reported their size just before this frame
-    // was cancelled. Keep those measurements for reattachment: an unchanged
-    // host will not report again, leaving the initial canvas hidden forever.
     bottomJumpGate.cancel()
     deferredRowsDuringScroll = nil
     deferredActiveRowsRange = nil
@@ -125,7 +116,6 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
     ) { [weak self] in
       self?.requestModelPresentationFrame()
     }
-    // Keep the local link alive only through explicit frame requests.
     presentationDisplayLink.isPaused = !displayFrameRequested
   }
 

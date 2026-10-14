@@ -6,9 +6,6 @@ import Testing
 @testable import ScreenSharingWebRTC
 @preconcurrency import WebRTC
 
-/// The host's half of frame recovery as a state machine: keyframe requests under
-/// the rate limit, the re-offer schedule while capture output is missing, and the
-/// single idle notice. Nothing here negotiates; time is entirely virtual.
 @MainActor
 struct ScreenSharingSenderRecoveryTests {
   @MainActor
@@ -22,7 +19,6 @@ struct ScreenSharingSenderRecoveryTests {
     var monitor: ScreenSharingSourceIdleMonitor { codecFactory.sourceIdleMonitor }
 
     init() {
-      // The same boundary as production: trials are pinned before any RTC object exists.
       _ = ScreenSharingFieldTrials.process.ensureInstalled()
       let clock = clock
       let origin = clock.now
@@ -37,9 +33,6 @@ struct ScreenSharingSenderRecoveryTests {
         sleep: { try await clock.sleep(for: $0) })
     }
 
-    /// Gives the one-frame cache something to re-offer, then pins the monitor's
-    /// activity to virtual zero: `push` records the real monotonic clock, which
-    /// the injected schedule must not be measured against.
     func captureFrame(timestampNs: Int64) throws {
       frameSender.configure(try ScreenSharingVideoConfiguration(width: 64, height: 64))
       var pixel: CVPixelBuffer?
@@ -65,7 +58,6 @@ struct ScreenSharingSenderRecoveryTests {
     harness.recovery.handle(.keyframe)
     #expect(harness.counters["videoRefreshRequestsReceived"] == 1)
     #expect(harness.counters["refreshFrames"] == 1)
-    // The encoder is asked for a keyframe exactly once per admitted request.
     #expect(harness.codecFactory.encoderRefreshRequest.consume())
     #expect(!harness.codecFactory.encoderRefreshRequest.consume())
 
@@ -82,7 +74,6 @@ struct ScreenSharingSenderRecoveryTests {
     #expect(harness.counters["videoRefreshRequestsThrottled"] == 2)
     #expect(harness.counters["refreshFrames"] == 2)
 
-    // The host never acts on its own idle notice, only on keyframe requests.
     harness.clock.advance(by: .seconds(1))
     harness.recovery.handle(.sourceIdle(latestTimestampNs: 1_000))
     #expect(harness.counters["videoRefreshRequestsReceived"] == 4)
@@ -98,7 +89,6 @@ struct ScreenSharingSenderRecoveryTests {
     let quick = ScreenSharingSourceIdleMonitor.maximumQuickResubmissions
     try harness.captureFrame(timestampNs: 1_000)
     harness.recovery.activate()
-    // The first evaluation happens immediately and parks until the threshold.
     await harness.clock.waitForSleep(threshold)
     #expect(harness.counters["sourceIdleEvaluations"] == 1)
     #expect(harness.counters["sourceIdleResubmissions"] == nil)
@@ -108,8 +98,6 @@ struct ScreenSharingSenderRecoveryTests {
     #expect(harness.clock.pendingCount == 1)
     for offer in 1...quick {
       harness.clock.advance(by: offer == 1 ? .nanoseconds(1) : threshold)
-      // Every re-offer is followed by the next scheduled evaluation, so waiting
-      // for that registration proves the re-offer itself already happened.
       if offer == quick {
         await harness.clock.waitForSleep(slow)
       } else {
@@ -119,17 +107,14 @@ struct ScreenSharingSenderRecoveryTests {
       #expect(harness.counters["refreshFrames"] == offer)
       #expect(harness.monitor.resubmissionCount == offer)
     }
-    // The quick phase is exhausted: the host keeps re-offering, but slowly.
     #expect(harness.labels["sourceIdleState"] == "re-offering the latest capture at the slow bounded rate")
 
-    // Output finally reached WebRTC, but the channel cannot carry the notice yet.
     harness.channel.isAvailable = false
     harness.monitor.recordEncoded(timestampNs: 1_000)
     harness.clock.advance(by: slow)
     await harness.channel.rejections.wait()
     #expect(harness.counters["sourceIdleNoticesDeferred"] == 1)
     #expect(harness.channel.sent.isEmpty)
-    // Idle ends the loop: no timer runs while the desktop is quiet.
     #expect(harness.clock.pendingCount == 0)
     #expect(harness.counters["sourceIdleResubmissions"] == quick)
 
@@ -139,7 +124,6 @@ struct ScreenSharingSenderRecoveryTests {
     #expect(harness.counters["sourceIdleNotices"] == 1)
     #expect(harness.labels["sourceIdleLatestTimestampNs"] == "1000")
     #expect(harness.labels["sourceIdleState"] == "latest capture announced")
-    // The notice is announced once; a second flush has nothing left to send.
     harness.recovery.flush()
     #expect(harness.channel.sent.count == 1)
     await harness.close()
@@ -156,10 +140,8 @@ struct ScreenSharingSenderRecoveryTests {
     let pending = harness.recovery.close()
     #expect(pending.count == 1)
     for task in pending { await task.value }
-    // Cancellation resumed the parked sleeper and left no timer behind.
     #expect(harness.clock.pendingCount == 0)
     #expect(harness.counters["sourceIdleResubmissions"] == nil)
-    // A closed recovery neither restarts its loop nor sends a retained notice.
     harness.recovery.activate()
     harness.channel.isAvailable = true
     harness.recovery.flush()

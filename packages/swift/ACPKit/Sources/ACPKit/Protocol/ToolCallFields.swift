@@ -6,10 +6,6 @@ enum ToolCallKeys: String, CodingKey {
   case meta = "_meta"
 }
 
-/// Shared lenient field decoding for `ToolCall` and `ToolCallUpdate`: an
-/// unknown status string becomes nil, and unrecognized content elements are
-/// skipped per-element — a newer server must never make the client drop the
-/// whole event.
 struct ToolCallFields {
   init(
     title: String?, kind: ToolKind?, status: ToolCallStatus?, content: [ToolCallContent]?,
@@ -47,8 +43,6 @@ struct ToolCallFields {
   init(from container: KeyedDecodingContainer<ToolCallKeys>) {
     title = Self.lenient(String.self, from: container, forKey: .title)
     kind = Self.lenient(ToolKind.self, from: container, forKey: .kind)
-    // Status and content affect turn liveness (a lost terminal status
-    // leaves the call spinning forever), so their swallows log at .error.
     status = Self.decodeStatus(from: container)
     content = Self.decodeContent(from: container)
     locations = Self.lenient([ToolCallLocation].self, from: container, forKey: .locations)
@@ -117,8 +111,6 @@ struct ToolCallFields {
     return nil
   }
 
-  // Decodes an optional field, logging (rather than silently dropping) a
-  // value that was present but malformed. Absent keys stay silent.
   private static func lenient<T: Decodable>(
     _ type: T.Type,
     from container: KeyedDecodingContainer<ToolCallKeys>,

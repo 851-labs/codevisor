@@ -5,7 +5,6 @@ import TranscriptKit
 import UIKit
 
 extension TranscriptRowLeaves {
-  /// The UIKit row views.
   @MainActor
   static func iOS(controller: SessionController) -> TranscriptRowLeaves {
     TranscriptRowLeaves(
@@ -63,8 +62,6 @@ extension TranscriptRowLeaves {
   }
 }
 
-/// A status-error row retries the last request; a session error offers sign
-/// in when the harness needs authentication, otherwise a session retry.
 private struct SessionErrorRow: View {
   let controller: SessionController
   let message: String

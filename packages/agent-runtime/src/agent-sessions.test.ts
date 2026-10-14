@@ -35,7 +35,6 @@ describe("preferHarnessSessionTitles", () => {
   })
 })
 
-/// A fake store: absolute path → file body (directories are implied).
 const makeFakeFs = (
   files: Record<string, string>,
   existingDirectories: ReadonlyArray<string>,
@@ -197,8 +196,6 @@ describe("listClaudeAgentSessions", () => {
   })
 
   it("defaults the home directory when none is given", async () => {
-    // A fake fs sees no files under the real home's store paths — the point
-    // is exercising the os.homedir() default without touching real files.
     await expect(listClaudeAgentSessions({ fs: makeFakeFs({}, []) })).resolves.toEqual([])
     await expect(listCodexAgentSessions({ fs: makeFakeFs({}, []) })).resolves.toEqual([])
   })
@@ -258,7 +255,6 @@ describe("listCodexAgentSessions", () => {
         [`${root}/a/rollout-gone.jsonl`]: metaLine("x", "/deleted"),
         [`${root}/a/rollout-locked.jsonl`]: metaLine("y", "/ok"),
         [`${root}/a/rollout-unstattable.jsonl`]: metaLine("z", "/ok"),
-        // Below the depth bound — never reached by the walk.
         [`${root}/1/2/3/4/5/rollout-deep.jsonl`]: metaLine("deep", "/ok")
       },
       ["/ok"]
@@ -295,12 +291,6 @@ describe("listCodexAgentSessions", () => {
         updatedAt: new Date(1_000).toISOString()
       }
     ])
-  })
-
-  it("returns [] for a missing sessions root", async () => {
-    await expect(
-      listCodexAgentSessions({ homedir: home, fs: makeFakeFs({}, []) })
-    ).resolves.toEqual([])
   })
 })
 
@@ -360,7 +350,6 @@ describe("defaultAgentSessionFileSystem", () => {
       }
     ])
 
-    // No ~/.codex at all under this home.
     await expect(listCodexAgentSessions({ homedir: home })).resolves.toEqual([])
   })
 })
@@ -436,7 +425,6 @@ describe("listPiAgentSessions", () => {
     )
     const sessions = await listPiAgentSessions({ agentDir, fs })
     expect(sessions.map((session) => session.sessionId)).toEqual(["kept"])
-    // Files that can't be read or stat'ed, and folders named like sessions, are skipped too.
     const unreadable: AgentSessionFileSystem = { ...fs, readHead: async () => undefined }
     expect(await listPiAgentSessions({ agentDir, fs: unreadable })).toEqual([])
     const odd: AgentSessionFileSystem = {

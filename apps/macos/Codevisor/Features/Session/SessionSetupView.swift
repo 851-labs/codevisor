@@ -4,11 +4,6 @@ import StreamMarkdown
 import SwiftUI
 import CodevisorUI
 
-/// The pre-chat setup sections shown after the first user message:
-/// "Setting up worktree…" / "Starting Claude Code…" rows styled like the
-/// transcript's "Worked for…" disclosure — a live timer while running, a
-/// final "Set up worktree in 60s" when done, and an expandable body with the
-/// streamed setup logs (git output, checkout hooks) or the failure message.
 struct SessionSetupView: View {
   let phases: [SessionSetupPhase]
 
@@ -30,8 +25,6 @@ struct SessionSetupPhaseView: View {
 
   init(phase: SessionSetupPhase) {
     self.phase = phase
-    // A phase that already failed when the view mounts (e.g. returning to
-    // the session) starts expanded so the error is visible immediately.
     let failed = phase.failureMessage != nil
     _isExpanded = State(initialValue: failed)
     _hasAutoExpandedFailure = State(initialValue: failed)
@@ -80,15 +73,12 @@ struct SessionSetupPhaseView: View {
             )
           }
         }
-        // The gap belongs to the disclosed body rather than the
-        // always-present header row.
         .padding(.top, 12)
       }
     }
     .onChange(of: phase.outcome) { _, outcome in
       switch outcome {
       case .failed:
-        // Surface what went wrong without a click.
         guard !hasAutoExpandedFailure else { return }
         hasAutoExpandedFailure = true
         isExpanded = true
@@ -110,16 +100,11 @@ struct SessionSetupPhaseView: View {
     }
     .font(.callout)
     .foregroundStyle(.secondary)
-    // Keep the setup label stable while the shared disclosure primitives
-    // animate only the chevron and the revealed content.
     .transaction { transaction in
       transaction.animation = nil
     }
   }
 
-  /// "Setting up worktree… 12s" (shimmering, live timer) while running;
-  /// "Set up worktree in 60s" once done; the failed title in warn color on
-  /// error.
   @ViewBuilder
   private var label: some View {
     switch phase.outcome {
@@ -170,7 +155,6 @@ struct SessionSetupPhaseView: View {
     failed.appendLog(stream: "stderr", line: "fatal: a branch named 'codevisor/fix-auth' already exists")
     failed.fail(message: "fatal: a branch named 'codevisor/fix-auth' already exists")
 
-    // Ephemeral: shown only while running (removed on success, kept on failure).
     let agent = SessionSetupPhase.startingAgent(named: "Claude Code", startedAt: Date().addingTimeInterval(-2))
 
     return ScrollView {

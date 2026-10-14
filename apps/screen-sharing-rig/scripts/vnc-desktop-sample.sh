@@ -1,18 +1,4 @@
 #!/usr/bin/env bash
-# Measures a desktop provisioned by scripts/vnc-desktop.sh as the Codevisor
-# client sees it (851-2322): `screen-sharing-rig vnc-sample` through an SSH
-# tunnel to the localhost-only Xvnc, while the desktop runs a scripted
-# workload. Prints one JSON line per workload:
-#
-#   idle    nothing but the desktop itself
-#   drag    a terminal window moved back and forth at ~60 Hz (what a compositor's
-#           shadows and redraws cost)
-#   typing  keystrokes into that terminal, timed from send to the echo's update
-#
-#   apps/screen-sharing-rig/scripts/vnc-desktop-sample.sh root@HOST [RIG_BINARY]
-#
-# Opens one scratch terminal on the desktop and closes it afterwards; nothing
-# else on the desktop is touched. Keep the desktop otherwise still while it runs.
 set -euo pipefail
 
 target=${1:-}
@@ -30,9 +16,6 @@ quality_args=()
 
 remote() { ssh -o BatchMode=yes "$target" "export DISPLAY=:$display; $1"; }
 
-# The tunnel: ssh -f returns once the forward is up, so nothing probes the VNC port. A probe
-# (nc -z) is a connection dropped mid-handshake, which TigerVNC counts as a failed sign-in;
-# a few of them blacklist 127.0.0.1, which is also where codevisor-server connects from.
 control=$(mktemp -u /tmp/codevisor-tunnel.XXXXXX)
 ssh -f -N -M -S "$control" -o BatchMode=yes -o ExitOnForwardFailure=yes \
   -L "$local_port:127.0.0.1:$((5900 + display))" "$target"

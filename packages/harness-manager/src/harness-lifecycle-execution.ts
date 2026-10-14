@@ -28,14 +28,9 @@ export interface StartBundleSwapOptions {
   readonly appcastUrl: string
   readonly targetVersion?: string
   readonly onSettled?: (success: boolean) => void
-  /// A dual-install app swap must not overwrite the primary CLI's update
-  /// metadata with the bundled app's version.
   readonly recordsHarnessVersion?: boolean
 }
 
-/// Install/update execution: resolving runnable install methods, running a
-/// vendor command in an attachable terminal until it settles, and the
-/// verified app-bundle swap.
 export const makeHarnessOperationRunner = (
   core: HarnessLifecycleCore,
   detection: HarnessUpdateDetection
@@ -84,8 +79,6 @@ export const makeHarnessOperationRunner = (
     }))
   }
 
-  /// Shared runner: spawns `command` in an attachable external terminal,
-  /// tracks phase, and settles to idle (success) or failed (exit/timeout).
   const runOperation = async (
     options: RunOperationOptions
   ): Promise<{ readonly lifecycle: HarnessLifecycleState; readonly terminalId: string }> => {
@@ -125,9 +118,6 @@ export const makeHarnessOperationRunner = (
         handle.exit(exitCode)
         if (exitCode === 0 && !timedOut) {
           try {
-            // Keep the operation visibly updating until the requested version
-            // is actually observable. Some native updaters return after handing
-            // replacement work to a descendant process.
             invalidateEnvCache()
             await options.verify?.()
             const installedVersion =
@@ -215,9 +205,6 @@ export const makeHarnessOperationRunner = (
     })
   }
 
-  /// Fires the verified bundle swap as a background operation on the
-  /// harness's lifecycle state. Shared by the app-bundle-origin update path
-  /// and the dual-install "update the app too" flow.
   const startBundleSwap = (options: StartBundleSwapOptions): HarnessLifecycleState => {
     const {
       appcastUrl,

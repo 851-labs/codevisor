@@ -2,7 +2,6 @@ import Foundation
 import ACPKit
 
 extension SessionModel {
-  /// Restore active work without coupling its lifetime to a mounted disclosure.
   func restoreActiveTranscriptDetails() {
     for item in conversation {
       guard case let .assistant(message) = item,
@@ -13,8 +12,6 @@ extension SessionModel {
     }
   }
 
-  /// Storage pages are assembled off-screen and installed once. Loaded work
-  /// stays resident for this chat, exactly like the original disclosure contract.
   @discardableResult
   public func loadTranscriptDetails(itemId: String) async -> Bool {
     if restoreTranscriptDetailsIfCached(itemId: itemId) { return true }
@@ -27,14 +24,11 @@ extension SessionModel {
       guard let self else { return false }
       defer { self.transcriptDetailLoadTasks.removeValue(forKey: itemId) }
       do {
-        // Fetched and converted to stream events off the main actor.
         let (details, events) = try await self.transport.transcriptDetailEvents(itemId: itemId)
         try Task.checkCancellation()
         guard let location = self.transcriptItemLocation(itemId),
           case let .assistant(original) = location.item
         else { return false }
-        // Streamed revisions may have advanced while storage was loading.
-        // The reducer merges snapshots by stable identity and revision.
         var turn = Self.hydratedTranscriptTurn(original, events: events)
         turn.detailRevision = max(turn.detailRevision, details.revision)
         let hydrated = ConversationItem.assistant(AssistantMessage(id: original.id, turn: turn))
@@ -83,8 +77,6 @@ extension SessionModel {
         turn.isGenerating = false
       case .assistantItemStarted:
         break
-      // `modelFallback` is session-level state, not per-turn detail:
-      // replaying history must not resurrect a dismissed notice.
       case .synchronization, .userMessage, .queueUpdated, .retrying, .backgroundTasks, .runtimeState,
         .planApprovalRequired, .updateGate, .modelFallback:
         break
@@ -110,8 +102,6 @@ extension SessionModel {
 
   private func restoreTranscriptDetailsIfCached(itemId: String) -> Bool {
     guard let cached = transcriptDetailsCache[itemId] else { return false }
-    // A row task can briefly outlive the deferred row it hydrated. The
-    // cache entry proves that work already completed successfully.
     guard let location = transcriptItemLocation(itemId) else { return true }
     guard case let .assistant(originalMessage) = location.item,
       cached.revision == originalMessage.turn.detailRevision

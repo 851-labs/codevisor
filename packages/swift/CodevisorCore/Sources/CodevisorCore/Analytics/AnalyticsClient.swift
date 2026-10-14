@@ -1,9 +1,6 @@
 import Foundation
 import PostHog
 
-/// The complete event allowlist for product analytics. Keeping event names in
-/// one closed enum lets the PostHog before-send hook reject every SDK/internal
-/// event and makes accidental autocapture impossible to ship unnoticed.
 public enum AnalyticsEventName: String, Sendable, CaseIterable {
   case appOpened = "app opened"
   case chatCreated = "chat created"
@@ -14,9 +11,6 @@ public enum AnalyticsEventName: String, Sendable, CaseIterable {
   case turnFailed = "turn failed"
 }
 
-/// Analytics properties are deliberately scalar-only. There is no escape
-/// hatch for arbitrary Encodable models, URLs, errors, or transcript objects,
-/// which keeps prompts, responses, code, paths, and commands out by design.
 public enum AnalyticsPropertyValue: Sendable, Equatable {
   case string(String)
   case integer(Int)
@@ -33,11 +27,6 @@ public enum AnalyticsPropertyValue: Sendable, Equatable {
   }
 }
 
-/// Consent-gated, manual-only analytics for the macOS app.
-///
-/// Debug builds do not contact PostHog unless their scheme sets
-/// `CODEVISOR_ENABLE_ANALYTICS=1`. Release builds configure lazily on the first
-/// opt-in, so an opted-out launch performs no PostHog network work at all.
 @MainActor
 public final class AnalyticsClient {
   public static let shared = AnalyticsClient()
@@ -54,8 +43,6 @@ public final class AnalyticsClient {
 
   private init() {}
 
-  /// Reads the public ingestion configuration embedded by the app target.
-  /// The project token can submit events but cannot read or administer data.
   public func configureFromMainBundle(enabled: Bool) {
     guard projectToken == nil else {
       setEnabled(enabled)
@@ -81,8 +68,6 @@ public final class AnalyticsClient {
     setEnabled(enabled)
   }
 
-  /// Applies the app's persisted consent as the authoritative gate. Enabling
-  /// lazily initializes PostHog; disabling stops all future capture calls.
   public func setEnabled(_ enabled: Bool) {
     self.enabled = enabled
     guard projectToken != nil else { return }
@@ -96,8 +81,6 @@ public final class AnalyticsClient {
     }
   }
 
-  /// Records exactly one process launch, once consent and configuration are
-  /// both present. Accepting during onboarding counts that current launch.
   public func captureAppOpenedOnce() {
     guard enabled, sdkIsSetUp, !capturedAppOpen else { return }
     capturedAppOpen = true
@@ -119,8 +102,6 @@ public final class AnalyticsClient {
   private func ensureSDKIsSetUp() {
     guard !sdkIsSetUp, let projectToken, let host else { return }
 
-    // Begin opted out even when the stored PostHog state says otherwise;
-    // the app preference above remains the only source of consent.
     let config = PostHogConfig(projectToken: projectToken, host: host)
     config.optOut = true
     config.captureApplicationLifecycleEvents = false
@@ -147,7 +128,6 @@ public final class AnalyticsClient {
       "os_version": ProcessInfo.processInfo.operatingSystemVersionString,
       "arch": Self.architecture,
       "release_channel": Self.releaseChannel,
-      // Do not derive or retain approximate location from the request IP.
       "$geoip_disable": true,
     ]
   }
@@ -172,8 +152,6 @@ public final class AnalyticsClient {
 }
 
 public extension AnalyticsClient {
-  /// Coarse token ranges preserve useful cost/scale segmentation without
-  /// transmitting exact conversation usage.
   static func tokenBucket(_ value: UInt64?) -> String? {
     guard let value else { return nil }
     return switch value {

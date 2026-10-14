@@ -1,7 +1,5 @@
 import type { AutomationToolProvider } from "@codevisor/automation"
 
-/// The automation tool a session's agent touched last: the live preview
-/// card shows that tool's view when both have something to show.
 export type AutomationTool = "browser" | "computer"
 
 export const makeAutomationUse = () => {
@@ -14,8 +12,6 @@ export const makeAutomationUse = () => {
     for (const listener of listeners.get(sessionId) ?? []) listener(tool)
   }
 
-  /// Calls `listener` with the session's latest tool now, if any, and on
-  /// every switch after. Returns the unsubscribe.
   const subscribe = (sessionId: string, listener: (tool: AutomationTool) => void): (() => void) => {
     const current = latest.get(sessionId)
     if (current !== undefined) listener(current)
@@ -28,9 +24,6 @@ export const makeAutomationUse = () => {
     }
   }
 
-  /// The provider, noting each call as a use of its tool. Every call
-  /// counts, whether or not it shows anything: the card only switches to a
-  /// tool with a view to show.
   const track = (provider: AutomationToolProvider): AutomationToolProvider => {
     const tool = provider.id
     if (tool === "codevisor") return provider

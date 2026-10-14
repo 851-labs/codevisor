@@ -3,7 +3,6 @@ import Testing
 
 @testable import ScreenSharingRigKit
 
-/// The rig's own Screen Sharing pane on a Codevisor server (851-2384).
 struct RigServerPaneTests {
   final class Recorder: @unchecked Sendable {
     let lock = NSLock()

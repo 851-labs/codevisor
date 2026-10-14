@@ -5,8 +5,6 @@
   import SwiftUI
   import WebKit
 
-  /// Mounts the shipping SwiftUI surfaces with offline preview models. This
-  /// branch runs before normal startup, so it never opens account storage.
   struct AppStoreScreenshotRoot: View {
     private let scene = ProcessInfo.processInfo.environment["CODEVISOR_SCREENSHOT_SCENE"] ?? "projects"
     @StateObject private var fixture = AppStoreScreenshotFixture()
@@ -46,8 +44,6 @@
     }
   }
 
-  /// StateObject's deferred initializer keeps fixture registration out of body
-  /// evaluation and guarantees one environment/controller set per launch.
   @MainActor
   private final class AppStoreScreenshotFixture: ObservableObject {
     let environment: AppEnvironment

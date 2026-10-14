@@ -3,19 +3,12 @@ import CodevisorCore
 import SwiftUI
 import TranscriptKit
 
-/// A worked section's work, as a line on its timeline (notes are Markdown
-/// rows beside the same rail): a subdued few-word summary that opens to its
-/// calls, or a lone call's own label that opens to its output. Its header
-/// brightens on hover, as the calls inside it do, and shows a chevron in
-/// place of its icon while hovered or open.
 struct WorkedTimelineLine<Detail: View>: View {
   let item: WorkedItem
   let isFirst: Bool
   let isLast: Bool
   let isTurnActive: Bool
-  /// The agents the turn is blocked on (see `awaitedAgentCalls`).
   var awaitedAgents: [ToolCall] = []
-  /// The item's ordinary rendering, for what a subagent line opens to.
   let detail: (WorkedItem) -> Detail
 
   @State private var isHovering = false
@@ -34,8 +27,6 @@ struct WorkedTimelineLine<Detail: View>: View {
         ? {
           let change = {
             disclosure.userToggled()
-            // A lone call opens as its own row would, so if another call
-            // joins it, it stays open in the group the line becomes.
             if let call = loneCall {
               store.setExpanded(.toolCall(call.toolCallId), disclosure.isExpanded)
             }
@@ -56,7 +47,6 @@ struct WorkedTimelineLine<Detail: View>: View {
     }
   }
 
-  /// A group's only call, which the line stands in for.
   private var loneCall: ToolCall? {
     if case let .toolGroup(group) = item, group.calls.count == 1 { group.calls[0] } else { nil }
   }

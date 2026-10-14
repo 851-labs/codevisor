@@ -3,8 +3,6 @@ import Foundation
 import MarkdownCore
 
 enum TranscriptWorkedSectionProjection {
-  /// The gap below a worked header. A turn's opening line stands in for its
-  /// header and keeps the same gap, so the header replacing it moves nothing.
   static let headerSpacingAfter: CGFloat = 12
 
   @discardableResult
@@ -27,9 +25,6 @@ enum TranscriptWorkedSectionProjection {
     let identity = TranscriptWorkedSectionIdentity(messageID: message.id, kind: kind)
     appendHeader(message, kind: kind, lifecycle: lifecycle, identity: identity, to: &rows)
 
-    // Deferred history starts loading from the header indicator. Until
-    // hydration completes there is deliberately no content row: opening
-    // changes neither document geometry nor the header's line height.
     if deferredDetailID != nil {
       return true
     }
@@ -65,8 +60,6 @@ enum TranscriptWorkedSectionProjection {
         spacingAfter: headerSpacingAfter,
         workedSection: .init(
           identity: identity,
-          // Collapsed by default, live or not: a live header rolls up
-          // what the turn is doing in its own label.
           role: .header(defaultExpanded: false, isFixedExpanded: false)
         )
       ))
@@ -80,9 +73,6 @@ enum TranscriptWorkedSectionProjection {
     identity: TranscriptWorkedSectionIdentity,
     to rows: inout [TranscriptPresentationRow]
   ) {
-    // Each item is a line on the section's timeline. Its rows abut so their
-    // rails join into one line; a note keeps its virtualized Markdown rows.
-    // While the model reasons, a "Thinking" line ends the section.
     let hasThinking = lifecycle == .receiving && message.turn.showsWorkedThinkingLine(kind)
     for (index, item) in items.enumerated() {
       let isFirst = index == 0

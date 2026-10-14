@@ -106,7 +106,6 @@ export const makeSharedProviderStore = (options: {
     const same = (row: SharedProviderRecord | undefined) =>
       row?.subject === bundle.subject && row.organizationId === bundle.organizationId
     const destination = shared || !global ? global : same(global) ? global : current
-    // Tombstones and machine sign-out survive periodic native discovery.
     if (
       !explicit &&
       ((await store.entries()).some((entry) => entry.key === slot && entry.deleted) ||
@@ -119,8 +118,6 @@ export const makeSharedProviderStore = (options: {
       return
     }
     if (explicit && !shared && same(global)) {
-      // Selecting the same identity resumes following the fleet. Keep a newly
-      // obtained managed grant when upgrading an externally owned mirror.
       await setLocal(slot, null)
     }
     const credential = await vault.create(bundle)
@@ -136,8 +133,6 @@ export const makeSharedProviderStore = (options: {
       await store.writeProvider(slot, record)
       if (!shared) await setLocal(slot, null)
     } else await setLocal(slot, record)
-    // Revoke only the replaced grant in this scope, after its successor is
-    // durable. A distinct local account must never revoke the fleet account.
     if (
       destination &&
       (shared || !global || same(global) || destination.credential.id !== global.credential.id)
@@ -165,9 +160,7 @@ export const makeSharedProviderStore = (options: {
             typeof parts[2] === "string"
           )
             ids.add(parts[2])
-        } catch {
-          /* Ignore malformed metadata from an older replica. */
-        }
+        } catch {}
       }
       return [...ids]
     },

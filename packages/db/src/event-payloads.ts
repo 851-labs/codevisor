@@ -15,9 +15,6 @@ export const jsonRecord = (value: unknown): JsonRecord | undefined =>
     ? (value as JsonRecord)
     : undefined
 
-/** Adds the canonical semantic transcript identity to a session event at the
- * API boundary. Runtime payloads remain stored verbatim; live fanout and
- * replay both receive the same server-owned chat item id. */
 export const withChatItemId = (payload: unknown, chatItemId: string | null): unknown => {
   const record = jsonRecord(payload)
   return record === undefined || chatItemId === null ? payload : { ...record, chatItemId }
@@ -47,8 +44,6 @@ export const pendingQuestionFromRaw = (raw: string | null): QuestionPayload | un
 export const backgroundTasksFromRaw = (raw: string): ReadonlyArray<BackgroundTask> =>
   JSON.parse(raw) as ReadonlyArray<BackgroundTask>
 
-/** Validates the full-snapshot `plan` payload before it becomes durable
- * session state. Extra envelope fields (such as `sessionUpdate`) are ignored. */
 export const sessionPlanFromPayload = (payload: JsonRecord): SessionPlan | undefined => {
   try {
     return Schema.decodeUnknownSync(SessionPlanSchema)({ entries: payload.entries })
@@ -71,9 +66,6 @@ export const payloadText = (payload: JsonRecord): string | undefined => {
   return content?.type === "text" && typeof content.text === "string" ? content.text : undefined
 }
 
-/** Whether replaying this non-answer update can produce visible assistant-turn
- * detail. Transport/config updates and empty thought chunks must not create an
- * otherwise empty assistant item. */
 export const hasRenderableWorkedDetail = (payload: JsonRecord): boolean => {
   const update = typeof payload.sessionUpdate === "string" ? payload.sessionUpdate : undefined
   switch (update) {
@@ -86,8 +78,6 @@ export const hasRenderableWorkedDetail = (payload: JsonRecord): boolean => {
     case "agent_thought_chunk":
       return (payloadText(payload)?.trim().length ?? 0) > 0
     case "agent_message_chunk":
-      // A zero-length commentary chunk can retroactively classify the earlier
-      // text span with the same message id as work rather than final output.
       return (
         (payloadText(payload)?.trim().length ?? 0) > 0 ||
         (payload.phase === "commentary" && typeof payload.messageId === "string")
@@ -163,7 +153,5 @@ export const isSessionShellEvent = (kind: EventKind, payload: unknown): boolean 
   }
   if (kind !== "session.updated") return false
   const value = jsonRecord(payload)
-  // Metadata updates carry the full SessionSummary. Turn/config/stream state
-  // remains exclusively in the session log.
   return typeof value?.id === "string" && typeof value.projectId === "string"
 }

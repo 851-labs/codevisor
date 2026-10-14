@@ -2,13 +2,9 @@ import CodevisorCore
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Files and images dragged onto the composer (from Files, Photos, or
-/// another app beside Codevisor on iPad) attach exactly as a paste would.
 extension ComposerBar {
   static let droppableTypes: [UTType] = [.fileURL, .image, .data]
 
-  /// Accepts what can become attachments, up to the remaining slots. A
-  /// drop with nothing attachable is refused so the system can show that.
   func acceptDrop(_ providers: [NSItemProvider]) -> Bool {
     guard !controller.isSubmitting, remainingAttachmentSlots > 0 else { return false }
     let accepted = providers.filter { Self.canAttachDrop($0) }.prefix(remainingAttachmentSlots)
@@ -28,14 +24,10 @@ extension ComposerBar {
     ComposerPasteProviderLoader.canLoadAttachment(from: provider) || fileContentType(of: provider) != nil
   }
 
-  /// A drag from Files carries the document's own type (a PDF, a source
-  /// file) as a file representation rather than a file URL.
   private static func fileContentType(of provider: NSItemProvider) -> UTType? {
     provider.registeredContentTypes.first { $0.conforms(to: .data) }
   }
 
-  /// Copies the dragged document out of the provider's short-lived location,
-  /// then stages it through the same path as a pasted file URL.
   private func startLoadingDroppedFile(_ provider: NSItemProvider) {
     guard let type = Self.fileContentType(of: provider) else { return }
     let id = UUID()
@@ -47,7 +39,6 @@ extension ComposerBar {
     let kind: Attachment.Kind = type.conforms(to: .image) ? .image : .file
     handlePasteAttachmentEvent(
       .began(id: id, name: name, mimeType: type.preferredMIMEType ?? "application/octet-stream", kind: kind))
-    // Progress is not surfaced: the attachment chip shows loading until the copy resolves.
     _ = provider.loadFileRepresentation(for: type, openInPlace: false) { url, _, error in
       let copied = url.flatMap { Self.copyDroppedFile($0, named: name) }
       Task { @MainActor in

@@ -2,21 +2,9 @@ import Foundation
 import Observation
 
 extension Autocomplete {
-  /// The single highlighted item of a popup. Every input drives the same
-  /// value — the pointer, the arrow keys, and a filter that removes the
-  /// current item — so what the user sees is always what Return accepts and
-  /// what the next arrow press moves from.
-  ///
-  /// The highlight is deliberately unaware of the list contents. Callers
-  /// pass the currently visible ordered targets to every navigation call,
-  /// so the same state drives grouped lists, filtered lists, and lists with
-  /// footers.
   @MainActor
   @Observable
   final class Highlight<ID: Hashable> {
-    /// Which input last moved the highlight, so a container can react
-    /// differently (scroll a keyboard target into view; leave a hovered one
-    /// alone).
     enum Source: Sendable, Hashable {
       case keyboard
       case pointer
@@ -33,16 +21,10 @@ extension Autocomplete {
       self.navigation = navigation
     }
 
-    // MARK: Pointer
-
-    /// The pointer entered an item: it becomes the highlight.
     func hover(_ id: ID) {
       set(id, source: .pointer)
     }
 
-    /// The pointer left an item. Menus clear the highlight the way NSMenu
-    /// does. While searching or using `autoHighlight`, it stays where it is
-    /// until another input moves it.
     func endHover(_ id: ID) {
       guard highlighted == id, !autoHighlights else { return }
       set(nil, source: .pointer)
@@ -50,18 +32,12 @@ extension Autocomplete {
 
     func focus(_ id: ID) { set(id, source: .keyboard) }
 
-    // MARK: Keyboard
-
-    /// Forget the highlight, e.g. when the popup is about to be presented.
     func reset() {
       highlighted = nil
       source = nil
       searchQuery = ""
     }
 
-    /// A changed search highlights its first result, even if the previous
-    /// target still matches. Clearing search restores the navigation preset.
-    /// Reconcile query and results together so an old list is never selected.
     func reconcile(with targets: [ID], query: String? = nil) {
       if let query {
         let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -105,10 +81,6 @@ extension Autocomplete {
       set(targets.last, source: .keyboard)
     }
 
-    /// Route a key command. `accept` receives the highlight only when it is
-    /// still among `targets`. Returns whether the command changed state or
-    /// fired a callback, so an owner sharing the keyboard (a text editor)
-    /// can let unhandled keys fall through.
     @discardableResult
     func handle(
       _ command: KeyCommand,

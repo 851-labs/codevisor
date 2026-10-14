@@ -10,9 +10,7 @@ struct ReviewPanePreferencesTests {
     preferences.setViewed(true, path: "a.swift", fingerprint: "1..2", current: ["a.swift"])
 
     #expect(preferences.isViewed(path: "a.swift", fingerprint: "1..2"))
-    // The file changed again after it was viewed.
     #expect(!preferences.isViewed(path: "a.swift", fingerprint: "1..3"))
-    // Servers without fingerprints can't be tracked.
     #expect(!preferences.isViewed(path: "a.swift", fingerprint: nil))
 
     preferences.setViewed(false, path: "a.swift", fingerprint: "1..2", current: ["a.swift"])

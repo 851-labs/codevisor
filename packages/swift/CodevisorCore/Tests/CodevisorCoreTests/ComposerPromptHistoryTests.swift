@@ -45,12 +45,10 @@ struct ComposerPromptHistoryTests {
     #expect(ComposerPromptHistory.step(&cursor, fresh: first, older: true) == "a")
     #expect(ComposerPromptHistory.step(&cursor, fresh: first, older: false) == "draft 1")
 
-    // Back at the draft, the user typed more: ↑ then ↓ returns the new text.
     let edited = ComposerPromptHistory(entries: ["a"], draft: "draft 2")
     #expect(ComposerPromptHistory.step(&cursor, fresh: edited, older: true) == "a")
     #expect(ComposerPromptHistory.step(&cursor, fresh: edited, older: false) == "draft 2")
 
-    // Mid-navigation, a new prompt was sent: ↑ starts over from the newest.
     #expect(ComposerPromptHistory.step(&cursor, fresh: edited, older: true) == "a")
     let afterSend = ComposerPromptHistory(entries: ["a", "b"], draft: "")
     #expect(ComposerPromptHistory.step(&cursor, fresh: afterSend, older: true) == "b")

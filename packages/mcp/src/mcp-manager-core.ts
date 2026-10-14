@@ -30,9 +30,6 @@ import {
 } from "./mcp-secret-store.js"
 import { reportBackgroundFailure, run, type UpstreamConnection } from "./mcp-support.js"
 
-/// Manager state that operations reassign after construction: the gateway
-/// and OAuth base URLs follow the server's bound port, and the local
-/// suppression set follows the config plane.
 export interface McpManagerState {
   gatewayBaseUrl: string
   oauthBaseUrl: string
@@ -41,7 +38,6 @@ export interface McpManagerState {
 
 const DEFAULT_GATEWAY_BASE_URL = "http://127.0.0.1:49361"
 
-/// The fields a change listener cares about: what a settings row renders.
 const visibleSignature = (server: McpServerRecord): string =>
   JSON.stringify([
     server.name,
@@ -58,13 +54,8 @@ const visibleSignature = (server: McpServerRecord): string =>
     server.detail
   ])
 
-/// Everything the operation modules share: the encryption key, connection
-/// and gateway registries, the built-in automation providers, and the
-/// record helpers that keep persisted connection state consistent.
 export const makeMcpManagerCore = (config: McpManagerConfig) => {
   const key = loadEncryptionKey(config.dataDir)
-  // This is a cryptographic compatibility label, not a user-facing brand.
-  // Keep it stable so resumed sessions retain a valid gateway credential.
   const gatewayBearerToken = createHash("sha256")
     .update("herdman-mcp-gateway-v1")
     .update(key)
@@ -76,13 +67,10 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
   const refreshRetryAttempts = new Map<string, number>()
   const selfServerId = config.serverId ?? "local"
   const rotationListeners = new Set<(id: string) => void>()
-  /* v8 ignore next 3 -- rotation events fire from the live OAuth refresh timer. */
+  /* v8 ignore next 3 */
   const emitCredentialsRotated = (id: string): void => {
     for (const listener of Array.from(rotationListeners)) listener(id)
   }
-  // Observers of a server record's visible state (the server publishes
-  // these as mcp.updated events so settings views follow connection
-  // transitions live instead of polling).
   const changeListeners = new Set<(id: string) => void>()
   const emitServerChanged = (id: string): void => {
     for (const listener of Array.from(changeListeners)) listener(id)
@@ -110,15 +98,12 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
     unavailableComputerProvider
   )
   const selfMachine = config.machine ?? { id: selfServerId, name: hostname() }
-  /// The client window that sent each session's current turn (C4 origin).
   const turnClientIds = new Map<string, string>()
   const codevisorProvider = makeCodevisorProvider(
     () => state.gatewayBaseUrl,
     () => run(config.db.getOrCreateConnectionToken),
     {
       currentContext: async ({ sessionId }) => {
-        // Calls forwarded from another machine use a synthetic session key
-        // with no local session row.
         const session = await run(config.db.getSessionSummary(sessionId)).catch(() => undefined)
         const parentSessionId = (session as { readonly parentSessionId?: unknown } | undefined)
           ?.parentSessionId
@@ -196,8 +181,6 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
       return run(
         config.db.saveMcpServer({
           ...builtin,
-          // Internal providers never spawn this transport. Keeping a valid
-          // transport value preserves the existing external MCP wire schema.
           transport: "stdio",
           args: [],
           enabled: true,
@@ -211,9 +194,6 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
   )
     .then(() => undefined)
     .catch((cause: unknown) => {
-      // Built-in MCP registration is optional feature initialization.
-      // Preserve external MCPs and the rest of the server when a packaged
-      // resource is unavailable.
       reportBackgroundFailure("Built-in MCP initialization failed", cause)
     })
 
@@ -262,16 +242,14 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
         enabled: patch.enabled ?? server.enabled,
         authType: patch.authType ?? server.authType,
         ...(oauthScope === undefined ? {} : { oauthScope }),
-        /* v8 ignore next -- every internal save transition supplies its resulting connection state. */
+        /* v8 ignore next */
         connectionState: patch.connectionState ?? server.connectionState,
         toolCount: patch.toolCount ?? server.toolCount,
         ...(detail === undefined ? {} : { detail }),
-        /* v8 ignore next -- manager-owned records always have an encrypted secret payload. */
+        /* v8 ignore next */
         ...(secretCipher === undefined ? {} : { secretCipher })
       })
     )
-    // Secret rewrites change what the row shows (header/env names) even
-    // though the ciphertext itself is never compared.
     if (patch.secretCipher !== undefined || visibleSignature(saved) !== visibleSignature(server)) {
       emitServerChanged(saved.id)
     }
@@ -283,9 +261,6 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
     for (const builtin of BUILTIN_MCP_SERVERS) {
       const current = await record(builtin.id)
       const state = builtinProviderState(builtin.id, current.enabled)
-      // Preserve an actionable runtime failure (for example a missing desktop
-      // D-Bus session) until an explicit reconnect. The ordinary macOS
-      // "open the app" state remains dynamic as the app starts and stops.
       if (
         builtin.id === "computer" &&
         current.connectionState === "unavailable" &&
@@ -310,7 +285,7 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
     }
   }
 
-  /* v8 ignore start -- these helpers are used exclusively by the live OAuth adapter. */
+  /* v8 ignore start */
   const replaceSecrets = async (
     id: string,
     mutate: (current: StoredSecrets) => StoredSecrets

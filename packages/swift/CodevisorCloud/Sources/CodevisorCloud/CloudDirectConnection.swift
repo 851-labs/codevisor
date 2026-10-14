@@ -2,19 +2,6 @@ import ACPKit
 import CodevisorClient
 import Foundation
 
-/// One direct LAN pipe to a single machine: the same sealed-channel protocol
-/// as the cloud relay (hello/welcome, binary envelope batches, per-direction
-/// seqs, negotiated compression, credit flow control) over a plain WebSocket
-/// to the machine's own `/v1/direct` listener — no hub in the middle, so
-/// frames make one LAN hop instead of a round trip through the relay region.
-///
-/// Deliberately simpler than `CloudHubConnection`: single-shot (no reconnect
-/// loop — when the socket dies the pipe is done, its channels fail, and
-/// `onDown` fires once so the selection layer falls back to the relay), no
-/// resume, no presence. Identity comes from the same app device keys as the
-/// relay; the machine refuses hellos from devices it has not already pinned
-/// (TOFU happens on the relay, never here), and the E2E channel crypto
-/// authenticates both ends of every frame, so the pipe needs no TLS.
 public actor CloudDirectConnection: CloudChannelHosting {
   public static let protocolVersion = CloudHubConnection.protocolVersion
   static let maximumMessageSize = CloudHubConnection.maximumMessageSize
@@ -31,8 +18,6 @@ public actor CloudDirectConnection: CloudChannelHosting {
   private let readyTimeout: Duration
   private let heartbeatInterval: Duration
   private let heartbeatTimeout: Duration
-  /// Fires exactly once when the pipe dies for any reason other than
-  /// `shutdown()` — the cue to route new channels over the relay again.
   private var onDown: (@Sendable () -> Void)?
 
   private let decoder = JSONDecoder()
@@ -45,8 +30,6 @@ public actor CloudDirectConnection: CloudChannelHosting {
   private var readyWaiters: [Int: CheckedContinuation<Void, any Error>] = [:]
   private var heartbeatTask: Task<Void, Never>?
   private var pongDeadlineTask: Task<Void, Never>?
-  /// Serializes outbound writes so relay frames hit the wire in seq order
-  /// even when several tasks send concurrently (same scheme as the hub).
   private var sendChain: Task<Void, Never> = Task {}
   private var channels: [String: CloudDirectChannelState] = [:]
 
@@ -80,27 +63,19 @@ public actor CloudDirectConnection: CloudChannelHosting {
     self.onDown = onDown
   }
 
-  // MARK: Lifecycle
-
-  /// Opens the socket and sends hello. Safe to call repeatedly; a dead pipe
-  /// stays dead (build a new instance to try again).
   public func connect() {
     guard runTask == nil, !isDown else { return }
     runTask = Task { await run() }
   }
 
-  /// Whether the pipe is welcomed and usable right now.
   public var isReady: Bool { isWelcomed && !isDown }
 
-  /// Silent teardown by the owner: channels fail but `onDown` does not fire.
   public func shutdown() {
     onDown = nil
     runTask?.cancel()
     goDown()
   }
 
-  /// Waits until the machine has welcomed this pipe (bounded by the ready
-  /// timeout), starting the connection if needed.
   public func waitUntilReady() async throws {
     guard !isDown else { throw CloudHubConnectionError.disconnected }
     connect()
@@ -182,8 +157,6 @@ public actor CloudDirectConnection: CloudChannelHosting {
     onDown = nil
   }
 
-  // MARK: Wire
-
   private func sendHello(identity: CloudAppDeviceIdentity) throws {
     let hello = CloudDirectHelloMessage(
       device: CloudDirectHelloMessage.Device(
@@ -228,11 +201,6 @@ public actor CloudDirectConnection: CloudChannelHosting {
     }
   }
 
-  // MARK: Keepalive
-
-  /// The LAN heartbeat is deliberately tighter than the hub's: a dead
-  /// direct pipe should demote to the relay within seconds, not half a
-  /// minute of a user staring at a stalled stream.
   private func startHeartbeat() {
     heartbeatTask?.cancel()
     heartbeatTask = Task { [weak self, heartbeatInterval] in
@@ -245,9 +213,6 @@ public actor CloudDirectConnection: CloudChannelHosting {
   }
 
   private func sendKeepalivePing() {
-    // A pending deadline means the last ping is still unanswered: don't
-    // send another (which would keep resetting the deadline forever on a
-    // half-open socket) — let the deadline decide.
     guard isWelcomed, !isDown, pongDeadlineTask == nil else { return }
     struct Ping: Encodable {
       var t = "ping"
@@ -288,22 +253,15 @@ public actor CloudDirectConnection: CloudChannelHosting {
       }
     }
   }
-  // MARK: - Inbound relay frames
 
   private func handleRelay(_ frame: CloudRelayFrame, payload: Data) {
     guard let state = channels[frame.channelId] else { return }
     state.receivedInbound = true
-    // A close ends the channel whatever its seq: it carries no sealed
-    // payload, and a responder that lost count (e.g. refusing a channel it
-    // no longer knows) must still be able to say why instead of surfacing
-    // as a protocol error.
     if case let .close(channelId, _, reason) = frame {
       channels.removeValue(forKey: channelId)
       state.onClosed(reason)
       return
     }
-    // Per-direction seqs are strictly monotonic from 0; a gap or repeat
-    // is a protocol error and kills the channel.
     guard frame.seq == state.nextInboundSeq else {
       abortChannel(frame.channelId, reason: .protocolError)
       return
@@ -311,7 +269,6 @@ public actor CloudDirectConnection: CloudChannelHosting {
     state.nextInboundSeq += 1
     switch frame {
     case .open:
-      // Machines never open channels toward the app.
       abortChannel(frame.channelId, reason: .protocolError)
     case let .data(channelId, seq):
       if let reason = state.receiveData(payload, channelId: channelId, seq: seq) {
@@ -324,17 +281,10 @@ public actor CloudDirectConnection: CloudChannelHosting {
       }
       state.onCredit(bytes)
     case .close:
-      // Handled before the seq check.
       break
     }
   }
 
-  // MARK: - Channels
-
-  /// Opens an end-to-end encrypted channel over this pipe. `onMessage` gets
-  /// each decrypted inbound payload; `onClosed` fires once when the channel
-  /// ends (with the peer's close reason, or nil on pipe loss). Both may be
-  /// invoked before this returns.
   public func openChannel(
     channelType: String,
     params: JSONValue?,
@@ -353,10 +303,6 @@ public actor CloudDirectConnection: CloudChannelHosting {
     )
   }
 
-  /// Opens a raw channel whose owner explicitly grants receive credit and
-  /// observes peer grants before sending. Credit is counted in encoded
-  /// ciphertext bytes; the sealed open payload carries `flowControl: true`
-  /// so the machine gates its own sends behind our grants.
   public func openFlowControlledChannel(
     channelType: String,
     params: JSONValue?,
@@ -430,7 +376,6 @@ public actor CloudDirectConnection: CloudChannelHosting {
     }
     return CloudRelayChannel(id: channelId, host: self)
   }
-  // MARK: - CloudChannelHosting
 
   func send(channelId: String, plaintext: Data) throws -> Int {
     guard let state = channels[channelId] else {
@@ -459,8 +404,6 @@ public actor CloudDirectConnection: CloudChannelHosting {
     try sendRelay(frame: .credit(channelId: channelId, seq: seq, bytes: bytes))
   }
 
-  /// Closes a channel from this side. `onClosed` is not invoked for
-  /// self-initiated closes.
   func closeChannel(_ channelId: String, reason: CloudChannelCloseReason) {
     guard let state = channels.removeValue(forKey: channelId) else { return }
     let seq = state.nextOutboundSeq
@@ -468,11 +411,6 @@ public actor CloudDirectConnection: CloudChannelHosting {
     try? sendRelay(frame: .close(channelId: channelId, seq: seq, reason: reason))
   }
 
-  /// The owner gave up before the machine sent anything on this channel.
-  /// Pings can keep succeeding while channel opens go unanswered, so the
-  /// heartbeat alone cannot demote this pipe; an unanswered open does. The
-  /// selection layer then routes new opens over the relay, and the pipe is
-  /// re-probed on a later roster refresh.
   func reportUnanswered(channelId: String) {
     guard let state = channels[channelId], !state.receivedInbound, !isDown else { return }
     Log.cloud.notice(

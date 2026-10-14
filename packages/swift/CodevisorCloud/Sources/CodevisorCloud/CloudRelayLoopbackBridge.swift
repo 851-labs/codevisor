@@ -2,13 +2,6 @@ import CodevisorClient
 import Foundation
 import Network
 
-/// A real local address for one cloud machine. Every accepted loopback TCP
-/// connection becomes one end-to-end encrypted, flow-controlled byte stream
-/// to the machine's own Codevisor listener.
-///
-/// The bridge does not parse HTTP or WebSocket traffic. Request streaming,
-/// chunked responses, MJPEG, upgrades, keep-alive, half-closes, and any future
-/// protocol layered on TCP therefore retain their original wire semantics.
 public final class CloudRelayLoopbackBridge: @unchecked Sendable {
   public enum BridgeError: Error, Sendable {
     case alreadyStarted
@@ -41,7 +34,6 @@ public final class CloudRelayLoopbackBridge: @unchecked Sendable {
     self.onStateChange = onStateChange
   }
 
-  /// Starts a loopback-only listener on an ephemeral port.
   public func start() async throws -> UInt16 {
     let parameters = NWParameters.tcp
     parameters.requiredLocalEndpoint = NWEndpoint.hostPort(host: .ipv4(.loopback), port: .any)
@@ -72,8 +64,6 @@ public final class CloudRelayLoopbackBridge: @unchecked Sendable {
     }
   }
 
-  // Observe the entire listener lifetime, including failure after start()
-  // returned. Never let a late ready callback resurrect a stopped bridge.
   func listenerStateChanged(_ state: NWListener.State, port: UInt16?) {
     switch state {
     case .ready:
@@ -100,7 +90,6 @@ public final class CloudRelayLoopbackBridge: @unchecked Sendable {
     }
   }
 
-  /// Stops listening and tears down every active tunnel.
   public func stop() {
     finish(throwing: BridgeError.stopped)
   }
@@ -141,16 +130,12 @@ public final class CloudRelayLoopbackBridge: @unchecked Sendable {
     }
   }
 
-  /// Raw ChaCha20-Poly1305 box size: plaintext + 16-byte tag (the box
-  /// travels as raw bytes — no encoding expansion).
   static func sealedByteCount(forPlaintextBytes count: Int) -> Int {
     precondition(count >= 0)
     return count + 16
   }
 
 }
-
-// MARK: - One accepted connection
 
 private final class LoopbackConnection: @unchecked Sendable {
   private struct RelayChunk: Sendable {
@@ -219,9 +204,6 @@ private final class LoopbackConnection: @unchecked Sendable {
         do {
           while try await group.next() != nil {}
         } catch {
-          // Cancellation alone does not wake an outstanding
-          // NWConnection.receive; cancel the socket before the task
-          // group waits for its sibling to unwind.
           connection.cancel()
           group.cancelAll()
           throw error
@@ -236,8 +218,6 @@ private final class LoopbackConnection: @unchecked Sendable {
     creditContinuation.finish()
   }
 
-  /// Local TCP → relay. Reading pauses before each chunk until the peer has
-  /// granted enough ciphertext budget for the largest possible receive.
   private func copyClientToMachine(
     channel: CloudRelayChannel,
     credits: AsyncStream<Int>
@@ -273,8 +253,6 @@ private final class LoopbackConnection: @unchecked Sendable {
     }
   }
 
-  /// Relay → local TCP. Credit is returned only after Network.framework has
-  /// accepted each chunk, propagating local backpressure across the relay.
   private func copyMachineToClient(
     channel: CloudRelayChannel,
     inbound: AsyncStream<RelayChunk>

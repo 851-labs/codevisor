@@ -3,18 +3,12 @@ import Observation
 import CodevisorCore
 import ACPKit
 
-/// A pane the user closed, with enough of where it lived to put it back:
-/// its tab (the restore lands right after it when that tab survives) and
-/// that tab's index at the time (the fallback position).
 struct ClosedPaneRecord: Equatable {
   let descriptor: PaneDescriptorState
   let tabId: UUID
   let tabIndex: Int
 }
 
-/// What the sidebar asks a workspace's mounted container to do with its
-/// top tabs. Selection commits directly through `selectDestination`; only
-/// structural commands need the mounted container's pane lifecycle.
 struct CenterTabRequest: Equatable {
   enum Action: Equatable {
     case close(UUID)
@@ -26,9 +20,6 @@ struct CenterTabRequest: Equatable {
   let action: Action
 }
 
-/// Caches one `SessionController` per session id so an in-flight conversation
-/// survives navigation (e.g. the new-chat → session handoff) and re-selecting a
-/// session in the sidebar.
 @MainActor
 @Observable
 final class SessionStore {
@@ -46,103 +37,44 @@ final class SessionStore {
     }
   }
 
-  /// Identity cache, not presentation state. Views resolve controllers while
-  /// constructing pane trees; tracking cache insertion would invalidate the
-  /// AttributeGraph from inside that same render pass. The controllers are
-  /// observable themselves, while `activityRevision` covers aggregate reads.
   @ObservationIgnored var controllers: [SessionKey: SessionController] = [:]
-  /// Whether a "close this working chat?" alert is up, so repeated ⌘W
-  /// doesn't stack another one. See `confirmClosingWorkingChats`.
   @ObservationIgnored var isConfirmingChatClose = false
-  /// Tiny viewport snapshots share the controller cache's lifetime. This
-  /// restores an exact position while its transcript remains resident, while
-  /// a genuinely uncached chat opens at the latest content after reloading.
-  /// Observation is intentionally disabled: scroll ticks must never
-  /// invalidate the store's sidebar/session observers.
   @ObservationIgnored var scrollStates: [SessionKey: SessionScrollState] = [:]
-  /// Recent chats retain their mounted native transcript window in addition
-  /// to model and geometry state. This is deliberately observation-ignored:
-  /// resolving a pane's presentation surface must remain an identity lookup,
-  /// not invalidate every session view.
   @ObservationIgnored var transcriptSurfaces =
     TranscriptPresentationSurfaceCache()
-  /// Per-session todo-panel expansion deliberately outlives controller
-  /// eviction so pinned checklists retain their disclosure state.
-  /// Each open subagent pane's mirror of its parent chat. Pruned with the
-  /// pane (see `reconcileMountedPaneGroups`).
   @ObservationIgnored var subagentMirrors: [SubagentPaneKey: SubagentMirror] = [:]
   struct SubagentPaneKey: Hashable {
     let workspaceId: UUID
     let paneId: UUID
   }
   @ObservationIgnored var todoExpansionStates: [SessionKey: Bool] = [:]
-  /// Center-tree leaf groups, keyed by (workspace, leaf group) — the ONE
-  /// model per leaf that both the top bar and the split view share.
   struct CenterLeafKey: Hashable {
     let workspaceId: UUID
     let groupId: UUID
   }
   @ObservationIgnored var centerLeafGroups: [CenterLeafKey: PaneGroupModel] = [:]
-  /// The groups' live browser pages by pane id.
   @ObservationIgnored let browserPanes = BrowserPaneIndex()
-  /// The sidebar's pull request badges for this window's workspaces.
   @ObservationIgnored let pullRequests = SidebarGitLookup.pullRequests()
-  /// The sidebar's branch names for this window's workspaces.
   @ObservationIgnored let branches = SidebarGitLookup.branches()
-  /// One live unsent new-chat draft per machine, mirrored to disk by
-  /// `ComposerDraftStore`. A controller permanently owns the server client
-  /// it was created with, so reusing a draft after a machine switch can send
-  /// the new machine's project id to the old server.
   @ObservationIgnored var draftsByServer: [String: SessionController] = [:]
-  /// One draft controller per DRAFT CHAT PANE (the in-workspace new-chat
-  /// composer), keyed by pane id. Promoted to the session cache on first
-  /// send; discarded when the pane closes unsent.
   @ObservationIgnored var paneDrafts: [UUID: SessionController] = [:]
-  /// Invalidates views that observe aggregate activity across the cached
-  /// controllers. A turn can finish without otherwise mutating this store
-  /// (most notably when its session is open), so nested controller
-  /// observation alone can leave cross-session UI such as update banners
-  /// holding onto its previous value.
   var activityRevision = 0
-  /// The session selected by navigation. It is used for controller
-  /// retention, never as proof that content was read.
   var openSessionKey: SessionKey?
-  /// The chat pane facing the user in this window: the selected chat pane
-  /// of the active split leaf. Combined with window key state below, this
-  /// is what the app-wide attention coordinator treats as "focused" — the
-  /// chat it marks read.
   var attentionFocus = SessionAttentionWorkspaceFocus()
-  /// Whether this store's window is key. A selected chat behind Settings or
-  /// another Codevisor window is not the focused chat.
   var isWindowFocused = false
-  /// Window-local navigation ownership, updated before panes mount or unmount.
   var navigationWorkspaceId: UUID? {
     get { attentionFocus.workspaceId }
     set {
-      // Re-committing the same destination must not rewrite observed focus.
       guard newValue != attentionFocus.workspaceId else { return }
       attentionFocus.selectWorkspace(newValue)
       publishFocus()
     }
   }
   @ObservationIgnored var navigationRevision = 0
-  /// A structural sidebar command consumed by the owning container.
   var centerTabRequest: CenterTabRequest?
-  /// ⌥⌘↑ / ⌥⌘↓ from inside a workspace: steps the sidebar's workspace
-  /// rows. Installed by the docked sidebar, which owns that order and the
-  /// selection.
   @ObservationIgnored var workspaceStepHandler: ((Int) -> Void)?
-  /// Whether this window's sidebar is showing (docked, or as the compact
-  /// drawer). ⇧⌘[ / ⇧⌘] step the sidebar's rows while it is, and the
-  /// workspace's tabs while it isn't. Kept current by the root view.
   @ObservationIgnored var isSidebarVisible = true
-  /// Classic sidebar: ⇧⌘[ / ⇧⌘] step through its flat tab-row list, across
-  /// workspaces. Installed by the docked classic sidebar; returns false when
-  /// it cannot answer, and the container cycles its own tabs instead.
   @ObservationIgnored var sidebarTabStepHandler: ((Int) -> Bool)?
-  /// Panes the user closed, newest last, per workspace — what ⌘⇧T brings
-  /// back. In memory only: the archive is the durable recovery for chats;
-  /// this is the browser-style undo for the current run.
   @ObservationIgnored var closedPanes: [UUID: [ClosedPaneRecord]] = [:]
   static let maxClosedPanesPerWorkspace = 20
 
@@ -158,17 +90,8 @@ final class SessionStore {
   func popClosedPane(workspaceId: UUID) -> ClosedPaneRecord? {
     closedPanes[workspaceId]?.popLast()
   }
-  /// Session ids in access order, most recent last — drives controller
-  /// eviction so browsing many sessions doesn't accumulate every transcript
-  /// ever opened (conversations retain full tool outputs and diffs).
-  /// OBSERVATION-IGNORED, deliberately: chat views bump this as they
-  /// appear, and an observed write would invalidate every view showing a
-  /// chat. No view reads it; it's pure LRU bookkeeping.
   @ObservationIgnored var accessOrder: [SessionKey] = []
-  /// How many idle (not open, not working, no background tasks/goal)
-  /// controllers stay cached before the least-recently-used are evicted.
   static let maxIdleControllers = 12
-  // Internal so split-off extension files (workspace helpers) reach it.
   let environment: AppEnvironment
   let notificationDelivery: any ChatNotificationDelivering
 
@@ -184,32 +107,12 @@ final class SessionStore {
     }
   }
 
-  /// Returns the cached controller for a session, creating + configuring it
-  /// (resume id, harness, persistence callback) if needed. Views call this
-  /// while rendering, so it never touches recency or evicts: the view that
-  /// shows the chat records the access afterwards with `noteAccess`.
   func controller(for session: ChatSession, project: Project) -> SessionController {
     let key = SessionKey(session)
-    // Registration is the durable draft -> live boundary. A first send
-    // registers its controller before the server has produced an agent
-    // session id, so it must win over the fallback inference below. If the
-    // pane-draft check runs first, the newly bound chat briefly receives a
-    // second empty controller and its optimistic row appears only when the
-    // agent id later forces lookup back through this cache.
     if let existing = controllers[key] {
-      // Cached lookup runs during view construction and must remain a
-      // pure identity read. Observed controller state is reconciled by
-      // explicit post-render lifecycle callbacks below.
       return existing
     }
 
-    // A New Chat chosen from an in-workspace placeholder gets a durable
-    // session record before its first send, but its live configuration
-    // still belongs to the pane draft UNTIL that controller is registered.
-    // Reuse (or create) that exact controller here. Minting an ordinary
-    // session controller would seed it from the harness default and let
-    // focus routing overwrite the workspace profile before the draft
-    // composer appears.
     if session.agentSessionId?.isEmpty != false,
       let location = paneDraftLocation(for: session)
     {
@@ -225,8 +128,6 @@ final class SessionStore {
     let controller = SessionController(
       project: project,
       configCache: environment.configCache,
-      // Existing chats never read New Chat defaults; the store is only
-      // consulted while a chat is still an unsent draft.
       composerDefaults: environment.composerDefaults,
       hostWorkspaceId: workspaceId,
       serverClient: environment.machines.client(for: session.serverId),
@@ -258,9 +159,6 @@ final class SessionStore {
     return controller
   }
 
-  /// Returns the pane-specific native transcript presentation. Including the
-  /// pane id lets the same chat appear in two splits without one AppKit view
-  /// being stolen back and forth between them.
   func transcriptSurface(
     for session: ChatSession,
     paneID: UUID,
@@ -276,9 +174,6 @@ final class SessionStore {
     )
   }
 
-  /// Reconciles a controller after view construction (or from an explicit
-  /// event callback). The identity guard prevents a stale view from writing
-  /// into a controller that has since been replaced or evicted.
   func reconcile(
     _ controller: SessionController,
     for session: ChatSession,
@@ -291,9 +186,6 @@ final class SessionStore {
     controller.reconcileExistingSession(session)
   }
 
-  /// The live controller for a session WITHOUT creating one — a pure read,
-  /// safe in view bodies. For an eagerly-created unsent chat this is its
-  /// pane-draft controller, not a second generic session controller.
   func activeController(for session: ChatSession) -> SessionController? {
     if let controller = controllers[SessionKey(session)] {
       return controller
@@ -304,12 +196,5 @@ final class SessionStore {
     return paneDrafts[location.paneId]
   }
 
-  /// Stand-in workspaces for chats mid-teardown (see `workspace(for:)`);
-  /// cached so repeated body evaluations see one stable identity.
   @ObservationIgnored var ephemeralWorkspaces: [UUID: Workspace] = [:]
-
-  // MARK: - Unread badges
-
-  // MARK: - Eviction
-
 }

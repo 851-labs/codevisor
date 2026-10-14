@@ -1,9 +1,5 @@
 import type { OpenCodeAuthMethod, OpenCodeAuthPrompt, OpenCodeAuthProvider } from "@codevisor/api"
 
-/// OpenCode 2's integration catalog (`GET /api/integration`) in the provider
-/// shape the accounts UI already renders. A method keeps OpenCode's own id
-/// (`chatgpt-browser`, `device`; `key` for an API key) so sign-in can name it.
-
 interface FormField {
   readonly key?: string
   readonly title?: string
@@ -34,12 +30,10 @@ export interface OpenCodeIntegration {
   readonly connections?: ReadonlyArray<{ readonly type?: string; readonly method?: string }>
 }
 
-/// The method id an API key is entered under.
 export const OPENCODE_KEY_METHOD = "key"
 
 const prompts = (form: ReadonlyArray<FormField> = []): Array<OpenCodeAuthPrompt> =>
   form.flatMap((field): Array<OpenCodeAuthPrompt> => {
-    // Hidden fields carry their own defaults; there is nothing to ask.
     if (field.hidden === true || field.key === undefined) return []
     const options = (field.options ?? []).flatMap((option) =>
       option.value === undefined
@@ -93,10 +87,8 @@ export const openCodeProvidersFromIntegrations = (
               prompts: prompts(method.form)
             }
           ]
-        // Environment variables and commands aren't something to click.
         return []
       })
-      // The first connection is the one in use.
       const active = integration.connections?.find((connection) => connection.type === "credential")
       const credentialType =
         active?.method === "oauth" ? "oauth" : active === undefined ? undefined : "api"

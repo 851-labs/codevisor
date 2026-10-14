@@ -15,8 +15,6 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-/// A Claude process starts on the chat's saved selections: the picker's
-/// choice is the only thing that sets the model, never the CLI default.
 describe("Claude start selections", () => {
   it("starts the process on the saved selections and reports them before init", async () => {
     const fake = new FakeQuery()
@@ -35,7 +33,6 @@ describe("Claude start selections", () => {
       expect.objectContaining({ currentValue: "xhigh", id: "effort" }),
       expect.objectContaining({ currentValue: "fast", id: "speed" })
     ])
-    // Already running it: no follow-up switch.
     expect(fake.models).toEqual([])
   })
 

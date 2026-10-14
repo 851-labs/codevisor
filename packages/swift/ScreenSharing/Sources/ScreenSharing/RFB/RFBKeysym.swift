@@ -1,8 +1,5 @@
 import Foundation
 
-/// X11 keysyms the KeyEvent message carries. Latin-1 characters are their own
-/// keysym; any other Unicode scalar is 0x01000000 + its value (the X.Org
-/// convention every modern server understands).
 public enum RFBKeysym {
   public static let backSpace: UInt32 = 0xff08
   public static let tab: UInt32 = 0xff09
@@ -40,7 +37,7 @@ public enum RFBKeysym {
     case 0x1b: escape
     case 0x7f: delete
     case 0x20...0xff: scalar.value
-    case let value where value < 0x20: value + 0x40  // control characters: the letter, the server applies Control
+    case let value where value < 0x20: value + 0x40
     case let value: 0x0100_0000 | value
     }
   }

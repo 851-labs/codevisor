@@ -246,7 +246,6 @@ extension ProcessCommandRunnerTests {
     await clock.waitForSleep(.seconds(5))
     clock.advance(by: .seconds(5))
     await #expect(throws: CommandRunnerError.self) { try await command.value }
-    // The command is still blocked; release it and acknowledge cleanup.
     runner.release.signal()
     await runner.finished.wait()
   }

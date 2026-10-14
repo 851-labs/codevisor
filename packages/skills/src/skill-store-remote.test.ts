@@ -28,7 +28,6 @@ describe("importRemote", () => {
       calls.push([url, ref])
       writeSkill(join(destination, "skills/deploy"), { name: "Deploy" })
       writeSkill(join(destination, "skills/review"), { name: "Review" })
-      // Stray files, ignored locations, and too-deep nesting never import.
       writeFileSync(join(destination, "README.md"), "docs")
       mkdirSync(join(destination, "node_modules/ignored"), { recursive: true })
       writeFileSync(join(destination, "node_modules/ignored/SKILL.md"), "nope")
@@ -63,11 +62,9 @@ describe("importRemote", () => {
         throw new Error("repository not found")
       }).importRemote({ source: "o/missing" })
     ).rejects.toMatchObject({ code: "invalid" })
-    // A subpath that does not exist in the clone reads as no skills found.
     await expect(
       managerWithClone(home, async () => {}).importRemote({ source: "o/r/absent/dir" })
     ).rejects.toMatchObject({ code: "invalid" })
-    // Non-Error clone failures with a pinned ref still produce a useful message.
     await expect(
       managerWithClone(home, async () => {
         throw "socket hangup"
@@ -84,7 +81,6 @@ describe("importRemote", () => {
     }
     const scan = await managerWithClone(home, clone).importRemote({ source: "o/r" })
     expect(scan.skills.map((skill) => skill.directoryName).toSorted()).toEqual(["deploy", "review"])
-    // Second run: everything conflicts now.
     await expect(
       managerWithClone(home, clone).importRemote({ source: "o/r" })
     ).rejects.toMatchObject({ code: "conflict" })
@@ -105,7 +101,6 @@ describe("importRemote", () => {
       `git init -q -b main && git add -A && git -c user.email=t@t -c user.name=t commit -qm skill`,
       { cwd: upstream }
     )
-    // Pin the ref too, exercising the default clone's --branch path.
     const scan = await manager(home).importRemote({ source: `${upstream}#main` })
     expect(storedSkill(scan, "my-skill").description).toBe("From git")
   })
@@ -162,7 +157,6 @@ describe("well-known skill sources", () => {
       if (path === "/.well-known/agent-skills/deploy/refs/notes.md") {
         return { status: 200, body: "notes" }
       }
-      // The "broken" skill's file 404s — that entry must be skipped.
       return undefined
     })
     try {
@@ -170,7 +164,6 @@ describe("well-known skill sources", () => {
       expect(storedSkill(scan, "deploy").description).toBe("Deploy checklist")
       expect(readFileSync(join(home, "store/deploy/refs/notes.md"), "utf8")).toBe("notes")
       expect(scan.skills.map((skill) => skill.directoryName)).toEqual(["deploy"])
-      // Auto-install applied to well-known imports too.
     } finally {
       await site.close()
     }
@@ -180,7 +173,6 @@ describe("well-known skill sources", () => {
     const home = makeHome()
     const { execSync } = await import("node:child_process")
     const { createHash } = await import("node:crypto")
-    // Build a tgz artifact containing an archived skill.
     const artifactSource = join(home, "artifact-src")
     writeSkill(join(artifactSource, "archived"), { description: "From archive", name: "Archived" })
     execSync(`tar -czf ${join(home, "archived.tgz")} -C ${artifactSource} archived`)
@@ -263,7 +255,6 @@ describe("well-known skill sources", () => {
       return undefined
     })
     try {
-      // A deep page URL still resolves through the origin's legacy path.
       const scan = await manager(home).importRemote({ source: `${site.url}/docs/page/` })
       expect(storedSkill(scan, "deploy")).toBeDefined()
     } finally {
@@ -275,7 +266,6 @@ describe("well-known skill sources", () => {
     const home = makeHome()
     const { execSync } = await import("node:child_process")
     const { createHash } = await import("node:crypto")
-    // A zip artifact, and a corrupt "gzip" artifact (valid magic, garbage body).
     const zipSource = join(home, "zip-src")
     writeSkill(join(zipSource, "zipped"), { description: "From zip", name: "Zipped" })
     execSync(`cd ${zipSource} && zip -qr ${join(home, "zipped.zip")} zipped`)
@@ -287,9 +277,6 @@ describe("well-known skill sources", () => {
     const plainDigest = `sha256:${createHash("sha256").update(plainBytes).digest("hex")}`
 
     const site = await startSkillSite((path) => {
-      // The path-relative candidate serves invalid JSON; the origin's
-      // agent-skills index serves a non-array shape; the legacy origin
-      // index finally works — exercising the whole candidate chain.
       if (path === "/docs/.well-known/agent-skills/index.json") {
         return { status: 200, body: "{ not json" }
       }
@@ -382,7 +369,6 @@ describe("remote discovery and selective import", () => {
   ) => {
     writeSkill(join(destination, "skills/deploy"), { description: "Deploys", name: "Deploy" })
     writeSkill(join(destination, "skills/review"), { description: "Reviews", name: "Review" })
-    // Broken frontmatter: named by its directory, no description.
     mkdirSync(join(destination, "skills/plain"), { recursive: true })
     writeFileSync(join(destination, "skills/plain/SKILL.md"), "---\n- broken\n---\n")
   }
@@ -397,7 +383,6 @@ describe("remote discovery and selective import", () => {
       { alreadyExists: false, directoryName: "plain", name: "plain" },
       { alreadyExists: false, description: "Reviews", directoryName: "review", name: "Review" }
     ])
-    // Nothing was imported.
     expect(existsSync(join(home, "store/review"))).toBe(false)
   })
 

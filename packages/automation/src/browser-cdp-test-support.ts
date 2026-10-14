@@ -2,9 +2,6 @@ import { vi } from "vitest"
 
 import { CdpConnection } from "./browser-cdp.js"
 
-/// Headless fixtures with multiple tabs must not depend on which tab Chrome
-/// considers foreground. Enable focus emulation before an attached page is
-/// used, so background Runtime/Accessibility commands remain responsive.
 export const emulateBrowserFocus = () => {
   const send = CdpConnection.prototype.sendOnce
   vi.spyOn(CdpConnection.prototype, "sendOnce").mockImplementation(async function <T>(
@@ -19,8 +16,6 @@ export const emulateBrowserFocus = () => {
   })
 }
 
-/// Observe registration and completed event dispatch at the existing CDP boundary.
-/// Install before constructing the provider; restore spies after each test.
 export const observeCdp = () => {
   const registrations = new Map<string, () => void>()
   const events = new Set<{

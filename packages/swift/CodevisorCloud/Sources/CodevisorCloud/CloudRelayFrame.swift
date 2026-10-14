@@ -1,8 +1,5 @@
 import Foundation
 
-// MARK: - Wire protocol (packages/api/src/cloud-protocol.ts, app plane)
-
-/// Why a relay channel ended, as carried in `close` frames.
 public enum CloudChannelCloseReason: String, Codable, Sendable {
   case done
   case rejected
@@ -12,9 +9,6 @@ public enum CloudChannelCloseReason: String, Codable, Sendable {
   case cryptoError = "crypto-error"
 }
 
-/// One relay frame's header metadata. The ciphertext never appears here — it
-/// rides beside the header as the envelope payload (open/data frames), and
-/// credit/close frames carry an empty payload.
 public enum CloudRelayFrame: Sendable, Equatable {
   case open(channelId: String, seq: UInt64, ephemeralKey: String)
   case data(channelId: String, seq: UInt64)
@@ -96,10 +90,7 @@ extension CloudRelayFrame: Codable {
   }
 }
 
-/// Errors the hub connection and the direct pipes surface to their callers.
 public enum CloudHubConnectionError: Error, Equatable, Sendable, LocalizedError {
-  /// The hub closed the socket with a fatal code (4200 bad token, 4201
-  /// unsupported protocol) — reconnecting cannot help.
   case rejected(closeCode: Int)
   case notSignedIn
   case credentialsUnavailable

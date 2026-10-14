@@ -2,22 +2,16 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// A spot in the remote filesystem.
 struct RemoteDirectory: Hashable {
   let path: String?
   let name: String
 
-  /// The machine's home folder (the server resolves a nil path to `~`).
   static let home = RemoteDirectory(path: nil, name: "Home")
   static let root = RemoteDirectory(path: "/", name: "/")
 }
 
-/// One level of the remote filesystem, Files-style: folder rows that push
-/// deeper, git repositories badged, secondary actions behind the ellipsis
-/// menu, and a fixed call to action for the current folder.
 struct RemoteDirectoryScreen: View {
   @Environment(AppEnvironment.self) private var environment
-  /// The machine whose filesystem is browsed.
   let serverId: String
   let directory: RemoteDirectory
   let onOpen: (RemoteDirectory) -> Void
@@ -84,8 +78,6 @@ struct RemoteDirectoryScreen: View {
         Button {
           onPick(listing.path)
         } label: {
-          // The app root sets a primary foreground style, which would
-          // otherwise override the prominent button's white label.
           Text("Add “\(title)” as Project")
             .lineLimit(1)
             .truncationMode(.middle)
@@ -100,8 +92,6 @@ struct RemoteDirectoryScreen: View {
         .padding(.bottom, 8)
       }
     }
-    // The composer's keyboard can still be up behind this sheet; keep the
-    // action at the bottom instead of floating above it.
     .ignoresSafeArea(.keyboard, edges: .bottom)
     .onChange(of: showHidden) { _, _ in
       Task { await load() }
@@ -113,8 +103,6 @@ struct RemoteDirectoryScreen: View {
     }
   }
 
-  /// The folder's own name; the home folder is named once its listing
-  /// resolves the path.
   private var title: String {
     guard directory.path == nil, let listing else { return directory.name }
     let name = (listing.path as NSString).lastPathComponent

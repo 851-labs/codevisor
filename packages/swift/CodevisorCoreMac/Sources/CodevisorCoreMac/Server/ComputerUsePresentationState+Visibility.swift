@@ -32,10 +32,6 @@ extension ComputerUsePresentationState {
     refreshWatchedWindowFrames(windowInfo: windows)
   }
 
-  /// Tool calls resize the stream to the window, but an app can move or
-  /// resize its window between them — the agent's own action often does.
-  /// While someone watches the live preview, follow the window here so the
-  /// preview never shows a stale layout until the next tool call.
   func refreshWatchedWindowFrames(windowInfo: [[String: Any]]) {
     let watched = sessions.filter { ComputerUseNativeSharing.shared.hasSinks(sessionID: $0.key) }
     guard !watched.isEmpty else { return }
@@ -67,8 +63,6 @@ extension ComputerUsePresentationState {
 
   func refreshCursorVisibility(windowInfo: [[String: Any]]? = nil, reorder: Bool = false) {
     guard !sessions.isEmpty else { return }
-    // Backstop for a termination that predates this observer or slipped
-    // past the notification: a dead pid can never become visible again.
     let deadPIDs = Set(sessions.values.map(\.pid)).filter { pid in
       guard let app = NSRunningApplication(processIdentifier: pid) else { return true }
       return app.isTerminated
@@ -95,9 +89,6 @@ extension ComputerUsePresentationState {
       }
 
       if presentation.cursorPanel.isVisible {
-        // App activations can rewrite the normal-level WindowServer
-        // stack. Re-pin defensively so the overlay stays adjacent to
-        // its target rather than becoming globally topmost or buried.
         if reorder { order(presentation.cursorPanel, relativeTo: presentation.targetWindowID) }
         continue
       }
@@ -186,8 +177,6 @@ extension ComputerUsePresentationState {
   }
 }
 
-/// A window's bounds from `CGWindowListCopyWindowInfo`, in the same global
-/// top-left point space as its accessibility frame.
 func computerUseWindowBounds(windowID: CGWindowID, windowInfo: [[String: Any]]) -> CGRect? {
   for info in windowInfo {
     guard (info[kCGWindowNumber as String] as? NSNumber)?.uint32Value == windowID,

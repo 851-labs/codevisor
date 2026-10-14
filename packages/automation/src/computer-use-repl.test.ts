@@ -105,8 +105,6 @@ describe("Computer Use REPL", () => {
 
   it("releases a session after replacing a large screenshot observation", async () => {
     const repl = pool()
-    // Two replacements of a 4 MB image still reproduce the old Bellard engine's
-    // JS_FreeRuntime assertion. Thirty replacements only added stress-test work.
     const image = { type: "image" as const, mimeType: "image/png", data: "A".repeat(4_000_000) }
     const invoke = async () => ({
       content: [...reply({ snapshotId: "s", text: "1 AXWindow" }).content, image]
@@ -373,7 +371,6 @@ describe("Computer Use REPL", () => {
       emptyInvoke
     )
     expect(empty).toEqual({ content: [] })
-    // Unsupported output entries must not leak into the MCP content stream.
     expect(
       (await repl.execute("a", "globalThis.__codevisor_outputs.push(null, {});", emptyInvoke))
         .content

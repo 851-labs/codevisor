@@ -2,8 +2,6 @@ import CodevisorCore
 import SwiftUI
 import CodevisorUI
 
-// MARK: - Actions
-
 extension OpenCodeProviderAuthenticationView {
   func loadAccounts() async {
     await perform("Loading profiles…") {
@@ -11,8 +9,6 @@ extension OpenCodeProviderAuthenticationView {
       do {
         loaded = try await client.listHarnessAccounts(harnessId: "opencode")
       } catch {
-        // Nothing to show yet: the sheet explains the failure in place, with
-        // a retry, rather than an alert over an empty list.
         guard profilesLoaded else {
           profilesError = serverErrorMessage(error)
           return
@@ -96,8 +92,6 @@ extension OpenCodeProviderAuthenticationView {
     }
   }
 
-  /// `label` is what the sheet's footer says while this runs. Every
-  /// blocking operation names itself; none of them renders in the body.
   private func perform(_ label: String, _ operation: () async throws -> Void) async {
     workingLabel = label
     errorMessage = nil

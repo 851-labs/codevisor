@@ -13,7 +13,6 @@ public struct CloudEmailAuthSheet: View {
   public var body: some View {
     Group {
       #if os(iOS)
-        // An explicit closure avoids Swift 6.3's actor-isolated method reference crash.
         NavigationStack(path: Binding(get: { model.navigationPath }, set: { navigate($0) })) {
           page(.signIn)
             .navigationDestination(for: CloudEmailAuthModel.Step.self) { page($0) }

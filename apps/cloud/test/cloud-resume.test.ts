@@ -26,7 +26,6 @@ describe("session resume", () => {
     expect(typeof app.welcome.resume).toBe("string")
 
     await disconnect(token, app.socket, "subway tunnel")
-    // Machines are never told; frames they send meanwhile are buffered.
     sendRelay(
       machine.socket,
       { peerId: app.welcome.connectionId, frame: { t: "data", channelId: "ch-r", seq: 0 } },
@@ -45,14 +44,12 @@ describe("session resume", () => {
     })
     expect(revived.welcome.resumed).toBe(true)
     expect(revived.welcome.connectionId).toBe(app.welcome.connectionId)
-    // Tokens rotate: the new welcome carries a fresh one.
     expect(revived.welcome.resume).not.toBe(app.welcome.resume)
 
     const first = await revived.reader.nextEnvelope()
     const second = await revived.reader.nextEnvelope()
     expect([...first.payload]).toEqual([1, 2])
     expect([...second.payload]).toEqual([3])
-    // The machine never saw a peer-gone; it can keep relaying to the same id.
     sendRelay(
       machine.socket,
       { peerId: app.welcome.connectionId, frame: { t: "data", channelId: "ch-r", seq: 2 } },
@@ -67,7 +64,6 @@ describe("session resume", () => {
     const app = await connectApp(token)
 
     await disconnect(token, machine.socket, "worker deploy")
-    // The machine still lists as online, and app frames buffer silently.
     const listed = await SELF.fetch(`${BASE}/api/machines`, { headers: authed(token) })
     const machines = ((await listed.json()) as { machines: CloudMachinePresence[] }).machines
     expect(machines.find((m) => m.deviceId === machine.deviceId)?.online).toBe(true)
@@ -88,8 +84,6 @@ describe("session resume", () => {
     expect([...replayed.payload]).toEqual([9, 9])
     expect((replayed.header as HubToMachineRelayHeader).peerId).toBe(app.welcome.connectionId)
 
-    // Apps saw neither machine-reset nor presence churn: the next control
-    // frame the app receives is its own pong.
     app.socket.send(encodeCloudFrame({ t: "ping" }))
     expect((await app.reader.next()).t).toBe("pong")
   })
@@ -107,7 +101,6 @@ describe("session resume", () => {
     })
     expect(reborn.welcome.resumed).toBeUndefined()
     expect(reborn.welcome.connectionId).not.toBe(machine.welcome.connectionId)
-    // Fresh hello → apps must drop their channels toward the machine.
     expect((await app.reader.next()).t).toBe("machine-reset")
     expect((await app.reader.next()).t).toBe("presence")
   })
@@ -120,7 +113,6 @@ describe("session resume", () => {
     await expireResumeGrace(token)
     expect((await app.reader.next()).t).toBe("presence")
     expect((await app.reader.next()).t).toBe("error")
-    // The expired token can no longer resume.
     const reborn = await connectMachine(token, "expiry-vps", machine.deviceId, {
       apiKey: machine.apiKey,
       keys: machine.keys,
@@ -139,7 +131,6 @@ describe("session resume", () => {
       { machineId: machine.deviceId, frame: { t: "data", channelId: "ch-lost", seq: 1 } },
       new Uint8Array([5])
     )
-    // Round-trip a ping so the buffered write is processed before expiry.
     app.socket.send(encodeCloudFrame({ t: "ping" }))
     expect((await app.reader.next()).t).toBe("pong")
     await expireResumeGrace(token)
@@ -159,7 +150,6 @@ describe("session resume", () => {
     const app = await connectApp(token)
     await disconnect(token, machine.socket, "away")
 
-    // Fill past the 256 KiB cap: five 64 KiB payloads.
     const chunk = new Uint8Array(64 * 1024).fill(7)
     for (let index = 0; index < 4; index += 1) {
       sendRelay(
@@ -173,12 +163,9 @@ describe("session resume", () => {
       { machineId: machine.deviceId, frame: { t: "data", channelId: "big", seq: 4 } },
       chunk
     )
-    // Abandoning the session fires the deferred death notices immediately
-    // (offline presence + broadcast error), then the sender's own error.
     expect((await app.reader.next()).t).toBe("presence")
     const overflow = (await app.reader.next()) as Extract<HubToApp, { t: "error" }>
     expect(overflow).toMatchObject({ t: "error", machineId: machine.deviceId })
-    // The abandoned session cannot resume any more.
     const reborn = await connectMachine(token, "overflow-vps", machine.deviceId, {
       apiKey: machine.apiKey,
       keys: machine.keys,
@@ -194,7 +181,6 @@ describe("resilience matrix", () => {
     const machine = await connectMachine(token, "deploy-stream-vps")
     const app = await connectApp(token)
 
-    // A stream in flight, machine → app.
     sendRelay(
       machine.socket,
       { peerId: app.welcome.connectionId, frame: { t: "data", channelId: "st", seq: 0 } },
@@ -202,12 +188,9 @@ describe("resilience matrix", () => {
     )
     expect([...(await app.reader.nextEnvelope()).payload]).toEqual([0])
 
-    // The deploy: every edge socket closes at once.
     await disconnect(token, machine.socket, "deploy")
     await disconnect(token, app.socket, "deploy")
 
-    // The machine reconnects first and keeps streaming; the app is still
-    // away, so the frame lands in its resume buffer.
     const machine2 = await connectMachine(token, "deploy-stream-vps", machine.deviceId, {
       apiKey: machine.apiKey,
       keys: machine.keys,
@@ -226,9 +209,7 @@ describe("resilience matrix", () => {
       resume: app.welcome.resume!
     })
     expect(app2.welcome.resumed).toBe(true)
-    // Presence never flapped: the machine shows online in the new welcome.
     expect(app2.welcome.machines.find((m) => m.deviceId === machine.deviceId)?.online).toBe(true)
-    // The mid-deploy frame replays, then the live stream just continues.
     expect([...(await app2.reader.nextEnvelope()).payload]).toEqual([1])
     sendRelay(
       machine2.socket,
@@ -236,7 +217,6 @@ describe("resilience matrix", () => {
       new Uint8Array([2])
     )
     expect([...(await app2.reader.nextEnvelope()).payload]).toEqual([2])
-    // Upstream still routes with the original addressing.
     sendRelay(app2.socket, {
       machineId: machine.deviceId,
       frame: { t: "credit", channelId: "st", seq: 0, bytes: 3 }
@@ -246,8 +226,6 @@ describe("resilience matrix", () => {
       frame: { t: "credit", bytes: 3 }
     })
 
-    // Neither side ever heard a death notice: a ping round-trips with
-    // nothing queued ahead of the pong.
     app2.socket.send(encodeCloudFrame({ t: "ping" }))
     expect(((await app2.reader.next()) as { t: string }).t).toBe("pong")
     machine2.socket.send(encodeCloudFrame({ t: "ping" }))

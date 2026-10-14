@@ -1,9 +1,5 @@
 import Foundation
 
-/// Supplies monotonic time and cancellable sleeps for session connection recovery.
-///
-/// Production uses `continuous`; tests inject a manually advanced scheduler so
-/// recovery-state thresholds never depend on runner timing.
 public struct SessionConnectionRecoveryScheduler: Sendable {
   typealias Instant = ContinuousClock.Instant
   typealias Now = @MainActor @Sendable () -> Instant

@@ -7,13 +7,6 @@ import type { HarnessAuthExec } from "./harness-auth-types.js"
 
 const execFileAsync = promisify(execFile)
 
-/// Passive probe cache. Deliberately generous: every status probe spawns the
-/// harness CLI, and a spawned CLI holding an expired access token refreshes
-/// it — with rotating refresh tokens, needless concurrent invocations are
-/// exactly how a login family gets invalidated (the intermittent-logout
-/// class of bug). State-changing paths (login flows, session auth failures,
-/// the explicit settings refresh) all force past this cache, so staleness
-/// here only ever delays a *passive* re-check.
 export const AUTH_CACHE_MS = 300_000
 export const CODEX_PROBE_TIMEOUT_MS = 10_000
 export const CURSOR_PROBE_TIMEOUT_MS = 10_000
@@ -43,9 +36,6 @@ export const parseClaudeAuthStatus = (output: string | undefined): ClaudeAuthSta
   }
 }
 
-/// `cursor-agent status --format json`. The CLI reports the signed-in
-/// identity, which is what lets a Cursor account row show a real email
-/// instead of the placeholder label its record is created with.
 export interface CursorAuthStatus {
   readonly isAuthenticated?: boolean
   readonly status?: string
@@ -67,9 +57,6 @@ export const parseCursorAuthStatus = (output: string | undefined): CursorAuthSta
   }
 }
 
-/// The URL `cursor-agent login` prints when `NO_OPEN_BROWSER` suppresses its
-/// own browser handoff. Codevisor opens it from the client instead, so a
-/// remote machine's sign-in still lands in the user's own browser.
 export const parseCursorLoginUrl = (output: string): string | undefined =>
   /https:\/\/\S*cursor\.com\/\S+/.exec(output)?.[0]
 
@@ -99,8 +86,6 @@ export const defaultExecFile: HarnessAuthExec = (command, args, options) =>
     stderr: string
   }>
 
-/// Runs a command that reads one secret line from stdin (API-key logins),
-/// resolving on a zero exit and rejecting with the captured stderr otherwise.
 export const runWithInput = async (
   command: string,
   args: ReadonlyArray<string>,
@@ -120,8 +105,6 @@ export const runWithInput = async (
       if (code === 0) resolve()
       else reject(new Error(stderr.trim() || `Authentication command exited with status ${code}`))
     })
-    // A command that exits without reading the key closes the pipe; its exit
-    // status above is the answer. An unhandled EPIPE would exit the server.
     child.stdin.on("error", () => undefined)
     child.stdin.end(`${input}\n`)
   })

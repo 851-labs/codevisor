@@ -53,7 +53,6 @@
       func color(at location: Int) -> NSColor? {
         storage?.attribute(.foregroundColor, at: location, effectiveRange: nil) as? NSColor
       }
-      // The command keeps the primary color; the output steps back.
       #expect(color(at: 0) != color(at: ("cat notes.txt\n" as NSString).length))
       #expect(
         color(at: ("cat notes.txt\nhello\n" as NSString).length) == color(at: ("cat notes.txt\n" as NSString).length))

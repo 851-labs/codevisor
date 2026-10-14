@@ -16,13 +16,12 @@ describe("VNC control lease (851-2338)", () => {
     arbiter.receive(a.id, JSON.stringify({ type: "request", name: "Studio" }))
     expect(a.received).toEqual([{ type: "granted" }])
     expect(arbiter.mayControl(a.id)).toBe(true)
-    expect(arbiter.mayControl(b.id)).toBe(true) // b never spoke the lease: not arbitrated yet
+    expect(arbiter.mayControl(b.id)).toBe(true)
     arbiter.receive(b.id, JSON.stringify({ type: "request", name: "  Laptop  " }))
     expect(a.received.at(-1)).toEqual({ type: "revoked", by: "Laptop" })
     expect(b.received).toEqual([{ type: "granted" }])
     expect(arbiter.mayControl(a.id)).toBe(false)
     expect(arbiter.mayControl(b.id)).toBe(true)
-    // Requesting again while in control just grants again.
     arbiter.receive(b.id, JSON.stringify({ type: "request" }))
     expect(b.received).toEqual([{ type: "granted" }, { type: "granted" }])
     expect(a.received).toHaveLength(2)
@@ -35,7 +34,7 @@ describe("VNC control lease (851-2338)", () => {
     arbiter.receive(a.id, JSON.stringify({ type: "request" }))
     arbiter.receive(b.id, JSON.stringify({ type: "request", name: " " }))
     expect(a.received.at(-1)).toEqual({ type: "revoked", by: "Another viewer" })
-    arbiter.receive(a.id, JSON.stringify({ type: "release" })) // not the controller: no effect
+    arbiter.receive(a.id, JSON.stringify({ type: "release" }))
     expect(arbiter.mayControl(b.id)).toBe(true)
     arbiter.receive(b.id, JSON.stringify({ type: "release" }))
     expect(arbiter.mayControl(b.id)).toBe(false)
@@ -52,10 +51,10 @@ describe("VNC control lease (851-2338)", () => {
     const b = viewer(arbiter)
     const legacy = viewer(arbiter)
     for (const id of [a.id, b.id]) arbiter.receive(id, JSON.stringify({ type: "hello" }))
-    expect(arbiter.mayResize(legacy.id)).toBe(true) // an older app isn't arbitrated
+    expect(arbiter.mayResize(legacy.id)).toBe(true)
     expect(arbiter.mayResize(a.id)).toBe(false)
     arbiter.leave(legacy.id)
-    expect(arbiter.mayResize(b.id)).toBe(true) // now the most recent
+    expect(arbiter.mayResize(b.id)).toBe(true)
     arbiter.receive(a.id, JSON.stringify({ type: "request" }))
     expect(arbiter.mayResize(a.id)).toBe(true)
     expect(arbiter.mayResize(b.id)).toBe(false)
@@ -72,7 +71,7 @@ describe("VNC control lease (851-2338)", () => {
     arbiter.receive(a.id, "7")
     arbiter.receive(999, JSON.stringify({ type: "request" }))
     expect(a.received).toEqual([])
-    expect(arbiter.mayControl(a.id)).toBe(true) // still not arbitrated: nothing it sent was a lease message
+    expect(arbiter.mayControl(a.id)).toBe(true)
   })
 
   it("keeps one arbiter per desktop", () => {

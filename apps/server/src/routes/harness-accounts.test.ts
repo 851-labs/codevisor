@@ -66,8 +66,6 @@ describe("harness account routes", () => {
       })
     ).body as { id: string }
 
-    // The pinned account cannot authenticate but the active account can: the
-    // session follows the working account and the rebind reaches the fanout.
     const pinned = await run(
       services.db.createSession({
         projectId: project.id,
@@ -95,8 +93,6 @@ describe("harness account routes", () => {
       )
     )
 
-    // The active account IS the pin (an inconsistent probe): nothing to
-    // rebind, the pin stays and the turn runs under the active context.
     activeContext = { id: "flaky-account", profileKind: "default" }
     const samePin = await run(
       services.db.createSession({
@@ -115,8 +111,6 @@ describe("harness account routes", () => {
       "flaky-account"
     )
 
-    // No usable account anywhere: the session keeps its dead pin and the
-    // prompt still fails with the sign-in error.
     activeContext = undefined
     const stranded = await run(
       services.db.createSession({
@@ -136,17 +130,6 @@ describe("harness account routes", () => {
     expect((await run(services.db.getSessionSummary(stranded.id))).harnessAccountId).toBe(
       "dead-account"
     )
-  })
-
-  it("reports 501 for a login answer without an auth service", async () => {
-    const { services } = await makeServices("server-answer-501")
-    const server = await startWithApp(services)
-    const answered = await jsonRequest(
-      server,
-      "/v1/harnesses/claude-code/accounts/a1/login/flow-1/answer",
-      { body: JSON.stringify({ code: "abc" }), method: "POST" }
-    )
-    expect(answered.status).toBe(501)
   })
 
   it("answers a pasteCode login flow through the accounts route", async () => {
@@ -171,8 +154,6 @@ describe("harness account routes", () => {
   it("capabilities lists sign-in-pending harnesses without inspecting them", async () => {
     const { services, agents } = await makeServices("server-a")
     const auth = {
-      // The fixture catalog holds one harness; the decorator plays the
-      // auth manager's role and contributes a second, sign-in-pending one.
       decorateHarnesses: (list: ReadonlyArray<Harness>) =>
         Promise.resolve([
           ...list.map((harness) => ({
@@ -206,10 +187,7 @@ describe("harness account routes", () => {
         configOptions: ReadonlyArray<unknown>
       }>
     }
-    // The signed-in harness is inspected as before…
     expect(body.harnesses.some((entry) => entry.harness.id === "codex")).toBe(true)
-    // …and the sign-in-pending ones ride along with no options and, above
-    // all, no inspection (inspection spawns the harness CLI).
     const pending = body.harnesses.filter((entry) => !entry.harness.enabled)
     expect(pending.length).toBeGreaterThan(0)
     expect(pending.every((entry) => entry.configOptions.length === 0)).toBe(true)

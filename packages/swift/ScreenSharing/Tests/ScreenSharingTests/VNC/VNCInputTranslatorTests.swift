@@ -5,7 +5,6 @@ import Testing
 
 @MainActor
 struct VNCInputTranslatorTests {
-  /// Code 0 is a letter; Shift (bit 1 of the Carbon state) uppercases it.
   let translator = VNCInputTranslator(
     width: 200, height: 100,
     keys: VNCKeyTranslator(layout: { code, modifiers in code == 0 ? (modifiers & 2 != 0 ? "A" : "a") : nil }))
@@ -22,7 +21,6 @@ struct VNCInputTranslatorTests {
     #expect(
       translator.translate(.button(corner, button: 1, down: false, clicks: 1, modifiers: 0))
         == [.pointerEvent(buttons: 1, x: 199, y: 99)])
-    // 45 px up = two wheel-up clicks with the left button still held; 5 px left = one wheel-left click.
     #expect(
       translator.translate(.scroll(corner, x: 0, y: 45, modifiers: 0)) == [
         .pointerEvent(buttons: 9, x: 199, y: 99), .pointerEvent(buttons: 1, x: 199, y: 99),
@@ -57,7 +55,6 @@ struct VNCInputTranslatorTests {
         .keyEvent(keysym: RFBKeysym.controlRight, down: true)
       ])
     #expect(translator.translate(.key(code: 63, down: true, repeatKey: false, modifiers: 32)) == [])
-    // Unknown to the layout.
     #expect(translator.translate(.key(code: 1, down: true, repeatKey: false, modifiers: 0)) == [])
     #expect(
       translator.translate(.text("hé")) == [

@@ -28,9 +28,6 @@ const StressRequest = Schema.Struct({
 
 const driverSessions = new WeakMap<RouteState, Set<string>>()
 
-/** Opt-in local development fixture control. Uses the normal durable event
- * materializer and fanout so clients exercise real paging, hydration, and
- * streaming. No timers or model calls: the driver acknowledges every chunk. */
 export const routeTranscriptStress = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
@@ -74,11 +71,8 @@ export const routeTranscriptStress = async (
         title: body.title ?? "Transcript stress"
       })
     )
-    // Register as driver-owned so the stale-agent sweep cannot terminate the
-    // explicit live turn between driver operations.
     state.activePromptSessions.add(session.id)
     owned.add(session.id)
-    // A turn must be durably ended before the next begins; fanout order matters.
     for (let index = 0; index < turns; index++) {
       await run(
         services.db.appendConversationItem(

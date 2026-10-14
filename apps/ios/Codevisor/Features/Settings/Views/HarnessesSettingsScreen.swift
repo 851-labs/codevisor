@@ -2,9 +2,6 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// The shared harness list: one row per harness; machines live in its menu.
-/// Also pushed by the model picker, so it stays a plain view inside
-/// whichever navigation stack presents it.
 struct HarnessesSettingsScreen: View {
   @Environment(AppEnvironment.self) private var environment
   @State private var globalModel = HarnessGlobalModel()

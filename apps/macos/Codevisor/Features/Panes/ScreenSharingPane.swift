@@ -21,18 +21,13 @@ final class ScreenSharingPane: Pane {
   private var persistedRevision = 0
   private var persistedResolutionRevision = 0
   private var recordedViewing = false
-  /// The endpoint the machine's sound settings were last applied to.
   private var soundAppliedTo: ObjectIdentifier?
-  /// The endpoint the machine's HDR setting was last applied to.
   private var hdrAppliedTo: ObjectIdentifier?
-  /// The endpoint the machine's shared clipboard setting was last applied to.
   private var clipboardAppliedTo: ObjectIdentifier?
   private let machineId: String
-  /// How the machine is reached and where, for the settings sheet (851-2367).
   private let connection: (kind: String, address: String?)
   private var observation: ObserveToken?
 
-  /// The machine the pane streams from.
   var connectionName: String { machineName }
 
   init(context: PaneContext, descriptor: PaneDescriptorState) {
@@ -54,26 +49,19 @@ final class ScreenSharingPane: Pane {
       }
     }
     guard let store else { return }
-    // Each connection's endpoint carries the focus callback; preferences the
-    // user changed here (and only those) are handed to the registry.
     observation = observe { [weak self] in
       guard let self else { return }
       store.endpoint?.onFocusChanged = self.onFocusChanged
-      // Control–Option–Escape leaves the keyboard with the pane (its background), so ⌘[ and the
-      // other app shortcuts work again while the pane stays in Control.
       store.endpoint?.onKeyboardReturned = { [weak self] in self?.onFocus?() }
-      // Each new connection plays the machine's sound as its settings say (851-2379).
       if let endpoint = store.endpoint, let audio = endpoint.audio, self.soundAppliedTo != ObjectIdentifier(endpoint) {
         self.soundAppliedTo = ObjectIdentifier(endpoint)
         let saved = ScreenSharingMachinePreferences().sound(machineId: self.machineId)
         audio.apply(.init(enabled: saved.enabled, volume: saved.volume))
       }
-      // And HDR as the machine's setting says: off unless turned on (851-2480).
       if let endpoint = store.endpoint, self.hdrAppliedTo != ObjectIdentifier(endpoint) {
         self.hdrAppliedTo = ObjectIdentifier(endpoint)
         endpoint.highDynamicRange = ScreenSharingMachinePreferences().highDynamicRange(machineId: self.machineId)
       }
-      // Shared clipboard is the machine's setting too, on unless turned off; the toolbar's toggle saves it.
       if let endpoint = store.endpoint, let clipboard = endpoint.clipboard {
         let sharing = clipboard.sharing
         let saved = ScreenSharingMachinePreferences().sharedClipboard(machineId: self.machineId)
@@ -84,13 +72,11 @@ final class ScreenSharingPane: Pane {
           ScreenSharingMachinePreferences().setSharedClipboard(sharing, machineId: self.machineId)
         }
       }
-      // Video arriving is what "last connected" means in the settings sheet.
       let viewing = store.phase == .viewing
       if viewing, !self.recordedViewing {
         ScreenSharingMachinePreferences().setLastConnected(Date(), machineId: self.machineId)
       }
       self.recordedViewing = viewing
-      // Dynamic Resolution is the machine's, not the pane's (851-2340).
       if store.dynamicResolutionRevision != self.persistedResolutionRevision {
         self.persistedResolutionRevision = store.dynamicResolutionRevision
         ScreenSharingMachinePreferences().setDynamicResolution(store.dynamicResolution, machineId: self.machineId)
@@ -103,8 +89,6 @@ final class ScreenSharingPane: Pane {
   }
   func makeView() -> AnyView { AnyView(ScreenSharingPaneView(pane: self)) }
 
-  /// The machine's settings as the sheet shows them (851-2367). The connection is the
-  /// machine's codevisor-server's to define, so only the viewer's choices are editable.
   func machineSettings() -> ScreenSharingMachineSettings {
     var settings = ScreenSharingMachineSettings(
       name: machineName, connection: connection.kind, address: connection.address,
@@ -123,7 +107,6 @@ final class ScreenSharingPane: Pane {
     return settings
   }
 
-  /// Why Dynamic Resolution can't apply on this connection (851-2368), for the settings sheet.
   static func dynamicResolutionNote(_ endpoint: ScreenSharingViewerEndpoint?) -> String? {
     guard let endpoint else { return nil }
     if !endpoint.supportsDynamicResolution || endpoint.resolutionAvailability.available == false {
@@ -132,8 +115,6 @@ final class ScreenSharingPane: Pane {
     return nil
   }
 
-  /// Done in the sheet: Dynamic Resolution applies as the toolbar toggle does (and is saved for
-  /// the machine); another display reconnects to it and is remembered for the pane.
   func applyMachineSettings(_ changes: ScreenSharingMachineSettingsChanges) {
     guard let store else { return }
     if let enabled = changes.dynamicResolution, enabled != store.dynamicResolution {
@@ -156,8 +137,6 @@ final class ScreenSharingPane: Pane {
     let url = machine.baseURL
     return ("Codevisor server", url.host().map { host in url.port.map { "\(host):\($0)" } ?? host })
   }
-  /// Never takes the keyboard from a video the user clicked into; otherwise the pane's background
-  /// has it, controlling or not, since control alone no longer focuses the video.
   func focus() { if store?.endpoint?.videoHasKeyboardFocus != true { onFocus?() } }
   func visibilityChanged(_ visible: Bool) { store?.send(visible ? .paneAppeared : .paneDisappeared) }
   func applyPreferences(_ preferences: ScreenSharingPanePreferences) { store?.send(.preferencesSynced(preferences)) }
@@ -175,8 +154,6 @@ final class ScreenSharingPane: Pane {
   }
   func unmounted(_ token: UUID) {
     mounts.remove(token)
-    // SwiftUI reparents carried panes within the same presentation update.
-    // Coalesce that handoff; a true navigation-away has no replacement mount.
     DispatchQueue.main.async { [weak self] in
       guard let self, self.mounts.isEmpty else { return }
       self.store?.send(.paneDisappeared)
@@ -235,12 +212,10 @@ private struct ScreenSharingPaneView: View {
 
   private func connection(_ store: StoreOf<ScreenSharingViewer>) -> some View {
     VStack(spacing: 0) {
-      // Lease messages describe control of a picture that's showing, not a connection being made (851-2470).
       if store.phase == .viewing, let message = store.lease?.message {
         HStack {
           Text(message).font(.caption).foregroundStyle(.secondary)
           Spacer()
-          // A failed request keeps Control selected; asking again is one click, not a mode round trip.
           if store.interactionMode == .control, store.lease?.phase == .viewing {
             Button("Request Control") { store.send(.interactionModeChanged(.control)) }.controlSize(.small)
           }
@@ -275,10 +250,6 @@ private struct ScreenSharingPaneView: View {
   }
 }
 
-/// The endpoint's video surface, with the fill around the remote display kept
-/// on the app's surface color — themed panes use their own, and the system
-/// theme (whose pane background defers to the window backdrop) gets the native
-/// window background rather than black bars.
 private struct ScreenSharingNativeView: NSViewRepresentable {
   let endpoint: ScreenSharingViewerEndpoint
   let letterbox: Color?

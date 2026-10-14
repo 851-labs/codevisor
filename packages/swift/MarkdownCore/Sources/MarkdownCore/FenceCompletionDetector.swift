@@ -1,6 +1,3 @@
-/// Presentation-only detection for the one fact MD4C's public callbacks do not
-/// expose: whether a fenced code block ended with a closing fence. The result
-/// never influences Markdown structure.
 enum FenceCompletionDetector {
   static func completions(in markdown: String) -> [Bool] {
     let lines = markdown.split(separator: "\n", omittingEmptySubsequences: false)
@@ -57,9 +54,6 @@ enum FenceCompletionDetector {
     return value
   }
 
-  /// Strips one CommonMark list marker. This scanner only annotates whether
-  /// MD4C's fenced block is visually complete; MD4C remains authoritative
-  /// for all container structure.
   private static func contentAfterListMarker(in line: Substring) -> Substring? {
     guard let first = line.first else { return nil }
     var remainder: Substring

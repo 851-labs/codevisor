@@ -3,7 +3,6 @@ import Foundation
 struct BrowserProtocolScanner {
   struct Member: Sendable {
     var key: String
-    /// The raw `"key":value` bytes, relative to `data.startIndex`.
     var member: Range<Int>
     var value: Range<Int>
   }
@@ -50,7 +49,6 @@ struct BrowserProtocolScanner {
     return index
   }
 
-  /// The index after the closing quote of the string that starts at `start`.
   private func skipString(_ start: Int) -> Int? {
     guard let base = bytes.baseAddress else { return nil }
     var index = start + 1

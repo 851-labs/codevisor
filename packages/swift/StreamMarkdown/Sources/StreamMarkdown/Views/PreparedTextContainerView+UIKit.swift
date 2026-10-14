@@ -1,8 +1,6 @@
 #if canImport(UIKit) && !canImport(AppKit)
   import UIKit
 
-  /// UIKit cannot replace a UITextView's text container. Keep a stable host
-  /// and explicitly transfer selection when installing a newly prepared stack.
   @MainActor
   final class PreparedTextContainerView: UIView {
     private var textView: SelectableTextKitView?

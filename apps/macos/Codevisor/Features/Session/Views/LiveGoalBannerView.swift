@@ -5,9 +5,6 @@ import CodevisorUI
 import StreamMarkdown
 import TranscriptKit
 
-/// Reads SessionModel.goal directly so activity/lifecycle snapshots invalidate
-/// this small subtree. Going through SessionController.goal only observed the
-/// stable model reference and left the first goal snapshot frozen on screen.
 struct LiveGoalBannerView: View {
   @Bindable var controller: SessionController
   @Bindable var model: SessionModel

@@ -14,7 +14,6 @@ describe("CodexProvider", () => {
       return client.requests.findLast((request) => request.method === "turn/start")?.params
     }
     expect(await turn("t1", { status: "completed" })).toMatchObject({ summary: "auto" })
-    // An unrelated failure keeps asking.
     await turn("t2", { status: "failed", error: { message: "Rate limit reached" } })
     expect(await turn("t3", { status: "completed" })).toMatchObject({ summary: "auto" })
     await turn("t4", {
@@ -48,9 +47,6 @@ describe("CodexProvider", () => {
       },
       sandboxPolicy: { type: "dangerFullAccess" }
     })
-    // After leaving Plan mode, the reset collaboration mode ("default") rides
-    // the next turn — codex's collaboration is sticky, so omitting it would
-    // leave the model stuck in Plan mode.
     await run(created!.handle.setMode("agent"))
     const secondTurnRequested = client.nextRequest("turn/start")
     const secondPrompt = run(created!.handle.prompt("implement"))
@@ -79,8 +75,6 @@ describe("CodexProvider", () => {
     expect(events.at(-1)?.payload).toMatchObject({ modeId: "agent-full-access" })
     await expect(run(created!.handle.setMode("nonsense"))).rejects.toThrow("Unknown Codex mode")
 
-    // An effort the new model doesn't support clamps to that model's default;
-    // xhigh is valid for gpt-5.2-codex but not gpt-5.5.
     await run(created!.handle.setConfigOption("effort", "xhigh"))
     await run(created!.handle.setConfigOption("model", "gpt-5.5"))
     const turnRequested = client.nextRequest("turn/start")
@@ -130,12 +124,10 @@ describe("CodexProvider", () => {
     await runTurn("go fast", "t1")
     expect(lastTurnStart()).toMatchObject({ serviceTier: "priority" })
 
-    // Standard routes via the explicit "default" sentinel, not an omission.
     await run(created!.handle.setConfigOption("speed", "standard"))
     await runTurn("go normal", "t2")
     expect(lastTurnStart()).toMatchObject({ serviceTier: "default" })
 
-    // A model without a fast tier drops the option and the tier override.
     await run(created!.handle.setConfigOption("model", "gpt-5.5"))
     const afterModel = events.at(-1)?.payload as { configOptions?: Array<{ id: string }> }
     expect(afterModel.configOptions).not.toContainEqual(expect.objectContaining({ id: "speed" }))
@@ -195,8 +187,6 @@ describe("CodexProvider", () => {
     const prompt = run(created!.handle.prompt("hello"))
     await turnRequested
     client.emit("turn/started", { threadId: "thread-new", turn: { id: "turn-close" } })
-    // Deliberate teardown (agent replacement, session close) — must not
-    // masquerade as a crash.
     await run(created!.handle.close)
     await expect(prompt).resolves.toMatchObject({ stopReason: "cancelled" })
     expect(client.closed).toBe(true)

@@ -249,7 +249,6 @@ export const makeGrokBuildExtension: AcpStdioExtensionFactory = ({ emit, enqueue
             emitAll(emit, subagents.notification(params))
             const events = normalizer.mapExtensionNotification(params)
             const sessionId = subagents.sessionOf(params)
-            // A subagent's turn boundaries are its own, not the chat's.
             if (sessionId !== undefined && subagents.isChildSession(sessionId)) return
             emitAll(emit, events)
             const mapped = grokGoalNotification(params, (sessionId) => goals.get(sessionId))
@@ -260,7 +259,6 @@ export const makeGrokBuildExtension: AcpStdioExtensionFactory = ({ emit, enqueue
           }
         )
       }
-      // A loaded session replays its subagents' lifecycle under this name.
       for (const method of ["_x.ai/session/update", "x.ai/session/update"]) {
         app.onNotification<unknown>(
           method,
@@ -278,7 +276,6 @@ export const makeGrokBuildExtension: AcpStdioExtensionFactory = ({ emit, enqueue
           rawNotification.update as unknown as Record<string, unknown>
         ) as unknown as typeof rawNotification.update
       }
-      // A subagent's own session streams into its agent's thread.
       if (subagents.isChildSession(notification.sessionId)) {
         return subagents.isThreadUpdate(notification.update as unknown as Record<string, unknown>)
           ? subagents.childEvents(

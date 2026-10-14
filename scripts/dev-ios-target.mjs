@@ -74,8 +74,6 @@ export async function launchIOSDevelopmentApp({
   if (current.lease !== simulator.lease)
     throw new Error("The worktree simulator changed during the build. Restart the dev runner.")
   await run(repoRoot, environment, "xcrun", ["simctl", "install", simulator.udid, appBundle])
-  // A slow termination must finish before launch, or it can kill the new app.
-  // A nonzero exit is expected when this is the first launch on the device.
   await waitForExit(
     spawn("xcrun", ["simctl", "terminate", simulator.udid, bundleIdentifier], {
       env: environment,
@@ -83,10 +81,6 @@ export async function launchIOSDevelopmentApp({
     })
   )
 
-  // Match CodevisorAppVariant's development-launch contract so simulator icon
-  // relaunches retain the dev cloud coordinates. Only the cloud URL: the
-  // simulator app signs in the production way, and every machine (the Dev
-  // Cloud server included) reaches it through that dev cloud account.
   const cloudEnvironment =
     cloudURL === undefined ? {} : { SIMCTL_CHILD_CODEVISOR_DEV_CLOUD_URL: cloudURL }
   await run(

@@ -1,13 +1,11 @@
 import Foundation
 import SwiftUI
 
-/// A flat item for the plain stories.
 struct Language: Identifiable, Hashable {
   let id: String
   var name: String { id }
 }
 
-/// A command for the rich-row story.
 struct Command: Identifiable, Hashable {
   let id: String
   let title: String
@@ -15,7 +13,6 @@ struct Command: Identifiable, Hashable {
   let shortcut: KeyboardShortcut?
 }
 
-/// Grouped items for the group, favorites, and footer stories.
 struct Harness: Identifiable, Hashable {
   let id: String
   let name: String
@@ -32,7 +29,6 @@ enum SampleData {
     "Swift", "Kotlin", "Rust", "Go", "TypeScript", "Python", "Ruby", "Elixir", "Haskell", "Zig", "C", "C++",
   ].map(Language.init(id:))
 
-  /// Enough languages to overflow the list's maximum height.
   static let manyLanguages = [
     "Swift", "Kotlin", "Rust", "Go", "TypeScript", "Python", "Ruby", "Elixir", "Haskell", "Zig", "C", "C++",
     "C#", "Java", "Scala", "Clojure", "OCaml", "F#", "Erlang", "Dart", "Lua", "Perl", "PHP", "R", "Julia",

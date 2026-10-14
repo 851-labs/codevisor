@@ -1,7 +1,5 @@
 import { Schema } from "effect"
 
-/// The tool-spec shape and the builders every Codevisor API tool entry uses.
-
 export type JsonSchema = Record<string, unknown>
 export type HttpMethod = "DELETE" | "GET" | "PATCH" | "POST" | "PUT"
 
@@ -20,11 +18,6 @@ export interface CodevisorApiToolSpec {
   readonly wrappedBody?: boolean | undefined
   readonly query?: ReadonlyArray<QueryParameter> | undefined
   readonly response?: "binary" | undefined
-  /// Consent gate: the tool grows a required boolean `confirm` argument that
-  /// is never forwarded to the server, and the provider refuses to send the
-  /// request unless it is exactly `true`. Used where an agent action runs
-  /// commands on the user's machine (e.g. plugin install) and the agent must
-  /// first show the user what will happen and receive explicit approval.
   readonly confirm?: boolean | undefined
 }
 
@@ -55,8 +48,6 @@ export const objectSchema = (schema: Schema.Constraint): JsonSchema => {
 }
 
 export const enabledBody = Schema.Struct({ enabled: Schema.Boolean })
-/// Either a person's session (serverUrl + sessionToken) or a one-time
-/// machine invite (inviteCode, from `machines.invite` on another machine).
 export const cloudConnectBody = Schema.Struct({
   serverUrl: Schema.optional(Schema.String),
   sessionToken: Schema.optional(Schema.String),

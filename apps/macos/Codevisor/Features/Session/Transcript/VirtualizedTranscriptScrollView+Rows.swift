@@ -6,8 +6,6 @@ import StreamMarkdown
 import SwiftUI
 import TranscriptKit
 
-// MARK: - Rows
-
 extension VirtualizedTranscriptScrollView: TranscriptSurfaceOwner, TranscriptSurfaceAdapter {
   @discardableResult
   func applyRows(_ rows: [TranscriptVirtualRow], layoutFingerprintChanged: Bool) -> Bool {

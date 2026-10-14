@@ -2,24 +2,18 @@ import { openCodeProvidersFromIntegrations, type OpenCodeIntegration } from "./i
 import type { makeOpenCodeServerPool } from "./pool.js"
 import { startOpenCodeServer, type OpenCodeServer, type OpenCodeServerOptions } from "./server.js"
 
-/// OpenCode 2 account operations for one profile: its binary, environment
-/// (whose XDG data directory holds its credentials) and working directory.
-
 export interface OpenCodeProfileRuntime {
   readonly command: string
   readonly cwd: string
   readonly env: NodeJS.ProcessEnv
 }
 
-/// A credential Codevisor keeps in a profile's OpenCode database.
 export interface SeededOpenCodeCredential {
   readonly id: string
   readonly integrationID: string
   readonly value: Readonly<Record<string, unknown>>
 }
 
-/// Ids of every credential Codevisor seeds, so its own are told apart from
-/// ones the user added in OpenCode.
 export const SEEDED_CREDENTIAL_PREFIX = "codevisor-"
 
 export const makeOpenCode2Accounts = (deps: {
@@ -27,8 +21,6 @@ export const makeOpenCode2Accounts = (deps: {
   readonly start?: (options: OpenCodeServerOptions) => Promise<OpenCodeServer>
 }) => {
   const start = deps.start ?? startOpenCodeServer
-  // One control server per binary and data directory: the credentials
-  // live in that directory's database.
   const hold = (profile: OpenCodeProfileRuntime) =>
     deps.pool.acquire(
       JSON.stringify([profile.command, profile.env.XDG_DATA_HOME ?? profile.env.HOME]),
@@ -46,10 +38,7 @@ export const makeOpenCode2Accounts = (deps: {
     }
   }
   return {
-    /// The profile's control server, held until released (a sign-in in
-    /// progress keeps it running).
     hold,
-    /// Signs the profile out of one provider: every credential it holds for it.
     removeIntegration: (profile: OpenCodeProfileRuntime, integrationID: string) =>
       withServer(profile, async (server) => {
         const stored = await server.request<{
@@ -58,9 +47,6 @@ export const makeOpenCode2Accounts = (deps: {
         for (const { id } of stored.data.filter((entry) => entry.integrationID === integrationID))
           await server.request(`/api/credential/${encodeURIComponent(id)}`, { method: "DELETE" })
       }),
-    /// Makes the profile's Codevisor credentials exactly `desired`, each one
-    /// replaced (OpenCode's API can't update a secret in place), so a session
-    /// starts with the token Codevisor holds now.
     syncCredentials: (
       profile: OpenCodeProfileRuntime,
       desired: ReadonlyArray<SeededOpenCodeCredential>

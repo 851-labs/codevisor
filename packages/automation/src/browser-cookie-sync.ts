@@ -54,10 +54,6 @@ export const synchronizeManagedCookies = async (
       })
     )
   }
-  // Chromium refuses some cookies other engines accept. Skip that one cookie:
-  // failing would block every page and agent using this browser. The jar is read
-  // back afterwards, so it is not published as deleted, and it is retried only
-  // once the server has a new revision.
   const rejected = new Map<string, number>()
   const importEntry = async (entry: BrowserCookieEntry, cookie: BrowserCookie) => {
     if (rejected.get(entry.key) === entry.revision) return
@@ -152,7 +148,6 @@ export const synchronizeManagedCookies = async (
     })
     return pending
   }
-  // The first navigation must see the shared jar, including session cookies.
   await sync()
   const timer = setInterval(() => {
     void sync().catch(() => undefined)

@@ -1,7 +1,6 @@
 import Foundation
 import ScreenSharing
 
-/// Owns cursor publication and the video cursor setting for one host subscription.
 @MainActor
 final class ScreenSharingHostCursorStream {
   private var publisher: ScreenSharingCursorPublisher?
@@ -44,6 +43,5 @@ final class ScreenSharingHostCursorStream {
     setShowsCursor(true)
   }
 
-  /// Stop polling before closing the peer; channel closure owns the subscription transition.
   func stopPublishing() { publisher?.stop() }
 }

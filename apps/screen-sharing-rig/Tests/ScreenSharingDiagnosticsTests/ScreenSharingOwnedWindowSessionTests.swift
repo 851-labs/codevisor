@@ -18,26 +18,21 @@ import ScreenSharing
     gate.signal()
     try await waiter.value
     #expect(gate.isSignalled && gate.failure == nil)
-    #expect(clock.pendingCount == 0)  // the deadline was cancelled on exit
-    // A later wait returns immediately; a repeated signal is harmless.
+    #expect(clock.pendingCount == 0)
     gate.signal()
     try await gate.wait(timeout: .seconds(1)) { try await clock.sleep(for: $0) }
   }
 
-  /// Ordering check (added while diagnosing the 11:18 UTC stalled suite run; NOT a reproduction of it):
-  /// the signal is issued before the waiter's task gets its first main-actor turn, so no continuation
-  /// exists yet. The main-actor-isolated gate must observe the signal on entry and return without ever
-  /// registering a continuation that nobody resumes.
   @Test @MainActor func signalBeforeTheWaiterRegistersIsObservedOnEntry() async throws {
     let clock = TestClock()
     let gate = ScreenSharingFirstDrawGate()
     let waiter = Task { @MainActor in
       try await gate.wait(timeout: .seconds(10)) { try await clock.sleep(for: $0) }
     }
-    gate.signal()  // same main-actor turn as the task creation: the waiter has not run yet
+    gate.signal()
     try await waiter.value
     #expect(gate.isSignalled && gate.failure == nil)
-    #expect(clock.pendingCount == 0 && clock.requestCount(.seconds(10)) == 0)  // no deadline was even started
+    #expect(clock.pendingCount == 0 && clock.requestCount(.seconds(10)) == 0)
   }
 
   @Test @MainActor func timeoutFailsThePendingWaitOnceAndBlocksLaterWaits() async {
@@ -50,7 +45,7 @@ import ScreenSharing
     clock.advance(by: .seconds(10))
     await #expect(throws: ScreenSharingFirstDrawGate.Failure.timedOut) { try await waiter.value }
     #expect(gate.failure == .timedOut)
-    gate.signal()  // a late first draw cannot revive readiness
+    gate.signal()
     #expect(!gate.isSignalled)
     await #expect(throws: ScreenSharingFirstDrawGate.Failure.timedOut) {
       try await gate.wait(timeout: .seconds(1)) { try await clock.sleep(for: $0) }
@@ -87,7 +82,7 @@ import ScreenSharing
     #expect(gate.failure == .tornDown && clock.pendingCount == 0)
     gate.signal()
     #expect(!gate.isSignalled)
-    gate.teardown()  // idempotent
+    gate.teardown()
     await #expect(throws: ScreenSharingFirstDrawGate.Failure.tornDown) {
       try await gate.wait(timeout: .seconds(1)) { try await clock.sleep(for: $0) }
     }
@@ -126,7 +121,7 @@ import ScreenSharing
     #expect(await fake.session.stopCapture())
     #expect(fake.stops == 1 && fake.session.finish() == .closedAfterCaptureStop)
     #expect(fake.session.completedInOrder && fake.hidden == 1 && fake.session.stopSucceeded == true)
-    #expect(fake.session.finish() == .closedAfterCaptureStop && fake.hidden == 1)  // idempotent
+    #expect(fake.session.finish() == .closedAfterCaptureStop && fake.hidden == 1)
   }
 
   @Test @MainActor func cancellationWhileReadinessIsHeldAbandonsTheShownWindowAndNeverStartsCapture() async {
@@ -137,8 +132,6 @@ import ScreenSharing
       try await fake.session.start(
         ready: {
           entered.signal()
-          // Readiness returns NORMALLY after the cancellation: only the
-          // session's own check may prevent the capture start.
           await held.wait()
         },
         startCapture: { fake.captureStarts += 1 })
@@ -164,7 +157,7 @@ import ScreenSharing
         ready: {},
         startCapture: {
           entered.signal()
-          await held.wait()  // the stream start completes after the cancellation
+          await held.wait()
           fake.captureStarts += 1
         })
     }
@@ -172,7 +165,6 @@ import ScreenSharing
     task.cancel()
     held.signal()
     await #expect(throws: CancellationError.self) { try await task.value }
-    // The stream had started, so it was really stopped before the window hid.
     #expect(fake.captureStarts == 1 && fake.stops == 1 && fake.hidden == 1)
     #expect(fake.session.stopSucceeded == true && fake.session.lifecycle.state == .closed)
     let stamps = fake.session.lifecycle.timestampsNs
@@ -215,7 +207,6 @@ import ScreenSharing
     #expect(fake.captureStarts == 1 && fake.hidden == 1 && fake.stops == 0)
     #expect(fake.session.lifecycle.abandonedFrom == .ready && fake.session.stopSucceeded == nil)
     #expect(!fake.session.completedInOrder)
-    // finish() is idempotent: it keeps the first outcome and never hides twice.
     #expect(fake.session.finish() == .abandoned(from: .ready) && fake.hidden == 1)
     #expect(await fake.session.stopCapture() == false && fake.stops == 0)
   }
@@ -226,16 +217,13 @@ import ScreenSharing
     try await fake.session.start(ready: {}, startCapture: { fake.captureStarts += 1 })
     #expect(await fake.session.stopCapture() == false && fake.stops == 1)
     #expect(fake.session.stopSucceeded == false && fake.session.stopFailure != nil)
-    #expect(fake.session.lifecycle.state == .capturing)  // no stopCapture transition was applied
+    #expect(fake.session.lifecycle.state == .capturing)
     #expect(fake.session.finish() == .abandoned(from: .capturing))
     #expect(!fake.session.completedInOrder && fake.hidden == 1)
     #expect(fake.session.record["stopSucceeded"] as? String == "false")
   }
 
   @Test @MainActor func repeatedCleanupAfterAFailedStopNeverReplacesTheFailure() async throws {
-    // The runtime path: normal-end stop fails → run throws → stop() asks the
-    // session to stop again. The second closure would succeed trivially (the
-    // capture already cleared its stream); it must not run or be believed.
     let fake = Fake()
     fake.stopThrows = true
     try await fake.session.start(ready: {}, startCapture: { fake.captureStarts += 1 })
@@ -247,7 +235,6 @@ import ScreenSharing
     #expect(fake.session.lifecycle.state == .capturing)
     #expect(fake.session.finish() == .abandoned(from: .capturing))
     #expect(!fake.session.completedInOrder && fake.hidden == 1)
-    // Cleanup again (top-level catch after a failed run): unchanged evidence.
     #expect(await fake.session.stopCapture() == false && fake.stops == 1)
     #expect(fake.session.finish() == .abandoned(from: .capturing) && fake.hidden == 1)
     let record = fake.session.record

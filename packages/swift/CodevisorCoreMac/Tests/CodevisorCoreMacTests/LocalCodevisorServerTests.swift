@@ -87,8 +87,8 @@ struct LocalCodevisorServerTests {
     let directory = try makeTemporaryDirectory()
     let statusURL = directory.appendingPathComponent("data-upgrade.json")
     let client = FakeLocalServerClient(healthResults: [
-      .failure(TestError()),  // pre-launch probe
-      .failure(TestError()),  // first wait iteration while migrating
+      .failure(TestError()),
+      .failure(TestError()),
       .success(.ready),
     ])
     let running = LocalDataUpgradeProgress(
@@ -105,12 +105,6 @@ struct LocalCodevisorServerTests {
       completed: 100,
       total: 100
     )
-    // The upgrade finishes exactly when the server first reports healthy
-    // (the third health call: pre-launch probe, one failing wait
-    // iteration, then success). Keying the status-file write to the
-    // health sequence instead of a timer keeps the test deterministic on
-    // loaded CI machines, where a detached sleeping task can lose the
-    // race against the wait loop's final progress refresh.
     var launchedBootId: String?
     client.onHealth = { call in
       guard call == 3 else { return }
@@ -135,7 +129,6 @@ struct LocalCodevisorServerTests {
         try JSONEncoder().encode(scoped).write(to: statusURL, options: .atomic)
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/tail")
-        // The fixture stays alive until explicit cleanup.
         process.arguments = ["-f", "/dev/null"]
         try process.run()
         launchedProcess = process
@@ -236,9 +229,6 @@ struct LocalCodevisorServerTests {
       allowsDevelopmentLaunch: true,
       entrypoint: URL(fileURLWithPath: "/tmp/main.js"),
       serverEnvironmentProvider: {
-        // Suspend mid-launch so the second caller arrives while the
-        // first is still in flight — the historical double-launch
-        // window (onboarding and the root view racing on first run).
         entered.signal()
         await release.wait()
         return [:]
@@ -286,8 +276,6 @@ struct LocalCodevisorServerTests {
     return directory
   }
 
-  /// A runtime directory shaped like a release bundle's: main.js beside a
-  /// VERSION file. Returns the entrypoint URL.
   func makeRuntimeEntrypoint(version: String) throws -> URL {
     let directory = try makeTemporaryDirectory()
     try version.write(
@@ -316,10 +304,6 @@ final class FakeLocalServerClient: CodevisorServerClienting, @unchecked Sendable
   private var healthCalls = 0
   var healthCallCount: Int { lock.withLock { healthCalls } }
   private var acceptedBootId: String?
-  /// Runs on every health() call with the 1-based call number, before the
-  /// result is returned. Lets tests key side effects (like data-upgrade
-  /// status file writes) to the health sequence instead of wall-clock
-  /// timers, which lose scheduling races on loaded CI machines.
   var onHealth: ((Int) -> Void)?
 
   init(healthResults: [Result<ServerHealth, Error>]) {

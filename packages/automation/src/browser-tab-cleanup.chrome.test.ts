@@ -8,8 +8,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 import { makeBrowserUseProvider } from "./browser-use-provider.js"
 
-/// What a turn leaves behind in a real managed Chromium: no startup page, and
-/// no agent tab or popup once the turn ends.
 const value = <T = unknown>(result: CallToolResult): T => {
   const message = result.content
     .filter((content) => content.type === "text")
@@ -80,7 +78,6 @@ describe("Browser live preview", () => {
       value(await provider.invoke(context, "use_backend", { backend: "managed" }))
       value(await provider.invoke(context, "tabs", { action: "new", url: `${origin}/` }))
       await firstFrame.promise
-      // JPEG frames of the agent's tab, titled after its page.
       expect(Buffer.from(frames[0]!, "base64").subarray(0, 3).toString("hex")).toBe("ffd8ff")
       await openerActive.promise
       expect(states).toContain("active:Opener")
@@ -112,7 +109,6 @@ describe("Browser live preview across tabs", () => {
       },
       frame: () => undefined
     })
-    /// Resolves on the next status with this label, or now if it is the latest.
     const shows = (label: string) =>
       seen.at(-1) === label
         ? Promise.resolve()
@@ -128,7 +124,6 @@ describe("Browser live preview across tabs", () => {
       value(await provider.invoke(context, "tabs", { action: "new", url: `${origin}/second` }))
       await second
 
-      // A REPL tab handle names its tab on every call; the selection stays.
       const back = shows("active:Opener")
       value(await provider.invoke(context, "tab_info", { tabId: first }))
       await back

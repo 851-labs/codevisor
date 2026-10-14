@@ -5,8 +5,6 @@ import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import { run, type CodevisorServerServices } from "../server-context.js"
 import { attachmentRef, captureAssistantFile } from "./assistant-files.js"
 
-// Image bytes are an internal adapter payload. Persist them before publishing
-// the tool update so neither the event log nor connected devices carry base64.
 export const persistGeneratedImage = async (
   services: CodevisorServerServices,
   event: RuntimeEvent

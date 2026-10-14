@@ -20,7 +20,6 @@ import {
 import { waitForSessions } from "./session-wait.js"
 
 const fixture = async () => {
-  // The server id must match the database's so the project folder is local.
   const { agents, services } = await makeServices("server-a")
   const fanout = await run(makeEventFanout)
   const server = await startWithApp(services, fanout)
@@ -32,9 +31,6 @@ const fixture = async () => {
     run(services.db.createSession({ projectId: project.id, harnessId: "codex" }))
   const wait = (body: unknown) =>
     jsonRequest(server, "/v1/sessions/wait", { method: "POST", body: JSON.stringify(body) })
-  // A database whose first per-session read announces that the wait has
-  // validated its ids and subscribed, so a test can change state strictly
-  // after the wait began.
   const observedDatabase = () => {
     const began = Promise.withResolvers<void>()
     const db: CodevisorDatabaseService = {
@@ -75,7 +71,6 @@ describe("waiting for sessions", () => {
         timedOut: false
       }
     })
-    // The first match ends the wait; every listed session is still reported.
     expect(await wait({ ids: [idle.id, asking.id] })).toMatchObject({
       body: {
         sessions: [
@@ -90,7 +85,6 @@ describe("waiting for sessions", () => {
   it("does not treat a session with a prompt still queued as idle, and times out with current states", async () => {
     const { services, session, wait } = await fixture()
     const queued = await session()
-    // Accepted but not yet dispatched: the row still reads idle.
     await run(services.db.createPromptQueueItem(queued.id, "next task"))
     expect(await wait({ ids: [queued.id], timeoutMs: 0 })).toEqual({
       status: 200,
@@ -112,7 +106,6 @@ describe("waiting for sessions", () => {
     agents.releasePrompt()
     const result = await waiting
     expect(result.timedOut).toBe(false)
-    // A finished turn nobody has read yet is "unread", which satisfies idle.
     expect(result.sessions).toEqual([{ id: busy.id, sidebarState: "unread" }])
   })
 
@@ -134,7 +127,6 @@ describe("waiting for sessions", () => {
   it("fails the wait, not the server, when a re-check cannot read the database", async () => {
     const { fanout, services, session } = await fixture()
     const queued = await session()
-    // Idle with a prompt still queued: the first check is not settled.
     await run(services.db.createPromptQueueItem(queued.id, "next task"))
     const firstRead = Promise.withResolvers<void>()
     let reads = 0
@@ -152,8 +144,6 @@ describe("waiting for sessions", () => {
     }
     const waiting = waitForSessions(db, fanout, { ids: [queued.id] }, new AbortController().signal)
     await firstRead.promise
-    // The queue changes; the event-driven re-check's read fails. That used
-    // to be an unhandled rejection and left the waiter hanging.
     await appendAndPublish(services.db, fanout, "session.queue.updated", queued.id, { queue: [] })
     await expect(waiting).rejects.toThrow("database is locked")
   })

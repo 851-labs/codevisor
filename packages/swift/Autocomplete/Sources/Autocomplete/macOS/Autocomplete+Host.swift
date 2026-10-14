@@ -4,8 +4,6 @@
   import SwiftUI
 
   extension Autocomplete {
-    /// One interaction engine for popovers and inline suggestions. All input
-    /// paths validate the same current snapshot and dispatch directly once.
     @MainActor
     @Observable
     final class Host {
@@ -73,8 +71,6 @@
         return handleOwnedEvent(event, editing: window?.firstResponder is NSTextView)
       }
 
-      /// AppKit can deliver a command directly to performKeyEquivalent rather
-      /// than the event queue. The field itself provides the ownership scope.
       func handleKeyEquivalent(_ event: NSEvent) -> Bool {
         guard let field = inputField, let editor = field.window?.firstResponder as? NSTextView,
           editor.delegate === field, !editor.hasMarkedText()
@@ -84,8 +80,6 @@
 
       private func handleOwnedEvent(_ event: NSEvent, editing: Bool) -> Bool {
         let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
-        // Text editing keeps unmodified character keys. AppKit's delegate,
-        // after input-method processing, owns Return/arrows/Escape in a field.
         if !editing || !modifiers.isDisjoint(with: [.command, .control, .option]) {
           var flags: EventModifiers = []
           if modifiers.contains(.command) { flags.insert(.command) }
@@ -95,8 +89,6 @@
           if handleShortcut(key: event.charactersIgnoringModifiers ?? "", modifiers: flags) { return true }
         }
 
-        // Control-J/K navigate before AppKit can interpret them as text edits.
-        // Control-N/P use the same path; unmodified field commands stay native.
         guard !editing || modifiers == .control, let command = Self.command(for: event) else { return false }
         return handle(command)
       }
@@ -126,8 +118,6 @@
         }
       }
 
-      /// Focused SwiftUI buttons also receive keys through their own responder
-      /// path, which does not require AppKit's event-queue monitor.
       func handleFocusedKey(_ key: KeyEquivalent, modifiers: EventModifiers) -> Bool {
         guard hasRowFocus else { return false }
         let modifiers = modifiers.intersection([.command, .control, .option, .shift])

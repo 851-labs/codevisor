@@ -44,11 +44,6 @@ describe("config sync", () => {
         transport: "http",
         url: "https://api.example.com/mcp"
       })
-      // A stdio definition and an OAuth-scoped one ride along, covering the
-      // command and scope fields end to end. Enabled definitions connect
-      // eagerly on create/update, on both machines: the command must fail at
-      // spawn (ENOENT) rather than be a real `npx -y …`, which installs from
-      // the registry on a cold CI runner and pushes this test past its budget.
       await mcpA.create({
         args: ["-y", "some-mcp"],
         enabled: true,
@@ -67,10 +62,7 @@ describe("config sync", () => {
       })
       const firstA = await reconcileMcps(a)
       expect([...firstA.status.published].toSorted()).toEqual(["GitHub", "Local Tool", "Scoped"])
-      // Static secrets travel with the definition (same-owner fleet trust);
-      // OAuth material never does.
       expect(JSON.stringify(firstA.changedEntries)).toContain("secret-token")
-      // Idempotent second pass.
       expect((await reconcileMcps(a)).status).toEqual({
         published: [],
         applied: [],
@@ -78,7 +70,6 @@ describe("config sync", () => {
         renamed: []
       })
 
-      // B adopts the definitions.
       await run(machineB.db.mergeSyncEntries(MCPS_SYNC_NAMESPACE, firstA.changedEntries))
       const appliedB = await reconcileMcps(b)
       expect([...appliedB.status.applied].toSorted()).toEqual(["GitHub", "Local Tool", "Scoped"])
@@ -92,15 +83,12 @@ describe("config sync", () => {
       expect(listB.find((server) => server.name === "Scoped")).toMatchObject({
         oauthScope: "repo"
       })
-      // Static secrets arrived with the definitions: a key-based server
-      // works here with zero re-entry.
       const githubSecretsB = await mcpB.staticSecrets(githubB?.id ?? "")
       expect(githubSecretsB.bearerToken).toBe("secret-token")
       expect(githubSecretsB.headers).toEqual({ "X-Keep": "k", "X-Org": "851" })
       const localToolIdB = listB.find((server) => server.name === "Local Tool")?.id ?? ""
       expect((await mcpB.staticSecrets(localToolIdB)).env).toEqual({ KEEP: "k", TOKEN: "t1" })
 
-      // Edits on B (http and stdio alike) replicate back to A.
       await mcpB.update(githubB?.id ?? "", {
         enabled: false,
         bearerToken: "",
@@ -123,8 +111,6 @@ describe("config sync", () => {
         "-y",
         "other-mcp"
       ])
-      // Secret edits converged exactly: the cleared bearer stays cleared,
-      // removed headers/env are gone, additions and kept values landed.
       const githubIdA = (await mcpA.list()).find((server) => server.name === "GitHub")?.id ?? ""
       const githubSecretsA = await mcpA.staticSecrets(githubIdA)
       expect(githubSecretsA.bearerToken).toBeUndefined()
@@ -133,7 +119,6 @@ describe("config sync", () => {
         (await mcpA.list()).find((server) => server.name === "Local Tool")?.id ?? ""
       expect((await mcpA.staticSecrets(localToolIdA)).env).toEqual({ KEEP: "k2" })
 
-      // A rotated bearer travels back the other way on the next round.
       await mcpA.update(githubIdA, { bearerToken: "rotated" })
       const rotatedA = await reconcileMcps(a)
       expect(rotatedA.status.published).toEqual(["GitHub"])
@@ -141,7 +126,6 @@ describe("config sync", () => {
       await reconcileMcps(b)
       expect((await mcpB.staticSecrets(githubB?.id ?? "")).bearerToken).toBe("rotated")
 
-      // Emptying a stdio server's env converges to nothing everywhere.
       await mcpB.update(localToolB?.id ?? "", { removeEnv: ["KEEP"] })
       const emptiedB = await reconcileMcps(b)
       expect(emptiedB.status.published).toEqual(["Local Tool"])
@@ -149,9 +133,6 @@ describe("config sync", () => {
       await reconcileMcps(a)
       expect((await mcpA.staticSecrets(localToolIdA)).env).toBeUndefined()
 
-      // OAuth under refresh ownership: A authorizes (modeled by importing
-      // material owned by itself), publishes the envelope, and B mirrors it
-      // WITHOUT becoming an owner.
       const scopedIdA = (await mcpA.list()).find((server) => server.name === "Scoped")?.id ?? ""
       await mcpA.importOAuthMaterial(scopedIdA, {
         owner: "server-a",
@@ -171,14 +152,11 @@ describe("config sync", () => {
       expect(envelope?.owner).toBe("server-a")
       await run(machineB.db.mergeSyncEntries(MCPS_SYNC_NAMESPACE, oauthA.changedEntries))
       await reconcileMcps(b)
-      // B mirrors the material — visible, attributed to A, never owned.
       const scopedIdB = (await mcpB.list()).find((server) => server.name === "Scoped")?.id ?? ""
       expect((await mcpB.oauthSyncState(scopedIdB))?.owner).toBe("server-a")
-      // A settled mirror republishes nothing.
       await reconcileMcps(b)
       expect((await reconcileMcps(b)).changedEntries).toEqual([])
 
-      // B re-authorizes: ownership transfers, and A demotes to a mirror.
       await mcpB.importOAuthMaterial(scopedIdB, {
         owner: "server-b",
         material: JSON.stringify({
@@ -192,8 +170,6 @@ describe("config sync", () => {
       await reconcileMcps(a)
       expect((await mcpA.oauthSyncState(scopedIdA))?.owner).toBe("server-b")
 
-      // A brand-new machine creates the server AND adopts the material in
-      // the same pass — zero logins on a fresh box.
       const { services: machineC } = await makeServices("server-c2")
       if (machineC.mcp === undefined) throw new Error("mcp unavailable")
       const c = { db: machineC.db, mcp: machineC.mcp, serverId: "server-c2" }
@@ -204,7 +180,6 @@ describe("config sync", () => {
         (await machineC.mcp.list()).find((server) => server.name === "Scoped")?.id ?? ""
       expect((await machineC.mcp.oauthSyncState(scopedIdC))?.owner).toBe("server-b")
 
-      // A deletion tombstones everywhere.
       const idA = (await mcpA.list()).find((server) => server.name === "GitHub")?.id ?? ""
       await mcpA.remove(idA)
       const removedA = await reconcileMcps(a)
@@ -233,10 +208,7 @@ describe("config sync", () => {
     }
     const first = await publishMachineReadiness(deps)
     expect(first.changedEntries).toHaveLength(1)
-    // A settled machine republishes nothing.
     expect((await publishMachineReadiness(deps)).changedEntries).toEqual([])
-    // Unless the report answers changes from elsewhere: then it republishes,
-    // stamped after them even when this machine's clock is behind.
     const signIn = {
       key: 'provider:["pi","default","anthropic"]',
       value: {},
@@ -255,7 +227,6 @@ describe("config sync", () => {
     expect(value.plugins.map((row) => row.id)).toEqual(["dev-linked", "ffmpeg-tools", "scratchpad"])
     expect(value.plugins[1]?.reason).toBe("needs ffmpeg")
 
-    // The same publisher serves every plane — namespaces stay independent.
     const harness = await publishMachineReadiness({
       db: services.db,
       namespace: HARNESS_READINESS_NAMESPACE,
@@ -281,7 +252,6 @@ describe("config sync", () => {
         profileKind: "default"
       })
     )
-    // A second account without an email exercises the optional field.
     await run(
       services.db.saveHarnessAccount({
         authState: "unauthenticated",
@@ -301,7 +271,6 @@ describe("config sync", () => {
     const first = await publishAccountsRoster(deps)
     expect(first.changedEntries).toHaveLength(1)
 
-    // An unchanged roster republishes nothing.
     expect((await publishAccountsRoster(deps)).changedEntries).toEqual([])
 
     const document = await run(services.db.getSyncEntries(ACCOUNTS_SYNC_NAMESPACE))
@@ -323,9 +292,6 @@ describe("config sync", () => {
       const deps = { db: services.db, mcp: services.mcp, serverId: "server-d" }
       const base = { authType: "none" as const, enabled: false, transport: "http" as const }
 
-      // Never-synced local definitions: a conflicting GitHub, a decoy
-      // occupying a rename candidate, an identical Same, and a name the
-      // replica only remembers as a tombstone.
       await services.mcp.create({ ...base, name: "GitHub", url: "https://local.example/mcp" })
       await services.mcp.create({ ...base, name: "GitHub-3", url: "https://decoy.example/mcp" })
       await services.mcp.create({ ...base, name: "Same", url: "https://same.example/mcp" })
@@ -353,9 +319,6 @@ describe("config sync", () => {
 
       const result = await reconcileMcps(deps)
 
-      // GitHub-2 is taken in the replica and GitHub-3 locally, so the
-      // local copy became GitHub-4; Same was adopted in place; Ghost
-      // republished over the stale tombstone.
       expect(result.status.renamed).toEqual([{ from: "GitHub", to: "GitHub-4" }])
       expect([...result.status.published].toSorted()).toEqual(["Ghost", "GitHub-3", "GitHub-4"])
       expect([...result.status.applied].toSorted()).toEqual(["GitHub", "GitHub-2"])

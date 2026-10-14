@@ -2,7 +2,6 @@ import CoreGraphics
 import Foundation
 import MarkdownCore
 
-/// The two chronological worked sections owned by an assistant turn.
 public enum TranscriptWorkedSectionKind: String, Sendable, Equatable, Hashable {
   case planning
   case implementation
@@ -25,8 +24,6 @@ public enum TranscriptWorkedSectionRowRole: Sendable, Equatable {
   case content
 }
 
-/// Presentation metadata used to remove collapsed worked rows before they
-/// enter either native virtualizer. The header remains present independently.
 public struct TranscriptWorkedSectionMembership: Sendable, Equatable {
   public let identity: TranscriptWorkedSectionIdentity
   public let role: TranscriptWorkedSectionRowRole
@@ -50,8 +47,6 @@ public struct TranscriptWorkedSectionHeader: Sendable, Equatable {
   }
 }
 
-/// Identity-only active reference. Keeping live data out of this value makes
-/// the header and tool-row SwiftUI roots stable across token flushes.
 public struct TranscriptActiveWorkedSectionHeader: Sendable, Equatable {
   public let messageID: UUID
   public let kind: TranscriptWorkedSectionKind

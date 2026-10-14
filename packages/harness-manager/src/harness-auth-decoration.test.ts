@@ -321,7 +321,6 @@ it("announces a shared sign-out so catalogs on other clients follow", async () =
       canLogout: true
     })
   )
-  // The shared store settles sign-out state itself, without a probe.
   const logout = vi.fn(async (id: string) =>
     run(
       db.updateHarnessAccountAuth(id, {
@@ -347,16 +346,12 @@ it("announces a shared sign-out so catalogs on other clients follow", async () =
     stop = manager.subscribe((event) => events.push(event.kind))
   expect(await manager.logout("shared-selected")).toMatchObject({ authState: "expired" })
   expect(events).toEqual(["harness.account.updated", "harness.auth.updated"])
-  // Signing out an already signed-out account changes nothing clients render.
   await manager.logout("shared-selected")
   expect(events).toHaveLength(2)
   stop()
 })
 
 it("emits auth events only when a probe changes what clients render", async () => {
-  // Clients refetch the catalog on `harness.auth.updated`, and that refetch
-  // re-probes. A probe that only stamps `lastCheckedAt` must stay silent or
-  // the two would chase each other forever.
   const directory = mkdtempSync(join(tmpdir(), "codevisor-auth-quiet-probe-"))
   directories.push(directory)
   const db = await run(

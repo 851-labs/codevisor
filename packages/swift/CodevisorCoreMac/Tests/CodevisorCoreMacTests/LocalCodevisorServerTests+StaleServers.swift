@@ -10,8 +10,8 @@ extension LocalCodevisorServerTests {
     let directory = entrypoint.deletingLastPathComponent()
     defer { try? FileManager.default.removeItem(at: directory) }
     let client = FakeLocalServerClient(healthResults: [
-      .success(.running(version: "0.1.9")),  // initial probe: stale server alive
-      .success(.running(version: "0.2.0")),  // launched runtime becomes healthy
+      .success(.running(version: "0.1.9")),
+      .success(.running(version: "0.2.0")),
     ])
     var launches: [LocalCodevisorServerLaunchRequest] = []
     var terminatedPorts: [Int] = []
@@ -47,8 +47,8 @@ extension LocalCodevisorServerTests {
     let directory = entrypoint.deletingLastPathComponent()
     defer { try? FileManager.default.removeItem(at: directory) }
     let client = FakeLocalServerClient(healthResults: [
-      .success(.running(version: "0.1.9")),  // initial probe: stale server alive
-      .success(.running(version: "0.2.0")),  // launched runtime becomes healthy
+      .success(.running(version: "0.1.9")),
+      .success(.running(version: "0.2.0")),
     ])
     var launches: [LocalCodevisorServerLaunchRequest] = []
     var terminatedPorts: [Int] = []

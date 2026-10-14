@@ -48,8 +48,6 @@ export const openSharedCredential = (
   return bundle
 }
 
-/// The coordinator is consulted at most this often for a credential that is
-/// otherwise serving fine: reads inside the window come from memory.
 const REVALIDATE_AFTER_MS = 5 * 60_000
 
 export interface SharedCredentialVaultConfig {
@@ -59,12 +57,7 @@ export interface SharedCredentialVaultConfig {
   readonly elapsed?: () => number
   readonly wait?: () => Promise<void>
   readonly readCached?: (id: string) => Promise<CoordinatedCredential | undefined>
-  /// How long a credential fetched from the coordinator is served from memory
-  /// before a read consults the coordinator again. Bounds how long a sign-out
-  /// on another machine can go unnoticed here. 0 consults it on every read.
   readonly revalidateAfterMs?: number
-  /// Durable local receipt lets a restarted process retry publication without
-  /// ever retrying the provider exchange. Never log its encrypted contents.
   readonly receipt: {
     read(id: string): Promise<{ operationId: string; sealed: string } | undefined>
     write(id: string, value: { operationId: string; sealed: string }): Promise<void>
@@ -72,32 +65,19 @@ export interface SharedCredentialVaultConfig {
   }
 }
 
-/// Access tokens closer to expiry than this are refreshed instead of served,
-/// so a long request never starts on a token that dies underneath it.
 const minimumValidityMs = (harnessId: SharedTokenBundle["harnessId"]): number =>
   ["pi", "opencode", "grok-build"].includes(harnessId) ? 6 * 60_000 : 60_000
 
-/// Reads are local-first. The coordinator exists to elect a single refresher
-/// across machines and to hold the sealed result; it is not the read path. A
-/// credential fetched from it is served from memory until it nears expiry, a
-/// provider rejects it, this process has an uncommitted refresh receipt, or
-/// the revalidation window lapses. Cloud traffic is therefore proportional to
-/// refreshes and windows, not to how often callers ask for a token.
 export const makeSharedCredentialVault = (config: SharedCredentialVaultConfig) => {
   const now = config.now ?? Date.now
   const elapsed = config.elapsed ?? (() => performance.now())
   const wait = config.wait ?? (() => new Promise<void>((resolve) => setTimeout(resolve, 150)))
   const revalidateAfterMs = config.revalidateAfterMs ?? REVALIDATE_AFTER_MS
   const flights = new Map<string, Promise<SharedTokenBundle>>()
-  /// Credentials as last confirmed by the coordinator, with the bundle already
-  /// opened so the local path never decrypts per call.
   const cached = new Map<
     string,
     { credential: CoordinatedCredential; bundle: SharedTokenBundle; verifiedAt: number }
   >()
-  /// Receipts this process wrote and has not yet committed. A pending receipt
-  /// means the cached credential predates a refresh whose outcome the
-  /// coordinator has not confirmed, so it must not be served locally.
   const pendingReceipts = new Set<string>()
   const remember = (
     reference: SharedCredentialReference,
@@ -135,8 +115,6 @@ export const makeSharedCredentialVault = (config: SharedCredentialVaultConfig) =
   const serves = (bundle: SharedTokenBundle, rejectedAccessToken: string | undefined) =>
     bundle.expiresAt > now() + minimumValidityMs(bundle.harnessId) &&
     bundle.accessToken !== rejectedAccessToken
-  /// The bundle the coordinator last confirmed, while that confirmation is
-  /// still inside the window and no refresh of ours awaits its commit.
   const held = (reference: SharedCredentialReference): SharedTokenBundle | undefined => {
     const entry = cached.get(reference.id)
     if (entry === undefined || pendingReceipts.has(reference.id)) return undefined
@@ -195,8 +173,6 @@ export const makeSharedCredentialVault = (config: SharedCredentialVaultConfig) =
       }
       const started = await config.coordinate(reference.id, { action: "start", operationId })
       if (started.status !== "acquired") throw new SharedCredentialError("reauthenticate")
-      // No retry or lock release after this point: a failed response can still
-      // mean the provider consumed the refresh token.
       const rotated = await config.rotate(bundle).catch(() => {
         throw new SharedCredentialError("reauthenticate")
       })
@@ -257,18 +233,10 @@ export const makeSharedCredentialVault = (config: SharedCredentialVaultConfig) =
         throw new Error("Invalid external credential")
       const isNewer = (previous: SharedTokenBundle) =>
         previous.accessToken !== bundle.accessToken && previous.expiresAt <= bundle.expiresAt
-      // Discovery republishes on every sweep; a mirror the coordinator already
-      // confirmed makes that sweep free.
       const confirmed = held(reference)
       if (confirmed !== undefined && !isNewer(confirmed)) return
       const state = await config.coordinate(reference.id, { action: "read" })
       if (state.status === "missing") {
-        // The coordinator lost the grant (a cloud store reset, or a seed that
-        // never landed) while the synced reference survived. Every read then
-        // fails with "sign in again" even though the CLI login this mirrors is
-        // live. The mirror has no refresh token to fork, so re-seed it under
-        // the same reference. Seeding never overwrites a revoked record, so a
-        // deliberate sign-out stays signed out.
         const seeded = await config.coordinate(reference.id, {
           action: "seed",
           sealed: sealSharedCredential(reference, bundle)
@@ -306,8 +274,6 @@ export const makeSharedCredentialVault = (config: SharedCredentialVaultConfig) =
       await removeReceipt(reference.id)
       remember(reference, committed.credential)
     },
-    /// Drop held credentials so the next read consults the coordinator: a
-    /// change from another machine (a sign-out) need not wait for the window.
     invalidate: (): void => cached.clear(),
     revoke: async (reference: SharedCredentialReference): Promise<void> => {
       const result = await config.coordinate(reference.id, { action: "revoke" })

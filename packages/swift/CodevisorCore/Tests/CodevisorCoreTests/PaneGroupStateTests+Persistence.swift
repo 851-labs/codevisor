@@ -9,11 +9,9 @@ extension PaneGroupStateTests {
       """
       {"id":"\(UUID().uuidString)","kind":"terminal","name":"Terminal 1","terminalKey":"abc","cwdOverride":"/tmp/x","attachOnly":false}
       """.utf8)
-    // The retired per-pane cwd override and agent-terminal flag are ignored.
     let decoded = try JSONDecoder().decode(PaneDescriptorState.self, from: legacy)
     #expect(decoded.kind == .terminal)
     #expect(decoded.ownerChatSessionId == nil)
-    // Pre-plugin descriptors decode with no plugin payload.
     #expect(decoded.pluginId == nil)
     #expect(decoded.pluginPaneType == nil)
   }

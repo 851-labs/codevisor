@@ -14,10 +14,7 @@ import { Effect, Schema } from "effect"
 import { EventFanout } from "./server-context-types.js"
 import type { CodevisorServerConfig } from "./server-context-types.js"
 
-/// HTTP plumbing shared by every route: auth, JSON I/O, failure mapping,
-/// route matching, and the common lookup-or-404 helpers.
-
-/* v8 ignore next 3 -- defensive: shared swallow for fire-and-forget event/drain failures. */
+/* v8 ignore next 3 */
 export const swallowError = (): undefined => {
   return undefined
 }
@@ -44,9 +41,6 @@ export const getProjectOrFail = async (
   db: CodevisorDatabaseService,
   projectId: string
 ): Promise<Project> => {
-  // Case-insensitive: UUIDs are case-insensitive identifiers, but clients can
-  // send either case (Swift uppercases, Node lowercases). A mismatch here used
-  // to read as a spurious "project not found".
   const wanted = projectId.toLowerCase()
   const project = (await run(db.listProjects)).find(
     (candidate) => candidate.id.toLowerCase() === wanted
@@ -137,7 +131,7 @@ export const readSchema = async <S extends Schema.ConstraintDecoder<unknown>>(
 export const readJson = async (request: IncomingMessage): Promise<unknown> => {
   const chunks: Array<Buffer> = []
   for await (const chunk of request) {
-    /* v8 ignore next -- Node HTTP request body chunks are Buffers in this server. */
+    /* v8 ignore next */
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
   }
   const raw = Buffer.concat(chunks).toString("utf8")
@@ -162,7 +156,7 @@ export const writeJson = (response: ServerResponse, status: number, body: unknow
 }
 
 export const writeFailure = (response: ServerResponse, cause: unknown): void => {
-  /* v8 ignore next -- errors after SSE headers are ended defensively. */
+  /* v8 ignore next */
   if (response.headersSent) {
     response.end()
     return
@@ -204,12 +198,12 @@ export const writeFailure = (response: ServerResponse, cause: unknown): void => 
   if (cause instanceof CloneError) {
     writeJson(response, 422, {
       error: cause.message,
-      /* v8 ignore next -- spawn-level clone failures carry no classification; exercised directly in git.test.ts. */
+      /* v8 ignore next */
       ...(cause.code === undefined ? {} : { code: cause.code })
     })
     return
   }
-  /* v8 ignore next 3 -- Git command classifications are covered in git.test; this is their thin HTTP mapping. */
+  /* v8 ignore next 3 */
   if (cause instanceof GitError) {
     writeJson(response, 422, { error: cause.message })
     return
@@ -218,16 +212,10 @@ export const writeFailure = (response: ServerResponse, cause: unknown): void => 
 }
 
 export const parseRequestUrl = (request: IncomingMessage): URL => {
-  /* v8 ignore next -- Node HTTP requests always provide url and host in these paths. */
+  /* v8 ignore next */
   return new URL(request.url ?? "/", `http://${request.headers.host ?? "127.0.0.1"}`)
 }
 
-/// Resources whose ids are canonically lowercase uuids (Swift clients render
-/// the same uuid uppercase). Their path parameters are normalized at the
-/// routing boundary so one chat can never split into case-twin database rows,
-/// in-memory transport keys, or event subjects. Other path parameters
-/// (queue-item ids, question ids, MCP ids, ...) are opaque client tokens and
-/// pass through byte-identical.
 const canonicalIdResources = new Set(["sessions", "projects", "workspaces", "worktrees"])
 
 const canonicalRouteCapture = (previousPatternPart: string | undefined, value: string): string =>
@@ -291,7 +279,7 @@ const localhostAddresses = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"])
 export const isLocalhost = (address: string | undefined): boolean =>
   localhostAddresses.has(String(address))
 
-/* v8 ignore next -- route/runtime failures use Error-compatible values. */
+/* v8 ignore next */
 export const failureMessage = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause)
 
@@ -301,11 +289,7 @@ export class HttpFailure extends Error {
   constructor(
     readonly status: number,
     message: string,
-    /// Machine-readable failure category, when the client can act on it
-    /// (e.g. clone auth_failed → "set up git credentials on the machine").
     readonly code?: string,
-    /// Structured facts about the failure (for example which client was
-    /// unavailable), serialized beside `code`.
     readonly details?: Readonly<Record<string, unknown>>
   ) {
     super(message)

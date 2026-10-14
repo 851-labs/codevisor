@@ -7,10 +7,6 @@ import { fileURLToPath } from "node:url"
 import { developmentLayout } from "./dev-layout.mjs"
 import { prepareSwiftPackage } from "./swift-artifacts.mjs"
 
-// TestStore installs a process-wide executor hook, even without an explicit
-// withMainSerialExecutor call. Keep these suites out of unrelated tests' process.
-// The two complementary selections run every test with normal parallelism.
-// The list is data in packages/swift so `vnc:validate` (in the rig app) can read it too.
 export const mainSerialExecutorSuites = JSON.parse(
   readFileSync(
     new URL("../packages/swift/main-serial-executor-suites.json", import.meta.url),
@@ -20,14 +16,8 @@ export const mainSerialExecutorSuites = JSON.parse(
 
 export const mainSerialExecutorFilter = `(${mainSerialExecutorSuites.join("|")})/`
 
-// Every suite uses Swift Testing, which test-swift.test.mjs enforces.
-// Without XCTest, each run skips a ~3.5s XCTest discovery pass over every test
-// bundle.
 export const swiftTestingOnly = ["--disable-xctest"]
 
-// The Swift packages this command tests, each built into its own .build.
-// `--only=<path>` narrows a run to some of them; `bun run check` uses it to
-// test only the packages a change can affect.
 export const swiftTestPackages = ["packages/swift", "apps/screen-sharing-rig"]
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url))
@@ -37,8 +27,6 @@ export async function runSwiftTests(
   { run = spawnSync, runBundles = runTestBundles } = {},
   packagePaths = swiftTestPackages
 ) {
-  // Extra selectors could turn the isolated pass into a union with unrelated
-  // tests. This command runs the full suites; only build options may be forwarded.
   for (const arg of args) {
     if (/^--(?:filter|skip|package-path|specifier)(?:=|$)/.test(arg) || arg === "-s") {
       throw new Error(`Test selection is managed by swift:test; cannot forward ${arg}`)
@@ -74,11 +62,6 @@ function swiftStatus(result) {
   return result.status ?? 1
 }
 
-/// Runs a built package's test bundles several at a time. `swift test` runs
-/// them one after another, which for packages/swift takes ~12s instead of ~5s.
-/// It launches each through SwiftPM's own testing helper, exactly as `swift
-/// test` does, and falls back to `swift test` where that helper or the bundles
-/// are not where this toolchain puts them.
 export async function runTestBundles(packagePath, selection, run = spawnSync) {
   const fallback = () =>
     swiftStatus(
@@ -106,7 +89,6 @@ export async function runTestBundles(packagePath, selection, run = spawnSync) {
     execFileSync("xcode-select", ["-p"], { encoding: "utf8" }).trim(),
     "Platforms/MacOSX.platform/Developer"
   )
-  // The environment `swift test` gives the helper.
   const environment = {
     ...process.env,
     DYLD_FRAMEWORK_PATH: `${platform}/Library/Frameworks:${platform}/Library/PrivateFrameworks`,
@@ -131,7 +113,6 @@ export async function runTestBundles(packagePath, selection, run = spawnSync) {
         environment
       )
       process.stdout.write(result.output)
-      // No test-run summary at all means the helper never ran the bundle.
       if (result.code !== 0 || !/Test run with \d+ tests?/.test(result.output)) {
         console.error(`swift:test: ${bundle} failed or did not run (exit ${result.code})`)
         status = 1
@@ -155,7 +136,6 @@ function runBundle(helper, bundle, args, env) {
   })
 }
 
-/// Splits `--only=<path>` selections from the arguments forwarded to Swift.
 export function parseSwiftTestArguments(argv) {
   const only = argv.filter((arg) => arg.startsWith("--only=")).map((arg) => arg.slice(7))
   for (const packagePath of only) {
@@ -171,7 +151,6 @@ export function parseSwiftTestArguments(argv) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const { args, packagePaths } = parseSwiftTestArguments(process.argv.slice(2))
-  // CodevisorNet links the tunnel xcframework from the shared artifact cache.
   const net = spawnSync("node", ["scripts/net-artifact.mjs", "ensure-swift"], {
     cwd: repoRoot,
     stdio: "inherit"

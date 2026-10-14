@@ -4,19 +4,14 @@ import Observation
 import Testing
 @testable import ScreenSharing
 
-/// 851-2338: with codevisor-server holding the lease, a control request waits
-/// for the server's grant, another viewer taking over revokes it with its
-/// name, and releasing tells the server; without a channel it's local, as before.
 @MainActor
 struct VNCControlLeaseTests {
-  /// Records every lease message and hands each to the test as it is sent (no polling).
   final class FakeChannel: RFBControlChannel, @unchecked Sendable {
     var onControlText: (@Sendable (String) -> Void)?
     let (sends, continuation) = AsyncStream<String>.makeStream()
     func sendControlText(_ text: String) async throws { continuation.yield(text) }
   }
 
-  /// The viewer's end of the emulator's control channel (the channel delivers on a main-actor hop).
   @MainActor
   @Observable
   final class Viewer {
@@ -26,7 +21,6 @@ struct VNCControlLeaseTests {
     }
   }
 
-  /// What the emulator sent the VNC server (observable: tests await it).
   @MainActor
   @Observable
   final class Outbox {
@@ -59,7 +53,6 @@ struct VNCControlLeaseTests {
       Issue.record("expected a grant, got \(viewer.received)")
       return
     }
-    // A button held when control is taken away is released on the desktop.
     emulator.controlChannel.send(
       .input(
         lease: lease, sequence: 1,
@@ -69,10 +62,8 @@ struct VNCControlLeaseTests {
     await awaitObserved { viewer.received.count == 2 }
     #expect(viewer.received.last == .revoked(lease: lease, reason: "Laptop took control."))
     #expect(outbox().last == .pointerEvent(buttons: 0, x: 50, y: 50))
-    // A second grant without a pending request is ignored; so is a revoke without a lease.
     emulator.serverLease(.granted)
     emulator.serverLease(.revoked(by: "Laptop"))
-    // Both were no-ops: a new request still round-trips normally, and it is the next message.
     let again = UUID()
     emulator.controlChannel.send(.request(id: again))
     _ = await sends.next()

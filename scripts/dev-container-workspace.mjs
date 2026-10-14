@@ -1,20 +1,10 @@
 import { createHash } from "node:crypto"
-/// Linux workspace assembly for the containerized dev remotes — the
-/// dist/manifest subset copied under tmp/container/app that the container
-/// installs its own Linux node_modules into.
 import { cp, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 
 import { pathExists } from "./dev-shared.mjs"
 
-/// The workspace subset a Linux container needs to run `dist/main.js`:
-/// built output, runtime resources, and manifests, never sources or macOS
-/// node_modules. The container installs its own Linux node_modules into
-/// the copy.
 const WORKSPACE_ROOTS = ["packages", "apps"]
-// `native` carries prebuilt addons (packages/net: the Linux tunnel addon).
-// `resources` carries files the server reads at runtime (the terminal's
-// ghostty-vt.wasm, the skills the gateway serves), as the release runtime does.
 const PACKAGE_RUNTIME = ["dist", "native", "resources"]
 const PACKAGE_KEEP = ["package.json", ...PACKAGE_RUNTIME]
 const ROOT_KEEP = ["package.json", "bun.lock", "bun.lockb", ".npmrc", "bunfig.toml", "patches"]
@@ -40,9 +30,6 @@ const workspacePackageDirectories = async (repoRoot) => {
   return directories
 }
 
-/// A cheap change signature over every manifest and runtime-file mtime: when it
-/// matches the previous sync, the copy (and the container's install) can be
-/// skipped entirely, so rig restarts stay fast.
 const workspaceSignature = async (repoRoot, packageDirectories) => {
   const hash = createHash("sha256")
   for (const name of ROOT_KEEP) {
@@ -72,8 +59,6 @@ const newestMtime = async (path) => {
   return newest
 }
 
-/// Assembles (or refreshes) the Linux workspace copy under
-/// tmp/container/app. Returns the absolute path to the copy.
 export async function syncLinuxWorkspace(repoRoot, containerRoot) {
   const appRoot = join(containerRoot, "app")
   const packageDirectories = await workspacePackageDirectories(repoRoot)
@@ -91,10 +76,6 @@ export async function syncLinuxWorkspace(repoRoot, containerRoot) {
   }
   for (const directory of packageDirectories) {
     const target = join(appRoot, directory)
-    // Refresh the copied members but PRESERVE node_modules: the Linux
-    // install nests workspace links and conflict-resolved deps inside
-    // package dirs, and a refresh with an unchanged lockfile never
-    // reinstalls them.
     if (await pathExists(target)) {
       for (const entry of await readdir(target)) {
         if (entry === "node_modules") continue
@@ -106,7 +87,6 @@ export async function syncLinuxWorkspace(repoRoot, containerRoot) {
       await copyIfPresent(join(repoRoot, directory, name), join(target, name))
     }
   }
-  // Package dirs that no longer exist in the workspace disappear whole.
   for (const root of WORKSPACE_ROOTS) {
     const rootPath = join(appRoot, root)
     if (!(await pathExists(rootPath))) continue

@@ -1,16 +1,3 @@
-// Containerized dev remote: run Dev Cloud as a real Linux machine instead
-// of a same-host process, so config-plane sync is tested
-// across genuinely separate filesystems and operating systems.
-//
-// Constraints this module honors:
-// - EVERYTHING repo-specific lives under the worktree's ignored tmp/ —
-//   the Linux workspace copy, its node_modules, all server data. Deleting
-//   the worktree (or tmp/) removes every trace. The only engine-global
-//   artifact is the stock base image, shared like any brew package.
-// - No custom image builds: a stock image plus bind mounts, so nothing
-//   accumulates in the engine's image store.
-// - Parallel worktrees stay isolated: container names and labels carry the
-//   same per-worktree hash as ports and bundle identifiers.
 import { execFile, spawn } from "node:child_process"
 import { EventEmitter } from "node:events"
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises"
@@ -46,15 +33,6 @@ const tryEngine = async (binary, args, options) => {
   }
 }
 
-/// Picks the container engine: Apple's `container` (lightweight VMs,
-/// Apple-silicon-optimized, no desktop daemon) is preferred; Docker (or
-/// OrbStack's docker CLI) is the fallback; `undefined` means run the dev
-/// remotes as same-host processes exactly as before. Selection is
-/// overridable with --container-engine=apple|docker|none or
-/// CODEVISOR_DEV_CONTAINER_ENGINE. Never boots a stopped Docker daemon —
-/// that would be exactly the "gets in the way" this feature must avoid;
-/// Apple's headless service is started on demand (it is the whole point
-/// of asking for containers).
 export async function resolveContainerEngine(preference) {
   const wanted = preference ?? process.env.CODEVISOR_DEV_CONTAINER_ENGINE ?? "auto"
   if (wanted === "none") return undefined
@@ -68,7 +46,6 @@ export async function resolveContainerEngine(preference) {
       )
       return undefined
     }
-    // Starting the service is idempotent and headless.
     if ((await tryEngine("container", ["system", "start"])) === undefined) return undefined
     return "apple"
   }
@@ -83,9 +60,6 @@ export async function resolveContainerEngine(preference) {
 
 const WORKTREE_LABEL = "dev.codevisor.worktree"
 
-/// Removes leftover dev containers for THIS worktree only — a crashed rig
-/// must never leave servers running, and other worktrees' containers are
-/// never touched.
 export async function sweepStaleContainers(
   engine,
   worktreeHash,
@@ -123,11 +97,6 @@ export async function sweepStaleContainers(
 
 export const DEV_CONTAINER_IMAGE = "node:22-bookworm"
 
-/// Shared across worktrees like the other pinned artifacts: bun's install
-/// cache is content-addressed by package@version, so the Linux dependency
-/// downloads happen once per machine instead of once per worktree. bun is
-/// built for concurrent use of one cache. Everything else in the container
-/// state (bun binary, node_modules, install signature) stays per worktree.
 export function linuxBunCacheRoot(environment = process.env) {
   return (
     environment.CODEVISOR_LINUX_BUN_CACHE ??
@@ -152,10 +121,6 @@ export async function ensureDevContainerImage(engine) {
   await execEngine(binary, ["image", "pull", DEV_CONTAINER_IMAGE])
 }
 
-/// The address containers use to reach services on the host (the dev
-/// cloud hub). Docker resolves a magic hostname; Apple containers reach
-/// the host at the default network's vmnet gateway, read from the host
-/// side so containers need no discovery tooling.
 export async function containerHostAddress(engine) {
   if (engine === "docker") return "host.docker.internal"
   const raw = await execEngine("container", ["network", "inspect", "default"])
@@ -168,16 +133,9 @@ export async function containerHostAddress(engine) {
   return gateway
 }
 
-/// CODEVISOR_DEV_CONTAINER_DESKTOP=1 gives each dev container an Xfce desktop
-/// over VNC, to view as a Screen Sharing pane and drive with Computer Use. Off
-/// by default: its packages add to every boot.
 export const wantsContainerDesktop = (environment = process.env) =>
   environment.CODEVISOR_DEV_CONTAINER_DESKTOP === "1"
 
-/// One-time per-rig-start container preparation: assemble the Linux
-/// workspace copy, make sure the stock image exists, sweep this worktree's
-/// stale containers, and resolve the host address containers use to reach
-/// the dev cloud hub.
 export async function prepareDevContainers({ repoRoot, containerRoot, engine, worktreeHash }) {
   const stateRoot = join(containerRoot, "state")
   const bunCache = linuxBunCacheRoot()
@@ -188,10 +146,6 @@ export async function prepareDevContainers({ repoRoot, containerRoot, engine, wo
   const entryScript = join(repoRoot, "scripts", "dev-container-entry.sh")
   const nativesCheck = join(repoRoot, "scripts", "dev-container-natives.mjs")
   const desktopScript = join(repoRoot, "scripts", "dev-container-desktop.sh")
-  // Server containers share this state and workspace; concurrent first
-  // boots would race the same bun download and node_modules install
-  // (cross-VM file locks do not serialize virtiofs mounts). Provision
-  // once, host-sequenced, before any server starts.
   if (changed || !(await pathExists(join(stateRoot, "installed.signature")))) {
     console.log("  provisioning Linux workspace (first container boot)…")
     const binary = engine === "apple" ? "container" : "docker"
@@ -236,10 +190,6 @@ export async function prepareDevContainers({ repoRoot, containerRoot, engine, wo
   }
 }
 
-/// A ChildProcess-shaped handle for a detached container, so the callers'
-/// existing waitForExit / waitForHealth / stop() logic works unchanged on
-/// both modes. exitCode flips (and "exit" fires) when the container is
-/// gone — it runs with --rm, so stopping and exiting look identical.
 const makeContainerHandle = (binary, name) => {
   const emitter = new EventEmitter()
   const handle = {
@@ -272,17 +222,6 @@ const makeContainerHandle = (binary, name) => {
   return handle
 }
 
-/// Dev remote state deliberately survives runner restarts, including its
-/// machine API key. The route to the worktree-local cloud does not: it is
-/// localhost in same-host mode and the VM gateway in container mode. Keep the
-/// persisted credential pointed at the current route so its built-in validity
-/// probe can either reuse the API key or re-provision it after a cloud reset.
-///
-/// Shared accounts (shared-credentials/*.json) are bound to the cloud origin
-/// they entered, and the coordinator refuses one bound elsewhere: switching
-/// between same-host and container mode would sign every shared account out
-/// of the remote. The dev cloud is one server on either route, known by its
-/// port, so those bindings follow the route too; any other origin is kept.
 export async function alignDevCloudCredentialUrl(credentialsPath, serverUrl) {
   const parsed = await readJsonObject(credentialsPath)
   if (parsed === undefined) return
@@ -324,11 +263,6 @@ const readJsonObject = async (path) => {
   }
 }
 
-/// Launches one dev remote server in either mode, returning a
-/// ChildProcess-compatible handle. Container mode runs the identical
-/// `serve` command inside Linux, with the server's roots bind-mounted from
-/// the worktree's tmp/ and dev-cloud URLs rewritten to the address the
-/// container reaches the host at.
 export async function launchDevRemoteServer({
   containerContext,
   repoRoot,
@@ -339,9 +273,6 @@ export async function launchDevRemoteServer({
   directPath,
   environment
 }) {
-  // A stable identity per dev remote: the default "local" server id
-  // collides across the fleet's sync namespaces (every machine's
-  // readiness would publish under the same key).
   const serverId = environment.CODEVISOR_DEV_INSTANCE_ID ?? serverName
   const rewriteHost = (value) =>
     typeof value === "string" && containerContext !== undefined
@@ -405,16 +336,11 @@ export async function launchDevRemoteServer({
     env[key] = key === "CODEVISOR_DEV_CLOUD_URL" ? rewriteHost(value) : toContainerPath(value)
   }
   await tryEngine(binary, ["rm", "--force", containerName])
-  // Harness credentials, installs, and user workspaces are machine state, not
-  // shared cache. Keep both /root and /home per remote so container replacement
-  // cannot silently delete a project's working directory.
   const homeMounts = devRemoteHomeMounts(remoteRootHost)
   await Promise.all(homeMounts.map(({ host }) => mkdir(host, { recursive: true })))
   const args = [
     "run",
     "--detach",
-    // The first boot runs a full Linux workspace install; the engine's
-    // default VM sizing is too small for that.
     "--cpus",
     "4",
     "--memory",
@@ -440,13 +366,8 @@ export async function launchDevRemoteServer({
     `${desktopScript}:/desktop.sh`,
     "--publish",
     `127.0.0.1:${port}:${port}`,
-    // The server runs as root in here, and Claude Code refuses
-    // --dangerously-skip-permissions under root unless the process declares
-    // a sandbox. This container IS one — without the flag every claude
-    // session (capability inspection included) exits immediately.
     "--env",
     "IS_SANDBOX=1",
-    // An Xfce desktop to view and drive (scripts/dev-container-desktop.sh).
     "--env",
     `CODEVISOR_DEV_DESKTOP=${desktop ? 1 : 0}`
   ]

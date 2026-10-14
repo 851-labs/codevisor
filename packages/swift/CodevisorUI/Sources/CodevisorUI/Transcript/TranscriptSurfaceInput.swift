@@ -5,13 +5,8 @@ import StreamMarkdown
 import SwiftUI
 import TranscriptKit
 
-/// The platform scroll views only mount and measure projected rows. The
-/// transcript-wide row construction itself lives in CodevisorCore and runs off
-/// the UI actor.
 public typealias TranscriptVirtualRow = TranscriptPresentationRow
 
-/// A monotonically bumped token. Changing it asks the surface to scroll to the
-/// bottom and resume following the latest row.
 public struct TranscriptScrollCommand: Equatable, Sendable {
   public var token = 0
 
@@ -20,25 +15,16 @@ public struct TranscriptScrollCommand: Equatable, Sendable {
   }
 }
 
-/// A promoted new chat briefly has two transcript surfaces backed by the same
-/// controller: the visible sheet and the workspace being mounted beneath it.
-/// Only the foreground surface may consume presentation events or publish
-/// viewport state; the prewarming surface is limited to layout and measurement.
 public enum TranscriptPresentationRole: Equatable, Sendable {
   case foreground
   case prewarming
 }
 
-/// Everything a native transcript surface receives per SwiftUI update, minus
-/// closures. Fields that only one platform consumes carry defaults so the
-/// SwiftUI boundary can construct the same value on both platforms.
 @MainActor
 public struct TranscriptSurfaceInput {
   public var sessionController: SessionController
   public var rows: [TranscriptVirtualRow]
   public var activeRows: [TranscriptVirtualRow]
-  /// Live text streams collapsed out of `activeRows` (see
-  /// `TranscriptWorkedRowsPresentation.hiddenStreamIDs`).
   public var hiddenActiveStreamIDs: [String]
   public var activeRowsVersion: TranscriptRowSetRevision
   public var rowsVersion: TranscriptRowSetRevision
@@ -51,11 +37,7 @@ public struct TranscriptSurfaceInput {
   public var isLoadingInitialHistory: Bool
   public var isPreparingInitialProjection: Bool
   public var isActiveProjectionPending: Bool
-  /// No precise active projection has been published yet for the current
-  /// active item, so the aggregate placeholder is all the surface has.
   public var isAwaitingFirstActiveProjection: Bool
-  /// Identifies durable worked details in this active projection, even if
-  /// the model has advanced again while these rows were being prepared.
   public var activeTextRestorationID: String?
   public var layoutFingerprint: Int
   public var scrollCommand: TranscriptScrollCommand
@@ -124,8 +106,6 @@ public struct TranscriptSurfaceInput {
   }
 }
 
-/// The closures a native transcript surface calls back into SwiftUI with.
-/// Callbacks that only one platform consumes default to no-ops.
 @MainActor
 public struct TranscriptSurfaceCallbacks {
   public var claimSendAnimation: @MainActor (UserSendAnimationRequest) -> Bool
@@ -136,13 +116,9 @@ public struct TranscriptSurfaceCallbacks {
   public var onNearTop: @MainActor () -> Bool
   public var onOlderHistoryPresented: @MainActor (UInt64) -> Void
   public var onSendAnimationCompleted: @MainActor (UserSendAnimationRequest) -> Void
-  /// Opens a Markdown link. Returns true when the link was handled (a
-  /// workspace file shown in Quick Look); false lets the platform open it.
   public var markdownImageLoader: MarkdownImageLoader?
   public var openMarkdownLink: (@MainActor (URL) -> Bool)?
-  /// Inline images preview on activation and offer new-tab/copy in their menu.
   public var markdownImageActions: MarkdownImageActions?
-  /// A send's flight (or lift) began at its transcript row.
   public var onSendAnimationStarted: @MainActor (UserSendAnimationRequest) -> Void
 
   public init(
@@ -174,8 +150,6 @@ public struct TranscriptSurfaceCallbacks {
   }
 }
 
-/// Retained for the lifetime of a Core Animation group so send and disclosure
-/// presentations can wait for the real row's presentation completion.
 public final class TranscriptSendAnimationCompletion: NSObject, CAAnimationDelegate {
   private let completion: (Bool) -> Void
 

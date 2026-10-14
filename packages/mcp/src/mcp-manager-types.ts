@@ -27,14 +27,11 @@ import type { PluginToolSource } from "./mcp-plugin-tools.js"
 
 export type { AutomationTool } from "./mcp-automation-use.js"
 
-/// Who a gateway call is made for. Local executions carry this machine's
-/// identity; calls forwarded from another machine carry the caller's.
 export interface GatewayOrigin {
   readonly machineId: string
   readonly machineName: string
   readonly sessionId?: string
   readonly sessionTitle?: string
-  /// The client window that sent the originating turn's prompt.
   readonly clientId?: string
 }
 
@@ -44,9 +41,6 @@ export interface GatewayCallContext {
   readonly origin?: GatewayOrigin
 }
 
-/// Forwards one sandbox tool call to another machine's gateway. Reject with
-/// a CodeExecutionToolError coded `machine_unavailable` (details: machineId,
-/// name, lastSeen, phase) when the machine cannot be reached.
 export type GatewayRemoteInvoker = (
   machine: string,
   path: string,
@@ -72,19 +66,11 @@ export interface McpManager {
   readonly create: (request: CreateMcpServerRequest) => Promise<McpServer>
   readonly detectAuth: (url: string) => Promise<McpAuthDetection>
   readonly update: (id: string, request: UpdateMcpServerRequest) => Promise<McpServer>
-  /// The decrypted STATIC secret material (bearer token, headers, env)
-  /// for config-plane replication; OAuth material travels separately via
-  /// oauthSyncState under refresh ownership. Empty bearer tokens
-  /// normalize to absent.
   readonly staticSecrets: (id: string) => Promise<{
     readonly bearerToken?: string
     readonly headers?: Readonly<Record<string, string>>
     readonly env?: Readonly<Record<string, string>>
   }>
-  /// The replication envelope for a server's OAuth material, present
-  /// whenever tokens exist. `owner` names the machine that owns the
-  /// refresh cycle — callers must only PUBLISH material they own; mirrors
-  /// read it for observability ("credentials from <machine>").
   readonly oauthSyncState: (id: string) => Promise<
     | {
         readonly owner: string
@@ -93,46 +79,22 @@ export interface McpManager {
       }
     | undefined
   >
-  /// Adopts another machine's OAuth material verbatim: replaces the stored
-  /// OAuth state, records that machine as the refresh owner, cancels any
-  /// local refresh timer, and drops the live connection so the next use
-  /// picks up the new tokens. Identical re-imports are no-ops; malformed
-  /// material is ignored.
   readonly importOAuthMaterial: (
     id: string,
     incoming: { readonly owner: string; readonly material: string }
   ) => Promise<void>
-  /// Fires after this machine rotates (or first saves) a server's OAuth
-  /// tokens, so the config plane can republish immediately.
   readonly subscribeCredentialsRotated: (listener: (id: string) => void) => () => void
-  /// Takes over the refresh cycle of every server whose tokens name
-  /// `legacyOwner` as their rotator — the identity this machine used to
-  /// boot under. Without this, a renamed machine would treat its own
-  /// tokens as a mirror's and never refresh them. Returns the adopted ids.
   readonly adoptOAuthOwnership: (legacyOwner: string) => Promise<ReadonlyArray<string>>
-  /// Fires whenever a server record's visible state changes (definition,
-  /// enabled flag, connection state, tool count, detail) or it is removed.
-  /// The server publishes these as `mcp.updated` events.
   readonly subscribeServersChanged: (listener: (id: string) => void) => () => void
   readonly remove: (id: string) => Promise<void>
   readonly tools: (id?: string) => Promise<ReadonlyArray<McpTool>>
-  /// What this machine knows about a server's artwork: its URL, and the
-  /// icons and website its live connection reported at `initialize`.
-  /// Undefined for servers this machine doesn't have.
   readonly iconSources: (id: string) => Promise<McpServerIconSources | undefined>
   readonly connect: (id: string) => Promise<McpServer>
-  /// Machine-local suppression (Phase 18): names disabled ON THIS MACHINE
-  /// by the config plane's mcp-overlays. Suppressed servers are dropped
-  /// from session resolution, refused connection, and any live connection
-  /// is closed — while the definition (and its fleet-wide enabled flag)
-  /// stays untouched. Idempotent; pass the full current set each time.
   readonly setLocalSuppression: (names: ReadonlySet<string>) => Promise<void>
   readonly beginOAuth: (id: string, redirectBaseUrl?: string) => Promise<string>
   readonly finishOAuth: (state: string, code: string) => Promise<McpServer>
   readonly disconnectOAuth: (id: string) => Promise<McpServer>
   readonly resolved: (projectId?: string, sessionId?: string) => Promise<ReadonlyArray<McpServer>>
-  /// The Codevisor skills the composer offers a chat: built-in guides whose
-  /// MCP server is enabled for it, and the user's saved skills.
   readonly composerSkills: (
     projectId?: string,
     sessionId?: string
@@ -159,14 +121,10 @@ export interface McpManager {
     answer: QuestionAnswer
   ) => Promise<boolean>
   readonly acceptBrowserExtension: (socket: WebSocket) => void
-  /// A live view of the tab a session's agent is driving, for the
-  /// picture-in-picture card. Works for every browser backend.
   readonly subscribeBrowserPreview: (
     sessionId: string,
     viewer: BrowserPreviewViewer
   ) => BrowserPreviewSubscription
-  /// Which of Browser Use and Computer Use a session's agent touched last,
-  /// now and on every switch. Returns the unsubscribe.
   readonly subscribeAutomationUse: (
     sessionId: string,
     listener: (tool: AutomationTool) => void
@@ -182,15 +140,10 @@ export interface McpManager {
   readonly browserExtensionArchive: () => string
   readonly browserExtensionIcon: () => string
   readonly finishTurn: (sessionId: string) => Promise<void>
-  /// Starts a turn; `clientId` names the window that sent the prompt and is
-  /// exposed to that turn's executions as their origin client.
   readonly beginTurn: (
     sessionId: string,
     options?: { readonly clientId?: string | undefined }
   ) => Promise<void>
-  /// Runs one gateway call on behalf of another machine (the server's
-  /// `POST /v1/gateway/invoke`). Browser tabs and recordings are scoped to
-  /// `remote:<origin.machineId>:<origin.sessionId>`.
   readonly invokeRemoteGatewayCall: (
     origin: GatewayOrigin,
     path: string,
@@ -208,30 +161,12 @@ export interface McpManager {
 export interface McpManagerConfig {
   readonly db: CodevisorDatabaseService
   readonly dataDir: string
-  /// This machine's stable server id — the identity used for OAuth refresh
-  /// ownership (exactly one machine rotates a server's tokens; the rest
-  /// mirror them through config sync). Defaults to "local".
   readonly serverId?: string
-  /// This machine's identity as other machines and the sandbox see it
-  /// (`machines.current`). Defaults to `serverId` and the host name.
   readonly machine?: { readonly id: string; readonly name: string }
-  /// Routes sandbox calls targeted at another machine. Without it, those
-  /// calls fail with `machine_unavailable`.
   readonly remoteInvoker?: GatewayRemoteInvoker
-  /// The server's --kind. Remote-kind servers cannot launch the local Chrome
-  /// installer from Settings; composer setup can still hand the user off to
-  /// the app running on that machine. Defaults to "local".
   readonly serverKind?: "local" | "remote"
-  /// The user's saved skills, served through the gateway's `skills` tool
-  /// alongside the built-ins. The server wires its skill store in directly.
   readonly skillSource?: SkillSource
-  /// Skills shipped by other packages (attaching-files, plugin authoring),
-  /// served through the `skills` tool.
   readonly packagedSkills?: ReadonlyArray<PackagedSkill>
-  /// Installed plugins' declared agent tools, exposed through the gateway as
-  /// server "plugin" (`plugin.<pluginId>.<toolName>` paths). The server wires
-  /// the plugins manager in directly — the structural PluginToolSource seam
-  /// keeps this package free of a @codevisor/plugins dependency.
   readonly pluginTools?: PluginToolSource
   readonly makeBrowserProvider?: (() => BrowserUseProvider) | undefined
   readonly makeComputerProvider?:

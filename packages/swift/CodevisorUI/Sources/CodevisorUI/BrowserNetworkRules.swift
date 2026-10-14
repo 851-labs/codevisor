@@ -1,12 +1,8 @@
 import Foundation
 import WebKit
 
-/// Native resource redirects run before literal loopback can bypass the proxy.
-/// Each view owns its extension context; website data remains scoped by machine.
 @MainActor
 enum BrowserNetworkRules {
-  /// WebKit can stall when a resource rule redirects a top-level navigation.
-  /// Route those through the navigation delegate, preserving the URL request.
   static func redirectedNavigation(_ request: URLRequest) -> URLRequest? {
     guard let url = request.url, ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
       url.user == nil, url.password == nil,
@@ -27,8 +23,6 @@ enum BrowserNetworkRules {
     context.hasAccessToPrivateData = true
     context.setPermissionStatus(.grantedExplicitly, for: .declarativeNetRequestWithHostAccess)
     context.setPermissionStatus(.grantedExplicitly, for: .nativeMessaging)
-    // Redirects require access to the requesting page and the destination.
-    // The extension only contains our routing rules and readiness handshake.
     for pattern in webExtension.requestedPermissionMatchPatterns {
       context.setPermissionStatus(.grantedExplicitly, for: pattern)
     }
@@ -46,7 +40,6 @@ enum BrowserNetworkRules {
       WKUserScript(source: socketScript, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .page))
     let view = WKWebView(frame: .zero, configuration: configuration)
 
-    // No website is loaded until the extension acknowledges rule installation.
     try await readiness.wait(context: context)
     controller.delegate = nil
     if let error = context.errors.first { throw error }

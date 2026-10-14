@@ -2,7 +2,6 @@ import { expect, it } from "vitest"
 
 import { openCodeProvidersFromIntegrations, type OpenCodeIntegration } from "./integrations.js"
 
-// Captured from OpenCode 2.0.24's GET /api/integration.
 const integrations: ReadonlyArray<OpenCodeIntegration> = [
   {
     id: "openai",
@@ -60,7 +59,6 @@ const integrations: ReadonlyArray<OpenCodeIntegration> = [
     ],
     connections: [{ type: "credential", method: "key" }]
   },
-  // Only reachable through an environment variable: nothing to sign in to.
   { id: "env-only", name: "Env Only", methods: [{ type: "env" }], connections: [] }
 ]
 

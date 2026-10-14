@@ -1,6 +1,5 @@
 import SwiftUI
 
-/// Native toolbar content used by the active file pane on each platform.
 public struct FilePaneToolbar: ToolbarContent {
   private let model: FilePaneModel
   private let onNewTab: () -> Void
@@ -20,7 +19,6 @@ public struct FilePaneToolbar: ToolbarContent {
             FilePaneTitleButton(model: model)
           }
         }
-        // Match the native navigation title's inset from the sidebar divider.
         .padding(.leading, 12)
       }
       .sharedBackgroundVisibility(.hidden)
@@ -52,8 +50,6 @@ public struct FilePaneToolbar: ToolbarContent {
   }
 }
 
-/// The document title doubles as the Open File trigger. On Mac the picker
-/// is a popover anchored here; on iPhone it is a sheet the pane presents.
 private struct FilePaneTitleButton: View {
   @Bindable var model: FilePaneModel
 
@@ -87,8 +83,6 @@ private struct FilePaneActions: View {
   @Bindable var model: FilePaneModel
   let onNewTab: () -> Void
 
-  /// iOS draws every New Tab action with the stacked-squares glyph; the
-  /// Mac keeps its plain plus.
   static var newTabSymbol: String {
     #if os(iOS)
       "plus.square.on.square"

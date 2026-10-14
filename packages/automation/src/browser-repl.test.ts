@@ -2,8 +2,6 @@ import { expect, it } from "vitest"
 
 import { browserResultValue, makeBrowserRepls } from "./browser-repl.js"
 
-// Handle lifetime and concurrent result routing belong to the REPL, independent
-// of Chrome's background renderer scheduling. Hold both calls at the tool boundary.
 it.each([false, true])(
   "preserves tab handles across cells (reverse replies: %s)",
   async (reverse) => {

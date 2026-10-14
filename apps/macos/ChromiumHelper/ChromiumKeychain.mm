@@ -1,20 +1,12 @@
 #import <Foundation/Foundation.h>
 #import <Security/Security.h>
 
-// CEF 152 does not expose Chromium's runtime Keychain name configuration.
-// Keep this adapter pinned to its exact generic-password query, in both the
-// app and its helpers. Remove it when CEF exposes keychain_service_name:
-// https://github.com/chromiumembedded/cef/pull/4247
-// Only the item identity changes. Security.framework still controls access,
-// and Chromium still generates a random key and encrypts its profile data.
 static NSDictionary *BrowserKeychainQuery(NSDictionary *query, NSString *bundleIdentifier) {
   if (![query[(__bridge id)kSecClass] isEqual:(__bridge id)kSecClassGenericPassword]
       || ![query[(__bridge id)kSecAttrService] isEqual:@"Chromium Safe Storage"]
       || ![query[(__bridge id)kSecAttrAccount] isEqual:@"Chromium"]) return query;
-  // Helper bundle IDs are generated from the owning app's bundle ID. This
-  // also isolates each development worktree from the production app.
   NSString *owner = [bundleIdentifier componentsSeparatedByString:@".chromium.helper"].firstObject;
-  if (owner.length == 0) return nil; // Never fall through to Chromium's shared item.
+  if (owner.length == 0) return nil;
   NSMutableDictionary *scoped = [query mutableCopy];
   scoped[(__bridge id)kSecAttrService] = [owner stringByAppendingString:@".browser.safe-storage"];
   scoped[(__bridge id)kSecAttrAccount] = @"Codevisor Browser";
@@ -47,8 +39,6 @@ static OSStatus BrowserItemDelete(CFDictionaryRef query) {
   }
 }
 
-// Static dyld interposition works when CEF is loaded with dlopen; it needs no
-// injected library, environment override, or writes to executable memory.
 __attribute__((used, section("__DATA,__interpose")))
 static const struct { const void *replacement; const void *original; } browserKeychainInterposers[] = {
   { (const void *)BrowserItemCopyMatching, (const void *)SecItemCopyMatching },

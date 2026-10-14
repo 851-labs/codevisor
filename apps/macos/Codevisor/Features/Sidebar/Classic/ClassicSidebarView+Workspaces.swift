@@ -2,14 +2,10 @@ import SwiftUI
 import CodevisorCore
 
 extension ClassicSidebarView {
-  /// One workspace: its header (the reorder handle) over its tab rows.
-  /// Both report their frames so a drag can compare the picked-up header
-  /// against whole sections and draw the insertion line between them.
   func workspaceSection(_ item: SidebarWorkspaceListItem) -> some View {
     let id = item.workspace.id
     return VStack(alignment: .leading, spacing: 1) {
       workspaceHeader(item)
-        // The picked-up row stays dimmed in place while its copy travels.
         .opacity(draggingID == id ? 0.4 : 1)
         .onGeometryChange(for: CGRect.self) { proxy in
           proxy.frame(in: .named(Self.reorderSpace))
@@ -28,8 +24,6 @@ extension ClassicSidebarView {
     .onDisappear { forgetWorkspaceGeometry(for: id) }
   }
 
-  /// Where the workspace lives. Nil when its machine is unknown — an
-  /// unresolved server isn't necessarily this one, so it stays unlabeled.
   func machineName(forServer serverId: String) -> String? {
     let machine = environment.machines.machine(for: serverId)
     return machine.map { $0.isLocal ? "This Mac" : $0.name }
@@ -49,8 +43,6 @@ extension ClassicSidebarView {
     )
   }
 
-  /// Whether the sidebar's selection is showing this workspace: its selected
-  /// chat lives here, or the workspace itself is selected (it has no chat).
   func routesSelectedSession(_ workspace: Workspace) -> Bool {
     switch selection {
     case let .session(serverId, sessionId):
@@ -63,13 +55,7 @@ extension ClassicSidebarView {
     }
   }
 
-  /// Archives the WORKSPACE (not just a chat): the record is flagged, its
-  /// live chats archive with it, and the row leaves the list. Layout is
-  /// kept — restoring any of its chats revives the whole workspace.
   private func archiveWorkspace(_ workspace: Workspace) {
-    // Whether the selection lives in this workspace, decided BEFORE the
-    // archive (a scratch workspace's discard also drops its session
-    // index, which this lookup depends on).
     let selectionLeaves: Bool
     if case let .session(serverId, sessionId) = selection,
       serverId == workspace.serverId,
@@ -81,8 +67,6 @@ extension ClassicSidebarView {
     }
     environment.archiveWorkspace(workspace)
     if selectionLeaves {
-      // Land on the most recent remaining chat; only an empty machine
-      // falls through to creating a fresh scratch workspace.
       selectNextChat(serverId: workspace.serverId)
     }
   }

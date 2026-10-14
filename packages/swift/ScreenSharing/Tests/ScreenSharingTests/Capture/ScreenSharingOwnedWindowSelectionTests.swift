@@ -50,13 +50,9 @@ import Testing
     #expect(counters["captureSamplesInvalid"] == 1 && counters["captureSamplesWithoutStatus"] == 1)
     #expect(counters["captureCallbacksOtherStatus"] == 1)
     #expect(metrics.snapshot().labels["captureLatestStatus"] == "other(42)")
-    // No counter name mentions a pool drop: absence of callbacks is not measured here.
     #expect(counters.keys.allSatisfy { !$0.lowercased().contains("drop") })
   }
 
-  /// The total is what a report divides by, so it has to be the number of callbacks that actually
-  /// happened: every bucket counted once, and the missing-image sub-count of complete callbacks not
-  /// counted a second time.
   @Test func theCallbackTotalCountsEachCallbackExactlyOnce() {
     let metrics = ScreenSharingMetrics()
     #expect(Accounting.callbackTotal(counters: [:]) == 0)
@@ -71,9 +67,8 @@ import Testing
     Accounting.record(valid: true, rawStatus: nil, hasImage: true, metrics: metrics)
     callbacks += 2
     let counters = metrics.snapshot().counters
-    #expect(counters["captureSamplesWithoutImage"] == 1)  // a complete callback that carried no image
+    #expect(counters["captureSamplesWithoutImage"] == 1)
     #expect(Accounting.callbackTotal(counters: counters) == callbacks)
-    // Counters this accounting never writes cannot inflate the total.
     #expect(Accounting.callbackTotal(counters: counters.merging(["capturedFrames": 900]) { a, _ in a }) == callbacks)
   }
 }
@@ -122,45 +117,36 @@ import Testing
   }
 
   @Test func cleanupBeforeReadinessOrAfterAFailedStartAbandonsTheWindowWithoutClaimingAStop() throws {
-    // Shown, readiness never reached (no first draw / not visible).
     var shown = Lifecycle()
     try shown.apply(.show, atNs: 1)
     #expect(shown.cleanUp(captureStopCompleted: false, atNs: 2) == .abandoned(from: .shown))
     #expect(shown.state == .abandoned && shown.abandonedFrom == .shown && !shown.completedInOrder)
     #expect(shown.timestampsNs[.stopCapture] == nil && shown.timestampsNs[.close] == nil)
-    // Ready, then SCStream start / ownership selection failed: captureStarted
-    // was never applied. Even a stray "stop completed" claim cannot fabricate
-    // a capture stop from this state.
     var failedStart = Lifecycle()
     try failedStart.apply(.show, atNs: 1); try failedStart.apply(.ready, atNs: 2)
     #expect(failedStart.cleanUp(captureStopCompleted: true, atNs: 3) == .abandoned(from: .ready))
     #expect(failedStart.timestampsNs[.stopCapture] == nil && !failedStart.completedInOrder)
-    // Nothing shown: nothing to clean.
     var never = Lifecycle()
     #expect(never.cleanUp(captureStopCompleted: false, atNs: 1) == .neverShown)
     #expect(never.state == .created)
   }
 
   @Test func cleanupDuringAnActiveRunCreditsTheStopOnlyWithCompletionEvidence() throws {
-    // Error mid-run, stream stop completed (capture recorded completion).
     var stopped = Lifecycle()
     try stopped.apply(.show, atNs: 1); try stopped.apply(.ready, atNs: 2); try stopped.apply(.startCapture, atNs: 3)
     #expect(stopped.cleanUp(captureStopCompleted: true, atNs: 4) == .closedAfterCaptureStop)
     #expect(stopped.state == .closed && stopped.completedInOrder)
     #expect(stopped.timestampsNs[.stopCapture] == 4 && stopped.timestampsNs[.close] == 4)
-    // Error mid-run, stop did not complete: abandoned from capturing, no stop claimed.
     var unstopped = Lifecycle()
     try unstopped.apply(.show, atNs: 1); try unstopped.apply(.ready, atNs: 2);
     try unstopped.apply(.startCapture, atNs: 3)
     #expect(unstopped.cleanUp(captureStopCompleted: false, atNs: 4) == .abandoned(from: .capturing))
     #expect(unstopped.timestampsNs[.stopCapture] == nil && !unstopped.completedInOrder)
-    // Paused workload, stop completed: closes in order.
     var paused = Lifecycle()
     try paused.apply(.show, atNs: 1); try paused.apply(.ready, atNs: 2); try paused.apply(.startCapture, atNs: 3)
     try paused.apply(.pauseWorkload, atNs: 4)
     #expect(paused.cleanUp(captureStopCompleted: true, atNs: 5) == .closedAfterCaptureStop)
     #expect(paused.completedInOrder)
-    // Already stopped by the normal path, then cleanup: closes; a second cleanup is a no-op.
     var normal = Lifecycle()
     try normal.apply(.show, atNs: 1); try normal.apply(.ready, atNs: 2); try normal.apply(.startCapture, atNs: 3)
     try normal.apply(.stopCapture, atNs: 4)

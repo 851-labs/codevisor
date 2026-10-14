@@ -57,7 +57,6 @@ describe("queued prompt attention", () => {
 
       await run(db.completePromptQueueItem(session.id, first.id))
       await run(db.claimPromptQueueItem(session.id))
-      // The public queue is empty before the final turn even starts.
       await publishQueue()
       expect(await run(db.listPromptQueue(session.id))).toEqual([])
       expect(await summary()).toMatchObject({ latestAttentionSequence: 0, unreadCount: 0 })

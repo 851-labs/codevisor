@@ -4,25 +4,16 @@
   import ScreenSharing
   import SwiftUI
 
-  /// The product's Screen Sharing window toolbar
-  /// (`apps/macos/Codevisor/Features/Panes/ScreenSharingToolbar.swift`) over
-  /// the same `ScreenSharingViewer` store: View/Control, display menu,
-  /// clipboard and connection details. Keep the two in step; the rig's copy
-  /// says "machine" where the product says "Mac".
   struct RigScreenSharingToolbar: ToolbarContent {
     @Bindable var store: StoreOf<ScreenSharingViewer>
-    /// Where the rig remembers this machine's Dynamic Resolution choice.
     let machineId: String
-    /// The machine settings sheet behind the gear (851-2367).
     let settings: () -> ScreenSharingMachineSettings
     let applySettings: (ScreenSharingMachineSettingsChanges) -> Void
 
     var body: some ToolbarContent {
       ToolbarItem(id: "screenSharing.mode", placement: .principal) {
-        // Dynamic Resolution lives in the machine settings sheet.
         if store.endpoint?.supportsControl != false { controlActions }
       }
-      // Only where the buttons do something (a native Mac host), so no empty pill otherwise.
       if store.endpoint?.supportsSystemKeys == true {
         ForEach(ScreenSharingSystemKey.allCases, id: \.self) { key in
           ToolbarItem(id: "screenSharing.macControls.\(key.rawValue)", placement: .principal) {

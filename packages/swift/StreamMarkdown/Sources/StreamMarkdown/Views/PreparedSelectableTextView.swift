@@ -2,9 +2,6 @@
   import MarkdownCore
   import SwiftUI
 
-  /// Large settled text prepares its native layout on the worker, then hands
-  /// that exact stack to the displayed view. Keep the previous presentation
-  /// visible while a width or typography change is being prepared.
   struct PreparedSelectableTextView: View {
     private let content: PreparedTextContent
     var wrapsText = true

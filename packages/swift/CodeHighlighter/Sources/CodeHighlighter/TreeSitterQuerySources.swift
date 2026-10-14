@@ -1,6 +1,5 @@
 import Foundation
 
-/// The ordered bundled query sources used when a grammar is first loaded.
 enum TreeSitterQuerySources {
   static func bases(for name: String) -> [String] {
     var bases = [name]

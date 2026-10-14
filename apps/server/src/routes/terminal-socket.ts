@@ -9,15 +9,9 @@ import { WebSocket } from "ws"
 
 import { failureMessage, run } from "../server-context.js"
 
-/// A socket queued past this many bytes is falling behind the terminal: stop
-/// sending it output and resync it once it drains below the low water mark.
-/// The PTY is never paused, so one slow client cannot stall the shell or the
-/// other clients watching it.
 export const TERMINAL_SOCKET_HIGH_WATER = 1024 * 1024
 export const TERMINAL_SOCKET_LOW_WATER = 256 * 1024
 
-/// Protocol 2 sends output as binary frames: a kind byte, the sequence number
-/// as a big-endian u64, then the UTF-8 output. Other frames stay JSON text.
 export const BINARY_OUTPUT = 1
 export const BINARY_OUTPUT_RESET = 2
 const HEADER_BYTES = 9
@@ -34,9 +28,6 @@ export const encodeBinaryOutput = (seq: number, data: string, reset: boolean): U
   return frame
 }
 
-/// Output coalescing delay for a client's round trip: none on fast links,
-/// so keystroke echo is never held back; on slow links a short window that
-/// turns bursts of small PTY reads into fewer, larger messages.
 export const coalesceDelayMs = (roundTripMs: number): number =>
   roundTripMs <= 20 ? 0 : Math.min(40, Math.max(2, Math.round(roundTripMs / 2)))
 
@@ -57,10 +48,6 @@ const realTimers: TerminalSocketTimers = {
   }
 }
 
-/// Delivers one terminal's frames to one client socket: batches adjacent
-/// output, encodes it for the client's protocol, and when the socket backs
-/// up, drops output until it drains and then asks for a resync from the last
-/// frame the client actually got.
 export class TerminalSocketSender {
   private batch: Array<string> = []
   private batchSeq = 0
@@ -68,7 +55,6 @@ export class TerminalSocketSender {
   private stale = false
   private lastSize: string | undefined
   private delayMs = 0
-  /// Sequence number of the last frame handed to the socket.
   lastSentSeq: number
   private readonly highWater: number
   private readonly lowWater: number
@@ -78,7 +64,6 @@ export class TerminalSocketSender {
     private readonly options: {
       readonly binary: boolean
       readonly lastOutputSeq: number
-      /// Called once a lagging socket drained: resubscribe from `lastSentSeq`.
       readonly resync: (lastSentSeq: number) => void
       readonly highWater?: number
       readonly lowWater?: number
@@ -96,8 +81,6 @@ export class TerminalSocketSender {
 
   readonly sink = (frame: TerminalServerFrame): void => {
     if (this.stale) return
-    // The size is announced on every (re)subscription; the client only needs
-    // to hear when it changes.
     if (frame.type === "size") {
       const key = `${frame.cols}x${frame.rows}`
       if (key === this.lastSize) return
@@ -153,31 +136,22 @@ export class TerminalSocketSender {
   }
 }
 
-/// Sockets each client has open per terminal. A reconnecting client's new
-/// socket can be up before the server notices the old one closed, so a
-/// client is only released once its last socket for the terminal is gone.
 const openSockets = new Map<string, number>()
 
 const sendError = (webSocket: WebSocket, cause: unknown): void => {
   webSocket.send(JSON.stringify({ type: "error", seq: 0, message: failureMessage(cause) }))
 }
 
-/// Serves one client's terminal WebSocket: replays or resyncs from its
-/// cursor, streams output through a flow-controlled sender, answers round
-/// trip probes, and applies its input, resize, and close frames.
 export const attachTerminalSocket = async (
   terminal: TerminalManagerService,
   terminalId: string,
   options: {
     readonly lastOutputSeq: number
     readonly protocol: number
-    /// Water marks override, for tests.
     readonly flowControl?: { readonly highWater: number; readonly lowWater: number }
   },
   webSocket: WebSocket
 ): Promise<void> => {
-  // Set while subscribed. A resync asked for while a subscription is still
-  // resolving (a send can complete first) runs once it has.
   let disconnect: (() => void) | undefined
   let deferredResync: number | undefined
   const subscribed = (unsubscribe: () => void): void => {
@@ -188,7 +162,7 @@ export const attachTerminalSocket = async (
     resubscribe(fromSeq)
   }
   const resubscribe = (fromSeq: number): void => {
-    /* v8 ignore next -- a send completing after the socket closed; nothing left to resync. */
+    /* v8 ignore next */
     if (webSocket.readyState !== WebSocket.OPEN) return
     if (disconnect === undefined) {
       deferredResync = fromSeq
@@ -198,13 +172,13 @@ export const attachTerminalSocket = async (
     disconnect = undefined
     run(terminal.connectTerminal(terminalId, fromSeq, sink)).then(
       subscribed,
-      /* v8 ignore next -- defensive: the terminal was removed while this client lagged. */
+      /* v8 ignore next */
       () => webSocket.close()
     )
   }
   const clientIds = new Set<string>()
   const sink = (frame: TerminalServerFrame): void => {
-    /* v8 ignore next -- the close event removes this sink before normal closed-socket output. */
+    /* v8 ignore next */
     if (webSocket.readyState === WebSocket.OPEN) sender.sink(frame)
   }
   const sender: TerminalSocketSender = new TerminalSocketSender(webSocket, {
@@ -213,8 +187,6 @@ export const attachTerminalSocket = async (
     ...options.flowControl,
     resync: resubscribe
   })
-  // Protocol 2 clients learn the server speaks it (binary output, pings)
-  // before any output; older servers never send this frame.
   if (options.protocol >= 2) webSocket.send(JSON.stringify({ type: "ready", seq: 0, protocol: 2 }))
   try {
     subscribed(await run(terminal.connectTerminal(terminalId, options.lastOutputSeq, sink)))
@@ -231,9 +203,6 @@ export const attachTerminalSocket = async (
       sendError(webSocket, cause)
       return
     }
-    // Valid JSON need not be an object ("null", "3"): reading a field off it
-    // would throw inside ws's listener and exit the server. Non-objects fall
-    // through to the frame decoder, which reports them like any bad frame.
     if (
       typeof message === "object" &&
       message !== null &&
@@ -264,9 +233,6 @@ export const attachTerminalSocket = async (
     void run(terminal.handleClientFrame(terminalId, frame))
       .catch((cause: unknown) => sendError(webSocket, cause))
       .finally(() => {
-        // Protocol 2 clients keep frames until acknowledged and resend them
-        // after a reconnect (a socket can die with frames still in it); the
-        // duplicate check by clientSeq makes the resend safe.
         if (options.protocol >= 2 && webSocket.readyState === WebSocket.OPEN) {
           webSocket.send(JSON.stringify({ type: "ack", seq: 0, clientSeq: frame.clientSeq }))
         }
@@ -274,7 +240,6 @@ export const attachTerminalSocket = async (
   })
   webSocket.on("close", () => {
     disconnect?.()
-    // A client that's gone no longer constrains the terminal's size.
     for (const clientId of clientIds) {
       const key = `${terminalId}\u0000${clientId}`
       const remaining = openSockets.get(key)! - 1

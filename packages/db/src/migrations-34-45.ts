@@ -1,7 +1,6 @@
 import { parseJsonRecord, sessionPlanFromPayload } from "./event-payloads.js"
 import type { Migration } from "./migration-types.js"
 
-/// Schema migrations 34–45.
 export const migrations34To45: ReadonlyArray<Migration> = [
   {
     id: 34,
@@ -187,14 +186,6 @@ export const migrations34To45: ReadonlyArray<Migration> = [
   {
     id: 42,
     name: "revision-counter session attention",
-    /// Replaces the attention-event ledger + pending-epoch reducer with a
-    /// single monotonic revision counter per session. Unread = revision ahead
-    /// of the shared read cursor (`session_read_state` survives unchanged —
-    /// its `last_seen_sequence` points into the same sequence space, so
-    /// existing cursors carry over exactly). `errored` becomes an intrinsic
-    /// flag (the urgent flavor of the action-required tier) instead of a
-    /// property of unread ledger rows. `pending_finish`/`settle_due_at` park a
-    /// finished turn while a subagent or goal still holds it in progress.
     sql: `
       create table session_attention (
         session_id text primary key references sessions(id) on delete cascade,
@@ -244,8 +235,6 @@ export const migrations34To45: ReadonlyArray<Migration> = [
       drop table if exists session_attention_state;
     `,
     run: (sqlite) => {
-      // Recompute the denormalized sidebar snapshot under the new precedence,
-      // bumping the ordering clock only where the visible value changed.
       const nextState = `
         case
           when (select errored from session_attention sa where sa.session_id = sessions.id) = 1
@@ -317,7 +306,6 @@ export const migrations34To45: ReadonlyArray<Migration> = [
       alter table sessions add column session_plan text;
     `,
     run: (sqlite) => {
-      // Read one indexed row at a time; the newest valid full snapshot wins.
       let sessionId = ""
       let revision = -1
       const select = sqlite.prepare(`select session_id, revision, payload from session_events

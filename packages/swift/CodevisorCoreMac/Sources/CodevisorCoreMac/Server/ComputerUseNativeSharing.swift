@@ -10,17 +10,10 @@ struct ComputerUseShareKey: Hashable, Sendable {
   let pid: pid_t
 }
 
-/// ScreenCaptureKit delivers picker observer callbacks on an internal queue,
-/// while `SCStream` and `SCContentFilter` have not adopted `Sendable`. Keep the
-/// unchecked crossing tightly scoped to the hop into this type's main-actor
-/// state rather than asserting that the callbacks themselves run on main.
 private struct ComputerUseUncheckedSendable<Value>: @unchecked Sendable {
   let value: Value
 }
 
-/// Maintains one native ScreenCaptureKit stream per controlled window. Session
-/// permissions reference that shared stream, while model screenshots remain
-/// on-demand through SCScreenshotManager.
 @MainActor
 final class ComputerUseNativeSharing: NSObject,
   SCStreamDelegate,
@@ -35,8 +28,6 @@ final class ComputerUseNativeSharing: NSObject,
     var keys: Set<ComputerUseShareKey>
     var pointPixelScale: CGFloat
     var settings: ComputerUseNativePreviewSettings
-    /// The window's last known frame, so a viewer's size request can resize
-    /// the stream without waiting for a tool call.
     var windowFrame: CGRect
   }
 
@@ -46,8 +37,6 @@ final class ComputerUseNativeSharing: NSObject,
   private var pendingWindowIDByKey: [ComputerUseShareKey: CGWindowID] = [:]
   private var windowIDByStream: [ObjectIdentifier: CGWindowID] = [:]
   private var intentionallyStopping: Set<ObjectIdentifier> = []
-  /// Live preview consumers per session. They outlive any one stream: a
-  /// session that moves to another window keeps its viewers.
   private var sinksBySession: [String: [UUID: any ComputerUseFrameSink]] = [:]
   private let outputQueue = DispatchQueue(
     label: "com.codevisor.computer-use.screen-share",
@@ -58,12 +47,6 @@ final class ComputerUseNativeSharing: NSObject,
     super.init()
     let picker = SCContentSharingPicker.shared
     picker.add(self)
-    // Streams only ever originate from an active Computer Use session:
-    // the picker is never presented, so nothing can create an unowned
-    // one. A cap of 0 used to enforce that, but the system counts our own
-    // per-window streams against it and stops them as if the user had —
-    // which permanently revoked healthy sessions. Allow enough headroom
-    // for one stream per controlled window.
     picker.maximumStreamCount = 32
   }
 
@@ -116,16 +99,11 @@ final class ComputerUseNativeSharing: NSObject,
     deactivatePickerIfIdle()
   }
 
-  /// Detaches one session/app pairing without touching revocations; the
-  /// caller decides whether the stop was a user decision worth revoking.
   func retire(key: ComputerUseShareKey) {
     detach(key: key, intentional: true)
     deactivatePickerIfIdle()
   }
 
-  /// Stops sharing for a session that has gone idle. Unlike `end`, the
-  /// session is not over — revocations stand, and the next tool call
-  /// re-attaches — so this must not clear them.
   func release(sessionID: String) {
     let keys = Set(windowIDByKey.keys.filter { $0.sessionID == sessionID })
       .union(pendingWindowIDByKey.keys.filter { $0.sessionID == sessionID })
@@ -133,8 +111,6 @@ final class ComputerUseNativeSharing: NSObject,
     deactivatePickerIfIdle()
   }
 
-  /// The controlled app exited. Non-revoking: the same session may control
-  /// a relaunched instance under a new pid.
   func targetTerminated(pid: pid_t) {
     let keys = Set(windowIDByKey.keys.filter { $0.pid == pid })
       .union(pendingWindowIDByKey.keys.filter { $0.pid == pid })
@@ -284,8 +260,6 @@ final class ComputerUseNativeSharing: NSObject,
     }
   }
 
-  // MARK: Live preview sinks
-
   func attachSink(sessionID: String, token: UUID, sink: any ComputerUseFrameSink) {
     sinksBySession[sessionID, default: [:]][token] = sink
     resubscribe(sessionID: sessionID)
@@ -297,13 +271,10 @@ final class ComputerUseNativeSharing: NSObject,
     resubscribe(sessionID: sessionID)
   }
 
-  /// The window was moved or resized outside a tool call. Resizes the
-  /// stream when its output size changes; a no-op otherwise.
   func windowFrameChanged(windowID: CGWindowID, windowFrame: CGRect) {
     refreshPreviewConfiguration(windowID: windowID, windowFrame: windowFrame)
   }
 
-  /// The size frames are currently delivered at for the session's window.
   func previewSize(sessionID: String) -> CGSize? {
     windowIDByKey.first { $0.key.sessionID == sessionID }
       .flatMap { entriesByWindowID[$0.value]?.settings.size }
@@ -326,7 +297,6 @@ final class ComputerUseNativeSharing: NSObject,
     sessions.flatMap { sinksBySession[$0]?.values.map(\.requestedDimension) ?? [] }.max() ?? 0
   }
 
-  /// A viewer now displays the preview at a different pixel size.
   func requestedDimensionChanged(sessionID: String) {
     let windowIDs = Set(windowIDByKey.filter { $0.key.sessionID == sessionID }.map(\.value))
     for windowID in windowIDs {
@@ -335,8 +305,6 @@ final class ComputerUseNativeSharing: NSObject,
     }
   }
 
-  /// Points the stream's publisher at the sinks of every session sharing
-  /// the window, and matches its frame rate to whether anyone is watching.
   private func resubscribe(windowID: CGWindowID) {
     guard let entry = entriesByWindowID[windowID] else { return }
     var sinks: [UUID: any ComputerUseFrameSink] = [:]
@@ -431,17 +399,11 @@ final class ComputerUseNativeSharing: NSObject,
       entry.publisher.removeAll()
       entry.keys.forEach { windowIDByKey.removeValue(forKey: $0) }
       if userStopped {
-        // Transient: the system reports its own stream teardown the
-        // same way it reports a Control Center stop, so this cannot
-        // be treated as a lasting decision.
         for key in entry.keys {
           ComputerUseRevocations.shared.insertTransient(key)
           ComputerUsePresentationState.shared.systemStopped(key: key)
         }
       } else {
-        // The window vanished (target quit or closed the shared
-        // window). Tear the presentation and menu-bar entry down, but
-        // do not revoke: a fresh window may be reattached later.
         Log.computerUse.error(
           "Native sharing stopped unexpectedly for window \(windowID, privacy: .public): \(error.localizedDescription, privacy: .public)"
         )
@@ -489,10 +451,6 @@ final class ComputerUseNativeSharing: NSObject,
 }
 
 extension ComputerUseNativeSharing {
-  /// A preview stream that starts and never calls back is what an exhausted `replayd` looks like
-  /// (on this Mac: 246 pipes, and the PiP sat on "Starting…"). Screen sharing's recovery restarts
-  /// the stream, then the daemon (at most once per 10 minutes, shared with screen sharing), then
-  /// the stream again. It gives up quietly if the window's stream is replaced or stopped meanwhile.
   fileprivate func watchForStall(stream: SCStream, publisher: ComputerUseFramePublisher, windowID: CGWindowID) {
     let recovery = ScreenSharingCaptureStallRecovery.live(
       metrics: ScreenSharingMetrics(), callbacks: { publisher.callbacks },
@@ -514,15 +472,6 @@ extension ComputerUseNativeSharing {
   }
 }
 
-/// Which session/app pairings may not be controlled right now.
-///
-/// Two kinds, because they mean different things. Choosing "Stop Using X" in
-/// the menu bar is an unambiguous decision and holds for the session. A
-/// ScreenCaptureKit stream ending is not: the system stops streams for its
-/// own reasons (window churn, stream limits), and treating that as a decision
-/// stranded healthy sessions with no way back. Those are transient — the next
-/// deliberate `get_app_state` clears them, so an agent that follows the error
-/// message recovers, while an action fired blindly still fails.
 final class ComputerUseRevocations: @unchecked Sendable {
   static let shared = ComputerUseRevocations()
 
@@ -538,17 +487,14 @@ final class ComputerUseRevocations: @unchecked Sendable {
     lock.withLock { permanent.contains(key) }
   }
 
-  /// The user chose to stop this app from the menu bar.
   func insert(_ key: ComputerUseShareKey) {
     _ = lock.withLock { permanent.insert(key) }
   }
 
-  /// The system stopped the sharing stream; recoverable on re-observation.
   func insertTransient(_ key: ComputerUseShareKey) {
     _ = lock.withLock { transient.insert(key) }
   }
 
-  /// Called when a session deliberately re-observes the app.
   func clearTransient(_ key: ComputerUseShareKey) {
     _ = lock.withLock { transient.remove(key) }
   }
@@ -568,7 +514,6 @@ final class ComputerUseRevocations: @unchecked Sendable {
   }
 }
 
-/// The preview stream's capture settings.
 func computerUseNativePreviewConfiguration(
   _ settings: ComputerUseNativePreviewSettings
 ) -> SCStreamConfiguration {
@@ -584,8 +529,6 @@ func computerUseNativePreviewConfiguration(
   configuration.capturesAudio = false
   configuration.scalesToFit = true
   configuration.ignoreShadowsSingleWindow = true
-  // BGRA, not SCK's 4:2:0 default: UI text stays crisp, and the alpha
-  // channel tells the PiP where the window's padding and corners are.
   configuration.pixelFormat = kCVPixelFormatType_32BGRA
   return configuration
 }

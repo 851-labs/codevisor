@@ -192,7 +192,6 @@ describe("owned process shutdown", () => {
       reads++
       return list()
     }
-    // Processes ignore SIGTERM until the force deadline.
     fake.system.signal = (pid, signal) => {
       fake.signals.push([pid, signal])
       if (signal === "SIGKILL") fake.set([])
@@ -207,7 +206,6 @@ describe("owned process shutdown", () => {
     expect(sleeps).toEqual([50, 100, 200, 400, 400, 400])
     expect(fake.signals.filter(([, signal]) => signal === "SIGTERM")).toHaveLength(3)
     expect(fake.signals.filter(([, signal]) => signal === "SIGKILL")).toHaveLength(3)
-    // Seven polls, plus one identity recheck for each of the two signalling passes.
     expect(reads).toBe(9)
   })
 
@@ -225,7 +223,6 @@ describe("owned process shutdown", () => {
     const joined = sampler.list({ notBefore: 0 })
     expect(read).toHaveBeenCalledTimes(1)
     clock = 1
-    // This caller asked after the in-flight read began, so it needs a fresh one.
     const fresh = sampler.list()
     expect(read).toHaveBeenCalledTimes(2)
     pending[0]!(10)
@@ -233,7 +230,6 @@ describe("owned process shutdown", () => {
     expect(await first).toBe(10)
     expect(await joined).toBe(10)
     expect(await fresh).toBe(20)
-    // A settled read is never reused by a caller that needs a fresh table.
     const later = sampler.list({ notBefore: 0 })
     expect(read).toHaveBeenCalledTimes(3)
     pending[2]!(30)
@@ -255,7 +251,6 @@ describe("owned process shutdown", () => {
     const newer = sampler.list()
     pending[1]!(20)
     expect(await newer).toBe(20)
-    // The older read finishing last must not replace the newer table.
     pending[0]!(10)
     expect(await older).toBe(10)
     clock = 260
@@ -322,9 +317,7 @@ describe("owned process shutdown", () => {
       if (child.exitCode === null && child.signalCode === null) {
         try {
           process.kill(-child.pid!, "SIGKILL")
-        } catch {
-          /* Already exited. */
-        }
+        } catch {}
       }
       await exited
       ;(await tracking).dispose()

@@ -4,11 +4,6 @@ import Testing
 
 @testable import ScreenSharing
 
-/// What the viewer sends for local pointer activity: button tracking, the
-/// coalesced drag, the scroll scale, and the release owed to the host when the
-/// video stops being the focused surface. Each test owns its window, and the
-/// coalescing window is a `TestClock`, so no expectation depends on a 16 ms
-/// wall-clock timer firing (or not) mid-assertion.
 @MainActor
 struct ScreenSharingInputSurfacePointerTests {
   @Test func aDragIsCoalescedIntoOneMoveBracketedByItsButton() throws {
@@ -26,8 +21,6 @@ struct ScreenSharingInputSurfacePointerTests {
         .move(.init(x: 0.75, y: 0.75), modifiers: 0),
         .button(.init(x: 0.75, y: 0.75), button: 0, down: false, clicks: 1, modifiers: 0),
       ])
-    // Only the press itself is unclamped: once a button is held, a drag that
-    // leaves the video keeps pushing the remote pointer along the edge.
     #expect(fixture.view.clamps == [false, true, true, true])
   }
 
@@ -58,8 +51,6 @@ struct ScreenSharingInputSurfacePointerTests {
     #expect(fixture.events.last == .scroll(corner, x: 0, y: 12, modifiers: 0), "one wheel line is twelve pixels")
     fixture.input.mouse(try fixture.scroll(x: 0, y: 0, precise: true))
     #expect(fixture.events.count == 2, "a scroll that resolves to nothing is not sent")
-    // The accumulator saturates at the value the control message allows, so a
-    // flick can never produce an event the host would reject as invalid.
     fixture.input.mouse(try fixture.scroll(x: 0, y: 400, precise: false))
     let saturated = try #require(fixture.events.last)
     #expect(saturated == .scroll(corner, x: 0, y: 4096, modifiers: 0))
@@ -162,8 +153,6 @@ struct ScreenSharingInputSurfacePointerTests {
     fixture.input.mouse(try fixture.mouse(.leftMouseDown, at: .init(x: 320, y: 270)))
     fixture.input.mouse(try fixture.mouse(.leftMouseUp, at: .init(x: 320, y: 270)))
     #expect(fixture.events.isEmpty)
-    // The refused press was never tracked as held, so the next press is still
-    // the unclamped one that starts a drag.
     fixture.view.mapsPointer = true
     fixture.input.mouse(try fixture.mouse(.leftMouseDown, at: .init(x: 320, y: 270)))
     #expect(fixture.view.clamps.last == false)
@@ -211,7 +200,6 @@ private final class PointerFixture {
     view = PointerTestView(frame: .init(x: 0, y: 0, width: 640, height: 540))
     window.contentView?.addSubview(view)
     window.contentView?.layoutSubtreeIfNeeded()
-    // The user clicked into the video: a grant alone doesn't give it the keyboard or pointer.
     #expect(window.makeFirstResponder(view))
     input = ScreenSharingInputSurface(
       view: view, notificationCenter: notifications, keyboardCapture: keyboard, applicationIsActive: { true },
@@ -236,10 +224,6 @@ private final class PointerFixture {
         context: nil, eventNumber: 1, clickCount: 1, pressure: 0))
   }
 
-  /// Scroll wheel and middle-button events cannot be built through
-  /// `NSEvent.mouseEvent` (AppKit traps), so they come from Quartz. Such an
-  /// event reports the window's top-left corner as its location, which the
-  /// fixture's target maps to the remote origin.
   func scroll(x: Int32, y: Int32, precise: Bool, momentumPhase: Int64 = 0) throws -> NSEvent {
     let event = try #require(
       CGEvent(
@@ -255,13 +239,7 @@ private final class PointerFixture {
     return try windowed(event)
   }
 
-  /// Field 51 is the window number `NSEvent(cgEvent:)` resolves its window
-  /// from; the requirement below fails loudly if a synthesized event ever
-  /// stops belonging to this fixture's window, rather than silently routing
-  /// nothing.
   private func windowed(_ event: CGEvent) throws -> NSEvent {
-    // A nil-source event starts with the modifier keys physically held right now: a developer
-    // holding ⌘ during the suite made these scrolls carry Command. No modifiers, explicitly.
     event.flags = []
     event.setIntegerValueField(try #require(CGEventField(rawValue: 51)), value: Int64(window.windowNumber))
     let native = try #require(NSEvent(cgEvent: event))
@@ -275,10 +253,6 @@ private final class PointerTestWindow: NSWindow {
   override var isKeyWindow: Bool { true }
 }
 
-/// Maps window points onto the remote display over its own bounds with a
-/// top-left origin — the same normalization the product surface performs after
-/// letterboxing, which `ScreenSharingVideoSurfaceLetterboxTests` covers with
-/// the real geometry.
 @MainActor
 private final class PointerTestView: NSView, ScreenSharingInputTarget {
   var mapsPointer = true

@@ -2,40 +2,25 @@ import Foundation
 import Observation
 
 extension ProjectWorktreeBase {
-  /// What a project that never chose a base branch starts worktrees from.
   public static let legacyDefault = ProjectWorktreeBase(remote: "origin", branch: "main")
 }
 
 extension ProjectGroup {
-  /// The one branch new worktrees of this project start from on every
-  /// machine: the choice recorded on its oldest git checkout that has one,
-  /// else the legacy default. A checkout added later (or one that missed a
-  /// change while offline) follows this, see `alignWorktreeBase(for:)`.
   public var worktreeBase: ProjectWorktreeBase {
     members.filter(\.isGitRepository).lazy.compactMap(\.worktreeBase).first ?? .legacyDefault
   }
 
-  /// Where new chats in this project start on every machine and client:
-  /// the choice recorded on its oldest git checkout that has one. Nil when
-  /// none has been chosen, or every checkout's server predates the field.
   public var defaultRunLocation: ProjectRunLocation? {
     members.filter(\.isGitRepository).lazy.compactMap(\.defaultRunLocation).first
   }
 }
 
-/// The remote branches a project's worktrees can start from, merged across
-/// every machine that has a checkout. Choosing one is a fleet-wide change
-/// (`ProjectListModel.setWorktreeBase`); this only lists what can be chosen.
 @MainActor
 @Observable
 public final class ProjectBaseBranchModel {
   public private(set) var branches: [ServerProjectGitBranch] = []
   public private(set) var isLoading = true
-  /// The first machine that failed to list its branches. Branches the other
-  /// machines listed are still offered.
   public private(set) var errorMessage: String?
-  /// False when every checkout's machine was offline, so an empty list
-  /// means "nothing to ask" rather than "no branches".
   public private(set) var reachedMachine = false
   @ObservationIgnored private var loadGeneration = 0
 
@@ -47,10 +32,6 @@ public final class ProjectBaseBranchModel {
 
   public init() {}
 
-  /// Lists each checkout's branches concurrently. `fetch` returns nil for a
-  /// machine that can't be reached right now, which is skipped rather than
-  /// reported. Branches keep the first machine's order; later machines only
-  /// add what it lacks, and only the first machine's default is marked.
   public func load(
     _ checkouts: [Project],
     using fetch: @escaping @Sendable (Project) async throws -> [ServerProjectGitBranch]?

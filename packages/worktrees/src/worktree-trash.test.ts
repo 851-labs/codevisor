@@ -32,12 +32,9 @@ describe("worktree trash", () => {
       worktreeId: "wt-sushi"
     })
 
-    // The path, its registration, and its branch are free before any file is
-    // deleted, so a restore or a new worktree can take the name at once.
     expect(existsSync(path)).toBe(false)
     expect(await registered(repo, path)).toBe(false)
     expect(await listCodevisorWorktreeBranchNames(repo)).toEqual([])
-    // Spotlight is told to skip the trash.
     expect(readdirSync(trashRoot)).toContain(".metadata_never_index")
 
     await trashed.purged
@@ -45,8 +42,6 @@ describe("worktree trash", () => {
   })
 
   it("still releases the branch when the directory is already gone", async () => {
-    // A crash after the files were moved but before the branch was released
-    // leaves exactly this; the name must not stay occupied forever.
     const { repo, root } = makeGitRepo(true)
     const path = join(root, "ramen")
     await addWorktree(repo, path, "codevisor/ramen")
@@ -66,7 +61,6 @@ describe("worktree trash", () => {
     const { repo, root } = makeGitRepo(true)
     const path = join(root, "curry")
     await addWorktree(repo, path, "codevisor/curry")
-    // A file where the trash directory belongs makes the move impossible.
     const trashRoot = join(root, "blocked")
     writeFileSync(trashRoot, "")
 
@@ -84,7 +78,6 @@ describe("worktree trash", () => {
     const unregistered = join(root, "stranger")
     mkdirSync(unregistered)
 
-    // Not a worktree git knows about, so the fallback refuses to touch it.
     await expect(
       trashWorktree(repo, unregistered, { trashRoot, id: "wt-stranger" })
     ).rejects.toThrow()
@@ -132,12 +125,9 @@ describe("worktree trash", () => {
 
   it("deletes at background priority unless the disk is running low", () => {
     const gib = 1024 ** 3
-    // Plenty of room: nobody is waiting on the delete.
     expect(purgePriority({ free: 200 * gib, total: 500 * gib })).toBe("background")
-    // Low in absolute terms, or as a share of a large disk: the space is needed now.
     expect(purgePriority({ free: LOW_DISK_FREE_BYTES - 1, total: 100 * gib })).toBe("utility")
     expect(purgePriority({ free: 40 * gib, total: 500 * gib })).toBe("utility")
-    // Unknown free space keeps the polite default.
     expect(purgePriority(undefined)).toBe("background")
   })
 

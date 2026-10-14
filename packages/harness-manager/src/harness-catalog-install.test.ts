@@ -107,8 +107,6 @@ describe("catalog installation routes", () => {
       "brew upgrade copilot-cli"
     ],
     ["qwen-code", "/opt/homebrew/Cellar/qwen-code/1.0.0/bin/qwen", "brew upgrade qwen-code"],
-    // OpenCode 1 installs move to OpenCode 2's package, removing the old one
-    // first where both would own the binary.
     [
       "opencode",
       "/opt/homebrew/Cellar/opencode/1.18.34/bin/opencode",

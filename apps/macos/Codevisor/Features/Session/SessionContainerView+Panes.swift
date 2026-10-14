@@ -2,12 +2,7 @@ import SwiftUI
 import CodevisorCore
 import CodevisorUI
 
-// MARK: - Panes
-
 extension SessionContainerView {
-  /// A center leaf's model with the container's lifecycle hooks attached
-  /// (idempotent — models are cached). The hooks are wired once per model
-  /// for this container and mount; later calls are a cache lookup.
   func configuredCenterModel(leafId: UUID) -> PaneGroupModel {
     let model = store.centerGroup(
       leafId: leafId,
@@ -15,11 +10,6 @@ extension SessionContainerView {
       session: session,
       project: project
     )
-    // The models are cached across containers, and these closures capture
-    // THIS container's focus controller — a stale capture makes every chat
-    // pane register its composer with a dead controller, orphaning the new
-    // container's focus intents. So a different container, mount or
-    // project rewires; the same one never does.
     let wiring = PaneGroupWiring(sourceId: focusSourceId, mountId: mountIdentity, project: project)
     guard model.wiring != wiring else { return model }
     model.wiring = wiring
@@ -27,11 +17,7 @@ extension SessionContainerView {
     return model
   }
 
-  /// Attaches this container's lifecycle hooks. Every hook reads the live
-  /// workspace when it runs, so wiring once stays current.
   private func wire(_ model: PaneGroupModel, leafId: UUID) {
-    // Acting in a group makes it the ACTIVE one: keyboard tab commands
-    // follow the user (routed via the focus controller's centerGroup).
     model.onActivated = { [weak model] in
       let workspace = selectedWorkspace
       guard isVisible,
@@ -49,10 +35,6 @@ extension SessionContainerView {
     model.workspaceCommandHandler = { command in
       handleWorkspaceCommand(command)
     }
-    // Selecting a chat tab focuses ITS composer — keyed and deferred,
-    // since switching tabs remounts the chat and the composer registers
-    // a tick later. ONLY chat panes: any other selected kind (New Tab
-    // placeholder) must not steal focus into some arbitrary composer.
     model.requestComposerFocus = { [weak model] in
       guard let selected = model?.state.selectedPane, selected.kind == .chat else { return }
       if let chatId = selected.chatSessionId {
@@ -68,14 +50,10 @@ extension SessionContainerView {
     model.onPaneClosed = { descriptor in
       if descriptor.kind == .chat {
         if let closedSessionId = descriptor.chatSessionId {
-          // Closing an established chat's tab ARCHIVES its
-          // session (recoverable from the archived list); the
-          // session itself always survives.
           if let closed = environment.projectList.session(closedSessionId, serverId: selectedWorkspace.serverId) {
             environment.closeSession(closed)
           }
         } else {
-          // A draft closed unsent: discard its composer state.
           store.removePaneDraft(paneId: descriptor.id)
         }
       }
@@ -83,11 +61,7 @@ extension SessionContainerView {
         dissolveIfEmpty(leafId: leafId)
       }
     }
-    // A lone New Tab placeholder's close dissolves its group — possible
-    // whenever the workspace has other groups.
     model.canDissolve = { true }
-    // Any center group can host chats (established or draft) and the
-    // New Tab placeholder. Weak model: the closure is held BY the model.
     model.chatContent = { [weak model] descriptor in
       let workspace = selectedWorkspace
       if descriptor.kind == .subagent {
@@ -127,9 +101,6 @@ extension SessionContainerView {
     }
   }
 
-  /// The chat pane facing the user: the selected pane of the active split
-  /// leaf, when it is a chat. Reads the live group model so pane selection
-  /// changes re-evaluate the publisher above.
   var focusedChatCandidate: UUID? {
     let workspace = selectedWorkspace
     guard isVisible, store.navigationWorkspaceId == workspace.id else { return nil }
@@ -143,10 +114,6 @@ extension SessionContainerView {
     return pane.chatSessionId
   }
 
-  /// "New Chat" from a New tab page: creates the SESSION eagerly — a real
-  /// chat from birth (sidebar row, archive-on-close, focus-follow), not a
-  /// deferred draft — in the workspace's one working directory with the
-  /// default harness, then converts the placeholder in place.
   func createChat(
     convertingPlaceholder paneId: UUID,
     in model: PaneGroupModel?
@@ -163,13 +130,9 @@ extension SessionContainerView {
         environment: environment
       )
     else { return }
-    // The pane's composer takes focus once it mounts; the responder
-    // observer then walks the sidebar selection over to the new chat.
     sessionFocus.requestComposerFocus(forChat: created.id)
   }
 
-  /// Removes an emptied split leaf. A layout may need an empty shell, but
-  /// that shell is not a shared pane and is never uploaded as New Tab.
   func dissolveIfEmpty(leafId: UUID) {
     var workspace = selectedWorkspace
     let model = store.centerGroup(
@@ -199,14 +162,12 @@ extension SessionContainerView {
     )
   }
 
-  /// Makes a leaf the active group (keyboard routing + hints).
   func activateLeaf(_ leafId: UUID?) {
     guard let leafId else { return }
     let workspace = selectedWorkspace
     store.selectDestination(.leaf(leafId), in: workspace.id)
   }
 
-  /// Browser titles follow this client's page; chat titles follow their session.
   func paneTitle(_ descriptor: PaneDescriptorState) -> String {
     if descriptor.kind == .browser, let title = store.localBrowserTitle(paneId: descriptor.id) {
       return title
@@ -220,9 +181,6 @@ extension SessionContainerView {
   }
 }
 
-/// Identifies the container a group's hooks were wired by: the mounted
-/// container instance, what it is mounted on, and the project its chat
-/// panes are built with.
 struct PaneGroupWiring: Equatable {
   let sourceId: UUID
   let mountId: UUID

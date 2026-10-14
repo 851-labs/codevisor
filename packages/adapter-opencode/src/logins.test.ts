@@ -10,8 +10,6 @@ const attempt = {
   mode: "auto"
 }
 
-/// A scripted OpenCode server held for one flow; `released` settles when
-/// the flow hands it back, which is how a test knows the flow ended.
 const hold = (answers: (path: string, init?: { readonly method?: string }) => unknown) => {
   const calls: Array<[string, unknown]> = []
   let release!: () => void
@@ -22,7 +20,6 @@ const hold = (answers: (path: string, init?: { readonly method?: string }) => un
     url: "http://oc",
     stop: vi.fn(),
     request: vi.fn(async (path: string, init?: { readonly method?: string }) => {
-      // Loading the location's integrations, before any sign-in.
       if (path === "/api/integration") return { data: [] }
       calls.push([path, init])
       const answer = answers(path, init)
@@ -134,7 +131,6 @@ describe("OpenCode 2 sign-in", () => {
       state: "error",
       error: "OpenCode finished signing in but saved no credential."
     })
-    // Without a capture, the credential stays where OpenCode saved it.
     expect(await run(() => ({ data: { status: "complete" } }))).toMatchObject({ state: "complete" })
   })
 
@@ -194,7 +190,6 @@ describe("OpenCode 2 sign-in", () => {
       error: "invalid code"
     })
     expect(await logins.answer(second.id, "again")).toMatchObject({ state: "error" })
-    // An ended flow is only forgotten.
     expect(await logins.cancel(second.id)).toBe(true)
     expect(
       rejected.calls.filter(([, init]) => (init as { method?: string })?.method === "DELETE")

@@ -13,7 +13,6 @@ const privateResponse = (c: CloudContext) => {
   c.header("Referrer-Policy", "no-referrer")
 }
 
-/** Native authentication returns directly to the app, including errors. */
 export const nativeHandoff = async (c: CloudContext) => {
   privateResponse(c)
   const scheme = nativeScheme(c.req.query("app"))
@@ -28,10 +27,6 @@ export const nativeHandoff = async (c: CloudContext) => {
   return c.redirect(`${scheme}://cloud-auth?ott=${encodeURIComponent(token)}`)
 }
 
-/** A headless bridge binds the browser to the native account before OAuth.
- * The one-time credential stays in the fragment, outside requests/referrers.
- * Provider selection and account management live entirely in the native app.
- */
 export const connectAccount = (c: CloudContext) => {
   privateResponse(c)
   const scheme = nativeScheme(c.req.query("app"))

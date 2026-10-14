@@ -19,8 +19,6 @@ extension SessionModelTests {
     model.viewDidAppear()
     let cached = model.conversation
 
-    // The fake deliberately sends no checkpoints, matching the quiet period
-    // before an older server's first 25-second heartbeat.
     await model.reconcileIfInFlight()
     #expect(model.connectionRecoveryMessage == nil)
     #expect(model.conversation == cached)
@@ -48,7 +46,6 @@ extension SessionModelTests {
     await settleUntil { model.connectionRecoveryMessage == "Reconnecting…" }
     let revision = model.transcriptProjectionRevision
 
-    // Once shown, the line stays a moment rather than flashing away.
     model.apply(.synchronization(.catchingUp))
     #expect(model.streamSynchronization == .catchingUp)
     #expect(model.connectionRecoveryMessage == "Reconnecting…")
@@ -59,7 +56,6 @@ extension SessionModelTests {
     model.apply(.synchronization(.caughtUp))
     #expect(model.connectionRecoveryMessage == nil)
 
-    // A subsequent real failure must still surface the single recovery row.
     model.apply(.synchronization(.reconnecting))
     await settleUntil { clock.pendingCount == 1 }
     clock.advance()

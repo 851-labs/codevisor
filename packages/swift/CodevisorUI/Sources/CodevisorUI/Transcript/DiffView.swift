@@ -5,10 +5,6 @@ import CodevisorCore
 import StreamMarkdown
 import SwiftUI
 
-/// Theme-independent diff structure prepared while a settled tool-call row is
-/// still collapsed. Keeping this separate from `DiffRenderCache` lets the
-/// first expanded frame render plain rows immediately; native highlighting can
-/// then fill colors without changing geometry.
 @MainActor
 final class DiffStructureCache {
   struct Key: Hashable, Sendable {
@@ -83,11 +79,6 @@ final class DiffStructureCache {
   }
 }
 
-/// Computed rows + highlights for recently rendered diffs. DiffView's
-/// `@State` dies whenever its row is unmounted (session switches rebuild the
-/// whole screen); without this process-level cache, every expanded diff
-/// re-ran the Myers diff and re-highlighted on each revisit. Keyed by full
-/// content (not hashes) so a collision can never render the wrong diff.
 @MainActor
 public final class DiffRenderCache {
   struct Key: Hashable {
@@ -110,7 +101,6 @@ public final class DiffRenderCache {
   private var order: [Key] = []
   private let limit: Int
 
-  /// Keys hold the full old/new texts, so the cap stays small.
   init(limit: Int = 24) {
     self.limit = max(1, limit)
   }
@@ -135,9 +125,6 @@ public final class DiffRenderCache {
   }
 }
 
-/// The portable horizontal scroll view needs the card width so narrow rows
-/// still paint through its trailing edge. The macOS native surface receives
-/// that width through `sizeThatFits`, avoiding a redundant geometry update.
 private struct DiffViewportWidthReader: ViewModifier {
   @Binding var width: CGFloat
 
@@ -155,11 +142,6 @@ private struct DiffViewportWidthReader: ViewModifier {
   }
 }
 
-/// A compact line-numbered diff for a tool-call file edit, computed by
-/// `LineDiff` (real Myers line diff, git hunk ordering) with old/new gutters.
-/// Shared indentation is stripped (edit snippets carry the source's full
-/// nesting) and rows are syntax-highlighted asynchronously via the path's
-/// language.
 public struct DiffView: View {
   let path: String
   let oldText: String?
@@ -168,19 +150,12 @@ public struct DiffView: View {
   @Environment(\.codeHighlightTheme) private var highlightTheme
   @Environment(\.transcriptInvalidateRowMeasurement) private var invalidateRowMeasurement
 
-  /// Rows are cached because streamed edits mutate `newText` repeatedly and
-  /// the diff should be computed once per content change, not per body eval.
   @State private var cachedRows: [LineDiff.Row] = []
   @State private var cachedKey: Int = 0
   @State private var hasPreparedStructure = false
   @State private var dedentedOld: String?
   @State private var dedentedNew: String = ""
-  /// Highlighted text per row id, swapped in when the native lexer catches up; rows
-  /// render plain until then. Cleared on content change so stale colors
-  /// never map onto shifted lines.
   @State private var highlightedRows: [Int: AttributedString] = [:]
-  /// The scroll viewport width, so row backgrounds extend across the whole
-  /// card even when every code line is narrower.
   @State private var viewportWidth: CGFloat = 0
 
   private var contentKey: Int {
@@ -191,14 +166,6 @@ public struct DiffView: View {
   }
 
   public var body: some View {
-    // Each diff has its own file header and per-file totals. Long lines
-    // scroll horizontally; tall files use a bounded vertical viewport that
-    // hands scrolling back to the transcript at either edge.
-    // The body paints the theme's editor background — the surface the
-    // token colors were designed for (pierre's --diffs-bg).
-    // Freshly recycled rows (empty @State) render straight from the
-    // shared cache on their first frame; `.task` then re-seeds the local
-    // state without recomputing.
     let localStructureIsCurrent = hasPreparedStructure && cachedKey == contentKey
     let cached = localStructureIsCurrent ? nil : DiffRenderCache.shared.entry(for: renderKey)
     let structure =
@@ -232,14 +199,9 @@ public struct DiffView: View {
     .modifier(DiffViewportWidthReader(width: $viewportWidth))
     .background(theme.codeBackground)
     .clipShape(RoundedRectangle(cornerRadius: 8))
-    // Match fenced Markdown code blocks' single, rounded content surface;
-    // the stroke keeps the file boundary legible against every theme.
     .overlay {
       RoundedRectangle(cornerRadius: 8).strokeBorder(theme.border, lineWidth: 1)
     }
-    // `clipShape` clips drawing but not hit testing. Constrain the native
-    // selectable rows as well so no invisible text surface can overlap the
-    // disclosure title above the card.
     .contentShape(RoundedRectangle(cornerRadius: 8))
     .task(id: highlightKey) { await refreshRowsAndHighlight() }
   }
@@ -267,8 +229,6 @@ public struct DiffView: View {
     highlights: [Int: AttributedString]
   ) -> some View {
     #if canImport(AppKit)
-      // One TextKit document per file: gutters and row fills are drawn
-      // by the native surface instead of mounting a text view per line.
       NativeDiffView(
         rows: rows,
         highlights: highlights,
@@ -303,8 +263,6 @@ public struct DiffView: View {
         rowView(row, gutterWidth: gutterWidth, highlights: highlights)
       }
     }
-    // Row backgrounds run to at least the viewport edge; wider code still
-    // scrolls horizontally.
     .frame(minWidth: viewportWidth, alignment: .leading)
   }
 
@@ -330,8 +288,6 @@ public struct DiffView: View {
     )
   }
 
-  /// Gutters sized to the widest line number instead of a fixed column —
-  /// a 6-line diff shouldn't reserve space for five-digit files.
   private func gutterWidth(for rows: [LineDiff.Row]) -> CGFloat {
     let maxLine = rows.reduce(1) { partial, row in
       max(partial, row.oldLine ?? 0, row.newLine ?? 0)
@@ -354,8 +310,6 @@ public struct DiffView: View {
       Text(marker(for: row.kind))
         .frame(width: 8)
         .foregroundStyle(tint(for: row.kind))
-      // Removed lines keep full syntax colors (pierre does not dim or
-      // strike them); the row tint alone marks the deletion.
       #if canImport(AppKit) || canImport(UIKit)
         SelectableTextView(
           attributedText: rowText(row, highlights: highlights),
@@ -374,8 +328,6 @@ public struct DiffView: View {
     .background(background(for: row.kind))
   }
 
-  /// Context numbers use the muted gutter tone; changed lines take the
-  /// addition/deletion base color, matching pierre's gutter behavior.
   private func lineNumberColor(for kind: LineDiff.Row.Kind) -> Color {
     switch kind {
     case .context: theme.diffLineNumberFg
@@ -385,7 +337,6 @@ public struct DiffView: View {
   }
 
   #if !canImport(AppKit) && !canImport(UIKit)
-    /// AttributedString flavor of `rowText` for the SwiftUI fallback path.
     private func portableRowText(
       _ row: LineDiff.Row,
       highlights: [Int: AttributedString]
@@ -408,8 +359,6 @@ public struct DiffView: View {
   #endif
 
   #if canImport(AppKit) || canImport(UIKit)
-    /// Row text: syntax-highlighted when the path's language and the theme
-    /// allow it, plain otherwise. Blank lines render a space to keep height.
     private func rowText(
       _ row: LineDiff.Row,
       highlights: [Int: AttributedString]
@@ -441,17 +390,9 @@ public struct DiffView: View {
     }
   #endif
 
-  /// Recomputes the diff rows (when the content changed) and re-highlights.
-  /// The Myers diff runs off the main actor: streamed edits rewrite
-  /// `newText` repeatedly, and diffing whole file contents on main per
-  /// rewrite was a visible stall on large edits. `task(id:)` cancellation
-  /// makes the sleep a trailing-edge debounce; the first computation (a
-  /// finished diff scrolled back into view) skips it and renders promptly.
   private func refreshRowsAndHighlight() async {
     let key = contentKey
     if key != cachedKey || cachedRows.isEmpty {
-      // A diff scrolled back into view: re-seed local state from the
-      // shared cache instead of recomputing rows and highlights.
       if let entry = DiffRenderCache.shared.entry(for: renderKey) {
         cachedKey = key
         hasPreparedStructure = true
@@ -478,8 +419,6 @@ public struct DiffView: View {
       dedentedNew = computed.dedentedNew
       cachedRows = computed.rows
       highlightedRows = [:]
-      // A cache miss replaces the bounded loading row with the final
-      // native diff height in one transcript measurement commit.
       invalidateRowMeasurement?()
     }
     await highlightRows()

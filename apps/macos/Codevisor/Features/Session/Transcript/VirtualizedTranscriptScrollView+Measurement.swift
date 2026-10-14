@@ -6,8 +6,6 @@ import StreamMarkdown
 import SwiftUI
 import TranscriptKit
 
-// MARK: - Measurement
-
 extension VirtualizedTranscriptScrollView {
   func invalidateChangedMeasurements(
     previousRowsByKey: [String: TranscriptVirtualRow],
@@ -19,34 +17,15 @@ extension VirtualizedTranscriptScrollView {
       if let previous = previousRowsByKey[key] {
         guard previous.measurementRevision != row.measurementRevision else { continue }
       } else {
-        // A key that was not in the previous row set can still hold a
-        // ledger height left behind by a differently shaped row under
-        // the same layout key — the aggregate active placeholder that
-        // precedes a block projection shares `message:<id>` with the
-        // settled shell. That height is layout geometry, never an
-        // exact measurement for this row: mark it stale so mounting
-        // measures instead of trusting it as known.
         guard measurements[key] != nil, !measurements.isStale(key) else { continue }
         measurements.markStale(key)
         continue
       }
-      // The last measured height stays in the ledger as stale layout
-      // geometry: a settled row whose content keeps changing (a
-      // background subagent streaming into an ended turn bumps this
-      // revision on every flush) must never snap back to its flat
-      // estimate and let its unclipped content overlap the rows below.
       measurements.markStale(key)
       measurementCache.removeMeasurement(for: key)
-      // Mounted content is replaced immediately after invalidation.
-      // `installRootView` performs the one required fresh measurement;
-      // invalidating here as well used to schedule the same TextKit and
-      // hosting-controller work twice for every settled revision.
     }
   }
 
-  /// Switches to the exact measurements for the current text layout. At
-  /// most three width/typography variants survive, which handles ordinary
-  /// sidebar toggling without allowing per-session memory to grow forever.
   @discardableResult
   func activateMeasurementCacheIfNeeded() -> Bool {
     guard contentView.bounds.width > 0 else { return false }
@@ -58,11 +37,6 @@ extension VirtualizedTranscriptScrollView {
 
     let cached = measurementCache.activate(key)
 
-    // Keep mounted heights as provisional geometry while their independent
-    // inner hosts remeasure at the new width. Provisional values are not
-    // written into the new width's cache — but they are marked stale, so
-    // a host whose height happens to be identical at the new width still
-    // commits it into that width's cache instead of being deduped away.
     let provisionalMountedHeights = Dictionary(
       uniqueKeysWithValues: mountedHosts.keys.compactMap { key in
         measurements[key].map { (key, $0) }
@@ -89,21 +63,11 @@ extension VirtualizedTranscriptScrollView {
     for (key, height) in provisionalMountedHeights where measurements[key] == nil {
       measurements.setProvisional(height, for: key)
     }
-    // ChatGPT restores the exact height map that produced its saved
-    // coordinate before mounting the saved rendered window. Apply it only
-    // when the width/typography key still matches; current measurements
-    // replace these provisional values as soon as the hosts lay out.
     if let restore = pendingInitialState?.virtualTranscript,
       restore.measurementCacheKey == key
     {
       for (rowKey, height) in restore.rowHeightsByKey where height > 0 {
         guard let row = rowByKey[rowKey] else { continue }
-        // A settled row's saved height is applied only when its
-        // revision still matches: content can change while the pane
-        // is closed (a background subagent streaming into an ended
-        // turn), and the snapshot must not restore that stale height
-        // as if it were current. Mismatches fall back to the
-        // revision-checked cache entry applied above, or the estimate.
         if row.id.isCacheableSettledRow {
           guard
             restore.settledRowsByKey[rowKey]?.revision
@@ -116,15 +80,6 @@ extension VirtualizedTranscriptScrollView {
     return true
   }
 
-  /// Rebuilds `virtualLayout` and re-anchors the viewport.
-  ///
-  /// `changedHeights` is the streaming fast path: when the only difference
-  /// from the current layout is a set of committed row heights (row set and
-  /// order unchanged — height commits never add or remove rows), the layout
-  /// is patched incrementally instead of reconstructed. The full rebuild
-  /// re-materializes and re-hashes every row key — O(transcript) string
-  /// work on the main thread for what is usually a one-row height change
-  /// several times per second per streaming chat.
   func rebuildDocumentGeometry(changedHeights: [String: CGFloat]? = nil) {
     let traceStart = TranscriptPerformanceTrace.begin()
     defer {
@@ -133,15 +88,8 @@ extension VirtualizedTranscriptScrollView {
         hostCount: mountedHosts.count, distance: currentDistanceFromBottom())
     }
 
-    // Capture the viewport before changing document size. A locked restore
-    // target wins until the user deliberately scrolls. Once the reader has
-    // moved away from the bottom, preserve the first visible row instead
-    // of preserving a raw bottom distance: streaming growth below that row
-    // must not pull the viewport down with it.
     let previousLayout = virtualLayout
     let previousDistance = initialPositionApplied ? currentDistanceFromBottom() : nil
-    // Follow intent survives settlement and width remeasurement. An explicit
-    // disclosure click can temporarily preserve its header below instead.
     let plan = TranscriptGeometryRebuildPlan(
       previousLayout: previousLayout,
       previousDistanceFromBottom: previousDistance,
@@ -205,8 +153,6 @@ extension VirtualizedTranscriptScrollView {
         setDistanceFromBottom(resolvedDistance)
       }
       animatePendingDisclosureCollapse()
-      // A delayed bounds notification after this transaction sees the
-      // final canonical distance, not the transient pre-compensation one.
       lastDistanceFromBottom = currentDistanceFromBottom()
     }
     if initialRestoreRange != nil || changedHeights == nil || mountedCoverageNeedsUpdate() {
@@ -262,10 +208,6 @@ extension VirtualizedTranscriptScrollView {
             for: key
           )
         }
-        // The hosting view's measured height is rounded up to keep
-        // row geometry stable. Pin the SwiftUI root to the top so any
-        // sub-point rounding slack stays below the message instead of
-        // recentering it when a disclosure changes the row height.
         .frame(width: effectiveRowWidth, alignment: .topLeading)
         .id(key)
     )
@@ -285,7 +227,6 @@ extension VirtualizedTranscriptScrollView {
       self?.recordMeasuredHeight(height, for: key)
     }
     host.onPresentationReady = { [weak self] in
-      // Never start a flight inside the host's AppKit layout callback.
       self?.requestDisplayFrameOrLayout()
     }
   }
@@ -293,15 +234,10 @@ extension VirtualizedTranscriptScrollView {
   func recordMeasuredHeight(_ rawHeight: CGFloat, for key: String) {
     let height = max(1, rawHeight.rounded(.up))
     guard rowByKey[key] != nil, mountedHosts[key]?.isAttachmentGeometryReady == true else { return }
-    // A stale ledger key must reach the commit even when the reported
-    // height is unchanged — that commit is what clears the staleness and
-    // rewrites the row's revision-keyed cache entries.
     let needsCommit =
       pendingMeasuredHeights[key].map { abs($0 - height) > 0.5 }
       ?? measurements.needsCommit(height, for: key)
     guard needsCommit else {
-      // Cached settled rows can report the exact height already in the
-      // ledger. Fresh AppKit layout still completes presentation gates.
       promoteTargetWindowAndRetireIfReady()
       updateInitialPresentationReadiness()
       resolveBottomJumpIfPossible()
@@ -310,9 +246,6 @@ extension VirtualizedTranscriptScrollView {
     }
     pendingMeasuredHeights[key] = height
 
-    // A mounted transcript commits all height changes on its native display
-    // clock. Content, following offsets, document size, and bottom
-    // compensation therefore become one physical-frame transaction.
     if presentationDisplayLink != nil, !inLiveResize {
       requestDisplayFrame()
       return
@@ -329,8 +262,6 @@ extension VirtualizedTranscriptScrollView {
     measurementCommitTask = nil
     let pending = pendingMeasuredHeights
     pendingMeasuredHeights.removeAll(keepingCapacity: true)
-    // A corrected height moves the rows around it; during a send those
-    // moves are carried by its springs rather than painted as a jump.
     let contentShift = sendTransitions.beginContentShift()
     var committedHeights: [String: CGFloat] = [:]
     for (key, height) in pending {
@@ -342,8 +273,6 @@ extension VirtualizedTranscriptScrollView {
       }
     }
     if !committedHeights.isEmpty {
-      // Height-only commits qualify for the incremental layout patch;
-      // row-set changes always come through `configure`'s full rebuild.
       rebuildDocumentGeometry(changedHeights: committedHeights)
     }
     sendTransitions.commitContentShift(contentShift)
@@ -353,9 +282,6 @@ extension VirtualizedTranscriptScrollView {
     sendTransitions.advance()
   }
 
-  /// Commits one measurement into the ledger and the revision-keyed caches.
-  /// Returns whether the height actually moved (geometry must rebuild); a
-  /// same-height commit still refreshes caches for the row's new revision.
   @discardableResult
   func storeMeasuredHeight(_ height: CGFloat, for key: String) -> Bool {
     let heightChanged = measurements.commit(height, for: key)

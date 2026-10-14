@@ -1,24 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Herdr-inspired working glyph: its ten braille frames advance at roughly
-/// eight steps per second in the harness icon's slot.
-///
-/// The frame cycle is a `CAKeyframeAnimation` on a layer's `contents`, NOT a
-/// `TimelineView(.animation)` — the same lesson already recorded on
-/// `ShimmeringText`, but with more bite here. A `TimelineView` re-evaluates its
-/// body on the main run loop, so this indicator froze solid for the duration of
-/// any main-thread hitch (notably the transcript rebuild on a tab switch),
-/// which read as a broken spinner while every render-server-driven
-/// `ProgressView` on screen kept turning. Discrete frame swapping cannot be
-/// composited in pure SwiftUI at all — a `Timer` or `PhaseAnimator` stalls
-/// exactly the same way — so the cycle is handed to CoreAnimation wholesale.
-///
-/// The trade is that the glyph must be rasterized against a known color instead
-/// of inheriting the ambient foreground style, so callers pass the color their
-/// surrounding row already uses.
 struct AgentActivityIndicator: View {
-  /// Matches what the enclosing row would have tinted the glyph.
   var color: Color = .secondary
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -32,15 +15,10 @@ struct AgentActivityIndicator: View {
   }
 }
 
-/// The ten braille frames, pre-rasterized per (color, appearance, scale).
-///
-/// Bounded and tiny: at most a couple of colors per appearance, so a plain
-/// dictionary needs no eviction policy.
 @MainActor
 private enum BrailleSpinnerFrames {
   static let glyphs = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
   static let size = CGSize(width: 14, height: 14)
-  /// Eight steps per second, as before.
   static let cycleDuration = Double(glyphs.count) / 8
 
   private struct Key: Hashable {
@@ -59,7 +37,6 @@ private enum BrailleSpinnerFrames {
     )
     if let cached = cache[key] { return cached }
     let images = glyphs.compactMap { render($0, color: color, scale: scale) }
-    // A partial set would animate a short, wrong cycle; don't cache it.
     guard images.count == glyphs.count else { return images }
     cache[key] = images
     return images
@@ -85,8 +62,6 @@ private enum BrailleSpinnerFrames {
     rep.size = NSSize(width: size.width, height: size.height)
     NSGraphicsContext.saveGraphicsState()
     NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-    // `.primary`/`.secondary` resolve differently per appearance, so bake
-    // them against the app's current one (as MenuIconRasterizer does).
     NSApp.effectiveAppearance.performAsCurrentDrawingAppearance {
       let text = NSAttributedString(
         string: glyph,
@@ -110,8 +85,6 @@ private enum BrailleSpinnerFrames {
   }
 }
 
-/// Hosts the pre-rasterized frames on a layer and cycles them in the render
-/// server, so the animation is immune to main-thread stalls.
 private struct BrailleSpinnerLayer: NSViewRepresentable {
   let color: Color
   let isAnimated: Bool
@@ -138,8 +111,6 @@ private struct BrailleSpinnerLayer: NSViewRepresentable {
       view.window?.backingScaleFactor
       ?? NSScreen.main?.backingScaleFactor
       ?? 2
-    // Rebuild only when something that changes the pixels or the timing
-    // moves; this runs on every SwiftUI invalidation of the enclosing row.
     let key = "\(color.hashValue)-\(scale)-\(isAnimated)-\(NSApp.effectiveAppearance.name.rawValue)"
     guard context.coordinator.appliedKey != key else { return }
     context.coordinator.appliedKey = key
@@ -156,10 +127,6 @@ private struct BrailleSpinnerLayer: NSViewRepresentable {
     animation.calculationMode = .discrete
     animation.duration = BrailleSpinnerFrames.cycleDuration
     animation.repeatCount = .infinity
-    // Phase-align to an absolute grid so every spinner on screen steps in
-    // lockstep regardless of when it mounted — the old absolute-time frame
-    // derivation gave that for free, and losing it would be visible with
-    // several running chats listed together.
     let now = CACurrentMediaTime()
     let phase = now.truncatingRemainder(dividingBy: animation.duration)
     animation.beginTime = layer.convertTime(now, from: nil) - phase

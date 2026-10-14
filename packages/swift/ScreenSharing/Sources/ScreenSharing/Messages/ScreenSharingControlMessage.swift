@@ -1,7 +1,5 @@
 import Foundation
 
-/// Transient control messages travel only on the authenticated media peer.
-/// A fresh host-issued lease prevents delayed input from a previous control period.
 public enum ScreenSharingControlMessage: Codable, Sendable, Equatable {
   case request(id: UUID)
   case grant(request: UUID, lease: UUID)
@@ -36,16 +34,9 @@ public struct ScreenSharingPointer: Codable, Sendable, Equatable {
   public var isValid: Bool { x.isFinite && y.isFinite && (0...1).contains(x) && (0...1).contains(y) }
 }
 
-/// Physical Mac key codes use the host's keyboard layout. Text insertion is a
-/// separate operation; it must never be interpreted as a physical shortcut.
-/// Keys a Mac keyboard has for system features, which the viewer offers as toolbar buttons like
-/// Apple Screen Sharing's (851-2469). Pressed on the host as the keys themselves: on tuftlord
-/// key 160 put the Dock into Mission Control and key 131 opened Apps. A host from before these
-/// drops codes above 126 as invalid.
 public enum ScreenSharingSystemKey: UInt16, CaseIterable, Sendable {
   case apps = 131
   case missionControl = 160
-  /// Show Desktop's default shortcut, F11.
   case desktop = 103
 }
 
@@ -69,8 +60,6 @@ public enum ScreenSharingInputEvent: Codable, Sendable, Equatable {
   }
 }
 
-/// Coordinates are normalized in the captured display, with the origin at its
-/// top left. This is independent of Retina scale and the display's global origin.
 public enum ScreenSharingVideoGeometry {
   public static func pointer(
     x: Double, y: Double, surfaceWidth: Double, surfaceHeight: Double,
@@ -87,17 +76,8 @@ public enum ScreenSharingVideoGeometry {
     return point.isValid ? point : nil
   }
 
-  /// Where a remote cursor image goes on an aspect-fit surface: origin
-  /// top-left, in surface units, the hotspot on the video position (x, y).
-  /// Also the scale a cursor image is drawn at, as `frame.width / cursorWidth`.
-  /// A remote cursor this short, in points, reads like the Mac's own arrow.
   public static let minimumCursorHeight = 20.0
 
-  /// Points per cursor pixel. The video's scale keeps the cursor in proportion,
-  /// but a big remote framebuffer squeezed into a small pane (a Retina Mac's
-  /// Screen Sharing at ~0.4, which also may send a 1× cursor on a 2× desktop)
-  /// made it microscopic. So it's never shorter than `minimumHeight`, and never
-  /// enlarged past one point per cursor pixel just to get there.
   public static func cursorScale(
     videoScale: Double, cursorHeight: Double, minimumHeight: Double = minimumCursorHeight
   ) -> Double {
@@ -116,7 +96,6 @@ public enum ScreenSharingVideoGeometry {
     let cursor = cursorScale(videoScale: scale, cursorHeight: cursorHeight, minimumHeight: minimumHeight)
     let left = (surfaceWidth - videoWidth * scale) / 2
     let top = (surfaceHeight - videoHeight * scale) / 2
-    // The hotspot lands on the host's position at the video's scale; the image around it is sized by the cursor's.
     return (
       left + x * scale - hotspotX * cursor, top + y * scale - hotspotY * cursor, cursorWidth * cursor,
       cursorHeight * cursor

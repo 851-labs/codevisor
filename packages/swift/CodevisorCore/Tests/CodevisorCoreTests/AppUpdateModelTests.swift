@@ -47,7 +47,6 @@ struct AppUpdateModelTests {
     #expect(model.statusMessage == "Downloading…")
     #expect(model.progress == 0.42)
 
-    // Fractions are clamped; a step without a measure clears the bar.
     model.reportProgress("Waiting for 2 chats to finish…", fraction: 1.7)
     #expect(model.progress == 1)
     model.reportProgress("Installing…")

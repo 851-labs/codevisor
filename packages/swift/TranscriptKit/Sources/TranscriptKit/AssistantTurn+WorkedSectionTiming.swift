@@ -1,20 +1,10 @@
 import Foundation
 
-/// A proposed plan splits a turn into two worked sections that read as two
-/// consecutive responses: the work that produced the plan, then the work that
-/// resumes once the user answers it. Each section owns its own live state and
-/// duration; time spent waiting on the user belongs to neither.
 extension AssistantTurn {
-  /// Whether a plan splits this turn. A history snapshot carries the plan
-  /// before its deferred work hydrates and restores `planBoundary`.
   var isSplitByPlan: Bool {
     planBoundary != nil || planDocument?.isEmpty == false
   }
 
-  /// Whether the section shows a header that loads its work on expand
-  /// before the turn's worked items have hydrated. History restores the work
-  /// after a plan only once details load, so a turn that resumed after its
-  /// plan keeps both sections visible from the first frame.
   public func defersWorkedSection(_ kind: TranscriptWorkedSectionKind) -> Bool {
     guard hasDeferredWorkedDetails else { return false }
     switch kind {
@@ -23,8 +13,6 @@ extension AssistantTurn {
     }
   }
 
-  /// True while `kind` is the section currently receiving work. The planning
-  /// section settles as soon as the plan lands, like a finished response.
   public func isWorkedSectionLive(_ kind: TranscriptWorkedSectionKind) -> Bool {
     guard isGenerating, !finalTextIsAsserted else { return false }
     switch kind {
@@ -33,8 +21,6 @@ extension AssistantTurn {
     }
   }
 
-  /// When the section's work began: the turn start for planning, the user's
-  /// answer to the plan for the work after it.
   public func workedSectionStart(_ kind: TranscriptWorkedSectionKind) -> Date? {
     switch kind {
     case .planning: startedAt
@@ -42,15 +28,12 @@ extension AssistantTurn {
     }
   }
 
-  /// Wall-clock duration of a settled section, nil when unknown.
   public func workedSectionDuration(_ kind: TranscriptWorkedSectionKind) -> TimeInterval? {
     let end: Date? =
       switch kind {
       case .planning:
         !isSplitByPlan
           ? endedAt
-          // History recorded before plan times existed: a turn that ended at
-          // its plan (codex) still spans exactly the planning work.
           : planProposedAt ?? (planResumedAt == nil && workedItemsAfterPlan.isEmpty ? endedAt : nil)
       case .implementation: endedAt
       }
@@ -58,7 +41,6 @@ extension AssistantTurn {
     return max(0, end.timeIntervalSince(start))
   }
 
-  /// "Working for 12s" while live, "Worked for 12s" once settled.
   public func workedSectionTitle(_ kind: TranscriptWorkedSectionKind, now: Date) -> String {
     if workedSectionTicks(kind) {
       let start = workedSectionStart(kind) ?? now
@@ -71,9 +53,6 @@ extension AssistantTurn {
     return "Worked for \(Self.formatWorkedDuration(duration))"
   }
 
-  /// Whether the section's title is a running timer. Unlike
-  /// `isWorkedSectionLive`, it keeps counting while an asserted final answer
-  /// streams: the response is still being produced.
   public func workedSectionTicks(_ kind: TranscriptWorkedSectionKind) -> Bool {
     guard isGenerating else { return false }
     switch kind {
@@ -82,16 +61,10 @@ extension AssistantTurn {
     }
   }
 
-  /// Whether `kind` shows its header before any work lands: once the
-  /// provider's first event arrives, a live section's header is the turn's
-  /// activity label. Until then the turn's opening line times the wait.
   public func showsLiveWorkedHeader(_ kind: TranscriptWorkedSectionKind) -> Bool {
     isWorkedSectionLive(kind) && (isThinking || hasProviderContent)
   }
 
-  /// Whether `kind` keeps its header with no work in it: a turn that only
-  /// answers still reads "Worked for", so the timer it showed from the send
-  /// stays above the answer instead of leaving as the answer streams.
   public func showsWorkedHeaderWithoutWork(_ kind: TranscriptWorkedSectionKind) -> Bool {
     guard hasProviderContent || (isGenerating && isThinking) else { return false }
     switch kind {
@@ -100,7 +73,6 @@ extension AssistantTurn {
     }
   }
 
-  /// Whether the provider has sent anything the transcript shows.
   public var hasProviderContent: Bool {
     entries.contains { entry in
       if case .contextCompaction = entry { return false }
@@ -108,15 +80,10 @@ extension AssistantTurn {
     }
   }
 
-  /// Whether an open `kind` section ends its timeline with a "Thinking"
-  /// line: only while the harness reports the model reasoning. The note or
-  /// tool that follows takes the line's place, so it never shifts the
-  /// timeline above it.
   public func showsWorkedThinkingLine(_ kind: TranscriptWorkedSectionKind) -> Bool {
     isGenerating && isThinking && showsLiveWorkedHeader(kind)
   }
 
-  /// The running section's elapsed time ("12s"), shown after its activity.
   public func workedSectionElapsed(_ kind: TranscriptWorkedSectionKind, now: Date) -> String {
     Self.formatWorkedDuration(now.timeIntervalSince(workedSectionStart(kind) ?? now))
   }

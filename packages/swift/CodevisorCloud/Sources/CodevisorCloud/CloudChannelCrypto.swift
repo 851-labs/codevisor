@@ -2,28 +2,11 @@ import CodevisorClient
 import CryptoKit
 import Foundation
 
-/// End-to-end encryption for cloud relay channels — the CryptoKit twin of
-/// packages/cloud-crypto (which uses @noble); the two must stay byte-for-byte
-/// compatible.
-///
-/// Key agreement per channel (Noise-IK-flavoured, deliberately minimal):
-///   dh1 = X25519(ephemeral, responderStatic)    — forward secrecy
-///   dh2 = X25519(openerStatic, responderStatic) — mutual authentication
-///   key = HKDF-SHA256(ikm = dh1 || dh2, salt = ephemeralPub, info = INFO)
-///
-/// Frames are IETF ChaCha20-Poly1305 boxes. Nonces are deterministic —
-/// 12 bytes = [direction byte, 0, 0, 0, seq as u64 BE] — and never travel on
-/// the wire; they never repeat under one key because every channel open
-/// derives a fresh key and each direction's seq is strictly monotonic. The
-/// AAD additionally binds (channelId, direction, seq) so ciphertext cannot be
-/// replayed across channels, directions, or positions.
 public enum CloudChannelCrypto {
   static let info = Data("codevisor-cloud-channel-v1".utf8)
   public static let keyLength = 32
   public static let nonceLength = 12
 
-  /// Generates a device's long-lived static X25519 keypair (raw secret +
-  /// base64url public), or a per-channel ephemeral.
   public static func generateKeyPair() -> (secretKey: Data, publicKey: String) {
     let secret = Curve25519.KeyAgreement.PrivateKey()
     return (
@@ -32,14 +15,11 @@ public enum CloudChannelCrypto {
     )
   }
 
-  /// Derives the base64url public key for a raw X25519 secret key.
   public static func publicKey(forSecretKey secretKey: Data) throws -> String {
     let key = try privateKey(secretKey)
     return base64URLEncode(key.publicKey.rawRepresentation)
   }
 
-  /// Opener side (the app connecting to a machine): fresh ephemeral per
-  /// channel open.
   public static func openChannel(
     openerSecretKey: Data,
     responderPublicKey: String
@@ -51,7 +31,6 @@ public enum CloudChannelCrypto {
     )
   }
 
-  /// Deterministic-ephemeral variant for cross-implementation test vectors.
   static func openChannel(
     openerSecretKey: Data,
     responderPublicKey: String,
@@ -69,8 +48,6 @@ public enum CloudChannelCrypto {
     )
   }
 
-  /// Responder side (a machine accepting a channel; the app never responds,
-  /// but the derivation is needed to verify vectors against the TS peer).
   public static func acceptChannel(
     responderSecretKey: Data,
     openerPublicKey: String,
@@ -121,8 +98,6 @@ public enum CloudChannelCrypto {
     return key
   }
 
-  // MARK: - base64url (unpadded)
-
   public static func base64URLEncode(_ data: Data) -> String {
     data.base64EncodedString()
       .replacingOccurrences(of: "+", with: "-")
@@ -157,8 +132,6 @@ public enum CloudChannelCryptoError: Error, Equatable, Sendable {
   case openFailed
 }
 
-/// Direction of a frame relative to the channel opener. The app is always the
-/// opener of relay channels.
 public enum CloudChannelDirection: String, Sendable {
   case openerToResponder = "opener-to-responder"
   case responderToOpener = "responder-to-opener"
@@ -171,8 +144,6 @@ public enum CloudChannelDirection: String, Sendable {
   }
 }
 
-/// Symmetric cipher for one channel. Both peers converge on the same key and
-/// use the direction tag to keep their AAD (and nonce) spaces disjoint.
 public struct CloudChannelCipher: Sendable {
   private let key: SymmetricKey
 
@@ -187,9 +158,6 @@ public struct CloudChannelCipher: Sendable {
     self.key = SymmetricKey(data: keyData)
   }
 
-  /// Seals a plaintext into a raw `box` (ciphertext ‖ 16-byte tag — the
-  /// deterministic nonce is never included). The box travels as a binary
-  /// relay envelope payload; no base64 on the wire.
   public func seal(
     _ plaintext: Data,
     channelId: String,
@@ -208,7 +176,6 @@ public struct CloudChannelCipher: Sendable {
     return sealed.ciphertext + sealed.tag
   }
 
-  /// Opens a raw `box`, authenticating (channelId, direction, seq).
   public func open(
     _ box: Data,
     channelId: String,

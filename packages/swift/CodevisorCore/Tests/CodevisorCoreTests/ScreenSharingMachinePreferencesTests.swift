@@ -2,7 +2,6 @@ import Foundation
 import Testing
 @testable import CodevisorCore
 
-/// 851-2340: Dynamic Resolution is per machine and works for cloud machine ids too; off by default (851-2481).
 struct ScreenSharingMachinePreferencesTests {
   @Test func dynamicResolutionIsPerMachineAndOffByDefault() throws {
     let suite = "ScreenSharingMachinePreferencesTests.\(UUID().uuidString)"
@@ -17,7 +16,6 @@ struct ScreenSharingMachinePreferencesTests {
     #expect(ScreenSharingMachinePreferences(defaults: defaults).dynamicResolution(machineId: "cloud:device-1"))
   }
 
-  /// 851-2481: choices saved under the old default (on) are reset to off once; later ones are kept.
   @Test func savedChoicesAreResetOnceForTheNewDefault() throws {
     let suite = "ScreenSharingMachinePreferencesTests.\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))
@@ -33,7 +31,6 @@ struct ScreenSharingMachinePreferencesTests {
     #expect(ScreenSharingMachinePreferences(defaults: defaults).dynamicResolution(machineId: "remote-vps"))
   }
 
-  /// 851-2480: HDR is per machine and off until turned on.
   @Test func hdrIsPerMachineAndOffByDefault() throws {
     let suite = "ScreenSharingMachinePreferencesTests.\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))

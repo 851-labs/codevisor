@@ -3,10 +3,6 @@ import Foundation
 import ScreenSharing
 
 enum ScreenSharingPeerStatistics {
-  /// One native subreport, reduced to what the selection below reads. The
-  /// shipped `RTCStatistics` cannot be constructed outside WebRTC, so the
-  /// selection is expressed over this shape and tests build report inputs
-  /// directly; the native path simply projects each subreport into it.
   struct Entry {
     let id: String
     let type: String

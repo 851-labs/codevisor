@@ -7,24 +7,12 @@ import type { WebSocket } from "ws"
 import { writeJson, type CodevisorServerConfig } from "../server-context.js"
 import { liveCloudDeviceId } from "./cloud.js"
 
-/// The direct-path discovery surface: apps ask (over the E2E relay) where
-/// this machine can be reached on its local networks, probe the candidates,
-/// and open sealed channels straight to /v1/direct when one answers — same
-/// channel protocol, no hub round trip. Requires the standard bearer/loopback
-/// authorization like every data route; the relay path arrives via loopback.
-
 export interface DirectPathInfo {
-  /// This machine's cloud device id — the address inside relay headers, and
-  /// how the app matches the answer to its pinned identity. Null when the
-  /// machine has no cloud registration (then there is nothing to pair with).
   deviceId: string | null
   port: number
-  /// LAN addresses worth probing. Empty when the server only listens on
-  /// loopback (no direct path possible).
   hosts: string[]
 }
 
-/// Non-internal IPv4 addresses; link-local (169.254/16) excluded.
 export const directHosts = (
   bindHost: string,
   interfaces: () => Record<string, { address: string; family: string; internal: boolean }[]>
@@ -67,8 +55,6 @@ export const routeNetDirect = (
   return true
 }
 
-/// Adapts a server-accepted `ws` socket onto the CloudSocket surface the
-/// DirectChannelHost consumes (mirror of cloud-bridge's outbound adapter).
 export const adaptDirectSocket = (socket: WebSocket): CloudSocket => {
   const adapted: CloudSocket = {
     send: (data) => socket.send(data),
@@ -79,8 +65,6 @@ export const adaptDirectSocket = (socket: WebSocket): CloudSocket => {
     onclose: null
   }
   socket.on("message", (data, isBinary) => {
-    // A throw here would escape ws's listener and exit the server (every
-    // agent with it); a handler that fails ends only this connection.
     try {
       if (isBinary) {
         const bytes = Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data as ArrayBuffer)
@@ -93,6 +77,6 @@ export const adaptDirectSocket = (socket: WebSocket): CloudSocket => {
     }
   })
   socket.on("close", (code) => adapted.onclose?.(code))
-  socket.on("error", () => undefined) // close fires afterwards
+  socket.on("error", () => undefined)
   return adapted
 }

@@ -4,8 +4,6 @@ import {
   type WireRelayEnvelope
 } from "@codevisor/api"
 
-/// Admit a binary relay batch before the hub counts or routes it. Size and
-/// hello checks precede decoding; accepted payloads remain views of the input.
 export const admitRelayMessage = (
   message: ArrayBuffer,
   helloDone: boolean

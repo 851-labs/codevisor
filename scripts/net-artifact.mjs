@@ -1,16 +1,3 @@
-// Native pieces of the Codevisor tunnel (docs/plans/codevisor-tunnel.md):
-//
-// - the Node addon (`packages/net/native/<platform>-<arch>/codevisor_net.node`)
-//   built from packages/net with cargo, cached per source stamp;
-// - the pinned `iroh-relay` binary for local development relays, downloaded
-//   from the URL + sha256 in scripts/net-build.lock.json (the same entry the
-//   relay Docker image uses, so dev and production run identical bytes);
-// - the Swift xcframework (`ensure-swift`), see scripts/build-net-swift.sh.
-//
-// Everything is cached under ~/.codevisor-development/artifacts/net and
-// shared across worktrees with the same cross-process lock as Ghostty.
-//
-// Usage: node scripts/net-artifact.mjs <stamp|ensure-node|ensure-relay|ensure-swift|relay-build-args|cargo ARGS…>
 import { spawn } from "node:child_process"
 import { createHash } from "node:crypto"
 import {
@@ -49,8 +36,6 @@ export async function readNetLock(root = repoRoot) {
   return JSON.parse(await readFile(join(root, "scripts", "net-build.lock.json"), "utf8"))
 }
 
-/// Hash of everything that affects the native build: the lock, the cargo
-/// manifests/lockfile, and every Rust source file. Sorted for stability.
 export async function netSourceStamp(root = repoRoot) {
   const hash = createHash("sha256")
   const files = [
@@ -92,17 +77,12 @@ function run(command, args, options = {}) {
   })
 }
 
-/// Where rustup's `cargo`/`rustc` proxies live: rustup's own installer puts them in
-/// ~/.cargo/bin, Homebrew's (keg-only) `rustup` formula in its opt prefix. Anything else on PATH
-/// named cargo may be a standalone toolchain (Homebrew's `rust`) that has none of the targets
-/// rustup installs and, on macOS 27, builds proc-macros the loader rejects.
 export const rustupProxyDirectories = (home = homedir()) => [
   join(home, ".cargo", "bin"),
   "/opt/homebrew/opt/rustup/bin",
   "/usr/local/opt/rustup/bin"
 ]
 
-/// The first directory holding both rustup and its cargo proxy, else undefined.
 export async function findRustup(directories = rustupProxyDirectories()) {
   for (const directory of directories) {
     if ((await exists(join(directory, "rustup"))) && (await exists(join(directory, "cargo")))) {
@@ -112,9 +92,6 @@ export async function findRustup(directories = rustupProxyDirectories()) {
   return undefined
 }
 
-/// The environment every cargo invocation runs in: rustup's proxies first on PATH and the
-/// toolchain pinned in net-build.lock.json selected, so the build never depends on which cargo
-/// happens to be first on PATH or on rustup's default. Installs the pinned toolchain if missing.
 export async function cargoEnv(environment = process.env, directories = rustupProxyDirectories()) {
   const directory = await findRustup(directories)
   if (directory === undefined) {
@@ -135,8 +112,6 @@ export async function cargoEnv(environment = process.env, directories = rustupPr
   return env
 }
 
-/// Builds (or reuses) the Node addon for this host and installs it into
-/// packages/net/native/<target>/. Returns the installed path.
 export async function ensureNodeAddon(environment = process.env) {
   const stamp = await netSourceStamp()
   const target = hostTarget()
@@ -148,9 +123,6 @@ export async function ensureNodeAddon(environment = process.env) {
       console.log(`Building the codevisor-net Node addon (${stamp}, ${target})`)
       let library
       if (process.platform === "linux") {
-        // Linked against an old glibc so the addon loads wherever the bundled Node runs: built
-        // natively on Ubuntu 24.04 it needed glibc 2.33+ and failed on Ubuntu 20.04 and Debian
-        // 11, leaving those servers without the tunnel (tunnel-only apps can't reach them).
         const lock = await readNetLock()
         const triple = `${process.arch === "arm64" ? "aarch64" : "x86_64"}-unknown-linux-gnu`
         const args = ["--release", "--locked", "-p", "codevisor-net-node"]
@@ -181,9 +153,6 @@ export async function ensureNodeAddon(environment = process.env) {
   return installed
 }
 
-/// Builds (or reuses) the Linux Node addon for the dev containers, inside a
-/// pinned Rust container on the same engine (no cross toolchain on the host),
-/// and installs it into packages/net/native/linux-<arch>/.
 export async function ensureLinuxNodeAddon(engine, arch = process.arch, environment = process.env) {
   const stamp = await netSourceStamp()
   const lock = await readNetLock()
@@ -234,7 +203,6 @@ export async function ensureLinuxNodeAddon(engine, arch = process.arch, environm
   return installed
 }
 
-/// Downloads (or reuses) the pinned iroh-relay binary for this host.
 export async function ensureRelayBinary(environment = process.env) {
   const lock = await readNetLock()
   const target = hostTarget()
@@ -261,8 +229,6 @@ export async function ensureRelayBinary(environment = process.env) {
     await rm(staging, { recursive: true, force: true })
     await mkdir(staging, { recursive: true })
     await writeFile(join(staging, "relay.tar.gz"), archive)
-    // The archive stores `./iroh-relay`; GNU tar matches member names
-    // literally (bsdtar on macOS accepts either spelling).
     await run("tar", ["-xzf", "relay.tar.gz", "./iroh-relay"], { cwd: staging })
     await mkdir(dirname(binary), { recursive: true })
     await rename(join(staging, "iroh-relay"), binary)
@@ -271,9 +237,6 @@ export async function ensureRelayBinary(environment = process.env) {
   return binary
 }
 
-/// Builds (or reuses) CodevisorNetFFI.xcframework in the shared cache, links
-/// it into packages/swift/Frameworks/ for SwiftPM's local binaryTarget, and
-/// refreshes the committed uniffi Swift bindings (CI fails if they drift).
 export async function ensureSwiftFramework(environment = process.env) {
   const stamp = await netSourceStamp()
   const cached = join(netArtifactsRoot(environment), stamp, "apple")
@@ -324,7 +287,6 @@ async function main(command) {
       console.log(await ensureSwiftFramework())
       return
     case "cargo":
-      // `net-artifact.mjs cargo ARGS…`: cargo with the pinned toolchain, for scripts like net:test.
       await run("cargo", process.argv.slice(3), { cwd: repoRoot, env: await cargoEnv() })
       return
     case "relay-build-args": {

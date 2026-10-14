@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest"
 
 import { makeStaleWhileRevalidate } from "./project-recommendations.js"
 
-/// A load whose results the test hands out one call at a time.
 const scriptedLoads = () => {
   const pending: Array<PromiseWithResolvers<ReadonlyArray<string>>> = []
   return {
@@ -37,7 +36,6 @@ describe("makeStaleWhileRevalidate", () => {
 
     clock = 20_000
     expect(await get()).toEqual(["alpha"])
-    // A second stale read joins the refresh already running.
     expect(await get()).toEqual(["alpha"])
     expect(loads.calls).toBe(2)
 
@@ -45,7 +43,6 @@ describe("makeStaleWhileRevalidate", () => {
     loads.resolve(1, ["beta"])
     await refreshTimestampRead.promise
     expect(await get()).toEqual(["beta"])
-    // A subsequent fresh read must not start another refresh.
     expect(await get()).toEqual(["beta"])
     expect(loads.calls).toBe(2)
   })

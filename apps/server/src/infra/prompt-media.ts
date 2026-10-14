@@ -3,18 +3,8 @@ import { readFile } from "node:fs/promises"
 import { INLINE_IMAGE_MEDIA_TYPES, type PromptAttachmentInput } from "@codevisor/agent-runtime"
 import sharp from "sharp"
 
-/// Sizes attachments for inline embedding, following OpenCode's
-/// `Image.normalize`: providers cap inline images (Anthropic: ~5 MB, long
-/// edge ~2000px) and whole requests (32 MB), so sending originals fails at
-/// the API once attachments can be hundreds of megabytes.
-
-/// Base64 budget for one inline image.
 export const INLINE_IMAGE_MAX_BASE64_BYTES = 5 * 1024 * 1024
-/// Longest allowed edge for an inline image, in either direction.
 export const INLINE_IMAGE_MAX_DIMENSION = 2000
-/// Largest PDF embedded as a document block. Base64 of this stays under the
-/// 32 MB Anthropic request cap (and the shared-account gateway's body cap);
-/// bigger PDFs are referenced by path only.
 export const INLINE_PDF_MAX_BYTES = 20 * 1024 * 1024
 
 const JPEG_QUALITIES = [80, 85, 70, 55, 40]
@@ -24,8 +14,6 @@ const base64Length = (bytes: number): number => Math.ceil(bytes / 3) * 4
 
 type InlineSizing = Pick<PromptAttachmentInput, "inline" | "inlineOmitted">
 
-/// Candidate sizes: first the largest that fits the dimension cap, then 0.75×
-/// steps, de-duplicated once they bottom out at 1px.
 const candidateSizes = (
   width: number,
   height: number
@@ -56,7 +44,6 @@ const normalizeImage = async (
 ): Promise<InlineSizing> => {
   try {
     const metadata = await sharp(path).metadata()
-    // EXIF orientations 5–8 swap the displayed width and height.
     const rotated = (metadata.orientation ?? 1) >= 5
     const width = rotated ? metadata.height : metadata.width
     const height = rotated ? metadata.width : metadata.height
@@ -87,14 +74,10 @@ const normalizeImage = async (
         }
       }
     }
-  } catch {
-    // An image the decoder rejects would be rejected by the provider too.
-  }
+  } catch {}
   return { inlineOmitted: true }
 }
 
-/// Decides what a provider may embed for one materialized attachment. Only
-/// embeddable kinds are ever read into memory; everything else is path-only.
 export const inlineSizing = async (attachment: {
   readonly path: string
   readonly kind: "image" | "file"

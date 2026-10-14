@@ -13,10 +13,6 @@ export const discoverCapabilities = async (
   url: URL
 ): Promise<{ readonly harnesses: ReadonlyArray<HarnessCapability> }> => {
   const cwd = existingDirectory(url.searchParams.get("cwd")) ?? tmpdir()
-  // Existing chats already know their harness. Filtering before auth
-  // decoration and inspection is important: both stages can start real CLI
-  // processes, so inspecting the whole catalog would put unrelated agents on
-  // the resumed chat's critical path.
   const requestedHarnessId = url.searchParams.get("harnessId")?.trim() || undefined
   const requestedConfigSelections = capabilityConfigSelections(url)
   const harnesses = await discoverHarnesses(services, false, requestedHarnessId)
@@ -49,10 +45,6 @@ const capabilityConfigSelections = (url: URL): Record<string, string> => {
   )
 }
 
-// Fleet-enabled harnesses blocked on sign-in ride along as capability
-// entries with no options and NO inspection (inspection spawns the CLI).
-// The composer renders them as "sign in required" rows; older clients
-// already filter on harness.enabled and never see them.
 const pendingSignInCapabilities = (
   harnesses: ReadonlyArray<Harness>
 ): ReadonlyArray<HarnessCapability> => {
@@ -83,8 +75,6 @@ const capabilityFromMetadata = (
 }
 
 const failedHarnessCapability = (harness: Harness, cause: unknown): HarnessCapability => {
-  // The picker hides a harness with no model option, so a swallowed
-  // failure here looks exactly like "not enabled" to the user. Say why.
   console.error(
     `[harnesses] inspecting ${harness.id} failed; it will be missing from the model picker: ${conflictFrom(cause).message}`
   )
@@ -121,9 +111,6 @@ const discoverHarnessesWithAuthMode = async (
   services: CodevisorServerServices,
   authMode: "passive" | "force" | "stored",
   harnessId?: string,
-  /// Lifecycle decoration (update knowledge, install methods) rides only on
-  /// requests that render it — Settings, rescans, update checks. The plain
-  /// list stays as light as possible for the composer's harness picker.
   includeLifecycle = false
 ): Promise<ReadonlyArray<Harness>> => {
   const discovered = await decorateHarnessSettings(
@@ -156,9 +143,6 @@ export const discoverHarnesses = (
     includeLifecycle
   )
 
-/// Readiness is derived in response to auth events, so it must only read the
-/// state that caused the event. Starting another passive probe here turns one
-/// probe failure into a feedback loop.
 export const discoverHarnessesFromStoredAuthState = (
   services: CodevisorServerServices
 ): Promise<ReadonlyArray<Harness>> =>

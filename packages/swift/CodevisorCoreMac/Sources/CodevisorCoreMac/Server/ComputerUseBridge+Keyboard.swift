@@ -125,7 +125,6 @@ extension ComputerUseBridge {
     } else {
       event.postToPid(pid)
     }
-    // Give the target's event queue a chance to consume each transition.
     Thread.sleep(forTimeInterval: 0.01)
   }
 }

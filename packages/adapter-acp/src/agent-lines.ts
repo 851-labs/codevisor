@@ -1,6 +1,3 @@
-/// Rewrites each newline-delimited message an agent writes before the ACP SDK
-/// reads it, for agent extensions its schema would reject. Lines are
-/// rewritten whole, so a message split across chunks is seen once complete.
 export const rewriteAgentLines = (
   input: ReadableStream<Uint8Array>,
   rewrite: (line: string) => string

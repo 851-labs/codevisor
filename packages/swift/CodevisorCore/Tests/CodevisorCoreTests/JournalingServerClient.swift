@@ -4,14 +4,6 @@ import Foundation
 
 @testable import CodevisorCore
 
-/// Puts an event journal in front of a `FakeServerClient`: every write it
-/// accepts advances the cursor, and snapshots report the current cursor --
-/// what a real server does. The outbox relies on this to keep an accepted
-/// change on screen until this device's cache has caught up to it; a fake
-/// that always reports cursor 0 would retire it the moment it is accepted.
-///
-/// The journal starts well above the cursors tests install by hand, so a
-/// snapshot fetched through it is never mistaken for an older one.
 final class JournalingServerClient: CodevisorServerClienting, @unchecked Sendable {
   let base: FakeServerClient
   private let lock = NSLock()
@@ -94,8 +86,6 @@ final class JournalingServerClient: CodevisorServerClienting, @unchecked Sendabl
 
 @MainActor private var journals: [ObjectIdentifier: JournalingServerClient] = [:]
 
-/// The journal in front of a `FakeServerClient` (one per fake, so writes
-/// and snapshots share a cursor); any other client is used as is.
 @MainActor
 func journaled(_ client: any CodevisorServerClienting) -> any CodevisorServerClienting {
   guard let fake = client as? FakeServerClient else { return client }

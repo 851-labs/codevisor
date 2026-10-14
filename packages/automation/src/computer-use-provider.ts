@@ -60,10 +60,7 @@ const jsonLineClient = (
         clearTimeout(request.timer)
         if (typeof message.error === "string") request.reject(new Error(message.error))
         else request.resolve(message.result as CallToolResult)
-      } catch {
-        // A malformed helper response is ignored; the request remains pending
-        // until the transport closes and reports a useful failure.
-      }
+      } catch {}
     }
   }, failAll)
   return {
@@ -97,9 +94,6 @@ const stablePathHash = (value: string): string => {
   return hash.toString(16)
 }
 
-// Keep this in sync with ComputerUseBridge.socketPath in the native app.
-// Foundation and Node can resolve different temporary directories, and a
-// worktree's TMPDIR can exceed macOS's 103-byte Unix socket path limit.
 export const macComputerUseSocketPath = (
   dataDir: string,
   userId = process.getuid?.() ?? 0
@@ -124,8 +118,6 @@ const macBridgeConfiguration = (
   }
 }
 
-/// Whether the native Codevisor app is running here and listening for its
-/// helper requests (screen sharing, simulators, Computer Use).
 export const macNativeHostAvailable = (dataDir: string): boolean =>
   macBridgeConfiguration(dataDir) !== undefined
 
@@ -161,8 +153,6 @@ const connectMacHelper = async (dataDir: string): Promise<HelperClient> => {
   }
 }
 
-// A dedicated native service message, not an agent tool invocation. The server
-// supplies the validated request and authenticates this private socket.
 export const requestMacScreenSharing = async (
   dataDir: string,
   request: Readonly<Record<string, unknown>>
@@ -205,9 +195,6 @@ const connectLinuxHelper = async (): Promise<HelperClient> => {
     stdio: ["pipe", "pipe", "pipe"]
   })
   let stderr = ""
-  // A request written as the helper dies fails with EPIPE on stdin. Unheard,
-  // that stream error exits the server; the helper's exit already fails
-  // every pending request with a useful message.
   processHandle.stdin.on("error", () => undefined)
   processHandle.stderr.on("data", (chunk: Buffer) => {
     stderr = `${stderr}${chunk.toString("utf8")}`.slice(-8_000)
@@ -234,17 +221,11 @@ export const makeComputerUseProvider = (
   readonly ensureSetup: () => Promise<void>
   readonly status: () => Readonly<Record<string, unknown>>
 } => {
-  // On macOS each session gets its own bridge connection: the bridge serves
-  // every connection concurrently but strictly serializes requests within one,
-  // so a shared socket would force simultaneous agents to take turns. The
-  // Linux helper is a spawned subprocess, so it stays shared there.
   const perSessionConnections = process.platform === "darwin"
   const helpers = new Map<string, Promise<HelperClient>>()
   const repls = makeComputerUseRepls()
   const recordingArtifacts = makeRecordingArtifacts()
   const helperKey = (sessionId: string): string => (perSessionConnections ? sessionId : "shared")
-  // Kept once available, re-checked until then: installing the accessibility
-  // packages the status asks for enables Computer Use without a restart.
   let linuxStatus: { readonly available: boolean; readonly detail?: string } | undefined
   const platformStatus = (): { readonly available: boolean; readonly detail?: string } => {
     if (process.platform === "darwin") {
@@ -263,8 +244,6 @@ export const makeComputerUseProvider = (
     const existing = helpers.get(key)
     if (existing !== undefined) {
       const client = await existing
-      // A dead transport (native app restarted, helper exited) would
-      // otherwise stay memoized and fail every future request.
       if (!client.isClosed()) return client
       if (helpers.get(key) === existing) helpers.delete(key)
       return connect(sessionId)
@@ -299,8 +278,6 @@ export const makeComputerUseProvider = (
       try {
         await client.request({ type: "tool", sessionId: "setup", tool: "list_apps", arguments: {} })
       } finally {
-        // The probe connection has no session behind it; keeping it open
-        // would hold a bridge serving slot for nothing.
         if (perSessionConnections) await release("setup")
       }
     },
@@ -368,8 +345,6 @@ export const makeComputerUseProvider = (
     },
     finishTurn: async (sessionId) => {
       if (!perSessionConnections) return
-      // Reuse an existing bridge only. Finishing a turn must not start a
-      // capture, reset REPL bindings, or detach a retained live preview.
       const active = await helpers.get(helperKey(sessionId))?.catch(() => undefined)
       await active?.request({ type: "finishTurn", sessionId }).catch(() => undefined)
     },

@@ -306,7 +306,6 @@ describe("native Screen Sharing signaling", () => {
     })
   })
 
-  // 851-2391: a stuck capture on the host was reported as "open or update Codevisor".
   it("tells a host that timed out or stopped apart from one that can't be reached", async () => {
     const helper = vi.fn(async (): Promise<unknown> => ({ version: 2 }))
     const { post } = await fixture(helper)
@@ -370,14 +369,12 @@ describe("native Screen Sharing signaling", () => {
     }
     expect(helper).toHaveBeenCalledTimes(5)
 
-    // Another chat's agent, a display pane, or a malformed target are refused.
     expect((await post({ ...target, displayId: `computer-use:${other.id}` })).status).toBe(404)
     expect((await post({ ...request, displayId: target.displayId })).status).toBe(404)
     for (const displayId of ["computer-use:", "computer-use:invalid", "window:1"]) {
       expect((await post({ ...target, displayId })).status).toBe(400)
       expect((await post({ ...target, operation: "heartbeat", displayId })).status).toBe(400)
     }
-    // A chat pane cannot address a display.
     expect((await post({ ...target, displayId: randomUUID() })).status).toBe(404)
     expect(helper).toHaveBeenCalledTimes(5)
   })

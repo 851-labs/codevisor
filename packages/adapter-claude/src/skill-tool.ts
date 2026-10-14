@@ -3,22 +3,13 @@ import type { CodevisorSkillRead } from "@codevisor/api"
 import { isRecord } from "./internal.js"
 import type { ClaudeSession } from "./session.js"
 
-/// Claude Code's own `Skill` tool, presented the way a Codevisor skill read
-/// is: the row is annotated `_meta.codevisorSkill`, and its body is the
-/// skill's instructions. Claude Code answers the call with only
-/// "Launching skill: name"; the instructions follow in a synthetic user
-/// message ("Base directory for this skill: …", then SKILL.md), which
-/// carries no tool id, so it is matched to the call by the skill's name.
-
 export const SKILL_TOOL = "Skill"
 
-/// What Claude Code prefixes a loaded skill's instructions with.
 const SKILL_TEXT_PREFIX = "Base directory for this skill:"
 
 export interface ClaudeSkillCall {
   readonly name: string
   readonly parentId: string | undefined
-  /// The call returned, so its instructions are expected next.
   resulted: boolean
 }
 
@@ -26,8 +17,6 @@ const skillMeta = (name: string, ok: boolean): { readonly codevisorSkill: Codevi
   codevisorSkill: { name, ok }
 })
 
-/// The `_meta` a `Skill` call's input update carries, and records the call
-/// so its result and instructions can be attached to it.
 export const skillCallMeta = (
   session: ClaudeSession,
   toolUseId: string,
@@ -40,8 +29,6 @@ export const skillCallMeta = (
   return { _meta: skillMeta(name, true) }
 }
 
-/// The `_meta` a `Skill` call's result carries. A failed call expects no
-/// instructions.
 export const skillResultMeta = (
   session: ClaudeSession,
   toolUseId: string,
@@ -54,8 +41,6 @@ export const skillResultMeta = (
   return { _meta: skillMeta(call.name, !failed) }
 }
 
-/// The skill a loaded-instructions message belongs to: the returned call
-/// whose name matches the skill's folder, else the oldest one waiting.
 const awaitingCall = (
   session: ClaudeSession,
   folder: string
@@ -67,9 +52,6 @@ const awaitingCall = (
   )
 }
 
-/// Attaches a synthetic message's skill instructions to the `Skill` call
-/// that loaded them. Returns whether the message was a skill's
-/// instructions, which then need no other handling.
 export const attachSkillText = (
   session: ClaudeSession,
   content: ReadonlyArray<unknown>

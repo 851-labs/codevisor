@@ -19,8 +19,6 @@ const peerAware = { features: [MACHINE_PEERS_FEATURE] }
 
 const open = (channelId: string) => ({ t: "open", channelId, seq: 0, ephemeralKey: "key" }) as const
 
-/// Skips unrelated presence noise (other machines connecting) up to the
-/// first control frame of the wanted kind.
 const nextOfKind = async <Kind extends HubToMachine["t"]>(
   reader: { next: () => Promise<HubToMachine> },
   kind: Kind
@@ -40,9 +38,7 @@ describe("machine peers", () => {
     const observer = await connectMachine(token, "laptop", undefined, peerAware)
     const listed = observer.welcome.machines?.find((m) => m.deviceId === existing.deviceId)
     expect(listed).toMatchObject({ name: "studio", serverId: "machine-studio", online: true })
-    // It never advertised machine peers, so it is not a channel target.
     expect(listed?.machinePeers).toBeUndefined()
-    // Machines that never advertised the feature keep the old welcome shape.
     expect(existing.welcome.machines).toBeUndefined()
 
     await disconnect(token, existing.socket, "bye")
@@ -70,8 +66,6 @@ describe("machine peers", () => {
     )
     const opened = await target.reader.nextEnvelope()
     const header = opened.header as HubToMachineRelayHeader
-    // The target learns the opener is a machine (it gates channel types on
-    // that) and gets its key + device id to agree keys and TOFU-pin.
     expect(header).toMatchObject({
       peerKind: "machine",
       peerDeviceId: opener.deviceId,
@@ -102,8 +96,6 @@ describe("machine peers", () => {
     const opener = await connectMachine(token, "opener", undefined, peerAware)
     const legacy = await connectMachine(token, "legacy")
 
-    // Another account's machine is not in this account's registry: to the
-    // hub it is indistinguishable from an id that never existed.
     sendRelay(opener.socket, { machineId: "other-account-machine", frame: open("c-1") })
     expect(await nextOfKind(opener.reader, "error")).toMatchObject({
       code: "unknown-machine",
@@ -116,8 +108,6 @@ describe("machine peers", () => {
       channelId: "c-2"
     })
 
-    // A legacy machine would not restrict machine openers to the gateway
-    // channel, so the hub never routes machine-opened channels to it.
     sendRelay(opener.socket, { machineId: legacy.deviceId, frame: open("c-4") })
     expect(await nextOfKind(opener.reader, "error")).toMatchObject({
       code: "unknown-machine",
@@ -134,7 +124,6 @@ describe("machine peers", () => {
     const opener = await connectMachine(token, "opener", undefined, peerAware)
     await disconnect(token, opener.socket, "quit")
     await expireResumeGrace(token)
-    // Channels the opener held on the target die with it.
     expect(await nextOfKind(target.reader, "peer-gone")).toEqual({
       t: "peer-gone",
       peerId: opener.welcome.connectionId

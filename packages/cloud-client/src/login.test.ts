@@ -218,7 +218,6 @@ describe("machine invites", () => {
     const credentials = await redeemMachineInvite(redeemed.fetch, invite.code, "hetzner-1")
     expect(redeemed.calls[0]?.input).toBe("http://localhost:8787/api/machine/invites/redeem")
     const sent = JSON.parse(redeemed.calls[0]?.init?.body as string) as Record<string, string>
-    // The secret key stays here; the cloud only learns the public half.
     expect(sent).toEqual({
       token,
       name: "hetzner-1",

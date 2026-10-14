@@ -19,7 +19,6 @@ describe("libghostty-vt terminal state", () => {
       source.write(`\u001b[3${line % 8}mline ${line}\u001b[0m\r\n`)
     }
     source.write("prompt$ \u001b[?25l")
-    // A renderer that already shows other output is reset first.
     const replica = createVtTerminal({ cols: 40, rows: 5 })
     replica.write("stale output\r\nthat must disappear")
     replica.write(source.reconstruct())
@@ -37,7 +36,6 @@ describe("libghostty-vt terminal state", () => {
     source.write("a\u001b[3")
     const replica = createVtTerminal({ cols: 20, rows: 3 })
     replica.write(source.reconstruct())
-    // Live output resumes mid-sequence on both.
     source.write("1mb")
     replica.write("1mb")
     expect(replica.text()).toBe("ab")
@@ -55,7 +53,6 @@ describe("libghostty-vt terminal state", () => {
     })
     terminal.write("ab\u001b[6n")
     expect(replies).toEqual(["\u001b[1;3R"])
-    // A terminal without a reply handler stays silent.
     const silent = createVtTerminal({ cols: 20, rows: 3 })
     silent.write("\u001b[6n")
     expect(replies).toHaveLength(1)
@@ -77,11 +74,9 @@ describe("libghostty-vt terminal state", () => {
     expect(terminal.title()).toBe("")
     terminal.write("\u001b]2;hello\u0007")
     expect(terminal.title()).toBe("hello")
-    // OSC 0 sets it too, ST-terminated and split across writes.
     terminal.write("\u001b]0;✳ Claude")
     terminal.write(" Code\u001b\\")
     expect(terminal.title()).toBe("✳ Claude Code")
-    // Reading the screen or resizing leaves it in place.
     terminal.reconstruct()
     terminal.resize(30, 6)
     expect(terminal.title()).toBe("✳ Claude Code")
@@ -98,8 +93,6 @@ describe("libghostty-vt terminal state", () => {
   })
 
   it("keeps working once its heap passes 2 GiB, and reports exhaustion", () => {
-    // Grab the raw exports of the instance loadGhosttyVt creates, to reserve
-    // heap directly; the reservation is untouched, so it stays virtual.
     let heap: { ghostty_wasm_alloc: (len: number) => number } | undefined
     const Instance = WebAssembly.Instance
     vi.stubGlobal(
@@ -117,7 +110,6 @@ describe("libghostty-vt terminal state", () => {
     try {
       loadGhosttyVt()
       const chunk = 64 * 1024 * 1024
-      // Raw wasm32 pointers past 2 GiB come back negative.
       let ptr: number
       do ptr = heap!.ghostty_wasm_alloc(chunk)
       while (ptr > 0)
@@ -136,9 +128,7 @@ describe("libghostty-vt terminal state", () => {
       expect(decode(terminal.reconstruct())).toContain("ab")
 
       for (let size = chunk; size >= 1; size = Math.floor(size / 2)) {
-        while (heap!.ghostty_wasm_alloc(size) !== 0) {
-          // Fill every remaining slot of this size.
-        }
+        while (heap!.ghostty_wasm_alloc(size) !== 0) {}
       }
       expect(() => terminal.write("more")).toThrow(/out of memory/)
       expect(() => createVtTerminal({ cols: 20, rows: 3 })).toThrow(/out of memory/)

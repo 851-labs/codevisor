@@ -1,8 +1,6 @@
 import Autocomplete
 import SwiftUI
 
-/// `Style` swaps the highlight (system menu material vs. a flat fill) and the
-/// scroller. A flat fill is what an inline popup on a glass surface wants.
 struct CustomStyleStory: View {
   enum Highlight: String, CaseIterable, Identifiable {
     case menuSelection = "Menu selection"

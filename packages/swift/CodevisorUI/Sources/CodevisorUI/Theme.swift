@@ -5,7 +5,6 @@ import SwiftUI
 #endif
 
 extension Color {
-  /// Bridges a theming-package RGBA into a SwiftUI color.
   public init(rgba: RGBA) {
     self.init(.sRGB, red: rgba.r / 255, green: rgba.g / 255, blue: rgba.b / 255, opacity: rgba.a)
   }
@@ -13,8 +12,6 @@ extension Color {
 
 #if canImport(AppKit)
   extension NSColor {
-    /// Bridges a theming-package RGBA into an AppKit color, in the same sRGB
-    /// space as `Color(rgba:)` so native and SwiftUI fills match.
     public convenience init(rgba: RGBA) {
       self.init(
         srgbRed: rgba.r / 255, green: rgba.g / 255, blue: rgba.b / 255, alpha: rgba.a)
@@ -22,16 +19,7 @@ extension Color {
   }
 #endif
 
-/// The semantic color tokens every view reads via `@Environment(\.theme)`.
-///
-/// With no palette (the "System Light"/"System Dark" themes) every token
-/// resolves to the dynamic Apple color the app used before theming existed —
-/// including material vibrancy — so the system themes render pixel-identical
-/// to the unthemed app, and unmigrated views/previews (which get the default
-/// environment value) always look right. With a derived palette, tokens are
-/// concrete theme colors.
 public struct Theme: Equatable, Sendable {
-  /// The derived palette, or nil to render the stock Apple look.
   public let palette: DerivedPalette?
 
   public init(palette: DerivedPalette?) {
@@ -42,49 +30,33 @@ public struct Theme: Equatable, Sendable {
 
   public var isSystem: Bool { palette == nil }
 
-  // MARK: - Surfaces
-
-  /// Main content/window surface (editor.background).
   public var windowBackground: Color {
     palette.map { Color(rgba: $0.windowBackground) } ?? Color.themeWindowBackground
   }
 
-  /// Full-page content surface. System themes reveal the native window
-  /// backdrop; custom themes paint their explicit editor background.
   public var contentBackground: Color {
     isSystem ? .clear : windowBackground
   }
 
-  /// The sidebar surface. System keeps `.regularMaterial` vibrancy; themed
-  /// paints the opaque sidebar color (matching the Pierre/web behavior).
   public var sidebarBackground: AnyShapeStyle {
     palette.map { AnyShapeStyle(Color(rgba: $0.sidebarBackground)) }
       ?? AnyShapeStyle(.regularMaterial)
   }
 
-  /// Inline card/panel fill (tool calls, plans, diffs).
   public var cardBackground: AnyShapeStyle {
     AnyShapeStyle(cardBackgroundColor)
   }
 
-  /// `cardBackground` as a concrete color. Transcript rows are drawn by two
-  /// renderers (SwiftUI while streaming, AppKit once settled), and both must
-  /// paint the plan card from this one value or the card shows a seam where
-  /// the renderers meet.
   public var cardBackgroundColor: Color {
     palette.map { Color(rgba: $0.cardBackground) } ?? Color.themeCardBackground
   }
 
   #if canImport(AppKit)
-    /// `cardBackgroundColor` for AppKit drawing. Stays dynamic on the system
-    /// themes so native rows follow light/dark switches like SwiftUI rows.
     public var cardBackgroundNSColor: NSColor {
       palette.map { NSColor(rgba: $0.cardBackground) } ?? .themeCardBackground
     }
   #endif
 
-  /// Quiet card fill for suggestion rows and similar (system: a whisper of
-  /// secondary).
   public var cardQuietBackground: Color {
     palette.map { Color(rgba: $0.cardBackground) } ?? Color.secondary.opacity(0.08)
   }
@@ -93,72 +65,41 @@ public struct Theme: Equatable, Sendable {
     palette.map { Color(rgba: $0.cardHoverBackground) } ?? Color.secondary.opacity(0.12)
   }
 
-  /// Row fill for a grouped `Form` under a custom theme, for
-  /// `.listRowBackground(...)`. `nil` in system mode is load-bearing:
-  /// `listRowBackground(nil)` leaves the native grouped-row styling
-  /// untouched, so System themes stay pixel-identical. Pairs with
-  /// `.scrollContentBackground(theme.isSystem ? .automatic : .hidden)`,
-  /// which strips the native form backdrop so themed rows read against the
-  /// themed sheet surface.
   public var formRowBackground: Color? {
     isSystem ? nil : cardQuietBackground
   }
 
-  /// The composer/input surface (controlBackgroundColor role).
   public var composerBackground: Color {
     palette.map { Color(rgba: $0.composerBackground) }
       ?? Color.themeControlBackground
   }
 
-  /// The terminal panel surface behind the terminal view. System theme:
-  /// CLEAR — the Ghostty surface runs near-zero background opacity and
-  /// composites onto the window's live backdrop (wallpaper tinting and
-  /// all), so nothing may paint between the surface and the window.
-  /// Custom palettes keep their own opaque terminal surface.
   public var terminalBackground: Color {
     palette.map { Color(rgba: $0.terminal.background) } ?? .clear
   }
 
-  /// The shared pane content surface. Today every pane is a terminal, so it
-  /// aliases the terminal surface; as more pane types arrive (chat, diffs,
-  /// extensions) they adopt this token so a selected pane tab — filled with
-  /// exactly this color — fuses with whatever pane it opens into.
   public var paneBackground: Color { terminalBackground }
 
-  /// The pane-group header (tab strip) surface: the content surface nudged
-  /// toward the foreground so the selected tab reads as a cutout into the
-  /// pane below.
   public var paneHeaderBackground: Color {
     palette.map { Color(rgba: $0.paneHeaderBackground) }
       ?? Color.themeUnderPageBackground
   }
 
-  /// Popover/sheet surface when themed; system popovers keep their material.
   public var popoverBackground: Color {
     palette.map { Color(rgba: $0.popoverBackground) } ?? Color.themeWindowBackground
   }
 
-  // MARK: - Glass (see ThemedSurfaceModifier.swift)
-
-  /// Tint of themed chrome glass over material: strong enough that the theme
-  /// clearly reads, thin enough that the backdrop (vibrancy, desktop
-  /// tinting) survives. Light themes need more ink to not look washed out.
   public var chromeTintAlpha: Double {
     (palette?.isDark ?? true) ? 0.65 : 0.75
   }
 
-  /// The sidebar palette color, for glass tinting; nil when system.
   public var sidebarTint: Color? { palette.map { Color(rgba: $0.sidebarBackground) } }
 
-  /// The popover palette color, for glass tinting; nil when system.
   public var popoverTint: Color? { palette.map { Color(rgba: $0.popoverBackground) } }
 
-  /// The user message bubble.
   public var bubbleBackground: Color {
     palette.map { Color(rgba: $0.bubbleBackground) } ?? Color.primary.opacity(0.08)
   }
-
-  // MARK: - Text
 
   public var textPrimary: Color {
     palette.map { Color(rgba: $0.textPrimary) } ?? Color.primary
@@ -172,9 +113,6 @@ public struct Theme: Equatable, Sendable {
     palette.map { Color(rgba: $0.textTertiary) } ?? Color.themeTertiaryLabel
   }
 
-  // MARK: - Interaction
-
-  /// Sidebar row hover — quieter than selection so the active row reads.
   public var rowHoverBackground: Color {
     palette.map { Color(rgba: $0.rowHoverBackground) } ?? Color.secondary.opacity(0.12)
   }
@@ -187,8 +125,6 @@ public struct Theme: Equatable, Sendable {
     palette.map { Color(rgba: $0.accent) } ?? Color.accentColor
   }
 
-  // MARK: - Borders
-
   public var border: Color {
     palette.map { Color(rgba: $0.border) } ?? Color.themeSeparator
   }
@@ -196,8 +132,6 @@ public struct Theme: Equatable, Sendable {
   public var separator: Color {
     palette.map { Color(rgba: $0.separator) } ?? Color.themeSeparator
   }
-
-  // MARK: - Status + diff
 
   public var statusOK: Color { palette.map { Color(rgba: $0.statusOK) } ?? .green }
   public var statusWarn: Color { palette.map { Color(rgba: $0.statusWarn) } ?? .orange }
@@ -212,15 +146,11 @@ public struct Theme: Equatable, Sendable {
     palette.map { Color(rgba: $0.diffRemovedBg) } ?? Color.red.opacity(0.12)
   }
 
-  /// The surface code renders on (editor.background): the theme's token
-  /// colors are designed against exactly this color, so diff/code bodies
-  /// paint it behind highlighted text. System themes keep the card fill.
   public var codeBackground: AnyShapeStyle {
     palette.map { AnyShapeStyle(Color(rgba: $0.windowBackground)) }
       ?? AnyShapeStyle(.quaternary.opacity(0.4))
   }
 
-  /// Diff gutter line numbers (pierre's fg-number token).
   public var diffLineNumberFg: Color {
     palette.map { Color(rgba: $0.diffLineNumberFg) } ?? Color.themeTertiaryLabel
   }
@@ -237,9 +167,6 @@ extension EnvironmentValues {
   }
 }
 
-/// System-role fallback colors for the System themes. AppKit and UIKit expose
-/// different dynamic color sets; each platform picks the closest match so the
-/// system themes render native on both.
 extension Color {
   static var themeWindowBackground: Color {
     #if canImport(AppKit)
@@ -273,9 +200,6 @@ extension Color {
     #endif
   }
 
-  /// The System-theme card fill: the quaternary label color at 40% of its
-  /// own alpha (`.quaternary.opacity(0.4)`). AppKit builds it from the same
-  /// dynamic color so native and SwiftUI rows are indistinguishable.
   static var themeCardBackground: Color {
     #if canImport(AppKit)
       Color(nsColor: .themeCardBackground)
@@ -294,20 +218,11 @@ extension Color {
 }
 
 extension Theme {
-  /// Fraction of the quaternary label alpha used for system-theme card fills.
   static let systemCardFillOpacity: CGFloat = 0.4
 }
 
 #if canImport(AppKit)
   extension NSColor {
-    /// See `Color.themeCardBackground`.
-    ///
-    /// Resolved inside a dynamic provider on purpose: `withAlphaComponent`
-    /// replaces the alpha rather than scaling it, and calling it on the
-    /// dynamic `quaternaryLabelColor` freezes the color to whichever
-    /// appearance is current at that moment (a dark-built fill is white on a
-    /// light window). The provider re-derives the fill per appearance, so a
-    /// native row built in dark mode still paints correctly after a switch.
     static var themeCardBackground: NSColor {
       NSColor(name: nil) { _ in
         let base = NSColor.quaternaryLabelColor.usingColorSpace(.sRGB) ?? .quaternaryLabelColor

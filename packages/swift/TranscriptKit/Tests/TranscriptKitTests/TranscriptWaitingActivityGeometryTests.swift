@@ -43,9 +43,6 @@ struct TranscriptWaitingActivityGeometryTests {
     let historyKey = rows[0].layoutKey
     let promptKey = rows[1].layoutKey
 
-    // Cover both a deferred precise projection at flight completion and an
-    // acknowledgment whose aggregate bridge arrives after the flight. The
-    // bridge may itself be replaced before a native measurement callback.
     let replacements = throughAggregate ? [activity(server, aggregate: true), serverRow] : [serverRow]
     for replacement in replacements {
       var nextRows = rows
@@ -60,8 +57,6 @@ struct TranscriptWaitingActivityGeometryTests {
       rows = nextRows
     }
 
-    // Committing the replacement's own measurement must not trigger the
-    // second scroll correction seen in the recording.
     let heightChanged = ledger.commit(15, for: serverRow.layoutKey)
     #expect(!heightChanged)
   }
@@ -122,7 +117,6 @@ struct TranscriptWaitingActivityGeometryTests {
     TranscriptRowSet.preserveWaitingActivityHeight(from: oldRows, to: newRows, ledger: &ledger)
     #expect(ledger[new.layoutKey] == nil)
 
-    // A width/typography invalidation makes the old height provisional.
     ledger.setProvisional(15, for: old.layoutKey)
     TranscriptRowSet.preserveWaitingActivityHeight(from: oldRows, to: newRows, ledger: &ledger)
     #expect(ledger[new.layoutKey] == nil)

@@ -3,10 +3,6 @@ import Foundation
 import Testing
 @testable import StreamMarkdown
 
-/// Streams a real assistant answer (two paragraphs then a bulleted list with
-/// inline code) token by token through the same parse → render → reconcile
-/// pipeline the transcript uses, and asserts that a word which has become
-/// visible is never scheduled to fade in again.
 @MainActor
 @Suite("Streaming list reveal regression")
 struct StreamingListRevealRegressionTests {
@@ -21,8 +17,6 @@ struct StreamingListRevealRegressionTests {
     - `packages/*` — shared TypeScript and Swift libraries for agent adapters, APIs, databases, encryption, synchronization, plugins, terminals, worktrees, and UI.
     """
 
-  /// Token-ish slices: a few characters at a time, with list markers landing
-  /// on their own so the "- " → empty item → text sequence is exercised.
   private static func slices(of text: String) -> [String] {
     var result: [String] = []
     var current = ""
@@ -73,9 +67,6 @@ struct StreamingListRevealRegressionTests {
         ),
         now: now
       )
-      // Anything whose fade already ended (or that carries no fade) is
-      // visible. Record it by position; a later pass must not attach a
-      // fade with a future start to the same position.
       let string = prepared.text.string as NSString
       for segment in StreamingWordSegmenter.segments(in: prepared.text.string) {
         let fade =
@@ -92,8 +83,6 @@ struct StreamingListRevealRegressionTests {
           )
         }
       }
-      // Let every scheduled fade finish before the next token so each
-      // pass starts from a fully visible surface.
       now += 5
       if failures.count > 3 { break }
     }

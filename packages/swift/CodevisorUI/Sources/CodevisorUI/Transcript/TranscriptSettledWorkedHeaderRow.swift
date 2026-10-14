@@ -95,10 +95,6 @@ public typealias TranscriptWorkedItemContent<Content: View> = (
   Bool
 ) -> Content
 
-/// Active worked rows live in independent native hosts. Observe the model
-/// itself here: SessionController's forwarding accessors only track its stable
-/// model reference, so they do not invalidate an already-mounted host when a
-/// streamed tool-call snapshot changes in place.
 private struct TranscriptObservedActiveWorkedHeaderRow: View {
   @Bindable var model: SessionModel
   let header: TranscriptActiveWorkedSectionHeader
@@ -141,9 +137,6 @@ private struct TranscriptObservedActiveWorkedItemRow<Content: View>: View {
   }
 }
 
-/// Mirrors `TranscriptActiveItemResolver` for identity-only worked rows. A
-/// projection can briefly outlive the active slot as a turn settles, or keep
-/// the locally-created id while the provider adopts a canonical id.
 @MainActor
 private func resolvedWorkedTurn(
   model: SessionModel,

@@ -17,7 +17,7 @@ describe("hub metrics", () => {
     const { lines, metrics } = capture()
     metrics.hello("app", false, false)
     metrics.hello("machine", true, true)
-    metrics.hello("app", false, true) // declined resume
+    metrics.hello("app", false, true)
     expect(lines).toEqual([
       { src: "hub", evt: "hello", kind: "app", resumed: false, presented: false },
       { src: "hub", evt: "hello", kind: "machine", resumed: true, presented: true },
@@ -31,7 +31,6 @@ describe("hub metrics", () => {
     tick()
     metrics.countRelay("c-1", 50)
     metrics.sessionEnd({ kind: "app", connectionId: "c-1", helloDone: true, deviceId: "dev-1" })
-    // A connection that never relayed still gets a summary (zeroes).
     metrics.sessionEnd({ kind: "machine", connectionId: "c-2", helloDone: true })
     expect(lines).toEqual([
       {
@@ -53,7 +52,6 @@ describe("hub metrics", () => {
         durationMs: 0
       }
     ])
-    // Totals were cleared with the summary.
     metrics.sessionEnd({ kind: "app", connectionId: "c-1", helloDone: true })
     expect(lines.at(-1)).toMatchObject({ relayMessages: 0, relayBytes: 0 })
   })

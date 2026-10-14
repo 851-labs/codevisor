@@ -152,7 +152,6 @@ describe("shared provider OAuth contracts", () => {
     { ...credential, access: "a." }
   ])("rejects malformed native credentials where required fields are absent", (value) => {
     const parsed = parseProviderOAuth("opencode", "openai", value, "managed")
-    // An opaque bearer is valid; its stable refresh grant supplies identity.
     if ((value as typeof credential)?.access === "a.") expect(parsed?.subject).toMatch(/^grant:/)
     else expect(parsed).toBeUndefined()
   })

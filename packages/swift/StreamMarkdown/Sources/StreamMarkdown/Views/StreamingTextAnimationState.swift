@@ -4,23 +4,11 @@ import QuartzCore
 struct StreamingTextAnimationContext {
   let timeline: StreamingTextAnimationTimeline
   let sourceID: String
-  /// Stable identity for the complete semantic stream whose arrival shape
-  /// drives the shared presentation buffer. Nested native surfaces keep their
-  /// own `sourceID` while reporting one source revision under this id.
   let pacingSourceID: String
-  /// The whole message source, not just this block. Markdown can reclassify
-  /// a growing tail (paragraph → list/table, incomplete emphasis → styled
-  /// text) even though the provider stream itself remains append-only.
   let documentSource: String
   let isStreaming: Bool
-  /// False for the first render of a semantic stream that predates the
-  /// mounted transcript presentation. That render seeds the reconciler with
-  /// already-visible words; subsequent appends use normal live animation.
   let animatesInitialContent: Bool
   let reduceMotion: Bool
-  /// Invalidates native prepared-text caches after a suspended presentation
-  /// resumes. The document itself may be unchanged, but every pending fade
-  /// deadline has moved forward by the suspension duration.
   let playbackRevision: Int
 
   init(
@@ -44,8 +32,6 @@ struct StreamingTextAnimationContext {
   }
 }
 
-/// Stored on attributed ranges and consumed only by the platform layout
-/// managers. NSObject identity keeps attributed-string copying cheap.
 enum StreamingTextRevealStyle: Equatable {
   case faded
   case atomic
@@ -105,10 +91,6 @@ struct PreparedStreamingText {
   let activeAnimationRanges: [NSRange]
 }
 
-/// Reconciles the rendered words owned by one native text surface. Existing
-/// word slots retain their original start time while an append-only provider
-/// stream grows, even if an incomplete Markdown construct changes how those
-/// same source bytes are parsed or styled.
 @MainActor
 final class StreamingTextAnimationState {
   private struct Word {
@@ -146,19 +128,12 @@ final class StreamingTextAnimationState {
     timeline = context.timeline
 
     let ranges = StreamingWordSegmenter.segments(in: base.string)
-    // String.hasPrefix compares extended grapheme clusters. A provider
-    // appending a skin tone or ZWJ component changes the trailing cluster,
-    // even though its UTF-8 source bytes are still strictly append-only.
     let sourceIsAppendOnly = context.documentSource.utf8.starts(with: documentSource.utf8)
     let oldWords = words
     var nextWords: [Word] = []
     nextWords.reserveCapacity(ranges.count)
 
     if !context.animatesInitialContent {
-      // Navigation/remount baseline: populate the same word ledger the
-      // live path uses, but put every current word safely in the past.
-      // When the mount switches to live mode, an unchanged prefix keeps
-      // these starts and only later appended words receive fresh ones.
       context.timeline.discard(oldWords.map(\.fade), at: presentationNow)
       context.timeline.baselineSource(
         context.documentSource,
@@ -185,9 +160,6 @@ final class StreamingTextAnimationState {
     }
 
     if context.reduceMotion {
-      // Existing and currently visible content becomes settled. If the
-      // user turns Reduce Motion back off mid-response, only genuinely
-      // new words animate.
       context.timeline.discard(oldWords.map(\.fade), at: presentationNow)
       context.timeline.baselineSource(
         context.documentSource,
@@ -213,13 +185,6 @@ final class StreamingTextAnimationState {
       )
     }
 
-    // Markdown structure can contract without the provider editing any
-    // text. The common case is a completed image destination splitting one
-    // live Markdown surface into prefix / preview / suffix. Reuse the
-    // unchanged rendered word prefix across that structural boundary so
-    // already-visible prose never receives a second entrance animation.
-    // Append-only updates retain the existing positional rule because the
-    // last rendered word may legitimately grow as more characters arrive.
     let candidateReuseCount = min(oldWords.count, ranges.count)
     var reusedCount = 0
     while reusedCount < candidateReuseCount {
@@ -262,9 +227,6 @@ final class StreamingTextAnimationState {
     for (index, range) in ranges.enumerated() {
       let word: Word
       if index < reusedCount {
-        // Position is the stable identity for an append-only rendered
-        // block. This deliberately survives a growing final word and
-        // Markdown tail reinterpretation.
         word = Word(text: range.text, fade: oldWords[index].fade)
       } else {
         word = Word(

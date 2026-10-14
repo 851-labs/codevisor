@@ -1,11 +1,6 @@
 import Foundation
 
 extension TranscriptRowSet {
-  /// Server identity adoption and the aggregate-to-block projection can
-  /// replace an unchanged waiting row under a new layout key. Carry its
-  /// measured height through both transitions instead of briefly restoring
-  /// the activity estimate. Call only within the same layout fingerprint;
-  /// activating a different width cache discards these heights as usual.
   public static func preserveWaitingActivityHeight(
     from oldRows: [Row],
     to newRows: [Row],
@@ -22,9 +17,6 @@ extension TranscriptRowSet {
       ledger[new.row.layoutKey] == nil
     else { return }
 
-    // This is the same content at the same width, so the measurement also
-    // remains valid if another projection replaces this bridge before its
-    // host reports. Active hosts still perform their own fresh measurement.
     ledger.setExact(height, for: new.row.layoutKey)
   }
 

@@ -1,19 +1,11 @@
 import CodevisorCore
 import Foundation
 
-/// Resolves the user's shell environment.
-///
-/// GUI applications inherit a minimal `PATH` that usually excludes Homebrew,
-/// nvm, asdf, etc., so the real `PATH` is recovered by asking the user's login
-/// shell.
 public struct EnvironmentProbe: Sendable {
   private let runner: any CommandRunner
   private let loginShell: URL
   private let baseEnvironment: [String: String]
 
-  /// Well-known executable directories merged into every resolved `PATH` so
-  /// detection survives a failed shell probe or an unusual shell setup.
-  /// `~/.local/bin` leads: it's the Claude Code native installer's default.
   public static func fallbackPathDirectories(home: String = NSHomeDirectory()) -> [String] {
     [
       "\(home)/.local/bin",
@@ -30,8 +22,6 @@ public struct EnvironmentProbe: Sendable {
     ]
   }
 
-  /// The user's actual login shell from the password database — GUI apps
-  /// can't rely on `SHELL` being set. Falls back to `SHELL`, then zsh.
   public static func userLoginShell(
     environment: [String: String] = ProcessInfo.processInfo.environment
   ) -> URL {
@@ -57,11 +47,6 @@ public struct EnvironmentProbe: Sendable {
     self.baseEnvironment = baseEnvironment
   }
 
-  /// Returns the user's `PATH`: the login shell's PATH first (its ordering
-  /// wins), then the base environment's PATH, then the fallback directories,
-  /// deduplicated. Probing `/usr/bin/env` and parsing the `PATH=` line is
-  /// fish-safe — fish echoes `$PATH` space-separated, but the exported
-  /// variable is always colon-separated.
   public func resolvedPath() async -> String {
     var probed: [String] = []
     do {
@@ -78,8 +63,6 @@ public struct EnvironmentProbe: Sendable {
         )
       }
     } catch {
-      // Fallback directories keep detection working, but a failed probe
-      // is the usual reason an installed CLI reads as "not found".
       Log.server.error(
         "Login-shell PATH probe failed; using fallback directories: \(String(describing: error), privacy: .public)"
       )
@@ -92,7 +75,6 @@ public struct EnvironmentProbe: Sendable {
     ])
   }
 
-  /// Extracts the value of the last `PATH=` line from `env(1)` output.
   static func pathFromEnvOutput(_ output: String) -> String? {
     var path: String?
     for line in output.split(separator: "\n") where line.hasPrefix("PATH=") {
@@ -115,7 +97,6 @@ public struct EnvironmentProbe: Sendable {
     return directories.joined(separator: ":")
   }
 
-  /// Returns the environment to pass to launched agents, with `PATH` resolved.
   public func resolvedEnvironment(path: String) -> [String: String] {
     var environment = baseEnvironment
     environment["PATH"] = path

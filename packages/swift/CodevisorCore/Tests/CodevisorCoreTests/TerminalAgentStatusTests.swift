@@ -4,13 +4,10 @@ import Testing
 
 @testable import CodevisorCore
 
-/// A terminal's agent activity is server-owned: it arrives on the pane
-/// record and shows as the chat's working indicator.
 @MainActor
 struct TerminalAgentStatusTests {
   let terminal = PaneDescriptorState(id: UUID(), kind: .terminal, name: "Terminal 1", terminalKey: "t1")
 
-  /// The shared workspace's chat tab plus a selected terminal tab.
   func fixture() async -> WorkspaceSyncFixture {
     let terminal = terminal
     return await WorkspaceSyncFixture { workspace, _ in
@@ -22,8 +19,6 @@ struct TerminalAgentStatusTests {
     try #require(fixture.current?.allPanes.first { $0.id == terminal.id })
   }
 
-  /// The server records a change in the terminal's agent activity, and the
-  /// device receives its `navigation.changed` event.
   func serverSets(_ fixture: WorkspaceSyncFixture, activity: String?) async throws {
     var record = try #require(
       fixture.server.panes(in: fixture.workspace.id).first { UUID(uuidString: $0.id) == terminal.id })
@@ -39,7 +34,6 @@ struct TerminalAgentStatusTests {
       (#","terminalActivity":"idle""#, .idle),
       (#","terminalActivity":"blocked""#, .blocked),
       ("", nil),
-      // A value this client doesn't know yet must not drop the pane.
       (#","terminalActivity":"thinking""#, nil),
     ] as [(String, TerminalActivity?)])
   func decoding(fields: String, activity: TerminalActivity?) throws {

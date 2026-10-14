@@ -24,8 +24,6 @@ const bundledAppSource = (definition: HarnessDefinition): HarnessUpdateSource | 
     (source) => source.apply.kind === "appBundleSwap" && source.check.kind === "sparkle"
   )
 
-/// Dual-install support: a harness whose binary is the user's own install
-/// but which also ships inside a desktop app the user may want updated.
 export const makeBundledAppOperations = (
   core: HarnessLifecycleCore,
   detection: HarnessUpdateDetection,

@@ -56,7 +56,6 @@ export const nativeAppleAuth = (env: CloudEnv) => ({
       },
       async (c) => {
         if (!hasAppleAuth(env) || !env.APPLE_NATIVE_CLIENT_ID) throw new APIError("NOT_FOUND")
-        // Atomic consumption prevents concurrent completion and token replay.
         const stored = await c.context.internalAdapter.consumeVerificationValue(
           `native-apple:${c.body.challengeId}`
         )

@@ -4,15 +4,8 @@ import Foundation
 import CodevisorClient
 @testable import CodevisorCloud
 
-/// The machine end of a direct pipe for tests: answers hello with the direct
-/// welcome (no machine list — the wire shape DirectChannelHost sends), pongs
-/// pings, and runs relay envelopes through a `ScriptedRelayMachine`'s
-/// responder crypto. Every frame the app sends is recorded, and `onFrame`
-/// sees each one the responder accepted (synchronously, in send order).
 @Observable
 final class ScriptedDirectMachine: @unchecked Sendable {
-  /// One app→machine frame the responder accepted: the header, its
-  /// decrypted payload (open/data frames), and the sealed payload size.
   struct ReceivedFrame {
     var frame: CloudRelayFrame
     var plaintext: Data?
@@ -45,7 +38,6 @@ final class ScriptedDirectMachine: @unchecked Sendable {
     lock.withLock { helloPublicKey }
   }
 
-  /// Every frame the app has sent, in order.
   var frames: [CloudRelayFrame] {
     lock.withLock { receivedFrames }
   }
@@ -80,8 +72,6 @@ final class ScriptedDirectMachine: @unchecked Sendable {
           let appKey = appPublicKey
         else { continue }
         lock.withLock { receivedFrames.append(header.frame) }
-        // A frame the responder cannot open (bad seq, bad seal) is
-        // dropped, as a real machine would.
         let plaintext: Data?
         do {
           plaintext = try machine.receive(header.frame, payload: wire.payload, appPublicKey: appKey)
@@ -144,8 +134,6 @@ func makeDirectConnection(
   )
 }
 
-/// A channel transport over one direct pipe to a scripted machine — the
-/// harness for the generic channel adapters (HTTP, WebSocket, loopback).
 func makeDirectEndpoint(
   to scripted: ScriptedDirectMachine,
   readyTimeout: Duration = .seconds(2),

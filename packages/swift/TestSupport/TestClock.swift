@@ -1,6 +1,5 @@
 import Foundation
 
-/// Virtual elapsed time with explicit registration and cancellation barriers.
 public final class TestClock: Clock, @unchecked Sendable {
   private struct Sleeper {
     let duration: Duration
@@ -23,7 +22,6 @@ public final class TestClock: Clock, @unchecked Sendable {
 
   public var pendingCount: Int { lock.withLock { pending.count } }
 
-  /// How many sleeps of exactly `duration` were ever requested (pending or resolved).
   public func requestCount(_ duration: Duration) -> Int { lock.withLock { requests.filter { $0 == duration }.count } }
 
   public func sleep(for duration: Duration) async throws {
@@ -45,8 +43,6 @@ public final class TestClock: Clock, @unchecked Sendable {
         var alreadyElapsed = false
         let cancelled = lock.withLock {
           if Task.isCancelled { return true }
-          // Resolve absolute deadlines under the same lock as registration;
-          // an advance before the timer starts must not extend its deadline.
           let duration = deadline.map { origin.duration(to: $0) - elapsed } ?? duration
           if duration <= .zero {
             alreadyElapsed = true

@@ -79,9 +79,6 @@ describe("durable session turns", () => {
       })
     )
     await archiveSessionViaWorkspace(services, project.id, archived.id)
-    // A concurrent-writer incident can strand a streaming row mid-transcript:
-    // the conversation moved past it, so it is not the newest item and no
-    // future terminal event can ever close it.
     const splitBrain = await run(
       services.db.createSession({
         projectId: project.id,
@@ -136,9 +133,6 @@ describe("durable session turns", () => {
     )
     runningServers.push(server)
 
-    // Startup recovery must stay database-only. A cold provider process can
-    // take tens of seconds to initialize, and health/chat history do not need
-    // it yet.
     expect(agents.loads).toEqual([])
     const page = await run(services.db.getTranscriptPage(session.id, undefined, 8))
     expect(page.pendingQuestion).toBeUndefined()
@@ -146,9 +140,6 @@ describe("durable session turns", () => {
     expect(
       (await run(services.db.getTranscriptPage(backgroundOnly.id, undefined, 8))).backgroundTasks
     ).toEqual([])
-    // Archived sessions get no turn restoration, but their stale streaming
-    // rows are still closed — unarchiving must not resurface an endless
-    // in-progress turn.
     expect(
       (await run(services.db.getTranscriptPage(archived.id, undefined, 8))).items.at(-1)
     ).toMatchObject({ isGenerating: false, stopReason: "end_turn" })
@@ -160,7 +151,6 @@ describe("durable session turns", () => {
       stopReason: "end_turn"
     })
     expect(splitPage.items.at(0)).not.toHaveProperty("stopDetail")
-    // Closed silently: a restart is not something the user acts on.
     expect(page.items.at(-1)).toMatchObject({ isGenerating: false, stopReason: "end_turn" })
     expect(page.items.at(-1)).not.toHaveProperty("stopDetail")
     const events = listSubjectEvents(services, session.id)

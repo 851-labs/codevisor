@@ -13,22 +13,8 @@ import {
 } from "./turn-lifecycle.js"
 import { claudeContextWindowFrom } from "./usage.js"
 
-/// The nudge pushed to resume a recoverable turn — the same thing a user would
-/// type. Pushed straight into the SDK input queue, so it never surfaces as a
-/// visible user message (the `user` echo carries no tool_result to forward).
 const CONTINUE_PROMPT = "Please continue."
 
-/// The nudge after the CLI process died mid-turn and the session was resumed
-/// on a fresh query. Unlike a truncation continue, the model's last step may
-/// not have happened: an in-flight tool call was cut off and any background
-/// commands died with the process. Say so, so it re-runs what it needs
-/// instead of waiting for results that will never arrive.
-/// The nudge after a forked command (a `context: fork` skill such as
-/// `/code-review`) reports back. The interactive CLI runs the fork in the
-/// background and its completion notification wakes Claude to answer; in SDK
-/// mode the fork blocks and the turn ends on its report, so Claude is asked
-/// for that answer instead. The report is in Claude's context as the
-/// command's output.
 const FORKED_COMMAND_REPLY_PROMPT =
   "The skill the user ran has finished in a subagent, and its report is the command output " +
   "above. Answer the user with its results now, as you would after a subagent reports back. " +
@@ -51,13 +37,9 @@ const pushHiddenUserMessage = (session: ClaudeSession, content: string): void =>
 const pushContinuePrompt = (session: ClaudeSession): void =>
   pushHiddenUserMessage(session, CONTINUE_PROMPT)
 
-/// Restarts the model after a stream-death resume (see `start-session.ts`).
 export const pushResumeAfterInterruptionPrompt = (session: ClaudeSession): void =>
   pushHiddenUserMessage(session, RESUME_AFTER_INTERRUPTION_PROMPT)
 
-/// Resumes the live turn after a recoverable stop by pushing a continue nudge.
-/// A positive delay (transient backoff) is scheduled; the callback bails if the
-/// session was closed while waiting, so a timer can never resume a dead session.
 const scheduleRecovery = (session: ClaudeSession, delayMs: number): void => {
   if (delayMs <= 0) {
     pushContinuePrompt(session)
@@ -69,8 +51,6 @@ const scheduleRecovery = (session: ClaudeSession, delayMs: number): void => {
   }, delayMs)
 }
 
-/// Emits a visible retry reason while Codevisor's outer recovery is active.
-/// The client clears it when the next output arrives or the turn ends.
 const emitRetrying = (
   session: ClaudeSession,
   attempt: number,
@@ -87,9 +67,6 @@ const emitRetrying = (
   })
 }
 
-/// Dev-only turn-end trace (gated on CODEVISOR_DEBUG). The provider has no logger;
-/// this matches the plain-console style used in apps/server/src/main.ts. This is
-/// how we learn the real dominant stop reason without shipping any UI noise.
 const logTurnEnd = (
   session: ClaudeSession,
   message: SDKMessage & { type: "result" },
@@ -157,16 +134,7 @@ export const handleResult = (
     })
   }
 
-  // Claude emits independent results for model follow-ups caused by background
-  // task notifications. If one interleaves with the user's live turn, it must
-  // not finish that turn, clear its questions, or settle its goal. When the
-  // follow-up produced visible top-level output after the user turn, our stream
-  // handlers opened an agent-initiated display turn; allow only that turn to
-  // close below.
   if (isTaskNotification && (!session.turnActive || session.initiatedBy === "user")) return
-  // A slash-command response can contain no assistant content. Still open its
-  // observed turn so the queued user initiator is consumed and the terminal
-  // event cannot be mistaken for unrelated autonomous activity.
   if (!session.turnActive) void ensureObservedTurnStarted(session)
 
   const assistantError = session.lastAssistantError
@@ -176,22 +144,16 @@ export const handleResult = (
   if (process.env.CODEVISOR_DEBUG !== undefined || process.env.HERDMAN_DEBUG !== undefined) {
     logTurnEnd(session, message, resolution)
   }
-  // Each `result` is classified on the assistant error seen since the previous
-  // one; consume it so a stale error can't misclassify a later leg.
   session.lastAssistantError = undefined
   session.lastUsageLimitText = undefined
   session.latestRateLimitInfo = undefined
 
   if (resolution.kind === "continue") {
-    // Output truncated — resume the same turn immediately and invisibly; the
-    // model just had more to say.
     session.truncationCount += 1
     scheduleRecovery(session, 0)
     return
   }
   if (resolution.kind === "retry") {
-    // Transient API failure — show "Retrying…", back off, then resume. The turn
-    // stays alive; turnId/pendingPrompt are untouched.
     session.transientRetries += 1
     emitRetrying(
       session,
@@ -202,8 +164,6 @@ export const handleResult = (
     scheduleRecovery(session, resolution.delayMs)
     return
   }
-  // A forked command reported to its agent's row this turn: Claude answers
-  // with the report before the turn ends, unless the turn ended abnormally.
   if (session.forkedCommandReplyPending) {
     session.forkedCommandReplyPending = false
     if (resolution.stopReason === "end_turn" && resolution.stopDetail === undefined) {
@@ -212,8 +172,6 @@ export const handleResult = (
     }
   }
 
-  // Terminal. A turn that ends with questions still open (interrupt, failure)
-  // invalidates them — clients must not keep showing the picker.
   session.lastErrorText = undefined
   if (authFailure) {
     void session.emit({

@@ -1,9 +1,6 @@
 import CodevisorCore
 import SwiftUI
 
-/// The providers a harness signs in to, and their credentials: the same
-/// pane, states and wording for every such harness (Pi, and each OpenCode
-/// profile), on macOS and iOS.
 public struct HarnessProvidersPane: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.theme) private var theme
@@ -11,9 +8,7 @@ public struct HarnessProvidersPane: View {
 
   @Bindable private var accounts: HarnessProviderAccounts
   private let harness: ServerHarness
-  /// Shared credentials this machine also uses, listed read-only.
   private let inherited: HarnessSharedCredentials?
-  /// Where a removed credential is removed from, for the confirmation.
   private let scope: String
   private let request: HarnessMachineSignIn?
   private let onChange: () async -> Void
@@ -123,7 +118,6 @@ public struct HarnessProvidersPane: View {
         List(selection: $selectedProviderId) { providerSection }
           .listStyle(.inset)
         Divider()
-        // The table's own +/− controls, as on the profile list beside it.
         HStack(spacing: 10) {
           Button {
             signIn = SignInRequest(providerId: nil)
@@ -206,7 +200,6 @@ public struct HarnessProvidersPane: View {
     #endif
   }
 
-  /// iOS shows failures in place; macOS raises them as an alert.
   private var inlineError: String? {
     #if os(iOS)
       accounts.errorMessage
@@ -229,7 +222,6 @@ private struct SignInRequest: Identifiable {
   let providerId: String?
 }
 
-/// One configured provider: its name, and what kind of credential it has.
 struct HarnessProviderRow: View {
   @Environment(\.theme) private var theme
   let provider: HarnessProvider

@@ -25,7 +25,6 @@ describe("plan section timestamps", () => {
       )
 
     await run(db.appendEvent("session.updated", session.id, { turnState: "started" }))
-    // An answer before any plan exists is not a plan boundary.
     await resolve("before-plan")
     expect(await latest()).not.toHaveProperty("planResumedAt")
 
@@ -40,11 +39,9 @@ describe("plan section timestamps", () => {
 
     const declined = await resolve("keep-planning")
     expect(await latest()).toMatchObject({ planResumedAt: declined.createdAt })
-    // Later answers in the resumed work do not move the boundary.
     await resolve("tool-permission")
     expect(await latest()).toMatchObject({ planResumedAt: declined.createdAt })
 
-    // A revised plan replaces the boundary and awaits a fresh answer.
     const revised = await run(
       db.appendEvent("session.output", session.id, {
         sessionUpdate: "plan_document",

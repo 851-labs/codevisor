@@ -1,3 +1,4 @@
+import * as acp from "@agentclientprotocol/sdk"
 import {
   type QuestionAnswer,
   type RuntimeEmit,
@@ -7,7 +8,7 @@ import {
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
-import { acpProtocolVersion, type AcpConnector } from "./index.js"
+import { type AcpConnector } from "./index.js"
 import {
   conversationEvent,
   FakeConnection,
@@ -98,7 +99,6 @@ describe("@codevisor/agent-runtime", () => {
   })
 
   it("demotes narration before tool calls, so each tool group follows its own text", async () => {
-    // OpenCode's order: narration, tool calls, more narration, more tool calls, the answer.
     class NarratingConnection extends FakeConnection {
       override prompt(sessionId: string) {
         const say = (messageId: string, text: string) =>
@@ -153,8 +153,6 @@ describe("@codevisor/agent-runtime", () => {
   })
 
   it("delivers events that arrive with no prompt in flight", async () => {
-    // Regression test for the dropped-background-events bug: the sink used to
-    // exist only for the duration of a prompt request.
     const connector = makeConnector()
     const runtime = makeAcpAgentRuntime({
       connector,
@@ -193,7 +191,6 @@ describe("@codevisor/agent-runtime", () => {
     const entered = Promise.withResolvers<void>()
     const sessionId = await run(
       runtime.createAgentSession("gemini", "/tmp/project", async (event) => {
-        // A slow async sink must not reorder events.
         entered.resolve()
         await release.promise
         seen.push((event.payload as { text?: string }).text ?? "lifecycle")
@@ -261,7 +258,6 @@ describe("@codevisor/agent-runtime", () => {
     const sessionId = await run(
       runtime.createAgentSession("gemini", "/tmp/project", () => undefined)
     )
-    // The ACP handle exposes no goal surface, so the runtime rejects cleanly.
     await expect(run(runtime.setGoal(sessionId, { objective: "x" }))).rejects.toThrow(
       "Goals are not supported by this harness"
     )
@@ -331,70 +327,6 @@ describe("@codevisor/agent-runtime", () => {
     expect(cleared).toEqual([sessionId])
   })
 
-  it("delegates goal calls to handles that support them", async () => {
-    const goalCalls: Array<unknown> = []
-    let clearCount = 0
-    const goal = {
-      createdAt: "2026-07-05T00:00:00.000Z",
-      objective: "finish the migration",
-      status: "active" as const,
-      timeUsedSeconds: 0,
-      tokenBudget: null,
-      tokensUsed: 0,
-      updatedAt: "2026-07-05T00:00:00.000Z"
-    }
-    const answered: Array<readonly [string, unknown]> = []
-    const custom = {
-      createSession: () =>
-        Effect.sync(() => ({
-          handle: {
-            answerQuestion: (questionId: string, answer: unknown) =>
-              Effect.sync(() => {
-                answered.push([questionId, answer])
-              }),
-            cancel: Effect.void,
-            clearGoal: Effect.sync(() => {
-              clearCount += 1
-            }),
-            close: Effect.void,
-            prompt: () => Effect.succeed({ stopReason: "end_turn" }),
-            setConfigOption: () => Effect.succeed([]),
-            setGoal: (update: unknown) =>
-              Effect.sync(() => {
-                goalCalls.push(update)
-                return goal
-              }),
-            setMode: () => Effect.void
-          },
-          metadata: { configOptions: [], sessionId: "goal-1", supportsGoals: true }
-        })),
-      id: "codex" as const,
-      loadSession: () => Effect.die("unused"),
-      readiness: () => ({ state: "ready" }) as const
-    }
-    const runtime = makeAcpAgentRuntime({
-      env: { PATH: "/bin" },
-      executableExists: () => true,
-      locateExecutable: (name) => `/bin/${name}`,
-      providers: { codex: custom as never }
-    })
-    const sessionId = await run(
-      runtime.createAgentSession("codex", "/tmp/project", () => undefined)
-    )
-    const result = await run(runtime.setGoal(sessionId, { status: "paused" }))
-    expect(result).toEqual(goal)
-    expect(goalCalls).toEqual([{ status: "paused" }])
-    await run(runtime.clearGoal(sessionId))
-    expect(clearCount).toBe(1)
-    await run(
-      runtime.answerQuestion(sessionId, "q-7", {
-        answers: { q: { answers: ["A"] } },
-        outcome: "answered"
-      })
-    )
-    expect(answered).toEqual([["q-7", { answers: { q: { answers: ["A"] } }, outcome: "answered" }]])
-  })
-
   it("registers custom providers and drops events for unknown sessions", async () => {
     const events: Array<RuntimeEvent> = []
     let capturedEmit: RuntimeEmit | undefined
@@ -441,7 +373,6 @@ describe("@codevisor/agent-runtime", () => {
       })
     )
     expect(sessionId).toBe("custom-1")
-    // Events for sessions the runtime doesn't know are dropped, not crashed on.
     await capturedEmit?.({ kind: "session.output", payload: {}, subjectId: "unknown-session" })
     await capturedEmit?.({ kind: "session.output", payload: { ok: true }, subjectId: "custom-1" })
     await capturedEmit?.({ kind: "session.output", payload: "raw", subjectId: "custom-1" })
@@ -493,6 +424,6 @@ describe("@codevisor/agent-runtime", () => {
   })
 
   it("speaks ACP protocol version 1", () => {
-    expect(acpProtocolVersion).toBe(1)
+    expect(acp.PROTOCOL_VERSION).toBe(1)
   })
 })

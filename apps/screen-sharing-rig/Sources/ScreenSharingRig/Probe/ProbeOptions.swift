@@ -14,7 +14,6 @@ struct ProbeOptions {
   let capturePicker: Bool
   let capturePickerWindow: Bool
   let captureQueueDepth: Int
-  /// Optional SCK minimum-frame-interval request (fps), isolated from the video rate; nil = existing behaviour.
   let captureIntervalFPS: Int?
   let copyCaptureSurface: Bool
   let capturePixelFormat: OSType
@@ -52,7 +51,6 @@ struct ProbeOptions {
   let viewerDisplayID: UInt32?
   let drawableCount: Int
   let unsyncedPresentation: Bool
-  /// Diagnostic: drawable acquisition and encoding on a serial worker (viewer/loopback, arrival-driven, synchronized).
   let renderOffMain: Bool
   let standardRateControl: Bool
   let disableLookAhead: Bool
@@ -66,8 +64,6 @@ struct ProbeOptions {
   let keyframeIntervalSeconds: Int
   let syntheticPixelFormat: SyntheticPixelFormat
   let videoCodec: ScreenSharingVideoCodec
-  /// The process-wide trial selection these options require, derived by the shared library factory that the boundary
-  /// and its tests use, so this file cannot drift from what is actually installed.
   var fieldTrialSelection: ScreenSharingFieldTrials.Selection {
     .probeOptions(
       jitterWindowFrames: jitterWindowFrames, lowLatencyPlayout: lowLatencyPlayout,
@@ -76,16 +72,10 @@ struct ProbeOptions {
 
   let jitterWindowFrames: Int?
   let lowLatencyPlayout: Bool
-  /// Receiver-only diagnostic: explicit WebRTC-ForcePlayoutDelay bounds (min_ms, max_ms) in milliseconds.
   let playoutDelayBoundsMs: (min: Int, max: Int)?
-  /// Receiver-only diagnostic frame-delivery audit window (seconds relative to the receiver's media start).
   let deliveryAuditWindow: (beginSeconds: Double, durationSeconds: Double)?
-  /// Receiver-only diagnostic: WebRTC RTC event log window (seconds relative to media start) and its raw output path
-  /// derived from the report stem; nil = no log object, nothing scheduled.
   let rtcEventLogWindow: (beginSeconds: Double, durationSeconds: Double)?
   let rtcEventLogPath: String?
-  /// Sender-only diagnostic: the same WebRTC RTC event log on the SENDING peer (send or loopback; owned-window source and
-  /// plain headless sender included); raw path REPORT.sender-rtc-event-log.binarypb; nil = no log object, nothing scheduled.
   let senderRtcEventLogWindow: (beginSeconds: Double, durationSeconds: Double)?
   let senderRtcEventLogPath: String?
   let codecCase: String?

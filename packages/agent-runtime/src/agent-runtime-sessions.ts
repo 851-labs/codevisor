@@ -19,8 +19,6 @@ export type AgentSessionOperations = Pick<
   | "setMode"
 >
 
-/// Operations on an already-loaded session (prompting, cancelling, config,
-/// goals, questions) plus the harness auth pass-throughs.
 export const makeAgentSessionOperations = (core: AgentRuntimeCore): AgentSessionOperations => {
   const { definitionFor, sessionFor, sessions, withSessionLifecycle } = core
 
@@ -49,8 +47,6 @@ export const makeAgentSessionOperations = (core: AgentRuntimeCore): AgentSession
             closeFailure = cause
           } finally {
             await session.chain
-            // Matching-handle check prevents stale cancellation cleanup from
-            // deleting a replacement installed by another lifecycle path.
             if (sessions.get(sessionId) === session) {
               sessions.delete(sessionId)
             }

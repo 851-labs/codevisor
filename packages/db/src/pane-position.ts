@@ -4,9 +4,6 @@ import type Database from "better-sqlite3"
 import { canonicalUuid } from "./ids.js"
 import type { WorkspacePaneRow } from "./rows.js"
 
-/// The shared tab-order key for a pane newly listed in `workspaceId`: after
-/// every tab the workspace already has, so a new tab opens at the end on
-/// every device.
 export const nextPanePositionIn = (
   sqlite: Database.Database,
   workspaceId: string,
@@ -32,7 +29,6 @@ const orderedPaneIds = (
   return [...listed, ...unlisted]
 }
 
-// Fresh ascending keys for the whole order, independent of the previous keys.
 const writePanePositions = (sqlite: Database.Database, paneIds: ReadonlyArray<string>): void => {
   const update = sqlite.prepare(
     "update workspace_panes set position = ?, updated_at = ? where id = ? and position <> ?"
@@ -46,7 +42,6 @@ const writePanePositions = (sqlite: Database.Database, paneIds: ReadonlyArray<st
   }
 }
 
-/// Reorders the scoped snapshot inside the caller's synchronous transaction.
 export const reorderPanePositions = (
   sqlite: Database.Database,
   panes: ReadonlyArray<WorkspacePaneRow>,

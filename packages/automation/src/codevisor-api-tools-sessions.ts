@@ -22,7 +22,6 @@ import {
   type CodevisorApiToolSpec
 } from "./codevisor-api-tool-spec.js"
 
-/// Session, terminal, and file tools.
 export const codevisorSessionApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   apiTool(
     "sessions.list",

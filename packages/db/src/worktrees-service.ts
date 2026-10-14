@@ -93,9 +93,6 @@ export const makeWorktreesService = (
             .get(id) as ArchivedWorktreeRow
         )
       }),
-    /// Restore looks up by (project, server, name) because that is all an
-    /// archived session carries — `worktree_name` is the only link left once
-    /// the `worktrees` row is gone.
     findArchivedWorktree: (rawProjectId, serverId, originalName) =>
       attempt("findArchivedWorktree", () => {
         const row = sqlite

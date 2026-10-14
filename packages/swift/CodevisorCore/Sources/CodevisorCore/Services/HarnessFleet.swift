@@ -1,29 +1,19 @@
 import Foundation
 
-/// Phase 24: the client-side read of each machine's per-harness condition —
-/// the REPORTED half of the desired-vs-reported matrix. One single-writer
-/// "harness-readiness" entry per machine, mirroring McpFleet's shape.
 @MainActor
 public enum HarnessFleet {
-  /// One harness's condition on one machine, as that machine reported it:
-  /// ready | signInRequired | notInstalled | disabled.
   public struct MachineReadiness: Identifiable, Equatable, Sendable {
     public let harnessId: String
     public let state: String
     public let reason: String?
     public let installed: Bool?
-    /// The installed CLI's version, as the machine reported it.
     public let version: String?
-    /// When the machine last published its readiness.
     public let reportedAt: Date?
-    /// Display identity and whether sign-in applies; nil from servers that
-    /// predate them.
     public let name: String?
     public let symbolName: String?
     public let authRequired: Bool?
     public var id: String { harnessId }
 
-    /// The leading number of `version` ("2.0.24" → 2), when it has one.
     public var majorVersion: Int? {
       version.flatMap { Int($0.drop { $0 == "v" }.prefix { $0.isNumber }) }
     }
@@ -44,7 +34,6 @@ public enum HarnessFleet {
     }
   }
 
-  /// machineId → that machine's readiness rows, parsed from the replica.
   public static func readiness(_ sync: ConfigSync) -> [String: [MachineReadiness]] {
     _ = sync.revisionsByNamespace["harness-readiness"]
     var result: [String: [MachineReadiness]] = [:]
@@ -73,19 +62,13 @@ public enum HarnessFleet {
     return result
   }
 
-  /// A harness some machine can run, as "Add Harness…" offers it.
   public struct CatalogEntry: Identifiable, Equatable, Sendable {
     public let id: String
     public let name: String
     public let symbolName: String
-    /// False only when a machine reported the harness needs no sign-in.
     public let authRequired: Bool
   }
 
-  /// Every harness any machine reported, read from the synced readiness
-  /// rows so offering one never waits on a machine. Rows from servers that
-  /// predate display fields fall back to the fleet's authored row, then the
-  /// registry.
   public static func catalog(_ sync: ConfigSync) -> [CatalogEntry] {
     var rowsById: [String: [MachineReadiness]] = [:]
     for row in readiness(sync).values.joined() { rowsById[row.harnessId, default: []].append(row) }

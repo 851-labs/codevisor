@@ -8,9 +8,7 @@
     let text: String
     let theme: Theme
     let followsTail: Bool
-    /// A command to echo above the output, as a terminal would.
     var command: String? = nil
-    /// Syntax colors for the text, one token line per line.
     var syntax: [[CodeHighlighter.Token]]? = nil
 
     func makeUIView(context _: Context) -> IOSNativePlainOutputScrollView {
@@ -97,8 +95,6 @@
       text output: String, command: String? = nil, theme: Theme, followsTail: Bool,
       syntax: [[CodeHighlighter.Token]]? = nil
     ) {
-      // The command and output share one document; output streams in as
-      // appended text after the command's line.
       let text = command.map { output.isEmpty ? $0 : "\($0)\n\(output)" } ?? output
       guard
         renderedText != text || renderedTheme != theme || renderedCommand != command
@@ -110,7 +106,6 @@
       let oldTheme = renderedTheme
       let selection = outputTextView.selectedRange
       let primary = UIColor(theme.textPrimary)
-      // Echoed commands read like a prompt line; their output steps back.
       let foreground = command == nil ? primary : UIColor(theme.textSecondary)
 
       outputTextView.textStorage.beginEditing()

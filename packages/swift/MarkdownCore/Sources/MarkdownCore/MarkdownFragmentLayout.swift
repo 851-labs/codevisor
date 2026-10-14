@@ -1,4 +1,3 @@
-/// Structural context for a leaf extracted from a complex Markdown container.
 public struct MarkdownFragmentLayout: Sendable, Equatable, Hashable {
   public struct ListMarker: Sendable, Equatable, Hashable, Identifiable {
     public let depth: Int
@@ -14,12 +13,10 @@ public struct MarkdownFragmentLayout: Sendable, Equatable, Hashable {
 
   public enum TrailingSpacing: Sendable, Equatable, Hashable {
     case none
-    /// Resolved through `MarkdownSpacing.gap(after:before:)`.
     case block(after: MarkdownBlockRole, before: MarkdownBlockRole)
     case listItem
   }
 
-  /// Stable AST path used as part of a transcript row identity.
   public let identity: String
   public let quoteDepth: Int
   public let listDepth: Int

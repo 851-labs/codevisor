@@ -38,9 +38,7 @@ struct MachineControllerAttentionSyncTests {
       State(sidebar: .waitingForUser, action: true, plan: true),
       State(sidebar: .inProgress),
       State(sidebar: .unread, latest: 1, unread: 1),
-      // A read from another client clears the shared unread state.
       State(sidebar: .idle, latest: 1, seen: 1),
-      // Manual unread changes no attention sequence and must stay silent.
       State(sidebar: .unread, latest: 1, seen: 1, unread: 1),
       State(sidebar: .idle, latest: 1, seen: 1),
       State(sidebar: .errored, latest: 2, seen: 1, unread: 1, error: true),

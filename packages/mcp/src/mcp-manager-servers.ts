@@ -35,8 +35,6 @@ export type McpServerOperations = Pick<
   | "update"
 >
 
-/// The managed-server lifecycle: create, update, remove, connect, and the
-/// project/session resolution views over the persisted records.
 export const makeMcpServerOperations = (
   core: McpManagerCore,
   deps: McpServerOperationDeps
@@ -115,7 +113,6 @@ export const makeMcpServerOperations = (
     const stored: StoredSecrets = {
       ...(request.env === undefined ? {} : { env: request.env }),
       ...(request.headers === undefined ? {} : { headers: request.headers }),
-      // "" is the editor's untouched field, not a credential.
       ...(request.bearerToken === undefined || request.bearerToken === ""
         ? {}
         : { bearerToken: request.bearerToken }),
@@ -136,9 +133,6 @@ export const makeMcpServerOperations = (
         ...(url === undefined ? {} : { url }),
         ...(command === undefined ? {} : { command }),
         args: request.args ?? [],
-        // `enabled` is the fleet-synced wish and belongs to the user alone;
-        // an OAuth server that still needs authorizing reports that through
-        // its connection state, not by flipping the wish off.
         enabled: request.enabled ?? true,
         authType,
         ...(request.oauthScope === undefined ? {} : { oauthScope: request.oauthScope }),
@@ -171,8 +165,6 @@ export const makeMcpServerOperations = (
       if (!saved.enabled) {
         await provider.close()
       } else if (saved.id === "browser" && state.connectionState === "needsSetup") {
-        // Browser downloads can take several minutes. Keep the toggle
-        // responsive and let the settings view observe setup progress.
         void connect(saved.id).catch(() => undefined)
       } else if (state.connectionState !== "unavailable") {
         await connect(saved.id).catch(() => undefined)
@@ -200,15 +192,9 @@ export const makeMcpServerOperations = (
     const nextAuthType = request.authType ?? current.authType
     const oauthIsAuthorized = nextSecrets.oauth?.tokens !== undefined
     const needsAuthorization = nextAuthType === "oauth" && !oauthIsAuthorized
-    // `enabled` is the user's wish: an unauthorized OAuth server stays
-    // enabled and reports needsAuthorization — the wish is fleet-synced,
-    // the auth state is this machine's alone.
     const enabled = request.enabled ?? current.enabled
     const args = request.args ?? current.args
     const oauthScope = request.oauthScope ?? current.oauthScope
-    // Only a change the live connection actually depends on tears it down.
-    // A rename or an enabled flip arriving from config sync must not bounce
-    // a working upstream mid-session.
     const definitionChanged =
       url !== current.url ||
       command !== current.command ||
@@ -238,8 +224,6 @@ export const makeMcpServerOperations = (
       connectionState,
       toolCount: resetsState ? 0 : current.toolCount,
       detail: resetsState ? undefined : current.detail,
-      // Re-encrypting unchanged material would read as a change to
-      // subscribers (fresh nonce, same secrets); only rewrite what moved.
       ...(JSON.stringify(nextSecrets) === JSON.stringify(currentSecrets)
         ? {}
         : { secretCipher: encryptSecrets(key, nextSecrets) })
@@ -250,10 +234,6 @@ export const makeMcpServerOperations = (
       !connections.has(id) &&
       !state.locallySuppressed.has(saved.name)
     ) {
-      // Never block the caller on an upstream handshake (a stdio `npx`
-      // first run can take a minute): the enable toggle answers at once and
-      // the row follows the connection through change events. The gateway
-      // inventory refreshes once the connection settles.
       void connect(id)
         .catch(() => undefined)
         .then(() => refreshGatewayInventories())
@@ -276,8 +256,6 @@ export const makeMcpServerOperations = (
         }
       }
     }
-    // Machine-disabling a built-in (Computer Use) also retracts its skills
-    // from the gateway's `skills` tool.
     await refreshGatewayInventories()
   }
 
@@ -287,7 +265,7 @@ export const makeMcpServerOperations = (
     if (!current.canRemove) throw new Error(`${current.name} cannot be removed`)
     await closeConnection(id)
     const timer = refreshTimers.get(id)
-    /* v8 ignore next -- timers only exist for the live OAuth refresh adapter. */
+    /* v8 ignore next */
     if (timer !== undefined) clearTimeout(timer)
     refreshTimers.delete(id)
     await run(config.db.deleteMcpServer(id))

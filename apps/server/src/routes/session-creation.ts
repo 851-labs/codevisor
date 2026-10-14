@@ -9,12 +9,6 @@ import {
 } from "../server-context.js"
 import { sessionEventSink } from "./session-events.js"
 
-/// The parts of creating a session that live OUTSIDE the database — account
-/// gating and the provider session — shared by the discrete POST /v1/sessions
-/// and the atomic workspace create so both bind sessions identically.
-
-/// The harness account a new session binds to, gated exactly like the
-/// discrete create: an agent that starts now needs a signed-in account.
 export const resolveSessionAccount = async (
   services: CodevisorServerServices,
   payload: CreateSessionRequest
@@ -26,7 +20,7 @@ export const resolveSessionAccount = async (
     payload.harnessAccountId === undefined
       ? await services.auth?.activeAccountContext(payload.harnessId)
       : await services.auth?.accountContext(payload.harnessAccountId)
-  /* v8 ignore next -- both accepted and rejected auth-gating paths are integration-tested. */
+  /* v8 ignore next */
   if (
     services.auth !== undefined &&
     accountContext === undefined &&
@@ -37,10 +31,6 @@ export const resolveSessionAccount = async (
   return { accountContext, harnessAccountId: payload.harnessAccountId ?? accountContext?.id }
 }
 
-/// The picks a new chat starts with: its own, else its parent's when both
-/// run the same harness, so a chat an agent creates runs (and its picker
-/// shows) the model the agent itself runs. Parent picks its runtime no
-/// longer offers stay behind: the parent is not running them.
 export const withStartPicks = async (
   services: CodevisorServerServices,
   payload: CreateSessionRequest
@@ -61,9 +51,6 @@ export const withStartPicks = async (
     : { ...payload, configSelections: Object.fromEntries(inherited) }
 }
 
-/// Starts (or adopts) the provider session behind a Codevisor session row.
-/// The session id is known up front so the standing event sink can bind to
-/// it before the agent session exists. Deferred agents start on first use.
 export const startSessionAgent = async (
   services: CodevisorServerServices,
   fanout: EventFanout,

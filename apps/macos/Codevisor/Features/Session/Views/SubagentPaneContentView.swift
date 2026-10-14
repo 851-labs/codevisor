@@ -1,8 +1,6 @@
 import CodevisorCore
 import SwiftUI
 
-/// A subagent pane: one of the parent chat's subagent threads, rendered by
-/// the ordinary chat surface in read-only mode.
 struct SubagentPaneContentView: View {
   let descriptor: PaneDescriptorState
   let focus: TerminalFocusController
@@ -28,8 +26,6 @@ struct SubagentPaneContentView: View {
           for: parentSession, paneID: descriptor.id, controller: mirror.controller)
       )
       .id(ObjectIdentifier(mirror))
-      // The parent chat owns the connection: keep it warm while its agent
-      // is on screen, and connect it when this pane is restored first.
       .task(id: ObjectIdentifier(mirror)) {
         store.noteAccess(SessionStore.SessionKey(parentSession))
         mirror.start()
@@ -83,9 +79,6 @@ private struct SubagentUnavailableView: View {
 }
 
 extension SessionStore {
-  /// The mirror a subagent pane shows, owned by that pane until it leaves
-  /// the workspace. A replaced parent controller (eviction, reconnect) gets a
-  /// fresh mirror.
   func subagentMirror(
     workspaceId: UUID, paneId: UUID, parent: SessionController, toolCallId: String
   ) -> SubagentMirror {
@@ -98,7 +91,6 @@ extension SessionStore {
     return mirror
   }
 
-  /// Drops the mirrors of subagent panes no longer in `workspace`.
   func pruneSubagentMirrors(in workspace: Workspace) {
     let open = Set(workspace.allPanes.lazy.filter { $0.kind == .subagent }.map(\.id))
     for key in subagentMirrors.keys where key.workspaceId == workspace.id && !open.contains(key.paneId) {

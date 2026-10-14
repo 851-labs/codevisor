@@ -7,25 +7,15 @@
     func controlCursorChanged()
   }
 
-  /// Responder and event routing for the native surface. The session event tap
-  /// captures system shortcuts; the local monitor also handles app-delivered events.
-  /// Both send physical keys for the host's keyboard layout to interpret, except
-  /// synthesized typing (851-2318): Computer Use `typeText` posts key code 0
-  /// carrying the text, which as a physical key would be A. A key-code-0 press
-  /// whose characters aren't what that key gives on the local layout is sent as
-  /// the text instead (the server receives the character's keysym).
   @MainActor
   final class ScreenSharingInputSurface {
     private weak var view: (any ScreenSharingInputTarget)?
     private let notificationCenter: NotificationCenter
     private let keyboardCapture: any ScreenSharingKeyboardCapture
     private let applicationIsActive: () -> Bool
-    /// Paces the motion flush. Injected so a test can hold and release the
-    /// coalescing window instead of racing a 16 ms wall-clock timer.
     private let clock: any Clock<Duration>
     var onInput: ((ScreenSharingInputEvent) -> Void)?
     var onRelease: (() -> Void)?
-    /// Control–Option–Escape gave the keyboard back to the app; the lease stays.
     var onKeyboardReturned: (() -> Void)?
     private var monitor: Any?
     private var observers: [NSObjectProtocol] = []
@@ -34,24 +24,15 @@
     private var buttons = Set<UInt8>()
     private var modifiers: UInt8 = 0
     private var keys = Set<UInt16>()
-    /// Key codes whose press went out as text: their release sends nothing.
     private var textKeys = Set<UInt16>()
     private let layout: VNCKeyTranslator.Layout
     private var scroll = ScreenSharingScrollAccumulator()
     private var lastPointer: ScreenSharingPointer?
     private var inputFocused = false { didSet { updateKeyClaim() } }
     private(set) var active = false { didSet { updateKeyClaim() } }
-    /// Input is actually going to the host: the lease is active and the video
-    /// has focus. While suspended (another app, a menu, a local control) the
-    /// pointer must look and behave as in View mode, not as the host's cursor.
     var isLive: Bool { active && inputFocused }
     private(set) var failureMessage: String?
-    /// The session tap is running, so system shortcuts (⌘Tab, ⌘Space) reach the host. It needs
-    /// Accessibility; without it control still works and those shortcuts stay on this Mac.
     private(set) var capturesSystemShortcuts = false
-    /// Input this Mac's own Codevisor host injected (tagged `ScreenSharingInputInjector.eventTag`) is
-    /// ignored, as forwarding it would loop when the video shows this Mac. Off when it shows another
-    /// machine: then it's the user's input arriving through a Codevisor session to this Mac.
     var dropsInjectedInput = true {
       didSet { keyboardCapture.setClaimsInjectedKeys(!dropsInjectedInput) }
     }
@@ -74,15 +55,10 @@
     func begin() -> Bool {
       guard !active else { return true }
       failureMessage = nil
-      // The window needn't be key: a grant that arrives while it isn't (the user switched apps while
-      // the pane connected) starts suspended and resumes when the window is key again, as after ⌘Tab.
-      // Refusing it released control and switched the pane to View for the session (851-2472).
       guard let view, let window = view.window else {
         failureMessage = "Focus this window and request control again."
         return false
       }
-      // Without Accessibility the tap doesn't start: the local monitor below still carries the mouse
-      // and ordinary keys, and the endpoint says (to a Mac host) that system shortcuts stay here.
       capturesSystemShortcuts = keyboardCapture.start(
         handle: { [weak self] type, event in self?.routeSystemKey(type, event: event) ?? false },
         interrupted: { [weak self] in
@@ -93,9 +69,6 @@
         }
       )
       active = true
-      // Control doesn't take the keyboard: a grant arriving as the pane is shown (⌘[ through the
-      // sidebar, a tab switch) leaves focus where it is, so the keys keep driving the app. The video
-      // owns the keyboard once it's clicked, or if it already had focus (a reconnect mid-use).
       inputFocused = window.isKeyWindow && applicationIsActive() && window.firstResponder === view
       view.controlCursorChanged()
       monitor = NSEvent.addLocalMonitorForEvents(
@@ -107,9 +80,6 @@
       let suspend: @Sendable (Notification) -> Void = { [weak self] _ in
         MainActor.assumeIsolated { self?.suspend() }
       }
-      // Coming back (⌘Tab, a closed menu, the window key again) with the video
-      // still first responder resumes input: nothing else would, since the view
-      // never lost first responder, and the pointer would stay invisible.
       let resume: @Sendable (Notification) -> Void = { [weak self] _ in
         MainActor.assumeIsolated { self?.resumeIfFocused() }
       }
@@ -149,16 +119,12 @@
       pendingMotion = nil; buttons = []; keys = []; textKeys = []; modifiers = 0; scroll = .init(); lastPointer = nil
     }
 
-    /// Control–Option–Escape: held input is released and the keyboard goes back to the app, still in
-    /// Control; a click into the video takes it again. Choosing View is what gives control back.
     private func returnKeyboard() {
       suspend()
       if let view, let window = view.window, window.firstResponder === view { window.makeFirstResponder(nil) }
       onKeyboardReturned?()
     }
 
-    /// Local controls may own focus while the remote-control lease stays active.
-    /// Release held input immediately so a menu cannot strand a remote key or drag.
     func suspend() {
       guard active else { return }
       let wasLive = inputFocused
@@ -185,8 +151,6 @@
       view?.controlCursorChanged()
     }
 
-    /// Resumes only when the video really has focus again: app active, window
-    /// key, video first responder, nothing modal in front.
     func resumeIfFocused() {
       guard active, applicationIsActive(), let view, let window = view.window, window.isKeyWindow,
         window.firstResponder === view, !view.isHiddenOrHasHiddenAncestor, window.attachedSheet == nil,
@@ -212,10 +176,6 @@
       return routeFocusedKey(event) ? nil : event
     }
 
-    /// Whether the focused video owns the keyboard right now: the same relationship
-    /// `routeFocusedKey` requires, as a snapshot the system tap reads on its own thread. Every
-    /// focus transition the surface sees (begin, end, suspend, resume) refreshes it; a claimed key
-    /// is still checked against the live state when it reaches `routeSystemKey`.
     private var ownsKeyboard: Bool {
       guard active, inputFocused, applicationIsActive(), let view, let window = view.window, window.isKeyWindow,
         window.firstResponder === view, !view.isHiddenOrHasHiddenAncestor, window.attachedSheet == nil,
@@ -230,8 +190,6 @@
       dropsInjectedInput && event?.getIntegerValueField(.eventSourceUserData) == ScreenSharingInputInjector.eventTag
     }
 
-    /// Quartz events have no AppKit window association. Never infer ownership
-    /// from event.window; require the live app/window/responder relationship.
     func routeSystemKey(_ type: CGEventType, event: CGEvent) -> Bool {
       guard [.keyDown, .keyUp, .flagsChanged].contains(type),
         !isDroppedInjection(event),
@@ -264,9 +222,6 @@
       return true
     }
 
-    /// The text a synthesized key press carries, or nil for a physical key.
-    /// Only key code 0 (what `typeText` uses) and never with Control or
-    /// Command, whose characters differ from the layout's by design.
     private func synthesizedText(_ event: NSEvent) -> String? {
       guard event.keyCode == 0, modifiers & (2 | 8) == 0, let characters = event.characters, !characters.isEmpty
       else { return nil }

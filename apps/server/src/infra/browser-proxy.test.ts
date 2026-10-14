@@ -197,8 +197,6 @@ describe("browser connection proxy", () => {
   })
 })
 
-// The connection lifecycle is deterministic here: explicitly deliver connect,
-// timeout, and socket failures rather than relying on OS error timing.
 describe("browser proxy connection lifecycle", () => {
   class FakeSocket extends EventEmitter {
     destroyed = false

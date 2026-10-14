@@ -20,8 +20,6 @@ struct TranscriptDocumentGeometryTests {
     return TranscriptDocumentGeometry.layout(rows: rows, measurements: ledger, spacing: 10)
   }
 
-  // MARK: layout / incremental
-
   @Test func layoutUsesLedgerHeightsOverEstimates() {
     let a = row(height: 100)
     let b = row(height: 200)
@@ -50,8 +48,6 @@ struct TranscriptDocumentGeometryTests {
     #expect(patched?.totalHeight == 360)
   }
 
-  // MARK: spacer change
-
   @Test func bottomSpacerChangeComparesLedgerOrEstimateAgainstPreviousLayout() {
     let a = row(height: 100)
     let previous = layout([a, spacer(40)])
@@ -73,8 +69,6 @@ struct TranscriptDocumentGeometryTests {
       !TranscriptDocumentGeometry.bottomSpacerGeometryWillChange(
         from: layout([a]), spacerRow: spacer(70), measurements: ledger))
   }
-
-  // MARK: rebuild plan
 
   private func plan(
     previous: VirtualTranscriptLayout,
@@ -126,9 +120,6 @@ struct TranscriptDocumentGeometryTests {
     #expect(p.visibleAnchorKey == nil)
   }
 
-  /// A turn that starts and finishes while the chat is off screen appends
-  /// settled rows with no active row. A reader who left at the bottom must
-  /// come back to the bottom and stay there while those rows measure.
   @Test func followingReaderStaysAtBottomWhenSettledRowsAppendBelow() {
     let first = row(height: 100)
     let second = row(height: 100)
@@ -139,7 +130,6 @@ struct TranscriptDocumentGeometryTests {
     #expect(following.pinsBottom)
     #expect(following.resolvedDistanceFromBottom(newLayout: grown, previousLayout: previous) == 0)
 
-    // The same change for a reader who scrolled up keeps their row stationary.
     let reading = plan(previous: previous, distance: 120, follows: false, measured: [first.layoutKey: 100])
     #expect(!reading.pinsBottom)
     #expect(reading.visibleAnchorKey == first.layoutKey)
@@ -155,9 +145,7 @@ struct TranscriptDocumentGeometryTests {
     let b = row(height: 100)
     let c = row(height: 100)
     let d = row(height: 100)
-    let previous = layout([a, b, c, d])  // total 430, spacing 10
-    // Viewport 300 tall at distance 0 spans 130...430: b straddles its top
-    // (110...210), while c and d start inside it.
+    let previous = layout([a, b, c, d])
     let unmeasured = plan(previous: previous, distance: 0)
     #expect(unmeasured.visibleAnchorKey == c.layoutKey)
     #expect(unmeasured.distanceToPreserve == 0)
@@ -170,23 +158,16 @@ struct TranscriptDocumentGeometryTests {
   @Test func rowTallerThanViewportAnchorsOnItsOwnTop() {
     let a = row(height: 100)
     let tall = row(height: 800)
-    let previous = layout([a, tall])  // tall spans 110...910
-    // Viewport 400...700 lies entirely inside `tall`; no row starts in it.
+    let previous = layout([a, tall])
     let p = plan(previous: previous, distance: 210)
     #expect(p.visibleAnchorKey == tall.layoutKey)
   }
 
-  /// Scrolling toward older messages brings rows in across the viewport top.
-  /// When such a partly visible row settles from its estimate to a measured
-  /// height, the rows below it, which are what the reader sees, must not
-  /// move in either direction.
   @Test(arguments: [CGFloat(23), -23])
   func straddlingTopRowResizeKeepsVisibleRowsStationary(delta: CGFloat) throws {
     let rows = (0..<6).map { _ in row(height: 100) }
     let measured = Dictionary(uniqueKeysWithValues: rows.map { ($0.layoutKey, CGFloat(100)) })
-    let previous = layout(rows, measured: measured)  // total 650, spacing 10
-    // Distance 100 puts the viewport at 250...550: rows[2] (220...320)
-    // straddles its top.
+    let previous = layout(rows, measured: measured)
     let distance: CGFloat = 100
     let p = plan(previous: previous, distance: distance, measured: measured)
     #expect(p.visibleAnchorKey == rows[3].layoutKey)
@@ -210,10 +191,8 @@ struct TranscriptDocumentGeometryTests {
     let previous = layout([a, b, c])
     let p = plan(previous: previous, distance: 0, measured: [c.layoutKey: 100])
     #expect(p.visibleAnchorKey == c.layoutKey)
-    // Anchor below the growth: distance unchanged. Growth of `a` (above c) must not move c.
     let grownAbove = layout([a, b, c], measured: [a.layoutKey: 300, c.layoutKey: 100])
     #expect(p.resolvedDistanceFromBottom(newLayout: grownAbove, previousLayout: previous) == 0)
-    // Growth below the anchor pushes the distance up by the delta.
     let grownBelow = layout([a, b, c, row(height: 50)], measured: [c.layoutKey: 100])
     #expect(p.resolvedDistanceFromBottom(newLayout: grownBelow, previousLayout: previous) == 60)
   }
@@ -230,8 +209,6 @@ struct TranscriptDocumentGeometryTests {
     let notApplied = plan(previous: previous, distance: nil, applied: false)
     #expect(notApplied.resolvedDistanceFromBottom(newLayout: previous, previousLayout: previous) == nil)
   }
-
-  // MARK: layout surface helpers
 
   @Test func keysInRangeIgnoresOutOfBoundsIndices() {
     let a = row(height: 1)

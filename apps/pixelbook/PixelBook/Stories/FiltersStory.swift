@@ -1,7 +1,6 @@
 import Autocomplete
 import SwiftUI
 
-/// Change matching behavior without reimplementing filtering.
 struct FiltersStory: View {
   enum Preset: String, CaseIterable, Identifiable {
     case contains = "Contains"

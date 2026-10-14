@@ -4,8 +4,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// Freshness and scope of update checks, and row state across a harness
-/// update's round trip.
 extension UpdateCenterTests {
   func makeHarness(id: String) -> ServerHarness {
     var harness = makeHarness(updateAvailable: true)
@@ -54,8 +52,6 @@ extension UpdateCenterTests {
     #expect(checks == 1)
     #expect(center.components.first { $0.kind == .app }?.latestVersion == "1.1.0")
 
-    // The next sweep re-reads the feed without the known release blinking
-    // out of the list while it does.
     await center.backgroundRefresh()
     #expect(checks == 2)
     #expect(rowDuringCheck?.updateAvailable == true)
@@ -84,7 +80,6 @@ extension UpdateCenterTests {
     let sweep = Task { await center.refresh() }
     await reading.wait()
     let check = Task { await center.refresh(force: true) }
-    // The request is visible (and blocking) while it waits for the sweep.
     await awaitObserved { center.isCheckingForUpdates }
     #expect(fake.harnessCheckScopes.isEmpty)
 
@@ -124,8 +119,6 @@ extension UpdateCenterTests {
     }
 
     let update = Task { await center.update(row) }
-    // Accepted, and the inventory re-read is still in flight: the row must
-    // already show the machine's state, not fall back to "Update".
     await reading.wait()
     let inFlight = try #require(center.components.first { $0.id == row.id })
     #expect(inFlight.phase == .updating)
@@ -152,12 +145,10 @@ extension UpdateCenterTests {
     await center.refresh()
     #expect(center.hasUpdateInFlight)
 
-    // A new release lands mid-update: the list the user watches stays put.
     fake.configurePluginUpdates([makePluginUpdate()])
     await center.backgroundRefresh()
     #expect(!center.components.contains { $0.kind == .plugin })
 
-    // The harness finishes; the held-back sweep runs on its own.
     fake.configureHarnesses([makeHarness(updateAvailable: false)])
     center.noteHarnessLifecycleChanged(onServer: remote.id)
     await awaitObserved { center.components.contains { $0.kind == .plugin } }

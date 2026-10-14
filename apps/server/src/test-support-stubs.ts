@@ -3,9 +3,6 @@ import { PluginsError } from "@codevisor/plugins"
 import type { PluginsManager, PluginStateEvent } from "@codevisor/plugins"
 import { SkillsError } from "@codevisor/skills"
 
-/// Scan fixtures and stub managers for the native MCP, skills, and plugin
-/// routes.
-
 export const nativeMcpScan: NativeMcpScan = {
   candidates: [
     {
@@ -43,9 +40,6 @@ export const nativeMcpRemoval = {
   serverName: "docs"
 }
 
-/// Shared plugins-manager stub for the plugin route suites (same role as
-/// nativeMcpStub/skillsStub below): records calls and mirrors the real
-/// manager's typed failures.
 export const pluginSummary = {
   canRestore: false,
   enabled: true,
@@ -173,7 +167,6 @@ export const pluginsStub = (
     return pluginSummary
   },
   handleProxyRequest: async (_request, response, url) => {
-    // Mirror the real manager: only proxy-shaped paths are handled here.
     if (!url.pathname.includes("/app/") || url.pathname.endsWith("/unhandled/")) {
       return false
     }

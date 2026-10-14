@@ -22,8 +22,6 @@ const claims = (token: string): Record<string, unknown> => {
   }
 }
 
-// Only integrations whose refresh contract has been inspected are enrolled.
-// An unknown OpenCode plugin must keep ownership of its own credentials.
 export const providerOAuthSupported = (
   harness: ProviderOAuthHarness,
   providerId: string,
@@ -98,8 +96,6 @@ export const parseProviderOAuth = (
     string(auth.chatgpt_account_id) ??
     string(credential.organization_id)
   const email = string(credential.email) ?? string(identity.email)
-  // Keep only access-side metadata in external mirrors. The refresh token is
-  // retained only for a grant created in an isolated Codevisor login flow.
   const { refresh: _refresh, refresh_token: _grokRefresh, ...metadata } = credential
   return {
     harnessId,

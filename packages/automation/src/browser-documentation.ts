@@ -1,4 +1,3 @@
-/** Runtime documentation travels with the implementation, including inside persistent cells. */
 export const browserDocumentation = `Codevisor Browser
 
 Start with browser.js({code}) through the Codevisor tool gateway. Inside cells, browser is already defined. Top-level JavaScript/TypeScript bindings persist; use browser.write(value) to emit output or leave an expression last. browser.reset clears bindings without closing tabs. Browser code has no filesystem, process, or network APIs. Ordinary execute scripts also expose tools.browser but do not preserve variables.

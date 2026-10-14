@@ -11,13 +11,11 @@ const execFileAsync = promisify(execFile)
 
 export const run = <A>(effect: Effect.Effect<A, unknown>): Promise<A> => Effect.runPromise(effect)
 
-/// "/Applications/ChatGPT.app/Contents/Resources/codex" → the .app bundle.
 export const appBundlePath = (binaryPath: string): string | undefined => {
   const index = binaryPath.indexOf(".app/")
   return index === -1 ? undefined : binaryPath.slice(0, index + 4)
 }
 
-/// Preference order among *available* methods.
 export const METHOD_PREFERENCE: ReadonlyArray<HarnessInstallMethodSpec["kind"]> = [
   "brew",
   "curl",
@@ -38,8 +36,6 @@ export const installCommand = (spec: HarnessInstallMethodSpec): string => {
   }
 }
 
-/// The reinstall-style update command for a method (brew upgrades in place,
-/// npm reinstalls @latest, curl reruns the vendor script).
 export const upgradeCommand = (spec: HarnessInstallMethodSpec): string => {
   switch (spec.kind) {
     case "brew":
@@ -59,13 +55,11 @@ export const upgradeCommand = (spec: HarnessInstallMethodSpec): string => {
   }
 }
 
-/// A method is runnable when its prerequisite tool exists on the PATH.
 export const methodPrerequisite = (kind: HarnessInstallMethodSpec["kind"]): string => kind
 
 export const defaultSpawnShell = (command: string, env: NodeJS.ProcessEnv): LifecycleProcess => {
   const shell = env.SHELL !== undefined && env.SHELL !== "" ? env.SHELL : "/bin/sh"
   const child = spawn(shell, ["-lc", command], {
-    // Its own group so a timeout kill takes worker descendants with it.
     detached: process.platform !== "win32",
     env,
     stdio: ["ignore", "pipe", "pipe"]
@@ -82,9 +76,6 @@ export const defaultSpawnShell = (command: string, env: NodeJS.ProcessEnv): Life
     forward(`${cause.message}\n`)
     for (const listener of exitListeners) listener(undefined)
   })
-  // `exit` can precede stdio closure when an updater hands work to a child
-  // process. `close` does not fire until the inherited pipes are closed, so
-  // it is the earliest safe point to begin target-version verification.
   child.once("close", (code) => {
     for (const listener of exitListeners) listener(code ?? undefined)
   })
@@ -96,9 +87,7 @@ export const defaultSpawnShell = (command: string, env: NodeJS.ProcessEnv): Life
         } else {
           child.kill("SIGKILL")
         }
-      } catch {
-        // Already gone.
-      }
+      } catch {}
     },
     onExit: (listener) => exitListeners.add(listener),
     onOutput: (listener) => outputListeners.add(listener)
@@ -126,8 +115,6 @@ export interface SparkleCheck {
   readonly appcastUrlX64?: string
 }
 
-/// The effective Sparkle feed for a check spec: arch-matched, with an env
-/// override so end-to-end rehearsal can point at a fixture feed.
 export const sparkleFeedUrl = (arch: string, check: SparkleCheck): string =>
   process.env.CODEVISOR_CODEX_APPCAST_URL ??
   (arch === "x64" && check.appcastUrlX64 !== undefined ? check.appcastUrlX64 : check.appcastUrl)

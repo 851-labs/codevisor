@@ -2,19 +2,10 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// One workspace in the sidebar: its header over its tab rows.
-///
-/// The section resolves its own workspace entry and routing chat, so a tab
-/// click or remote edit in one workspace re-renders only that workspace's
-/// section; the list above it only follows which workspaces are listed.
 struct ClassicSidebarWorkspaceSection: View {
-  /// The owning sidebar, whose row builders and actions this section reuses.
   let sidebar: ClassicSidebarView
   let item: WorkspaceSidebarItem
-  /// Sidebar state every row depends on. Passed explicitly so a change
-  /// re-evaluates the section rather than relying on the copied sidebar.
   let selection: SidebarSelection?
-  /// The dragged workspace or tab, whose row dims in place.
   let draggingID: UUID?
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 

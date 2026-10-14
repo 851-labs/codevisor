@@ -40,17 +40,14 @@ describe("isNewerVersion", () => {
     expect(isNewerVersion("1.2.3", "1.2.3")).toBe(false)
     expect(isNewerVersion("1.2.3-beta.1", "1.2.3")).toBe(false)
     expect(isNewerVersion("26.715.52143", "26.715.31925")).toBe(true)
-    // Unequal segment counts pad with zeros on either side.
     expect(isNewerVersion("1.2.1", "1.2")).toBe(true)
     expect(isNewerVersion("1.2", "1.2.1")).toBe(false)
   })
 
   it("ranks a release above pre-releases of the same core", () => {
-    // A server installed from an rc/alpha must still be offered its stable.
     expect(isNewerVersion("0.1.94", "0.1.94-rc.37")).toBe(true)
     expect(isNewerVersion("0.1.94", "0.1.94-alpha.42")).toBe(true)
     expect(isNewerVersion("0.1.94-rc.37", "0.1.94")).toBe(false)
-    // But a pre-release of the NEXT core is newer than the current stable.
     expect(isNewerVersion("0.1.95-alpha.1", "0.1.94")).toBe(true)
   })
 
@@ -61,12 +58,10 @@ describe("isNewerVersion", () => {
     expect(isNewerVersion("0.1.94-rc.1", "0.1.94-alpha.50")).toBe(true)
     expect(isNewerVersion("0.1.94-alpha.50", "0.1.94-rc.1")).toBe(false)
     expect(isNewerVersion("0.1.94-alpha.50", "0.1.94-alpha.50")).toBe(false)
-    // Numeric identifiers rank below alphanumeric; longer lists win on ties.
     expect(isNewerVersion("1.0.0-alpha.1", "1.0.0-alpha")).toBe(true)
     expect(isNewerVersion("1.0.0-alpha", "1.0.0-alpha.1")).toBe(false)
     expect(isNewerVersion("1.0.0-alpha", "1.0.0-1")).toBe(true)
     expect(isNewerVersion("1.0.0-1", "1.0.0-alpha")).toBe(false)
-    // Build metadata is ignored.
     expect(isNewerVersion("1.2.3+build.5", "1.2.3")).toBe(false)
   })
 })
@@ -98,7 +93,6 @@ describe("latest-version checkers", () => {
       channel: "latest",
       latestVersion: "0.99.0"
     })
-    // Unknown package or offline → silence, never an error.
     await expect(checkNpmLatest("@nope/nope", "latest", fetchImpl)).resolves.toEqual({})
   })
 
@@ -144,12 +138,9 @@ describe("latest-version checkers", () => {
       "https://formulae.brew.sh/api/formula/hollow.json": { versions: {} },
       "https://formulae.brew.sh/api/cask/hollow.json": { version: "" }
     })
-    // Registry document without the requested dist-tag.
     await expect(checkNpmLatest("tagless", "latest", fetchImpl)).resolves.toEqual({})
-    // Release tag with no digits strips to nothing; absent tags too.
     await expect(checkGithubLatest("x/versionless", fetchImpl)).resolves.toEqual({})
     await expect(checkGithubLatest("x/tagless", fetchImpl)).resolves.toEqual({})
-    // Formula without a stable version falls to the cask, which is empty too.
     await expect(checkBrewLatest("hollow", fetchImpl)).resolves.toEqual({})
   })
 })
@@ -167,8 +158,6 @@ describe("detectInstallOrigin", () => {
   })
 
   it("classifies npm globals behind brew-node symlinks as npm, not brew", () => {
-    // /opt/homebrew/bin/<cli> is a symlink into homebrew's node_modules when
-    // node came from brew — the real path decides.
     expect(
       detectInstallOrigin("/opt/homebrew/bin/gemini", {
         home,
@@ -229,9 +218,6 @@ describe("detectInstallOrigin", () => {
     const home = realpathSync(mkdtempSync(join(tmpdir(), "codevisor-updater-home-")))
     try {
       vi.stubEnv("HOME", home)
-      // The binary lives in a home-dot directory but is reached through a
-      // plain-directory symlink: only the default realpath resolver sees the
-      // dot directory, and only the process HOME makes it a home install.
       mkdirSync(join(home, ".tool", "bin"), { recursive: true })
       writeFileSync(join(home, ".tool", "bin", "tool"), "")
       mkdirSync(join(home, "bin"))
@@ -239,7 +225,6 @@ describe("detectInstallOrigin", () => {
 
       expect(detectInstallOrigin(join(home, "bin", "tool"))).toBe("curl")
 
-      // Without HOME, a dot directory anywhere must not read as a home install.
       vi.stubEnv("HOME", undefined)
       expect(detectInstallOrigin("/srv/.tool/bin/tool", { realpath: (path) => path })).toBe(
         "unknown"
@@ -298,14 +283,12 @@ describe("detectBrewPackage", () => {
     const { join } = await import("node:path")
     const dir = mkdtempSync(join(tmpdir(), "codevisor-brew-"))
     try {
-      // Default realpath follows a real symlink into a Cellar-shaped path.
       const cellarBinary = join(dir, "Cellar/tool/1.0.0/bin/tool")
       mkdirSync(join(dir, "Cellar/tool/1.0.0/bin"), { recursive: true })
       writeFileSync(cellarBinary, "#!/bin/sh\n")
       const link = join(dir, "tool")
       symlinkSync(cellarBinary, link)
       expect(detectBrewPackage(link)).toEqual({ cask: false, formula: "tool" })
-      // A dangling path falls back to the literal argument (no Homebrew match).
       expect(detectBrewPackage(join(dir, "does-not-exist"))).toBeUndefined()
     } finally {
       rmSync(dir, { force: true, recursive: true })

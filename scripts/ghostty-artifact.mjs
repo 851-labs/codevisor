@@ -22,7 +22,6 @@ import { fileURLToPath } from "node:url"
 
 const defaultOrigin = "https://updates.codevisor.dev/dev-artifacts/ghostty"
 const frameworkRelativePath = join("apps", "macos", "Frameworks", "GhosttyKit.xcframework")
-/// The macOS app links the first slice, the iOS app the other two.
 export const GHOSTTY_SLICES = ["macos-arm64_x86_64", "ios-arm64", "ios-arm64_x86_64-simulator"]
 
 export async function ghosttyBuildStamp(repoRoot) {
@@ -54,8 +53,6 @@ export async function ensureGhosttyFramework(repoRoot, environment = process.env
     await withArtifactLock(artifactsRoot, stamp, async () => {
       if (await validFramework(cachedFramework, stamp)) return
 
-      // One-time migration for checkouts created before the shared cache. This
-      // checks only the current worktree and never searches sibling worktrees.
       if (await validRegularFramework(localFramework, stamp)) {
         console.log(`Installing the existing GhosttyKit into ${cachedFramework}`)
         await installFramework(localFramework, cachedFramework)
@@ -65,9 +62,6 @@ export async function ensureGhosttyFramework(repoRoot, environment = process.env
       try {
         await downloadFramework({ artifactsRoot, cachedFramework, environment, stamp })
       } catch (cause) {
-        // The shared artifact is published by CI after a pin bump lands; until
-        // then, produce it locally (a checksum-verified download plus
-        // repackaging, so this takes seconds, not a Zig build).
         console.log(
           `GhosttyKit ${stamp} is not published yet (${cause instanceof Error ? cause.message : String(cause)}); building it locally.`
         )
@@ -177,9 +171,7 @@ async function linkLocalFramework(localFramework, cachedFramework, expectedStamp
         if (currentTarget === target) return
       }
     }
-  } catch {
-    // Missing or broken destination; create it below.
-  }
+  } catch {}
 
   await mkdir(dirname(localFramework), { recursive: true })
   await rm(localFramework, { recursive: true, force: true })
@@ -194,10 +186,6 @@ async function validRegularFramework(path, expectedStamp) {
   }
 }
 
-/// Whether `path` is the GhosttyKit this checkout pins (`expectedStamp`),
-/// laid out the way the apps build against it: each slice's headers and
-/// module map under Headers/GhosttyKit/ (so the slices' module maps don't
-/// collide), found through a Swift include path of Headers/.
 export async function validFramework(path, expectedStamp) {
   try {
     const stamp = (await readFile(join(path, ".codevisor-stamp"), "utf8")).trim()
@@ -305,8 +293,6 @@ async function main() {
     return
   }
   if (command === "validate") {
-    // Release builds install the framework with build-ghostty.sh and check it
-    // here, against the same layout the dev tooling uses.
     const framework =
       process.argv[3] ?? join(repoRoot, "apps/macos/Frameworks/GhosttyKit.xcframework")
     const stamp = await ghosttyBuildStamp(repoRoot)

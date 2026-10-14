@@ -1,17 +1,3 @@
-// Verifies that every trusted dependency — the packages bun may run install
-// scripts for, which in practice means the native addons — loads from every
-// workspace package that declares it.
-//
-// Resolution is deliberately per-workspace. Under bun's isolated linker the
-// root node_modules links only the root manifest's own dependencies, so a
-// `require("node-pty")` from the repo root proves nothing about whether the
-// terminal package can load it (and fails for the wrong reason the moment
-// the root stops declaring it). Loading from the declaring workspace runs
-// the addon's binding lookup, which is the check that matters after a fresh
-// Linux install.
-//
-// Usable as a library (tests) and as a CLI inside the dev container:
-//   node dev-container-natives.mjs <repo-root>
 import { readdir, readFile, stat } from "node:fs/promises"
 import { createRequire } from "node:module"
 import { join, relative, resolve } from "node:path"
@@ -25,10 +11,6 @@ const defaultLoad = (name, manifestPath) => {
   createRequire(manifestPath)(name)
 }
 
-/// Workspace package directories named by the root manifest's `workspaces`
-/// globs. Only the `<dir>/*` form is supported; it is the only form this
-/// repository uses, and anything else should fail loudly rather than be
-/// silently skipped.
 export async function workspaceDirectories(repoRoot, workspaces) {
   const perPattern = await Promise.all(
     workspaces.map(async (pattern) => {
@@ -51,13 +33,9 @@ export async function workspaceDirectories(repoRoot, workspaces) {
         .map((entry) => join(root, entry.name))
     })
   )
-  // Promise.all preserves pattern order, and readdir order within a pattern.
   return perPattern.flat()
 }
 
-/// Loads each trusted dependency from every workspace that declares it.
-/// Returns every check performed, the failures among them, and the trusted
-/// names no workspace declares (dead configuration, reported but not fatal).
 export async function verifyTrustedDependencies(repoRoot, { load = defaultLoad } = {}) {
   const rootManifest = await readManifest(join(repoRoot, "package.json"))
   const directories = await workspaceDirectories(repoRoot, rootManifest.workspaces ?? [])

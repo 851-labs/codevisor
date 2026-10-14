@@ -15,7 +15,6 @@ const escaped = (source: string, index: number): boolean => {
   return count % 2 === 1
 }
 
-// Keep code examples literal. Offsets always refer to the original Markdown.
 export const markdownFileReferences = (source: string): ReadonlyArray<MarkdownFileReference> => {
   const code = new Uint8Array(source.length)
   let offset = 0

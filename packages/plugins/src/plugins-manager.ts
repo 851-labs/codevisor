@@ -49,7 +49,6 @@ const localhostAddresses = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"])
 const defaultIsLocalhost = (address: string | undefined): boolean =>
   localhostAddresses.has(String(address))
 
-/// Proxy request and tool invocation timeouts before the call fails.
 const PROXY_TIMEOUT_MS = 30_000
 const TOOL_TIMEOUT_MS = 30_000
 
@@ -63,22 +62,14 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
   const listeners = new Set<(event: PluginStateEvent) => void>()
   const installedListeners = new Set<() => void>()
   let isClosing = false
-  /// PluginsManagerConfig is a strict widening of the supervisor's config
-  /// (minus dataDir/onStateChange, which the manager owns), so it passes
-  /// through wholesale; the supervisor ignores the manager-only keys.
   const supervisorOverrides: Omit<PluginSupervisorConfig, "dataDir" | "onStateChange"> = config
   const supervisor = makePluginSupervisor({
     ...supervisorOverrides,
     contextSecret: tokens.contextSecret,
-    // "plugin-data" (not "plugins") so per-plugin runtime state can never
-    // collide with an installed-plugins root living in the same directory —
-    // dev instances keep both directly under one flat data dir.
     dataDir: pluginDataRoot,
     onStateChange: (pluginId) => emitState(pluginId),
     onUnexpectedExit: (pluginId) => requestMaintenance(pluginId)
   })
-  /// A fresh scan per operation keeps "drop a folder in" installs live with
-  /// no registration step; the scan is a handful of stats and manifest reads.
   const scan = (): PluginScan => {
     const result = scanPlugins(pluginsRoot)
     return {
@@ -135,12 +126,6 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
       state: supervisor.state(plugin.id)
     })
 
-  /// Fans a supervisor state transition out to subscribers as a full summary.
-  /// The transition can arrive asynchronously (for example, after a crash), so the
-  /// plugin is re-resolved from disk; one uninstalled mid-flight has nothing
-  /// left to describe and is skipped. So is one whose folder can't be read:
-  /// a crash reports its transition from inside the process's exit handler,
-  /// where a throw would exit the whole server.
   const emitState = (pluginId: string): void => {
     let plugin: InstalledPlugin | undefined
     try {
@@ -162,17 +147,12 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
   const contextHeaders = makePaneContextHeaders(signedContextHeaders)
   const authenticate = makePaneAuthenticator(tokens)
 
-  /// The installed set changed (install, update, link, uninstall): let the
-  /// MCP gateway refresh which plugin tools it advertises to agents.
   const notifyInstalled = (): void => {
     for (const listener of installedListeners) {
       listener()
     }
   }
 
-  /// Post-install summary: resolved from the unfiltered store scan so an
-  /// install targeting another platform still answers with what landed on
-  /// disk instead of a spurious 404.
   const summarizeInstalled = async (pluginId: string): Promise<PluginSummary> => {
     const installed = findPluginOrFail(scanPlugins(pluginsRoot), pluginId)
     const compatible = scan().plugins.find((plugin) => plugin.id === pluginId)
@@ -184,7 +164,6 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
       }
     }
     const summary = summarize(installed)
-    // The list changed: let subscribed clients refresh their chips/cards.
     emitState(pluginId)
     notifyInstalled()
     return summary
@@ -227,18 +206,12 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
       return summarizeInstalled(manifest.id)
     },
     unlink: async (pluginId) => {
-      // Same refresh contract as remove: once the link is gone the plugin
-      // no longer resolves on disk, so the list response is the signal.
       await installer.unlink(pluginId)
       await persist(pluginId, true)
       notifyInstalled()
       return { plugins: scan().plugins.map(summarize) }
     },
     remove: async (pluginId) => {
-      // The supervisor stop inside the installer emits any final state
-      // transition while the plugin still resolves on disk; after deletion
-      // there is nothing left to describe, so the list response is the
-      // client's refresh signal.
       await installer.remove(pluginId)
       await persist(pluginId, true)
       notifyInstalled()
@@ -249,12 +222,9 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
       if (match === null) {
         return false
       }
-      /* v8 ignore next -- the pattern's first capture always exists on match. */
+      /* v8 ignore next */
       const pluginId = decodeURIComponent(match[1] ?? "")
       const subPath = match[2]
-      // `/app` without the trailing slash would make every relative URL in
-      // the pane document resolve outside the proxy prefix; redirect once
-      // rather than serving a subtly broken document.
       if (subPath === undefined) {
         response.writeHead(308, { Location: `/v1/plugins/${pluginId}/app/${url.search}` })
         response.end()
@@ -283,7 +253,7 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
           ? {
               setCookie: paneCookieHeader(
                 pluginId,
-                /* v8 ignore next -- viaQueryToken implies the query param exists. */
+                /* v8 ignore next */
                 url.searchParams.get(PANE_TOKEN_QUERY_PARAM) ?? ""
               )
             }
@@ -292,28 +262,23 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
       if (outcome === "ok") {
         supervisor.noteSuccess(plugin.id, lease)
       } else if (outcome === "unreachable") {
-        // The port is dead even though the runtime looked alive: kick the
-        // supervisor so automatic maintenance relaunches it.
         supervisor.markUnreachable(plugin.id, lease)
       }
       return true
     },
     handleUpgrade: async (request, socket, head) => {
-      /* v8 ignore next -- Node HTTP upgrade requests always carry a URL. */
+      /* v8 ignore next */
       const url = new URL(request.url ?? "/", "http://127.0.0.1")
       const match = PROXY_PATH_PATTERN.exec(url.pathname)
       if (match === null) {
         return false
       }
       try {
-        /* v8 ignore next -- the pattern's first capture always exists on match. */
+        /* v8 ignore next */
         const pluginId = decodeURIComponent(match[1] ?? "")
         const subPath = match[2] ?? "/"
         const plugin = findPluginOrFail(scan(), pluginId)
         assertEnabled(pluginId)
-        // Remote plugin sockets arrive through the restricted relay byte
-        // tunnel as a loopback connection, so loopback is an accepted
-        // principal exactly like the server's own auth exemption.
         const authenticated = authenticate(pluginId, request, url)
         if (authenticated === undefined && !isLoopback(request.socket.remoteAddress)) {
           socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n")

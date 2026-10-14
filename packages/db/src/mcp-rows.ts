@@ -30,16 +30,12 @@ export interface McpServerRecord extends McpServer {
   readonly secretCipher?: string
 }
 
-/// One-time backup of a harness config file, taken before Codevisor's first
-/// ever mutation of it and never overwritten afterwards.
 export interface NativeConfigBackupRecord {
   readonly filePath: string
   readonly backupPath: string
   readonly createdAt: string
 }
 
-/// A parked native MCP removal; `fragment` is the verbatim parsed entry
-/// (JSON-encoded) so restore can reinsert exactly what was removed.
 export interface NativeMcpRemovalRecord extends NativeMcpRemoval {
   readonly fragment: string
 }

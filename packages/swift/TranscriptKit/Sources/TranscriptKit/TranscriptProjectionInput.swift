@@ -1,9 +1,6 @@
 import CodevisorProtocol
 import Foundation
 
-/// Immutable transcript input copied from the UI actor before row projection.
-/// All expensive, transcript-wide work operates on this value on the
-/// projection actor; AppKit/UIKit only mount the resulting visible rows.
 public struct TranscriptProjectionInput: Sendable {
   public enum ConnectionStatus: Equatable, Sendable {
     case idle
@@ -13,10 +10,6 @@ public struct TranscriptProjectionInput: Sendable {
 
   public let settledConversation: [ConversationItem]
   public let pendingUserMessage: UserMessage?
-  /// Immutable value represented by the projected active row. The native
-  /// row may observe newer token content only while the live item keeps this
-  /// identity; at a turn boundary this snapshot keeps the old response on
-  /// screen until the replacement projection commits.
   public let activeItem: ConversationItem?
   public var hasActiveItem: Bool { activeItem != nil }
   public let setupPhases: [SessionSetupPhase]

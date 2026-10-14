@@ -1,8 +1,6 @@
 import ACPKit
 import Foundation
 
-/// The direct-pipe implementation of `CloudChannelTransport`: channels opened
-/// here ride one `CloudDirectConnection` straight to the machine.
 public struct CloudDirectTransport: Sendable, CloudChannelTransport {
   public let connection: CloudDirectConnection
 
@@ -47,11 +45,6 @@ public struct CloudDirectTransport: Sendable, CloudChannelTransport {
   }
 }
 
-/// Chooses the pipe at channel-open time. Consumers (HTTP/WS tunnels, the
-/// loopback bridge) hold ONE transport per machine for their whole life;
-/// because every channel is ephemeral, each new open simply asks the provider
-/// which pipe is best right now — a live verified direct pipe, else the
-/// relay. No consumer ever migrates an open channel between pipes.
 public struct SwitchingChannelTransport: Sendable, CloudChannelTransport {
   public let machineDeviceId: String
   private let provider: @Sendable () async throws -> any CloudChannelTransport

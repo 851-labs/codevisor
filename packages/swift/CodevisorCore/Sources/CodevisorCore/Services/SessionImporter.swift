@@ -1,7 +1,6 @@
 import Foundation
 import ACPKit
 
-/// A session discovered in a harness, tagged with which harness it belongs to.
 public struct ImportedSession: Sendable, Equatable {
   public let harnessId: String
   public let info: SessionInfo
@@ -12,7 +11,6 @@ public struct ImportedSession: Sendable, Equatable {
   }
 }
 
-/// Fetches sessions from every installed harness via the Codevisor server.
 public struct SessionImporter: Sendable {
   private let harnessService: any HarnessServicing
 
@@ -20,7 +18,6 @@ public struct SessionImporter: Sendable {
     self.harnessService = harnessService
   }
 
-  /// Lists sessions across all ready harnesses. Failures per harness are ignored.
   public func fetchAll() async -> [ImportedSession] {
     let harnesses = await harnessService.readyHarnesses()
     var result: [ImportedSession] = []

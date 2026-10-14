@@ -108,7 +108,6 @@ describe("Antigravity provider", () => {
       expect(
         JSON.parse(await readFile(join(root, "gemini", "config", "mcp_config.json"), "utf8"))
       ).toMatchObject({ mcpServers: { codevisor: { command: "/bin/node" } } })
-      // The user's own agy runs on an overlay of their data root.
       await run(
         antigravity.loadSession(definition, "c-1", "/repo", recorder().emit, undefined, gateway)
       )
@@ -244,7 +243,6 @@ describe("Antigravity provider", () => {
     await run(antigravity.createSession(definition, "/repo", recorder().emit, managed))
     expect(commands.calls.filter((call) => call.args.includes("models"))).toHaveLength(1)
 
-    // An empty listing isn't a catalog worth keeping.
     const empty = provider({ answers: { models: { stdout: "" } } })
     await run(empty.provider.probeAuth!(definition))
     await run(empty.provider.createSession(definition, "/repo", recorder().emit))

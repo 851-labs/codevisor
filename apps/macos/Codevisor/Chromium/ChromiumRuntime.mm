@@ -30,8 +30,6 @@ class Application final : public CefApp, public CefBrowserProcessHandler {
  public:
   CefRefPtr<CefBrowserProcessHandler> GetBrowserProcessHandler() override { return this; }
   void OnBeforeCommandLineProcessing(const CefString&, CefRefPtr<CefCommandLine> command) override {
-    // CEF otherwise shows Chrome's login dialog instead of invoking its public
-    // GetAuthCredentials callback, including for the workspace proxy capability.
     command->AppendSwitch("disable-chrome-login-prompt");
     command->AppendSwitch("disable-quic");
   }
@@ -53,11 +51,6 @@ void ChromiumRuntime::Pump() {
   pumping_ = true;
   CefDoMessageLoopWork();
   pumping_ = false;
-  // A fallback pump is required, as in CEF's external-pump example: CEF's
-  // pump returns after a 10 ms slice without rescheduling leftover work, and
-  // never re-announces delayed work it reported from DoWork. Pages need it at
-  // frame rate. Without any page, only CEF's own housekeeping remains, so the
-  // main thread wakes once a second instead of 30 times.
   if (!pumpTimer_) StartPumpTimer(HasBrowserWork() ? 33 : 1000);
 }
 bool ChromiumRuntime::HasBrowserWork() const {
@@ -81,7 +74,6 @@ void ChromiumRuntime::StartPumpTimer(int64_t delay) {
 }
 bool ChromiumRuntime::Initialize() {
   if (initialized_) {
-    // A new page may follow an idle period; resume frame-rate pumping now.
     if (!shuttingDown_) SchedulePump(0);
     return !shuttingDown_;
   }
@@ -92,8 +84,6 @@ bool ChromiumRuntime::Initialize() {
   settings.external_message_pump = true;
   settings.log_severity = LOGSEVERITY_WARNING;
   NSString *support = [NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES) firstObject];
-  // Fresh profiles accompany the app-owned Keychain item. Do not try to
-  // decrypt old profiles with the new key or request Chromium's shared key.
   NSString *root = [[support stringByAppendingPathComponent:NSBundle.mainBundle.bundleIdentifier] stringByAppendingPathComponent:@"Chromium-v2"];
   CefString(&settings.root_cache_path) = RuntimeString(root);
   CefString(&settings.log_file) = RuntimeString([root stringByAppendingPathComponent:@"chromium.log"]);
@@ -121,7 +111,6 @@ void ChromiumRuntime::FinishShutdownIfReady() {
     [pumpTimer_ invalidate]; pumpTimer_ = nil;
     if (initialized_) CefShutdown();
     initialized_ = false;
-    // Keep the framework loaded until process exit; AppKit may still unwind CEF frames.
     auto completion = shutdownCompletion_;
     shutdownCompletion_ = nil;
     completion();

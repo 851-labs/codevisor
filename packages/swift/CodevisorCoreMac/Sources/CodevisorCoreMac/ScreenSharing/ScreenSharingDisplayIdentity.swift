@@ -1,17 +1,11 @@
 import ColorSync
 import CoreGraphics
 
-/// Which physical display a session shares, across renumbering. macOS can give a display a new
-/// ID when the display set changes: on a Mac Studio with one display, the virtual display
-/// appearing and going made display 188 come back as 190 (2026-09-27), and every capture
-/// restart then asked for 188 ("Selected display is unavailable") until the session ended.
-/// A session follows its display by hardware identity instead of by ID.
 struct ScreenSharingDisplayIdentity: Equatable, Sendable {
   struct Online: Equatable, Sendable {
     let id: CGDirectDisplayID
     let identity: ScreenSharingDisplayIdentity
     let isMain: Bool
-    /// One of the host's own virtual displays: never the shared display.
     let isVirtual: Bool
   }
 
@@ -19,9 +13,6 @@ struct ScreenSharingDisplayIdentity: Equatable, Sendable {
   let model: UInt32
   let serial: UInt32
 
-  /// The display now standing for `id`: `id` itself while it's online; else the online display
-  /// with the same hardware identity; else, when that can't be told apart, the only physical
-  /// display or the main one. nil when there's no candidate (the display set is mid-change).
   static func follow(
     _ id: CGDirectDisplayID, identity: ScreenSharingDisplayIdentity, online: [Online]
   ) -> CGDirectDisplayID? {
@@ -36,8 +27,6 @@ struct ScreenSharingDisplayIdentity: Equatable, Sendable {
 }
 
 extension ScreenSharingDisplayIdentity {
-  /// Whether a session can go on after the display set changed: the display it shares can still
-  /// be followed, and the host's virtual display it mirrors onto, if any, is still online.
   static func sessionSurvives(
     shared: CGDirectDisplayID, identity: ScreenSharingDisplayIdentity, virtual: CGDirectDisplayID?,
     online: [Online]
@@ -52,8 +41,6 @@ extension ScreenSharingDisplayIdentity {
       vendor: CGDisplayVendorNumber(id), model: CGDisplayModelNumber(id), serial: CGDisplaySerialNumber(id))
   }
 
-  /// Whether a viewer's display id (a display's UUID, as the host lists it) is one of this Mac's own
-  /// displays: viewing it, this Mac's host injects input into the screen the viewer is on.
   static func isOnThisMac(_ displayId: String) -> Bool {
     online().contains { display in
       guard let uuid = CGDisplayCreateUUIDFromDisplayID(display.id)?.takeRetainedValue() else { return false }
@@ -61,7 +48,6 @@ extension ScreenSharingDisplayIdentity {
     }
   }
 
-  /// The displays WindowServer has online right now.
   static func online() -> [Online] {
     var ids = [CGDirectDisplayID](repeating: 0, count: 32)
     var count: UInt32 = 0

@@ -4,14 +4,11 @@ import Testing
 
 @testable import CodevisorCore
 
-/// A terminal's live title is server-owned: it arrives on the pane record,
-/// names the terminal's tab, and never becomes the name this device publishes.
 @MainActor
 struct TerminalLiveTitleTests {
   let project = Project.fromFolder(URL(fileURLWithPath: "/src/app"), serverId: "m")
   let terminal = PaneDescriptorState(id: UUID(), kind: .terminal, name: "Terminal 1", terminalKey: "t1")
 
-  /// A chat tab plus one terminal tab, installed as machine "m"'s snapshot.
   func installed() async -> (fixture: NavigationFixture, workspace: Workspace) {
     let chat = ChatSession(projectId: project.id, serverId: "m", title: "Fix it")
     var workspace = Workspace(
@@ -23,7 +20,6 @@ struct TerminalLiveTitleTests {
     return (fixture, workspace)
   }
 
-  /// The terminal's record as a `navigation.changed` event carries it.
   func record(in workspace: Workspace, liveTitle: String?) throws -> ServerWorkspacePane {
     let liveTitleField = liveTitle.map { #","liveTitle":\#(String(reflecting: $0))"# } ?? ""
     let json = """
@@ -52,7 +48,6 @@ struct TerminalLiveTitleTests {
     #expect(pane.name == "Terminal 1")
     #expect(tab.displayTitle(for: pane, chatTitle: nil) == "✳ Claude Code")
 
-    // The shell exited: servers omit the field rather than sending null.
     #expect(
       await fixture.store.apply(
         .fixture(cursor: 6, panes: [try record(in: workspace, liveTitle: nil)]), machineId: "m"))
@@ -100,7 +95,6 @@ struct TerminalLiveTitleTests {
       ("Terminal 3", "htop", "htop"),
       ("Terminal", "htop", "htop"),
       ("Dev server", "node", "Dev server"),
-      // Nothing running: default names, numbered or not, read "Terminal".
       ("Terminal 3", " \n ", "Terminal"),
     ])
   func paneNamePrecedence(name: String, liveTitle: String, shown: String) {

@@ -21,7 +21,6 @@ it.each([1, 2])(
     onTestFinished(() => {
       raw.close()
     })
-    // Cross real 8192-code-point blocks, including their UTF-16 storage boundaries.
     const source = "abcdef😀日本語".repeat(2_000)
     raw.prepare("update chat_parts set text = ? where item_id = ?").run(source, item.id)
     raw.prepare("delete from transcript_entries where item_id = ?").run(item.id)
@@ -49,7 +48,6 @@ it.each([1, 2])(
     onTestFinished(() => {
       reopened.close()
     })
-    // Resume with production defaults, so the persisted cursor is batch-size independent.
     const progress = vi.fn()
     seedImportedTranscript(reopened, progress)
     expect(progress).toHaveBeenCalledOnce()

@@ -5,8 +5,6 @@ import { describe, expect, it } from "vitest"
 import { DatabaseError, makeDatabase } from "./index.js"
 import { buildV4Fixture, run, tempDatabase } from "./test-support.js"
 
-/// Column names of one table, read straight from the file so schema
-/// assertions do not depend on the service's own mapping.
 const sqliteColumns = (filename: string, table: string): ReadonlyArray<string> => {
   const sqlite = new Database(filename)
   try {
@@ -21,8 +19,6 @@ const sqliteColumns = (filename: string, table: string): ReadonlyArray<string> =
 describe("@codevisor/db project and archive upgrades", () => {
   it("moves archive state onto the workspace and closes individually archived chats", async () => {
     const filename = tempDatabase()
-    // Build modern state through the public API, then rewind migration 50 and
-    // re-create the pre-50 archive columns so the upgrade runs for real.
     const seed = await run(makeDatabase({ filename, serverId: "local" }))
     const project = await run(seed.createProject({ folderPath: "/tmp/archive-upgrade" }))
     const retired = await run(seed.createProject({ folderPath: "/tmp/retired-project" }))
@@ -77,19 +73,13 @@ describe("@codevisor/db project and archive upgrades", () => {
     const panes = await run(db.listWorkspacePanes)
     const workspaces = await run(db.listWorkspaces)
 
-    // Archived on its own means the user closed that tab, so the pane goes.
     expect(panes.some((pane) => pane.resourceId === closedByHand.id)).toBe(false)
-    // Archived along with its workspace is not a closed tab: the workspace now
-    // carries the archive, and restoring it must bring this tab back.
     expect(panes.some((pane) => pane.resourceId === wentWithWorkspace.id)).toBe(true)
 
-    // An archived project pushes its state down onto the workspaces, which are
-    // the only rows that still carry it.
     expect(workspaces.find((w) => w.id === retiredWorkspace.id)?.isArchived).toBe(true)
     expect(workspaces.find((w) => w.id === retiredWorkspace.id)?.archivedAt).toBe(
       "2026-06-02T00:00:00.000Z"
     )
-    // Workspaces in a live project are untouched.
     expect(workspaces.find((w) => w.id === liveWorkspace.id)?.isArchived).toBe(false)
     expect(workspaces.find((w) => w.id === archivedWorkspace.id)?.isArchived).toBe(true)
 
@@ -145,9 +135,6 @@ describe("@codevisor/db project and archive upgrades", () => {
         }
       ).title_is_user_set
     ).toBe(1)
-    // Migration 5 dropped the legacy project-shaped `workspaces` table;
-    // migration 21 reuses the freed name for empty pane workspaces, and adds
-    // the sessions binding column.
     const workspaceColumns = (
       sqlite.pragma("table_info(workspaces)") as ReadonlyArray<{ readonly name: string }>
     ).map((column) => column.name)
@@ -160,10 +147,6 @@ describe("@codevisor/db project and archive upgrades", () => {
       )
     ).not.toContain("symbol_name")
     expect(sqlite.prepare("select count(*) as count from workspaces").get()).toEqual({ count: 0 })
-    // Migration 22 added the workspace scratchpad table; migration 33 dropped
-    // it again when the notes feature was removed. A fresh migrate run still
-    // creates it on the way through, so only the end state matters here — the
-    // table is gone and its already-logged events went with it.
     expect(
       sqlite
         .prepare("select name from sqlite_master where type = 'table' and name = 'workspace_notes'")
@@ -189,8 +172,6 @@ describe("@codevisor/db project and archive upgrades", () => {
   it("refuses to migrate a database with orphaned child rows", async () => {
     const filename = tempDatabase()
     buildV4Fixture(filename)
-    // With enforcement off an orphan can sneak in; the migration's
-    // foreign_key_check must catch it.
     const sqlite = new Database(filename)
     sqlite.pragma("foreign_keys = OFF")
     sqlite

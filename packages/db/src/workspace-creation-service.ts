@@ -12,13 +12,6 @@ import type { CodevisorDatabaseService } from "./service.js"
 import { insertSessionRow } from "./sessions-service.js"
 import { upsertWorkspaceRow } from "./workspaces-service.js"
 
-/// A new workspace is born around its first chat. Writing the workspace, the
-/// session and the chat pane in ONE transaction means the navigation journal
-/// records them together, so no other client can ever observe a workspace
-/// without its chat (the state that used to leave phantom placeholder tabs
-/// behind). An existing workspace keeps its metadata: only membership and
-/// the pane are added. Idempotent per session id so a retried request
-/// converges.
 export const makeWorkspaceCreationService = (
   context: ServiceContext
 ): Pick<CodevisorDatabaseService, "createWorkspaceWithSession"> => {

@@ -15,19 +15,13 @@ import { afterEach, beforeEach, expect, vi } from "vitest"
 
 import type { UserHub } from "../src/user-hub.js"
 
-/// Shared scaffolding for the hub integration tests: dev login, sockets,
-/// frame readers, and machine/app connection setup.
-
 export const BASE = "http://localhost:8787"
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] })
-  // Keep real workerd alarms dormant; expiry is invoked explicitly below.
   vi.setSystemTime(new Date("2100-01-01T00:00:00Z"))
 })
 afterEach(() => vi.useRealTimers())
-
-// -- Small helpers -----------------------------------------------------------
 
 export const devLogin = async (): Promise<string> => {
   const response = await SELF.fetch(`${BASE}/dev/login`, { method: "POST" })
@@ -50,7 +44,6 @@ const hubStub = async (token: string): Promise<DurableObjectStub<UserHub>> => {
   return namespace.get(namespace.idFromName(userId)) as DurableObjectStub<UserHub>
 }
 
-/// A client close is asynchronous: acknowledge the server handler before resuming or expiring.
 export const disconnect = async (
   token: string,
   socket: WebSocket,
@@ -82,7 +75,6 @@ export const disconnect = async (
   }
 }
 
-/// Advances the frozen clock past resume grace and explicitly runs expiry.
 export const expireResumeGrace = async (token: string): Promise<void> => {
   const stub = await hubStub(token)
   await runInDurableObject(stub, async (hub, state) => {
@@ -93,7 +85,6 @@ export const expireResumeGrace = async (token: string): Promise<void> => {
   })
 }
 
-/// Buffered async queue: items arrive before or after we await them.
 export class Queue<Item> {
   #items: Item[] = []
   #waiters: ((item: Item) => void)[] = []
@@ -113,14 +104,10 @@ export class Queue<Item> {
   }
 }
 
-/// Splits a hub socket's traffic into its two wire planes: JSON text control
-/// frames and binary relay envelopes (batches flattened, boundaries counted).
 export class SocketReader<Frame> {
   readonly #controls = new Queue<Frame>()
   readonly #envelopes = new Queue<WireRelayEnvelope>()
   binaryMessages = 0
-  // The test client delivers binary messages as Blobs; reading them is async,
-  // so chain the reads to keep envelope order identical to wire order.
   #chain: Promise<void> = Promise.resolve()
 
   constructor(socket: WebSocket, decode: (raw: string) => Frame) {
@@ -150,7 +137,6 @@ export class SocketReader<Frame> {
   }
 }
 
-/// Sends one relay envelope as its own binary message.
 export const sendRelay = (
   socket: WebSocket,
   header: unknown,
@@ -178,8 +164,6 @@ export interface MachineSetup {
   welcome: Extract<HubToMachine, { t: "welcome" }>
 }
 
-/// Full machine onboarding: session → api key with device metadata → hub
-/// connection → hello/welcome.
 export const connectMachine = async (
   token: string,
   name: string,
@@ -282,5 +266,3 @@ export const connectApp = async (
   expect(welcome.t).toBe("welcome")
   return { keys, socket, reader, welcome, deviceId }
 }
-
-// -- Discovery & pages -------------------------------------------------------

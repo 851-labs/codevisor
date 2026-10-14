@@ -1,10 +1,6 @@
 import CodevisorCore
 import SwiftUI
 
-/// One machine under a harness. The chrome is `FleetMachineRow`, shared with
-/// the MCP and plugin pages; only the action a harness offers is
-/// specific to this plane. A failure opens from the row's mark, not from a
-/// button of its own.
 struct HarnessMachineRow: View {
   let row: HarnessFleet.MachineRow
   let harnessName: String
@@ -21,17 +17,11 @@ struct HarnessMachineRow: View {
   }
 }
 
-/// What a machine row can do, supplied by the harness it belongs to.
 struct HarnessMachineActions {
-  /// Signs this machine in, or the whole fleet for a fleet-shared harness.
   var signIn: ((_ machineId: String) -> Void)?
-  /// Nil when accounts are fleet-shared or the harness needs none.
   var accounts: ((_ machineId: String) -> Void)?
 }
 
-/// A check once a machine is in sync; a spinner while it catches up; a mark
-/// when it needs the user. Kept as a harness-shaped alias over the shared
-/// mark so the harness row's accessory slot reads the same as before.
 struct HarnessMachineMark: View {
   let status: HarnessFleet.MachineStatus
   var details: FleetBlockedMachine?
@@ -41,18 +31,12 @@ struct HarnessMachineMark: View {
   }
 }
 
-/// The one action a machine's status calls for, as a plain button: a menu
-/// with a single item hid it behind a click. Nothing renders while the
-/// machine is converging, has nothing to offer, or only needs explaining —
-/// that last case belongs to the mark. The same button sits in the harness
-/// row when the fleet is one machine.
 struct HarnessMachineActionButton: View {
   @Environment(\.theme) private var theme
   let row: HarnessFleet.MachineRow
   let harnessName: String
   let actions: HarnessMachineActions
 
-  /// The failure this row's mark opens, if it has one.
   static func details(
     row: HarnessFleet.MachineRow, harnessName: String
   ) -> FleetBlockedMachine? {

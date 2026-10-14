@@ -20,12 +20,6 @@ import {
 import { resolveSessionAccount, startSessionAgent, withStartPicks } from "./session-creation.js"
 import { findSession, resolveSessionCwdOrFail } from "./session-workspace.js"
 
-/// POST /v1/workspaces — a workspace born around its first chat. The
-/// workspace row, the session row and the chat pane commit in one database
-/// transaction, so the navigation journal publishes them as one change and
-/// no client ever sees the workspace without its chat. Everything that lives
-/// outside the database (cwd, account, provider session) is prepared first,
-/// exactly as the discrete POST /v1/sessions does.
 export const routeWorkspaceCreate = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
@@ -75,7 +69,7 @@ export const routeWorkspaceCreate = async (
     )
     sessionPayload = {
       ...sessionPayload,
-      /* v8 ignore next -- account binding is integration-tested through POST /v1/sessions, which shares resolveSessionAccount. */
+      /* v8 ignore next */
       ...(harnessAccountId === undefined ? {} : { harnessAccountId }),
       agentSessionId
     }

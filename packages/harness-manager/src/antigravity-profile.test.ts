@@ -12,7 +12,6 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
-/// A user home with an agy config, and an empty managed profile beside it.
 const fixture = async (settings?: string) => {
   const root = await mkdtemp(join(tmpdir(), "agy-profile-"))
   roots.push(root)
@@ -42,7 +41,6 @@ describe("managed Antigravity profiles", () => {
   it("links the user's agy config in around the account's own sign-in", async () => {
     const { home, own, profile } = await fixture('{"toolPermission":"always-proceed"}')
     const gemini = antigravityGeminiDir(profile)
-    // Something the account already has stays its own.
     await mkdir(join(gemini, "config"), { recursive: true })
     await writeFile(join(gemini, "config", "mcp_config.json"), '{"mine":true}')
 
@@ -77,7 +75,6 @@ describe("managed Antigravity profiles", () => {
       toolPermission: "always-proceed",
       modelProvider: "gemini"
     })
-    // Without the key again, the account goes back to the user's settings.
     await prepareAntigravityProfile(profile, { HOME: home }, undefined)
     expect(await link(settings)).toBeDefined()
     await prepareAntigravityProfile(profile, { HOME: home }, undefined)

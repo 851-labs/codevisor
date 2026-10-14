@@ -4,8 +4,6 @@ import ScreenSharingWebRTC
 import CryptoKit
 import Foundation
 
-/// TURN REST credentials expire five minutes after issuance. Only the host
-/// process has the shared secret; the viewer receives an HMAC-derived password.
 struct ScreenSharingHostConnectivity {
   let environment: [String: String]
   var now: () -> TimeInterval = { Date().timeIntervalSince1970 }

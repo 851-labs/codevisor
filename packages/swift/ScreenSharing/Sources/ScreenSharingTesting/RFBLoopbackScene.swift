@@ -1,23 +1,12 @@
 import ScreenSharing
 
-/// A deterministic desktop workload for the reference server: each `next`
-/// changes the framebuffer the way a real desktop would for that activity and
-/// returns the rectangles that describe the change on the wire. A scene is a
-/// function of its kind, seed and frame count, never of wall time, so tests,
-/// `vnc-bench` and the rig replay exactly the same content.
 public struct RFBLoopbackScene: Sendable {
   public enum Kind: String, CaseIterable, Sendable {
-    /// Nothing changes.
     case idle
-    /// Glyph-sized rectangles appear along lines, like typing in an editor.
     case typing
-    /// Content moves up (CopyRect) and a new strip appears at the bottom.
     case scroll
-    /// A window moves across a static background.
     case windowDrag
-    /// High-entropy full-frame content, like a photo or video.
     case photo
-    /// The desktop alternates between two sizes and is repainted.
     case resize
   }
 
@@ -35,8 +24,6 @@ public struct RFBLoopbackScene: Sendable {
     random = SplitMix64(seed: seed ^ kind.rawValue.stableHash)
   }
 
-  /// Applies the next frame to `framebuffer` and returns its rectangles, in
-  /// the order the client must apply them. Empty when nothing changed.
   public mutating func next(on framebuffer: RFBFramebuffer) throws -> [RFBLoopbackServer.Rectangle] {
     defer { frame += 1 }
     switch kind {
@@ -49,8 +36,6 @@ public struct RFBLoopbackScene: Sendable {
     }
   }
 
-  // MARK: Scenes
-
   private static let glyph = (width: 8, height: 12)
 
   private mutating func typing(_ framebuffer: RFBFramebuffer) throws -> [RFBLoopbackServer.Rectangle] {
@@ -62,7 +47,6 @@ public struct RFBLoopbackScene: Sendable {
       caret = (0, 0)
     }
     let rect = RFBRectangle(x: caret.x, y: caret.y, width: width, height: height)
-    // Ink on paper: a random glyph-like bit pattern in one colour.
     let ink = (UInt8(random.next() & 0x7F), UInt8(random.next() & 0x7F), UInt8(random.next() & 0x7F))
     var pixels = [UInt8]()
     pixels.reserveCapacity(width * height * 4)
@@ -100,7 +84,6 @@ public struct RFBLoopbackScene: Sendable {
       x: min(max(0, old.x + dx), framebuffer.width - size.width),
       y: min(max(0, old.y + dy), framebuffer.height - size.height),
       width: size.width, height: size.height)
-    // A frame gets the whole desktop painted once, then only the window's travel.
     let dirty: RFBRectangle
     if window == nil {
       try framebuffer.fill(
@@ -148,7 +131,6 @@ public struct RFBLoopbackScene: Sendable {
     return [.desktopSize(width: width, height: height), .encoded(full)]
   }
 
-  /// `count` BGRA pixels around a random base colour.
   private mutating func noise(count: Int, spread: UInt64) -> [UInt8] {
     let base = (UInt8(random.next() & 0xBF), UInt8(random.next() & 0xBF), UInt8(random.next() & 0xBF))
     var pixels = [UInt8]()
@@ -163,8 +145,6 @@ public struct RFBLoopbackScene: Sendable {
   }
 }
 
-/// A small, fast, seedable generator (Vigna's SplitMix64): the same seed gives
-/// the same sequence on every machine and Swift version.
 public struct SplitMix64: RandomNumberGenerator, Sendable {
   private var state: UInt64
   public init(seed: UInt64) { state = seed }
@@ -178,7 +158,6 @@ public struct SplitMix64: RandomNumberGenerator, Sendable {
 }
 
 extension String {
-  /// FNV-1a: `hashValue` is randomised per process, this is not.
   fileprivate var stableHash: UInt64 {
     var hash: UInt64 = 0xCBF2_9CE4_8422_2325
     for byte in utf8 { hash = (hash ^ UInt64(byte)) &* 0x100_0000_01B3 }

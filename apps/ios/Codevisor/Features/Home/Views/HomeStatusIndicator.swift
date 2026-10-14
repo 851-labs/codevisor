@@ -1,10 +1,7 @@
 import SwiftUI
 
-/// Messages-style status gutter shared by agent rows and collapsed workspace
-/// summaries. The transparent idle state preserves alignment in every row.
 struct HomeStatusIndicator: View {
   let status: HomeSessionStatus
-  /// On an accent-filled sidebar selection the blue unread dot would vanish.
   @Environment(\.backgroundProminence) private var backgroundProminence
 
   var body: some View {

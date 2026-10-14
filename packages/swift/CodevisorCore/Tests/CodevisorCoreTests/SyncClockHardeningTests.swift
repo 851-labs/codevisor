@@ -4,11 +4,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// Phase 15: ownership-model hardening for the Swift half of the LWW core.
-/// SyncClock mirrors @codevisor/sync and both sides MUST merge identically;
-/// the "conformance vector" here is duplicated verbatim from
-/// packages/sync/src/hardening.test.ts — if either suite's expectation
-/// changes, the other must change with it or replicas diverge.
 @Suite("SyncClockHardening")
 struct SyncClockHardeningTests {
   private func ts(_ wallMs: Int, _ counter: Int, _ deviceId: String) -> ServerSyncTimestamp {
@@ -27,8 +22,6 @@ struct SyncClockHardeningTests {
     ServerSyncEntry(key: key, value: .null, deleted: true, timestamp: timestamp)
   }
 
-  /// The shared conformance vector: every tiebreak rung (wall clock,
-  /// counter, device id), a tombstone, and a deliberate revival.
   private var batchAlpha: [ServerSyncEntry] {
     [
       entry("theme", .string("dark"), ts(100, 0, "alpha")),
@@ -102,20 +95,17 @@ struct SyncClockHardeningTests {
   func skewedDeviceWinsCausallyLaterEdits() {
     let remote = entry("k", .string("fleet"), ts(1_000_000, 0, "fast"))
     var document = SyncClock.merge([], [remote]).merged
-    // Wall clock reads 500, but the ratchet stamps past everything seen.
     let stamp = SyncClock.next(after: SyncClock.latest(in: document), deviceId: "slow", nowMs: 500)
     #expect(stamp == ts(1_000_000, 1, "slow"))
     let local = entry("k", .string("local"), stamp)
     document = SyncClock.merge(document, [local]).merged
     #expect(document == [local])
-    // The fleet adopts it too — the skewed device is not second-class.
     #expect(SyncClock.merge([remote], [local]).changed == [local])
   }
 
   @Test("Stale writes never resurrect a tombstone; a later re-add does")
   func tombstoneResurrection() {
     let tombstone = dead("mcp", ts(100, 0, "deleter"))
-    // A stale live value and a replay of pre-delete history are inert.
     let stale = SyncClock.merge([tombstone], [entry("mcp", .string("zombie"), ts(90, 0, "stale"))])
     #expect(stale.changed.isEmpty)
     #expect(stale.merged == [tombstone])
@@ -128,11 +118,9 @@ struct SyncClockHardeningTests {
     )
     #expect(replay.changed.isEmpty)
     #expect(replay.merged == [tombstone])
-    // Dueling tombstones resolve deterministically like any write.
     let rival = dead("mcp", ts(100, 0, "zeta"))
     #expect(SyncClock.merge([tombstone], [rival]).merged == [rival])
     #expect(SyncClock.merge([rival], [tombstone]).merged == [rival])
-    // A deliberate causally-later re-add revives the key — by design.
     let stamp = SyncClock.next(after: SyncClock.latest(in: [tombstone]), deviceId: "author", nowMs: 100)
     let revived = entry("mcp", .string("reborn"), stamp)
     #expect(SyncClock.merge([tombstone], [revived]).merged == [revived])
@@ -148,7 +136,6 @@ struct SyncClockHardeningTests {
       burst.append(entry("k", .string(value), clock!))
     }
     #expect(burst.map(\.timestamp.counter) == [0, 1, 2])
-    // Merged in any order, the last write of the burst wins.
     #expect(SyncClock.merge([], burst.reversed()).merged == [burst[2]])
     #expect(SyncClock.merge([], burst).merged == [burst[2]])
   }

@@ -105,7 +105,6 @@ describe("agent runtime account handoff", () => {
     expect(oldEvents).toEqual([])
     expect(replacementEvents).toEqual([])
 
-    // Even a provider callback that escapes close cannot cross generations.
     await oldEmit?.({
       kind: "session.error",
       payload: { message: "late old-account error" },

@@ -1,6 +1,3 @@
-// Helpers shared by the development runners (scripts/dev.mjs and
-// scripts/dev-ios.mjs): port scanning, health probing, process exit
-// bookkeeping, filesystem probes, and the worktree icon color derivation.
 import { access, readdir } from "node:fs/promises"
 import { createServer } from "node:net"
 
@@ -84,9 +81,7 @@ export async function waitForHealth(port, child, attempts = 120) {
     try {
       const response = await fetch(`http://127.0.0.1:${port}/v1/health`)
       if (response.ok) return
-    } catch {
-      // The listener is still starting.
-    }
+    } catch {}
     await delay(250)
   }
   throw new Error(`Timed out waiting for the Codevisor server on port ${port}`)
@@ -109,8 +104,6 @@ export function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds))
 }
 
-/// Asks each dev server to shut down over HTTP (killing any that can't be
-/// reached), waits up to 2 s for all of them, then kills stragglers.
 export async function shutdownDevServers(servers) {
   for (const [servicePort, child] of servers) {
     try {

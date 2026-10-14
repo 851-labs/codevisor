@@ -1,7 +1,7 @@
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { makeClaudeProvider } from "./claude.js"
+import { makeClaudeProvider } from "./provider.js"
 import {
   definition,
   environment,
@@ -13,7 +13,6 @@ import {
   streamEvent
 } from "./test-support.js"
 
-/// Delay before the first stream resumption; doubles per attempt.
 const STREAM_RECOVERY_BACKOFF_MS = 1_000
 
 describe("ClaudeProvider", () => {
@@ -65,19 +64,14 @@ describe("ClaudeProvider", () => {
     fake.push(initMessage())
     const created = await createPromise
 
-    // The session id is assigned client-side and handed to the CLI.
     expect(created.metadata.sessionId).toBeTruthy()
     expect(fake.options?.extraArgs?.["session-id"]).toBe(created.metadata.sessionId)
-    // Claude Code's own system prompt, as in a normal `claude` session.
     expect(fake.options?.systemPrompt).toEqual({ type: "preset", preset: "claude_code" })
-    // Full access is the default posture; the CLI is started in bypass so it
-    // matches the advertised mode.
     expect(created.metadata.modes?.currentModeId).toBe("bypassPermissions")
     expect(fake.options?.permissionMode).toBe("bypassPermissions")
     expect(created.metadata.modes?.availableModes.find((mode) => mode.id === "default")?.name).toBe(
       "Always Ask"
     )
-    // Permission modes carry the canonical Codevisor vocabulary + descriptions.
     expect(created.metadata.modes?.availableModes.map((mode) => mode.canonicalId)).toEqual([
       "ask",
       "autoEdit",
@@ -87,7 +81,6 @@ describe("ClaudeProvider", () => {
     expect(created.metadata.modes?.availableModes.every((mode) => mode.description)).toBe(true)
     expect(created.metadata.configOptions[0]?.id).toBe("model")
     expect(created.metadata.configOptions[0]?.currentValue).toBe("claude-fable-5")
-    // No synthetic "Default" entry: the CLI's own default ("high") is shown.
     const effort = created.metadata.configOptions.find((option) => option.id === "effort")
     expect(effort?.currentValue).toBe("high")
     expect(effort?.options.map((option) => ("value" in option ? option.value : ""))).toEqual([
@@ -131,7 +124,6 @@ describe("ClaudeProvider", () => {
     }
     expect(fresh.options?.settings).toEqual({ skillOverrides: skillsOff })
 
-    // A recovered stream keeps the flag but drops the fresh-session id.
     const prompt = run(created.handle.prompt("do work"))
     await fresh.nextPrompt()
     fresh.finish()
@@ -179,7 +171,6 @@ describe("ClaudeProvider", () => {
     )
     fake.push(initMessage("sdk-session-1", "claude-opus-4-8"))
     const created = await createPromise
-    // Picked after start: the restart must carry this, not the start model.
     await run(created.handle.setConfigOption("model", "claude-fable-5"))
     await run(created.handle.setConfigOption("effort", "xhigh"))
 
@@ -194,17 +185,11 @@ describe("ClaudeProvider", () => {
     )
     await fake.drain()
 
-    // The SDK stream ends mid-turn with no `result` (CLI crashed / pipe
-    // closed). The turn is NOT ended: the same CLI session is resumed on a
-    // fresh query and nudged to continue — invisible to the user.
     fake.finish()
     await vi.advanceTimersByTimeAsync(STREAM_RECOVERY_BACKOFF_MS - 1)
-    // Still backing off: no fresh query yet.
     expect(resumed.promptInput).toBeUndefined()
     await vi.advanceTimersByTimeAsync(1)
     await resumed.nextPrompt()
-    // Resumed by the id the first query was started with, and without the
-    // fresh-session `--session-id` flag that would conflict with it.
     expect(resumed.options?.resume).toBe(fake.options?.extraArgs?.["session-id"])
     expect(resumed.options?.resume).toBeTypeOf("string")
     expect(resumed.options?.extraArgs).toBeUndefined()
@@ -212,15 +197,12 @@ describe("ClaudeProvider", () => {
       model: "claude-fable-5",
       settings: { effortLevel: "xhigh", fastMode: false }
     })
-    // The nudge tells the model its process was interrupted, so it re-runs a
-    // cut-off tool call instead of waiting on results that will never come.
     expect(resumed.userMessages).toHaveLength(1)
     expect(String(resumed.userMessages[0]?.message.content)).toContain("interrupted and restarted")
     expect(events.map((event) => event.payload as Record<string, unknown>)).not.toContainEqual(
       expect.objectContaining({ turnState: "ended" })
     )
 
-    // The resumed query finishes the turn normally: one turn, one clean end.
     resumed.push(resultMessage())
     const result = await promptPromise
     expect(result.stopReason).toBe("end_turn")
@@ -245,7 +227,6 @@ describe("ClaudeProvider", () => {
 
     const promptPromise = run(created.handle.prompt("do work"))
     await fake.nextPrompt()
-    // Open a tool call so we can prove it gets settled on the safety-net path.
     fake.push(
       streamEvent({
         content_block: { id: "tool-x", name: "Bash", type: "tool_use" },
@@ -255,14 +236,11 @@ describe("ClaudeProvider", () => {
     )
     await fake.drain()
 
-    // No successor queries: every resumption gets the same dead stream back,
-    // so the bounded recovery gives up and the turn ends visibly.
     fake.finish()
     let settled = false
     void promptPromise.then(() => {
       settled = true
     })
-    // Two resumptions back off 1 s then 2 s before the turn gives up.
     await vi.advanceTimersByTimeAsync(3 * STREAM_RECOVERY_BACKOFF_MS - 1)
     expect(settled).toBe(false)
     await vi.advanceTimersByTimeAsync(1)
@@ -323,7 +301,6 @@ describe("ClaudeProvider", () => {
     expect(loaded.sessionId).toBe("previous-session")
     expect(loaded.metadata?.sessionId).toBe("previous-session")
     expect(fake.options?.resume).toBe("previous-session")
-    // The resumed process runs the chat's saved model from its first turn.
     expect(fake.options?.model).toBe("claude-opus-4-8")
     expect(loaded.metadata?.configOptions).toContainEqual(
       expect.objectContaining({ currentValue: "claude-opus-4-8", id: "model" })

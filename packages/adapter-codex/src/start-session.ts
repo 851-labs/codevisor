@@ -32,9 +32,6 @@ export interface CodexStartSessionDeps {
   readonly readConfigFile: (path: string) => string | undefined
 }
 
-/// Session bootstrap extracted from makeCodexProvider as a deps-factory (the
-/// makeSkillsOperations pattern): the startSession body is unchanged, its
-/// closed-over provider dependencies are injected.
 export const makeStartSession = ({
   connect,
   environment,
@@ -49,12 +46,6 @@ export const makeStartSession = ({
     toolGateway?: ToolGatewayConfig
   ): Promise<CodexSession> => {
     const client = await connect(definition, cwd, account, toolGateway)
-    // Disable stubs may only name servers the machine's config.toml already
-    // defines: overrides deep-merge into it, and a bare `{ enabled: false }`
-    // for an undefined server creates a transport-less entry the app-server
-    // rejects at config load ("invalid transport in `mcp_servers.…`").
-    // Machines without the Codex desktop app have no such entries — and
-    // nothing to disable.
     const configuredServers =
       toolGateway === undefined
         ? undefined
@@ -62,11 +53,6 @@ export const makeStartSession = ({
     const nativeAutomationDisables = NATIVE_AUTOMATION_MCP_SERVERS.filter(
       (name) => configuredServers?.has(name) ?? false
     )
-    // Keep Codex's bundled and first-party plugin skills out of
-    // Codevisor-owned threads without changing the user's global settings.
-    // Codevisor, repository, and user skills remain available. Disable the
-    // newer unified-computer-use plugin as a whole: it contributes its own
-    // skills and cua_repl transport, independently of system bundled skills.
     const threadConfig = {
       plugins: {
         [DISABLED_CODEX_PLUGIN]: { enabled: false }

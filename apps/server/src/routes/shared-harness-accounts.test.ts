@@ -112,14 +112,10 @@ it("reconciles received credentials and protects the loopback gateway at the rea
   })
   expect(merged.status).toBe(200)
   expect(await b.shared.accounts("claude-code", true)).toHaveLength(1)
-  // The harnesses whose sign-ins arrived are checked at once, not at the
-  // next sweep.
   expect(refresh.mock.calls.map(([harnessId]) => harnessId).toSorted()).toEqual([
     "claude-code",
     "pi"
   ])
-  // Then it reports, stamped after the sign-ins, so the fleet can tell it
-  // has caught up with them.
   const signedInAt = Math.max(
     ...(await a.shared.store.entries()).map((entry) => entry.timestamp.wallMs)
   )
@@ -128,7 +124,6 @@ it("reconciles received credentials and protects the loopback gateway at the rea
       (entry) => entry.key === "server-a" && entry.timestamp.wallMs >= signedInAt
     )
   )
-  // The same sign-ins again change nothing, so nothing is checked again.
   refresh.mockClear()
   const again = await jsonRequest(server, "/v1/sync/harness-shared-accounts", {
     method: "PUT",
@@ -201,8 +196,6 @@ it("scopes provider OAuth to shared settings and filters uninspected plugins at 
     (await send("pi", { action: "login", providerId: "anthropic", methodId: "oauth" })).status
   ).toBe(400)
   expect((await send("opencode", { action: "providers" })).status).toBe(404)
-  // A profile added on another device a moment ago is created on demand from
-  // the synced profile list, rather than answered "not found".
   const sharedProfile = "shared-6f1d2a3b-0c4e-4f5a-9b8c-7d6e5f4a3b2c"
   auth.sharedOpenCodeProfiles = vi.fn<NonNullable<typeof auth.sharedOpenCodeProfiles>>(async () => {
     await run(

@@ -87,7 +87,6 @@ describe("@codevisor/db", () => {
   it("round-trips harness update state and pending updates", async () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     try {
-      // Latest-version knowledge: empty → upsert (sparse and full) → list.
       expect(await run(db.listHarnessUpdateStates)).toEqual([])
       const sparse = await run(
         db.setHarnessUpdateState({ harnessId: "codex", info: { updateAvailable: false } })
@@ -111,7 +110,6 @@ describe("@codevisor/db", () => {
       await run(db.setHarnessUpdateState(full))
       expect(await run(db.listHarnessUpdateStates)).toEqual([full])
 
-      // Pending updates: empty → armed (sparse) → running (full) → cleared.
       expect(await run(db.listHarnessPendingUpdates)).toEqual([])
       await run(
         db.setHarnessPendingUpdate({
@@ -135,7 +133,6 @@ describe("@codevisor/db", () => {
       expect(await run(db.listHarnessPendingUpdates)).toEqual([running])
       await run(db.clearHarnessPendingUpdate("codex"))
       expect(await run(db.listHarnessPendingUpdates)).toEqual([])
-      // Clearing an absent row is a no-op, not an error.
       await run(db.clearHarnessPendingUpdate("codex"))
     } finally {
       await Effect.runPromise(db.close)

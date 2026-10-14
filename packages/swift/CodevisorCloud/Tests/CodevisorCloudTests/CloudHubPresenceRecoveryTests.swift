@@ -12,7 +12,6 @@ struct CloudHubPresenceRecoveryTests {
     let (hub, _) = makeHub(scripted)
 
     try await hub.waitUntilReady()
-    // A channel-scoped failure says nothing about the machine's presence.
     scripted.errorToApp(
       code: "machine-offline",
       message: "machine is not connected",
@@ -22,7 +21,6 @@ struct CloudHubPresenceRecoveryTests {
     await scripted.socket.drain()
     #expect(await hub.machines.first?.online == true)
 
-    // The grace-expiry broadcast carries machine-wide authority.
     scripted.errorToApp(
       code: "machine-offline",
       message: "resume grace expired",

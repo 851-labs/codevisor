@@ -3,7 +3,6 @@ import type Database from "better-sqlite3"
 
 import { jsonRecord } from "./event-payloads.js"
 
-/// The session's latest `available_skills_update`, kept as session state.
 export const readSessionSkills = (
   sqlite: Database.Database,
   sessionId: string

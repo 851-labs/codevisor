@@ -2,19 +2,6 @@ import CodevisorClient
 import CodevisorCore
 import SwiftUI
 
-/// Presents the local server's blocking data upgrade as a sheet over the
-/// main window. Its own modifier (like `UpdateCenterUpkeep`) so RootView's
-/// already-large chain stays within the type checker's budget.
-///
-/// The sheet cannot be dismissed: nothing in the app can issue a request
-/// until the migration finishes, and the New Chat page used to be the only
-/// route that explained the wait. It closes itself when the server reports
-/// healthy (the sidecar progress clears) and, if the upgrade failed — or the
-/// server died mid-upgrade leaving a stale "running" sidecar — switches to
-/// the failed layout with a Restart button so the user is never stuck. A
-/// failed upgrade is often fixed by a newer build, so that layout also opens
-/// Settings › Updates: the sheet is window-modal, and Settings is its own
-/// window, so the app update path stays fully usable behind it.
 struct ServerDataUpgradePresentation: ViewModifier {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.openSettings) private var openSettings
@@ -46,14 +33,8 @@ struct ServerDataUpgradePresentation: ViewModifier {
   }
 }
 
-/// What the sheet shows, derived from the sidecar report and the local
-/// server's lifecycle. Separate from the view so the wedge guard is a plain
-/// function.
 struct ServerDataUpgradePresentationState: Equatable {
   let progress: LocalDataUpgradeProgress
-  /// Set when the upgrade failed: the report's own error, or — for a report
-  /// still claiming "running" after the server start failed — the start
-  /// failure, since that sidecar will never advance again.
   let failureMessage: String?
 
   init?(progress: LocalDataUpgradeProgress?, serverState: LocalCodevisorServerState) {
@@ -79,8 +60,6 @@ struct ServerDataUpgradeSheet: View {
   let progress: LocalDataUpgradeProgress
   let failureMessage: String?
   let restart: () -> Void
-  /// Opens Settings › Updates; offered on failure, since the fix for a
-  /// migration that cannot complete is usually a newer build.
   var checkForUpdates: (() -> Void)? = nil
 
   private var isFailed: Bool { failureMessage != nil }

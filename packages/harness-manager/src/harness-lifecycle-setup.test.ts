@@ -16,8 +16,6 @@ import { makeHarnessLifecycleManager } from "./harness-lifecycle.js"
 
 afterEach(cleanupLifecycleTests)
 
-/// A harness setup the test finishes: `checked` resolves once the lifecycle
-/// asks for it, `finish` settles it.
 const controlledSetup = () => {
   const checked = Promise.withResolvers<NodeJS.ProcessEnv>()
   const finished = Promise.withResolvers<void>()
@@ -144,7 +142,6 @@ describe("harness setup at startup", () => {
     await failing.checked
     failing.fail("OpenCode couldn't migrate its sessions: disk full")
     await finishing
-    // Only the failed setup changed anything.
     expect(phases).toEqual(["updating", "failed"])
     expect(lifecycle.isGated("unchecked")).toBe(false)
     expect(lifecycle.isGated("done")).toBe(false)

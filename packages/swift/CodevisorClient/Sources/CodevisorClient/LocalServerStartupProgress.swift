@@ -1,7 +1,5 @@
 import Foundation
 
-/// Seven completed startup milestones. The final milestone belongs to the
-/// client: a listening process is ready only after its health identity matches.
 public struct LocalServerStartupProgress: Codable, Equatable, Sendable {
   public struct Work: Codable, Equatable, Sendable {
     public var id: String
@@ -59,7 +57,6 @@ public struct LocalServerStartupProgress: Codable, Equatable, Sendable {
     }
   }
 
-  /// A repeated write of the same work is not evidence of forward progress.
   public var progressKey: String {
     "\(bootId):\(stage):\(completed):\(work?.id ?? ""):\(work?.completed ?? 0)"
   }

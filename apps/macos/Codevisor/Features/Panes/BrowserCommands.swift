@@ -12,9 +12,6 @@ extension FocusedValues {
   }
 }
 
-/// The focused browser page's commands. The menu exists only while a browser
-/// pane has focus, so it isn't an empty, disabled menu everywhere else — and
-/// its disabled items don't swallow ⌘L and ⌘R from other panes.
 struct BrowserCommands: Commands {
   @FocusedValue(\.browserPage) private var page
 

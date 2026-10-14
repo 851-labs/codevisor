@@ -15,11 +15,8 @@ extension WorkspaceScreen {
         client: environment.machines.client(for: resolvedServerId),
         preferences: pane.review ?? ReviewPanePreferences())
     }
-    // Resolved during body evaluation: only write real changes, or the
-    // observation would invalidate the screen on every render.
     let projectBase = resolvedProject?.worktreeBase?.displayName
     if model.projectBase != projectBase { model.projectBase = projectBase }
-    // Another device may have changed what this pane compares.
     model.apply(pane.review ?? ReviewPanePreferences())
     model.onPreferencesChange = { updateReview(pane, preferences: $0) }
     return model

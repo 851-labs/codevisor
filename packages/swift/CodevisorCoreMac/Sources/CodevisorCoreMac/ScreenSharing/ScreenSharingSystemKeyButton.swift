@@ -2,13 +2,6 @@ import ComposableArchitecture
 import ScreenSharing
 import SwiftUI
 
-/// Apps, Mission Control or Desktop on the host, like Apple Screen Sharing's toolbar (851-2469).
-/// They press the host's own keys: always shown enabled, and pressed while viewing they switch to
-/// Control and press the key once the host grants it (851-2479).
-///
-/// One toolbar item per key: three buttons inside one item reached Accessibility all named after
-/// the first ("Apps"), and inside a ControlGroup as bare groups with no name or press action, so
-/// VoiceOver couldn't use them.
 public struct ScreenSharingSystemKeyButton: View {
   let store: StoreOf<ScreenSharingViewer>
   let key: ScreenSharingSystemKey

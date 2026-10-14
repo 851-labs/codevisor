@@ -3,9 +3,6 @@ import { describe, expect, it } from "vitest"
 import { makeServices, run } from "../test-support.js"
 import { MCPS_SYNC_NAMESPACE, reconcileMcps } from "./config-sync.js"
 
-/// Split from config-sync.test.ts for the size cap: every malformed,
-/// junk-shaped, or wrong-transport replica value the MCP reconcile must
-/// shrug off without driving changes.
 const oauthSeed = (name: string, oauth: unknown) => ({
   authType: "oauth",
   enabled: false,
@@ -55,8 +52,6 @@ describe("config sync malformed values", () => {
         }
       ])
     )
-    // A definition this machine once applied, deleted locally, whose
-    // replica entry is ALREADY a tombstone: nothing to republish.
     await run(
       services.db.mergeSyncEntries("local.mcps-applied", [
         { key: "ghost", value: "stale-fp", timestamp: { wallMs: 1, counter: 0, deviceId: "c" } }
@@ -70,8 +65,6 @@ describe("config sync malformed values", () => {
     })
     expect(result.status).toEqual({ published: [], applied: [], removed: [], renamed: [] })
 
-    // A structurally valid entry with junk in args keeps only the strings,
-    // and one without args at all defaults to none.
     await run(
       services.db.mergeSyncEntries(MCPS_SYNC_NAMESPACE, [
         {
@@ -102,9 +95,6 @@ describe("config sync malformed values", () => {
           },
           timestamp: { wallMs: 2, counter: 0, deviceId: "z" }
         },
-        // OAuth envelope junk in every flavor: each malformed field drops
-        // the envelope (the server still applies, tokenless), and material
-        // owned by THIS machine is never imported.
         {
           key: "OAuthy1",
           value: oauthSeed("OAuthy1", "str"),
@@ -165,8 +155,6 @@ describe("config sync malformed values", () => {
       "OAuthy3",
       "OAuthy4"
     ])
-    // Envelope junk never smuggled material in — and self-owned material
-    // is authority, not an import (no tokens exist here, so no ownership).
     for (const name of ["OAuthy1", "OAuthy2", "OAuthy3", "OAuthy4", "OAuthMine"]) {
       const id = (await services.mcp.list()).find((server) => server.name === name)?.id ?? ""
       expect(await services.mcp.oauthSyncState(id)).toBeUndefined()
@@ -177,9 +165,6 @@ describe("config sync malformed values", () => {
     expect((await services.mcp.list()).find((server) => server.name === "No Args")?.args).toEqual(
       []
     )
-    // Junk secret shapes filter down to their string-valued survivors —
-    // and wrong-transport material (env on http, headers on stdio) is
-    // stripped entirely.
     const mixedId =
       (await services.mcp.list()).find((server) => server.name === "Mixed Args")?.id ?? ""
     const mixedSecrets = await services.mcp.staticSecrets(mixedId)
@@ -197,8 +182,6 @@ describe("config sync malformed values", () => {
     expect(noArgsSecrets.bearerToken).toBeUndefined()
     expect(noArgsSecrets.env).toBeUndefined()
 
-    // A replica update carrying an oauth scope applies onto an existing
-    // local definition through the update path.
     await services.mcp.create({
       authType: "none",
       enabled: false,

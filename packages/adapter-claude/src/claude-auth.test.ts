@@ -15,7 +15,6 @@ const makeClient = (overrides: Record<string, unknown> = {}) => {
     },
     claudeOAuthWaitForCompletion: async () => {
       calls.push(["wait"])
-      // Claude clears its active flow before the callback resolves.
       throw new Error("No active claude_authenticate flow")
     },
     interrupt: async () => {
@@ -111,7 +110,6 @@ describe("spawnClaudeAuthClient", () => {
     })
     client.close()
     await interrupted.promise
-    // An unswallowed rejection fails the run as an unhandled error.
     expect(calls).toEqual([["close"]])
   })
 })

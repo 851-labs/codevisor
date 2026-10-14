@@ -1,10 +1,3 @@
-//  The iOS plugin pane's backing state: one PluginPaneModel per pane runs
-//  the token→load flow into a cached WebPaneController (mirroring macOS
-//  PluginPane), and PluginPaneCache keeps a small LRU of live models so tab
-//  switches re-attach without reloading while webviews outside the active
-//  canvas are torn down — each WKWebView is a web-content process, which is
-//  jetsam-relevant on iOS.
-
 import CodevisorCore
 import CodevisorUI
 import Foundation
@@ -14,9 +7,6 @@ import UIKit
 import WebKit
 import os
 
-/// One plugin pane's live state: phase + the cached WebPaneController.
-/// Created by PluginPaneCache and torn down when evicted, so the model's
-/// lifetime — not the SwiftUI view's — owns the webview.
 @MainActor
 @Observable
 final class PluginPaneModel: Identifiable {
@@ -28,12 +18,10 @@ final class PluginPaneModel: Identifiable {
   }
 
   let id: UUID
-  /// Set by the hosting view: `codevisor.setTitle` renames the pane's tab.
   @ObservationIgnored var onTitleChange: ((String) -> Void)?
 
   private(set) var phase: Phase = .idle
 
-  /// The machine whose plugin-update revisions apply to this pane.
   @ObservationIgnored let serverId: String
   @ObservationIgnored let pluginId: String
   @ObservationIgnored private let paneType: String
@@ -41,9 +29,6 @@ final class PluginPaneModel: Identifiable {
   @ObservationIgnored private let cwd: String
   @ObservationIgnored private let client: any CodevisorServerClienting
   @ObservationIgnored private let access: PluginAccessController
-  /// The machine's effective HTTP origin: direct machines answer their
-  /// baseURL, relay machines start the loopback bridge on demand
-  /// (MachineController.effectiveHTTPBaseURL).
   @ObservationIgnored private let resolveBaseURL: @MainActor () async -> URL?
   @ObservationIgnored private let recoverConnection: @MainActor () async -> URL?
   @ObservationIgnored private var loadedBaseURL: URL?
@@ -52,10 +37,6 @@ final class PluginPaneModel: Identifiable {
   @ObservationIgnored private var connectionRecovery = WebConnectionRecovery()
   @ObservationIgnored private var controller: WebPaneController?
   @ObservationIgnored private var loadTask: Task<Void, Never>?
-  /// The plugin-update revision the last load ran against; a moved
-  /// revision (`plugin.updated`: restart, re-import, re-link) makes the
-  /// next `loadIfNeeded` re-run the full token→load flow even on a ready
-  /// (or failed) pane.
   @ObservationIgnored private var loadedUpdateRevision: UInt64?
 
   init(
@@ -82,8 +63,6 @@ final class PluginPaneModel: Identifiable {
     self.recoverConnection = recoverConnection
   }
 
-  /// The controller (and its webview), created lazily on first show and
-  /// cached until the model is evicted.
   func ensureController(theme: WebPaneThemeTokens) -> WebPaneController {
     if let controller {
       controller.applyTheme(theme)
@@ -97,8 +76,6 @@ final class PluginPaneModel: Identifiable {
         themeMode: theme.mode
       ),
       theme: theme,
-      // Per-plugin persistent storage: HTTP cache and localStorage
-      // survive pane teardown/app relaunch, isolated between plugins.
       dataStoreIdentifier: pluginId.isEmpty
         ? nil : WebPaneController.pluginDataStoreIdentifier(for: pluginId)
     )
@@ -121,10 +98,6 @@ final class PluginPaneModel: Identifiable {
     return controller
   }
 
-  /// Kicks off the token-then-load flow once, and again whenever the
-  /// plugin's update revision moved since the last load (`plugin.updated`:
-  /// the plugin's code changed, so a ready pane reloads and a failed pane
-  /// retries). Manual Retry goes through `retry()`.
   func loadIfNeeded(theme: WebPaneThemeTokens, updateRevision: UInt64) {
     guard phase == .idle || loadedUpdateRevision != updateRevision else { return }
     load(theme: theme, updateRevision: updateRevision)
@@ -135,8 +108,6 @@ final class PluginPaneModel: Identifiable {
     load(theme: theme, updateRevision: updateRevision, recovering: true)
   }
 
-  /// A retained pane may still reference a retired local origin. Refresh
-  /// only when that origin changed, or a failed read-only load can retry.
   func connectionDidChange(theme: WebPaneThemeTokens, updateRevision: UInt64) async {
     guard phase != .idle, phase != .loading else { return }
     if connectionFailure {
@@ -194,8 +165,6 @@ final class PluginPaneModel: Identifiable {
           themeMode: theme.mode
         )
         guard !Task.isCancelled else { return }
-        // Resolved per load so a Retry after a relay reconnect picks
-        // up the fresh loopback origin.
         let base = recovering ? await self.recoverConnection() : await self.resolveBaseURL()
         guard let base else {
           guard !Task.isCancelled else { return }
@@ -223,16 +192,12 @@ final class PluginPaneModel: Identifiable {
     }
   }
 
-  /// The machine base URL + the server-relative pane path (which already
-  /// carries its own query string).
   private static func paneURL(base: URL, path: String) -> URL? {
     let origin = base.absoluteString
       .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
     return URL(string: "\(origin)\(path)")
   }
 
-  /// Drops the webview and its web-content process. The next visit
-  /// reloads from scratch (plugin panes keep durable state server-side).
   func teardown() {
     loadTask?.cancel()
     loadTask = nil
@@ -245,26 +210,15 @@ final class PluginPaneModel: Identifiable {
   }
 }
 
-/// The app-wide store of live plugin pane models, keyed by pane id. Hidden
-/// panes keep their webviews alive for a retention window (Safari-tab style)
-/// so tab switches within it are instant, bounded by a hard cap so webviews
-/// never stack unboundedly; memory warnings and pane closes tear webviews
-/// down eagerly.
 @MainActor
 final class PluginPaneCache {
   static let shared = PluginPaneCache()
 
-  /// How long a hidden pane's webview stays alive after it was last
-  /// visible, balancing instant tab switches against WebKit memory use.
   private let retentionSeconds: TimeInterval = 300
-  /// Hard ceiling on simultaneously live webviews regardless of retention —
-  /// each one is a web-content process, which is jetsam-relevant on iOS.
   private let capacity = 4
 
   private var models: [UUID: PluginPaneModel] = [:]
-  /// Most recently used last.
   private var usageOrder: [UUID] = []
-  /// Last time each pane was used (visible); drives retention expiry.
   private var lastUsed: [UUID: Date] = [:]
   private var sweepTask: Task<Void, Never>?
   private var memoryWarningObserver: (any NSObjectProtocol)?
@@ -281,8 +235,6 @@ final class PluginPaneCache {
     }
   }
 
-  /// The pane's live model, created via `make` on first use. Marks the
-  /// pane as most recently used and evicts webviews beyond the cap.
   func model(for paneId: UUID, make: () -> PluginPaneModel) -> PluginPaneModel {
     let model =
       models[paneId]
@@ -295,7 +247,6 @@ final class PluginPaneCache {
     return model
   }
 
-  /// The pane closed (or left the workspace): tear its webview down now.
   func remove(paneId: UUID) {
     usageOrder.removeAll { $0 == paneId }
     lastUsed.removeValue(forKey: paneId)
@@ -312,7 +263,6 @@ final class PluginPaneCache {
     scheduleSweep()
   }
 
-  /// Keep only the most recently used (visible) pane's webview.
   private func handleMemoryWarning() {
     while usageOrder.count > 1 {
       evictOldest()
@@ -326,9 +276,6 @@ final class PluginPaneCache {
     models.removeValue(forKey: evicted)?.teardown()
   }
 
-  /// Tears down hidden panes whose retention window has expired. One sweep
-  /// task runs while any hidden pane is alive, sleeping until the earliest
-  /// expiry; the visible (most recently used) pane is never expired.
   private func scheduleSweep() {
     guard sweepTask == nil, usageOrder.count > 1 else { return }
     sweepTask = Task { @MainActor [weak self] in

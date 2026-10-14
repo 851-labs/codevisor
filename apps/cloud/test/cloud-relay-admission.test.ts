@@ -21,7 +21,6 @@ import {
   SocketReader
 } from "./cloud-test-support.js"
 
-// Register cleanup before any hello or reader assertion can fail.
 const ownedSocket = async (
   context: TestContext,
   token: string,
@@ -95,7 +94,7 @@ it("orders size, hello and decoding diagnostics and recovers on the same socket"
     [2097152, "hello required before relaying"]
   ] as const) {
     const malformed = new Uint8Array(size)
-    malformed.fill(255, 0, 4) // Impossible header length, regardless of trailing bytes.
+    malformed.fill(255, 0, 4)
     expect(malformed.byteLength).toBe(size)
     const error = reader.next()
     socket.send(malformed)
@@ -114,7 +113,6 @@ it("orders size, hello and decoding diagnostics and recovers on the same socket"
     const error = reader.next()
     socket.send(bytes)
     expect(await error).toEqual({ t: "error", code: "invalid-frame", message })
-    // Delivery acknowledges recovery after each distinct rejection.
     const relayed = machine.reader.nextEnvelope()
     sendRelay(
       socket,
@@ -154,7 +152,6 @@ it("accepts an actual 2097152-byte relay and refuses 2097153 bytes with recovery
     frame: { t: "data", channelId: "exact-limit", seq: 11 }
   })
   expect(envelope.payload.byteLength).toBe(2097152 - overhead)
-  // Deep object equality enumerates millions of properties for this payload.
   expect(envelope.payload.every((byte, index) => byte === payload[index])).toBe(true)
 
   const refused = encodeRelayEnvelopes([{ header, payload: new Uint8Array(payload.length + 1) }])

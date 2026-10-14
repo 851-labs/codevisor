@@ -1,8 +1,6 @@
 import Foundation
 
 extension Workspace {
-  /// Removes empty leaves after pane lifecycle hooks have persisted a close.
-  /// Selection changes only when its tab or active leaf has disappeared.
   public mutating func pruneClosedCenterTab(_ tabId: UUID) {
     guard let index = centerTabs.firstIndex(where: { $0.id == tabId }) else { return }
     let oldLeaves = centerTabs[index].root.allGroups.map(\.id)
@@ -26,15 +24,10 @@ extension Workspace {
     }
   }
 
-  /// Re-selects after a rebuild dropped the selected tab — a close applied
-  /// through sync prunes the tab before `pruneClosedCenterTab` can see it —
-  /// with the same neighbor that rule picks. `previousTabs` is the order
-  /// before the rebuild, which locates where the closed tab sat.
   mutating func selectReplacementForClosedTab(_ closedTabId: UUID, previousTabs: [WorkspaceTab]) {
     guard !centerTabs.isEmpty, !centerTabs.contains(where: { $0.id == closedTabId }),
       let oldIndex = previousTabs.firstIndex(where: { $0.id == closedTabId })
     else { return }
-    // The closed tab's slot: just before the first survivor that followed it.
     let tabs = centerTabs
     let index =
       previousTabs[(oldIndex + 1)...].lazy
@@ -43,8 +36,6 @@ extension Workspace {
     selectedCenterTabId = Self.replacementTab(afterRemovingAt: index, from: tabs).id
   }
 
-  /// The tab that takes over when the selected tab at `index` closes: the
-  /// one above it, else the one below.
   static func replacementTab(
     afterRemovingAt index: Int, from tabs: [WorkspaceTab]
   ) -> WorkspaceTab {

@@ -83,7 +83,6 @@ struct TranscriptTextSelectionTests {
     #expect(span.surfaceRanges(rowIndex: 0, surfaceLengths: [3, 4]) == [0..<3, 0..<4])
     #expect(span.surfaceRanges(rowIndex: 1, surfaceLengths: [3, 4]) == [0..<3, 0..<4])
 
-    // A selection that starts at the end of a row contributes nothing from it.
     let fromEnd = TranscriptSelectionSpan(
       start: .rowEnd("a"),
       startRow: 0,
@@ -107,7 +106,7 @@ struct TranscriptTextSelectionTests {
   @Test func textJoinsSurfacesAndRowsSkippingEmptyContributions() {
     let rows: [[String]] = [
       ["Hello world", "second surface"],
-      [],  // a chrome row with no text
+      [],
       ["```code```"],
       ["tail", ""],
     ]

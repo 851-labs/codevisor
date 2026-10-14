@@ -2,20 +2,13 @@ import Foundation
 import ACPKit
 
 extension SessionController {
-  // MARK: - Goals
-
-  /// The session's persistent goal, when the harness supports goal mode.
   public var goal: SessionGoal? { model?.goal }
 
-  /// Whether the selected harness supports goals at all — gates every goal
-  /// affordance; harnesses without support show nothing.
   public var supportsGoals: Bool {
     guard let harnessId = connectedHarnessId ?? selectedHarnessId else { return false }
     return supportsGoalsByHarness[harnessId] ?? false
   }
 
-  /// The goal affordance shows whenever the harness supports goals; a goal
-  /// set before the first send is held and applied once the agent connects.
   public var canEditGoal: Bool { supportsGoals }
 
   public func toggleGoalComposer() {
@@ -23,16 +16,12 @@ extension SessionController {
       exitGoalComposer()
     } else {
       isGoalComposerArmed = true
-      // Plan and goal are mutually exclusive: arming the goal composer
-      // leaves plan mode.
       if isPlanModeOn, !isPlanModeUpdatePending {
         Task { await togglePlanMode() }
       }
     }
   }
 
-  /// Leaves goal mode without mutating an ordinary composer draft. Editing
-  /// an existing goal restores the chat draft that the edit displaced.
   public func exitGoalComposer() {
     isGoalComposerArmed = false
     isGoalEditing = false
@@ -42,8 +31,6 @@ extension SessionController {
     }
   }
 
-  /// Loads the current goal into the composer in edit mode — submitting
-  /// replaces the objective.
   public func editGoal() {
     guard let objective = (goal ?? draftGoal)?.objective else { return }
     composerTextBeforeGoalEdit = composerText
@@ -52,10 +39,6 @@ extension SessionController {
     isGoalEditing = true
   }
 
-  /// Submits the composer text as the goal (the armed-toggle send path).
-  /// On a new chat this mirrors `send()`: navigate to the session page,
-  /// create the worktree/session, connect the agent — with the goal applied
-  /// on connect instead of a prompt.
   public func submitGoalFromComposer() async {
     let objective = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !objective.isEmpty, !isConnecting, !isSubmitting,
@@ -83,7 +66,6 @@ extension SessionController {
     let showsSetupPhases =
       (pendingNewChatAnalytics || (!hasSentFirst && onFirstSend != nil))
       && resumeAgentSessionId?.isEmpty != false
-    // Navigate first, exactly like a first prompt send.
     if !hasSentFirst {
       firstSendSelections = rememberedConfigValues
       hasSentFirst = true
@@ -101,8 +83,6 @@ extension SessionController {
       isGoalComposerArmed = true
     }
 
-    // Materialize the worktree before the agent exists, exactly like a
-    // first prompt send (see send()).
     if wantsNewWorktree, sessionCwdOverride == nil {
       if let failure = await createWorktree(showsSetupPhase: showsSetupPhases) {
         restoreComposer()
@@ -120,7 +100,6 @@ extension SessionController {
     status = .connecting("Starting \(harness.name)…")
     if showsSetupPhases { beginSetupPhase(.startingAgent(named: harness.name)) }
     do {
-      // Opening saved state stays read-only; this explicit submission starts work.
       let model = try await connect(harnessId: harness.id)
       self.model = model
       await pendingConfiguration.apply(to: model)
@@ -146,16 +125,11 @@ extension SessionController {
     return false
   }
 
-  /// The pre-connect goal shown in the banner before the session exists.
-  /// Kept visible until the live goal replaces it, so the banner doesn't
-  /// flicker out during the connect handshake.
   public var draftGoal: SessionGoal? {
     guard model?.goal == nil, let pendingGoal else { return nil }
     return SessionGoal(objective: pendingGoal, status: .active)
   }
 
-  /// Applies a goal captured before connect. Called once the model exists.
-  /// The draft clears only after the live goal is set (no banner gap).
   func applyPendingGoal(to model: SessionModel) async {
     guard let pendingGoal else { return }
     if await model.setGoal(objective: pendingGoal) {
@@ -179,13 +153,8 @@ extension SessionController {
     }
   }
 
-  // MARK: - Todos
-
-  /// The session's latest todo checklist, pinned above the composer.
   public var todos: Plan? { model?.sessionPlan }
 
-  /// Fully completed snapshots remain durable for sync/cursor correctness,
-  /// but no longer occupy any pinned checklist UI.
   public var visibleTodos: Plan? {
     guard let todos,
       todos.entries.contains(where: { $0.status != .completed })
@@ -195,8 +164,6 @@ extension SessionController {
     return todos
   }
 
-  /// Restores the per-session disclosure preference after controller
-  /// creation or LRU eviction.
   public func restoreTodoDisclosure(isExpanded: Bool) {
     isTodosExpanded = isExpanded
   }

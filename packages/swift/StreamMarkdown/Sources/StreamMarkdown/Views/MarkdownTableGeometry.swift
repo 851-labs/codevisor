@@ -1,7 +1,5 @@
 import CoreGraphics
 
-/// Immutable geometry shared by table preparation and viewport mounting.
-/// Finding visible cells uses two binary searches per axis.
 struct MarkdownTableGeometry {
   let columnOffsets: [CGFloat]
   let rowOffsets: [CGFloat]
@@ -16,9 +14,6 @@ struct MarkdownTableGeometry {
   }
 
   static func viewport(in bounds: CGRect, visible: CGRect, overscan: CGFloat = 80) -> CGRect {
-    // Horizontal clipping belongs to the table's own scroller. Navigation
-    // transitions can move the enclosing viewport sideways without changing
-    // which table rows need to be prepared.
     CGRect(x: bounds.minX, y: visible.minY, width: bounds.width, height: visible.height)
       .insetBy(dx: 0, dy: -max(0, overscan)).intersection(bounds)
   }

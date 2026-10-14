@@ -3,11 +3,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// The keep/sibling/dismiss policy for a workspace whose chats are all
-/// CLOSED — they still belong to it, but none of them has a pane. The
-/// sidebar lists such a workspace by its terminal/plugin tabs, and a session
-/// route is the only way to mount it, so the closed chat still assigned to it
-/// must keep the route — unless nothing but the New Tab placeholder is left.
 @MainActor
 struct WorkspaceSyncRouteDispositionTests {
   @MainActor
@@ -19,8 +14,6 @@ struct WorkspaceSyncRouteDispositionTests {
     var repository: ProjectedWorkspaceRepository { navigation.workspaces }
     var projectList: ProjectListModel { navigation.projectList }
 
-    /// Installs the machine's snapshot: the workspace's panes are the
-    /// layout's panes, and a chat in `chatTab` is assigned to it.
     func makeSync(layout: [WorkspaceTab]) async -> WorkspaceSyncModel {
       let project = Project(id: projectId, serverId: "local", name: "codevisor")
       let chat = ChatSession(id: sessionId, projectId: projectId, serverId: "local", title: "Closed chat")
@@ -31,7 +24,6 @@ struct WorkspaceSyncRouteDispositionTests {
       return navigation.workspaceSync
     }
 
-    /// The chat tab, exactly as an open chat's pane.
     var chatTab: WorkspaceTab {
       let chat = PaneDescriptorState(
         id: sessionId,
@@ -45,9 +37,6 @@ struct WorkspaceSyncRouteDispositionTests {
       )
     }
 
-    /// Closing a chat closes its pane on the server. The chat keeps its
-    /// workspace assignment -- which is what "closed" means, and what the
-    /// route still anchors on.
     func closeChatTab() async {
       _ = await navigation.store.apply(
         .fixture(cursor: 2, deleted: [("workspace_panes", sessionId.uuidString)]), machineId: "local")
@@ -64,8 +53,6 @@ struct WorkspaceSyncRouteDispositionTests {
       root: .leaf(PaneGroupState(panes: [terminal], selectedPaneId: terminal.id))
     )
     let sync = await fixture.makeSync(layout: [terminalTab, fixture.chatTab])
-    // Closing the chat's pane is the whole of "this chat is closed": the chat
-    // row and its workspace membership are untouched.
     await fixture.closeChatTab()
 
     #expect(fixture.projectList.sessions.contains { $0.id == fixture.sessionId })

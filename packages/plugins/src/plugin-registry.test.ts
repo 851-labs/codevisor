@@ -99,9 +99,6 @@ describe("makePluginRegistryClient", () => {
   })
 
   it("never caches a never-generated index (generatedAt null)", async () => {
-    // The cloud serves { generatedAt: null } before its first poll. Pinning
-    // that empty answer for a TTL would show "no plugins published" for 10
-    // minutes on fresh dev environments, so it is served but not cached.
     let calls = 0
     const client = makePluginRegistryClient({
       baseUrl: "https://registry.example",
@@ -114,7 +111,6 @@ describe("makePluginRegistryClient", () => {
       now: () => 0
     })
     expect((await client.fetchIndex()).generatedAt).toBeNull()
-    // Same instant, no TTL elapsed: the empty answer was not cached.
     expect((await client.fetchIndex()).generatedAt).toBe("first-poll")
     expect(calls).toBe(2)
   })
@@ -135,7 +131,6 @@ describe("makePluginRegistryClient", () => {
     })
     expect((await client.fetchIndex()).generatedAt).toBe("cached")
     clock = PLUGIN_REGISTRY_CACHE_TTL_MS + 1
-    // Stale-while-error: the expired entry still answers.
     expect((await client.fetchIndex()).generatedAt).toBe("cached")
     expect(calls).toBe(2)
   })
@@ -155,7 +150,6 @@ describe("makePluginRegistryClient", () => {
     expect((failure as PluginsError).code).toBe("unavailable")
     expect((failure as PluginsError).message).toContain("network down")
 
-    // Non-Error throwables surface as their string form.
     const throwsValue = makePluginRegistryClient({
       baseUrl: "https://registry.example",
       fetchImpl: async () => {
@@ -172,8 +166,6 @@ describe("makePluginRegistryClient", () => {
     })
     await expect(teapot.fetchIndex()).rejects.toThrow("status 503")
 
-    // A 200 whose body does not match the wire schema is just as unusable —
-    // including non-Error decode throws surfacing as their string form.
     const malformed = makePluginRegistryClient({
       baseUrl: "https://registry.example",
       fetchImpl: async () => jsonResponse({ entries: "not-an-array" })
@@ -191,7 +183,6 @@ describe("makePluginRegistryClient", () => {
     vi.stubGlobal("fetch", fetchMock)
     const client = makePluginRegistryClient({ baseUrl: "https://registry.example" })
     expect((await client.fetchIndex()).generatedAt).toBe("global")
-    // The fresh cache answers without touching fetch again.
     expect((await client.fetchIndex()).generatedAt).toBe("global")
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
@@ -203,7 +194,6 @@ describe("filterPluginRegistryIndex", () => {
     expect(filterPluginRegistryIndex(full, "GIT").entries.map((entry) => entry.id)).toEqual([
       "acme.git-diff"
     ])
-    // "notes-plugin" only appears in the repo; the entry has no description.
     expect(
       filterPluginRegistryIndex(full, "notes-plugin").entries.map((entry) => entry.id)
     ).toEqual(["beta.notes"])
@@ -211,7 +201,6 @@ describe("filterPluginRegistryIndex", () => {
       "acme.git-diff"
     ])
     expect(filterPluginRegistryIndex(full, "zzz").entries).toEqual([])
-    // Diagnostics pass through untouched so the wire shape never changes.
     expect(filterPluginRegistryIndex(full, "zzz").rejected).toEqual(full.rejected)
   })
 

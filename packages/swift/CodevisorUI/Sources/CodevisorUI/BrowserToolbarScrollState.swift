@@ -1,7 +1,5 @@
 import Foundation
 
-/// Tracks deliberate reading gestures without reacting to page layout, restored
-/// scroll positions, or rubber-banding at either end of the document.
 struct BrowserToolbarScrollState {
   private(set) var isCollapsed = false
   private var previousOffset: CGFloat?

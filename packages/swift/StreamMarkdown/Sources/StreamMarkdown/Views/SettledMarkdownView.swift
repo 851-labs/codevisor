@@ -2,12 +2,6 @@
   import AppKit
   import SwiftUI
 
-  /// Flat native renderer for immutable Markdown.
-  ///
-  /// A text-compatible run becomes one TextKit 2 view. Code, tables, and
-  /// separators use dedicated AppKit views. No SwiftUI hosting controller is
-  /// involved, which makes the complete object graph safe to retain in the
-  /// transcript's bounded prepared-surface cache.
   @MainActor
   public final class SettledMarkdownView: NSView {
     private struct ContentKey: Equatable {
@@ -18,9 +12,6 @@
     }
 
     public var onContentHeightChange: (() -> Void)?
-    /// See `EnvironmentValues.markdownTableBleedLimit`: native hosts that
-    /// draw a bordered container around this view (the proposed-plan card)
-    /// cap how far a wide table's scroll viewport reaches past the column.
     public var tableBleedLimit: CGFloat = .greatestFiniteMagnitude {
       didSet {
         guard tableBleedLimit != oldValue else { return }
@@ -29,7 +20,6 @@
     }
     private var contentKey: ContentKey?
     private var contentViews: [NativeMarkdownContentView] = []
-    /// Space above each content view; the first is always zero.
     private var gaps: [CGFloat] = []
     private var measuredWidth: CGFloat = -1
     private var measuredHeight: CGFloat = 1
@@ -102,9 +92,6 @@
       return measuredHeight
     }
 
-    /// The text of each selectable surface `setContent` would create for
-    /// `blocks`, in order. Lets the transcript copy rows that are currently
-    /// unmounted using exactly the surface structure a mounted row has.
     public static func plainTextSurfaces(
       blocks: [MarkdownBlock],
       theme: MarkdownTheme
@@ -143,7 +130,6 @@
       }
     }
 
-    /// One view per block unless the whole row is a single text run.
     private static func gaps(between blocks: [MarkdownBlock], viewCount: Int, theme: MarkdownTheme) -> [CGFloat] {
       guard viewCount == blocks.count else { return Array(repeating: 0, count: viewCount) }
       return blocks.indices.map { index in
@@ -280,8 +266,6 @@
 
   @MainActor
   private final class NativeMarkdownSeparatorView: NativeMarkdownContentView {
-    /// Resolved in `updateLayer()`, not here: see the note on
-    /// `NativeMarkdownCodeBlockView.fillColor`.
     private let ruleColor: NSColor
 
     init(color: NSColor) {

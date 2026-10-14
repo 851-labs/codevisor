@@ -2,17 +2,12 @@ import ScreenSharing
 import Foundation
 import Observation
 
-/// The pane's clipboard. With sharing on, copies on either Mac reach the other while this Mac
-/// controls the host: the host sends each new copy, and a new copy here goes to the host while the
-/// video has keyboard focus, so a paste there (any way, menu or keys) already has it. With sharing
-/// off, the menu's Send and Get move text one way at a time.
 @MainActor
 @Observable
 public final class ScreenSharingViewerClipboard {
   public private(set) var available = false
   public private(set) var busy = false
   public private(set) var message: String?
-  /// Off until the pane applies the machine's setting (on unless turned off).
   public var sharing = false {
     didSet { if sharing != oldValue { sharingChanged() } }
   }
@@ -63,13 +58,11 @@ public final class ScreenSharingViewerClipboard {
     }
     channel.onMessage = { [weak self, weak channel] message in
       guard let self else { return }
-      // This Mac's clipboard goes to the host when the user works there, never on the host's request.
       if case .read(let id) = message {
         _ = channel?.send(.result(id: id, error: "The viewer shares its clipboard only as it changes."))
         return
       }
       let idle = !self.transfer.isBusy
-      // A copy the host shares unasked must not replace one made here while it was in flight.
       if idle, case .begin = message { self.expectedChangeCount = self.pasteboard.changeCount }
       self.transfer.receive(message)
       if idle {
@@ -106,7 +99,6 @@ public final class ScreenSharingViewerClipboard {
     transfer.requestText()
   }
 
-  /// This Mac holds control, or gave it back: sharing runs only while it does.
   func setControlling(_ controlling: Bool) {
     guard controlling != self.controlling else { return }
     self.controlling = controlling
@@ -114,7 +106,6 @@ public final class ScreenSharingViewerClipboard {
     poll()
   }
 
-  /// Sends a new local copy to the host while sharing, controlling and focused on the video.
   func poll() {
     guard sharingActive, available, !transfer.isBusy, hasKeyboardFocus(), let text = sync.changedText() else { return }
     operation = .share
@@ -122,7 +113,6 @@ public final class ScreenSharingViewerClipboard {
   }
 
   private func sharingChanged() {
-    // Turned on, the clipboard as it is now goes to the host at the next chance.
     if sharing { sync.reset(synced: nil) }
     setHostSharing(sharingActive)
     poll()

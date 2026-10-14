@@ -53,9 +53,6 @@ if [[ "$target" != "$host_target" ]]; then
   exit 1
 fi
 
-# TypeScript's incremental output retains JavaScript for deleted source files.
-# A release runtime must never inherit those stale modules from a developer or
-# CI workspace, so rebuild the server from an empty output directory every time.
 rm -rf "$repo_root/apps/server/dist" "$repo_root/apps/server/tsconfig.tsbuildinfo"
 if [[ -n "${CODEVISOR_PREBUILT_SERVER_JS:-}" ]]; then
   "$script_dir/package-server-js.sh" --extract "$CODEVISOR_PREBUILT_SERVER_JS"
@@ -74,7 +71,6 @@ if ! node_version="$("$node_runtime" --version 2>/dev/null)"; then
   echo "error: failed to read Node version from $node_runtime" >&2
   exit 1
 fi
-# CI installs exactly .node-version; any build must at least share its major.
 node_major="v$(cut -d. -f1 < "$repo_root/.node-version")."
 if [[ "$node_version" != "$node_major"* ]]; then
   echo "error: Codevisor release artifacts must bundle Node ${node_major}x (.node-version); found $node_version at $node_runtime" >&2
@@ -97,9 +93,6 @@ cp "$repo_root/bun.lock" "$runtime_dir/bun.lock"
 cp "$repo_root/apps/server/package.json" "$runtime_dir/apps/server/package.json"
 cp -R "$repo_root/apps/server/dist" "$runtime_dir/apps/server/dist"
 
-# Every built workspace package ships: dist for the module graph, plus the
-# package's resources/ directory when it has one (terminal terminfo,
-# automation browser extension + skills, ...).
 for package_dir in "$repo_root"/packages/*/; do
   package_name="$(basename "$package_dir")"
   [[ -d "$package_dir/dist" ]] || continue
@@ -111,17 +104,10 @@ for package_dir in "$repo_root"/packages/*/; do
   fi
 done
 
-# The tunnel's native addon (docs/plans/codevisor-tunnel.md), built with cargo
-# on this runner for its own target like the other native addons. Without it
-# the server still runs, relay-only (see apps/server/src/infra/cloud-tunnel.ts).
 node "$repo_root/scripts/net-artifact.mjs" ensure-node >/dev/null
 mkdir -p "$runtime_dir/packages/net/native/$target"
 cp "$repo_root/packages/net/native/$target/codevisor_net.node" "$runtime_dir/packages/net/native/$target/"
 
-# Keep Ghostty's terminfo database next to @codevisor/terminal in both macOS
-# and Linux lookup layouts. Linux PTYs advertise the portable xterm-256color
-# baseline, but the Ghostty entry remains available to macOS and explicit
-# shell configuration without modifying the host terminfo database.
 terminal_resources="$repo_root/packages/terminal/resources"
 for entry in \
   terminfo/78/xterm-ghostty \
@@ -142,10 +128,7 @@ if ! cmp -s \
   echo "error: macOS and Linux terminfo entries are out of sync" >&2
   exit 1
 fi
-# (terminal resources ship via the generic package resources copy above)
 
-# The lockfile spans every workspace member, so bun's frozen install needs
-# each manifest present even though the runtime only ships the server code.
 for manifest in "$repo_root"/apps/*/package.json "$repo_root"/packages/*/package.json; do
   [[ -f "$manifest" ]] || continue
   relative="${manifest#"$repo_root"/}"
@@ -161,9 +144,6 @@ if [[ ! -x "$node_gyp" ]]; then
   exit 1
 fi
 
-# Filtered to the server workspace so the other apps' dependency trees stay
-# out of the runtime; hoisted keeps the classic node_modules layout that the
-# bundled Node resolves (and that survives zipping into the app bundle).
 (cd "$runtime_dir" && PATH="$node_runtime_dir:$PATH" npm_config_node_gyp="$node_gyp" bun install --production --frozen-lockfile --filter '@codevisor/server' --linker hoisted)
 cp "$node_runtime" "$runtime_dir/bin/node"
 chmod +x "$runtime_dir/bin/node"
@@ -173,10 +153,6 @@ find "$runtime_dir/apps/server/dist" "$runtime_dir/packages" \
   \( -name "*.test.js" -o -name "*.test.d.ts" \) \
   -delete
 
-# The Claude provider drives the user's own `claude` binary via
-# pathToClaudeCodeExecutable; the Agent SDK's vendored CLI runtime (~200MB per
-# platform, shipped as optionalDependencies) is never executed and must not
-# ship in the runtime.
 rm -rf "$runtime_dir"/node_modules/@anthropic-ai/claude-agent-sdk-*
 rm -rf "$runtime_dir"/node_modules/.bun/@anthropic-ai+claude-agent-sdk-* 2>/dev/null || true
 leftover=$(find "$runtime_dir/node_modules" -maxdepth 3 -type d -name "claude-agent-sdk-*" | head -1)
@@ -185,14 +161,6 @@ if [[ -n "$leftover" ]]; then
   exit 1
 fi
 
-# Strip non-runtime files from the bundled dependencies (~65MB, a quarter of
-# the runtime): TypeScript sources and declarations, sourcemaps, and docs are
-# never read by Node; better-sqlite3's deps/ and src/ plus node-gyp's
-# obj.target intermediates only matter at compile time; and the QuickJS debug
-# wasm payloads back a DEBUG variant the server never instantiates (their
-# packages stay resolvable — quickjs-emscripten requires all variant packages
-# at load time, but each loads its wasm payload with a lazy dynamic import).
-# package.json and LICENSE files stay.
 find "$runtime_dir/node_modules" -type f \
   \( -name "*.ts" -o -name "*.mts" -o -name "*.cts" \
   -o -name "*.map" -o -name "*.md" -o -name "*.markdown" \) \
@@ -209,24 +177,14 @@ for package_name in agent-runtime api cloud-client cloud-crypto db terminal; do
   ln -s "../../packages/$package_name" "$runtime_dir/node_modules/@codevisor/$package_name"
 done
 
-# The macOS app looks for Resources/server/main.js and terminal-proxy.js.
-# Keep copies at the runtime root while preserving apps/server/dist for package
-# manager metadata and symlink targets.
 cp "$runtime_dir/apps/server/dist/"*.js "$runtime_dir/"
 cp "$runtime_dir/apps/server/dist/"*.d.ts "$runtime_dir/" 2>/dev/null || true
-# The root-level entry copies resolve their relative imports from ./cli/,
-# ./routes/, and ./infra/ — mirror every server dist subdirectory so the flat
-# layout stays import-complete as the module tree evolves.
 for subdir in "$runtime_dir/apps/server/dist"/*/; do
   subdir_name="$(basename "$subdir")"
   rm -rf "${runtime_dir:?}/$subdir_name"
   cp -R "$subdir" "$runtime_dir/$subdir_name"
 done
 
-# Launchers resolve symlinks before locating the runtime root: install.sh
-# links them into ~/.local/bin or /usr/local/bin, and an unresolved
-# BASH_SOURCE would look for the bundled node next to the symlink instead of
-# the runtime (breaking every invocation via PATH).
 write_launcher() {
   local name="$1" entry="$2"
   cat > "$runtime_dir/bin/$name" <<EOF
@@ -260,11 +218,6 @@ source_revision="${CODEVISOR_SOURCE_REVISION:-${GITHUB_SHA:-unknown}}"
 printf '{"version":"%s","buildNumber":%s,"sourceRevision":"%s","target":"%s"}\n' \
   "$version" "$build_number" "$source_revision" "$target" > "$runtime_dir/BUILD.json"
 
-# LaunchServices starts the macOS app with / as its working directory. Probe
-# resource discovery from there so a runtime layout regression cannot ship a
-# server that stays alive without ever opening its health port.
-# -P: physical path — Node import resolution realpaths through symlinks (e.g.
-# macOS /tmp), and the discoverability probes compare path prefixes.
 runtime_root="$(cd "$runtime_dir" && pwd -P)"
 (
   cd /

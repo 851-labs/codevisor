@@ -7,9 +7,6 @@ struct TranscriptMeasurementLedgerTests {
     var ledger = TranscriptMeasurementLedger()
     ledger.commit(1_240, for: "message:a")
 
-    // A background subagent flushed into the settled row: its revision
-    // moved, so the measurement is stale — but layout must keep using the
-    // real height, never revert to the row's flat estimate.
     ledger.markStale("message:a")
 
     let layout = VirtualTranscriptLayout(
@@ -29,9 +26,6 @@ struct TranscriptMeasurementLedgerTests {
     ledger.commit(500, for: "message:a")
     ledger.markStale("message:a")
 
-    // The remeasure landed on the same height. It must still commit (so
-    // revision-keyed caches relearn the row) — but must not report a
-    // geometry change, and afterwards the ordinary dedupe applies again.
     #expect(ledger.needsCommit(500, for: "message:a"))
     let geometryChanged = ledger.commit(500, for: "message:a")
     #expect(geometryChanged == false)
@@ -58,8 +52,6 @@ struct TranscriptMeasurementLedgerTests {
 
   @Test func provisionalHeightIsUsedButRequiresRecommit() {
     var ledger = TranscriptMeasurementLedger()
-    // The active row's streaming height transferred onto the newly
-    // settled row: good enough to position rows, not authoritative.
     ledger.setProvisional(880, for: "message:a")
 
     #expect(ledger["message:a"] == 880)

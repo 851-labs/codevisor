@@ -66,14 +66,7 @@ export const handleUpgrade = async (
   webSocketServer: WebSocketServer,
   clientControl?: ClientControlBroker
 ): Promise<void> => {
-  // Node drops its own 'error' listener from a socket it hands to 'upgrade'.
-  // Until ws adopts it, a reset (ECONNRESET while authorize or a plugin is
-  // awaited) would be an unhandled 'error' and exit the server.
   socket.on("error", () => socket.destroy())
-  // ws emits 'error' on an accepted socket for a malformed frame (bad
-  // opcode, invalid UTF-8, oversize) and closes it afterwards; unheard, that
-  // 'error' would exit the server, so every socket accepted here has a
-  // listener before any route sees it.
   const accept = (onSocket: (webSocket: WebSocket) => void): void => {
     webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
       webSocket.on("error", () => undefined)
@@ -94,9 +87,6 @@ export const handleUpgrade = async (
       })
       return
     }
-    // Direct sealed-channel pipe: authenticates via already-pinned E2E
-    // identity inside the channel protocol itself (DirectChannelHost) — a
-    // bearer token would be both unnecessary and unavailable to it.
     if (
       request.method === "GET" &&
       url.pathname === "/v1/direct" &&
@@ -111,9 +101,6 @@ export const handleUpgrade = async (
       })
       return
     }
-    // Plugin pane WebSockets authenticate inside the proxy (pane token,
-    // session cookie, or loopback for relayed traffic) — never with the
-    // machine bearer token, which webviews cannot attach.
     if (
       url.pathname.startsWith("/v1/plugins/") &&
       services.plugins !== undefined &&
@@ -160,7 +147,7 @@ export const handleUpgrade = async (
           EVENT_SOCKET_KEEPALIVE_MS,
           url.searchParams.get("sync") === "1"
         ).catch(
-          /* v8 ignore next -- defensive: socket setup failures close the just-upgraded connection. */
+          /* v8 ignore next */
           () => webSocket.close()
         )
       })
@@ -180,7 +167,7 @@ export const handleUpgrade = async (
           EVENT_SOCKET_KEEPALIVE_MS,
           url.searchParams.get("sync") === "1"
         ).catch(
-          /* v8 ignore next -- defensive: socket setup failures close the just-upgraded connection. */
+          /* v8 ignore next */
           () => webSocket.close()
         )
       })
@@ -203,7 +190,7 @@ export const handleUpgrade = async (
         },
         webSocket
       ).catch(
-        /* v8 ignore next -- defensive: socket setup failures close the just-upgraded connection. */
+        /* v8 ignore next */
         () => webSocket.close()
       )
     })
@@ -213,8 +200,6 @@ export const handleUpgrade = async (
   }
 }
 
-/// Keepalives let quiet clients detect dead paths without advancing their
-/// replay cursor. Global and session subscribers share the bounded journal reader.
 const EVENT_SOCKET_KEEPALIVE_MS = 25_000
 
 export const attachEventSocket = async (

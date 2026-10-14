@@ -1,9 +1,3 @@
-//! The tunnel endpoint: one per device, addressed by its Ed25519 key.
-//!
-//! Built on iroh's `Minimal` preset so nothing depends on n0 infrastructure:
-//! no n0 relays, no DNS/pkarr address lookup. Relays come from our relay map
-//! and peer addresses from our hub (`NetAddr`), never from n0.
-
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result, anyhow};
@@ -24,53 +18,37 @@ use crate::{
     message_stream::MessageStream,
 };
 
-/// How a device can be reached: what the hub distributes in presence.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct NetAddr {
-    /// Hex Ed25519 public key.
     pub endpoint_id: String,
     pub relay_url: Option<String>,
-    /// `ip:port` candidates (LAN, public via QAD, tailnet).
     pub direct_addrs: Vec<String>,
 }
 
-/// One currently-open path of a connection.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PathInfo {
     pub is_relay: bool,
-    /// `ip:port` for direct paths, the relay URL for relay paths.
     pub remote: String,
     pub selected: bool,
     pub rtt_ms: f64,
-    /// Largest UDP payload QUIC currently sends on this path (path MTU
-    /// discovery starts at 1200 and probes upwards).
     pub current_mtu: u16,
     pub cwnd: u64,
     pub lost_packets: u64,
     pub congestion_events: u64,
     pub black_holes_detected: u64,
-    /// Application datagrams actually put on the wire on this path.
     pub datagrams_sent: u64,
 }
 
-/// Generates a fresh endpoint secret key (32 bytes).
 pub fn generate_secret_key() -> [u8; 32] {
     SecretKey::generate().to_bytes()
 }
 
-/// The hex endpoint id belonging to a secret key.
 pub fn endpoint_id_for(secret_key: &[u8; 32]) -> String {
     SecretKey::from_bytes(secret_key).public().to_string()
 }
 
-/// Handshakes the accept driver runs at once. Past this, new dials are
-/// refused (the dialer retries) instead of queueing behind stalled ones.
 const MAX_PENDING_HANDSHAKES: usize = 64;
 
-/// Ends a dial early: [`NetEndpoint::connect_cancellable`] gives up as soon
-/// as `cancel` is called. Lets callers whose own runtime can't drop the
-/// dialing future (the Swift binding's async glue never cancels Rust
-/// futures) stop an abandoned handshake instead of leaving it to time out.
 #[derive(Debug)]
 pub struct CancelToken(watch::Sender<bool>);
 
@@ -89,10 +67,8 @@ impl CancelToken {
         *self.0.borrow()
     }
 
-    /// Resolves once `cancel` has been called (at once if it already was).
     pub async fn cancelled(&self) {
         let mut receiver = self.0.subscribe();
-        // The sender lives in `self`, so this only returns once cancelled.
         let _ = receiver.wait_for(|cancelled| *cancelled).await;
     }
 }
@@ -101,8 +77,6 @@ pub struct NetEndpoint {
     endpoint: Endpoint,
     addr_updates: Mutex<(watch::Receiver<NetAddr>, bool)>,
     addr_task: JoinHandle<()>,
-    /// Completed handshakes, fed by the accept driver (started by the first
-    /// `accept`, so dial-only endpoints never complete unwanted handshakes).
     accepted: Mutex<Option<mpsc::UnboundedReceiver<Result<NetConnection>>>>,
     accept_task: std::sync::Mutex<Option<JoinHandle<()>>>,
 }
@@ -174,9 +148,6 @@ impl NetEndpoint {
         net_addr(&self.endpoint.addr())
     }
 
-    /// Waits until this endpoint's address differs from the last one returned
-    /// by this method (the first call returns the current address at once).
-    /// Callers loop on it and republish to the hub.
     pub async fn next_addr(&self) -> Result<NetAddr> {
         let mut guard = self.addr_updates.lock().await;
         let (receiver, started) = &mut *guard;
@@ -187,7 +158,6 @@ impl NetEndpoint {
         Ok(receiver.borrow_and_update().clone())
     }
 
-    /// Resolves once a home relay is connected, or errors after `timeout`.
     pub async fn online(&self, timeout: Duration) -> Result<()> {
         tokio::time::timeout(timeout, self.endpoint.online())
             .await
@@ -203,7 +173,6 @@ impl NetEndpoint {
         Ok(NetConnection::new(connection))
     }
 
-    /// `connect`, abandoned (and its handshake dropped) once `cancel` fires.
     pub async fn connect_cancellable(&self, addr: &NetAddr, alpn: &[u8], cancel: &CancelToken) -> Result<NetConnection> {
         tokio::select! {
             biased;
@@ -212,22 +181,10 @@ impl NetEndpoint {
         }
     }
 
-    /// Tells the endpoint the network may have changed (an app returning
-    /// from suspension, a path change the OS reported). iroh re-checks its
-    /// interfaces and, on a real change, rebinds its sockets and re-homes on
-    /// a relay. Harmless when nothing changed.
     pub async fn network_change(&self) {
         self.endpoint.network_change().await;
     }
 
-    /// The next incoming connection with its handshake complete. `Ok(None)`
-    /// once the endpoint is closed. A failed handshake is an `Err` for that
-    /// attempt only; keep accepting.
-    ///
-    /// Handshakes run concurrently: one dialer that stalls mid-handshake
-    /// (an app suspended while dialing) must not hold every later dial in
-    /// the queue until its idle timeout. Initials that wait that long are
-    /// stale by the time they are accepted, and QUIC refuses them.
     pub async fn accept(&self) -> Result<Option<NetConnection>> {
         let mut accepted = self.accepted.lock().await;
         let receiver = accepted.get_or_insert_with(|| {
@@ -266,9 +223,6 @@ impl Drop for NetEndpoint {
     }
 }
 
-/// Takes every incoming connection off the endpoint as it arrives and runs
-/// its handshake as its own task, reporting each outcome in completion
-/// order. Aborting the driver aborts its handshakes (the `JoinSet` drops).
 async fn drive_accepts(endpoint: Endpoint, sender: mpsc::UnboundedSender<Result<NetConnection>>) {
     let mut handshakes = JoinSet::new();
     loop {
@@ -292,8 +246,6 @@ async fn drive_accepts(endpoint: Endpoint, sender: mpsc::UnboundedSender<Result<
             }
         }
     }
-    // The endpoint closed: report the handshakes still in flight, which fail
-    // promptly now that their connections are closed.
     while let Some(done) = handshakes.join_next().await {
         if let Ok(result) = done && sender.send(result).is_err() {
             return;
@@ -329,8 +281,6 @@ impl NetConnection {
         self.connection.alpn().to_vec()
     }
 
-    /// Opens a message stream. The peer's `accept_message_stream` resolves
-    /// when the first message arrives (QUIC announces streams lazily).
     pub async fn open_message_stream(&self) -> Result<MessageStream> {
         let (send, recv) = self.connection.open_bi().await?;
         Ok(MessageStream::new(send, recv))
@@ -367,13 +317,10 @@ impl NetConnection {
         self.connection.max_datagram_size()
     }
 
-    /// Free bytes in QUIC's outgoing datagram buffer; below a datagram's
-    /// size, sending it drops the oldest datagram still waiting.
     pub fn datagram_send_buffer_space(&self) -> usize {
         self.connection.datagram_send_buffer_space()
     }
 
-    /// The per-connection datagram demultiplexer used by media flows.
     pub fn media(&self) -> Arc<DatagramRouter> {
         self.media
             .get_or_init(|| DatagramRouter::start(self.connection.clone()))
@@ -384,7 +331,6 @@ impl NetConnection {
         self.connection.close(code.into(), reason.as_bytes());
     }
 
-    /// Resolves when the connection closes, with a human-readable reason.
     pub async fn closed(&self) -> String {
         self.connection.closed().await.to_string()
     }

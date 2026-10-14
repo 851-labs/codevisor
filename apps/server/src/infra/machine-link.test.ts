@@ -21,8 +21,6 @@ const presence = (overrides: Partial<CloudMachinePresence> = {}): CloudMachinePr
 
 const ok = (result: unknown): GatewayExchange => ({ status: 200, body: JSON.stringify({ result }) })
 
-/// A link over scripted paths; each path records the bodies it was asked to
-/// deliver so tests can prove what did (and did not) get sent.
 const link = (
   options: {
     machines?: CloudMachinePresence[] | undefined
@@ -60,9 +58,7 @@ describe("machine list", () => {
     const { machineLink } = link({
       machines: [
         presence(),
-        // This machine's own presence entry is not a second machine.
         presence({ deviceId: "device-self", serverId: "machine-self", name: "Studio" }),
-        // Older servers publish no server id.
         presence({
           deviceId: "device-old",
           serverId: undefined,

@@ -10,8 +10,6 @@ import type { NormalizedNativeServer } from "./native-config-normalize.js"
 import type { DiscoveredServer, NativeMcpScanner } from "./native-mcp-scan.js"
 import type { NativeMcpManagerConfig } from "./native-mcp-types.js"
 
-/// Secrets that reference shell variables were expanded by the harness at
-/// launch time; imported verbatim they stay literal — worth a warning.
 const placeholderWarnings = (normalized: NormalizedNativeServer): Array<string> => {
   const warnings: Array<string> = []
   for (const [key, value] of [
@@ -35,7 +33,6 @@ export const makeNativeMcpImporter = (
 } => {
   const { scanDetailed } = scanner
 
-  /// Names already taken in the managed store, for collision suffixing.
   const managedNames = async (): Promise<Set<string>> => {
     const servers = await run(config.db.listMcpServers)
     return new Set(servers.map((server) => server.name.toLowerCase()))
@@ -68,8 +65,6 @@ export const makeNativeMcpImporter = (
         })
         continue
       }
-      // Prefer the user-level registration when the same server also appears
-      // in a project file.
       const source =
         discovered.find(
           (entry) => entry.row.identity === identity && entry.row.scope === "global"
@@ -99,7 +94,6 @@ export const makeNativeMcpImporter = (
     const { normalized, row } = source
     const warnings = placeholderWarnings(normalized)
 
-    // Pick a free managed name: the native name, then a harness-suffixed one.
     let name = candidateName
     if (names.has(name.toLowerCase())) {
       name = `${candidateName} (${row.harnessName})`
@@ -113,9 +107,6 @@ export const makeNativeMcpImporter = (
       }
     }
 
-    // Bare remote servers get an authorization probe so OAuth-protected ones
-    // land in needsAuthorization with the existing Connect… flow ready. A
-    // probe failure (offline, blocked) never fails the import.
     let authType: "none" | "bearer" | "oauth" = "none"
     if (normalized.url !== undefined && Object.keys(normalized.headers).length === 0) {
       try {

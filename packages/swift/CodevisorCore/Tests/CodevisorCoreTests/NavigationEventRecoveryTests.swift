@@ -24,7 +24,6 @@ struct NavigationEventRecoveryTests {
       Issue.record("A failed snapshot must not be presented as current")
       return
     }
-    // The last known state stays on screen while the machine is unreachable.
     #expect(fixture.repository.workspace(id: fixture.workspace.id)?.isArchived == false)
     #expect(fixture.repository.workspace(id: fixture.workspace.id)?.centerTabs == fixture.workspace.centerTabs)
     #expect(fixture.fake.workspaceSnapshotCallCount == 1)
@@ -168,7 +167,6 @@ struct NavigationEventRecoveryTests {
     fixture.fake.workspaceSnapshotHandler = {
       started.signal()
       if started.value == 1 {
-        // Like a wedged transport, this deliberately ignores cancellation.
         await release.wait()
         return stale
       }

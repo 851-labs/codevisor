@@ -46,8 +46,6 @@ describe("browser extension development installer", () => {
     const root = await mkdtemp(join(tmpdir(), "codevisor-extension-replace-"))
     temporaryDirectories.push(root)
     const extension = join(root, "browser", "extension")
-    // What an interrupted copy leaves: a truncated file plus one the current
-    // build no longer ships.
     await mkdir(extension, { recursive: true })
     await writeFile(join(extension, "popup.js"), "")
     await writeFile(join(extension, "retired.js"), "old")
@@ -55,7 +53,6 @@ describe("browser extension development installer", () => {
     expect(prepareBrowserExtension(root, "http://127.0.0.1:61234")).toBe(extension)
     expect((await readFile(join(extension, "popup.js"), "utf8")).length).toBeGreaterThan(0)
     await expect(readFile(join(extension, "retired.js"))).rejects.toThrow()
-    // A second run swaps again and leaves no staging or stale copies behind.
     prepareBrowserExtension(root, "http://127.0.0.1:61234")
     const siblings = await readdir(join(root, "browser"))
     expect(siblings.filter((name) => /\.(next|stale)-/.test(name))).toEqual([])
@@ -175,10 +172,6 @@ describe("browser extension development installer", () => {
   })
 
   it("reports a missing opener to the caller instead of crashing the server", async () => {
-    // A headless Linux server has no browser and no xdg-open. The failed
-    // spawn used to surface as an unhandled 'error' event, which exits the
-    // server process and every agent running in it. An empty PATH makes the
-    // opener missing on every machine.
     const emptyPath = await mkdtemp(join(tmpdir(), "codevisor-no-openers-"))
     temporaryDirectories.push(emptyPath)
     vi.stubEnv("PATH", emptyPath)

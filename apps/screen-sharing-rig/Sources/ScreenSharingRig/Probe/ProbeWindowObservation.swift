@@ -4,9 +4,6 @@ import CoreMedia
 import QuartzCore
 @preconcurrency import ScreenCaptureKit
 
-/// Samples only the benchmark marker from a user-selected window. No frames,
-/// audio or input are retained. An external analysis combines these local host
-/// timestamps with the workload's clock and measured clock-offset bounds.
 @MainActor
 enum ProbeWindowObservation {
   struct Options {
@@ -33,7 +30,6 @@ enum ProbeWindowObservation {
         }
         values[key] = arguments[index + 1]
       }
-      // Below 900 source pixels the workload response panel overlaps the marker.
       guard let width = Int(values["--width"] ?? "3840"), (900...3840).contains(width),
         let height = Int(values["--height"] ?? "2160"), (360...2160).contains(height),
         let top = Double(values["--content-top-points"] ?? "0"), top.isFinite, (0...300).contains(top),

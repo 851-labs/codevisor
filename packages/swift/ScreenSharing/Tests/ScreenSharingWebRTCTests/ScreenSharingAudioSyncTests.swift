@@ -1,8 +1,6 @@
 import Testing
 @testable import ScreenSharingWebRTC
 
-/// How late the viewer plays the host's sound (851-2379): as late as the picture, never under
-/// 60 ms, plus a margin that grows with underruns and decays when there are none.
 @MainActor
 struct ScreenSharingAudioSyncTests {
   @Test func theTargetFollowsTheVideoAboveAFloor() {

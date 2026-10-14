@@ -7,29 +7,14 @@ import { GitError } from "./git.js"
 import { withPriority } from "./low-priority.js"
 import { heavyGit } from "./working-state.js"
 
-/// A review response carries whole file texts, so it is bounded in files, per
-/// file, and overall; beyond that the client could not render it usefully.
 const maxFiles = 300
 const maxFileBytes = 1024 * 1024
 const maxTextBytes = 12 * 1024 * 1024
-/// Git's own binary heuristic: a NUL within the first 8000 bytes.
 const binarySniffBytes = 8000
 const gitlinkMode = "160000"
 
 const utf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true })
 
-/// Plumbing whose output is paths and file contents, so it is read as bytes:
-/// `runGit` trims, which would corrupt a path ending in a space or a blob
-/// ending in a newline.
-///
-/// Settles only once both git has exited and its stdin has finished or
-/// failed, so the outcome never depends on which of the two is noticed first.
-/// Git's own failure wins, since it says why; a git that exited cleanly
-/// without reading every request (its stdin broke) produced partial output,
-/// which is a failure too.
-///
-/// Without `input`, stdin is closed without a write: git may never read it,
-/// and even ending an empty write on a pipe git already closed breaks it.
 export const gitBytes = async (
   operation: string,
   args: ReadonlyArray<string>,
@@ -78,8 +63,6 @@ interface RawChange {
   readonly oldPath: string
 }
 
-/// Parses `diff-tree --raw -z`: `:oldmode newmode oldsha newsha status\0path\0`
-/// with a second path after a rename's status.
 const parseRawDiff = (output: Buffer): ReadonlyArray<RawChange> => {
   const fields = output.toString("utf8").split("\0")
   const changes: Array<RawChange> = []
@@ -103,8 +86,6 @@ const parseRawDiff = (output: Buffer): ReadonlyArray<RawChange> => {
 
 const isNullSha = (sha: string): boolean => /^0+$/.test(sha)
 
-/// Asks one `cat-file` process for every blob at once rather than a process
-/// per file side.
 const blobSizes = async (
   dir: string,
   shas: ReadonlyArray<string>,
@@ -129,7 +110,6 @@ const blobSizes = async (
   )
 }
 
-/// `cat-file --batch` answers `<sha> <type> <size>\n<bytes>\n` per request.
 const blobContents = async (
   dir: string,
   shas: ReadonlyArray<string>,
@@ -168,7 +148,6 @@ const fileStatus = (status: string): GitDiffFile["status"] => {
   if (status === "A") return "added"
   if (status === "D") return "deleted"
   if (status === "R") return "renamed"
-  // M, and T for a type change such as a file becoming a symlink.
   return "modified"
 }
 
@@ -179,8 +158,6 @@ const budgetedPlans = (
   kept: ReadonlyArray<RawChange>,
   sizes: ReadonlyMap<string, number>
 ): ReadonlyArray<{ readonly change: RawChange; readonly tooLarge: boolean }> => {
-  // Files are budgeted in path order, so which ones lose their text is stable
-  // from one refresh to the next.
   let budget = maxTextBytes
   return kept.map((change) => {
     const shaSizes = sideShas(change).map((sha) => sizes.get(sha)!)
@@ -201,8 +178,6 @@ const projectReviewFile = (
     path: change.path,
     ...(status === "renamed" ? { oldPath: change.oldPath } : {}),
     status,
-    // Both sides' blob ids: identical on every client, and different as
-    // soon as either side's content changes.
     fingerprint: `${change.oldSha}..${change.newSha}`
   }
   if (tooLarge) return { ...identity, oldText: null, newText: null, omitted: "tooLarge" }
@@ -226,10 +201,8 @@ export const diffFiles = async (
     dir,
     env
   )
-  // Submodule commits are not in this repository, so there is no text to show.
   const changes = parseRawDiff(raw)
     .filter((change) => change.oldMode !== gitlinkMode && change.newMode !== gitlinkMode)
-    // Rename detection can emit a renamed file at its old path's position.
     .toSorted((left, right) => Number(left.path > right.path) - Number(left.path < right.path))
   const kept = changes.slice(0, maxFiles)
   const sizes = await blobSizes(dir, [...new Set(kept.flatMap(sideShas))], env)

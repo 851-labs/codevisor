@@ -30,8 +30,6 @@ export const cleanupNativeMcpTests = async (): Promise<void> => {
 
 export const HOME = "/home/u"
 
-/// In-memory filesystem: reads serve from the record, atomic writes mutate
-/// it — so write-pipeline tests can assert on resulting file contents.
 export const fakeFs = (files: Record<string, string | Error>): NativeConfigFileSystem => ({
   readFile: async (path) => {
     const value = files[path]
@@ -50,8 +48,6 @@ export interface ImportFakes {
   readonly detectedUrls: Array<string>
 }
 
-/// Fake managed-MCP store: `create` persists through the real db (so
-/// post-import scans see `alreadyManaged`), `detectAuth` is scripted.
 export const fakeMcp = (
   db: CodevisorDatabaseService,
   behavior: {

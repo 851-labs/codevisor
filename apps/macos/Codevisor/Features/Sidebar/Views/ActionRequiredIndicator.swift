@@ -1,7 +1,5 @@
 import SwiftUI
 
-/// Attention marker for a chat blocked on a question or plan approval, or a
-/// terminal whose program is waiting on the user.
 struct ActionRequiredIndicator: View {
   let color: Color
   var subject = "chat"

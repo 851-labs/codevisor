@@ -3,23 +3,15 @@ import CodevisorUI
 import SimulatorPane
 import SwiftUI
 
-/// One full-screen pane body: a chat transcript, the new-tab page, or a
-/// terminal. All state stays with WorkspaceScreen; this view receives the
-/// resolved values and closures for the pane it renders.
 struct WorkspacePaneContentView: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.windowID) private var windowID
   let pane: PaneDescriptorState
-  /// The identity the chat pane's transcript surface is cached under.
   var surfacePaneID: UUID?
-  /// Stable layout namespace for a draft adopting its workspace in place.
   var layoutNamespaceToken: UUID?
   let filePaneModel: (PaneDescriptorState) -> FilePaneModel
   let reviewPaneModel: (PaneDescriptorState) -> ReviewPaneModel
   var onOpenFiles: (() -> Void)? = nil
-  /// Resolved via the cache (and the draft controller) so an already-live
-  /// chat renders on the FIRST frame — a just-sent message must never flash
-  /// a spinner over itself.
   let chatController: (PaneDescriptorState) -> SessionController?
   let activeSessionId: UUID?
   let session: (UUID) -> ChatSession?
@@ -46,15 +38,11 @@ struct WorkspacePaneContentView: View {
   let onConvertToPlugin: (PluginNewTabOption) -> Void
   let serverConfig: CodevisorServerConfig?
   let workspaceCwd: String
-  /// The machine's API client, for the New Tab page's plugin pane rows.
   let machineClient: any CodevisorServerClienting
   let machineId: String
-  /// The pane's cached plugin model (webview + load state), resolved by
-  /// WorkspaceScreen so the cache sees every visibility change.
   let browserPaneModel: (PaneDescriptorState) -> BrowserPaneModel
   let pluginPaneModel: (PaneDescriptorState) -> PluginPaneModel
   let simulatorPaneModel: (PaneDescriptorState) -> SimulatorPaneModel?
-  /// `codevisor.setTitle` from a plugin pane: rename that pane's tab.
   let onRenamePane: (PaneDescriptorState, String) -> Void
 
   var body: some View {
@@ -67,8 +55,6 @@ struct WorkspacePaneContentView: View {
             for: .init(paneID: surfacePaneID ?? pane.id, isNewChat: isNewChatPresentation, windowID: windowID),
             controller: controller
           ),
-          // A draft picks where it will run; sending fixes that, so
-          // the chips animate away in place.
           showsRunPickers: showsRunPickers,
           initialComposerFocusRequest: initialComposerFocusRequest,
           onInitialComposerFocusRequestFulfilled:
@@ -148,8 +134,6 @@ struct WorkspacePaneContentView: View {
         ContentUnavailableView("No Machine", systemImage: "bolt.slash")
       }
     case .subagent:
-      // Device-local to the Mac that opened it; iOS pushes subagents instead
-      // and never holds this kind of pane.
       EmptyView()
     }
   }

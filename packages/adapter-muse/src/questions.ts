@@ -3,25 +3,16 @@ import type { QuestionSpec } from "@codevisor/api"
 
 import { commandId, text, type ApprovalRequest, type UserInputRequest } from "./protocol.js"
 
-/// Muse's blocking asks as Codevisor questions. Both arrive as server
-/// requests acknowledged with an empty receipt; the answer is a separate
-/// command (`approval/decide`, `userInput/answer` or `userInput/cancel`).
-
 export interface MuseQuestion {
   readonly specs: ReadonlyArray<QuestionSpec>
   readonly autoResolutionMs?: number
-  /// The command that delivers the user's answer to Muse.
   readonly reply: (answer: QuestionAnswer) => { method: string; params: Record<string, unknown> }
 }
 
 const PERMISSION_ID = "permission"
 
-/// Muse ships Codevisor's sessions in `allowAll`, so only escalations its
-/// reviewer can't settle arrive here — answered with Muse's own choices.
 export const approvalQuestion = (request: ApprovalRequest): MuseQuestion => {
   const subject = text(request.subject.command) ?? text(request.subject.path)
-  // Dismissing refuses: Muse's abort, else a denial, else any choice that
-  // doesn't approve. With none of those, the turn itself is stopped.
   const refusal =
     request.availableChoices.find((choice) => choice.decision === "abort") ??
     request.availableChoices.find((choice) => choice.decision.startsWith("denied")) ??
@@ -63,8 +54,6 @@ export const approvalQuestion = (request: ApprovalRequest): MuseQuestion => {
   }
 }
 
-/// `request_user_input`: one or more questions with labelled options; any
-/// answer can also be free text.
 export const userInputQuestion = (request: UserInputRequest): MuseQuestion => ({
   specs: request.questions.map((question) => ({
     id: question.id,

@@ -2,18 +2,12 @@ import SwiftUI
 import CodevisorCore
 import CodevisorUI
 
-/// Read-only per-harness detail sheet: identity, detected binary path, and
-/// probed version. Deliberately one flat surface — later lifecycle phases add
-/// install-method and update-source rows here rather than new UI.
 struct HarnessDetailSheet: View {
   let harness: ServerHarness
 
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.settingsMachineId) private var settingsMachineId
 
-  /// The machine this view operates on — pinned by the machine-scoped
-  /// Settings page that presented it, else the app's selected machine
-  /// (onboarding, previews).
   private var scopedServerId: String {
     settingsMachineId ?? environment.defaultComposerServerId
   }
@@ -21,8 +15,6 @@ struct HarnessDetailSheet: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(\.theme) private var theme
 
-  /// Dual-install: a desktop app bundling its own copy of this CLI.
-  /// Fetched lazily when the sheet opens — never on the list path.
   @State private var bundledApp: ServerHarnessBundledApp?
   @State private var isUpdatingBundledApp = false
   @State private var bundledAppError: String?
@@ -55,8 +47,6 @@ struct HarnessDetailSheet: View {
           .frame(width: 30, height: 30)
           .background(RoundedRectangle(cornerRadius: 8).fill(theme.cardHoverBackground))
           .accessibilityHidden(true)
-        // The name is the sheet's navigation title; repeating it here
-        // would be the only duplicated string on the surface.
         Text("Built-in harness")
           .font(.callout)
           .foregroundStyle(theme.textSecondary)
@@ -117,10 +107,6 @@ struct HarnessDetailSheet: View {
     .frame(maxWidth: .infinity, alignment: .leading)
   }
 
-  /// The dual-install block: the desktop app's own copy of this CLI, with
-  /// its own Sparkle-fed update state and an explicit update action —
-  /// deliberately separate from the row's Update button, which targets the
-  /// user's primary install.
   @ViewBuilder
   private func bundledAppBlock(_ app: ServerHarnessBundledApp) -> some View {
     VStack(alignment: .leading, spacing: 8) {
@@ -177,8 +163,6 @@ struct HarnessDetailSheet: View {
     do {
       try await environment.machines.client(for: serverId).updateBundledApp(harnessId: harness.id)
       environment.harnessCatalogDidChange(onServer: serverId)
-      // The swap runs server-side (download + verify + replace) —
-      // poll the on-demand snapshot until the version settles.
       for _ in 0..<150 {
         try? await Task.sleep(for: .seconds(2))
         await loadBundledApp()

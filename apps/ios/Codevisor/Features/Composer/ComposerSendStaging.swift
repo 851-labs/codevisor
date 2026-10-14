@@ -2,12 +2,8 @@ import CodevisorUI
 import SwiftUI
 import UIKit
 
-/// Lifts the composer's glyphs into the window on the Send tap, before the
-/// editor clears, so the transcript can fly them into the new bubble.
 @MainActor
 enum ComposerSendStaging {
-  /// - Parameter sourceFrame: The editor's frame in window coordinates, as
-  ///   the composer reports it; it identifies which editor is sending.
   static func stage(session: ObjectIdentifier, sourceFrame: CGRect, theme: Theme) {
     guard !sourceFrame.isEmpty, let window = UIWindow.codevisorKeyWindow,
       let editor = editor(in: window, overlapping: sourceFrame)
@@ -39,9 +35,6 @@ enum ComposerSendStaging {
 }
 
 extension UITextView {
-  /// The laid-out glyphs, from the first line's leading edge to the last
-  /// line's bottom, in this view's (content) coordinates. A single line is
-  /// exactly as wide as its glyphs; wrapped text spans the editor.
   fileprivate var laidOutTextRect: CGRect {
     let start = caretRect(for: beginningOfDocument)
     let end = caretRect(for: endOfDocument)

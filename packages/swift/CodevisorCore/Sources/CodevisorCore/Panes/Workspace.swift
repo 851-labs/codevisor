@@ -1,19 +1,7 @@
-//  A workspace: the persistence root for everything in a window's content
-//  area. It owns browser-style tabs whose contents are split trees (one pane
-//  per leaf). Chats are
-//  REFERENCES to sessions (the server owns transcripts and
-//  lifecycle); a workspace can host many, each anchored to a directory under
-//  the workspace's root.
-
 import Foundation
 
-/// One browser-style workspace tab. Its content is an independent split
-/// layout and `activeLeafId` records which split receives keyboard commands
-/// and supplies the tab's title/icon.
 public struct WorkspaceTab: Codable, Sendable, Equatable, Identifiable {
   public let id: UUID
-  /// User-pinned label for this layout. Nil keeps the browser-style title
-  /// following whichever split is active inside the tab.
   public var customTitle: String?
   public var root: SplitNode
   public var activeLeafId: UUID
@@ -48,15 +36,10 @@ public struct WorkspaceTab: Codable, Sendable, Equatable, Identifiable {
       ?? UUID()
   }
 
-  /// The tab a layout shows when it has nothing else: one local "New tab"
-  /// page. It exists only on this device — it is never published, and it
-  /// gives way to the first real pane that arrives (see
-  /// `WorkspaceSyncModel.reconcilePanes`).
   public static func placeholder() -> WorkspaceTab {
     WorkspaceTab(root: .leaf(.centerInitialWithoutChat()))
   }
 
-  /// A tab whose every pane is the local New Tab page.
   public var isPlaceholder: Bool {
     root.allGroups.allSatisfy { group in group.state.panes.allSatisfy { $0.kind == .newTab } }
   }
@@ -66,34 +49,16 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
   public let id: UUID
   public var sidebarPosition: String?
   public var sidebarOrderRevision: Int = 0
-  /// Display name. Automatic names begin with the project name and may
-  /// follow a newly-created worktree; an explicit rename pins the name.
   public var name: String
   public var hasCustomName: Bool
-  /// The workspace's one, authoritative working directory (project checkout
-  /// or worktree), fixed at creation. Every chat/terminal in the workspace
-  /// runs at this root. Nil when the backing session hasn't resolved its
-  /// directory yet.
   public var rootDirectory: String?
-  /// The git worktree this workspace lives in, when it was created with the
-  /// "start in a new worktree" option. Nil means the workspace runs at the
-  /// project root. New sessions in the workspace are stamped with this name
-  /// so the server derives their cwd. Decoded leniently: payloads written
-  /// before this field existed load as nil.
   public var worktreeName: String?
-  /// The machine the workspace's sessions and shells live on.
   public let serverId: String
   public let projectId: UUID
-  /// Browser-style tabs across the center area. Each tab owns a split tree
-  /// whose leaf groups contain exactly one pane.
   public var centerTabs: [WorkspaceTab]
   public var selectedCenterTabId: UUID
   public var createdAt: Date
-  /// Archived workspaces leave the sidebar (their chats go with them) but
-  /// keep their layout -- opening an archived chat revives the workspace.
   public var isArchived: Bool
-  /// Whether the server has this workspace. False for a draft: a workspace
-  /// started on this device that its first chat will create on the server.
   public var isServerSynced: Bool
 
   public var isDraft: Bool { !isServerSynced }
@@ -218,9 +183,6 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     )
   }
 
-  /// Transitional convenience for layout code: reads/writes the selected
-  /// top tab's tree. New code should use `centerTabs` when it needs to see
-  /// across tabs.
   public var centerTree: SplitNode {
     get { selectedCenterTab?.root ?? centerTabs[0].root }
     set {
@@ -246,14 +208,10 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     centerTabs.first { $0.root.groupId(containingChat: sessionId) != nil }?.id
   }
 
-  /// The selected pane in a specific split leaf, across every top tab.
-  /// Keyboard/header split actions use the targeted leaf rather than the
-  /// workspace's sidebar-routed chat when choosing an inheritance source.
   public func selectedPane(inLeaf leafId: UUID) -> PaneDescriptorState? {
     centerTabs.lazy.compactMap { $0.root.group(id: leafId)?.selectedPane }.first
   }
 
-  /// The pane that owns a chat session reference, if it is still open.
   public func pane(containingChat sessionId: UUID) -> PaneDescriptorState? {
     centerTabs.lazy
       .flatMap { $0.root.allGroups }
@@ -261,10 +219,6 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
       .first { $0.kind == .chat && $0.chatSessionId == sessionId }
   }
 
-  /// Replaces an existing center pane without changing its tab/split slot,
-  /// or appends it as a new top tab when this device has not placed the pane
-  /// yet. New Tab promotion uses this to keep one pane identity while its
-  /// renderer changes from placeholder to chat/terminal.
   @discardableResult
   public mutating func upsertCenterPane(
     _ pane: PaneDescriptorState,
@@ -301,10 +255,6 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     return tab.id
   }
 
-  /// Whether any center tab shows live content that is not a chat and not
-  /// the New Tab placeholder. Such a workspace
-  /// is not empty even once its last chat closes: the sidebar keeps listing
-  /// it and navigation keeps routing to it.
   public var hasOpenNonChatContent: Bool {
     centerTabs.contains { tab in
       tab.root.allGroups.contains { group in
@@ -313,7 +263,6 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     }
   }
 
-  /// Session ids of every chat pane in the workspace, reading order.
   public var chatSessionIds: [UUID] {
     centerTabs.flatMap { tab in
       tab.root.allGroups.flatMap { group in
@@ -326,8 +275,6 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     centerTabs.flatMap { $0.root.allGroups.flatMap(\.state.panes) }
   }
 
-  /// Whether any pane is real content. A workspace showing only the local
-  /// New Tab page has none: the server knows nothing about that page.
   public var hasRealPanes: Bool {
     allPanes.contains { !$0.kind.isDeviceLocal }
   }

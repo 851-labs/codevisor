@@ -14,7 +14,6 @@ struct ScreenSharingKeyframeRequestTests {
   @Test func requestSurvivesUntilAdmissionAndUsableOutput() throws {
     var request = ScreenSharingKeyframeRequest()
     request.request()
-    // An admission drop does not begin an attempt or acknowledge the request.
     #expect(request.isPending)
     let attemptCandidate = request.beginAttempt()
     let attempt = try #require(attemptCandidate)

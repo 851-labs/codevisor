@@ -1,9 +1,5 @@
 import Foundation
 
-/// An sRGB color with channels in 0...255 and alpha in 0...1, mirroring the
-/// representation used by the reference TypeScript implementation
-/// (`.repos/pierre/packages/theming/src/modules/color.ts`) so the ported
-/// math stays comparable value-for-value.
 public struct RGBA: Equatable, Hashable, Sendable {
   public var r: Double
   public var g: Double
@@ -17,8 +13,6 @@ public struct RGBA: Equatable, Hashable, Sendable {
     self.a = a
   }
 
-  /// Parses `#rgb`, `#rgba`, `#rrggbb`, or `#rrggbbaa` (case-insensitive,
-  /// surrounding whitespace tolerated). Returns nil for any other format.
   public init?(hex: String) {
     let trimmed = hex.trimmingCharacters(in: .whitespacesAndNewlines)
     guard trimmed.hasPrefix("#") else { return nil }
@@ -50,10 +44,6 @@ public struct RGBA: Equatable, Hashable, Sendable {
     self.init(r: r, g: g, b: b, a: a)
   }
 
-  /// Parses any color notation themes actually use: hex (all four widths)
-  /// or `color(display-p3 r g b [/ a])` — the notation pierre's generated
-  /// themes emit. P3 components are converted to sRGB (gamut-clamped).
-  /// Returns nil for anything else.
   public init?(css: String) {
     let trimmed = css.trimmingCharacters(in: .whitespacesAndNewlines)
     if trimmed.hasPrefix("#") {
@@ -64,7 +54,6 @@ public struct RGBA: Equatable, Hashable, Sendable {
     guard lower.hasPrefix("color("), lower.hasSuffix(")") else { return nil }
     let inner = lower.dropFirst("color(".count).dropLast()
 
-    // Split off the optional `/ alpha` component.
     let slashParts = inner.split(separator: "/", maxSplits: 1)
     var alpha = 1.0
     if slashParts.count == 2 {
@@ -84,13 +73,9 @@ public struct RGBA: Equatable, Hashable, Sendable {
     self.init(r: srgb.r * 255, g: srgb.g * 255, b: srgb.b * 255, a: alpha)
   }
 
-  // Converts gamma-encoded Display-P3 components (0...1) to gamma-encoded
-  // sRGB via linear P3 → XYZ (D65) → linear sRGB, clamping out-of-gamut
-  // values to the sRGB cube.
   private static func displayP3ToSRGB(
     r: Double, g: Double, b: Double
   ) -> (r: Double, g: Double, b: Double) {
-    // Display-P3 uses the sRGB transfer curve.
     func decode(_ v: Double) -> Double {
       v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
     }
@@ -102,18 +87,15 @@ public struct RGBA: Equatable, Hashable, Sendable {
     let lr = decode(r)
     let lg = decode(g)
     let lb = decode(b)
-    // Linear P3 → XYZ (D65)
     let x = 0.48657095 * lr + 0.26566769 * lg + 0.19821729 * lb
     let y = 0.22897456 * lr + 0.69173852 * lg + 0.07928691 * lb
     let z = 0.00000000 * lr + 0.04511338 * lg + 1.04394437 * lb
-    // XYZ → linear sRGB
     let sr = 3.24096994 * x - 1.53738318 * y - 0.49861076 * z
     let sg = -0.96924364 * x + 1.87596750 * y + 0.04155506 * z
     let sb = 0.05563008 * x - 0.20397696 * y + 1.05697151 * z
     return (encode(sr), encode(sg), encode(sb))
   }
 
-  /// Lowercase `#rrggbb`; alpha is dropped.
   public func hexString() -> String {
     func hex(_ value: Double) -> String {
       let clamped = max(0, min(255, Int(value.rounded())))
@@ -122,9 +104,6 @@ public struct RGBA: Equatable, Hashable, Sendable {
     return "#" + hex(r) + hex(g) + hex(b)
   }
 
-  /// Linear sRGB mix, the native replacement for CSS
-  /// `color-mix(in srgb, self weight%, other)`. `weight` is the fraction of
-  /// self in the result (0...1); alpha mixes the same way.
   public func mixed(with other: RGBA, weight: Double) -> RGBA {
     let w = max(0, min(1, weight))
     return RGBA(
@@ -135,9 +114,6 @@ public struct RGBA: Equatable, Hashable, Sendable {
     )
   }
 
-  /// Standard alpha compositing of self over an (assumed opaque) background;
-  /// the result is opaque. Used to measure the real contrast of
-  /// semi-transparent tokens against the surface they render on.
   public func compositedOver(_ background: RGBA) -> RGBA {
     RGBA(
       r: (r * a + background.r * (1 - a)).rounded(),
@@ -147,8 +123,6 @@ public struct RGBA: Equatable, Hashable, Sendable {
     )
   }
 
-  /// WCAG relative luminance in 0...1. Alpha is ignored — composite first
-  /// when measuring a transparent color against a surface.
   public var relativeLuminance: Double {
     func channel(_ value: Double) -> Double {
       let v = value / 255
@@ -157,7 +131,6 @@ public struct RGBA: Equatable, Hashable, Sendable {
     return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
   }
 
-  /// Returns a copy with the given alpha.
   public func withAlpha(_ alpha: Double) -> RGBA {
     RGBA(r: r, g: g, b: b, a: alpha)
   }

@@ -19,15 +19,12 @@ import {
 } from "../server-context.js"
 
 const IMAGE_MAGIC_BYTES: ReadonlyArray<readonly [ReadonlyArray<number>, number]> = [
-  [[0x89, 0x50, 0x4e, 0x47], 0], // png
-  [[0xff, 0xd8, 0xff], 0], // jpeg
-  [[0x47, 0x49, 0x46, 0x38], 0], // gif
-  [[0x57, 0x45, 0x42, 0x50], 8] // webp (RIFF....WEBP)
+  [[0x89, 0x50, 0x4e, 0x47], 0],
+  [[0xff, 0xd8, 0xff], 0],
+  [[0x47, 0x49, 0x46, 0x38], 0],
+  [[0x57, 0x45, 0x42, 0x50], 8]
 ]
 
-/// The stored kind drives UI treatment (thumbnail + lightbox vs file chip)
-/// and provider mapping, so it is sniffed server-side rather than trusted
-/// from the client's Content-Type alone.
 const sniffAttachmentKind = (data: Buffer, mimeType: string): "image" | "file" => {
   const isImage =
     IMAGE_MAGIC_BYTES.some(
@@ -45,9 +42,6 @@ const uploadTooLarge = (): HttpFailure =>
     "file_too_large"
   )
 
-/// Passes the request body through while counting it. Relayed uploads arrive
-/// chunked with no Content-Length, so the limit is enforced on the bytes
-/// themselves; throwing makes putStream discard its staged temp file.
 export async function* limitedUploadBody(
   source: AsyncIterable<Uint8Array>,
   maxBytes = MAX_UPLOAD_BYTES
@@ -161,8 +155,6 @@ const writeAttachmentHeaders = (
   contentLength: number
 ): void => {
   response.writeHead(range === undefined ? 200 : 206, {
-    // Files are immutable (content is stored once at upload), so clients
-    // may cache aggressively.
     "Accept-Ranges": "bytes",
     "Cache-Control": "private, max-age=31536000, immutable",
     "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(metadata.name)}`,
@@ -188,7 +180,7 @@ const streamAttachment = (
     return true
   }
   const stream = createReadStream(file.path, range === undefined ? {} : range)
-  /* v8 ignore next -- requires the immutable object to disappear after validation but before the stream opens. */
+  /* v8 ignore next */
   stream.once("error", (cause) => response.destroy(cause))
   stream.pipe(response)
   return true

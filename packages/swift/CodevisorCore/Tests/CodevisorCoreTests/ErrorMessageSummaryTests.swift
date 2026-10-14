@@ -22,7 +22,6 @@ struct ErrorMessageSummaryTests {
     let error = ErrorMessageSummary(message)
     #expect(error.summary == "Internal error: Type validation failed")
     #expect(error.details == message)
-    // A label of several words is part of the sentence, so it stays.
     #expect(ErrorMessageSummary(#"Request failed with body: {"a":1}"#).summary == "Request failed with body")
     #expect(ErrorMessageSummary(#"Provider said {"a":1}"#).summary == "Provider said")
   }

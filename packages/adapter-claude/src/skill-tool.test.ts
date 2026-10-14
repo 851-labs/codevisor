@@ -33,7 +33,6 @@ const toolResult = (id: string, text: string, isError = false) =>
 
 const skill = (name: string, ok = true) => ({ codevisorSkill: { name, ok } })
 
-/// What Claude Code sends after a loaded skill's result: its instructions.
 const synthetic = (text: string) =>
   ({
     isSynthetic: true,
@@ -72,8 +71,6 @@ describe("Claude Code's Skill tool", () => {
       ]),
       toolResult("sk-1", "Launching skill: tophat"),
       toolResult("sk-2", "Launching skill: review"),
-      // Instructions arrive matched by folder, not order, and without the
-      // base-directory line Claude Code prefixes them with.
       synthetic(
         "Base directory for this skill: /repo/.claude/skills/review\n\n# Review\n\nRead it."
       ),
@@ -107,10 +104,8 @@ describe("Claude Code's Skill tool", () => {
       assistant([skillUse("sk-bad", { skill: "nope" }), skillUse("sk-odd", {})]),
       toolResult("sk-bad", "Unknown skill: nope", true),
       toolResult("sk-odd", "Launching skill"),
-      // Nothing awaits instructions: consumed without an update.
       synthetic("Base directory for this skill: /repo/.claude/skills/nope\n\n# Nope"),
       synthetic("Base directory for this skill:"),
-      // Not a skill's instructions: ordinary handling.
       synthetic("Some other reminder")
     ])
     expect(updates).toContainEqual(

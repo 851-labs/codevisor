@@ -11,15 +11,10 @@ import {
 
 import { record } from "./protocol.js"
 
-/// One `agy` headless session: NDJSON frames over the child's stdio, one
-/// conversation, turn after turn until stdin closes.
 export interface AgyProcess {
   readonly send: (message: Record<string, unknown>) => void
   readonly onEvent: (handler: (event: Record<string, unknown>) => void) => void
-  /// agy exited or its pipe failed, with what it said on the way out. Not
-  /// called for `close()`.
   readonly onExit: (handler: (error: Error) => void) => void
-  /// SIGINT, the only way to stop a headless turn.
   readonly interrupt: () => void
   readonly close: () => void
 }
@@ -39,7 +34,6 @@ export interface AgyRunResult {
   readonly stderr: string
 }
 
-/// Runs a one-shot agy command (`models`, `--version`) to completion.
 export type AgyRunner = (
   request: AgySpawnRequest & { readonly timeoutMs: number }
 ) => Promise<AgyRunResult>
@@ -57,8 +51,6 @@ export const wireAgyProcess = (
     } catch {
       return
     }
-    // Handlers run inside the transport's stream listener: one bad frame is
-    // logged and skipped rather than thrown into the server.
     try {
       eventHandler?.(record(event))
     } catch (error) {
@@ -76,12 +68,11 @@ export const wireAgyProcess = (
   }
 }
 
-/* v8 ignore start -- spawning runs against a live agy binary; tests drive wireAgyProcess over fake transports. */
+/* v8 ignore start */
 export const spawnAgyProcess: AgyConnector = async (request) => {
   const child = spawn(request.command, [...request.args], {
     cwd: request.cwd,
     env: request.env,
-    // Its own process group, so SIGINT reaches agy and the commands it runs.
     detached: process.platform !== "win32",
     stdio: ["pipe", "pipe", "pipe"]
   })

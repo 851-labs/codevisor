@@ -58,18 +58,9 @@ public struct ServerProject: Codable, Equatable, Sendable {
   public var createdAt: String
   public var locations: [ServerProjectLocation]
   public var worktreeBase: ProjectWorktreeBase? = nil
-  /// A `ProjectRunLocation` raw value. Kept raw so a value from a newer
-  /// server reads as "not chosen" instead of failing the whole listing.
   public var defaultRunLocation: String? = nil
-  /// The git remote the server observed in this project's folder. Absent
-  /// on older servers (except for clone-from-git projects) and on folders
-  /// without a remote.
   public var repoUrl: String? = nil
-  /// Server-normalized identity of `repoUrl`, the cross-machine grouping
-  /// key. Absent on older servers, which leaves the project ungrouped.
   public var repoKey: String? = nil
-  /// True for the hidden backing project of a scratch workspace (folder
-  /// under ~/codevisor/workspaces). Absent on older servers.
   public var isScratch: Bool? = nil
 
   public func project(serverId: String = "local") throws -> Project {
@@ -83,11 +74,6 @@ public struct ServerProject: Codable, Equatable, Sendable {
       origin: origin,
       createdAt: try ServerDateCoding.date(from: createdAt),
       locations: locations.map { location in
-        // Stamp the location with the client's machine id, not the
-        // server's self-reported id (always "local"). Otherwise
-        // `location(for: machineId)` misses on remote machines, so
-        // `isGitRepository` (and the folder lookup) silently fall back
-        // — which is why worktrees looked disabled on remote repos.
         ProjectLocation(
           id: location.id,
           projectId: uuid,
@@ -129,8 +115,6 @@ public struct ServerProject: Codable, Equatable, Sendable {
   }
 }
 
-/// Server-owned workspace identity and navigation metadata. Pane identity is
-/// fetched separately; only each device's tab/split layout remains local.
 public struct ServerWorkspace: Codable, Equatable, Sendable {
   public var sidebarPosition: String?
   public var sidebarOrderRevision: Int?
@@ -174,9 +158,6 @@ public struct ServerWorkspace: Codable, Equatable, Sendable {
   }
 }
 
-/// Server-owned pane identity. Native layout stores this id in a client-local
-/// tab/split tree; provider/type/resource describe the renderer independently
-/// of where a client chooses to place it.
 public struct ServerWorkspacePane: Codable, Equatable, Sendable {
   public var id: String
   public var workspaceId: String
@@ -186,23 +167,11 @@ public struct ServerWorkspacePane: Codable, Equatable, Sendable {
   public var resourceKind: String?
   public var resourceId: String?
   public var metadata: String?
-  /// Monotonic content revision. Nil only when talking to a server that
-  /// predates revisioned pane snapshots.
   public var revision: Int?
-  /// Shared tab order within the workspace (ascending). Nil from servers
-  /// that predate synced tab order, and for panes this device created that
-  /// the server hasn't listed yet.
   public var position: String?
   public var createdAt: String
   public var updatedAt: String?
-  /// Terminal panes only: the title the running program last set (OSC 0/2).
-  /// Server-owned, so pane upserts never send it; nil when no program has
-  /// set one or on servers that predate live titles.
   public var liveTitle: String?
-  /// Terminal panes only: what the program in the terminal says it is doing
-  /// ("working", "idle", "done", "blocked", or "error"); nil when it says
-  /// nothing or on servers that predate terminal status. Kept raw so a value this
-  /// client doesn't know yet never fails the record. Server-owned.
   public var terminalActivity: String?
 
   public init(
@@ -340,10 +309,6 @@ extension CodevisorServerClient {
 
   public func upsertProject(_ project: Project) async throws -> ServerProject {
     let remoteProjects = try await listProjects()
-    // Compare as UUIDs: the server lowercases ids while Swift's
-    // uuidString is uppercase — a string comparison never matches, which
-    // sent every "update" down the create path (and archiving, whose
-    // PATCH therefore never fired, silently reverted).
     if remoteProjects.contains(where: { UUID(uuidString: $0.id) == project.id }) {
       return try await updateProject(project)
     }
@@ -406,8 +371,6 @@ extension CodevisorServerClient {
     }
   }
 
-  /// The pre-close-route fallback: servers without `POST .../close` only
-  /// understand a plain DELETE.
   private func deleteWorkspacePane(workspaceId: UUID, paneId: UUID) async throws {
     do {
       try await sendNoResponse(
@@ -454,7 +417,6 @@ extension CodevisorServerClient {
     let path: String
   }
 
-  /// Creates a folder on this machine (the remote browser's "New Folder").
   public func createDirectory(path: String) async throws -> String {
     struct Body: Encodable {
       let path: String
@@ -485,11 +447,6 @@ extension CodevisorServerClient {
   }
 
   public func createProjectFromGit(id: UUID, url: String, name: String?) async throws -> ServerProject {
-    // Clones legitimately run for minutes on large repos; the default
-    // request timeout would abort mid-transfer. Send the id in the same
-    // (upper) case the client uses everywhere else — session creation
-    // looks the project up by that exact string, so a lowercased id here
-    // would store a project the client can never address ("not found").
     try await send(
       "/v1/projects/from-git",
       method: "POST",

@@ -36,8 +36,6 @@ public enum TranscriptAssistantChromeSlice: Sendable, Equatable {
 }
 
 extension AssistantMessage {
-  /// The message as history presents it: the turn's outcome minus the
-  /// failure copy and its action classification.
   func withoutStopDetail() -> AssistantMessage {
     guard turn.stopDetail != nil || turn.stopKind != nil else { return self }
     var copy = self
@@ -68,9 +66,6 @@ enum TranscriptAssistantRowProjection {
       return
     }
 
-    // A failure is only actionable on the latest turn. Older stop details
-    // are dropped before projection, so no row — block, chrome, or shell —
-    // can render them.
     let message = presentsStopDetail ? original : original.withoutStopDetail()
     let presented = ConversationItem.assistant(message)
     let projectedContent = appendAssistantBlocks(
@@ -80,9 +75,6 @@ enum TranscriptAssistantRowProjection {
       to: &rows
     )
     if projectedContent || hasStopDetailWithoutAnswer(message) {
-      // An error-only turn keeps the exact row identity it had while
-      // active, so settling reuses its host and measurement instead of
-      // remounting under the aggregate `message:` key.
       appendStopDetailEpilogueIfNeeded(
         message,
         waitingOnBackgroundTask: waitingOnBackgroundTask,
@@ -90,7 +82,6 @@ enum TranscriptAssistantRowProjection {
         to: &rows
       )
     } else if hasStopDetailWithoutAnswer(original) {
-      // An older error-only turn has nothing left to show.
     } else {
       rows.append(
         .init(
@@ -105,11 +96,6 @@ enum TranscriptAssistantRowProjection {
     }
   }
 
-  /// The block rows shared by the settled and active projections: both
-  /// worked sections, the plan document, and the final response. Returns
-  /// whether anything was projected so each caller can choose its own
-  /// fallback (the assistant shell when settled, the aggregate active row
-  /// while live).
   @discardableResult
   static func appendAssistantBlocks(
     _ message: AssistantMessage,
@@ -165,8 +151,6 @@ enum TranscriptAssistantRowProjection {
     )
   }
 
-  /// Splits a final response into independently measurable rows. Error-only
-  /// and still-forming turns keep their ordinary assistant shell.
   @discardableResult
   static func appendAssistantResponse(
     _ message: AssistantMessage,
@@ -224,8 +208,6 @@ enum TranscriptAssistantRowProjection {
               content: .markdownChunk(projected),
               estimatedHeight: projected.estimatedHeight,
               measurementRevision: projected.measurementRevision,
-              // Rows of one document sit flush: the next row adds the gap
-              // its first block calls for (see `precedingRole`).
               spacingAfter: chunkIndex == chunks.count - 1 ? 10 : 0
             ))
         }
@@ -315,7 +297,6 @@ enum TranscriptAssistantRowProjection {
           for: .assistant(message),
           waitingOnBackgroundTask: waitingOnBackgroundTask
         ),
-        // The activity line stands in for the turn's header.
         spacingAfter: slice == .activity ? TranscriptWorkedSectionProjection.headerSpacingAfter : nil
       ))
   }
@@ -331,23 +312,16 @@ enum TranscriptAssistantRowProjection {
     )
   }
 
-  /// The outer projection briefly owns one aggregate active row while the
-  /// block projection runs. A fresh turn has one known 32-point line;
-  /// reserving a generic response height here would move the bottom-pinned
-  /// transcript before the precise projection arrives.
   static func activeFallbackEstimatedHeight(for item: ConversationItem) -> CGFloat {
     isOpeningLine(item) ? activityRowEstimatedHeight : 320
   }
 
-  /// The aggregate row keeps the gap of the opening line it stands in for.
   static func activeFallbackSpacingAfter(for item: ConversationItem) -> CGFloat? {
     isOpeningLine(item) ? TranscriptWorkedSectionProjection.headerSpacingAfter : nil
   }
 
   private static func isOpeningLine(_ item: ConversationItem) -> Bool {
     guard case let .assistant(message) = item else { return false }
-    // Blank spans render nothing, so a turn holding only those is still a
-    // bare opening line and must keep its 32pt reservation.
     return message.turn.entries.allSatisfy(\.isBlankText)
       && message.turn.attachments.isEmpty
       && message.turn.subagents.isEmpty
@@ -435,9 +409,6 @@ enum TranscriptAssistantRowProjection {
     return hasher.finalize()
   }
 
-  /// A fresh turn's one line: its "Working for…" header. The optimistic
-  /// placeholder and a fresh active turn reserve the same height so the
-  /// handoff between them never moves the bottom-pinned transcript.
   static let activityRowEstimatedHeight: CGFloat = 32
 
   private static func attachmentMeasurementRevision(

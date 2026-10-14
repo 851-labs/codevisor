@@ -4,9 +4,6 @@ import StreamMarkdown
 import SwiftUI
 import UIKit
 
-/// SwiftUI boundary around the UIKit virtualizer. One dedicated container
-/// controller owns every row host, keeping transcript content out of the
-/// surrounding navigation controller's containment tree.
 struct NativeTranscriptView: UIViewControllerRepresentable {
   let presentationSurface: TranscriptPresentationSurface
   let input: TranscriptSurfaceInput

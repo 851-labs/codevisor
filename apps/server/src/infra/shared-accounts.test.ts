@@ -197,14 +197,10 @@ describe("automatic shared accounts", () => {
     const id = sharedOAuthIdentity(native("alice"))
     const credential = (await b.shared.store.get(id))!.credential!
     expect((await b.vault.token(credential)).subject).toBe("alice")
-    // Revoked at the coordinator, but B still holds a confirmed credential
-    // inside its revalidation window and keeps serving it.
     await a.vault.revoke(credential)
     expect((await b.vault.token(credential)).subject).toBe("alice")
-    // The periodic sweep leaves held credentials alone…
     await b.shared.reconcile()
     expect((await b.vault.token(credential)).subject).toBe("alice")
-    // …while a sync-driven reconcile re-reads them.
     await b.shared.reconcileRemote()
     await expect(b.vault.token(credential)).rejects.toThrow("signed out")
   })

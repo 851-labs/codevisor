@@ -1,8 +1,6 @@
 #if canImport(AppKit)
   import SwiftUI
 
-  /// Semantic content accepted by an autocomplete menu. Standard ForEach and
-  /// builder conditionals expand this content before any rows are rendered.
   @MainActor
   public protocol AutocompleteMenuContent {
     var autocompleteEntries: [Autocomplete.Entry] { get }
@@ -52,8 +50,6 @@
       public static func buildLimitedAvailability(_ part: [Choice<Value>]) -> [Choice<Value>] { part }
     }
 
-    /// An opaque semantic entry. Use Choice, Action, Picker, and Section to
-    /// build entries; view realization is never the source of keyboard order.
     struct Entry {
       indirect enum Kind {
         case item(ItemDefinition)
@@ -76,8 +72,6 @@
       }
     }
 
-    /// A secondary action is reachable from the row's accessibility actions,
-    /// context menu, and optional local keyboard shortcut.
     struct SecondaryAction {
       public let title: String
       public let systemImage: String
@@ -95,8 +89,6 @@
       }
     }
 
-    /// A value in a selection-bound Picker. The title supplies search,
-    /// measurement, and accessibility text even when the label is custom.
     struct Choice<Value: Hashable>: View, AutocompleteChoiceContent {
       let value: Value
       var definition: ItemDefinition
@@ -149,8 +141,6 @@
       }
     }
 
-    /// A command, separate from a selectable value. Shortcuts are active only
-    /// while this autocomplete owns keyboard focus.
     struct Action: View, AutocompleteMenuContent {
       var definition: ItemDefinition
 
@@ -196,7 +186,6 @@
       }
     }
 
-    /// A titled or untitled section with a stable, typed identity.
     struct Section: View, AutocompleteMenuContent {
       let id: AnyHashable
       let title: String?
@@ -222,8 +211,6 @@
       }
     }
 
-    /// Use inside Menu/Suggestions for an inline choice group, or on its own
-    /// for a menu whose trigger displays the current value.
     struct Picker<Value: Hashable>: View, AutocompleteMenuContent {
       let title: String
       let id: AnyHashable

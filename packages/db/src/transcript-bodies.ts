@@ -6,8 +6,6 @@ import { readSetupBodyPage } from "./setup-state.js"
 
 const blockSize = 8192
 
-/** Store oversized fields in separately paged blocks. Status-only tool
- * updates then touch metadata without reading/copying the old output. */
 export const mergeTranscriptFields = (
   db: Database.Database,
   itemId: string,

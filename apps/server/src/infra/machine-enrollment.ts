@@ -12,25 +12,12 @@ import { CloudApiError } from "@codevisor/cloud-client"
 import { HttpFailure } from "../server-context.js"
 import type { MachineLink } from "./machine-link.js"
 
-/// Adding and removing machines on this machine's account, shared by the
-/// CLI (`codevisor machines …`) and the agent tools (`machines.invite`,
-/// `machines.add`, `machines.remove`) through the /v1/machines routes.
-///
-/// `add` sets a host up end to end from here: it mints a one-time invite,
-/// runs the public installer on the host over SSH with the invite on the
-/// script's stdin (never in argv, a file, or the caller's context), and
-/// waits until the new machine is online on the account.
-
 export const DEFAULT_INSTALL_URL = "https://www.codevisor.dev/install.sh"
 
-/// How long a host gets to download, install, and join.
 const SSH_TIMEOUT_MS = 10 * 60 * 1000
-/// How long a joined machine gets to show up online in hub presence.
 const APPEAR_TIMEOUT_MS = 60 * 1000
 const APPEAR_POLL_MS = 1000
-/// Trailing output kept for error messages.
 const OUTPUT_TAIL_LINES = 30
-/// Output kept while the install runs, so a chatty host can't grow memory.
 const OUTPUT_BUFFER_CHARS = 128_000
 
 export interface SshRun {
@@ -49,7 +36,6 @@ export interface MachineEnrollmentOptions {
   readonly cloud: MachineEnrollmentCloud
   readonly link: MachineLink
   readonly installUrl?: string
-  /// The ssh executable (default: `ssh` on PATH).
   readonly sshCommand?: string
   readonly runSsh?: (
     args: ReadonlyArray<string>,
@@ -63,15 +49,11 @@ export interface MachineEnrollmentOptions {
 export interface MachineEnrollment {
   readonly invite: () => Promise<MachineInviteResponse>
   readonly add: (request: AddMachineRequest, signal?: AbortSignal) => Promise<MachineSummary>
-  /// Removes another machine by id or name; resolves to the remaining list.
   readonly remove: (machine: string) => Promise<ReadonlyArray<MachineSummary>>
 }
 
-/// POSIX single-quoting: safe for any string inside `sh`.
 export const shellQuote = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`
 
-/// The script `sh -s` runs on the host. The installer sees CODEVISOR_INVITE,
-/// joins the account with it, and skips the interactive onboarding.
 export const remoteInstallScript = (options: {
   readonly inviteCode: string
   readonly installUrl: string
@@ -91,10 +73,6 @@ export const remoteInstallScript = (options: {
     ""
   ].join("\n")
 
-/// `ssh` arguments for one non-interactive run. No `-t`: without a terminal
-/// the installer never starts interactive onboarding. BatchMode fails fast
-/// instead of prompting for a password; accept-new trusts a fresh host's key
-/// on first contact (and still refuses a changed one).
 export const sshArgs = (destination: string, port: number | undefined): string[] => [
   "-o",
   "BatchMode=yes",
@@ -127,17 +105,12 @@ const spawnSsh =
       }
       child.stdout.on("data", collect)
       child.stderr.on("data", collect)
-      // Cancelled or timed out: report it like an interrupted run. Anything
-      // else means ssh couldn't start here at all (missing, not executable).
       child.on("error", (error) => {
         if (error.name === "AbortError") resolve({ exitCode: null, output })
         else reject(new HttpFailure(501, `Couldn't run ssh on this machine: ${error.message}`))
       })
       child.on("close", (exitCode) => resolve({ exitCode, output }))
-      // ssh that fails before reading the script (unreachable host, refused
-      // key) closes the pipe; the exit code above reports that. An unhandled
-      // EPIPE here would exit the server instead.
-      /* v8 ignore next -- the script fits in the pipe buffer, so tests' early-exiting fakes never see EPIPE. */
+      /* v8 ignore next */
       child.stdin.on("error", () => undefined)
       child.stdin.end(stdin)
     })
@@ -156,7 +129,7 @@ const cloudFailure = (cause: unknown, action: string): HttpFailure => {
 
 export const makeMachineEnrollment = (options: MachineEnrollmentOptions): MachineEnrollment => {
   const { cloud, link } = options
-  /* v8 ignore next -- production runs the system ssh; tests point sshCommand at a fake. */
+  /* v8 ignore next */
   const runSsh = options.runSsh ?? spawnSsh(options.sshCommand ?? "ssh")
   const sleep = options.sleep ?? delay
   const now = options.now ?? Date.now
@@ -169,7 +142,6 @@ export const makeMachineEnrollment = (options: MachineEnrollmentOptions): Machin
     }
   }
 
-  /// The machine our invite added: new since `before`, added by this machine.
   const waitForJoined = async (
     before: ReadonlySet<string>,
     signal: AbortSignal | undefined

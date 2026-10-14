@@ -12,10 +12,6 @@ import type {
 import type { SessionGoal } from "@codevisor/api"
 import { Effect } from "effect"
 
-export const acpProtocolVersion = acp.PROTOCOL_VERSION
-
-/// No `terminal` capability: agents run their own shell commands, as they do
-/// under their own UIs.
 export const acpClientCapabilities = (): acp.ClientCapabilities => ({
   plan: {},
   terminal: false
@@ -29,14 +25,8 @@ export interface AcpHarnessLaunchRequest {
   readonly env: NodeJS.ProcessEnv
 }
 
-/// One live ACP adapter process. Session output is pushed to the `emit`
-/// callback for the connection's whole lifetime — including notifications
-/// that arrive between turns — which is what keeps background/agent-initiated
-/// work from being dropped.
 export interface AcpAgentConnection {
   readonly listSessions?: Effect.Effect<ReadonlyArray<AgentSessionSummary>, AgentRuntimeError>
-  /// `skillListTimeoutMs` bounds the wait for the skills the agent pushes
-  /// right after setup, so the metadata can carry them.
   readonly createSession: (
     cwd: string,
     toolGateway?: ToolGatewayConfig,
@@ -61,8 +51,6 @@ export interface AcpAgentConnection {
   >
   readonly cancel: (sessionId: string) => Effect.Effect<void, AgentRuntimeError>
   readonly setMode: (sessionId: string, modeId: string) => Effect.Effect<void, AgentRuntimeError>
-  /// Returns the agent's updated config options in Codevisor's normalized
-  /// shape so the caller can broadcast them.
   readonly setConfigOption: (
     sessionId: string,
     configId: string,
@@ -73,9 +61,6 @@ export interface AcpAgentConnection {
     update: SetGoalUpdate
   ) => Effect.Effect<SessionGoal, AgentRuntimeError>
   readonly clearGoal?: (sessionId: string) => Effect.Effect<void, AgentRuntimeError>
-  /// Resolves a pending `session/request_permission` that was surfaced as a
-  /// blocking question. Absent on connections without permission plumbing
-  /// (fakes, older transports) — the runtime then reports unsupported.
   readonly answerQuestion?: (
     sessionId: string,
     questionId: string,
@@ -88,9 +73,6 @@ export interface AcpAgentConnection {
         readonly id: string
         readonly name: string
         readonly description?: string
-        /// The agent delegates this method to a host-provided credential
-        /// (`_meta.external_provider`): selecting it needs no user
-        /// interaction, only an `authenticate` request.
         readonly external?: boolean
       }>
       readonly canLogout: boolean
@@ -101,8 +83,6 @@ export interface AcpAgentConnection {
   readonly authenticate: (methodId: string) => Effect.Effect<void, AgentRuntimeError>
   readonly logout: Effect.Effect<void, AgentRuntimeError>
   readonly close: Effect.Effect<void, AgentRuntimeError>
-  /// What the agent reported during the ACP initialize handshake. Absent on
-  /// connections whose transport predates the field (fakes, older adapters).
   readonly agentInfo?: {
     readonly name?: string
     readonly version?: string

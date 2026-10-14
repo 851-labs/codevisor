@@ -5,11 +5,6 @@ import CodevisorClient
 import CodevisorProtocol
 @testable import CodevisorCloud
 
-// MARK: - Fake WebSocket seam
-
-/// A scripted WebSocket connection: the test (or a scripted machine) feeds
-/// inbound messages through `push`/`finish`, and every outbound send is both
-/// recorded and forwarded to `onSend`.
 @Observable
 final class FakeWebSocketConnection: ServerWebSocketConnecting, @unchecked Sendable {
   private let lock = NSLock()
@@ -49,7 +44,6 @@ final class FakeWebSocketConnection: ServerWebSocketConnecting, @unchecked Senda
     push(.string(json))
   }
 
-  /// Ends the connection: the client's pending/next receive throws.
   func disconnect() {
     inboundContinuation.finish(throwing: URLError(.networkConnectionLost))
   }
@@ -82,7 +76,6 @@ final class FakeWebSocketConnection: ServerWebSocketConnecting, @unchecked Senda
   }
 }
 
-/// Hands out connections built by `makeConnection` — one per connect call.
 @Observable
 final class FakeWebSocketTransport: ServerWebSocketTransport, @unchecked Sendable {
   private let lock = NSLock()
@@ -104,5 +97,3 @@ final class FakeWebSocketTransport: ServerWebSocketTransport, @unchecked Sendabl
     return makeConnection(request)
   }
 }
-
-// MARK: - Scripted hub + machine

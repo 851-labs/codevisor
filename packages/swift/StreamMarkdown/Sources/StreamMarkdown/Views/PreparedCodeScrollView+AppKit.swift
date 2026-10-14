@@ -2,8 +2,6 @@
   import AppKit
   import SwiftUI
 
-  /// Uses the same axis routing as other transcript code blocks. The native
-  /// text view owns the prepared layout and keeps selection while scrolling.
   struct PreparedCodeScrollView: NSViewRepresentable {
     let layout: PreparedNativeTextLayout
 

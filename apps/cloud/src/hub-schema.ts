@@ -2,9 +2,6 @@ import type { CloudMachinePresence } from "@codevisor/api"
 
 import { machineTunnel } from "./hub-tunnel.js"
 
-/// The hub's durable shape: per-hub SQLite migrations (append-only, applied
-/// on wake — see user-hub.ts) and the row/attachment types they imply.
-
 export const HUB_MIGRATIONS: readonly string[] = [
   `CREATE TABLE machines (
      device_id TEXT PRIMARY KEY,
@@ -14,8 +11,6 @@ export const HUB_MIGRATIONS: readonly string[] = [
      public_key TEXT NOT NULL,
      last_seen_at TEXT NOT NULL
    )`,
-  // Resumable connection identities + their offline relay buffers (see
-  // resume-sessions.ts). Grouped as one append-only step.
   `CREATE TABLE sessions (
      connection_id TEXT PRIMARY KEY,
      kind TEXT NOT NULL,
@@ -31,17 +26,9 @@ export const HUB_MIGRATIONS: readonly string[] = [
      message BLOB NOT NULL,
      PRIMARY KEY (connection_id, seq)
    )`,
-  // Socket attachments survive Durable Object hibernation and deploys. A
-  // generation makes one machine socket authoritative when a replacement
-  // overlaps the half-open predecessor it supersedes.
   `ALTER TABLE machines ADD COLUMN active_generation INTEGER NOT NULL DEFAULT 0`,
-  // The machine's stable Codevisor server id (hello `device.serverId`), so
-  // peers can match hub presence to the same machine reached directly; and
-  // whether it accepts channels from other machines (MACHINE_PEERS_FEATURE).
   `ALTER TABLE machines ADD COLUMN server_id TEXT;
    ALTER TABLE machines ADD COLUMN peer_aware INTEGER NOT NULL DEFAULT 0`,
-  // Tunnel control plane (hub-tunnel.ts): each machine's endpoint id and last
-  // reported address, and the account's app devices machines may admit.
   `ALTER TABLE machines ADD COLUMN tunnel_endpoint_id TEXT;
    ALTER TABLE machines ADD COLUMN tunnel_addr TEXT;
    CREATE TABLE app_devices (
@@ -50,8 +37,6 @@ export const HUB_MIGRATIONS: readonly string[] = [
      endpoint_id TEXT NOT NULL,
      last_seen_at TEXT NOT NULL
    )`,
-  // Machines that joined through another machine's invite, recorded when
-  // the invite is redeemed (before the new machine's first hello).
   `CREATE TABLE machine_origins (
      device_id TEXT PRIMARY KEY,
      added_by_device_id TEXT NOT NULL,
@@ -68,11 +53,9 @@ export interface MachineRow extends Record<string, SqlStorageValue> {
   last_seen_at: string
   active_generation: number
   server_id: string | null
-  /// 1 when the last hello advertised MACHINE_PEERS_FEATURE.
   peer_aware: number
   tunnel_endpoint_id: string | null
   tunnel_addr: string | null
-  /// From machine_origins (LEFT JOIN): the machine whose invite added it.
   added_by_device_id: string | null
   added_by_name: string | null
 }
@@ -80,22 +63,10 @@ export interface MachineRow extends Record<string, SqlStorageValue> {
 export interface SocketAttachment {
   kind: "app" | "machine"
   connectionId: string
-  /// Machine sockets: the registered device id. App sockets: absent until
-  /// hello, then the app's self-assigned device id.
   deviceId?: string
-  /// App sockets: static public key from hello, attached to `open` relays so
-  /// machines can authenticate the channel opener.
   publicKey?: string
-  /// Machine sockets that advertised MACHINE_PEERS_FEATURE: they receive the
-  /// machine list, presence, and machine-reset, and may open channels to
-  /// other machines on the account.
   peerAware?: boolean
-  /// Machine sockets: the generation installed in the durable registry when
-  /// this hello won ownership. Missing means generation 0 for sockets that
-  /// survived deployment of the generation migration.
   machineGeneration?: number
-  /// Machine sockets: the hello registered a tunnel endpoint, so this machine
-  /// understands (and receives) `peer-devices`.
   tunnel?: boolean
   helloDone: boolean
 }

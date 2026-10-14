@@ -58,7 +58,6 @@ struct CloudAccountAuthenticationSections: View {
               .foregroundStyle(.secondary)
             }
             #if os(iOS)
-              // Align the native separator with the provider name, past its 20-point icon and 12-point spacing.
               .alignmentGuide(.listRowSeparatorLeading) { _ in 32 }
               .alignmentGuide(.listRowSeparatorTrailing) { dimensions in dimensions.width }
             #endif

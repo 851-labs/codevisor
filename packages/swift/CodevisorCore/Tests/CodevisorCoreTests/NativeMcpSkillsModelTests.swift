@@ -58,7 +58,6 @@ struct NativeMcpSkillsModelTests {
     #expect(server.envNames == ["TOKEN"])
     #expect(server.supportsRemove)
     #expect(scan.harnesses[0].error == nil)
-    // Identifiable ids are stable and unique per harness/scope/file/name.
     #expect(server.id == "claude-code|global|/home/u/.claude.json|docs")
   }
 

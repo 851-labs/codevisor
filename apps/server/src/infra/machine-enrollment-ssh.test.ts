@@ -27,7 +27,6 @@ const presence = (
   ...extra
 })
 
-/// Observes the real owned SSH child without replacing its process behavior.
 class SshCancellation {
   readonly caller = new AbortController()
   readonly ready = Promise.withResolvers<void>()
@@ -79,7 +78,6 @@ describe("the real ssh runner", () => {
       rmSync(directory, { recursive: true, force: true })
   })
 
-  /// A stand-in `ssh` that records its stdin and behaves per `body`.
   const fakeSsh = (body: string): { command: string; stdinPath: string } => {
     const directory = mkdtempSync(join(tmpdir(), "codevisor-fake-ssh-"))
     directories.push(directory)
@@ -116,7 +114,6 @@ describe("the real ssh runner", () => {
 
   it("runs ssh with the script on stdin and the default installer", async () => {
     const ssh = fakeSsh('echo "✓ Connected as hetzner-1."')
-    // The new machine is on the account once the host has run the script.
     const cloud = account(() => existsSync(ssh.stdinPath))
     const enrollment = makeMachineEnrollment({
       cloud,
@@ -140,7 +137,6 @@ describe("the real ssh runner", () => {
     const enrollment = makeMachineEnrollment({
       cloud: {
         ...cloud,
-        // Offline on the first poll after the install, online on the next.
         machines: () =>
           (machines() ?? []).map((machine) =>
             machine.deviceId === "device-new" ? { ...machine, online: ++polls > 1 } : machine

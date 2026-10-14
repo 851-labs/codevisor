@@ -2,14 +2,12 @@ import CodevisorCore
 import SwiftUI
 
 enum AIDataSharingConsent {
-  // Increase this when the disclosed data or recipients change materially.
   static let currentVersion = 1
   static let preferenceKey = "ios.aiDataSharing.consentVersion"
   static let privacyPolicyURL = URL(string: "https://www.codevisor.dev/privacy")!
 }
 
 struct AIDataSharingConsentScreen: View {
-  /// Omitted when reviewing the disclosure in Settings.
   var onAgree: (() -> Void)?
 
   var body: some View {

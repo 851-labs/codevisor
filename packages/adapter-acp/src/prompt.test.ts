@@ -39,7 +39,6 @@ describe("prompt attachments", () => {
         uri: "file:///tmp/att/notes.txt"
       }
     ])
-    // No image capability: the image still arrives as a readable resource_link.
     expect(acpPrompt({ attachments: [image], text: "look" }, {})).toEqual([
       { text: "look", type: "text" },
       {
@@ -50,7 +49,6 @@ describe("prompt attachments", () => {
         uri: "file:///tmp/att/shot.png"
       }
     ])
-    // Image-only prompts drop the empty text block.
     expect(acpPrompt({ attachments: [image], text: "" }, { image: true })).toEqual([
       {
         mimeType: "image/png",

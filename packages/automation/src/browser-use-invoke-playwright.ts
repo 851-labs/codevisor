@@ -37,8 +37,6 @@ import {
 import { snapshotPage } from "./browser-snapshot.js"
 import type { BrowserToolInvocation, BrowserToolSessionState } from "./browser-use-invoke-types.js"
 
-/// The Playwright-style locator operations (`playwright.*`).
-/// Returns undefined for tool names this family does not own.
 export const invokePlaywrightTools = async (
   invocation: BrowserToolInvocation,
   state: BrowserToolSessionState

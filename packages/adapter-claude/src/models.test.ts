@@ -90,8 +90,6 @@ describe("ClaudeProvider", () => {
     const deliverModels = stallModelList(fake)
     const events: Array<RuntimeEvent> = []
     const created = await createWithLostModelListRace(fake, events)
-    // Session creation did not block on the list — and, without it, no
-    // model-derived option can be offered yet.
     expect(created.metadata.configOptions).toEqual([])
     expect(configUpdates(events)).toEqual([])
 
@@ -107,8 +105,6 @@ describe("ClaudeProvider", () => {
     ])
     await fake.drain()
 
-    // Nothing named a model yet, so none is reported as selected ("" is
-    // unknown); the list's first row is not the CLI's model.
     expect(configUpdates(events)).toEqual([
       {
         configId: "model",
@@ -122,7 +118,6 @@ describe("ClaudeProvider", () => {
         ]
       }
     ])
-    // The handle's own snapshots carry the list from here on.
     await run(created.handle.setConfigOption("model", "sonnet"))
     const latest = events.at(-1)?.payload as { configOptions?: Array<{ id: string }> }
     expect(latest.configOptions?.map((option) => option.id)).toEqual(["model", "effort", "speed"])
@@ -277,8 +272,6 @@ describe("ClaudeProvider", () => {
       expect.objectContaining({ currentValue: "fast", id: "speed" })
     )
 
-    // Switching to a model without fast mode drops the option and turns
-    // fast mode off.
     await run(created.handle.setConfigOption("model", "claude-opus-4-8"))
     expect(fake.flagSettings).toEqual([{ fastMode: true }, { fastMode: false }])
     const afterModel = events.at(-1)?.payload as Record<string, unknown>
@@ -330,7 +323,6 @@ describe("ClaudeProvider", () => {
     expect(model?.options.map((option) => option.name)).toEqual([
       "Opus 5.5",
       "Opus 5.5 (1M context)",
-      // Not shaped like "Family X.Y" alone, so the CLI's name stands.
       "Sonnet 5 (1M context)",
       "Fable",
       "Haiku"
@@ -440,8 +432,6 @@ describe("ClaudeProvider", () => {
     fake.push({ ...(initMessage() as object), fast_mode_state: "on" } as never)
     const created = await createPromise
 
-    // The init lands after createSession's metadata snapshot in some orders;
-    // read the live options through a config change instead.
     await run(created.handle.setConfigOption("effort", "medium"))
     const updated = events.at(-1)?.payload as Record<string, unknown>
     const speed = (
@@ -453,8 +443,6 @@ describe("ClaudeProvider", () => {
 
 type SupportedModels = Awaited<ReturnType<FakeQuery["supportedModels"]>>
 
-/// A model list that never answers on its own; the returned function delivers
-/// it once the test has let the startup race be lost.
 const stallModelList = (fake: FakeQuery): ((models: SupportedModels) => void) => {
   let deliver: ((models: SupportedModels) => void) | undefined
   vi.spyOn(fake, "supportedModels").mockImplementation(
@@ -466,7 +454,6 @@ const stallModelList = (fake: FakeQuery): ((models: SupportedModels) => void) =>
   return (models) => deliver?.(models)
 }
 
-/// Pause the model response and advance the full startup budget explicitly.
 const createWithLostModelListRace = async (fake: FakeQuery, events: Array<RuntimeEvent>) => {
   const pending = run(
     makeProvider(fake).createSession(definition, "/tmp", async (event) => {

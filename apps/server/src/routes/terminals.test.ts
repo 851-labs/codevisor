@@ -8,7 +8,6 @@ const recordMessages = (socket: WebSocket) => {
   const waiters = new Map<number, () => void>()
   socket.on("message", (data) => {
     const message = JSON.parse(data.toString()) as { type?: string }
-    // Size announcements aren't what these tests follow.
     if (message.type === "size") return
     messages.push(message)
     waiters.get(messages.length)?.()
@@ -28,7 +27,6 @@ describe("terminal routes", () => {
   it("kills a session's terminal over the delete route", async () => {
     const { server, spawner } = await start()
 
-    // No live terminal for the session yet.
     const missing = await jsonRequest(server, "/v1/terminals/session/no-such-session", {
       method: "DELETE"
     })

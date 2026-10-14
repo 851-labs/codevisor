@@ -14,19 +14,11 @@ public struct CodevisorMachine: Identifiable, Sendable, Codable, Equatable {
 
   public var isLocal: Bool { id == Self.local.id }
 
-  /// A machine whose record cannot be resolved right now. The identity is the
-  /// real server id, so nothing is mistaken for another machine, and the
-  /// address is a reserved name that can never resolve: panes report
-  /// unavailable instead of silently addressing a different machine — in
-  /// particular this one, which `CodevisorMachine.local` would do.
   public static func unresolved(id: String) -> CodevisorMachine {
     CodevisorMachine(
       id: id, name: id, baseURL: URL(string: "http://unresolved.invalid")!, kind: "unresolved")
   }
 
-  /// True for machines reached through the Codevisor Cloud relay (their ids
-  /// are `cloud:<deviceId>`; they are synthesized from cloud presence, not
-  /// stored in the registry).
   public var isCloud: Bool { id.hasPrefix(Self.cloudIdPrefix) }
 
   public var serverConfig: CodevisorServerConfig {
@@ -49,11 +41,8 @@ public struct CodevisorMachine: Identifiable, Sendable, Codable, Equatable {
   }
 
   public static let cloudIdPrefix = "cloud:"
-  /// Cloud machines have no direct address; requests tunnel through the
-  /// relay, so their baseURL is a recognizable placeholder.
   public static let cloudPlaceholderBaseURL = URL(string: "https://cloud-relay.invalid")!
 
-  /// The cloud device id for a `cloud:` machine id, nil otherwise.
   public static func cloudDeviceId(forMachineId id: String) -> String? {
     guard id.hasPrefix(cloudIdPrefix) else { return nil }
     return String(id.dropFirst(cloudIdPrefix.count))

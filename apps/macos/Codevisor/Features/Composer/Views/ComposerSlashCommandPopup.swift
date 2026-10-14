@@ -70,8 +70,6 @@ struct ComposerSlashCommandPopup: View {
       }
     }
     .clipShape(cardStyle.shape)
-    // The palette overlays other glass accessories, whose text must not
-    // show through this surface when their materials merge.
     .background(theme.windowBackground, in: cardStyle.shape)
     .composerGlassSurface(shape: cardStyle.shape)
     .accessibilityElement(children: .contain)
@@ -89,8 +87,6 @@ struct ComposerSlashCommandPopup: View {
         Text(command.title)
           .fontWeight(.medium)
           .lineLimit(1)
-          // Long descriptions truncate first; the title and its source
-          // label stay whole.
           .layoutPriority(1)
         Text(command.description)
           .lineLimit(1)

@@ -1,11 +1,5 @@
-// Generic transcript disclosure chrome, shared by tool rows, worked sections,
-// setup phases, and message roots on both platforms.
 import SwiftUI
 
-/// Commits disclosure layout at its final size, then animates only the newly
-/// revealed pixels. This is the same presentation model as the original
-/// "Worked for…" disclosure: the virtualizer receives one authoritative row
-/// height rather than following an intermediate height animation.
 public struct TranscriptDisclosureContentReveal<Content: View>: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.transcriptInvalidateRowMeasurement) private var invalidateRowMeasurement
@@ -32,13 +26,8 @@ public struct TranscriptDisclosureContentReveal<Content: View>: View {
     }
     .onChange(of: isExpanded) { _, expanded in
       if !expanded {
-        // The shared reveal remains mounted while its content does
-        // not, so the next false-to-true transition starts hidden.
         isVisible = false
       }
-      // The Boolean change inserts/removes the final-size content in one
-      // SwiftUI commit. Native row hosts defer this request until that
-      // commit is laid out, then report the one resulting height.
       invalidateRowMeasurement?()
     }
   }

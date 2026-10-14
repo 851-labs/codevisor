@@ -53,8 +53,6 @@ describe("destructive native operations", () => {
       vi.restoreAllMocks()
     }
   })
-  // A ~/.claude.json fixture with unrelated state, comments, and 4-space
-  // indentation — removal must leave everything but the one entry untouched.
   const CLAUDE_FIXTURE = `{
     // personal settings — do not lose this comment
     "numStartups": 42,
@@ -105,7 +103,6 @@ model = "gpt-5.1"
     expect(after).toContain('"projects": { "/Users/u/app": { "history": ["one"] } }')
     expect(after).toContain('"linear"')
     expect(after).not.toContain("docs-mcp")
-    // 4-space indentation preserved.
     expect(after).toContain('    "mcpServers"')
     const scanned = harnessGroup(result.scan, "claude-code")
     expect(scanned.servers.map((server) => server.serverName)).toEqual(["linear"])
@@ -155,7 +152,6 @@ docs = { command = "docs-mcp" }
     await expect(manager.removeServer("codex", "docs")).rejects.toMatchObject({
       code: "unsupported"
     })
-    // The file is untouched after the refusal.
     expect(files[`${HOME}/.codex/config.toml`]).toContain('docs = { command = "docs-mcp" }')
   })
 
@@ -165,7 +161,6 @@ docs = { command = "docs-mcp" }
     await manager.removeServer("claude-code", "docs")
     const backup = await run(db.getNativeConfigBackup(`${HOME}/.claude.json`))
     expect(backup).toBeDefined()
-    // The backup holds the pre-mutation content.
     expect(files[backup!.backupPath]).toBe(CLAUDE_FIXTURE)
 
     await manager.removeServer("claude-code", "linear")
@@ -228,7 +223,6 @@ docs = { command = "docs-mcp" }
     }
     const { manager } = await testManager(files)
     const { removal } = await manager.removeServer("gemini", "docs")
-    // The user deleted the whole file after the removal.
     delete files[`${HOME}/.gemini/settings.json`]
     const scan = await manager.restoreRemoval(removal.id)
     const after = JSON.parse(files[`${HOME}/.gemini/settings.json`] as string) as Record<
@@ -243,12 +237,10 @@ docs = { command = "docs-mcp" }
     const files: Record<string, string | Error> = { [`${HOME}/.claude.json`]: CLAUDE_FIXTURE }
     const { manager } = await testManager(files)
     const { removal } = await manager.removeServer("claude-code", "docs")
-    // The user re-added a server named docs behind our back.
     files[`${HOME}/.claude.json`] = JSON.stringify({
       mcpServers: { docs: { command: "other-docs" } }
     })
     await expect(manager.restoreRemoval(removal.id)).rejects.toMatchObject({ code: "conflict" })
-    // Still parked for later.
     expect(await manager.listRemovals()).toHaveLength(1)
   })
 
@@ -267,7 +259,6 @@ docs = { command = "docs-mcp" }
     }
     const { manager } = await testManager(files)
 
-    // Unknown server in an existing config file.
     await expect(manager.setNativeEnabled("opencode", "ghost", true)).rejects.toMatchObject({
       code: "notFound"
     })
@@ -306,19 +297,15 @@ docs = { command = "docs-mcp" }
     await expect(manager.removeServer("not-a-harness", "docs")).rejects.toMatchObject({
       code: "notFound"
     })
-    // amp has no nativeMcp metadata at all.
     await expect(manager.removeServer("amp", "docs")).rejects.toMatchObject({
       code: "notFound"
     })
-    // goose is scan-only (writable: false).
     await expect(manager.removeServer("goose", "docs")).rejects.toMatchObject({
       code: "unsupported"
     })
-    // claude-code has no native enable flag.
     await expect(manager.setNativeEnabled("claude-code", "docs", false)).rejects.toMatchObject({
       code: "unsupported"
     })
-    // Missing file and missing entries.
     await expect(manager.removeServer("gemini", "docs")).rejects.toMatchObject({
       code: "notFound"
     })

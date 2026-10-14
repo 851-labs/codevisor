@@ -2,8 +2,6 @@ import Testing
 
 @testable import CodevisorClient
 
-/// A server failure reads as its sentence, never as the JSON it arrived in (851-2391: the viewer
-/// showed `{"error":"Open or update Codevisor on the host Mac, then retry Screen Sharing"}`).
 struct CodevisorServerClientErrorTests {
   @Test func anErrorBodyShowsItsSentence() {
     let body = #"{"error":"Open or update Codevisor on the host Mac, then retry Screen Sharing"}"#

@@ -18,8 +18,6 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-/// Loads the generated plugin and runs its setup against OpenCode's
-/// built-in methods, returning what it registered.
 const load = async (options: unknown) => {
   const directory = await mkdtemp(join(tmpdir(), "codevisor-opencode-plugin-"))
   onTestFinished(() => rm(directory, { recursive: true, force: true }))
@@ -68,7 +66,6 @@ it("refreshes Codevisor-shared sign-ins through the broker, never with a real re
   const { id, registered } = await load({ broker: "http://127.0.0.1:9/harness/provider-token" })
 
   expect(id).toBe("codevisor.shared-credentials")
-  // Only methods OpenCode actually has here; xAI isn't installed in this fixture.
   expect(registered.map((entry) => [entry.integrationID, entry.method.id])).toEqual([
     ["openai", "chatgpt-browser"]
   ])

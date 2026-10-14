@@ -1,9 +1,6 @@
 import CoreGraphics
 import Foundation
 
-/// A stable pixel coordinate inside one virtual row. Unlike a raw
-/// bottom-relative distance, this survives height corrections elsewhere in
-/// the document without moving the reader's visible content.
 public struct VirtualTranscriptAnchor: Sendable, Equatable {
   public let key: String
   public let offsetFromRowTop: CGFloat
@@ -14,11 +11,6 @@ public struct VirtualTranscriptAnchor: Sendable, Equatable {
   }
 }
 
-/// Platform-neutral geometry for a bottom-anchored, variable-height transcript.
-///
-/// AppKit and UIKit adapters can share this layout: the platform scroll view
-/// supplies its viewport while this type owns estimates, measured heights,
-/// and bottom-relative visible-range lookup.
 public struct VirtualTranscriptLayout: Sendable, Equatable {
   public struct Item: Sendable, Equatable {
     public let key: String
@@ -37,8 +29,6 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
   public let indexByKey: [String: Int]
   public var totalHeight: CGFloat { heightIndex.totalHeight }
 
-  /// Full geometry exports for persistence and diagnostics. Frame-time callers
-  /// use `frame(at:)` so they only visit the rows they need.
   public var heights: [CGFloat] { heightIndex.allRows().map(\.height) }
   public var topOffsets: [CGFloat] {
     var top: CGFloat = 0
@@ -70,9 +60,6 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
     self.heightIndex = heightIndex
   }
 
-  /// Copies only affected height-index paths. Existing layout snapshots keep
-  /// their original geometry for restoration and animation. Unknown keys
-  /// require a topology rebuild; unchanged subtrees are reused.
   public func updatingHeights(_ updates: [String: CGFloat]) -> VirtualTranscriptLayout? {
     guard !updates.isEmpty else { return self }
     var replacements: [(index: Int, height: CGFloat)] = []
@@ -88,9 +75,6 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
 
   public var isEmpty: Bool { keys.isEmpty }
 
-  /// The row containing `offset` (measured from the top of the first row).
-  /// Spacing between two rows belongs to the nearer one, and offsets above
-  /// or below the transcript clamp to its first and last row.
   public func index(nearestToOffset offset: CGFloat) -> Int? {
     guard !keys.isEmpty else { return nil }
     let next = heightIndex.firstTopReaching(offset)
@@ -119,10 +103,6 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
     max(0, totalHeight - (max(0, viewportTop) + max(0, viewportHeight)))
   }
 
-  /// Translates a bottom-relative viewport coordinate across a layout
-  /// change while keeping the same row fixed in the viewport. Changes below
-  /// the anchor increase the distance from the bottom; changes above it do
-  /// not move the reader's content.
   public func distanceFromBottom(
     preservingAnchor key: String,
     previousLayout: VirtualTranscriptLayout,
@@ -141,8 +121,6 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
     )
   }
 
-  /// Rows intersecting the viewport plus a small row-count overscan. Long
-  /// chat turns make row-count overscan more useful than a fixed pixel band.
   public func visibleRange(
     distanceFromBottom: CGFloat,
     viewportHeight: CGFloat,
@@ -161,10 +139,6 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
     return start..<overscannedEnd
   }
 
-  /// Rows intersecting a viewport plus a geometry-based runway on either
-  /// side. Unlike row-count overscan, this guarantees roughly the same
-  /// amount of prepared scrolling across transcripts whose turns vary from
-  /// one line to several screens tall.
   public func visibleRange(
     distanceFromBottom: CGFloat,
     viewportHeight: CGFloat,
@@ -186,17 +160,11 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
     return first..<min(keys.count, max(first + 1, end))
   }
 
-  /// Recreates a previously rendered virtual window around its first key.
-  /// Saved windows are advisory: missing keys fall back to the ordinary
-  /// distance-based range and counts are clamped to the current transcript.
   public func renderedRange(anchorKey: String, count: Int) -> Range<Int>? {
     guard let start = indexByKey[anchorKey] else { return nil }
     return start..<min(keys.count, start + max(1, count))
   }
 
-  /// Captures the row at the viewport's top edge and the exact pixel offset
-  /// into that row. A top edge inside inter-row spacing is represented as a
-  /// negative offset from the following row, preserving the gap exactly.
   public func viewportAnchor(at viewportTop: CGFloat) -> VirtualTranscriptAnchor? {
     guard !keys.isEmpty else { return nil }
     let index = firstIndexWhoseBottomExceeds(viewportTop)
@@ -206,9 +174,6 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
     )
   }
 
-  /// Resolves a previously captured row-relative pixel coordinate in the
-  /// current geometry. Missing rows deliberately return nil so callers can
-  /// fall back to their bottom-relative coordinate.
   public func viewportTop(restoring anchor: VirtualTranscriptAnchor) -> CGFloat? {
     guard let index = indexByKey[anchor.key] else { return nil }
     return frame(at: index).minY + anchor.offsetFromRowTop
@@ -223,13 +188,6 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
   }
 }
 
-/// Insets-aware scroll coordinates for the native transcript adapters.
-///
-/// UIKit represents the fully scrolled-to-top position as a negative content
-/// offset when content is inset below navigation chrome. Keeping that range in
-/// one platform-neutral value prevents the iOS virtualizer from accidentally
-/// clamping the scroll view back to zero (which both loses the navigation-bar
-/// underlap and corrupts bottom-relative restoration).
 public struct VirtualTranscriptViewport: Sendable, Equatable {
   public let contentHeight: CGFloat
   public let viewportHeight: CGFloat

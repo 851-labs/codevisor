@@ -4,8 +4,6 @@ import ACPKit
 @testable import TranscriptKit
 
 extension TranscriptReducerTests {
-  // MARK: - Subagent routing
-
   @Test("Parented chunks land in the subagent bucket without touching main state")
   func subagentChunksRouted() {
     let turn = reduce([
@@ -17,10 +15,7 @@ extension TranscriptReducerTests {
     #expect(turn.entries.map(\.id) == ["tool:task-1"])
     let bucket = turn.subagents["task-1"]
     #expect(bucket?.entries == [.text(id: "acp:msg-sub", markdown: "child text")])
-    // The thought chunk flipped the bucket's thinking, then text cleared it.
     #expect(bucket?.isThinking == false)
-    // Main thinking state was never flipped false by parented text (only
-    // the parent tool_call itself cleared it).
     #expect(turn.isThinking == false)
   }
 
@@ -66,7 +61,6 @@ extension TranscriptReducerTests {
         ToolCall(
           toolCallId: "sub-read", title: "Read", kind: .read, status: .inProgress, parentToolCallId: "task-1")
       ),
-      // Settle updates (tool results) carry no parent attribution.
       .toolCallUpdate(ToolCallUpdate(toolCallId: "sub-read", status: .completed)),
     ])
     #expect(turn.entries.map(\.id) == ["tool:task-1"])

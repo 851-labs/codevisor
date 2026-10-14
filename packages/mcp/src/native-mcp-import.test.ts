@@ -35,7 +35,6 @@ describe("importServers", () => {
         transport: "stdio"
       }
     ])
-    // stdio imports never probe authorization.
     expect(fakes.detectedUrls).toEqual([])
     const candidate = result.scan.candidates.find((entry) => entry.identity === "docs-mcp")
     expect(candidate?.alreadyManaged).toBe(true)
@@ -164,7 +163,6 @@ describe("importServers", () => {
     const { db, fakes, manager } = await testManager({
       [`${HOME}/.claude.json`]: CLAUDE_CONFIG
     })
-    // Same *name*, different identity — the import must rename, not skip.
     await run(
       db.saveMcpServer({
         authType: "none",

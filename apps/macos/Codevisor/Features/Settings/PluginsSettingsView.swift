@@ -3,10 +3,6 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// The Plugins pane: one row per plugin as the fleet wants it, with each
-/// machine's condition nested beneath — the same shape as Harnesses. Install
-/// lands on the local machine and replicates from there; uninstall
-/// tombstones the fleet entry, so it applies everywhere.
 struct PluginsSettingsView: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.theme) private var theme
@@ -18,8 +14,6 @@ struct PluginsSettingsView: View {
   @State private var reporting: PluginFleetEntry?
   @State private var actionError: String?
 
-  /// Removing a link names the machine as well as the plugin: the same
-  /// plugin id can be linked on more than one machine.
   private struct PluginUnlinkRequest: Identifiable {
     let entry: PluginFleetEntry
     let machineId: String
@@ -29,7 +23,6 @@ struct PluginsSettingsView: View {
   private enum PluginsRootSheet: Identifiable {
     case install(initialSource: String?)
     case browse
-    /// A plan is prepared on one machine and only that machine can apply it.
     case update(ServerPluginUpdatePlan, machineId: String)
     var id: String {
       switch self {
@@ -40,8 +33,6 @@ struct PluginsSettingsView: View {
     }
   }
 
-  /// Fleet-level installs land on the local machine; registry plugins sync
-  /// out from there.
   private var localClient: any CodevisorServerClienting {
     environment.machines.client(for: CodevisorMachine.local.id)
   }
@@ -83,8 +74,6 @@ struct PluginsSettingsView: View {
       if !theme.isSystem { theme.windowBackground }
     }
     .task(id: environment.machines.allMachines.map(\.id)) { await model.load(in: environment) }
-    // Any machine's plugin state change (start, crash, install) re-merges
-    // the catalog; readiness rows follow the replica on their own.
     .onChange(of: pluginStateRevisions) { _, _ in model.scheduleReload(in: environment) }
     .onChange(of: SettingsRouter.shared.pendingPluginInstallSource, initial: true) { _, source in
       guard let source else { return }
@@ -181,8 +170,6 @@ struct PluginsSettingsView: View {
         fetchRegistry: { try await localClient.fetchPluginRegistry(query: nil) },
         installedIds: Set(model.entries(environment.configSync).map(\.id)),
         onInstall: { entry in
-          // The registry only discovers; installing goes through the
-          // consent flow with the entry's repo.
           activeSheet = .install(initialSource: entry.repo)
         })
     case .update(let plan, let machineId):
@@ -214,17 +201,12 @@ struct PluginsSettingsView: View {
     }
   }
 
-  /// Uninstall is only ever offered for a shared plugin: tombstoning its
-  /// fleet entry removes it from every machine on their next pass. A
-  /// machine-bound plugin has no entry and is removed by Remove Link.
   private func uninstall(_ entry: PluginFleetEntry) async {
     pendingRemoval = nil
     PluginFleet.remove(entry.id, in: environment.configSync)
     await model.load(in: environment)
   }
 
-  /// Removing a link deletes the symlink Codevisor made, never the
-  /// directory behind it — the server refuses anything else.
   private func unlink(_ request: PluginUnlinkRequest) async {
     pendingUnlink = nil
     do {

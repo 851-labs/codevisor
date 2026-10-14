@@ -71,7 +71,6 @@ struct SessionAttentionCoordinatorTests {
       ))
     #expect(delivery.delivered.map(\.kind) == [.finished])
 
-    // Already unread: further finishes stay silent until read.
     model.onAttentionTransition?(
       SessionAttentionTransition(
         sessionId: sessionId, serverId: "local",
@@ -88,8 +87,6 @@ struct SessionAttentionCoordinatorTests {
     let coordinator = SessionAttentionCoordinator(projectList: model)
     let delivery = FakeNotificationDelivery()
     coordinator.notificationDelivery = delivery
-    // The user is looking at a chat on the LOCAL machine; the finish
-    // lands on a remote one. Fleet notifications must still ping.
     coordinator.updateFocus(
       owner: ObjectIdentifier(delivery),
       session: SessionAttentionFocus(serverId: "local", sessionId: UUID())
@@ -138,7 +135,6 @@ struct SessionAttentionCoordinatorTests {
     let delivery = FakeNotificationDelivery()
     coordinator.notificationDelivery = delivery
 
-    // App-launch snapshot discovering a finished chat: badge yes, ping no.
     model.onAttentionTransition?(
       SessionAttentionTransition(
         sessionId: UUID(), serverId: "local",
@@ -146,7 +142,6 @@ struct SessionAttentionCoordinatorTests {
         new: summary(latest: 3, unread: 3),
         origin: .snapshot
       ))
-    // Manual mark-unread: revision unchanged, so there is no edge.
     model.onAttentionTransition?(
       SessionAttentionTransition(
         sessionId: UUID(), serverId: "local",
@@ -198,11 +193,8 @@ struct SessionAttentionCoordinatorTests {
       session: SessionAttentionFocus(serverId: session.serverId, sessionId: session.id)
     )
 
-    // The finish arrives while focused: the model already holds the new
-    // revision when the transition fires (snapshot path).
     await fakeServer.setSessionAttention(id: session.id, latestSequence: 1, lastSeenSequence: 0)
     await fixture.refresh(from: fakeServer)
-    // Shown read immediately; it stays read while the request is sent.
     #expect(fixture.session(session.id)?.unreadCount == 0)
     await fixture.flush()
     #expect(fixture.session(session.id)?.unreadCount == 0)
@@ -210,8 +202,6 @@ struct SessionAttentionCoordinatorTests {
     #expect(requests.map(\.throughSequence) == [1])
     #expect(delivery.delivered.isEmpty)
 
-    // An unfocused surface (window lost key → publisher sends nil) stops
-    // reading and lets pings through again.
     coordinator.updateFocus(owner: ObjectIdentifier(delivery), session: nil)
     model.onAttentionTransition?(
       SessionAttentionTransition(
@@ -234,7 +224,6 @@ struct SessionAttentionCoordinatorTests {
     coordinator.notificationDelivery = delivery
     let sessionId = UUID()
 
-    // Read on another device arrives as a live attention update.
     model.onAttentionTransition?(
       SessionAttentionTransition(
         sessionId: sessionId, serverId: "local",
@@ -263,7 +252,6 @@ struct SessionAttentionCoordinatorTests {
     coordinator.updateFocus(owner: ObjectIdentifier(delivery), session: focus.session)
 
     focus.selectWorkspace(UUID())
-    // A cached observer fires before its outgoing view has disappeared.
     focus.update(sourceId: source, workspaceId: workspace, isVisible: true, session: chat)
     coordinator.updateFocus(owner: ObjectIdentifier(delivery), session: focus.session)
     var finished = session
@@ -285,7 +273,6 @@ struct SessionAttentionCoordinatorTests {
     let session = ChatSession(
       id: UUID(), projectId: project.id, harnessId: "codex", title: "Held"
     )
-    // Offline, so the unread request stays waiting while focus changes.
     let fixture = NavigationFixture()
     await fixture.install(projects: [project], sessions: [session])
     let model = fixture.projectList
@@ -296,11 +283,9 @@ struct SessionAttentionCoordinatorTests {
     coordinator.updateFocus(owner: ObjectIdentifier(delivery), session: focus)
 
     model.markSessionUnread(session.id, serverId: session.serverId)
-    // The hold keeps focus from immediately reading the manual flag back.
     #expect(fixture.session(session.id)?.unreadCount == 1)
     #expect(fixture.store.pendingIntents.map(\.intent) == [.markSessionUnread(sessionId: session.id)])
 
-    // Leaving and returning re-reads it; the read replaces the unsent unread.
     coordinator.updateFocus(owner: ObjectIdentifier(delivery), session: nil)
     coordinator.updateFocus(owner: ObjectIdentifier(delivery), session: focus)
     #expect(fixture.session(session.id)?.unreadCount == 0)

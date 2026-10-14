@@ -3,12 +3,6 @@
   import ScreenSharingRigKit
   import SwiftUI
 
-  /// The rig's window: a sidebar of machines to view (`RigMachine.catalog`,
-  /// plus the loopback VNC server while it runs) over a Debug section of
-  /// scenarios, each a way to exercise the screen-sharing stack outside the
-  /// product. Launched without arguments it opens on the first machine; the resident viewer (`--config`) opens the same window
-  /// on Native session with its video inside. `probe`, `vnc-server` and the
-  /// `--config` host remain headless entry points the scripts drive.
   enum RigScenario: String, CaseIterable, Identifiable {
     case loopbackServer, nativeSession
     var id: String { rawValue }
@@ -30,16 +24,11 @@
 
   @MainActor
   enum RigShell {
-    /// Opens the shell window and runs the application until it closes. With
-    /// the resident viewer's `runner`, Native session hosts its video and the
-    /// runner is the window's delegate: closing it stops the session and exits
-    /// cleanly, which the launch agent does not restart.
     static func run(runner: RigRunner? = nil) -> Never {
       let app = NSApplication.shared
       app.setActivationPolicy(.regular)
       RigMainMenu.install()
       let controller = NSHostingController(rootView: RigShellView(runner: runner))
-      // The SwiftUI `.toolbar` and navigation titles drive a native unified window toolbar.
       controller.sceneBridgingOptions = [.toolbars, .title]
       let window = NSWindow(contentViewController: controller)
       window.title = runner == nil ? "Codevisor Screen Sharing Rig" : "Codevisor Screen Sharing Rig · viewer"
@@ -65,7 +54,6 @@
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
   }
 
-  /// A sidebar row: a machine, or one of the debug scenarios.
   enum RigSidebarItem: Hashable {
     case machine(String)
     case scenario(RigScenario)
@@ -77,7 +65,6 @@
     @State private var columns: NavigationSplitViewVisibility = .all
     @State private var loopback = RigLoopbackServerModel()
     @State private var catalog: [RigMachineModel]
-    /// The loopback server as a machine, listed while it serves.
     @State private var loopbackMachine: RigMachineModel?
 
     init(runner: RigRunner?) {
@@ -120,7 +107,6 @@
           if let runner { RigNativeSessionView(runner: runner) } else { RigInstructionsView.nativeSession }
         }
       }
-      // Every screen shows the tall unified toolbar: this item keeps one present even when a screen adds none.
       .toolbar {
         ToolbarItem(id: "rig.sidebar", placement: .navigation) {
           Button {
@@ -138,11 +124,9 @@
         loopbackMachine = port.map {
           RigMachineModel(machine: .loopback(port: $0, password: loopback.password.isEmpty ? nil : loopback.password))
         }
-        // Viewing the loopback server when it stops: back to its controls.
         let loopbackId = RigMachine.loopback(port: 0, password: nil).id
         if loopbackMachine == nil, case .machine(loopbackId) = selection { selection = .scenario(.loopbackServer) }
       }
-      // A sample measures presented frames with nothing else on screen: only the video, no sidebar.
       .onChange(of: runner?.nativeSession.sampling ?? false) { _, sampling in
         if sampling { selection = .scenario(.nativeSession) }
         columns = sampling ? .detailOnly : .all
@@ -150,7 +134,6 @@
     }
   }
 
-  /// Scenarios that stay command-driven: what to run and where their documentation is.
   struct RigInstructionsView: View {
     let title: String
     let lines: [String]

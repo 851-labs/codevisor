@@ -1,14 +1,8 @@
-//! Endpoint configuration. Production and local development differ only in
-//! these values (relay URLs, trust anchors, path policy) — never in code.
-
 use std::str::FromStr;
 
 use anyhow::{Context, Result, anyhow, bail};
 use rustls_pki_types::{CertificateDer, pem::PemObject};
 
-/// Which transports an endpoint may use. `Auto` is the only production value;
-/// the others exist so development and tests can force each path (e.g. the
-/// Dev Cloud machine runs `RelayOnly` so a relayed machine always exists).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PathPolicy {
     #[default]
@@ -30,29 +24,19 @@ impl FromStr for PathPolicy {
     }
 }
 
-/// One relay the endpoint may home on and dial through.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RelaySpec {
     pub url: String,
-    /// UDP port of the relay's QUIC address discovery (QAD). `None` uses
-    /// iroh's default (7842); local development allocates per-worktree ports.
     pub quic_port: Option<u16>,
 }
 
 #[derive(Debug, Clone)]
 pub struct NetConfig {
-    /// Ed25519 secret key (32 bytes); its public half is the endpoint id.
     pub secret_key: [u8; 32],
     pub relays: Vec<RelaySpec>,
-    /// Extra PEM trust anchors on top of the compiled-in Mozilla roots. Empty
-    /// in production (relays use Let's Encrypt); local dev passes its CA.
     pub trust_anchors_pem: Vec<String>,
-    /// UDP socket addresses to bind (e.g. `0.0.0.0:41641`, `[::]:41641`).
-    /// Empty keeps iroh's defaults (all interfaces, OS-chosen port). A fixed
-    /// port lets operators write one firewall/port-forward rule.
     pub bind_addrs: Vec<String>,
     pub path_policy: PathPolicy,
-    /// ALPNs this endpoint accepts. Dialing works for any ALPN.
     pub alpns: Vec<Vec<u8>>,
 }
 
@@ -71,7 +55,6 @@ impl NetConfig {
     }
 }
 
-/// Parses a secret key from its 64-char hex form.
 pub fn secret_key_from_hex(hex_key: &str) -> Result<[u8; 32]> {
     let bytes = hex::decode(hex_key.trim()).context("secret key is not hex")?;
     bytes
@@ -106,7 +89,6 @@ mod tests {
     }
 }
 
-/// The 64-char hex form of a secret key (how it is persisted).
 pub fn secret_key_hex(key: &[u8; 32]) -> String {
     hex::encode(key)
 }

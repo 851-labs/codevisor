@@ -1,7 +1,6 @@
 import Autocomplete
 import SwiftUI
 
-/// Choices and commands participate in the same search and navigation.
 struct ActionsStory: View {
   @State private var selection = ""
   @State private var managePresses = 0

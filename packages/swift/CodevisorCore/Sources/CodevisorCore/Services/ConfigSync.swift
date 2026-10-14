@@ -2,42 +2,22 @@ import ACPKit
 import Foundation
 import Observation
 
-/// Client-side half of the config plane (@codevisor/sync): a durable local
-/// replica of each namespace, plus the gossip that keeps every reachable
-/// machine's replica converged. There is deliberately no authority server —
-/// clients are the edges of the graph: a write here stamps a hybrid logical
-/// clock and fans out to every reachable machine; a machine's sync.changed
-/// event is adopted and re-gossiped onward; anything unreachable converges
-/// on the next sweep.
 @MainActor
 @Observable
 public final class ConfigSync {
-  /// The namespaces this client gossips. Grows as stores onboard.
   public static let namespaces = [
     "settings", skillsNamespace, "mcps", "harness-accounts", "harnesses", "plugins",
     "mcp-readiness", "mcp-overlays", "harness-credentials", "harness-shared-accounts", "harness-readiness",
     "plugin-readiness",
   ]
-  /// Codevisor's skill store: one entry per skill, `{hash, name}`, with the
-  /// content ferried separately as a blob.
   public static let skillsNamespace = "codevisor-skills"
 
   private let machines: MachineController
   private let store: any PersistenceStore
-  /// This client install's stable identity in HLC stamps.
   let deviceId: String
-  /// Bumped whenever a namespace's replica actually changes — the
-  /// invalidation observers watch instead of diffing entries.
   public private(set) var revisionsByNamespace: [String: UInt64] = [:]
   public private(set) var receivedNamespaces: Set<String> = []
-  /// Invoked after a namespace's replica actually changed (local write or
-  /// adopted remote entries) — consumers apply the new values in place.
   @ObservationIgnored public var onNamespaceChanged: ((String) -> Void)?
-  /// Invoked when a machine's reconcile RESPONSE reports it actually
-  /// applied harness or credential changes — the signal that its catalog
-  /// (enabled set, auth gates) is now different, however long the apply
-  /// took. Gossip alone cannot carry this: applying does not change the
-  /// replicated entries.
   @ObservationIgnored public var onHarnessCatalogChanged: ((String) -> Void)?
   @ObservationIgnored private var entriesByNamespace: [String: [ServerSyncEntry]] = [:]
 
@@ -58,18 +38,14 @@ public final class ConfigSync {
     }
   }
 
-  // MARK: - Reading and writing
-
   public func entries(namespace: String) -> [ServerSyncEntry] {
     loadNamespace(namespace)
   }
 
-  /// An empty replica is meaningful only after it has been received or saved.
   public func hasSnapshot(namespace: String) -> Bool {
     receivedNamespaces.contains(namespace) || store.loadData(forKey: "configSync.replica.\(namespace)") != nil
   }
 
-  /// The live value for a key; nil when absent or tombstoned.
   public func value(namespace: String, key: String) -> JSONValue? {
     guard let entry = loadNamespace(namespace).first(where: { $0.key == key }),
       entry.deleted != true
@@ -102,8 +78,6 @@ public final class ConfigSync {
     pushEverywhere(namespace: namespace)
   }
 
-  /// Merges entries into the local replica, bumping the namespace revision
-  /// when anything actually changed.
   @discardableResult
   func apply(namespace: String, incoming: [ServerSyncEntry]) -> Bool {
     let result = SyncClock.merge(loadNamespace(namespace), incoming)
@@ -115,20 +89,12 @@ public final class ConfigSync {
     return true
   }
 
-  /// A machine's sync.changed event: adopt it, then gossip onward — a
-  /// change entering through one machine still reaches machines the
-  /// originating client cannot see.
   public func applyRemoteChange(namespace: String, entries incoming: [ServerSyncEntry]) {
     if apply(namespace: namespace, incoming: incoming) {
       pushEverywhere(namespace: namespace)
     }
   }
 
-  // MARK: - Gossip
-
-  /// One machine, one namespace set: PUT the local replica (the response
-  /// is the merged document — push and pull in one round trip) and adopt
-  /// anything newer it held.
   public func synchronize(machineId: String, namespaces: [String] = ConfigSync.namespaces) async {
     let client = machines.client(for: machineId)
     if namespaces.contains("harness-shared-accounts"),
@@ -144,8 +110,6 @@ public final class ConfigSync {
     client: any CodevisorServerClienting,
     namespaces: [String]
   ) async -> [String: ServerSyncDocument] {
-    // Each namespace is its own round trip; send them together rather than
-    // making a caller wait on one after another. Results apply in order.
     let outgoing = namespaces.map { ($0, loadNamespace($0)) }
     let documents = await withTaskGroup(of: (String, ServerSyncDocument?).self) { group in
       for (namespace, entries) in outgoing {
@@ -170,9 +134,6 @@ public final class ConfigSync {
     }
   }
 
-  /// One machine's full pass — run the moment its connection comes up, so
-  /// a freshly joined (or newly reachable) machine converges immediately
-  /// instead of on the next periodic sweep.
   public func synchronizeMachine(_ machineId: String) async {
     let client = machines.client(for: machineId)
     await synchronize(machineId: machineId)
@@ -183,11 +144,6 @@ public final class ConfigSync {
     await synchronizeSkills()
   }
 
-  /// The periodic reconvergence loop. One-shot triggers (machine connect,
-  /// local writes) cover the happy path, but a ferry that fails while a
-  /// machine is mid-boot would otherwise stick forever — nothing retried.
-  /// Merging is idempotent and change-detected, so a settled fleet sweep
-  /// costs a handful of no-op requests.
   public func startPeriodicSweep(every interval: Duration = .seconds(300)) {
     periodicSweepTask?.cancel()
     periodicSweepTask = Task { [weak self] in
@@ -204,14 +160,11 @@ public final class ConfigSync {
     periodicSweepTask = nil
   }
 
-  /// Every reachable machine. Safe to call often; merging is idempotent.
   public func synchronizeAll() async {
     for machine in machines.allMachines
     where machines.connectionsById[machine.id]?.status?.isReachable == true {
       let client = machines.client(for: machine.id)
       await synchronize(machineId: machine.id)
-      // Reconcile the machine's applied state against its (just
-      // gossiped) replicas, and refresh its published roster.
       _ = try? await client.reconcileMcpsSync()
       _ = try? await client.reconcileHarnessesSync()
       _ = try? await client.reconcilePluginsSync()
@@ -220,14 +173,6 @@ public final class ConfigSync {
     await synchronizeSkills()
   }
 
-  // MARK: - Skills ferry
-
-  /// Skills replicate as metadata (the "codevisor-skills" namespace, gossiped
-  /// above) plus content-addressed archives servers cannot fetch from
-  /// each other. This client is the courier: reconcile everywhere,
-  /// collect who is missing which blob, carry each blob from any machine
-  /// that serves it, then reconcile the needy machines again so they
-  /// apply what just arrived.
   public func synchronizeSkills() async {
     let reachable = machines.allMachines.filter {
       machines.connectionsById[$0.id]?.status?.isReachable == true
@@ -297,11 +242,9 @@ public final class ConfigSync {
           (try? await client.mergeSyncDocument(namespace: namespace, entries: entries))
             != nil
         else { return }
-        // Receivers apply right away instead of on their next sweep.
         await self.reconcile(namespace: namespace, machineId: machine.id)
       }
     }
-    // New skill content also needs its blob ferried before it applies.
     if namespace == Self.skillsNamespace {
       Task { await synchronizeSkills() }
     }
@@ -318,7 +261,6 @@ public final class ConfigSync {
       }
     case "plugins": _ = try? await client.reconcilePluginsSync()
     case "harness-credentials", "harness-shared-accounts":
-      // Ferried credentials flip auth state — the catalog's gates.
       guard let value = try? await client.reconcileCredentialsSync() else { return }
       if case .object(let fields) = value,
         case .array(let applied)? = fields["applied"],
@@ -329,8 +271,6 @@ public final class ConfigSync {
     default: break
     }
   }
-
-  // MARK: - Persistence
 
   private func loadNamespace(_ namespace: String) -> [ServerSyncEntry] {
     if let cached = entriesByNamespace[namespace] { return cached }

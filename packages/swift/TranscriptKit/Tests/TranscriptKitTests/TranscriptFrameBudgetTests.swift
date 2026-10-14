@@ -33,7 +33,6 @@ struct TranscriptFrameBudgetTests {
     #expect(
       B.runwayPreparationsPerFrame(maximumFramesPerSecond: 120, projectedDistance: 2400, viewportHeight: 800) == 3
     )
-    // A degenerate viewport is clamped to 1pt, so any motion counts as a full viewport.
     #expect(B.runwayPreparationsPerFrame(maximumFramesPerSecond: 60, projectedDistance: 1, viewportHeight: 0) == 4)
   }
 }

@@ -2,10 +2,6 @@ import ScreenSharing
 import Darwin
 import Foundation
 
-/// At most 361 samples (the CLI bounds duration / interval to 360, plus the
-/// final sample); each sample copies counters, labels and bounded timing
-/// summaries, not raw histories. CPU is whole-process user+system time (100%
-/// is one core); GPU utilization is not measured here.
 @MainActor
 struct ProbeTimeline {
   struct Sample: Encodable {

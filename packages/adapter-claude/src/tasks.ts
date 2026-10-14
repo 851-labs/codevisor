@@ -3,9 +3,6 @@ import type { ClaudeSession, ClaudeTaskEntry, ClaudeTaskState } from "./session.
 
 const PLAN_ENTRY_STATUSES = new Set(["pending", "in_progress", "completed"])
 
-/// Maps TodoWrite's todos into wire plan entries. Lenient: malformed todos
-/// are skipped, unknown statuses degrade to pending. Priority is fixed at
-/// "medium" — Claude todos carry no priority (mirrors claude-agent-acp).
 const planEntriesFromTodos = (
   todos: ReadonlyArray<unknown>
 ): Array<{ content: string; priority: string; status: string }> =>
@@ -41,9 +38,7 @@ export const taskIdFromCreateResult = (content: unknown): string | undefined => 
       if (isRecord(parsed) && isRecord(parsed.task) && typeof parsed.task.id === "string") {
         return parsed.task.id
       }
-    } catch {
-      // Claude Code currently renders this as "Task #1 created successfully".
-    }
+    } catch {}
     return /^Task #([^\s]+) created successfully\b/.exec(text)?.[1]
   }
 
@@ -110,9 +105,6 @@ export const applyTaskUpdate = (tasks: ClaudeTaskState, input: unknown): boolean
   return true
 }
 
-/// Emits the plan-shaped update for a plan tool's authoritative input:
-/// TodoWrite → a full-snapshot step checklist (`plan`), ExitPlanMode → the
-/// plan-mode plan document (`plan_document`). Malformed input emits nothing.
 export const emitPlanUpdate = (session: ClaudeSession, toolName: string, input: unknown): void => {
   if (toolName === "TodoWrite") {
     if (!isRecord(input) || !Array.isArray(input.todos)) return
@@ -123,7 +115,6 @@ export const emitPlanUpdate = (session: ClaudeSession, toolName: string, input: 
     })
     return
   }
-  // ExitPlanMode: the plan markdown is the tool input's `plan` field.
   if (!isRecord(input) || typeof input.plan !== "string" || input.plan.length === 0) return
   void session.emit({
     kind: "session.output",

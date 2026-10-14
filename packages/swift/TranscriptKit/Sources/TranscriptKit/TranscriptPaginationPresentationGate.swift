@@ -1,11 +1,5 @@
 import Foundation
 
-/// Owns the user-visible lifetime of one reverse-pagination operation.
-///
-/// Network completion is intentionally not the terminal state: native
-/// transcript views can defer a prepend while scrolling, so feedback remains
-/// visible until the virtualizer confirms that the fetched rows have entered
-/// its document geometry.
 public struct TranscriptPaginationPresentationTarget: Sendable, Equatable {
   public let token: UInt64
   public let projectionRevision: UInt64
@@ -26,9 +20,6 @@ public struct TranscriptPaginationPresentationGate: Sendable, Equatable {
 
   public var isPresented: Bool { activeToken != nil }
 
-  /// Starts feedback only when another page is known to exist. The returned
-  /// token binds the eventual response and native-layout acknowledgement to
-  /// this exact request.
   @discardableResult
   public mutating func begin(hasOlderHistory: Bool) -> UInt64? {
     guard hasOlderHistory, activeToken == nil else { return nil }
@@ -39,9 +30,6 @@ public struct TranscriptPaginationPresentationGate: Sendable, Equatable {
     return nextToken
   }
 
-  /// A non-empty page keeps feedback alive until the projection containing
-  /// that page publishes. Empty pages and failures end it immediately
-  /// because there is no new document geometry for the virtualizer to commit.
   public mutating func requestDidFinish(
     token: UInt64,
     insertedItemCount: Int,
@@ -57,10 +45,6 @@ public struct TranscriptPaginationPresentationGate: Sendable, Equatable {
     self.requiredProjectionKey = requiredProjectionKey
   }
 
-  /// Binds native acknowledgement to a committed projection revision rather
-  /// than a row identity. A later projection is also valid: transcript
-  /// projections are cumulative, so it necessarily contains the requested
-  /// history page while avoiding races with unrelated projection updates.
   public mutating func projectionDidPublish(
     key: TranscriptProjectionKey,
     revision: UInt64
@@ -74,8 +58,6 @@ public struct TranscriptPaginationPresentationGate: Sendable, Equatable {
     presentationTarget = .init(token: token, projectionRevision: revision)
   }
 
-  /// Returns true only when the matching native virtualizer commit completes
-  /// the active pagination presentation.
   @discardableResult
   public mutating func didPresent(token: UInt64) -> Bool {
     guard activeToken == token, presentationTarget?.token == token else { return false }

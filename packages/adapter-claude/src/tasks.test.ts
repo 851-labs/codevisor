@@ -29,7 +29,6 @@ describe("ClaudeProvider", () => {
     const promptPromise = run(created.handle.prompt("plan the feature"))
     await fake.nextPrompt()
 
-    // TodoWrite streams like any tool, but must not open a tool call.
     fake.push(streamEvent({ message: { id: "msg-plan" }, type: "message_start" }))
     fake.push(
       streamEvent({
@@ -73,7 +72,6 @@ describe("ClaudeProvider", () => {
       type: "user"
     } as never)
 
-    // ExitPlanMode carries the plan-mode plan document in input.plan.
     fake.push(
       streamEvent({
         content_block: { id: "exit-1", name: "ExitPlanMode", type: "tool_use" },
@@ -91,7 +89,6 @@ describe("ClaudeProvider", () => {
             name: "ExitPlanMode",
             type: "tool_use"
           },
-          // Malformed plan input emits nothing (and still no tool call).
           { id: "exit-2", input: {}, name: "ExitPlanMode", type: "tool_use" }
         ],
         role: "assistant"
@@ -104,8 +101,6 @@ describe("ClaudeProvider", () => {
     await promptPromise
 
     const payloads = events.map((event) => event.payload as Record<string, unknown>)
-    // No tool-call lifecycle at all for plan tools — including the turn-end
-    // settle sweep (they were never registered as open).
     expect(
       payloads.filter(
         (payload) =>

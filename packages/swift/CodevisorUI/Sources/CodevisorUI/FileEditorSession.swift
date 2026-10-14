@@ -1,7 +1,6 @@
 import Foundation
 import Observation
 
-/// One pane's presentation, selection, and undo history for a shared document.
 @MainActor @Observable
 public final class FileEditorSession {
   public let document: FileDocumentModel

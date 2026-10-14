@@ -5,8 +5,6 @@ import Testing
 
 @testable import CodevisorCoreMac
 
-/// Shared clipboard between the viewer's and the host's clipboards, each on its own pasteboard,
-/// over a local channel whose deliveries the test runs.
 @MainActor
 struct ScreenSharingSharedClipboardTests {
   @Test func aCopyHereReachesTheHostOnlyWhileControllingWithFocusAndNeverComesBack() {
@@ -57,7 +55,6 @@ struct ScreenSharingSharedClipboardTests {
     #expect(fixture.host.changeCount == host, "the copy it wrote doesn't go back")
   }
 
-  /// A Mac viewing itself: both sides share one pasteboard, so each write looks like a new copy.
   @Test func onOnePasteboardACopySettlesInsteadOfGoingRound() {
     let fixture = SharedClipboardFixture(onePasteboard: true)
     fixture.viewer.sharing = true

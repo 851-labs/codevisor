@@ -6,10 +6,6 @@ import Testing
 @testable import ScreenSharingWebRTC
 @preconcurrency import WebRTC
 
-/// The viewer's half of frame recovery as a state machine: an idle notice
-/// checked against what was decoded, the grace window and its extensions, the
-/// keyframe request, and the capped exponential retry when recovery completes
-/// without the announced content.
 @MainActor
 struct ScreenSharingReceiverRecoveryTests {
   @MainActor
@@ -19,8 +15,6 @@ struct ScreenSharingReceiverRecoveryTests {
     let codecFactory: ScreenSharingCodecFactory
     let channel = RefreshChannelDouble()
     let recovery: ScreenSharingReceiverRecovery
-    /// The requester repeats a pending request on this fixed interval, which
-    /// also collides with the first retry delay; tests count both explicitly.
     static let requesterInterval = Duration.milliseconds(100)
     var audit: ScreenSharingDeliveryAudit { codecFactory.deliveryAudit }
 
@@ -39,14 +33,10 @@ struct ScreenSharingReceiverRecoveryTests {
     var counters: [String: Int] { metrics.snapshot().counters }
     var labels: [String: String] { metrics.snapshot().labels }
 
-    /// The decoder reporting that the replacement keyframe was decoded. The
-    /// verifier then decides whether the announced content actually arrived.
     func decodeRecoveryKeyframe() {
       codecFactory.refreshSignal.decodedKeyframe(generation: codecFactory.refreshSignal.keyframeGeneration)
     }
 
-    /// Drives a notice to its refresh decision and the first keyframe request,
-    /// leaving the requester parked on its repeat interval.
     func requestRefresh(after grace: Duration, decoded: Int64, target: Int64) async {
       audit.decoded(sourceTimestampNs: decoded, nowNs: 1)
       recovery.handle(.sourceIdle(latestTimestampNs: target))
@@ -56,10 +46,6 @@ struct ScreenSharingReceiverRecoveryTests {
       await clock.waitForSleep(Self.requesterInterval)
     }
 
-    /// Waits for the clock's sleeper set to change. The refresh signal hops to
-    /// the main actor, and that hop always registers or cancels a sleeper, so
-    /// this is the hop's completion event rather than a poll. The trigger must
-    /// not itself touch the clock.
     func awaitSignalHop(_ trigger: () -> Void) async {
       let revision = clock.changed.value
       trigger()
@@ -80,11 +66,8 @@ struct ScreenSharingReceiverRecoveryTests {
     #expect(harness.labels["sourceIdleOutcome"] == "verified at notice")
     #expect(harness.labels["sourceIdleNoticeDecodedTimestampNs"] == "500")
     #expect(harness.labels["sourceIdleNoticeTargetTimestampNs"] == "400")
-    // The target was met before its notice, and the recorded decode time is the
-    // one of the frame that met it.
     #expect(harness.labels["sourceIdleTargetDecodedAtNs"] == "7")
     #expect(harness.clock.pendingCount == 0 && harness.channel.sent.isEmpty)
-    // The viewer never acts on a keyframe request; that is the host's message.
     harness.recovery.handle(.keyframe)
     #expect(harness.counters["sourceIdleNoticesReceived"] == 1)
     await harness.close()
@@ -99,9 +82,6 @@ struct ScreenSharingReceiverRecoveryTests {
     #expect(harness.counters["sourceIdleVerifiedAfterGrace"] == nil)
 
     harness.audit.decoded(sourceTimestampNs: 900, nowNs: 2)
-    // The grace task reports its verdict and then finishes, so its completion
-    // is the verdict's event. The clock's own change signal fires as soon as
-    // the sleeper is resumed, before the task has run.
     let verification = harness.recovery.pendingDeliveryVerification
     #expect(verification != nil)
     harness.clock.advance(by: grace)
@@ -129,14 +109,11 @@ struct ScreenSharingReceiverRecoveryTests {
     #expect(harness.channel.sent == [.keyframe])
     #expect(harness.counters["sourceIdleRefreshRequests"] == 1)
     #expect(harness.labels["sourceIdleOutcome"] == "refresh requested")
-    // A true result attributes the new recovery traffic to this decision.
     #expect(harness.counters["sourceIdleRecoveryInitiated"] == 1)
     #expect(harness.counters["refreshRecoveryPendingEvents"] == 1)
     #expect(harness.counters["videoRefreshRequestsSent"] == 1)
     #expect(harness.labels["sourceIdleRequestSentAtNs"] != nil)
 
-    // While recovery is pending the request repeats on the requester's own
-    // interval, and nothing else re-arms it.
     await harness.clock.waitForSleep(Harness.requesterInterval)
     harness.clock.advance(by: Harness.requesterInterval)
     await harness.channel.sends.wait(for: 2)
@@ -154,7 +131,6 @@ struct ScreenSharingReceiverRecoveryTests {
     harness.audit.decoded(sourceTimestampNs: 100, nowNs: 1)
     harness.recovery.handle(.sourceIdle(latestTimestampNs: 900))
     await harness.clock.waitForSleep(grace)
-    // Each further window is granted only because strictly newer content arrived.
     for extended in 1...allowed {
       harness.audit.decoded(sourceTimestampNs: 100 + Int64(extended), nowNs: Int64(extended))
       harness.clock.advance(by: grace)
@@ -162,7 +138,6 @@ struct ScreenSharingReceiverRecoveryTests {
       #expect(harness.counters["sourceIdleGraceExtensions"] == extended)
       #expect(harness.counters["sourceIdleRefreshRequests"] == nil)
     }
-    // Newer content still arriving cannot buy a further window past the cap.
     harness.audit.decoded(sourceTimestampNs: 200, nowNs: 9)
     harness.clock.advance(by: grace)
     await harness.channel.sends.wait()
@@ -177,8 +152,6 @@ struct ScreenSharingReceiverRecoveryTests {
     harness.audit.decoded(sourceTimestampNs: 100, nowNs: 1)
     harness.recovery.handle(.sourceIdle(latestTimestampNs: 900))
     await harness.clock.waitForSleep(grace)
-    // A duplicate and an older frame are both ignored by the audit, so the
-    // window sees no progress and the extension budget stays unspent.
     harness.audit.decoded(sourceTimestampNs: 100, nowNs: 2)
     harness.audit.decoded(sourceTimestampNs: 50, nowNs: 3)
     harness.clock.advance(by: grace)
@@ -193,14 +166,10 @@ struct ScreenSharingReceiverRecoveryTests {
     let grace = Duration.milliseconds(250)
     let harness = Harness(grace: grace, graceExtensions: 0)
     await harness.requestRefresh(after: grace, decoded: 100, target: 900)
-    // The requester's repeat interval is already registered and shares the first
-    // retry's duration, so sleeps of that length are counted explicitly.
     var intervalSleeps = 1
 
     for retry in 1...3 {
       let delay = ScreenSharingDeliveryVerifier.retryDelay(retry)
-      // A delayed older keyframe completed recovery without the announced
-      // content. The same hop cancels the repeat interval and arms the retry.
       harness.decodeRecoveryKeyframe()
       if delay == Harness.requesterInterval {
         intervalSleeps += 1
@@ -219,7 +188,6 @@ struct ScreenSharingReceiverRecoveryTests {
       intervalSleeps += 1
       await harness.clock.waitForSleep(Harness.requesterInterval, count: intervalSleeps)
     }
-    // 100 ms doubling, one request per retry, and the target is never abandoned.
     #expect(harness.clock.requestCount(.milliseconds(200)) == 1)
     #expect(harness.clock.requestCount(.milliseconds(400)) == 1)
     #expect(harness.counters["sourceIdleRecovered"] == nil)
@@ -233,10 +201,8 @@ struct ScreenSharingReceiverRecoveryTests {
     #expect(ScreenSharingDeliveryVerifier.retryDelay(1) == .milliseconds(100))
     #expect(ScreenSharingDeliveryVerifier.retryDelay(2) == .milliseconds(200))
     #expect(ScreenSharingDeliveryVerifier.retryDelay(6) == .milliseconds(3_200))
-    // Doubling stops at the ceiling and never regresses afterwards.
     #expect(ScreenSharingDeliveryVerifier.retryDelay(7) == .milliseconds(5_000))
     #expect(ScreenSharingDeliveryVerifier.retryDelay(40) == .milliseconds(5_000))
-    // A non-positive retry number is clamped to the initial delay.
     #expect(ScreenSharingDeliveryVerifier.retryDelay(0) == .milliseconds(100))
   }
 
@@ -252,7 +218,6 @@ struct ScreenSharingReceiverRecoveryTests {
     #expect(harness.labels["sourceIdleTargetDecodedAtNs"] == "4")
     #expect(harness.counters["sourceIdleRefreshRetries"] == nil)
     #expect(harness.counters["refreshRecoveryClearedEvents"] == 1)
-    // Recovery is over: no retry timer and no further request traffic.
     #expect(harness.clock.pendingCount == 0)
     #expect(harness.channel.sent == [.keyframe])
     await harness.close()
@@ -266,15 +231,12 @@ struct ScreenSharingReceiverRecoveryTests {
     await harness.clock.waitForSleep(ScreenSharingDeliveryVerifier.retryDelay(1), count: 2)
     #expect(harness.counters["sourceIdleRefreshRetries"] == 1)
 
-    // A second notice cancels the armed retry and restarts from a fresh grace.
     harness.recovery.handle(.sourceIdle(latestTimestampNs: 1_200))
     await harness.clock.waitForSleep(grace, count: 2)
     #expect(harness.clock.pendingCount == 1)
     #expect(harness.audit.pendingTargetNs == 1_200)
     harness.clock.advance(by: grace)
     await harness.channel.sends.wait(for: 2)
-    // The abandoned retry never executed. The keyframe had cleared recovery, so
-    // the newer notice's decision opens a second recovery rather than joining one.
     #expect(harness.counters["sourceIdleRetriesExecuted"] == nil)
     #expect(harness.counters["sourceIdleRefreshRequests"] == 2)
     #expect(harness.counters["sourceIdleRefreshAlreadyPending"] == nil)
@@ -290,7 +252,6 @@ struct ScreenSharingReceiverRecoveryTests {
     harness.recovery.handle(.sourceIdle(latestTimestampNs: 900))
     await harness.clock.waitForSleep(grace)
     harness.clock.advance(by: grace)
-    // The requester parks on its repeat interval whether or not it could send.
     await harness.clock.waitForSleep(Harness.requesterInterval)
     #expect(harness.counters["sourceIdleRefreshRequests"] == 1)
     #expect(harness.channel.sent.isEmpty && harness.counters["videoRefreshRequestsSent"] == nil)

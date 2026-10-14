@@ -1,10 +1,5 @@
 import Foundation
 
-/// One request to animate a user message from the composer into its transcript
-/// row. The token distinguishes requests even if a caller deliberately reuses
-/// a message id. The destination is always the row keyed by `messageID`,
-/// whether it is still optimistic or already settled: a send never waits on
-/// the server to animate.
 public struct UserSendAnimationRequest: Equatable, Sendable {
   public let token: UInt64
   public let messageID: UUID
@@ -15,9 +10,6 @@ public struct UserSendAnimationRequest: Equatable, Sendable {
   }
 }
 
-/// Exactly-once ownership for send animations. This state outlives native
-/// transcript views, so rebuilding a SwiftUI/AppKit surface cannot claim the
-/// same request again.
 struct UserSendAnimationCoordinator {
   private var nextToken: UInt64 = 0
   private var currentRequest: UserSendAnimationRequest?

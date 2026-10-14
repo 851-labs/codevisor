@@ -3,9 +3,6 @@ import CodevisorCore
 import SwiftUI
 import CodevisorUI
 
-/// Read-only detail for an MCP server that lives in a harness's own config
-/// file. Secret values never reach the client, so env vars and headers render
-/// as names only.
 struct NativeMcpDetailSheet: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(\.theme) private var theme

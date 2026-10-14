@@ -1,7 +1,3 @@
-// Cross-process mutual exclusion for shared artifact roots. Publish a fully
-// initialized directory atomically: there is never an empty initializing lock.
-// Each owner has a unique child name, so stale cleanup and release cannot
-// unlink a replacement owner's child. rmdir refuses a nonempty replacement.
 import { randomUUID } from "node:crypto"
 import {
   lstat,
@@ -52,8 +48,6 @@ const cleanStale = async (path, isProcessAlive) => {
     throw error
   }
   if (!info.isDirectory()) {
-    // Migration from the previous PID-file protocol. A replacement using
-    // this protocol is a directory and unlink cannot remove it.
     const owner = Number.parseInt(await readFile(path, "utf8").catch(() => ""), 10)
     if (Number.isInteger(owner) && (await isProcessAlive(owner))) return
     try {
@@ -103,8 +97,6 @@ export async function withArtifactLock(
         if (!["EEXIST", "ENOTEMPTY", "ENOTDIR", "EISDIR"].includes(error.code)) throw error
       }
       await cleanStale(lockPath, isProcessAlive)
-      // Retrying after cleanup is safe even when another owner won the race.
-      // The delay is injected so contention tests do not depend on wall time.
       const occupied = await lstat(lockPath).then(
         () => true,
         (error) => {

@@ -1,9 +1,4 @@
-// Pure helpers for `bun run vnc:validate` (apps/screen-sharing-rig/scripts/vnc-validate.ts): the one
-// gate every VNC change passes.
-
 export const defaults: { swiftFilter: string; benchArgs: string[]; machines: string } = {
-  // Every VNC-touching Swift suite: RFB/VNC protocol and sessions, the
-  // reference server and shaping, and the product diagnostics.
   swiftFilter: "RFB|VNC|ScreenSharingDiagnostics|ScreenSharingViewerEndpoint",
   benchArgs: [],
   machines: "loopback"
@@ -105,7 +100,6 @@ export function renderReport({
   return { ok: verdict, text: `${lines.join("\n")}\n` }
 }
 
-/// The last line matching `pattern`, for a layer's one-line summary.
 export function lastLine(output: string, pattern: RegExp): string {
   return (
     output
@@ -115,7 +109,6 @@ export function lastLine(output: string, pattern: RegExp): string {
   )
 }
 
-/// One `swift test` invocation can run several test binaries: total them.
 export function testCount(output: string): { ran: number; passed: boolean } {
   const runs = [...output.matchAll(/Test run with (\d+) tests? in \d+ suites? (passed|failed)/g)]
   return {
@@ -124,8 +117,6 @@ export function testCount(output: string): { ran: number; passed: boolean } {
   }
 }
 
-/// The bench layer's failure text for the report: this build's bench-error.txt
-/// and origin/main's, each fenced so its lines survive Markdown (851-2337).
 export function benchFailure(current: string, main: string): string {
   return [
     block("vnc-bench failed (this build)", current),

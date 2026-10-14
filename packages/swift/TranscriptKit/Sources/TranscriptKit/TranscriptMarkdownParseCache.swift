@@ -1,10 +1,6 @@
 import Foundation
 import MarkdownCore
 
-/// Bounded parser state shared by active and settled projections. Parsing
-/// runs outside the lock on the projection worker. Concurrent requests for
-/// one source can independently fall back to a full parse; each caller still
-/// receives the result for its own immutable input.
 final class TranscriptMarkdownParseCache: @unchecked Sendable {
   struct Key: Hashable {
     let messageID: UUID
@@ -34,7 +30,6 @@ final class TranscriptMarkdownParseCache: @unchecked Sendable {
       return parser
     }
     let result = parser.parse(source)
-    // Include an allowance for the semantic tree as well as source storage.
     let cost = source.utf8.count * 4
     guard cost <= byteLimit, entryLimit > 0 else { return result }
     lock.withLock {

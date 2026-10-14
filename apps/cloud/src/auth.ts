@@ -11,15 +11,10 @@ import * as schema from "./db/schema.js"
 import { emailAuthPlugin, hasEmailAuth } from "./email-auth.js"
 import { isDevAuthEnabled, type CloudEnv } from "./env.js"
 
-/// Client ids accepted by the device-authorization flow. Machines are the only
-/// device-flow consumer today; native apps use email, Apple, or the browser OAuth handoff.
 export const MACHINE_CLIENT_ID = "codevisor-machine"
 
-/// A year: see `session` below.
 export const SESSION_LIFETIME_SECONDS = 60 * 60 * 24 * 365
 
-/// D1 bindings only exist per-request, so auth must be built per request (and
-/// per DO call) rather than at module scope.
 export const createAuth = (env: CloudEnv) => {
   const database = drizzleAdapter(drizzle(env.DB, { schema }), { provider: "sqlite" })
   const devAuth = isDevAuthEnabled(env)
@@ -38,8 +33,6 @@ export const createAuth = (env: CloudEnv) => {
         : {}),
       ...(hasAppleAuth(env) ? { apple: () => appleOptions(env) } : {})
     },
-    // Apple posts its authorization response cross-origin; state remains
-    // mandatory and bound to the browser that started the request.
     trustedOrigins: ["https://appleid.apple.com"],
     account: {
       accountLinking: {
@@ -49,16 +42,12 @@ export const createAuth = (env: CloudEnv) => {
         trustedProviders: ["apple", "github"]
       }
     },
-    // Unlinking Apple would discard the token needed for account deletion.
-    // This release supports connecting providers and deleting the whole account.
     disabledPaths: ["/unlink-account", "/sign-in/email-otp"],
     user: {
       deleteUser: {
         enabled: true,
         beforeDelete: async (user) => {
           await revokeAppleAuthorization(env, user.id)
-          // Revoke machine credentials before closing sockets. No deleted
-          // account can reconnect while Better Auth removes its sessions.
           await env.DB.batch([
             env.DB.prepare("DELETE FROM apikey WHERE reference_id = ?").bind(user.id),
             env.DB.prepare("DELETE FROM device_code WHERE user_id = ?").bind(user.id),
@@ -69,8 +58,6 @@ export const createAuth = (env: CloudEnv) => {
           await env.USER_HUB.get(env.USER_HUB.idFromName(user.id)).deleteAccount()
         },
         afterDelete: async (user) => {
-          // Also remove any key issued by a request already in flight when
-          // deletion started. Auth sessions no longer exist at this point.
           await env.DB.prepare("DELETE FROM apikey WHERE reference_id = ?").bind(user.id).run()
         }
       }
@@ -85,39 +72,19 @@ export const createAuth = (env: CloudEnv) => {
       sendOnSignIn: false,
       autoSignInAfterVerification: true
     },
-    /// Signing in once should last until the user signs out. Each use a day
-    /// or more after the last pushes expiry a year out, so any app opened
-    /// at least once a year stays signed in. Sensitive actions (account
-    /// deletion) still demand a recent sign-in via the default `freshAge`.
     session: { expiresIn: SESSION_LIFETIME_SECONDS, updateAge: 60 * 60 * 24 },
     rateLimit: { enabled: !devAuth, storage: "database" },
     advanced: { ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] } },
     plugins: [
       ...(hasEmailAuth(env) ? [emailAuthPlugin(env)] : []),
       nativeAppleAuth(env),
-      /// Native apps hold tokens, not cookies: session token arrives in the
-      /// `set-auth-token` header and is sent back as `Authorization: Bearer`.
       bearer(),
-      /// Browser-OAuth → native-app handoff: the /auth/handoff page generates
-      /// a single-use token the app exchanges for its session.
       oneTimeToken(),
-      /// `codevisor auth login`: RFC 8628 device flow, approved on /device.
       deviceAuthorization({
         verificationUri: "/device",
         validateClient: (clientId: string) => clientId === MACHINE_CLIENT_ID,
-        // Dev instances (and tests) poll immediately; real instances keep the
-        // RFC-friendly 5s minimum.
         interval: devAuth ? "0s" : "5s"
       }),
-      /// Long-lived per-machine credentials, listed/revoked from app settings.
-      /// Metadata carries the machine's deviceId + static public key.
-      ///
-      /// No per-key budget: the plugin's default limiter (10 verifications a
-      /// day, raised to 10k at launch) counts every relay handshake and
-      /// credential command a daemon makes, so a busy machine eventually
-      /// failed verification exactly like a revoked one and showed up offline
-      /// on every other client. The option overrides the per-row
-      /// `rate_limit_enabled` flag, so existing keys need no migration.
       apiKey({ enableMetadata: true, rateLimit: { enabled: false } })
     ]
   })

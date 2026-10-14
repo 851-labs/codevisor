@@ -1,5 +1,4 @@
 #!/usr/bin/env bun
-// Regenerate the native catalog from the pinned reference; no extension runtime is shipped.
 import { execFileSync } from "node:child_process"
 import { copyFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
@@ -25,7 +24,6 @@ const languageNames = {}
 const languageSuffixes = {}
 const definitions = new Map()
 
-// Match upstream's precedence: explicit associations override language defaults.
 for (const item of active) {
   if (item.format !== 0) throw new Error(`Unsupported icon format: ${item.icon}`)
   definitions.set(item.icon, item)
@@ -48,7 +46,6 @@ for (const item of active) {
 
 const fileNames = { ...languageNames, ...names }
 const fileExtensions = { ...languageSuffixes, ...suffixes }
-// Plain text uses the same native document symbol as unknown files.
 delete fileExtensions.txt
 const icons = [
   ...new Set([...Object.values(fileNames), ...Object.values(fileExtensions)])
@@ -81,7 +78,6 @@ for (const icon of icons) {
       info: { author: "xcode", version: 1 },
       properties: {
         "preserves-vector-representation": true,
-        // The monochrome Markdown mark needs native contrast in both appearances.
         "template-rendering-intent": icon === "markdown" ? "template" : "original"
       }
     })

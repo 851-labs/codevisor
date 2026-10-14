@@ -1,9 +1,6 @@
 import ACPKit
 import Foundation
 
-/// A hybrid logical clock stamp from the config plane (@codevisor/sync).
-/// Total order: wallMs, then counter, then deviceId as the deterministic
-/// tiebreak — every replica orders any two stamps identically.
 public struct ServerSyncTimestamp: Codable, Equatable, Sendable {
   public var wallMs: Int
   public var counter: Int
@@ -15,12 +12,9 @@ public struct ServerSyncTimestamp: Codable, Equatable, Sendable {
     self.deviceId = deviceId
   }
 
-  /// The wall-clock time the entry was written.
   public var date: Date { Date(timeIntervalSince1970: Double(wallMs) / 1000) }
 }
 
-/// One replicated config key. Deletions are tombstones (`deleted: true`),
-/// so a removal beats an older write on replicas that never saw the key.
 public struct ServerSyncEntry: Codable, Equatable, Sendable {
   public var key: String
   public var value: JSONValue
@@ -35,7 +29,6 @@ public struct ServerSyncEntry: Codable, Equatable, Sendable {
   }
 }
 
-/// One namespace's replica on one server.
 public struct ServerSyncDocument: Codable, Equatable, Sendable {
   public var namespace: String
   public var entries: [ServerSyncEntry]
@@ -46,7 +39,6 @@ public struct ServerSyncDocument: Codable, Equatable, Sendable {
   }
 }
 
-/// Outcome of one MCP-definitions reconcile pass on a machine.
 public struct ServerMcpSyncStatus: Codable, Equatable, Sendable {
   public var published: [String]
   public var applied: [String]
@@ -69,8 +61,6 @@ public struct ServerSkillsSyncMissingBlob: Codable, Equatable, Sendable {
   }
 }
 
-/// Outcome of one skills reconcile pass on a machine — most importantly the
-/// blobs it cannot apply until a client ferries them over.
 public struct ServerSkillsSyncStatus: Codable, Equatable, Sendable {
   public var published: [String]
   public var applied: [String]
@@ -91,8 +81,6 @@ public struct ServerSkillsSyncStatus: Codable, Equatable, Sendable {
 }
 
 extension CodevisorServerClient {
-  /// Merges entries into the machine's replica. The response is the merged
-  /// document, so one round trip both pushes and pulls.
   public func mergeSyncDocument(
     namespace: String,
     entries: [ServerSyncEntry]
@@ -153,8 +141,6 @@ extension CodevisorServerClient {
   }
 }
 
-/// One machine blocked on itself: a sign-in required before an enable
-/// applies, or no runnable install method. Retried on every pass.
 public struct ServerHarnessSyncBlocked: Codable, Equatable, Sendable {
   public var id: String
   public var reason: String
@@ -165,7 +151,6 @@ public struct ServerHarnessSyncBlocked: Codable, Equatable, Sendable {
   }
 }
 
-/// POST /v1/sync/harnesses/reconcile: the harness plane's pass summary.
 public struct ServerHarnessSyncStatus: Codable, Equatable, Sendable {
   public var published: [String]
   public var applied: [String]
@@ -188,7 +173,6 @@ public struct ServerHarnessSyncStatus: Codable, Equatable, Sendable {
   }
 }
 
-/// POST /v1/sync/plugins/reconcile: the plugin plane's pass summary.
 public struct ServerPluginSyncStatus: Codable, Equatable, Sendable {
   public var published: [String]
   public var applied: [String]

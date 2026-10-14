@@ -14,11 +14,6 @@ import type { PluginProcessHandle, PluginSpawnOptions } from "./plugin-superviso
 import { PluginsError } from "./plugins-error.js"
 import { makePluginsManager, type PluginsManager } from "./plugins-manager.js"
 
-/// Shared fixtures for the supervisor and manager suites (same pattern as
-/// apps/server's test-support.ts): in-process fake plugin servers, fake
-/// spawners, and a manager factory wired to temp directories. Registered
-/// cleanups run after every test in every importing file.
-
 export const cleanups: Array<() => void> = []
 
 afterEach(() => {
@@ -35,8 +30,6 @@ export const makeDir = (prefix: string): string => {
 
 export const makeDataDir = (): string => makeDir("codevisor-plugin-data-")
 
-/// An InstalledPlugin handed straight to the supervisor without a manifest
-/// file on disk.
 export const plugin = (overrides: Partial<PluginManifestV1> = {}): InstalledPlugin => ({
   directoryName: "example",
   id: "owner.example",
@@ -59,8 +52,6 @@ export interface FakeSpawn {
   readonly simulateExit: (message: string) => void
 }
 
-/// Binds the assigned $PORT in-process so readiness probing sees a real
-/// listener without any child processes.
 export const fakeSpawn = (options: { readonly listen?: boolean } = {}): FakeSpawn => {
   let count = 0
   let server: Server | undefined
@@ -109,8 +100,6 @@ export const exampleManifest = {
   version: "0.1.0"
 }
 
-/// A tool-bearing plugin (panes empty — tool-only plugins are first-class).
-/// The paths line up with makeFakePlugin's tool endpoints below.
 export const toolManifest = {
   description: "Notes tools",
   id: "owner.notes",
@@ -150,10 +139,6 @@ export interface RecordedRequest {
   readonly headers: IncomingMessage["headers"]
 }
 
-/// What a plugin does with a request, exactly as the plugins docs describe:
-/// HMAC-SHA256 over the raw X-Codevisor-Context header value, keyed by the
-/// CODEVISOR_PLUGIN_CONTEXT_SECRET string from its spawn environment, hex
-/// encoded, compared in constant time.
 export const verifyPluginContext = (
   secret: string | undefined,
   headers: IncomingMessage["headers"]
@@ -170,7 +155,6 @@ export const verifyPluginContext = (
 
 export interface FakePlugin {
   readonly requests: Array<RecordedRequest>
-  /// Environment the most recent spawn received.
   readonly env: () => NodeJS.ProcessEnv
   readonly spawnCount: () => number
   readonly simulateExit: (message: string) => void
@@ -185,9 +169,6 @@ export interface FakePlugin {
   readonly stop: () => void
 }
 
-/// An in-process stand-in for a plugin server: binds the assigned $PORT and
-/// records every request so tests can assert on exactly what crossed the
-/// proxy.
 export const makeFakePlugin = (): FakePlugin => {
   let server: Server | undefined
   let spawns = 0
@@ -304,8 +285,6 @@ export const makeFakePlugin = (): FakePlugin => {
   }
 }
 
-/// Hosts the manager behind a real HTTP server the way apps/server does:
-/// proxy-shaped requests go to the manager pre-auth, everything else 404s.
 export const makeOuterServer = async (
   manager: PluginsManager
 ): Promise<{ readonly origin: string; readonly port: number }> => {
@@ -359,8 +338,6 @@ export const makeManager = (
   return { fake, manager, root }
 }
 
-/// Advances readiness/backoff time only when the code under test sleeps
-/// (after each completed probe, and between automatic restart attempts).
 export const advancingClock = () => {
   let now = 0
   return {

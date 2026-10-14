@@ -5,8 +5,6 @@ import Foundation
 import Observation
 import ScreenSharing
 
-/// One Simulator pane: the machine's simulators, the device the pane shows, its chrome and
-/// settings, and the live stream while the pane is on screen.
 @MainActor
 @Observable
 public final class SimulatorPaneModel {
@@ -18,42 +16,27 @@ public final class SimulatorPaneModel {
 
   public private(set) var listState: ListState = .loading
   public private(set) var list: ServerSimulatorList?
-  /// The device the pane shows (shared with every client through the pane registry).
   public private(set) var udid: String?
   public private(set) var deviceType: ServerSimulatorDeviceTypeDetail?
-  /// Chrome bundles by identifier, for the device type's screens.
   public private(set) var chromes: [String: SimulatorChrome] = [:]
-  /// The live view while the pane shows a running device: a WebRTC stream, or snapshots where
-  /// WebRTC isn't available.
   private(set) var connection: (any SimulatorConnection)?
   public private(set) var settings: ServerSimulatorSettings?
-  /// A device action in flight ("Starting…"), shown in place of controls.
   public private(set) var activity: String?
-  /// The last failed action, until dismissed.
   public var alert: String?
-  /// Whether the device's settings popover is open.
   public var showsSettings = false
-  /// Whether the Manage Simulators sheet is up.
   public var managingSimulators = false
-  /// Simulators being deleted, shown as such until the list no longer has them.
   public private(set) var deleting: Set<String> = []
-  /// Bumped when the host focuses the pane; the device chooser moves keyboard focus to its search
-  /// field, as the New Tab page it was opened from does.
   public private(set) var chooserFocusRequests = 0
-  /// Whether the pane is still where the user is working, so a chooser that mounts after the
-  /// request (the list was still loading) doesn't take focus from somewhere else.
   @ObservationIgnored public var canFocusChooser: () -> Bool = { true }
 
   public var onPreferencesChanged: ((SimulatorPanePreferences) -> Void)?
 
   @ObservationIgnored let client: any CodevisorServerClienting
-  /// Makes the live stream for a running device.
   @ObservationIgnored private let makeConnection: @MainActor (_ udid: String) -> any SimulatorConnection
   @ObservationIgnored private var visible = false
   @ObservationIgnored private var poller: Task<Void, Never>?
   @ObservationIgnored private var loadingType: String?
 
-  /// `openTunnel` routes the stream's media through the cloud tunnel to a machine elsewhere.
   public init(
     client: any CodevisorServerClienting, preferences: SimulatorPanePreferences?, workspaceId: UUID, paneId: UUID,
     openTunnel: (@MainActor () async -> CloudTunnelMediaRoute?)? = nil
@@ -66,7 +49,6 @@ public final class SimulatorPaneModel {
     udid = preferences?.udid
   }
 
-  /// A model whose device views come from `makeConnection` (tests).
   init(
     client: any CodevisorServerClienting, preferences: SimulatorPanePreferences?,
     makeConnection: @escaping @MainActor (_ udid: String) -> any SimulatorConnection
@@ -81,16 +63,13 @@ public final class SimulatorPaneModel {
     return list?.devices.first { $0.udid == udid }
   }
 
-  /// The device while it's running and not mid-restart: when its controls do something.
   public var runningDevice: ServerSimulatorDevice? {
     guard let device, device.isBooted, activity == nil else { return nil }
     return device
   }
 
-  /// What the host says the device is doing; nil until the stream reports.
   public var deviceState: ScreenSharingSimulatorState? { connection?.state }
 
-  /// The screen being streamed: the host's choice, else the device type's first.
   public var display: ServerSimulatorDisplay? {
     guard let displays = deviceType?.displays, !displays.isEmpty else { return nil }
     return displays.first { $0.name == deviceState?.display } ?? displays[0]
@@ -99,8 +78,6 @@ public final class SimulatorPaneModel {
   public var chrome: SimulatorChrome? {
     (display?.chromeIdentifier ?? deviceType?.chromeIdentifier).flatMap { chromes[$0] }
   }
-
-  // MARK: Lifecycle
 
   public func focusChooser() {
     chooserFocusRequests += 1
@@ -129,7 +106,6 @@ public final class SimulatorPaneModel {
     connection = nil
   }
 
-  /// Another client chose a device for this pane.
   public func applyPreferences(_ preferences: SimulatorPanePreferences) {
     guard preferences.udid != udid else { return }
     udid = preferences.udid
@@ -141,7 +117,6 @@ public final class SimulatorPaneModel {
     poller = Task { [weak self] in
       while !Task.isCancelled {
         await self?.refresh()
-        // Faster while a device is changing state, so Start feels immediate.
         let busy = self?.device.map { !$0.isBooted && !$0.isShutdown } ?? false
         try? await Task.sleep(for: .seconds(busy ? 1 : 6))
       }
@@ -153,7 +128,6 @@ public final class SimulatorPaneModel {
       let list = try await client.simulators()
       self.list = list
       listState = .loaded
-      // A deleted device leaves the pane on the picker.
       if let udid, !list.devices.contains(where: { $0.udid == udid }) { choose(nil) }
       await loadDeviceType()
       syncStream()
@@ -161,8 +135,6 @@ public final class SimulatorPaneModel {
       if list == nil { listState = .failed(Self.message(for: error)) }
     }
   }
-
-  // MARK: Device
 
   public func choose(_ udid: String?) {
     guard udid != self.udid else { return }
@@ -201,7 +173,6 @@ public final class SimulatorPaneModel {
     }
   }
 
-  /// Streams while the pane is on screen and its device is running.
   private func syncStream() {
     let wanted = visible && device?.isBooted == true
     if wanted, connection == nil, let udid {
@@ -214,7 +185,6 @@ public final class SimulatorPaneModel {
     }
   }
 
-  /// Starts the stream again after it failed.
   public func reconnect() {
     connection?.stop()
     connection = nil
@@ -251,7 +221,6 @@ public final class SimulatorPaneModel {
     rename(udid, to: name)
   }
 
-  /// Renames any of the Mac's simulators.
   public func rename(_ udid: String, to name: String) {
     Task {
       do { try await client.renameSimulator(udid: udid, name: name) } catch { alert = Self.message(for: error) }
@@ -259,8 +228,6 @@ public final class SimulatorPaneModel {
     }
   }
 
-  /// Deletes one of the Mac's simulators (shutting it down first if it runs). Deleting this
-  /// pane's device leaves the pane on the gallery.
   public func delete(_ udids: Set<String>) {
     for udid in udids where !deleting.contains(udid) {
       if udid == self.udid {
@@ -276,7 +243,6 @@ public final class SimulatorPaneModel {
     }
   }
 
-  /// Creates a simulator (from Manage Simulators): it joins the list without changing the pane.
   public func create(name: String, deviceType: String, runtime: String) {
     Task {
       do {
@@ -289,8 +255,6 @@ public final class SimulatorPaneModel {
     }
   }
 
-  // MARK: Settings
-
   public func loadSettings() async {
     guard let udid, device?.isBooted == true else { return }
     settings = try? await client.simulatorSettings(udid: udid)
@@ -300,7 +264,6 @@ public final class SimulatorPaneModel {
     guard let udid else { return }
     var change = ServerSimulatorSettingsChange(udid: udid)
     edit(&change)
-    // Optimistic, so controls don't snap back while the device applies it.
     settings = settings?.applying(change)
     Task {
       do { settings = try await client.changeSimulatorSettings(change) } catch { alert = Self.message(for: error) }
@@ -317,15 +280,11 @@ public final class SimulatorPaneModel {
     }
   }
 
-  // MARK: Input
-
   @discardableResult
   public func send(_ message: ScreenSharingSimulatorMessage) -> Bool {
     connection?.send(message) ?? false
   }
 
-  /// Bumped as this pane asks for a posture, before the device answers: the canvas keeps what
-  /// the screen shows right then, as the guest's own fold soon redraws it mid-transition.
   private(set) var postureRequests = 0
 
   public func setPosture(_ posture: String) {

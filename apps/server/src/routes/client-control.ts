@@ -20,8 +20,6 @@ export const routeClientControl = async (
   if (!url.pathname.startsWith("/v1/clients")) return false
   if (!broker) throw new HttpFailure(501, "Client control unavailable")
   if (url.pathname === "/v1/clients" && request.method === "GET") {
-    // `originClientId` is the window that sent the prompt behind the calling
-    // agent's turn; naming it marks that window `isOrigin`.
     writeJson(response, 200, await broker.describe(machine, url.searchParams.get("originClientId")))
     return true
   }

@@ -3,9 +3,6 @@
   import CodevisorCore
   import SwiftUI
 
-  /// The Mac's base-branch button: the branch name as a text button beside
-  /// the mode button, opening a searchable list, because repositories often
-  /// carry hundreds of remote branches.
   struct ReviewBaseAutocomplete: View {
     let model: ReviewPaneModel
 
@@ -20,7 +17,6 @@
         }
         .labelsHidden()
       } label: {
-        // Matches the mode button's text-and-chevron look.
         HStack(spacing: 3) {
           Text(model.baseDisplayName)
             .lineLimit(1)
@@ -37,7 +33,6 @@
       .autocompleteLoadingState(model.refs == nil && model.isLoadingRefs ? .loading("Loading branches…") : .ready)
       .accessibilityLabel("Base Branch, \(model.baseDisplayName)")
       .help("Choose the Branch to Compare With")
-      // Local refs only, so this is fast and works offline.
       .task { await model.loadRefs() }
     }
   }

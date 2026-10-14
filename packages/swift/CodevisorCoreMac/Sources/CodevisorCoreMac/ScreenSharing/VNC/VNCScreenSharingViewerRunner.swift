@@ -5,13 +5,6 @@ import Foundation
 extension ScreenSharingViewerBackend {
   public typealias VNCOpen = @Sendable () async throws -> (client: RFBClient, outcome: RFBHandshake.Outcome)
 
-  /// A VNC server reached through `open` (the loopback server in tests and
-  /// the Screen Sharing rig; the product goes through the native backend's
-  /// provider switch). Discovery performs a handshake to learn the desktop's
-  /// name and size, and the first connection after it reuses that handshake's
-  /// connection rather than signing in again (851-2353); a connection is
-  /// replaced up to three times after video was seen and the socket dropped,
-  /// and ends with the server's own message otherwise. The surface defaults to the one the native backend makes.
   @MainActor
   public static func vnc(
     displayId: String, open: @escaping VNCOpen,
@@ -25,21 +18,14 @@ extension ScreenSharingViewerBackend {
   }
 }
 
-/// One pane's VNC connections, one after another, mirroring the native runner's shape.
 @MainActor
 final class VNCScreenSharingViewerRunner {
   private let displayId: String
   private let open: ScreenSharingViewerBackend.VNCOpen
-  /// Sets the desktop's UI scale through the machine's server (Dynamic Resolution, 851-2340).
   private let setDesktopScale: (@MainActor (Int) async -> Void)?
-  /// Whether the machine's server holds the control lease (851-2338); else control is local.
   private let arbitratedByServer: @MainActor () -> Bool
   private let makeSurface: @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface
   private var previous: Task<Void, Never>?
-  /// The connection discovery opened, kept for the next attempt so one connect
-  /// signs in once: a Mac account sign-in is a 4096-bit key exchange, and every
-  /// connection shows on the Mac as a viewer (851-2353). Closed if unused by the
-  /// next discovery or when the runner goes away.
   private var discovered: (client: RFBClient, outcome: RFBHandshake.Outcome)?
 
   init(
@@ -91,7 +77,6 @@ final class VNCScreenSharingViewerRunner {
     }
   }
 
-  /// `stale`: discovery's connection had closed before any video; open a fresh one.
   private enum Outcome { case lost, stale, ended(String), cancelled }
 
   private func run(emit: @escaping @Sendable (ScreenSharingViewerEvent) -> Void) async {
@@ -134,7 +119,6 @@ final class VNCScreenSharingViewerRunner {
       endpoint = ScreenSharingViewerEndpoint(
         session: session, surface: try makeSurface(session))
       endpoint.setDesktopScale = setDesktopScale
-      // Codevisor never injects input for a VNC desktop, so nothing it tags can loop through one.
       endpoint.dropsInjectedInput = false
     } catch {
       session.close()

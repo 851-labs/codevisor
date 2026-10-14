@@ -7,8 +7,6 @@ export function executableHarness(
   detectBinaries: ReadonlyArray<string>,
   command: string,
   args: ReadonlyArray<string> = [],
-  /// Lifecycle metadata (installMethods/update) and other optional
-  /// definition fields that don't fit the positional shorthand.
   extra: Partial<
     Pick<
       HarnessDefinition,

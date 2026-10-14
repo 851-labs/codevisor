@@ -1,15 +1,3 @@
-/// One controller at a time for a VNC desktop, decided by the server (851-2338).
-///
-/// Every viewer's RFB stream passes through codevisor-server's socket route,
-/// so the server holds the lease. Last one wins: a request hands control to
-/// the requester at once and tells the previous controller who took it. Only
-/// the controller's input and clipboard reach the desktop; the desktop's size
-/// follows the controller, or, when nobody controls, the most recent viewer.
-///
-/// Viewers speak it in text frames on the same WebSocket as the RFB bytes
-/// (binary frames): `{"type":"request","name":…}` and `{"type":"release"}`;
-/// the server answers `{"type":"granted"}` and `{"type":"revoked","by":…}`.
-/// A viewer that never sends one (an older app) isn't arbitrated, as before.
 export class VNCControlArbiter {
   private readonly viewers = new Map<
     number,
@@ -32,7 +20,6 @@ export class VNCControlArbiter {
     if (this.latest === id) this.latest = [...this.viewers.keys()].at(-1)
   }
 
-  /// A viewer's control message (text frame); malformed ones are ignored.
   receive(id: number, text: string): void {
     const viewer = this.viewers.get(id)
     if (viewer === undefined) return
@@ -61,13 +48,11 @@ export class VNCControlArbiter {
     }
   }
 
-  /// Input and clipboard: the controller's, or any viewer that isn't arbitrated (an older app).
   mayControl(id: number): boolean {
     const viewer = this.viewers.get(id)
     return viewer !== undefined && (!viewer.arbitrated || this.controller === id)
   }
 
-  /// The desktop's size: the controller's; with no controller, the most recent viewer's.
   mayResize(id: number): boolean {
     const viewer = this.viewers.get(id)
     if (viewer === undefined) return false
@@ -78,7 +63,6 @@ export class VNCControlArbiter {
 
 const arbiters = new Map<number, VNCControlArbiter>()
 
-/// The arbiter for the VNC server on `port` (one per desktop, for the server's lifetime).
 export const vncControlArbiter = (port: number): VNCControlArbiter => {
   let arbiter = arbiters.get(port)
   if (arbiter === undefined) {

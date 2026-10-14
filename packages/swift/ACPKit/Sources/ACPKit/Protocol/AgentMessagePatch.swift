@@ -1,7 +1,5 @@
 import Foundation
 
-/// A position-addressed update to a persisted message. Offsets are UTF-16 code
-/// units, matching the server. Replacements advance generation; appends do not.
 public struct AgentMessagePatch: Codable, Equatable, Sendable {
   public var chatItemId: String? = nil
   public var messageId: String

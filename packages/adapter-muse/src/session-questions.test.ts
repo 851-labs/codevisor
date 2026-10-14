@@ -20,7 +20,6 @@ describe("Muse chat questions", () => {
       availableChoices: choices
     }
     expect(client.serverRequest("approval/request", approval)).toEqual({})
-    // The next stage of the same approval replaces the first.
     client.serverRequest("approval/request", {
       ...approval,
       currentRequirementId: { approvalId: "ap-1", sourceIndex: 1 }
@@ -72,7 +71,6 @@ describe("Muse chat questions", () => {
       questionId: "ui-1",
       autoResolutionMs: 1000
     })
-    // Muse auto-resolved it before the user answered.
     client.emit("userInput/settled", { userInputId: "ui-1" })
     client.emit("userInput/settled", { userInputId: "ui-1" })
     client.emit("approval/resolved", { approvalId: 7 })
@@ -83,7 +81,6 @@ describe("Muse chat questions", () => {
     })
     expect(client.serverRequest("session/unknownRequest", {})).toEqual({})
 
-    // Asks still open when the turn ends are cancelled with it.
     client.serverRequest("approval/request", { ...approval, approvalId: "ap-2" })
     client.emit("approval/resolved", { approvalId: "other" })
     client.emit("turn/completed", { turnId: deploy, terminal: "completed" })

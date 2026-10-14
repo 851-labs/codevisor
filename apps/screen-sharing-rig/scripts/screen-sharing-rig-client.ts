@@ -1,8 +1,5 @@
-/// HTTP access to the rig processes: the viewer's loopback control port and the host's LAN port,
-/// both bearer-token gated. Pure of process state; the CLI passes the local viewer config in.
 import type { RigConfiguration } from "./screen-sharing-rig-lib.ts"
 
-/// Response shapes the Swift rig serves. The CLI trusts them the way it trusts rig.json.
 export interface RigStatus {
   role: string
   name: string

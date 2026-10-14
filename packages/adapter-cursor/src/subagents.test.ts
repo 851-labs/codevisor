@@ -11,7 +11,6 @@ const CHILD = "agent-1"
 const payload = (event: RuntimeEvent | undefined): Record<string, unknown> | undefined =>
   event?.payload as Record<string, unknown> | undefined
 
-/// Cursor's Task tool call, as its ACP agent sends it.
 const taskCall = (status: string, extra: Record<string, unknown> = {}) => ({
   kind: "other",
   rawInput: {
@@ -36,8 +35,6 @@ const announcement = (update: Record<string, unknown>) => ({
   }
 })
 
-/// The Cursor extension with its notification handlers captured, as a
-/// connection would drive it.
 const cursorExtension = () => {
   const emitted: Array<RuntimeEvent> = []
   const handlers = new Map<string, (params: unknown) => void>()
@@ -76,7 +73,6 @@ describe("Cursor subagents", () => {
       status: "pending",
       title: "Find SQLite chat schema"
     })
-    // Its later updates carry no tool name; it's still the agent.
     expect(
       subagents.mapToolUpdate(SESSION, {
         rawOutput: { durationMs: 4902, isBackground: false },
@@ -186,7 +182,6 @@ describe("Cursor subagents", () => {
       sessionUpdate: "agent_message_chunk"
     })
 
-    // A background run's call returns at once; its session settles it.
     const [returned] = notify(
       SESSION,
       taskCall("completed", { rawOutput: { durationMs: 5, isBackground: true } })

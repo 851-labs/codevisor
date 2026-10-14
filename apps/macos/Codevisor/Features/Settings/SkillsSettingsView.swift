@@ -2,9 +2,6 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// The Skills pane: Codevisor's skill store, which agents read through the
-/// tool gateway. The store syncs across devices, so the pane reads and
-/// writes this Mac's copy.
 struct SkillsSettingsView: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.theme) private var theme
@@ -15,7 +12,6 @@ struct SkillsSettingsView: View {
   @State private var pendingRemoval: ServerSkill?
   @State private var actionError: String?
 
-  /// Changes land on this Mac's store; sync carries them everywhere else.
   private var localClient: any CodevisorServerClienting {
     environment.machines.client(for: CodevisorMachine.local.id)
   }
@@ -45,7 +41,6 @@ struct SkillsSettingsView: View {
     .background {
       if !theme.isSystem { theme.windowBackground }
     }
-    // Reload when another device's change syncs in.
     .task(id: environment.configSync.revisionsByNamespace[ConfigSync.skillsNamespace]) {
       await model.load(client: localClient)
     }

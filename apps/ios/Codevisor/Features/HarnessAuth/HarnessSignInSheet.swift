@@ -3,19 +3,13 @@ import CodevisorUI
 import SwiftUI
 
 extension Notification.Name {
-  /// Posted by chat error rows that need the sign-in sheet — HomeView
-  /// observes it and presents over whatever surface raised the error.
   static let codevisorHarnessSignIn = Notification.Name("codevisor.harness-sign-in")
 }
 
-/// One harness on one machine that needs signing in — the payload every
-/// sign-in presentation carries, sheet-item and notification alike.
 struct HarnessSignInRequest: Identifiable {
   let serverId: String
   let harnessId: String
-  /// Skips the lookup when the presenter already holds the harness row.
   var initialHarness: ServerHarness?
-  /// Lands in the sign-in flow rather than the account list.
   var startsSignIn = false
 
   var id: String { "\(serverId)|\(harnessId)" }
@@ -44,12 +38,6 @@ struct HarnessSignInRequest: Identifiable {
   }
 }
 
-/// The in-flow sign-in surface, wherever the need surfaces — the model
-/// picker's "sign in required" rows, an auth-dead chat — so nobody has to
-/// know Settings exists to get a fleet machine working. Fleet-shared
-/// harnesses land on the fleet's accounts sheet (the machine the request
-/// came from is just the preferred sign-in host); only harnesses whose
-/// accounts truly live on one machine get that machine's flow.
 struct HarnessSignInSheet: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.dismiss) private var dismiss
@@ -101,8 +89,6 @@ struct HarnessSignInSheet: View {
       loadFailed = harness == nil
     }
     .onDisappear {
-      // Whatever happened in the flow, the machine's catalog is now
-      // suspect — the revision bump refreshes any mounted composer.
       environment.harnessCatalogDidChange(onServer: request.serverId)
     }
   }
@@ -139,7 +125,6 @@ struct HarnessSignInSheet: View {
 }
 
 extension View {
-  /// Presents the sign-in sheet bound to an optional request.
   func harnessSignInSheet(
     request: Binding<HarnessSignInRequest?>,
     onDismiss: @escaping () -> Void = {}

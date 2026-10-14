@@ -1,5 +1,3 @@
-// The AppKit/TextKit rendering layer. iOS uses the matching UIKit/TextKit
-// implementation in `SelectableTextView+UIKit.swift`.
 #if canImport(AppKit)
   import AppKit
   import QuickLookUI
@@ -26,8 +24,6 @@
     }
   }
 
-  /// Value attached to ranges whose background is painted as a rounded chip by
-  /// `RoundedBackgroundLayoutManager`.
   final class TextKitRoundedBackground: NSObject, NSCopying {
     let color: NSColor
     let cornerRadius: CGFloat
@@ -51,9 +47,6 @@
     )
   }
 
-  /// Paints inline-code backgrounds in the same TextKit layout that draws the
-  /// selectable glyphs. Drawing before `super` leaves the native selection
-  /// highlight on top of the chip.
   final class StreamingTextLayoutManager: NSLayoutManager {
     var animationTime = CACurrentMediaTime()
 
@@ -146,8 +139,6 @@
 
   }
 
-  /// The displayed selectable view. It owns an explicit TextKit 1 stack so the
-  /// selectable and unselected states always share one layout engine.
   @MainActor
   public final class SelectableTextKitView: TranscriptSelectableTextView,
     StreamingTextAnimationFrameClient
@@ -178,9 +169,6 @@
       if preparedLayout == nil {
         textStorage.addLayoutManager(layoutManager)
         textContainer.lineFragmentPadding = 0
-        // SwiftUI owns the view frame. Let sizeThatFits/layout set the
-        // TextKit width explicitly so a measurement probe cannot make
-        // NSTextView resize itself inside an active SwiftUI layout pass.
         textContainer.widthTracksTextView = false
         textContainer.heightTracksTextView = false
         layoutManager.addTextContainer(textContainer)
@@ -361,21 +349,12 @@
       }
     }
 
-    /// Testable display-stack measurement. Selection is deliberately absent
-    /// from this calculation; changing the selected range cannot alter glyph
-    /// generation or the resulting height.
     func contentHeight(forWidth width: CGFloat) -> CGFloat {
       let width = max(1, width)
       if abs(measuredWidth - width) <= 0.25 {
         return measuredHeight
       }
       guard let layoutManager, let textContainer else { return 1 }
-      // A SwiftUI measurement probe must not resize the displayed view.
-      // NSTextView.setFrameSize can scroll the enclosing clip view to
-      // preserve its selection, synchronously posting a bounds change
-      // while SwiftUI is still evaluating sizeThatFits. Configure only
-      // the TextKit layout container here; SwiftUI assigns the returned
-      // frame after measurement has completed.
       textContainer.containerSize = NSSize(
         width: width,
         height: CGFloat.greatestFiniteMagnitude
@@ -386,13 +365,5 @@
       return measuredHeight
     }
   }
-
-/// Shared selection lifecycle for every read-only TextKit surface in the
-/// transcript, including prose, code blocks, tables, diffs, and tool output.
-///
-/// AppKit normally preserves a non-empty selection after an `NSTextView`
-/// resigns first responder and paints it with the inactive-selection color.
-/// A transcript contains many independent text views, so that editor behavior
-/// makes old selections appear to accumulate as the user clicks around.
 
 #endif

@@ -3,12 +3,6 @@ import { parse as parseToml, stringify as stringifyToml } from "smol-toml"
 
 import { detectIndent, NativeConfigUnsupportedError } from "./native-config-files.js"
 
-/// Remove one server entry from a JSONC document, preserving the user's
-/// comments, indentation, and everything outside the single edited subtree.
-/// Ported from add-mcp formats/json.ts — deliberately with NO
-/// JSON.stringify-of-the-whole-file fallback: for files like ~/.claude.json
-/// a full rewrite would destroy unrelated state formatting, so failures
-/// refuse instead.
 export const removeJsonConfigKey = (
   content: string,
   configKey: string,
@@ -17,15 +11,13 @@ export const removeJsonConfigKey = (
   const edits = jsonc.modify(content, [...configKey.split("."), serverName], undefined, {
     formattingOptions: detectIndent(content)
   })
-  /* v8 ignore next 4 -- jsonc.modify only returns no edits for an absent key, which callers pre-verify. */
+  /* v8 ignore next 4 */
   if (edits.length === 0) {
     throw new NativeConfigUnsupportedError(`No entry named ${serverName} to remove`)
   }
   return jsonc.applyEdits(content, edits)
 }
 
-/// Set a single value (server entry on restore, enable flag on toggle)
-/// inside a JSONC document, preserving formatting everywhere else.
 export const setJsonConfigValue = (
   content: string,
   path: ReadonlyArray<string>,
@@ -39,8 +31,6 @@ export const setJsonConfigValue = (
 
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 
-/// Canonical JSON (sorted object keys) for structural before/after
-/// comparison of parsed TOML documents.
 const canonicalJson = (value: unknown): string => {
   if (Array.isArray(value)) {
     return `[${value.map(canonicalJson).join(",")}]`
@@ -51,21 +41,16 @@ const canonicalJson = (value: unknown): string => {
       .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`)
     return `{${entries.join(",")}}`
   }
-  // Parsed TOML values are strings, numbers, booleans, and dates — never
-  // undefined — so stringify always yields a string here.
   return JSON.stringify(value)
 }
 
-/// The acceptable post-removal shapes. Removing the only `[parent.name]`
-/// table also removes the implicit parent from the document, so both
-/// "parent kept as an empty table" and "parent gone" verify as correct.
 const withoutKeyVariants = (
   parsed: Record<string, unknown>,
   parentKey: string,
   name: string
 ): ReadonlyArray<Record<string, unknown>> => {
   const parent = parsed[parentKey]
-  /* v8 ignore next -- callers verify the entry exists before editing. */
+  /* v8 ignore next */
   if (parent === null || typeof parent !== "object") return [parsed]
   const { [name]: _removed, ...rest } = parent as Record<string, unknown>
   if (Object.keys(rest).length === 0) {
@@ -75,15 +60,8 @@ const withoutKeyVariants = (
   return [{ ...parsed, [parentKey]: rest }]
 }
 
-/// Remove `[parentKey.name]` (and its subtables like `[parentKey.name.env]`)
-/// from a TOML document by text-level excision, verified structurally:
-/// parse(before) minus the entry must deep-equal parse(after). Entries
-/// defined as inline tables or dotted keys are refused — Codevisor never
-/// re-serializes a whole TOML file, because that would destroy comments and
-/// formatting (the reason @iarna/toml-style round-trips were rejected).
 export const removeTomlTable = (content: string, parentKey: string, name: string): string => {
   const before = readTomlRemovalTarget(content, parentKey, name)
-  // Match [mcp_servers.docs], [mcp_servers."docs"], and their subtables.
   const nameForms = `(?:${escapeRegExp(name)}|"${escapeRegExp(name)}")`
   const headerPattern = new RegExp(
     `^\\s*\\[${escapeRegExp(parentKey)}\\.${nameForms}(?:\\.[^\\]]+)?\\]\\s*(?:#.*)?$`
@@ -139,7 +117,6 @@ const exciseTomlSections = (
 }
 
 const tomlSectionEnd = (lines: Array<string>, index: number, anyHeaderPattern: RegExp): number => {
-  // Find the section's end: the next table header or EOF…
   let end = lines.length
   for (let next = index + 1; next < lines.length; next += 1) {
     if (anyHeaderPattern.test(lines[next] as string)) {
@@ -151,8 +128,6 @@ const tomlSectionEnd = (lines: Array<string>, index: number, anyHeaderPattern: R
 }
 
 const tomlSectionContentEnd = (lines: Array<string>, index: number, end: number): number => {
-  // …then trim back over trailing blanks and comments: those visually
-  // belong to the NEXT section (or are spacing), so they survive.
   let last = end - 1
   while (last > index) {
     const line = (lines[last] as string).trim()
@@ -181,13 +156,12 @@ const verifyTomlRemoval = (
   parentKey: string,
   name: string
 ): void => {
-  // Structural verification: the edit removed exactly the one entry.
   const reparsed = parseTomlAfterRemoval(after, name)
   const reparsedCanonical = canonicalJson(reparsed)
   const acceptable = withoutKeyVariants(before, parentKey, name).some(
     (variant) => canonicalJson(variant) === reparsedCanonical
   )
-  /* v8 ignore next 5 -- refusal-over-corruption backstop: the section-scoped excision has no known parse-valid-but-different outcome, but a false verifier here would silently damage user configs. */
+  /* v8 ignore next 5 */
   if (!acceptable) {
     throw new NativeConfigUnsupportedError(
       `Removing ${name} would change unrelated configuration — edit the file manually`
@@ -195,9 +169,6 @@ const verifyTomlRemoval = (
   }
 }
 
-/// Append a `[parentKey.name]` table (restore). The block is stringified in
-/// isolation and appended, so the rest of the document is never touched;
-/// verified structurally afterwards like removeTomlTable.
 export const appendTomlTable = (
   content: string,
   parentKey: string,
@@ -217,7 +188,7 @@ const parseTomlAfterRestoration = (after: string, name: string): Record<string, 
   try {
     return parseToml(after) as Record<string, unknown>
   } catch {
-    /* v8 ignore next 3 -- stringifyToml output always reparses; kept as a refusal-over-corruption backstop. */
+    /* v8 ignore next 3 */
     throw new NativeConfigUnsupportedError(
       `Restoring ${name} would corrupt the file — edit it manually`
     )
@@ -250,7 +221,7 @@ const verifyTomlRestoration = (
 ): void => {
   const reparsed = parseTomlAfterRestoration(after, name)
   const expected = restoredTomlDocument(before, parentKey, name, fragment)
-  /* v8 ignore next 5 -- refusal-over-corruption backstop: stringifyToml of an isolated table appends faithfully, but a mismatch must refuse rather than write. */
+  /* v8 ignore next 5 */
   if (canonicalJson(reparsed) !== canonicalJson(expected)) {
     throw new NativeConfigUnsupportedError(
       `Restoring ${name} would change unrelated configuration — edit the file manually`

@@ -86,8 +86,6 @@ struct KeychainCredentialStoreTests {
   @Test("A save that loses an insert race to another writer still lands")
   func saveSurvivesConcurrentInsert() throws {
     let keychain = FakeKeychain()
-    // Another writer inserts the item between this save's update (not found)
-    // and its add — the first-launch race that surfaced as -25299.
     keychain.beforeNextAdd = { keychain.insert("theirs", service: "cloud.dev-a", account: "app-device-id") }
     let cloud = KeychainCloudCredentialStore(service: "cloud.dev-a", operations: keychain.operations)
 
@@ -141,7 +139,6 @@ private final class FakeKeychain: @unchecked Sendable {
   private let lock = NSLock()
   private var items: [Item: Data] = [:]
   private var recordedQueries: [QueryRecord] = []
-  /// Runs once, just before the next add — a competing writer's insert.
   var beforeNextAdd: (() -> Void)?
 
   func insert(_ value: String, service: String, account: String) {

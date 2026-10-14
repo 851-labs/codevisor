@@ -14,7 +14,6 @@ struct ShellCommandPresentationTests {
     #expect(shell(["cmd": "pwd"]).shellCommand == "pwd")
     #expect(shell(["command": ["git", "status", "--short"]]).shellCommand == "git status --short")
     #expect(shell(["command": ["/bin/bash", "-lc", "rg -n foo"]]).shellCommand == "rg -n foo")
-    // Nothing to echo: no input, an empty command, or a non-shell call.
     #expect(shell(nil).shellCommand == nil)
     #expect(shell(["command": "  "]).shellCommand == nil)
     #expect(shell(["description": "Lists files"]).shellCommand == nil)
@@ -27,7 +26,6 @@ struct ShellCommandPresentationTests {
     #expect(ToolCall.unwrappingShellInvocation(#"bash -c 'echo '\''hi'\'''"#) == "echo 'hi'")
     #expect(ToolCall.unwrappingShellInvocation(#"sh -c 'it'"'"'s'"#) == "it's")
     #expect(ToolCall.unwrappingShellInvocation(#"/bin/bash -lc "echo \"\$HOME\" \\n""#) == #"echo "$HOME" \n"#)
-    // Anything that isn't exactly one quoted word stays as the harness wrote it.
     #expect(ToolCall.unwrappingShellInvocation("bash -lc 'a' && 'b'") == "bash -lc 'a' && 'b'")
     #expect(ToolCall.unwrappingShellInvocation(#"bash -c "a" "b""#) == #"bash -c "a" "b""#)
     #expect(ToolCall.unwrappingShellInvocation(#"bash -c "trailing\""#) == #"bash -c "trailing\""#)

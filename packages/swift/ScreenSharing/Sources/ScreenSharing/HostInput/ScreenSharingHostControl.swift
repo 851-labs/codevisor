@@ -1,8 +1,6 @@
 #if os(macOS)
   import Foundation
 
-  /// The session owns this controller and closes it before stopping media.
-  /// No input is accepted until the active peer explicitly acquires control.
   @MainActor
   public final class ScreenSharingHostControl {
     public private(set) var lease: UUID?
@@ -60,9 +58,7 @@
 
     public func revoke(_ reason: String) {
       guard let previous = lease else { return }
-      // Invalidate first: reentrant callbacks and queued packets cannot inject.
       lease = nil
-      // Release ordinary keys before modifiers; each source tracks only its own input.
       let modifierCodes: Set<UInt16> = [54, 55, 56, 58, 59, 60, 61, 62, 63]
       let keys = heldKeys.sorted { a, b in
         if modifierCodes.contains(a) != modifierCodes.contains(b) { return !modifierCodes.contains(a) }

@@ -43,8 +43,6 @@ export const harness = (id: string, path: string, version?: string): Harness => 
   readiness: { state: "ready", path, ...(version === undefined ? {} : { version }) }
 })
 
-/// The install methods decorateHarnesses resolves for a harness that is not
-/// installed on this machine.
 export const installMethodsFor = async (lifecycle: HarnessLifecycleManager, id: string) => {
   const [decorated] = await lifecycle.decorateHarnesses([
     { ...harness(id, ""), readiness: { state: "unavailable" } }
@@ -86,7 +84,6 @@ export const jsonResponse = (body: unknown, status = 200) => ({
   text: async () => (typeof body === "string" ? body : JSON.stringify(body))
 })
 
-/// A PATH directory with executable stubs, for install-method availability.
 export const makeBinDir = (names: ReadonlyArray<string>): string => {
   const dir = mkdtempSync(join(tmpdir(), "codevisor-bin-"))
   directories.push(dir)
@@ -113,7 +110,6 @@ export const fakeTerminal = () => {
   return { exits, outputs, terminal }
 }
 
-/// Manually-settled fake process so tests control exit timing.
 export const fakeSpawner = () => {
   const spawned = Promise.withResolvers<void>()
   const spawns: Array<{ command: string; env: NodeJS.ProcessEnv }> = []

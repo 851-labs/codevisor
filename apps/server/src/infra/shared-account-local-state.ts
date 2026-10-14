@@ -4,7 +4,6 @@ import { Effect } from "effect"
 
 const NAMESPACE = "local.shared-accounts"
 
-/** Machine-local sign-in state; credential grants and shared selection live in their own stores. */
 export class SharedAccountLocalState {
   private readonly capturingLogins = new Set<string>()
 

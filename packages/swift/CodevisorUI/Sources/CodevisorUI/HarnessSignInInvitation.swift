@@ -7,12 +7,9 @@ import SwiftUI
   import UIKit
 #endif
 
-/// A consistent entry point for an account or provider list with no credentials.
 public struct HarnessSignInInvitation<Action: View>: View {
   @Environment(\.theme) private var theme
   #if os(iOS)
-    /// iOS resolves the accent against the background to keep the tinted
-    /// call-to-action legible; macOS uses the native prominent style.
     @Environment(\.self) private var environment
   #endif
 
@@ -95,7 +92,6 @@ public struct HarnessSignInInvitation<Action: View>: View {
       let black = RGBA(r: 0, g: 0, b: 0)
       let minimumRatio = environment.colorSchemeContrast == .increased ? 7.0 : 4.5
 
-      // Preserve the theme's hue while keeping the white label legible.
       for step in 0...20 {
         let candidate = accent.mixed(with: black, weight: 1 - Double(step) / 20)
         if ColorMath.contrastRatio(candidate.relativeLuminance, 1) >= minimumRatio {

@@ -4,9 +4,6 @@ import { parseLocator } from "./browser-locator-parse.js"
 import { normalizeRef } from "./browser-snapshot.js"
 import type { AXNode } from "./browser-snapshot.js"
 
-/// Resolving a locator to the backend node ids it matches, across frames and
-/// shadow roots, with Playwright's strictness rules.
-
 const backendNodeIdsFromArrayObject = async (
   runtime: BrowserRuntime,
   page: PageHandle,
@@ -148,8 +145,6 @@ const filterBackendNodeIdsByRoots = async (
       "Runtime.callFunctionOn",
       {
         objectId: rootObjects[0],
-        // The AX response is breadth-first, not document order. Resolve containment and
-        // ordering together in the page so first()/nth() match the visible DOM order.
         functionDeclaration:
           "function(rootCount,...nodes){const roots=nodes.slice(0,rootCount);const contains=(root,node)=>{for(let current=node;current;current=current.getRootNode()?.host){if(current!==root&&root.contains(current))return true;}return false;};return nodes.slice(rootCount).filter(node=>roots.some(root=>contains(root,node))).sort((a,b)=>{const order=a.compareDocumentPosition(b);return order&1?0:order&2?1:order&4?-1:0;});}",
         arguments: [

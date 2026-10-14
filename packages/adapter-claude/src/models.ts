@@ -4,8 +4,6 @@ import type { SessionConfigOption, SessionModeState } from "@codevisor/api"
 
 import type { ClaudeModel, ClaudeSession } from "./session.js"
 
-// "Always Ask" (not the CLI's internal "default") mirrors the naming the
-// claude-agent-acp adapter ships; a bare "Default" tells the user nothing.
 const PERMISSION_MODES: SessionModeState = {
   currentModeId: "bypassPermissions",
   availableModes: [
@@ -58,9 +56,6 @@ export const metadataFor = (
   if (effortLevels.length > 0) {
     options.push({
       category: "thought_level",
-      // No synthetic "Default" entry: until the user picks a level the CLI
-      // runs at its own default ("high" on effort-capable models), so
-      // surface that as the selection.
       currentValue: effortLevels.includes(session.currentEffort)
         ? session.currentEffort
         : defaultEffortFor(effortLevels),
@@ -115,12 +110,6 @@ const knownClaudeModelFromProvider = <Model extends { readonly value: string }>(
   const exact = findKnownModel(models, value)
   if (exact !== undefined) return exact
 
-  // Claude's runtime events use concrete ids (`claude-opus-4-8`) while
-  // supportedModels can expose settable aliases (`opus[1m]`). Reconcile a
-  // concrete id by family; when the family offers several aliases they
-  // differ by context window, and the id's own `[1m]` suffix says which
-  // one applies. Anything still ambiguous stays unresolved rather than
-  // inventing information the value does not carry.
   const family = claudeModelFamily(value)
   if (family === undefined) return undefined
   const familyMatches = models.filter((model) => claudeModelFamily(model.value) === family)
@@ -134,18 +123,11 @@ const knownClaudeModelFromProvider = <Model extends { readonly value: string }>(
 
 const hasLongContextSuffix = (value: string): boolean => /\[1m\]$/i.test(sanitizeModelValue(value))
 
-/// The picker row a requested model maps to. Fable's concrete id changes
-/// between CLI releases (`claude-fable-5` → `claude-fable-5[1m]` →
-/// `claude-fable-5-1[1m]`), so a value remembered by an older release or a
-/// stale catalog still needs to land on the current row rather than being
-/// treated as some other model.
 export const resolveClaudeModel = <Model extends { readonly value: string }>(
   models: ReadonlyArray<Model>,
   value: string
 ): Model | undefined => knownClaudeModelFromProvider(models, sanitizeModelValue(value))
 
-/// The id to hand the CLI for a picker request. Unknown values are refused
-/// instead of being sent through and then reported back as another row.
 export const resolveRequestedClaudeModel = (session: ClaudeSession, value: string): string => {
   const sanitized = sanitizeModelValue(value)
   if (session.models.length === 0) return sanitized
@@ -156,10 +138,6 @@ export const resolveRequestedClaudeModel = (session: ClaudeSession, value: strin
   return matched.value
 }
 
-/// Applies a provider-reported model where it maps unambiguously to the
-/// picker and returns the best truthful value for notices. An unknown model
-/// leaves the picker unchanged but is returned raw so callers never relabel
-/// it as the previous model.
 export const applyClaudeModelFromProvider = (session: ClaudeSession, value: string): string => {
   const sanitized = sanitizeModelValue(value)
   if (session.models.length === 0) {
@@ -185,16 +163,9 @@ export const currentClaudeModelFor = (session: ClaudeSession): ClaudeModel | und
     session.currentModel = matched.value
     return matched
   }
-  // A model the picker cannot name stays as reported, and an unset model
-  // stays unset (reported as "", meaning unknown): until the CLI's init
-  // names its model, presenting some row of the list would be a guess, and
-  // a guess read back as the chat's selection is how picks got replaced.
   return undefined
 }
 
-/// Effort levels the CLI's flag settings accept. `max` is valid (verified
-/// against a live CLI) even though the SDK's `Settings` type lags its own
-/// `EffortLevel` union.
 export const SETTABLE_EFFORT_LEVELS: ReadonlySet<string> = new Set([
   "low",
   "medium",
@@ -207,14 +178,9 @@ export interface ClaudeStartSelections {
   readonly model?: string | undefined
   readonly effort?: string | undefined
   readonly speed?: string | undefined
-  /// Skills turned off for the model and the slash menu alike.
   readonly skillOverrides?: Settings["skillOverrides"]
 }
 
-/// Query options that start a CLI process on the chat's selections instead
-/// of the CLI's defaults. Effort and fast mode go through the flag-settings
-/// layer — the same layer live changes use (`applyFlagSettings`) — so a
-/// later live change replaces them rather than competing with a CLI flag.
 export const claudeStartOptions = (
   selections: ClaudeStartSelections
 ): Pick<ClaudeOptions, "model" | "settings"> => {
@@ -233,13 +199,9 @@ export const claudeStartOptions = (
   }
 }
 
-/// The CLI's default effort for effort-capable models is "high".
 const defaultEffortFor = (levels: ReadonlyArray<string>): string =>
   levels.includes("high") ? "high" : (levels[0] ?? "high")
 
-/// A saved model id from an older CLI release reconciles onto the current
-/// row's id (Fable's id drifts between releases). The process was started
-/// with the saved id, so hand it the id the picker now reports.
 export const alignStartModel = async (
   session: ClaudeSession,
   startModel: string | undefined
@@ -249,12 +211,6 @@ export const alignStartModel = async (
   await session.q.setModel(session.currentModel).catch(() => undefined)
 }
 
-/// Two separate emits, deliberately: the client's `session.updated` dispatch
-/// duck-types the payload and stops at the first arm that matches, so
-/// folding the notice and the option snapshot into one payload would drop
-/// whichever arm loses. The snapshot refreshes the picker (and the
-/// effort/speed lists, which derive from the model) to what is really
-/// running; it is a runtime report, never a change to the chat's saved pick.
 export const emitModelFallback = (
   session: ClaudeSession,
   originalModel: string,
@@ -279,9 +235,6 @@ export const emitModelFallback = (
 
 type SupportedModel = Awaited<ReturnType<ClaudeSession["q"]["supportedModels"]>>[number]
 
-/// Alias rows are named by family alone ("Opus"); the version they resolve
-/// to only appears as the description's lead ("Opus 5.5 · Best for…").
-/// Anything not shaped exactly like that keeps the CLI's own name.
 const versionedDisplayName = (model: SupportedModel): string => {
   const [, family = "", suffix = ""] = /^(\S+)(\s+\(.*\))?$/.exec(model.displayName) ?? []
   const lead = model.description.split(" · ")[0]?.trim() ?? ""
@@ -290,8 +243,6 @@ const versionedDisplayName = (model: SupportedModel): string => {
   return /^\d+(\.\d+)*$/.test(version) ? `${lead}${suffix}` : model.displayName
 }
 
-/// The CLI's "default" pseudo-model is an alias, not a model — the picker
-/// shows real models only.
 export const adoptModelList = (
   session: ClaudeSession,
   models: ReadonlyArray<SupportedModel>

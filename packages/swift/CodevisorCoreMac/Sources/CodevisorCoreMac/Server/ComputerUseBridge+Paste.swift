@@ -4,8 +4,6 @@ import Foundation
 
 private let computerUsePasteLock = NSLock()
 
-/// Restore only our temporary clipboard. A copy made by the user or another
-/// app while pasting must win over the saved contents.
 func computerUseShouldRestoreClipboard(writtenChangeCount: Int, currentChangeCount: Int) -> Bool {
   writtenChangeCount == currentChangeCount
 }
@@ -50,8 +48,6 @@ extension ComputerUseBridge {
     written = pasteboard.changeCount
     guard prepared else { throw BridgeError("Unable to prepare the clipboard for pasting") }
     try keyPress("super+v", pid: app.processIdentifier, global: true)
-    // Wait for the target to consume the paste before restoring the clipboard.
-    // A non-text target may not expose an acknowledgement; report uncertainty.
     var verified = false
     for _ in 0..<50 {
       try ComputerUseForeground.shared.check(pid: app.processIdentifier)

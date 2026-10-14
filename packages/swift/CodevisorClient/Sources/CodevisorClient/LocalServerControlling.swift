@@ -1,10 +1,6 @@
 import Foundation
 import Observation
 
-/// State of the app-managed local server. Lives in CodevisorCore (not
-/// CodevisorCoreMac) because shared, platform-neutral code — `MachineController`
-/// and status UI — renders it. Only macOS can *produce* most of these states;
-/// on iOS there is no local server and `AppEnvironment.localServer` is nil.
 public enum LocalCodevisorServerState: Equatable, Sendable {
   case idle
   case alreadyRunning
@@ -51,15 +47,10 @@ public struct LocalDataUpgradeProgress: Codable, Equatable, Sendable {
   }
 }
 
-/// Platform-owned lifecycle hooks. The macOS app supplies an SMAppService
-/// LaunchAgent; tests and development omit it and keep the direct child path.
 public struct LocalCodevisorManagedService {
   public var prepare: @MainActor () async throws -> Void
   public var start: @MainActor () async throws -> Void
   public var stop: @MainActor () async throws -> Void
-  /// Whether launchd currently has a live process for the job: true/false
-  /// when known, nil when it cannot be determined. Lets the health wait
-  /// tell "still booting" (keep waiting) from "exited" (fail now).
   public var isJobRunning: @MainActor () async -> Bool?
 
   public init(
@@ -75,31 +66,17 @@ public struct LocalCodevisorManagedService {
   }
 }
 
-/// The shared-facing surface of the app-managed local server. The concrete
-/// implementation (`LocalCodevisorServer`, spawning the bundled Node runtime)
-/// is macOS-only and lives in CodevisorCoreMac; shared code programs against
-/// this protocol so `CodevisorCore` builds on platforms with no local server.
 @MainActor
 public protocol LocalServerControlling: AnyObject, Observable {
   var state: LocalCodevisorServerState { get }
-  /// Sidecar progress remains available while the new server is performing
-  /// its blocking migration and therefore cannot answer HTTP yet.
   var dataUpgradeProgress: LocalDataUpgradeProgress? { get }
   var startupProgress: LocalServerStartupProgress? { get }
-  /// Invoked when the bundled server exits asking the app to take over the
-  /// update; see `LocalCodevisorServer.onUpdateRequested`.
   var onUpdateRequested: (@MainActor () -> Void)? { get set }
 
   func configureManagedService(_ service: LocalCodevisorManagedService)
   @discardableResult
   func ensureRunning() async -> LocalCodevisorServerState
-  /// Drains the server's live chats (reporting progress such as "Waiting for
-  /// 2 chats to finish…" through `onStatus`), then stops it. Returns true
-  /// when the server is stopped and ready for the app bundle to be replaced.
   func prepareForAppUpdate(onStatus: @escaping @MainActor (String) -> Void) async -> Bool
-  /// The app update was abandoned after `prepareForAppUpdate` began: release
-  /// the drain (so held prompts dispatch) and make sure the server is
-  /// running again.
   func abandonAppUpdate() async
   func shutdown() async -> Bool
 }

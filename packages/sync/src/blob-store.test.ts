@@ -32,7 +32,6 @@ describe("blob store", () => {
     store.remove(id)
     expect(store.has(id)).toBe(false)
     expect(existsSync(store.path(id))).toBe(false)
-    // Removing again is a no-op.
     store.remove(id)
   })
 

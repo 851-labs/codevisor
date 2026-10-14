@@ -1,7 +1,6 @@
 import Foundation
 
 public extension Autocomplete {
-  /// Decides whether a candidate string satisfies a query.
   struct Filter: Sendable {
     enum Strategy { case contains, startsWith, subsequence, custom }
     let id = UUID()
@@ -16,8 +15,6 @@ public extension Autocomplete {
       predicate(candidate, query)
     }
 
-    /// Case- and diacritic-insensitive containment — the behavior of Xcode's
-    /// searchable menus.
     public static let contains = preset(.contains) { candidate, query in
       query.isEmpty || candidate.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil
     }
@@ -26,8 +23,6 @@ public extension Autocomplete {
       query.isEmpty || candidate.range(of: query, options: [.caseInsensitive, .diacriticInsensitive, .anchored]) != nil
     }
 
-    /// Every query character appears in the candidate in order, not
-    /// necessarily adjacent — the behavior of command palettes.
     public static let subsequence = preset(.subsequence) { candidate, query in
       var remaining = normalized(query)[...]
       for character in normalized(candidate) {

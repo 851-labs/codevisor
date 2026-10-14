@@ -2,9 +2,6 @@
   import AppKit
   import SwiftUI
 
-  /// A native field editor keeps selection, IME and standard text shortcuts intact.
-  /// Its suggestions are a nonactivating child panel, so showing them never takes
-  /// keyboard focus away from the address field or resizes the window toolbar.
   public struct BrowserAddressEditor: NSViewRepresentable {
     @Binding var text: String
     @Binding var editing: Bool
@@ -68,9 +65,6 @@
 
       func focusAndSelectAll() {
         guard let field else { return }
-        // Calling selectText again on an active field ends and restarts editing,
-        // allowing SwiftUI's blur handler to replace the address and selection.
-        // Keep the existing field editor (and any unsubmitted text) instead.
         if let editor = field.currentEditor() as? NSTextView {
           editor.selectAll(nil)
         } else {
@@ -92,8 +86,6 @@
         previousInput = ""
       }
       public func controlTextDidEndEditing(_ notification: Notification) {
-        // A suggestion click is delivered before the field loses focus because
-        // the panel is nonactivating. Ordinary page clicks dismiss immediately.
         owner.editing = false
         owner.suggestions.dismiss()
         closePanel()

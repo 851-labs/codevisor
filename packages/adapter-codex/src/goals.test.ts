@@ -19,7 +19,6 @@ describe("CodexProvider", () => {
     const { client, created, events } = await setup()
     expect(created?.metadata.supportsGoals).toBe(true)
 
-    // Omitted budget key stays omitted on the wire (keep semantics).
     const goal = await run(created!.handle.setGoal!({ objective: "ship goal mode" }))
     let request = client.requests.findLast((entry) => entry.method === "thread/goal/set")
     expect(request?.params).toEqual({ objective: "ship goal mode", threadId: "thread-new" })
@@ -28,7 +27,6 @@ describe("CodexProvider", () => {
     expect(goal.createdAt).toBe(new Date(1_700_000_000 * 1000).toISOString())
     expect(events.at(-1)?.payload).toEqual({ goal })
 
-    // A number sets the budget; pause is just a status update.
     await run(created!.handle.setGoal!({ status: "paused", tokenBudget: 50_000 }))
     request = client.requests.findLast((entry) => entry.method === "thread/goal/set")
     expect(request?.params).toEqual({
@@ -37,7 +35,6 @@ describe("CodexProvider", () => {
       tokenBudget: 50_000
     })
 
-    // Explicit null clears the budget (double-option), keeping the objective.
     const cleared = await run(created!.handle.setGoal!({ tokenBudget: null }))
     request = client.requests.findLast((entry) => entry.method === "thread/goal/set")
     expect(request?.params).toEqual({ threadId: "thread-new", tokenBudget: null })
@@ -69,7 +66,6 @@ describe("CodexProvider", () => {
     vi.useFakeTimers({ toFake: ["Date"], now: 1_700_000_000_000 })
     try {
       const { client, events } = await setup()
-      // Out-of-band snapshot (turnId null — e.g. resume) always emits.
       client.emit("thread/goal/updated", {
         goal: goalSnapshot({}),
         threadId: "thread-new",
@@ -78,7 +74,6 @@ describe("CodexProvider", () => {
       expect(events.at(-1)?.payload).toMatchObject({ goal: { objective: "long haul" } })
       const countAfterSnapshot = events.length
 
-      // Accounting-only tick inside a turn within the rate window is held back.
       client.emit("thread/goal/updated", {
         goal: goalSnapshot({ tokensUsed: 200 }),
         threadId: "thread-new",
@@ -86,7 +81,6 @@ describe("CodexProvider", () => {
       })
       expect(events.length).toBe(countAfterSnapshot)
 
-      // A material change (status flip) bypasses the throttle.
       client.emit("thread/goal/updated", {
         goal: goalSnapshot({ status: "budgetLimited", tokensUsed: 10_000 }),
         threadId: "thread-new",
@@ -96,7 +90,6 @@ describe("CodexProvider", () => {
         goal: { status: "budgetLimited", tokensUsed: 10_000 }
       })
 
-      // Malformed goals are skipped, not thrown.
       client.emit("thread/goal/updated", {
         goal: goalSnapshot({ status: "later" }),
         threadId: "thread-new",
@@ -127,9 +120,7 @@ describe("CodexProvider", () => {
         tokensUsed: 50,
         updatedAt: 1_700_000_001
       }
-      // First in-turn update emits (it materially differs from "no goal")…
       client.emit("thread/goal/updated", { goal, threadId: "thread-new", turnId: "turn-1" })
-      // …then a same-shape accounting tick is held by the rate limit.
       client.emit("thread/goal/updated", {
         goal: { ...goal, tokensUsed: 999 },
         threadId: "thread-new",

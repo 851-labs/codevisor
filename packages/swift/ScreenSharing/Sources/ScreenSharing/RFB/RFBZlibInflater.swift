@@ -1,8 +1,6 @@
 import CZlib
 import Foundation
 
-/// One zlib stream that persists for the connection, as ZRLE requires: each
-/// rectangle's compressed bytes continue the same stream.
 final class RFBZlibInflater {
   private var stream = z_stream()
   private var open = false
@@ -16,7 +14,6 @@ final class RFBZlibInflater {
 
   deinit { if open { inflateEnd(&stream) } }
 
-  /// Consumes all of `input` and returns everything it produced.
   func inflate(_ input: [UInt8]) throws -> [UInt8] {
     var output: [UInt8] = []
     var scratch = [UInt8](repeating: 0, count: 1 << 16)
@@ -44,13 +41,10 @@ final class RFBZlibInflater {
   }
 }
 
-/// The server side, for the loopback server: sync-flushed so each rectangle
-/// is decodable on arrival while the stream stays open.
 package final class RFBZlibDeflater {
   private var stream = z_stream()
   private var open = false
 
-  /// `level`: zlib 0…9; the default suits ZRLE, Tight uses 1 as TigerVNC does for its default compression level.
   package init(level: Int32 = Z_DEFAULT_COMPRESSION) throws {
     guard deflateInit_(&stream, level, ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size)) == Z_OK
     else { throw RFBError.malformed("zlib initialisation failed") }

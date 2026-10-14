@@ -1,7 +1,6 @@
 import { attachTarget, type BrowserRuntime, type PageHandle } from "./browser-cdp-engine.js"
 import { locatorBackendNodeIds } from "./browser-locator-resolve.js"
 
-/** Chrome isolates cross-site frames in child debugger sessions. Never resolve their nodes in the parent. */
 export const routeBrowserFrame = async (
   runtime: BrowserRuntime,
   original: PageHandle,
@@ -25,7 +24,6 @@ export const routeBrowserFrame = async (
     }
     if (!node.frameId) throw new Error("The frame document is not available")
     const sessionId = await attachTarget(runtime, node.frameId, page.sessionId)
-    // Only the session changes as frames nest; every other field stays the original page's.
     page = { ...original, sessionId }
     frame = []
   }

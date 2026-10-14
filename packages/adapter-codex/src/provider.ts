@@ -14,9 +14,6 @@ import {
   type ProviderEnvironment,
   type ToolGatewayConfig
 } from "@codevisor/agent-runtime"
-/// Assembly surface for the Codex provider: the modules below were split out
-/// of the original monolithic provider.ts; everything previously public is
-/// re-exported here so index.ts and all consumers stay unchanged.
 import { isoTimestamp } from "@codevisor/api"
 import { Effect } from "effect"
 
@@ -33,14 +30,9 @@ import { codexUsageLimitsFrom } from "./usage.js"
 import { isCodexVersionNewer, readCodexVersion } from "./version.js"
 
 export interface CodexProviderConfig {
-  /// Injectable for tests: scripted app-server sessions instead of a spawned
-  /// codex binary.
   readonly connector?: CodexConnector
   readonly scanAgentSessions?: () => Promise<ReadonlyArray<AgentSessionSummary>>
-  /// Injectable for tests: reads a resolved Codex binary's version.
   readonly versionReader?: (command: string, env: NodeJS.ProcessEnv) => string | undefined
-  /// Injectable for tests: reads the codex home's `config.toml` text, or
-  /// `undefined` when the file is missing or unreadable.
   readonly configFileReader?: (path: string) => string | undefined
 }
 
@@ -58,9 +50,6 @@ export const makeCodexProvider = (
   const versionReader = config.versionReader ?? readCodexVersion
   const readConfigFile = config.configFileReader ?? defaultConfigFileReader
 
-  // PATH first, then fallbackPaths. When both the user CLI and Codex.app
-  // bundle are present, compare resolved binary versions and run the newer
-  // app-server so Codevisor sees the newest Codex model catalog.
   const locateCodex = (definition: HarnessDefinition): string => {
     const locatedCandidates: Array<{ command: string; version: string | undefined }> = []
     const seen = new Set<string>()
@@ -111,18 +100,14 @@ export const makeCodexProvider = (
           ? {}
           : {
               CODEVISOR_MCP_GATEWAY_TOKEN: toolGateway.bearerToken,
-              // Resumed pre-rename threads may still reference this env key.
               HERDMAN_MCP_GATEWAY_TOKEN: toolGateway.bearerToken
             })
       }
     })
     await client.request("initialize", {
-      // experimentalApi unlocks turn/start.collaborationMode (Plan mode) and
-      // item/tool/requestUserInput.
       capabilities: { experimentalApi: true },
       clientInfo: { name: "Codevisor", title: "Codevisor", version: "0.1.0" }
     })
-    // The server rejects all other requests until this lands.
     client.notify("initialized")
     if (account?.oauth) {
       try {
@@ -145,9 +130,6 @@ export const makeCodexProvider = (
     const remaining = new Set(sessions.map((session) => session.sessionId))
     const titles: HarnessSessionTitle[] = []
     try {
-      // Archived threads live behind a separate filter upstream. Scan both
-      // buckets, newest activity first, and stop as soon as every JSONL
-      // fallback session has been matched.
       for (const archived of [false, true]) {
         let cursor: string | undefined
         for (let page = 0; page < 50 && remaining.size > 0; page += 1) {
@@ -230,8 +212,6 @@ export const makeCodexProvider = (
           sessionId: session.key
         }
       }),
-    // Native sessions from ~/.codex/sessions rollouts — workspace
-    // suggestions and "import existing chats" for pre-Codevisor codex users.
     listAgentSessions: async (definition, account, options) => {
       const fallback = await scanAgentSessions()
       if (options?.titles === false) return fallback

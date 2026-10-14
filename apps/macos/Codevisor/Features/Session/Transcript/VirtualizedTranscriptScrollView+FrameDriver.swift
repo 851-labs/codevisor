@@ -6,19 +6,10 @@ import StreamMarkdown
 import SwiftUI
 import TranscriptKit
 
-// MARK: - FrameDriver
-
 extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
-  /// Starts a new SwiftUI ownership lifetime without discarding the native
-  /// presentation. Version counters are local to each SwiftUI tree, so make
-  /// their first complete projection authoritative even if its number happens
-  /// to equal the previous owner's last counter.
   func prepareForPresentationAttachment() {
     if initialPresentationGate.isReady {
       persistViewport()
-      // Retain the hosts, but restore the saved row/offset once this owner's
-      // projection is ready. AppKit may have clamped or reset the detached
-      // clip view, and messages may have arrived while the chat was hidden.
       if let state = lastStableScrollState {
         pendingInitialState = state
         initialPositionApplied = false
@@ -102,9 +93,6 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
     let hadRequestedMounts = mountedRowsUpdateRequested
     uninstallPresentationFrameDriver()
     installPresentationFrameDriver()
-    // Changing screens replaces the callback source, not its queued work.
-    // With no measurement or model event pending, the replacement would
-    // otherwise stay paused and strand the virtual window until a scroll.
     if hadRequestedModelPresentation { requestModelPresentationFrame() }
     if hadRequestedMounts { requestMountedRowsUpdate() }
     if hadRequestedFrame { requestDisplayFrame() }
@@ -155,8 +143,6 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
   func deferMountedRowsUpdateUntilLayoutCompletes(
     rangeOverride: Range<Int>? = nil
   ) {
-    // A display-link callback cannot run inside the current AppKit layout
-    // stack, so it is the cheapest coalescing boundary when available.
     if rangeOverride == nil, presentationDisplayLink != nil, !inLiveResize {
       mountedRowsUpdateRequested = true
       requestDisplayFrame()
@@ -211,8 +197,6 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
   }
 
   func finishPresentationFrame() {
-    // Host readiness can change without a height change. Its notification
-    // requests this frame after the host's AppKit layout stack unwinds.
     updateInitialPresentationReadiness()
     sendTransitions.advance()
     if !isLiveScrolling, !isHandlingUserInput {

@@ -71,8 +71,6 @@ struct LineDiffTests {
 
   @Test("Dedent uses the shallowest line of either side as the floor")
   func dedentShallowestFloor() {
-    // Old is deeper than new everywhere; only new's shallowest indent
-    // may be stripped, or the sides would fall out of column alignment.
     let (old, new) = LineDiff.dedent(old: "        deep\n", new: "    shallow\n        deep\n")
     #expect(old == "    deep\n")
     #expect(new == "shallow\n    deep\n")

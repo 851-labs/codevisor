@@ -1,11 +1,3 @@
-/// The slice of agy's headless stream-json protocol this adapter speaks
-/// (`agy --input-format=stream-json --output-format=stream-json`): one user
-/// line in, `init` once, then `step_update`s and a `result` per turn. Shapes
-/// follow Google's headless docs for Antigravity CLI 1.3.x; every value agy
-/// produces is open, so unknown step types and states pass through.
-
-/// The oldest agy whose headless mode takes `--effort` and waits on a turn
-/// with no print timeout by default.
 export const MINIMUM_AGY_VERSION = "1.3.0"
 
 export interface AgyUsage {
@@ -32,10 +24,7 @@ export interface AgySubagent {
 export interface AgyStep {
   readonly conversation_id?: string
   readonly step_index: number
-  /// `ACTIVE`, `DONE` or `ERROR`; a step is re-sent as it settles.
   readonly state: string
-  /// `user_input`, `agent_response`, `tool` (older builds: `tool_call`),
-  /// `checkpoint`, …
   readonly step_type: string
   readonly tool_name?: string
   readonly text_delta?: string
@@ -46,11 +35,9 @@ export interface AgyStep {
 
 export interface AgyResult {
   readonly conversation_id: string
-  /// `SUCCESS`, `ERROR`, `CANCELED`, `INTERRUPTED`, …
   readonly status: string
   readonly response?: string
   readonly error?: string
-  /// Session totals, not the turn's.
   readonly usage?: AgyUsage
   readonly denied_actions?: ReadonlyArray<{
     readonly action?: string
@@ -69,8 +56,6 @@ export const text = (value: unknown): string | undefined =>
 export const finite = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isFinite(value) ? value : undefined
 
-/// agy's tool parameters are PascalCase (`TargetFile`); a few builds and
-/// tools use camelCase. The first present spelling wins.
 export const param = (parameters: Record<string, unknown>, ...names: Array<string>): unknown => {
   for (const name of names) {
     if (parameters[name] !== undefined) return parameters[name]
@@ -93,8 +78,6 @@ export const versionAtLeast = (version: string, minimum: string): boolean => {
   return true
 }
 
-/// What agy says when nobody is signed in (`authentication failed or timed
-/// out`, `Please sign in to view available models`, …).
 export const signedOut = (message: string): boolean =>
   /authenticat|sign in|not logged in|log in/i.test(message)
 

@@ -17,8 +17,6 @@ export type GitReviewFailureCode =
   | "unknown_base"
   | "no_turn_snapshot"
 
-/// A review that cannot be produced for a reason the user can act on. The
-/// server maps each code onto an HTTP status; anything else is a real fault.
 export class GitReviewError extends Error {
   constructor(
     readonly code: GitReviewFailureCode,
@@ -30,10 +28,6 @@ export class GitReviewError extends Error {
   }
 }
 
-/// Where the working tree is recorded when an agent turn starts, so "last
-/// turn" can show exactly what the turn changed. `refs/worktree/` is private
-/// to each checkout, so linked worktrees of one repository never overwrite
-/// each other's snapshot.
 export const turnStartRef = "refs/worktree/codevisor/turn-start"
 
 const assertWorkTree = async (dir: string): Promise<void> => {
@@ -42,10 +36,6 @@ const assertWorkTree = async (dir: string): Promise<void> => {
   }
 }
 
-/// Starts from the real index so paths the user force-added stay tracked and
-/// unchanged files keep their stat data (only edited files get re-hashed). A
-/// repository with nothing staged yet has no index file; an empty scratch
-/// index is the same thing.
 const seedFromRealIndex = (
   dir: string,
   scratch: ScratchIndex,
@@ -61,14 +51,9 @@ const captureWorkingTree = async (
   return writeWorkingTree(dir, scratch)
 }
 
-/// The working tree as git would commit it after `git add -A`: tracked edits
-/// and deletions plus untracked, non-ignored files. Built in a scratch index,
-/// so the user's staging is untouched.
 const worktreeTree = (dir: string, env: NodeJS.ProcessEnv | undefined): Promise<string> =>
   withScratchIndex(env, (scratch) => captureWorkingTree(dir, scratch, env))
 
-/// The staged tree. `write-tree` runs on a copy because it caches trees back
-/// into the index it reads, and the real one is the user's.
 const indexTree = (dir: string, env: NodeJS.ProcessEnv | undefined): Promise<string> =>
   withScratchIndex(env, async (scratch) => {
     await seedFromRealIndex(dir, scratch, env)
@@ -81,8 +66,7 @@ const indexTree = (dir: string, env: NodeJS.ProcessEnv | undefined): Promise<str
         heavyGit
       )
     } catch (cause) {
-      /* v8 ignore next -- an index git can read but not write out as a tree
-         is otherwise only a damaged object store. */
+      /* v8 ignore next */
       if (!(cause instanceof GitError && cause.message.includes("unmerged"))) throw cause
       throw new GitReviewError(
         "unmerged_index",
@@ -92,8 +76,6 @@ const indexTree = (dir: string, env: NodeJS.ProcessEnv | undefined): Promise<str
     }
   })
 
-/// HEAD's tree, or git's empty tree before the first commit so a new
-/// repository reviews as "everything added".
 const headTree = async (dir: string, env: NodeJS.ProcessEnv | undefined): Promise<string> => {
   try {
     return await runGit("head-tree", ["rev-parse", "--verify", "--quiet", "HEAD^{tree}"], dir, env)
@@ -102,9 +84,6 @@ const headTree = async (dir: string, env: NodeJS.ProcessEnv | undefined): Promis
   }
 }
 
-/// The conventional default branch that exists here, by its short name. A
-/// symbolic `origin/HEAD` reports the branch it points at (`origin/main`),
-/// which is what a base picker should show.
 const defaultBase = async (
   dir: string,
   env: NodeJS.ProcessEnv | undefined
@@ -113,9 +92,7 @@ const defaultBase = async (
     try {
       await runGit("base-ref", ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], dir, env)
       return await runGit("base-name", ["rev-parse", "--abbrev-ref", ref], dir, env)
-    } catch {
-      // Try the next conventional default-branch ref.
-    }
+    } catch {}
   }
   return null
 }
@@ -133,7 +110,6 @@ const branchBase = async (
       "Codevisor couldn't find a default branch to compare against."
     )
   }
-  // A leading dash would reach git as an option, not a ref.
   const mergeBase = base.startsWith("-")
     ? undefined
     : await runGit("merge-base", ["merge-base", "HEAD", `${base}^{commit}`], dir, env).catch(
@@ -169,8 +145,6 @@ interface ComparedTrees {
   readonly base?: string
 }
 
-/// The old side is resolved first: it is where a review fails for a reason
-/// the user can fix, and the working-tree capture is the expensive half.
 const comparedTrees = async (
   dir: string,
   mode: GitDiffMode,
@@ -201,17 +175,12 @@ const comparedTrees = async (
   }
 }
 
-/// Compares two trees of the repository containing `dir` (see `GitDiffMode`).
-/// Never modifies the user's index or refs.
 export const gitDiff = async (
   dir: string,
   mode: GitDiffMode,
   options: {
     readonly base?: string
     readonly env?: NodeJS.ProcessEnv
-    /// The `revision` of a diff the caller already has. When the compared
-    /// trees still match it, blob reading is skipped and no files are sent:
-    /// the Review pane polls, and an unchanged folder must stay cheap.
     readonly knownRevision?: string
   } = {}
 ): Promise<GitDiff> => {
@@ -228,8 +197,6 @@ export const gitDiff = async (
   return { ...header, files, truncated }
 }
 
-/// Branches a review can compare against, from local refs only: a picker must
-/// open instantly and offline, so nothing is fetched.
 export const gitRefs = async (dir: string, env?: NodeJS.ProcessEnv): Promise<GitRefs> => {
   await assertWorkTree(dir)
   const currentBranch = await runGit(
@@ -238,8 +205,6 @@ export const gitRefs = async (dir: string, env?: NodeJS.ProcessEnv): Promise<Git
     dir,
     env
   ).catch(() => null)
-  // for-each-ref sorts by full name, which puts refs/heads before
-  // refs/remotes and each group in order.
   const output = await runGit(
     "list-refs",
     ["for-each-ref", "--format=%(refname)%00%(symref)", "refs/heads/", "refs/remotes/"],
@@ -251,7 +216,6 @@ export const gitRefs = async (dir: string, env?: NodeJS.ProcessEnv): Promise<Git
     .filter((line) => line.length > 0)
     .flatMap((line): ReadonlyArray<GitRefBranch> => {
       const [ref, symbolicTarget] = line.split("\0") as [string, string]
-      // `origin/HEAD` names another branch rather than being one.
       if (symbolicTarget.length > 0) return []
       const remote = ref.startsWith("refs/remotes/")
       return [{ name: ref.slice(remote ? "refs/remotes/".length : "refs/heads/".length), remote }]
@@ -259,13 +223,6 @@ export const gitRefs = async (dir: string, env?: NodeJS.ProcessEnv): Promise<Git
   return { currentBranch, defaultBase: await defaultBase(dir, env), branches }
 }
 
-/// Records the working tree as the start of an agent turn for `lastTurn`
-/// reviews. A no-op (false) outside a git work tree. The commit's parent is
-/// HEAD when there is one, which keeps its objects cheap deltas and reachable.
-///
-/// The ref is written only if `signal` has not aborted by then: a caller that
-/// gave up waiting has already let the agent start editing, and a snapshot
-/// finishing late would capture some of the turn's own changes.
 export const recordTurnStartSnapshot = async (
   dir: string,
   options: { readonly env?: NodeJS.ProcessEnv; readonly signal?: AbortSignal } = {}

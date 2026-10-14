@@ -8,9 +8,6 @@ import ScreenSharingTesting
 import Testing
 @testable import CodevisorCoreMac
 
-/// The VNC backend against the loopback server with the real client:
-/// discovery, the ready signal, replacement after a lost socket, and the
-/// terminal messages.
 @MainActor
 struct VNCScreenSharingViewerBackendTests {
   @MainActor
@@ -64,7 +61,6 @@ struct VNCScreenSharingViewerBackendTests {
     await #expect(throws: RFBError.authenticationFailed("Authentication failed")) { try await wrong.backend.discover() }
   }
 
-  /// 851-2353: discovery's handshake is the connection; a connect after it signs in once, not twice.
   @Test func discoveryThenConnectOpensOneConnection() async throws {
     let harness = try await Harness()
     defer { harness.stop() }
@@ -76,14 +72,12 @@ struct VNCScreenSharingViewerBackendTests {
     await awaitObserved { harness.log.events.count >= 2 }
     expectNoDifference(harness.log.events, [.opened(harness.log.endpoints[0]), .ready])
     #expect(harness.server.connectionCount == 1)
-    // A second discovery replaces the kept connection instead of adding to it.
     await harness.cancelConsumers()
     _ = try await harness.backend.discover()
     _ = try await harness.backend.discover()
     #expect(harness.server.connectionCount == 3)
   }
 
-  /// A kept connection the server closed before any video is replaced by a fresh one, not an error.
   @Test func aStaleDiscoveryConnectionIsReplaced() async throws {
     let harness = try await Harness()
     defer { harness.stop() }
@@ -100,7 +94,6 @@ struct VNCScreenSharingViewerBackendTests {
     await harness.cancelConsumers()
   }
 
-  /// 851-2368: the Dynamic Resolution button is usable only where the desktop can follow the pane.
   @Test func resolutionAvailabilityFollowsWhatTheServerSupports() async throws {
     var resizable = RFBLoopbackServer.Configuration()
     resizable.desktopResize = .accept
@@ -113,7 +106,6 @@ struct VNCScreenSharingViewerBackendTests {
       #expect(endpoint.supportsDynamicResolution)
       await awaitObserved { endpoint.resolutionAvailability.available != nil }
       #expect(endpoint.resolutionAvailability.available == expected)
-      // A server that can change the desktop's UI scale makes it usable either way (851-2339).
       endpoint.desktopCanScale = true
       #expect(endpoint.resolutionAvailability.available == true)
       await harness.cancelConsumers()
@@ -129,7 +121,6 @@ struct VNCScreenSharingViewerBackendTests {
     let first = harness.log.endpoints[0]
     expectNoDifference(harness.log.events, [.opened(first)])
     #expect(first.supportsControl && first.supportsClipboard)
-    // A VNC video needn't contain the host's pointer: the local arrow may stand in (851-2355).
     #expect(harness.surfaces[0].videoShowsPointer == false)
     harness.surfaces[0].present()
     await awaitObserved { harness.log.events.count >= 2 }
@@ -164,8 +155,6 @@ struct VNCScreenSharingViewerBackendTests {
   }
 
   @Test func aRefusedConnectionEndsWithAReadableMessage() async throws {
-    // A privileged port nothing listens on: a stopped loopback server's ephemeral port could be
-    // reused by another test's server while this one connects.
     let backend = ScreenSharingViewerBackend.vnc(
       displayId: "vnc:127.0.0.1:1",
       open: { try await VNCConnection.open(host: "127.0.0.1", port: 1, password: nil) },

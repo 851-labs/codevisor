@@ -100,7 +100,6 @@ struct RigConfigurationTests {
 }
 
 extension RigConfigurationTests {
-  /// 851-2480: the rig asks for HDR only when told to, as the app does by default.
   @Test func hdrIsOffUnlessTurnedOn() throws {
     let viewer = ["role": "viewer", "peer": "h", "token": Self.token] as [String: Any]
     #expect(try RigConfiguration.parse(Self.json(viewer)).highDynamicRange == false)

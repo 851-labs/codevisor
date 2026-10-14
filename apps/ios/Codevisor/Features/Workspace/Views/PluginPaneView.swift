@@ -2,28 +2,18 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// The iOS plugin pane body: the shared WebPaneView once loading, with a
-/// native error card (Retry) for token or navigation failures — never a
-/// blank webview. State lives in the cached PluginPaneModel, so remounts
-/// (tab switches, grid round-trips) re-attach the same webview without
-/// reloading.
 struct PluginPaneView: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.theme) private var theme
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.scenePhase) private var scenePhase
   let model: PluginPaneModel
-  /// `codevisor.setTitle`: rename the pane's tab (persisted + published).
   let onRename: (String) -> Void
 
   private var themeTokens: WebPaneThemeTokens {
     WebPaneThemeTokens(palette: theme.palette, isDark: colorScheme == .dark)
   }
 
-  /// The plugin's reload token: `plugin.updated` (restart, re-import,
-  /// re-link) bumps it, and the pane re-runs its full token→load flow —
-  /// a fresh pane token and URL, not a bare webView.reload(), so relay
-  /// origins re-resolve too.
   private var updateRevision: UInt64 {
     environment.pluginUpdateRevision(forServer: model.serverId, pluginId: model.pluginId)
   }
@@ -58,7 +48,6 @@ struct PluginPaneView: View {
       if phase == .active { model.retry(theme: tokens, updateRevision: revision) }
     }
     .onChange(of: revision) { _, moved in
-      // Failed panes retry through the same path automatically.
       model.loadIfNeeded(theme: tokens, updateRevision: moved)
     }
     .task(id: environment.machines.httpConnectionState(forMachineId: model.serverId)) {

@@ -4,11 +4,8 @@ import { recommendProjectsFromSessions } from "../project-recommendations.js"
 import { run, type CodevisorServerServices } from "../server-context.js"
 import { discoverHarnesses } from "./harnesses.js"
 
-/// The most recommendations any request may ask for; the cache holds this
-/// many and each request takes its own prefix.
 const maxLimit = 50
 
-/// A cached answer younger than this is served without a rescan.
 const freshForMs = 15_000
 
 const caches = new WeakMap<
@@ -26,14 +23,10 @@ const scan = async (
       .map(async (harness) => {
         try {
           const account = await services.auth?.activeAccountContext(harness.id)
-          // Suggestions need only each session's cwd and activity time, so
-          // skip the harness title lookups.
           return await run(
             services.agents.listAgentSessions(harness.id, account, { titles: false })
           )
         } catch {
-          // One unavailable/corrupt harness store must not hide useful
-          // recommendations from every other installed harness.
           return []
         }
       })
@@ -41,9 +34,6 @@ const scan = async (
   return recommendProjectsFromSessions(sessionGroups.flat(), { limit: maxLimit })
 }
 
-/// Stale-while-revalidate: the add-project sheet opens often and the scan
-/// walks every harness store, so a cached answer is returned immediately
-/// and refreshed in the background once it is no longer fresh.
 export const makeStaleWhileRevalidate = <T>(
   load: () => Promise<ReadonlyArray<T>>,
   now: () => number = Date.now
@@ -65,11 +55,8 @@ export const makeStaleWhileRevalidate = <T>(
   }
   return () => {
     const isStale = now() - loadedAt > freshForMs
-    // An empty answer (often from before harness detection settled) is
-    // cheap to recompute and useless to serve, so it is never served stale.
     if (value === undefined || (isStale && value.length === 0)) return refresh()
     if (isStale) {
-      // A failed background refresh leaves the last good answer in place.
       refresh().catch(() => undefined)
     }
     return Promise.resolve(value)

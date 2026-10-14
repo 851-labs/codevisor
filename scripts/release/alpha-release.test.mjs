@@ -125,7 +125,6 @@ test("a published Alpha still owes a TestFlight upload until its marker is attac
     pendingPublication({ ...release, assets: [...assets, { name: TESTFLIGHT_ASSET }] }, identity),
     { macos: false, ios: false }
   )
-  // An incomplete release is republished, which drops its marker.
   assert.deepEqual(
     pendingPublication({ ...release, assets: [{ name: TESTFLIGHT_ASSET }] }, identity),
     { macos: true, ios: true }

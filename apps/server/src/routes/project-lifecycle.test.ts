@@ -12,9 +12,6 @@ import { jsonRequest, makeServices, run, runningServers, start, tempDirs } from 
 
 describe("project lifecycle routes", () => {
   it("archives workspaces independently, leaving chats and bystanders alone", async () => {
-    // The workspace is the only thing that carries archive state, so there is
-    // no cascade to get wrong: archiving one workspace must not touch another,
-    // and a chat has no archive flag of its own to fall out of step with.
     const { server } = await start()
     const folder = mkdtempSync(join(tmpdir(), "codevisor-archive-"))
     tempDirs.push(folder)
@@ -77,7 +74,6 @@ describe("project lifecycle routes", () => {
       method: "PATCH"
     })
     expect(await archivedStateOf(workspace.id)).toBe(true)
-    // The tab survives the archive so restoring reopens exactly what was open.
     expect(await paneCount(workspace.id)).toBe(1)
     expect(await archivedStateOf("bystander-workspace")).toBe(false)
 
@@ -88,7 +84,6 @@ describe("project lifecycle routes", () => {
     expect(await archivedStateOf(workspace.id)).toBe(false)
     expect(await paneCount(workspace.id)).toBe(1)
 
-    // A PATCH that says nothing about archiving leaves the bit alone.
     const renamed = await jsonRequest(server, `/v1/workspaces/${workspace.id}`, {
       body: JSON.stringify({ name: "renamed" }),
       method: "PATCH"
@@ -98,8 +93,6 @@ describe("project lifecycle routes", () => {
   })
 
   it("archives a workspace with no worktree without touching the filesystem", async () => {
-    // Non-git projects never get a worktree, so archiving is a pure flag flip
-    // — the snapshot machinery must not engage at all.
     const { server } = await start()
     const folder = mkdtempSync(join(tmpdir(), "codevisor-plain-archive-"))
     tempDirs.push(folder)
@@ -131,7 +124,6 @@ describe("project lifecycle routes", () => {
     })
     expect(archived.body).toMatchObject({ isArchived: true })
 
-    // Restoring finds no snapshot record and still succeeds.
     const restored = await jsonRequest(server, "/v1/workspaces/plain-workspace", {
       body: JSON.stringify({ isArchived: false }),
       method: "PATCH"
@@ -273,7 +265,6 @@ describe("project lifecycle routes", () => {
       expect(match).not.toBeNull()
       expect(foodWorktreeNames).toContain(match?.[1])
 
-      // Scratch workspace folders draw from the same development pool.
       const scratch = await jsonRequest(server, "/v1/projects/scratch", {
         body: JSON.stringify({}),
         method: "POST"

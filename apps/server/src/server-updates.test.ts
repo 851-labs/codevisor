@@ -20,7 +20,6 @@ describe("@codevisor/server self-updates", () => {
   it("reports and applies updates through the configured updater", async () => {
     const { services } = await makeServices("server-updates")
 
-    // Servers without an updater refuse remote update requests.
     const plain = await run(
       startCodevisorServer(
         services,
@@ -30,7 +29,6 @@ describe("@codevisor/server self-updates", () => {
     runningServers.push(plain)
     expect((await jsonRequest(plain, "/v1/update/apply", { method: "POST" })).status).toBe(409)
 
-    // Servers with an updater report fresh update state and apply on request.
     const updaterState = observableFixture({
       available: true,
       applyCalls: 0,
@@ -83,19 +81,15 @@ describe("@codevisor/server self-updates", () => {
       channel: "stable",
       latestVersion: "0.2.0",
       updateAvailable: true,
-      // Build numbers pass through untouched: clients rely on them to
-      // confirm an update landed when version strings differ across feeds.
       currentBuildNumber: 100,
       latestBuildNumber: 200
     })
-    // A plain check may serve the updater's cache; refresh=1 must not.
     expect(updaterState.forcedChecks).toBe(0)
     expect((await jsonRequest(updatable, "/v1/update?refresh=1")).body).toMatchObject({
       latestVersion: "0.2.0",
       updateAvailable: true
     })
     expect(updaterState.forcedChecks).toBe(1)
-    // The client forwards its alpha preference; unknown channels are stable.
     expect((await jsonRequest(updatable, "/v1/update?channel=alpha")).body).toMatchObject({
       channel: "alpha"
     })
@@ -111,19 +105,15 @@ describe("@codevisor/server self-updates", () => {
       targetVersion: "0.2.0",
       targetBuildNumber: 200
     })
-    // Applying always re-checks with force so the restart decision is live,
-    // and installs from the same channel it checked.
     expect(updaterState.forcedChecks).toBe(2)
     await waitFor(() => updaterState.applyCalls === 1)
     expect(updaterState.checkedChannels.at(-1)).toBe("alpha")
     expect(updaterState.appliedChannels).toEqual(["alpha"])
 
-    // A failing apply is swallowed after the 202 acknowledgement.
     updaterState.applyFails = true
     expect((await jsonRequest(updatable, "/v1/update/apply", { method: "POST" })).status).toBe(202)
     await waitFor(() => updaterState.applyCalls === 2)
 
-    // Nothing to apply when already up to date.
     updaterState.available = false
     const upToDate = await jsonRequest(updatable, "/v1/update/apply", { method: "POST" })
     expect(upToDate.status).toBe(200)
@@ -145,7 +135,6 @@ describe("@codevisor/server self-updates", () => {
             apply: async () => undefined,
             check: async () => ({
               channel: "stable",
-              // Varies every check; the change fingerprint must ignore it.
               checkedAt: new Date().toISOString(),
               currentVersion: "0.1.0",
               latestVersion: state.available ? "0.2.0" : "0.1.0",
@@ -159,9 +148,7 @@ describe("@codevisor/server self-updates", () => {
     runningServers.push(server)
 
     await jsonRequest(server, "/v1/update?refresh=1")
-    // An identical outcome stays silent…
     await jsonRequest(server, "/v1/update?refresh=1")
-    // …while a changed one publishes again.
     state.available = false
     await jsonRequest(server, "/v1/update?refresh=1")
 
@@ -216,7 +203,6 @@ describe("@codevisor/server self-updates", () => {
       })
     ).body as { readonly id: string }
 
-    // The prompt remains active until explicitly released.
     await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
       body: JSON.stringify({ text: "slow prompt" }),
       method: "POST"
@@ -229,7 +215,6 @@ describe("@codevisor/server self-updates", () => {
     expect(busy.status).toBe(200)
     expect(busy.body).toMatchObject({ accepted: false, reason: "busy" })
 
-    // Once the turn finishes the update goes through again.
     agents.releasePrompt()
     await waitFor(async () => {
       const applied = await jsonRequest(server, "/v1/update/apply", { method: "POST" })

@@ -1,14 +1,4 @@
 #!/bin/sh
-# The one place iroh-relay's config is written (docs/plans/codevisor-tunnel.md).
-# Production (entrypoint.sh on Fly), CI smoke tests and `bun run dev`
-# (scripts/dev-net.mjs) all run it; only the environment differs.
-#
-# Required: RELAY_HOSTNAME, RELAY_CERT_PATH, RELAY_KEY_PATH,
-#           RELAY_AUTHORIZE_URL, RELAY_AUTHORIZE_TOKEN
-# Optional: RELAY_HTTP_BIND_ADDR, RELAY_HTTPS_BIND_ADDR, RELAY_QUIC_BIND_ADDR,
-#           RELAY_METRICS_BIND_ADDR
-#
-# Keys checked against the pinned iroh-relay (v1.2.0 iroh-relay/src/main.rs).
 set -eu
 cat <<TOML
 enable_relay = true

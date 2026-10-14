@@ -175,8 +175,6 @@ export const prepareBrowserExtension = (
   if (source === undefined) throw new Error("The Codevisor Chrome extension is missing")
   const extension = join(dataDir, "browser", "extension")
   mkdirSync(dirname(extension), { recursive: true, mode: 0o700 })
-  // Build the whole extension beside the live one, then swap it in, so a
-  // failed copy never leaves a half-written extension behind.
   const staged = `${extension}.next-${process.pid}-${(stagedExtensions += 1)}`
   copyDirectory(source, staged)
   applyExtensionBranding(staged, branding)
@@ -194,8 +192,6 @@ export const prepareBrowserExtension = (
 
 let stagedExtensions = 0
 
-/// File-by-file copy. `cpSync` fails with EACCES on some shared filesystems
-/// (the dev containers' virtiofs mounts) and leaves unreadable partial files.
 const copyDirectory = (source: string, target: string): void => {
   mkdirSync(target, { recursive: true })
   for (const entry of readdirSync(source, { withFileTypes: true })) {
@@ -206,10 +202,6 @@ const copyDirectory = (source: string, target: string): void => {
   }
 }
 
-/// Moves the old directory aside before renaming the new one in: a rename
-/// works even when the old one holds entries that can't be deleted, so a
-/// damaged copy from an earlier run can never wedge setup. Leftovers from
-/// this and earlier swaps are removed best-effort.
 const replaceDirectory = (staged: string, target: string): void => {
   const stale = `${target}.stale-${process.pid}-${stagedExtensions}`
   if (existsSync(target)) renameSync(target, stale)
@@ -219,9 +211,7 @@ const replaceDirectory = (staged: string, target: string): void => {
     if (!entry.startsWith(`${basename(target)}.stale-`)) continue
     try {
       rmSync(join(parent, entry), { force: true, recursive: true })
-    } catch {
-      // An entry that can't be deleted stays aside, out of the way.
-    }
+    } catch {}
   }
 }
 
@@ -231,10 +221,6 @@ interface DevelopmentInstallerOptions {
   readonly launch?: (command: string, args: ReadonlyArray<string>) => Promise<void>
 }
 
-/// Resolves once the opener is running; rejects when it could not start (no
-/// `xdg-open` on a headless Linux server). A spawn failure arrives as an
-/// 'error' event, and with no listener it would be an uncaught exception
-/// that exits the whole server, so the caller gets it as a rejection instead.
 const launchDetached = (command: string, args: ReadonlyArray<string>): Promise<void> =>
   new Promise((resolve, reject) => {
     const child = spawn(command, [...args], { stdio: "ignore", detached: true })

@@ -1,10 +1,6 @@
 import CodevisorCore
 import SwiftUI
 
-/// An MCP server's own icon in Settings: its declared `serverInfo` icon,
-/// else its brand's favicon, resolved by a machine that has the server
-/// (this one when it can) and cached like transcript tool icons. Draws
-/// `fallback` until then, or when there is none.
 public struct McpServerIconView<Fallback: View>: View {
   let entry: McpFleetEntry
   let side: CGFloat
@@ -19,7 +15,6 @@ public struct McpServerIconView<Fallback: View>: View {
     self.fallback = fallback()
   }
 
-  /// The machine asked for the icon, and the server's id there.
   private var source: (machineId: String, serverId: String)? {
     if let local = entry.idByMachine[CodevisorMachine.local.id] {
       return (CodevisorMachine.local.id, local)

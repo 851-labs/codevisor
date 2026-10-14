@@ -1,6 +1,3 @@
-/// Shared assembly and signing rules for Screen Sharing diagnostic bundles.
-/// Pure functions take an injectable `run` so tests never spawn codesign.
-
 export const rigIdentity = Object.freeze({
   bundleIdentifier: "com.codevisor.ScreenSharingRig",
   displayName: "Codevisor Screen Sharing Rig",
@@ -23,8 +20,6 @@ export interface SigningChoice {
   warning?: string
 }
 
-/// Parse `security find-identity -v -p codesigning` output. Lines that carry a
-/// trailing status such as `(CSSMERR_TP_CERT_REVOKED)` are not usable.
 export function parseCodesigningIdentities(text: string): CodesigningIdentity[] {
   const identities: CodesigningIdentity[] = []
   for (const line of text.split("\n")) {
@@ -36,11 +31,6 @@ export function parseCodesigningIdentities(text: string): CodesigningIdentity[] 
   return identities
 }
 
-/// Pick the rig's signing identity. Precedence: explicit environment override,
-/// the first valid Apple Development identity, then ad-hoc with a warning.
-/// Ad-hoc signing pins TCC grants to the code hash, which is the churn the rig
-/// exists to remove, so it is never silent. Developer ID is deliberately not
-/// selected automatically: the rig must not look like a shipping artifact.
 export function resolveSigningIdentity({
   env = {},
   identities = []
@@ -88,8 +78,6 @@ export interface PlistDictionary {
   [key: string]: PlistValue
 }
 
-/// Info.plist for a diagnostic bundle. Keys are emitted sorted so two builds of
-/// the same inputs produce identical bytes.
 export function diagnosticInfoPlist({
   bundleIdentifier,
   displayName,
@@ -116,8 +104,6 @@ export function diagnosticInfoPlist({
     NSScreenCaptureUsageDescription:
       "Capture the display you select for a native Screen Sharing diagnostic.",
     NSLocalNetworkUsageDescription: "Connect to the other Mac in your Screen Sharing diagnostic.",
-    // Signaling is plain HTTP with a bearer token. ATS exempts RFC 1918 addresses on its own, but not
-    // a Tailscale peer (100.64/10 or a MagicDNS name), which is how the two Macs reach each other off LAN.
     NSAppTransportSecurity: { NSAllowsArbitraryLoads: true },
     ...extra
   }
@@ -133,7 +119,6 @@ function plistValue(value: PlistValue): string {
   return `<string>${escapeXML(value)}</string>`
 }
 
-/// Keys sorted, nested dictionaries rendered the same way.
 function plistDict(entries: PlistDictionary): string {
   const body = Object.entries(entries)
     .toSorted(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -145,8 +130,6 @@ function plistDict(entries: PlistDictionary): string {
 export type CommandRunner = (command: string, args: string[]) => unknown
 export type CommandCapture = (command: string, args: string[]) => string | Promise<string>
 
-/// Sign nested code before the app, inside out, with one identity and no
-/// timestamp server. Returns the commands issued so callers can log them.
 export async function signDiagnosticApp({
   app,
   frameworks,
@@ -165,16 +148,11 @@ export async function signDiagnosticApp({
     commands.push(["/usr/bin/codesign", ...args])
     await run("/usr/bin/codesign", args)
   }
-  // Sequential on purpose: nested code must be sealed before the outer bundle.
   for (const framework of frameworks) await sign(framework)
   await sign(app)
   return commands
 }
 
-/// The designated requirement is what TCC pins a grant to. Read it back so a
-/// build can prove it did not change from the previous build. An ad-hoc
-/// signature has only an implicit cdhash requirement, which codesign prints
-/// commented out (`# designated => cdhash H"…"`).
 export async function designatedRequirement({
   app,
   capture

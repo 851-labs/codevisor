@@ -44,7 +44,6 @@ describe("spliceUpgrade", () => {
     await Promise.all([clientClosed, upstreamClosed])
     expect(client.destroyed).toBe(true)
     expect(upstream.destroyed).toBe(true)
-    // Repeated closure notifications still release the pin once.
     upstream.emit("close")
     client.emit("close")
     expect(closes).toBe(1)

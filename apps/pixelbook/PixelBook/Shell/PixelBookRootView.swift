@@ -8,7 +8,6 @@ enum PixelBookAppearance: String, CaseIterable, Identifiable {
 
   var id: String { rawValue }
 
-  /// `nil` follows the system.
   var nsAppearance: NSAppearance? {
     switch self {
     case .system: nil
@@ -60,7 +59,6 @@ struct PixelBookRootView: View {
     } detail: {
       if let story = StoryCatalog.story(id: selectedStoryID) {
         story.content()
-          // Fresh @State per story so variants never share picker state.
           .id(story.id)
           .environment(\.currentStory, story)
           .environment(\.showsStoryInspector, $showsInspector)
@@ -95,8 +93,6 @@ struct PixelBookRootView: View {
         .help("Preview the story in light or dark appearance")
       }
       ToolbarItem(placement: .primaryAction) {
-        // A toolbar Toggle draws its own on-state; the tooltip names the
-        // action, and ⌥⌘I is the system-wide inspector shortcut.
         Toggle(isOn: $showsInspector) {
           Label("Inspector", systemImage: "info.circle")
         }
@@ -105,16 +101,8 @@ struct PixelBookRootView: View {
       }
     }
     .frame(minWidth: 900, minHeight: 600)
-    // Hide the toolbar backdrop once, window-wide, so each column's content
-    // color runs under the title bar. Doing it per column (or re-asserting
-    // the separator style from a probe) fights AppKit frame by frame while a
-    // column collapses and makes the layout stutter.
     .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
     .background(WindowFrameGuard())
-    // Set the AppKit appearance rather than `preferredColorScheme`: the
-    // SwiftUI modifier re-hosts the window content on macOS and leaves the
-    // chrome and content disagreeing when it flips back to the system
-    // value. The app-wide appearance also reaches popovers.
     .onChange(of: appearance, initial: true) { _, appearance in
       NSApp.appearance = appearance.nsAppearance
     }

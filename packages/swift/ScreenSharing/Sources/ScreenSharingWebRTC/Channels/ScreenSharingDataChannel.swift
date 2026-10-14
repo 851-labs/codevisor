@@ -3,28 +3,14 @@ import os
 @preconcurrency import WebRTC
 import ScreenSharing
 
-/// A bounded native ordered channel. Independent SCTP streams carry input and
-/// clipboard transfers. Video uses its own RTP transport. Protocol code is
-/// written against `ScreenSharingMessageChannel`; this is its WebRTC carrier.
-///
-/// Threading: the `RTCDataChannel` is confined to the channel's own serial queue. Every
-/// `sendData`, `bufferedAmount`, `readyState` and `close` — each a call that waits for WebRTC's
-/// network or signaling thread — runs there, never on the caller's thread. Received packets are
-/// decoded on that queue too; a real-time consumer takes its messages there (`deliverOffMain`),
-/// and only the rest reach `onMessage` on the main actor, in arrival order, as do availability
-/// changes. `send` may be called from any thread: it admits the message against the send budget
-/// at once (so a refusal is still reported synchronously) and hands it to the queue, which
-/// preserves the order of sends.
 nonisolated public final class ScreenSharingDataChannel<Message: Sendable>: ScreenSharingMessageChannel,
   @unchecked Sendable
 {
   @MainActor public var onMessage: ((Message) -> Void)?
   @MainActor public var onAvailabilityChanged: ((Bool) -> Void)?
-  /// Open and not closed, as last observed on the channel's queue.
   public var isAvailable: Bool { state.withLock { !$0.closed && $0.open } }
   let label: String
   private let queue: DispatchQueue
-  /// The WebRTC object, touched only on `queue`; released there when the channel closes.
   private let carrier: Carrier
   private let receiver: ScreenSharingControlReceiver
   private let state = OSAllocatedUnfairLock(initialState: ChannelState())
@@ -32,11 +18,8 @@ nonisolated public final class ScreenSharingDataChannel<Message: Sendable>: Scre
   private let decode: @Sendable (Data) throws -> Message
   private let maximumBufferedBytes: Int
   private let reliable: Bool
-  /// Main-actor only: the closed notice went out (exactly once).
   @MainActor private var publishedClose = false
 
-  /// `limits` bounds one message and what may wait in either direction; the cursor channel
-  /// carries images, the others small messages.
   init(
     connection: RTCPeerConnection, id: Int32, label: String, limits: ScreenSharingChannelLimits = .control,
     reliable: Bool = true,
@@ -50,7 +33,6 @@ nonisolated public final class ScreenSharingDataChannel<Message: Sendable>: Scre
     queue = DispatchQueue(label: "codevisor.screen-sharing.channel.\(label)", qos: .userInteractive)
     receiver = ScreenSharingControlReceiver(limits: limits)
     let options = RTCDataChannelConfiguration()
-    // Audio (851-2379) is unordered and never retransmitted: a late packet is worse than a lost one.
     options.isOrdered = reliable
     if !reliable { options.maxRetransmits = 0 }
     options.isNegotiated = true
@@ -60,7 +42,6 @@ nonisolated public final class ScreenSharingDataChannel<Message: Sendable>: Scre
       throw ScreenSharingError.unavailable("Cannot create the screen-sharing data channel.")
     }
     carrier = Carrier(channel)
-    // WebRTC calls these on its own threads; each only schedules work on the channel's queue.
     let schedule: @Sendable (@escaping @Sendable (ScreenSharingDataChannel) -> Void) -> Void = {
       [weak self, queue] work in
       guard let channel = self else { return }
@@ -70,13 +51,9 @@ nonisolated public final class ScreenSharingDataChannel<Message: Sendable>: Scre
     receiver.stateChanged = { schedule { $0.refreshState() } }
     receiver.bufferedAmountChanged = { schedule { $0.refreshBufferedAmount() } }
     channel.delegate = receiver
-    // A state change before the delegate was set is picked up here.
     queue.async { [weak self] in self?.refreshState() }
   }
 
-  /// Hands decoded messages to `take` on the channel's queue, in arrival order, before the main
-  /// actor sees them; a message `take` returns true for never reaches `onMessage`. For a consumer
-  /// that must not wait for main (the viewer's audio). Set it before the channel opens.
   public func deliverOffMain(_ take: (@Sendable (Message) -> Bool)?) { state.withLock { $0.offMain = take } }
 
   @discardableResult
@@ -85,9 +62,7 @@ nonisolated public final class ScreenSharingDataChannel<Message: Sendable>: Scre
     let size = data.count
     let admission: Admission = state.withLock { state in
       guard state.open, !state.closed else { return .refused }
-      // What WebRTC still holds, what is on its way to it, and this message.
       guard state.bufferedBytes + UInt64(state.queuedBytes) + UInt64(size) <= UInt64(maximumBufferedBytes) else {
-        // An unreliable channel sheds what doesn't fit instead of giving up.
         return reliable ? .overflow : .refused
       }
       state.queuedBytes += size
@@ -114,18 +89,12 @@ nonisolated public final class ScreenSharingDataChannel<Message: Sendable>: Scre
     }
   }
 
-  /// Terminal and idempotent. Publishes `false` to `onAvailabilityChanged` before returning, then
-  /// drops both callbacks; the WebRTC channel closes on its queue without the caller waiting.
   @MainActor public func close() {
     if markClosed() { closeCarrier() }
     publishClosed()
   }
 
-  /// Enqueues `group` behind everything the channel's queue was asked to do so far (its close
-  /// included, once closed): the peer's teardown waits for it before closing the connection.
   func afterQueuedWork(in group: DispatchGroup) { queue.async(group: group) {} }
-
-  // MARK: Channel queue
 
   private func refreshState() {
     let open = carrier.channel?.readyState == .open
@@ -150,9 +119,6 @@ nonisolated public final class ScreenSharingDataChannel<Message: Sendable>: Scre
     state.withLock { $0.bufferedBytes = buffered }
   }
 
-  /// One drain at a time: the schedule stays held until the main actor has delivered this batch,
-  /// so a stalled main actor makes later packets wait in the bounded inbox (and overflow it)
-  /// instead of piling up unbounded deliveries.
   private func drainInbox() {
     let (packets, failed) = receiver.drain()
     guard !failed else { fail(); return }
@@ -176,7 +142,6 @@ nonisolated public final class ScreenSharingDataChannel<Message: Sendable>: Scre
       }
       return
     }
-    // What decoded before a bad packet is still delivered, then the channel closes.
     DispatchQueue.main.async { [weak self] in
       MainActor.assumeIsolated {
         guard let self else { return }
@@ -193,19 +158,14 @@ nonisolated public final class ScreenSharingDataChannel<Message: Sendable>: Scre
     }
   }
 
-  // MARK: Teardown
-
   private enum Admission { case accepted, refused, overflow }
 
-  /// Any thread: the channel gave up (a send budget overrun, a refused send, an overflowing or
-  /// undecodable inbox). The main actor hears about it asynchronously, after what was queued.
   private func fail() {
     guard markClosed() else { return }
     closeCarrier()
     DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.publishClosed() } }
   }
 
-  /// True for the call that closed the channel.
   private func markClosed() -> Bool {
     let first = state.withLock { state in
       guard !state.closed else { return false }
@@ -222,7 +182,6 @@ nonisolated public final class ScreenSharingDataChannel<Message: Sendable>: Scre
     queue.async {
       carrier.channel?.delegate = nil
       carrier.channel?.close()
-      // The channel retains the peer's factory: its last release happens here, off the caller's thread.
       carrier.channel = nil
     }
   }
@@ -237,32 +196,24 @@ nonisolated public final class ScreenSharingDataChannel<Message: Sendable>: Scre
   }
 
   deinit {
-    // A channel dropped without `close()` still releases its WebRTC object on its own queue.
     let carrier = carrier
     queue.async { carrier.channel = nil }
   }
 
-  /// The channel's lock-protected state.
   private struct ChannelState: Sendable {
     var open = false
     var closed = false
-    /// Bytes `send` accepted that the queue has not yet handed to WebRTC.
     var queuedBytes = 0
-    /// WebRTC's `bufferedAmount`, as last read on the queue.
     var bufferedBytes: UInt64 = 0
     var offMain: (@Sendable (Message) -> Bool)?
   }
 }
 
-/// Holds the `RTCDataChannel`; only the channel's queue reads or writes `channel`.
 private final class Carrier: @unchecked Sendable {
   var channel: RTCDataChannel?
   init(_ channel: RTCDataChannel) { self.channel = channel }
 }
 
-/// WebRTC callbacks must not create an unbounded backlog. One scheduled drain admits at most
-/// 256 messages / 64 KiB. Overflow closes the affected channel. Callbacks arrive on WebRTC's
-/// threads and only schedule work; the hooks are set once, before the delegate is installed.
 private final class ScreenSharingControlReceiver: NSObject, RTCDataChannelDelegate, @unchecked Sendable {
   var received: (@Sendable () -> Void)?
   var stateChanged: (@Sendable () -> Void)?
@@ -283,22 +234,17 @@ private final class ScreenSharingControlReceiver: NSObject, RTCDataChannelDelega
   }
 }
 
-/// How much one channel admits: a message, a drain's worth of messages, and unsent bytes.
 public struct ScreenSharingChannelLimits: Sendable, Equatable {
   public var messageBytes: Int
   public var drainBytes: Int
   public var bufferedBytes: Int
 
-  /// Control, clipboard and video refresh: small messages.
   public static let control = Self(
     messageBytes: ScreenSharingControlMessage.maximumBytes, drainBytes: 64 * 1024, bufferedBytes: 16 * 1024)
-  /// The pointer (851-2377): a PNG now and then between tiny positions.
   public static let cursor = Self(
     messageBytes: ScreenSharingCursorMessage.maximumBytes, drainBytes: 256 * 1024, bufferedBytes: 128 * 1024)
 }
 
-/// Value state kept under the receiver's lock; independently exercises admission
-/// limits without creating threads, media peers or event-loop timing in tests.
 struct ScreenSharingControlInbox {
   let limits: ScreenSharingChannelLimits
   init(limits: ScreenSharingChannelLimits = .control) { self.limits = limits }
@@ -308,7 +254,6 @@ struct ScreenSharingControlInbox {
   private var failed = false
   private var stopped = false
 
-  /// True for the arrival that finds no drain outstanding: it must schedule one.
   mutating func enqueue(_ data: Data) -> Bool {
     guard !stopped else { return false }
     if packets.count >= 256 || data.count > limits.messageBytes || bytes + data.count > limits.drainBytes {
@@ -321,16 +266,12 @@ struct ScreenSharingControlInbox {
     return true
   }
 
-  /// Takes the batch. The drain stays outstanding until `finish()`: arrivals meanwhile wait
-  /// here, within the limits, rather than scheduling another.
   mutating func drain() -> ([Data], Bool) {
     let result = (packets, failed)
     packets = []; bytes = 0
     return result
   }
 
-  /// The batch was delivered. True when more arrived meanwhile (the caller drains again, still
-  /// outstanding); false releases the schedule for the next arrival.
   mutating func finish() -> Bool {
     guard packets.isEmpty, !failed else { return true }
     scheduled = false

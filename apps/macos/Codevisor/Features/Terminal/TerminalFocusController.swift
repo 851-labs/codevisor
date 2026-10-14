@@ -4,9 +4,6 @@ import CodevisorCore
 import CodevisorUI
 import GhosttyKit
 
-/// Reports the hosting NSWindow to a callback (fires on mount and window
-/// moves). Zero-sized; used by the session screen to anchor its focus
-/// controller's key-command guard to the right window.
 struct HostWindowCapture: NSViewRepresentable {
   var onWindow: (NSWindow?) -> Void
 
@@ -29,31 +26,15 @@ struct HostWindowCapture: NSViewRepresentable {
   }
 }
 
-/// Moves AppKit first-responder focus between the composer's text view and the
-/// session's pane group (its selected pane). Holds weak references so it never
-/// keeps views alive. Owned by the session screen and (composer-only) the
-/// new-chat page.
 @MainActor
 final class TerminalFocusController {
 
   weak var composerTextView: SubmittingTextView?
-  /// The window hosting the session screen, captured by the screen itself.
-  /// The tab-command guard anchors here — NOT to the composer's window:
-  /// the composer unmounts whenever a non-chat tab (terminal, New tab
-  /// page) is selected, and ⌘T must keep working then (falling through
-  /// would reach the Format menu's Fonts panel). Also the anchor for the
-  /// ONE first-responder observer (the upward focus-feedback path).
   weak var hostWindow: NSWindow? {
     didSet { observeFirstResponder() }
   }
 
-  /// The single upward feedback path for composer focus: the user clicked
-  /// (or tabbed) into some chat's composer — the container activates that
-  /// chat's group, keeping "active group" true to where the keyboard is.
-  /// (Terminal surfaces report the same through their own responder
-  /// overrides.)
   var onChatComposerFocused: ((UUID) -> Void)?
-  /// Workspace navigation is available before any pane has mounted.
   var workspaceCommandHandler: ((PaneGroupCommand) -> Bool)?
   var canFocusChat: ((UUID) -> Bool)?
   var navigationRevision: (() -> Int)?
@@ -65,8 +46,6 @@ final class TerminalFocusController {
     responderObservation = hostWindow?.observe(
       \.firstResponder, options: [.new]
     ) { [weak self] window, _ in
-      // AppKit changes a window's first responder on the main thread, and KVO
-      // notifies synchronously on the thread that made the change.
       MainActor.assumeIsolated {
         let responder = window.firstResponder
         let revision = self?.navigationRevision?()
@@ -90,8 +69,6 @@ final class TerminalFocusController {
         return
       }
     }
-    // A chat's question picker is its composer-area surface while a
-    // blocking question is up — focusing it activates the chat too.
     for (chatId, box) in chatQuestionPickers {
       if let picker = box.view, view === picker {
         onChatComposerFocused?(chatId)
@@ -105,43 +82,23 @@ final class TerminalFocusController {
       }
     }
   }
-  /// The chat history's scroll view. Clicks anywhere inside it park keyboard
-  /// focus on it (blurring a focused terminal) so typing can hand off to the
-  /// composer.
   weak var transcriptView: NSView?
-  /// The active center split: workspace tab/split commands pressed while
-  /// the chat has focus route through its model to the container.
   weak var centerGroup: PaneGroupModel?
   private var typeToFocusMonitor: Any?
 
-  /// Composer text views by CHAT SESSION, so multi-chat workspaces can
-  /// focus the right one (the single `composerTextView` is whichever
-  /// registered last — arbitrary with several chats mounted).
   private final class WeakTextView {
     weak var view: SubmittingTextView?
     init(_ view: SubmittingTextView) { self.view = view }
   }
 
   private var chatComposers: [UUID: WeakTextView] = [:]
-  /// Chat transcript (history) views by session — the click-to-blur zones:
-  /// a click in ANY chat's transcript parks focus there, taking the
-  /// keyboard away from a focused terminal.
   private final class WeakNSView {
     weak var view: NSView?
     init(_ view: NSView) { self.view = view }
   }
 
   private var chatTranscripts: [UUID: WeakNSView] = [:]
-  /// Question-picker key anchors by chat. While a chat shows a blocking
-  /// agent question its composer is UNMOUNTED and the picker replaces it
-  /// as the chat's one keyboard surface — so every composer-focus route
-  /// (open sequence, pane/tab clicks, transcript clicks, type-to-focus)
-  /// prefers a registered picker over the (dead) composer slot.
   private var chatQuestionPickers: [UUID: WeakNSView] = [:]
-  /// A chat whose composer should take focus as soon as it CAN — the
-  /// target pane may not have laid out yet (fresh workspace open, or a
-  /// tab switch that remounts the chat), so the intent parks here and
-  /// applies on registration.
   private var pendingComposerFocus: UUID?
 
   func registerComposer(_ view: SubmittingTextView, forChat sessionId: UUID) {
@@ -157,15 +114,6 @@ final class TerminalFocusController {
     chatTranscripts[sessionId] = WeakNSView(view)
   }
 
-  /// Registers a question picker's key anchor and gives it the keyboard
-  /// through the same makeFirstResponder-with-retry path the composer
-  /// uses (a lone SwiftUI FocusState write is dropped during the composer
-  /// card's animated swap). Unlike composer registration — which never
-  /// takes focus, because N panes mount in arbitrary order — a picker
-  /// mounting means a question just arrived (or a parked intent targets
-  /// this chat), so it grabs focus. Politely: it inherits focus its own
-  /// chat's composer held (that composer is mid-teardown) or that nobody
-  /// held, but never steals from a terminal or another chat's editor.
   func registerQuestionPicker(_ view: NSView, forChat sessionId: UUID) {
     chatQuestionPickers[sessionId] = WeakNSView(view)
     if let pending = pendingComposerFocus, canFocusChat?(pending) == false {
@@ -176,7 +124,6 @@ final class TerminalFocusController {
       focusWhenWindowed(view, forChat: sessionId)
       return
     }
-    // A parked intent for ANOTHER chat outranks this mount's grab.
     guard pendingComposerFocus == nil else { return }
     guard canFocusChat?(sessionId) != false else { return }
     focusWhenWindowed(view, forChat: sessionId) { [weak self] window in
@@ -184,10 +131,6 @@ final class TerminalFocusController {
     }
   }
 
-  /// The picker is leaving its window (question resolved/dismissed, or
-  /// the whole chat unmounting). If the picker area held the keyboard,
-  /// hand it to the composer that replaces it — parking the intent until
-  /// the (remounting) composer registers.
   func unregisterQuestionPicker(_ view: NSView, forChat sessionId: UUID) {
     guard chatQuestionPickers[sessionId]?.view === view else { return }
     chatQuestionPickers[sessionId] = nil
@@ -195,8 +138,6 @@ final class TerminalFocusController {
     let responder = window.firstResponder
     let pickerHeldFocus =
       responder === view
-      // Teardown ordering may already have dropped focus to the
-      // window — nobody owns it, the returning composer may claim it.
       || responder === window
       || isQuestionPickerNotesEditor(responder)
     if pickerHeldFocus {
@@ -204,19 +145,12 @@ final class TerminalFocusController {
     }
   }
 
-  /// The picker's notes editor is a SubmittingTextView too; recognize it
-  /// as "inside the picker" by exclusion — editable, but registered as no
-  /// chat's composer.
   private func isQuestionPickerNotesEditor(_ responder: NSResponder?) -> Bool {
     guard let textView = responder as? SubmittingTextView else { return false }
     if textView === composerTextView { return false }
     return !chatComposers.values.contains { $0.view === textView }
   }
 
-  /// Whether a newly mounted picker may take the keyboard: yes when its
-  /// own chat's composer holds it (the picker replaces that composer) or
-  /// when nobody meaningful does; no while the user is typing elsewhere —
-  /// a terminal, another chat's composer/picker, any editable field.
   private func questionPickerMayTakeFocus(in window: NSWindow, forChat sessionId: UUID) -> Bool {
     guard window.attachedSheet == nil, NSApp.modalWindow == nil else { return false }
     guard let responder = window.firstResponder, responder !== window else { return true }
@@ -233,30 +167,21 @@ final class TerminalFocusController {
     return true
   }
 
-  /// The chat's composer-area keyboard surface: its question picker while
-  /// a blocking question is up (the composer is unmounted then), else its
-  /// composer text view.
   private func composerAreaView(forChat sessionId: UUID) -> NSView? {
     if let picker = chatQuestionPickers[sessionId]?.view { return picker }
     return chatComposers[sessionId]?.view
   }
 
-  /// The unkeyed picker fallback, mirroring the single-slot
-  /// `composerTextView`: only unambiguous when exactly one picker is live.
   private var fallbackQuestionPicker: NSView? {
     let live = chatQuestionPickers.values.compactMap(\.view)
     return live.count == 1 ? live[0] : nil
   }
 
-  /// Focuses a specific chat's composer area — immediately when possible,
-  /// otherwise the moment it registers (see `pendingComposerFocus`).
   func requestComposerFocus(forChat sessionId: UUID) {
     guard canFocusChat?(sessionId) != false else { return }
     deferredComposerFocus.cancel()
     pendingComposerFocus = nil
     if let view = composerAreaView(forChat: sessionId) {
-      // A click that activated this chat by landing in its history (selecting
-      // text there) keeps focus where it put it.
       focusWhenWindowed(view, forChat: sessionId) { [weak self] window in
         guard let transcript = self?.chatTranscripts[sessionId]?.view,
           let responder = window.firstResponder as? NSView
@@ -268,8 +193,6 @@ final class TerminalFocusController {
     }
   }
 
-  /// Attachment retries the pending request. Navigation can supersede it
-  /// at any point; a late composer or picker never chooses the destination.
   private func focusWhenWindowed(
     _ view: NSView,
     forChat sessionId: UUID,
@@ -291,10 +214,6 @@ final class TerminalFocusController {
     )
   }
 
-  /// Focuses the ACTIVE group's selected chat's composer area when there
-  /// is one; otherwise the last-registered composer (drafts, single-chat
-  /// screens, the new-chat page) or, with the composer slot dead behind a
-  /// question, the live picker.
   func focusComposer() {
     if let chatId = centerGroup?.state.selectedPane?.chatSessionId,
       let view = composerAreaView(forChat: chatId)
@@ -306,9 +225,6 @@ final class TerminalFocusController {
     view.window?.makeFirstResponder(view)
   }
 
-  /// Gives a passive pane (currently New Tab) neutral keyboard focus. The
-  /// window becomes its own first responder, which cleanly resigns a hidden
-  /// terminal or editor without routing keys into an unrelated chat.
   func focusPaneBackground() {
     guard let window = hostWindow,
       window.isKeyWindow,
@@ -318,11 +234,6 @@ final class TerminalFocusController {
     window.makeFirstResponder(nil)
   }
 
-  /// Makes ordinary typing anywhere in the session move focus into the
-  /// composer without dropping the first character, and makes a click
-  /// anywhere in the chat history move keyboard focus onto the history (so
-  /// a focused terminal stops receiving keystrokes). The monitor is scoped
-  /// to the active session screen and removed when that screen disappears.
   func startTypeToFocus() {
     guard typeToFocusMonitor == nil else { return }
     typeToFocusMonitor = NSEvent.addLocalMonitorForEvents(
@@ -339,18 +250,12 @@ final class TerminalFocusController {
     }
   }
 
-  /// Workspace commands while the chat (or anything that isn't a terminal)
-  /// holds focus. Focused terminals route the same shortcuts through their
-  /// active leaf model via its key-equivalent handler
-  /// (GhosttyTerminalSurfaceAdapter); both match against `ShortcutCatalog`,
-  /// so the two paths and the menu share one definition of each shortcut.
   private func handleTabCommand(_ event: NSEvent) -> Bool {
     guard let window = hostWindow ?? composerTextView?.window,
       event.window === window,
       window.isKeyWindow,
       window.attachedSheet == nil,
       NSApp.modalWindow == nil,
-      // Focused terminals (either group) route their own commands.
       !(window.firstResponder is Ghostty.SurfaceView)
     else { return false }
     guard let command = ShortcutCatalog.paneCommand(for: event) else { return false }
@@ -370,9 +275,6 @@ final class TerminalFocusController {
   }
 
   private func handleTypeToFocus(_ event: NSEvent) -> NSEvent? {
-    // The chat unmounts while a terminal tab covers it, so a stale
-    // target reference (or one detached from the window) naturally
-    // opts out here — no explicit visibility flag needed.
     guard let target = typeToFocusTarget(),
       let window = target.window,
       event.window === window,
@@ -388,10 +290,6 @@ final class TerminalFocusController {
       return event
     }
 
-    // Preserve real editing sessions and terminal input. Read-only
-    // transcript text is also an NSTextView, but ordinary typing there is
-    // exactly what should move focus into the composer. AppKit represents
-    // an active NSTextField with its editable NSTextView field editor.
     if let currentTextView = window.firstResponder as? NSTextView,
       currentTextView.isEditable
     {
@@ -405,8 +303,6 @@ final class TerminalFocusController {
     if window.firstResponder is Ghostty.SurfaceView {
       return event
     }
-    // A focused question picker owns its keys (digits select options,
-    // space toggles) — never pull them away to another chat's composer.
     if let responder = window.firstResponder as? NSView,
       chatQuestionPickers.values.contains(where: { $0.view === responder })
     {
@@ -415,22 +311,11 @@ final class TerminalFocusController {
 
     guard window.makeFirstResponder(target) else { return event }
 
-    // Local monitors run before NSApplication.sendEvent. Returning the
-    // original event dispatches it to the new first responder, preserving
-    // NSTextView's native key binding, undo, dead-key, and IME pipelines.
     return event
   }
 
-  /// The composer-area typing target: the selected chat's picker anchor
-  /// while a question is up (the composer is unmounted then — stray
-  /// typing self-heals focus onto the picker, so digits land as option
-  /// picks even if the mount-time grab ever races the swap), otherwise
-  /// the editable composer text view.
   private func typeToFocusTarget() -> NSView? {
     if let selectedPane = centerGroup?.state.selectedPane {
-      // A terminal or New Tab page must never route typing into some
-      // other, merely mounted chat. An unkeyed chat is the legacy/draft
-      // case and still uses the single-slot fallback below.
       guard selectedPane.kind == .chat else { return nil }
       if let chatId = selectedPane.chatSessionId {
         if let picker = chatQuestionPickers[chatId]?.view {
@@ -448,27 +333,7 @@ final class TerminalFocusController {
     return fallbackQuestionPicker
   }
 
-  /// Pane-style focus for the chat history: a click that lands in it and
-  /// that no view claims focus from — whitespace, a disclosure trigger, a
-  /// row's inert chrome — parks keyboard focus on the history, exactly like
-  /// a click in the terminal focuses the terminal. SwiftUI rows consume
-  /// such clicks without ever touching the AppKit first responder, so
-  /// without this a focused terminal keeps eating keystrokes after the user
-  /// has clicked into the chat.
-  ///
-  /// The decision is deliberately made AFTER the click dispatches, never
-  /// before: the transcript's selectable text views (and the composer's
-  /// editor) claim first responder themselves as part of handling their
-  /// mouseDown, and preempting that fights their native selection/caret
-  /// behavior. If the first responder changed at all as a result of the
-  /// click, the click "spent" its focus and is left alone.
   private func handleTranscriptClick(_ event: NSEvent) -> NSEvent? {
-    // Every registered chat transcript is a click-into-the-chat zone
-    // (multi-chat workspaces have several); the single slot is the
-    // fallback for screens that never register keyed (the new-chat
-    // page). A click that lands in a zone parks focus on THAT transcript
-    // unless the click itself claimed focus. Printable typing then hands
-    // off to the keyed composer through handleTypeToFocus.
     var zones: [(chatId: UUID?, view: NSView)] = chatTranscripts.compactMap { id, box in
       box.view.map { (id, $0) }
     }
@@ -482,10 +347,6 @@ final class TerminalFocusController {
         NSApp.modalWindow == nil,
         let zoneSuperview = zone.view.superview
       else { continue }
-      // Geometry check scoped to the zone's own subtree (hitTest
-      // takes superview coordinates). Overlays floating inside its
-      // frame — the composer card, scroll-to-bottom — are excluded
-      // by the focus-change check below, not by geometry.
       let point = zoneSuperview.convert(event.locationInWindow, from: nil)
       guard let hitView = zone.view.hitTest(point) else { continue }
 
@@ -493,31 +354,21 @@ final class TerminalFocusController {
       if let composer = zone.chatId.flatMap({ chatComposers[$0]?.view }),
         responderBeforeClick === composer
       {
-        return event  // Already writing in this chat.
+        return event
       }
 
       let revision = navigationRevision?()
       DispatchQueue.main.async { [weak self] in
-        // Someone claimed focus from this click (text selection, a
-        // menu, a control): leave it alone.
         guard let self, self.navigationRevision?() == revision,
           zone.view.window === window, window.firstResponder === responderBeforeClick
         else { return }
 
-        // Clicking or dragging again in an already-focused text view
-        // leaves the same first responder in place. Treat the hit
-        // view as the evidence in that case; moving focus to the
-        // transcript would end native selection tracking and clear
-        // TranscriptSelectableTextView's selected range.
         if let responderView = responderBeforeClick as? NSView,
           hitView === responderView || hitView.isDescendant(of: responderView)
         {
           return
         }
 
-        // Inert history chrome and whitespace do not claim AppKit
-        // focus themselves. Park focus on the transcript so its chat
-        // becomes active without implying composer focus.
         window.makeFirstResponder(zone.view)
       }
       return event
@@ -533,8 +384,6 @@ final class TerminalFocusController {
       .intersection(.deviceIndependentFlagsMask)
 
     if includesQuestionPickerCommands {
-      // Arrow keys carry implicit function/numpad flags. After removing
-      // those, picker commands must be genuinely unmodified.
       let pickerModifiers = modifiers.subtracting([.function, .numericPad])
       if pickerModifiers.isEmpty {
         switch event.specialKey {
@@ -543,7 +392,6 @@ final class TerminalFocusController {
         default:
           break
         }
-        // Return, keypad Enter, Escape, and Space operate the picker.
         if event.keyCode == 36 || event.keyCode == 76 || event.keyCode == 53
           || event.charactersIgnoringModifiers == " "
         {
@@ -556,12 +404,6 @@ final class TerminalFocusController {
       event.specialKey == nil
     else { return false }
 
-    // Keep Space available for scrolling and Full Keyboard Access button
-    // activation when the ordinary composer is not focused. A question
-    // picker's Space is handled above because it toggles the highlighted
-    // option. Option is deliberately allowed because it produces text on
-    // many keyboard layouts; dead-key events may have no characters and
-    // still need to reach NSTextView.
     return event.characters != " " && event.characters != "\u{00A0}"
   }
 }

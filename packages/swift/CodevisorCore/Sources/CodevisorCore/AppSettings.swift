@@ -2,59 +2,23 @@ import Foundation
 import CodevisorTheming
 import Observation
 
-/// Persisted app settings: onboarding completion, whether to surface sessions
-/// that were created outside Codevisor (imported via `session/list`), and the
-/// appearance/theme selection.
 public struct AppSettings: Sendable, Codable, Equatable {
   public static let defaultNotificationSoundPath = "/System/Library/Sounds/Glass.aiff"
 
   public var hasCompletedOnboarding: Bool
-  /// The app version whose launch last confirmed (or walked the user
-  /// through) the system permissions Computer Use needs. When an update
-  /// arrives and permissions are missing, the standalone permissions gate
-  /// shows once for the new version.
   public var permissionsReviewedVersion: String?
-  /// The user chose "Set Up Later": Computer Use is disabled and no launch
-  /// gate nags again. Cleared when permissions setup completes (from the
-  /// MCP settings inline flow or a later onboarding pass).
   public var permissionsSetupSkipped: Bool
-  /// How far onboarding got, so a restart part-way through (granting
-  /// Screen Recording asks for one) resumes on the same step instead of
-  /// starting over. Cleared when onboarding completes.
   public var onboardingStep: Int?
-  /// The permissions review was presented and the user has not finished it
-  /// yet. Granting Screen Recording restarts the app mid-review, so the
-  /// dialog has to come back — even once everything is granted — until the
-  /// user actually closes it. Cleared by Continue or Set Up Later.
   public var permissionsReviewInProgress: Bool
   public var importExternalSessions: Bool
-  /// Whether this device may send anonymous product usage events. Content
-  /// such as prompts, responses, code, paths, and terminal commands must
-  /// never be included in those events.
   public var shareAnalytics: Bool
-  /// Whether this installation may send privacy-filtered native crash and
-  /// allowlisted internal error reports to Sentry.
   public var shareCrashReports: Bool
-  /// Opts this installation into signed Alpha builds in addition to Stable.
   public var alphaUpdatesEnabled: Bool
-  /// Whether ⌘Q asks "Are you sure you want to quit?" first. A stray ⌘Q
-  /// (next to ⌘W) tears down every open terminal and agent view at once, so
-  /// this defaults on; the alert's "Do not ask me again" turns it off.
   public var confirmBeforeQuitting: Bool
-  /// Whether closing a chat whose agent is still working (⌘W, Close Tab,
-  /// or a tab's close button) asks first. Defaults on; the alert's
-  /// "Do not ask me again" turns it off.
   public var confirmBeforeClosingWorkingChat: Bool
-  /// Appearance: force light/dark or follow the OS.
   public var themeMode: ThemeMode
-  /// The theme id used when the effective appearance is light/dark. The
-  /// defaults are the system entries, which render the stock Apple look.
   public var lightThemeId: String
   public var darkThemeId: String
-  /// Chat attention preferences are local to this device. Keeping them out
-  /// of server state is intentional: a future iPhone client can choose its
-  /// own sounds while a server-side presence coordinator chooses which
-  /// active device receives each event.
   public var notificationsEnabled: Bool
   public var systemNotificationsEnabled: Bool
   public var notificationSoundsEnabled: Bool
@@ -108,7 +72,6 @@ public struct AppSettings: Sendable, Codable, Equatable {
     case onboardingStep, permissionsReviewInProgress
     case importExternalSessions, shareAnalytics
     case shareCrashReports, alphaUpdatesEnabled
-    /// Read-only migration key written by the former custom updater.
     case betaUpdatesEnabled
     case confirmBeforeQuitting, confirmBeforeClosingWorkingChat
     case themeMode, lightThemeId, darkThemeId
@@ -128,14 +91,9 @@ public struct AppSettings: Sendable, Codable, Equatable {
         forKey: .permissionsReviewInProgress
       ) ?? false
     importExternalSessions = try container.decodeIfPresent(Bool.self, forKey: .importExternalSessions) ?? false
-    // Existing installations completed onboarding before this preference
-    // existed. Enable analytics for that migration cohort; fresh installs
-    // remain disabled until the final onboarding step is completed.
     shareAnalytics =
       try container.decodeIfPresent(Bool.self, forKey: .shareAnalytics)
       ?? hasCompletedOnboarding
-    // Native diagnostics are a separate data class. Never extend an older
-    // analytics choice to Sentry without a new, explicit decision.
     shareCrashReports = try container.decodeIfPresent(Bool.self, forKey: .shareCrashReports) ?? false
     alphaUpdatesEnabled =
       try container.decodeIfPresent(Bool.self, forKey: .alphaUpdatesEnabled)
@@ -187,7 +145,6 @@ public struct AppSettings: Sendable, Codable, Equatable {
   }
 }
 
-/// Observable, persisted settings model.
 @MainActor
 @Observable
 public final class AppSettingsModel {
@@ -199,8 +156,6 @@ public final class AppSettingsModel {
     self.init(store: store, settings: Self.loadSettings(from: store))
   }
 
-  /// Opens the settings launch already decoded off the main actor; without
-  /// a snapshot it reads `store` synchronously.
   public convenience init(store: any PersistenceStore, launchSnapshot: ClientLaunchSnapshot?) {
     self.init(store: store, settings: launchSnapshot?.settings ?? Self.loadSettings(from: store))
   }
@@ -210,8 +165,6 @@ public final class AppSettingsModel {
     self.settings = settings
   }
 
-  /// Reads and decodes the persisted settings, falling back to defaults (and
-  /// keeping a backup) when they are unreadable.
   nonisolated static func loadSettings(from store: any PersistenceStore) -> AppSettings {
     guard let data = store.loadData(forKey: "settings") else { return AppSettings() }
     do {
@@ -240,14 +193,10 @@ public final class AppSettingsModel {
   public var alphaUpdatesEnabled: Bool { settings.alphaUpdatesEnabled }
   public var confirmBeforeQuitting: Bool { settings.confirmBeforeQuitting }
   public var confirmBeforeClosingWorkingChat: Bool { settings.confirmBeforeClosingWorkingChat }
-  /// Whether ⌘Q should ask first. Never during onboarding: granting a
-  /// system permission there has macOS offer "Quit & Reopen", and a
-  /// confirmation sheet makes that relaunch silently fail.
   public var shouldConfirmBeforeQuitting: Bool {
     settings.hasCompletedOnboarding && settings.confirmBeforeQuitting
   }
 
-  /// Records the result of onboarding.
   public func completeOnboarding(importExternalSessions: Bool) {
     settings.hasCompletedOnboarding = true
     settings.importExternalSessions = importExternalSessions
@@ -255,8 +204,6 @@ public final class AppSettingsModel {
     persist()
   }
 
-  /// Records that the given app version confirmed (or walked the user
-  /// through) the Computer Use system permissions.
   public func setPermissionsReviewedVersion(_ version: String) {
     settings.permissionsReviewedVersion = version
     persist()
@@ -267,14 +214,11 @@ public final class AppSettingsModel {
     persist()
   }
 
-  /// Remembers how far onboarding got so a mid-flow restart resumes there.
   public func setOnboardingStep(_ step: Int?) {
     settings.onboardingStep = step
     persist()
   }
 
-  /// Marks the permissions review open (the dialog returns after a restart)
-  /// or finished (the user pressed Continue or Set Up Later).
   public func setPermissionsReviewInProgress(_ value: Bool) {
     settings.permissionsReviewInProgress = value
     persist()
@@ -285,13 +229,11 @@ public final class AppSettingsModel {
     persist()
   }
 
-  /// Updates the privacy preference used as the single gate for analytics.
   public func setShareAnalytics(_ value: Bool) {
     settings.shareAnalytics = value
     persist()
   }
 
-  /// Updates the privacy preference used as the single gate for diagnostics.
   public func setShareCrashReports(_ value: Bool) {
     settings.shareCrashReports = value
     persist()
@@ -302,16 +244,11 @@ public final class AppSettingsModel {
     persist()
   }
 
-  /// Turns the ⌘Q confirmation alert on or off. Off is what the alert's
-  /// "Do not ask me again" checkbox records; Settings can turn it back on.
   public func setConfirmBeforeQuitting(_ value: Bool) {
     settings.confirmBeforeQuitting = value
     persist()
   }
 
-  /// Turns the working-chat close confirmation on or off. Off is what the
-  /// alert's "Do not ask me again" checkbox records; Settings can turn it
-  /// back on.
   public func setConfirmBeforeClosingWorkingChat(_ value: Bool) {
     settings.confirmBeforeClosingWorkingChat = value
     persist()
@@ -357,7 +294,6 @@ public final class AppSettingsModel {
     persist()
   }
 
-  /// Resets settings to defaults (re-triggers onboarding).
   public func reset() {
     settings = AppSettings()
     persist()

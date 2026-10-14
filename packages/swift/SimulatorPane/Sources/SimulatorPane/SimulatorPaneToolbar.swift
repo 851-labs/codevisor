@@ -1,12 +1,8 @@
 import CodevisorClient
 import SwiftUI
 
-/// The Simulator pane's toolbar items: which device leads, its settings and actions trail. The
-/// device's own controls (Home, screenshot, rotation, posture) sit along the bottom, as in Device
-/// Hub: the pane's action bar on a Mac, the bottom toolbar on an iPhone or iPad.
 public struct SimulatorPaneToolbar: ToolbarContent {
   let model: SimulatorPaneModel
-  /// Saves or shares a screenshot (PNG) of the device.
   let onScreenshot: (Data, String) -> Void
 
   public init(model: SimulatorPaneModel, onScreenshot: @escaping (Data, String) -> Void) {
@@ -17,13 +13,10 @@ public struct SimulatorPaneToolbar: ToolbarContent {
   public var body: some ToolbarContent {
     #if os(macOS)
       if let device = model.device {
-        // In place of the window title, without a glass capsule; the toolbar's hover highlight
-        // wraps the label evenly, so nothing pads it from outside.
         ToolbarItem(id: "simulator.device", placement: .navigation) {
           SimulatorDevicePicker(model: model, device: device)
         }
         .sharedBackgroundVisibility(.hidden)
-        // Without a window title to push them over, settings and actions need the space.
         ToolbarSpacer(.flexible)
         ToolbarItemGroup(placement: .primaryAction) {
           if device.isBooted { SimulatorSettingsButton(model: model) }
@@ -31,8 +24,6 @@ public struct SimulatorPaneToolbar: ToolbarContent {
         }
       }
     #else
-      // The device is the screen's title, and its menu the title menu (see the workspace screen);
-      // settings live in the actions menu, declared before the workspace's New Tab button.
       if let device = model.device {
         ToolbarItem(id: "simulator.actions", placement: .topBarTrailing) {
           SimulatorActionsMenu(model: model, device: device)
@@ -48,7 +39,6 @@ public struct SimulatorPaneToolbar: ToolbarContent {
           ToolbarItem(id: "simulator.rotate", placement: .bottomBar) { SimulatorRotateButton(model: model) }
         }
         if model.deviceState?.postures.isEmpty == false {
-          // One item: separate ones each show their title and spill into the overflow menu.
           ToolbarItem(id: "simulator.posture", placement: .bottomBar) {
             HStack(spacing: 4) { SimulatorPostureButtons(model: model) }
               .labelStyle(.iconOnly)
@@ -59,8 +49,6 @@ public struct SimulatorPaneToolbar: ToolbarContent {
   }
 }
 
-/// The Mac's simulators to switch to, iPhones first with the running ones marked, then Manage
-/// Simulators: an iPhone or iPad's title menu.
 public struct SimulatorDeviceMenuItems: View {
   let model: SimulatorPaneModel
 
@@ -71,7 +59,6 @@ public struct SimulatorDeviceMenuItems: View {
   public var body: some View {
     Picker("Simulator", selection: Binding(get: { model.udid ?? "" }, set: { model.choose($0) })) {
       ForEach(SimulatorFamilies.sorted(model.list?.devices ?? [])) { device in
-        // A menu shows the second line as the item's subtitle.
         VStack(alignment: .leading) {
           Text(device.name)
           Text(device.isBooted ? "\(device.runtime.name) · Running" : device.runtime.name)
@@ -86,7 +73,6 @@ public struct SimulatorDeviceMenuItems: View {
 }
 
 #if os(macOS)
-  /// Opens the device's settings in a popover. (On an iPhone or iPad they're in the actions menu.)
   struct SimulatorSettingsButton: View {
     let model: SimulatorPaneModel
 
@@ -99,8 +85,6 @@ public struct SimulatorDeviceMenuItems: View {
   }
 #endif
 
-/// Everything else you can do to the device: restart, shut down, rename, delete (and, on an
-/// iPhone or iPad, its settings).
 struct SimulatorActionsMenu: View {
   let model: SimulatorPaneModel
   let device: ServerSimulatorDevice
@@ -111,7 +95,6 @@ struct SimulatorActionsMenu: View {
   var body: some View {
     Menu("More", systemImage: "ellipsis") {
       #if os(iOS)
-        // On an iPhone or iPad the bar has no room for a separate settings button.
         if device.isBooted {
           Button("Device Settings", systemImage: "slider.horizontal.3") { model.showsSettings = true }
           Divider()

@@ -1,6 +1,5 @@
 import Foundation
 
-/// Single-use probe fault, armed at the decoder reset edge. The app never arms it.
 package final class ScreenSharingEncoderDropCheck: @unchecked Sendable {
   package init() {}
   private let lock = NSLock()

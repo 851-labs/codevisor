@@ -5,9 +5,6 @@ struct WorkspaceNavigationTitle: Equatable {
   let subtitle: String
 }
 
-/// Lets UIKit lay out the real conversation title, then animates just its
-/// lettering. The navigation buttons and sheet expansion keep their own
-/// animations, and the destination uses the same native title and subtitle.
 @MainActor
 final class NewChatNavigationTitleTransition {
   private var animator: UIViewPropertyAnimator?
@@ -32,9 +29,6 @@ final class NewChatNavigationTitleTransition {
       snapshot.accessibilityElementsHidden = true
     }
 
-    // SwiftUI receives these same values on its next reconciliation. Update
-    // the native item now so we can retain the old title before it changes,
-    // without changing the draft's pane identity or its first responder.
     UIView.performWithoutAnimation {
       item.title = title.title
       item.subtitle = title.subtitle

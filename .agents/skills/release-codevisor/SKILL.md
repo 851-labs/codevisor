@@ -30,7 +30,6 @@ GitHub `latest`. Alpha releases remain prereleases and never advance `latest`.
 Public iOS TestFlight publication uses the separate, manually triggered
 `Publish Beta` workflow. Do not dispatch it as part of a normal
 macOS/server release; submit an iOS beta only when requested.
-See [TestFlight release setup](../../../docs/testflight-releases.md).
 
 Do not create, move, or push a version tag manually. The workflow owns the tag.
 

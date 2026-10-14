@@ -1,15 +1,9 @@
 import type { SessionConfigOption } from "@codevisor/api"
 
-/// agy's model catalog as Codevisor's Model and Reasoning pickers. `agy
-/// models` lists one line per variant (`gemini-4-argon-high  Gemini 4 Argon
-/// (High)`); the variants of one model share a picker entry, and the tier is
-/// the reasoning level.
-
 export const MODEL_OPTION_ID = "model"
 export const EFFORT_OPTION_ID = "thought_level"
 
 export interface AgyModelVariant {
-  /// What `--model` takes.
   readonly slug: string
   readonly tier: string | undefined
   readonly label: string | undefined
@@ -21,7 +15,6 @@ export interface AgyModel {
   readonly variants: ReadonlyArray<AgyModelVariant>
 }
 
-// agy separates the columns with a tab (or, in older builds, runs of spaces).
 const LINE = /^([A-Za-z0-9][\w.-]*)(?:\t|\s{2,})\s*(\S.*?)\s*$/
 const TIERED = /^(.*\S)\s+\(([^()]+)\)$/
 
@@ -47,14 +40,11 @@ export const parseModels = (output: string): Array<AgyModel> => {
   return models
 }
 
-/// The tier a model runs at when nobody chose one.
 export const defaultTier = (model: AgyModel): string | undefined => {
   const tiers = model.variants.map((variant) => variant.tier)
   return tiers.includes("medium") ? "medium" : tiers[0]
 }
 
-/// The model and tier a chat runs, falling back to agy's first listing (its
-/// recommended model) and the model's default tier.
 export const resolveSelection = (
   models: ReadonlyArray<AgyModel>,
   selection: { readonly modelId?: string | undefined; readonly tier?: string | undefined }

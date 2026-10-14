@@ -15,11 +15,8 @@ public struct ClientLayoutRequest: Codable, Sendable {
   }
   public var workspaceId: UUID
   public var action: Action
-  /// Background layout edits preserve selection unless explicitly requested.
   public var focus: Bool?
 
-  /// Validate on a copy, then let the native owner commit once and publish
-  /// any created pane through the same registry used by the UI.
   public func applying(to original: Workspace, compact: Bool) throws -> Workspace {
     guard original.id == workspaceId, !original.isArchived else {
       throw ClientControlError("Workspace is unavailable")
@@ -94,9 +91,6 @@ public struct ClientLayoutRequest: Codable, Sendable {
     workspace.centerTabs[index].customTitle = trimmed.isEmpty ? nil : trimmed
   }
 
-  /// Restore selection on the uncommitted copy, so background edits never
-  /// briefly select their result. Follow the active leaf if the edit moved it
-  /// into another tab; all other surviving tabs retain their own selection.
   private func preserveSelection(from original: Workspace, in workspace: inout Workspace) {
     for tab in original.centerTabs {
       if let index = workspace.centerTabs.firstIndex(where: { $0.id == tab.id }),
@@ -129,7 +123,6 @@ public struct ClientLayoutRequest: Codable, Sendable {
     let source = workspace.centerTabs[index]
     guard let state = source.root.group(id: leaf) else { throw ClientControlError("Leaf is unavailable") }
     if action.kind == "detach" {
-      // A leaf that is already alone is already detached.
       if source.root.allGroups.count == 1 {
         _ = workspace.selectDestination(.leaf(leaf))
         return

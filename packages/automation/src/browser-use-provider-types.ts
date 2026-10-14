@@ -19,11 +19,9 @@ export interface BrowserUseProvider extends AutomationToolProvider {
   readonly status: () => BrowserUseProviderStatus
   readonly sessionBackend: (sessionId: string) => BrowserBackend | undefined
   readonly setSessionBackend: (sessionId: string, backend: BrowserBackend) => void
-  /** Called only between responses, never for steering input during an active turn. */
   readonly beginTurn: (sessionId: string, backend: BrowserBackend) => Promise<void>
   readonly acceptExtensionConnection: (socket: WebSocket) => void
   readonly onExtensionConnectionChange: (listener: (connected: boolean) => void) => () => void
-  /** Rejects when the opener (Finder, Chrome, xdg-open) could not be launched. */
   readonly openDevelopmentExtensionFolder: () => Promise<void>
   readonly openDevelopmentExtensionPage: () => Promise<void>
   readonly openDevelopmentExtensionInstaller: () => Promise<void>
@@ -31,7 +29,6 @@ export interface BrowserUseProvider extends AutomationToolProvider {
   readonly extensionArchivePath: () => string
   readonly extensionIconPath: () => string
   readonly configureExtensionRelay: (serverBaseUrl: string) => void
-  /// A live view of the tab the session's agent is driving.
   readonly subscribePreview?: (
     sessionId: string,
     viewer: BrowserPreviewViewer

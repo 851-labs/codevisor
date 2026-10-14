@@ -1,13 +1,3 @@
-// Declarations for CoreGraphics' private virtual-display classes: the native
-// host's display sized to the viewer (851-2376, private API approved for it)
-// and the Screen Sharing rig. The classes are exported by CoreGraphics.framework;
-// no header ships in the SDK.
-//
-// Derived from DeskPad's CGVirtualDisplayPrivate.h (MIT, Khaos Tian, 2021),
-// itself a class-dump of the framework. Properties observed at runtime on
-// macOS 27 but absent here (transferFunction, rotation, refreshDeadline,
-// isReference) are intentionally not declared until they are needed.
-
 #import <CoreGraphics/CoreGraphics.h>
 #import <Foundation/Foundation.h>
 

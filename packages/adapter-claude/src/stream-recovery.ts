@@ -6,20 +6,11 @@ import { cancelClaudePendingQuestions } from "./questions.js"
 import { InputQueue, type ClaudeQueryFn, type ClaudeSession } from "./session.js"
 import { pushResumeAfterInterruptionPrompt } from "./turn-recovery.js"
 
-/// Invisible stream resumptions allowed per turn. The SDK stream ending with a
-/// turn still open and no `result` means the CLI process or its pipe died, not
-/// that the work finished: resume the same CLI session on a fresh query and
-/// nudge it to continue — what a user would do by hand — instead of ending the
-/// turn with an error the user can do nothing about. Past the cap the turn
-/// ends and surfaces the failure.
 const MAX_STREAM_RECOVERIES = 2
-/// Delay before the first resumption; doubles per attempt.
 const STREAM_RECOVERY_BACKOFF_MS = 1_000
 
 export interface StreamRecoveryDeps {
-  /// The options the session's first query was started with.
   readonly options: ClaudeOptions
-  /// Starts the message pump for a query (the session's own pump).
   readonly pump: (query: Query) => Promise<void>
   readonly queryFn: ClaudeQueryFn
 }
@@ -29,12 +20,6 @@ const sleep = (ms: number): Promise<void> =>
     setTimeout(resolve, ms)
   })
 
-/// Resumes the live turn on a fresh SDK query after the stream died with the
-/// turn still open. The CLI session is resumed by id (its transcript is
-/// durable on disk), a new input queue replaces the one the dead query may
-/// still be reading, and an interruption-aware nudge restarts the model.
-/// Returns false when the session cannot be resumed (retired, aborted,
-/// cancelled, or out of attempts) so the caller ends the turn instead.
 export const resumeSessionAfterStreamDeath = async (
   session: ClaudeSession,
   deps: StreamRecoveryDeps
@@ -44,21 +29,12 @@ export const resumeSessionAfterStreamDeath = async (
   const attempt = session.streamRecoveries
   session.streamRecoveries += 1
   await sleep(STREAM_RECOVERY_BACKOFF_MS * 2 ** attempt)
-  // The session may have been retired or cancelled while backing off.
   if (session.retired || session.abort.signal.aborted || !session.turnActive) return false
-  // State that died with the CLI process: a permission/question picker whose
-  // resolver belonged to the dead query, and background tasks whose child
-  // processes went down with it. The resumed CLI re-asks anything it needs.
   void cancelClaudePendingQuestions(session)
   if (session.backgroundTasks.size > 0) {
     session.backgroundTasks.clear()
     emitBackgroundTasks(session)
   }
-  // A fresh session was started with `--session-id`; the resumed one must
-  // name the same id through `resume` instead, never both.
-  // The process restarts on what the session is running now — the model,
-  // effort, and speed the chat applied since start — not the start options.
-  // Skills turned off at start stay off.
   const {
     extraArgs: startArgs,
     model: _startModel,

@@ -7,7 +7,6 @@ export interface SharedAccountIntegration {
   readonly context: (id: string) => Promise<HarnessAccountContext | undefined>
   readonly activate: (harnessId: string, id: string) => Promise<boolean>
   readonly accounts: (harnessId: string) => Promise<ReadonlyArray<HarnessAccount> | undefined>
-  /** Cached account visibility for catalog rows; never reconciles or probes credentials. */
   readonly storedAccounts?: (
     harnessId: string
   ) => Promise<ReadonlyArray<HarnessAccount> | undefined>

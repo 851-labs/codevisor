@@ -67,8 +67,6 @@ describe("pi source", () => {
     const published = await source.read()
     expect(published).toBe(canonicalCredentialJson({ openai: { type: "api_key", key: "sk-1" } }))
 
-    // Applying a fleet subset replaces the api_key class (removals travel)
-    // and preserves the local oauth entry verbatim.
     await source.apply(canonicalCredentialJson({ groq: { type: "api_key", key: "sk-2" } }))
     const merged = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>
     expect(Object.keys(merged).toSorted()).toEqual(["anthropic", "groq"])
@@ -140,28 +138,23 @@ describe("codex source", () => {
     expect(source.tombstoneOnAbsence).toBe(true)
     expect(await source.localOverrides!()).toEqual([])
 
-    // API-key file publishes whole.
     await mkdir(join(home, ".codex"), { recursive: true })
     await writeFile(path, JSON.stringify({ OPENAI_API_KEY: "sk-c" }))
     expect(await source.read()).toBe(canonicalCredentialJson({ OPENAI_API_KEY: "sk-c" }))
 
-    // A rotating token family stops publication…
     await writeFile(path, JSON.stringify({ tokens: { access_token: "a" }, last_refresh: "t" }))
     expect(await source.localOverrides!()).toEqual(["*"])
     expect(await source.read()).toBeUndefined()
-    // …and refuses ferried content and deletions while it lives.
     await source.apply(canonicalCredentialJson({ OPENAI_API_KEY: "ferried" }))
     expect(JSON.parse(await readFile(path, "utf8"))).toHaveProperty("tokens")
     await source.applyDelete!()
     expect(JSON.parse(await readFile(path, "utf8"))).toHaveProperty("tokens")
 
-    // Back to an API key: applies and deletes propagate.
     await writeFile(path, JSON.stringify({ OPENAI_API_KEY: "old" }))
     await source.apply(canonicalCredentialJson({ OPENAI_API_KEY: "ferried" }))
     expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ OPENAI_API_KEY: "ferried" })
     await source.applyDelete!()
     expect(await source.read()).toBeUndefined()
-    // Deleting when already absent is a quiet no-op.
     await source.applyDelete!()
   })
 })
@@ -179,7 +172,6 @@ describe("devin source", () => {
     await writeFile(path, content)
     expect(await source.read()).toBe(content)
 
-    // Verbatim apply onto a fresh machine, locked down to owner-only.
     const { home: other, byId: otherById } = await makeSources()
     const target = otherById["devin-credentials-file"]!
     await target.apply(content)
@@ -187,7 +179,6 @@ describe("devin source", () => {
     expect(await readFile(applied, "utf8")).toBe(content)
     expect(((await stat(applied)).mode & 0o777).toString(8)).toBe("600")
 
-    // A fleet sign-out removes the file.
     await target.applyDelete!()
     await expect(readFile(applied, "utf8")).rejects.toMatchObject({ code: "ENOENT" })
     await target.applyDelete!()
@@ -205,7 +196,6 @@ describe("devin source", () => {
       await readFile(join(home, ".local", "share", "devin", "credentials.toml"), "utf8")
     ).toContain("wk")
 
-    // A directory where the file should be is an error, never "absent".
     const broken = await mkdtemp(join(tmpdir(), "codevisor-ferry-"))
     roots.push(broken)
     await mkdir(join(broken, ".local", "share", "devin", "credentials.toml"), {
@@ -216,7 +206,6 @@ describe("devin source", () => {
     }).find((candidate) => candidate.id === "devin-credentials-file")!
     await expect(brokenSource.read()).rejects.toThrow()
 
-    // A bare resolver environment falls back to the owned process home.
     vi.stubEnv("HOME", home)
     expect(homedir()).toBe(home)
     const bare = credentialFerrySources({ resolveEnv: () => Promise.resolve({}) }).find(
@@ -231,8 +220,6 @@ describe("hostile files and path variants", () => {
     const home = await mkdtemp(join(tmpdir(), "codevisor-ferry-h-"))
     roots.push(home)
 
-    // PI_CODING_AGENT_DIR with a ~ prefix expands against HOME; a custom
-    // CODEX_HOME wins over the default.
     const env = {
       HOME: home,
       XDG_DATA_HOME: join(home, ".local", "share"),
@@ -247,11 +234,9 @@ describe("hostile files and path variants", () => {
       join(home, "custom-pi", "auth.json"),
       JSON.stringify({ openai: { type: "api_key", key: "sk-custom" }, junk: "not-an-object" })
     )
-    // Non-object entries are simply not part of the travelling class.
     expect(await byId["pi-auth"]!.read()).toBe(
       canonicalCredentialJson({ openai: { type: "api_key", key: "sk-custom" } })
     )
-    // Applying twice exercises the lock file's already-exists path.
     await byId["pi-auth"]!.apply(canonicalCredentialJson({ a: { type: "api_key", key: "1" } }))
     await byId["pi-auth"]!.apply(canonicalCredentialJson({ a: { type: "api_key", key: "2" } }))
 
@@ -259,7 +244,6 @@ describe("hostile files and path variants", () => {
     await writeFile(join(home, "custom-codex", "auth.json"), JSON.stringify(["an", "array"]))
     await expect(byId["codex-auth-file"]!.read()).rejects.toThrow("Not a credential object")
 
-    // An unreadable file propagates its error rather than masking it.
     const { chmod } = await import("node:fs/promises")
     await writeFile(
       join(home, "custom-codex", "auth.json"),
@@ -272,7 +256,6 @@ describe("hostile files and path variants", () => {
       await chmod(join(home, "custom-codex", "auth.json"), 0o600)
     }
 
-    // An unwritable parent surfaces the real error from the lock setup.
     const lockedHome = await mkdtemp(join(tmpdir(), "codevisor-ferry-l-"))
     roots.push(lockedHome)
     const lockedDir = join(lockedHome, "custom-pi")
@@ -290,13 +273,11 @@ describe("hostile files and path variants", () => {
       await chmodDir(lockedDir, 0o700)
     }
 
-    // An empty override falls back to the default location.
     const emptied = credentialFerrySources({
       resolveEnv: () => Promise.resolve({ HOME: home, PI_CODING_AGENT_DIR: "", CODEX_HOME: "" })
     })
     expect(await emptied.find((source) => source.id === "pi-auth")!.read()).toBeUndefined()
 
-    // An absent resolver HOME falls back to the owned process home.
     vi.stubEnv("HOME", home)
     expect(homedir()).toBe(home)
     await mkdir(join(home, ".codex"), { recursive: true })
@@ -313,7 +294,6 @@ describe("hostile files and path variants", () => {
     expect(await pi.read()).toBeUndefined()
     const codexBare = bare.find((source) => source.id === "codex-auth-file")!
     expect(await codexBare.read()).toBe('{"OPENAI_API_KEY":"owned-fallback"}')
-    // Fully empty resolver env selects the owned default Pi path.
     const emptyEnv = credentialFerrySources({ resolveEnv: () => Promise.resolve({}) })
     expect(await emptyEnv.find((source) => source.id === "pi-auth")!.read()).toBe(
       '{"openai":{"type":"api_key","key":"owned-pi"}}'

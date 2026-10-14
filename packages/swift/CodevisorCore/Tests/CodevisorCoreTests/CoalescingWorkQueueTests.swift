@@ -24,7 +24,6 @@ struct CoalescingWorkQueueTests {
       started.signal()
       release.wait()
     }
-    // The first write is in flight; everything below queues behind it.
     await started.wait()
     for index in 1...50 {
       queue.enqueue(key: "status") { log.append("status-\(index)") }
@@ -34,7 +33,6 @@ struct CoalescingWorkQueueTests {
     release.signal()
     await queue.flush()
 
-    // Keys keep first-enqueue order; each runs only its newest job.
     #expect(log.values == ["status-0", "status-final", "channel"])
   }
 

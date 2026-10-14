@@ -93,7 +93,6 @@ describe("plugin sync", () => {
       ])
     )
 
-    // Pass 1: a requirement is missing — blocked, nothing recorded.
     world.state.installFailure = new Error("Required executable not found: ffmpeg")
     const first = await reconcilePlugins(world.deps)
     expect([...first.status.blocked].map((item) => item.reason)).toEqual([
@@ -102,8 +101,6 @@ describe("plugin sync", () => {
     ])
     expect(first.status.installed).toEqual([])
 
-    // Pass 2: the requirement appeared — both install, the disabled one is
-    // disabled right after, and the applied records land.
     delete world.state.installFailure
     const second = await reconcilePlugins(world.deps)
     expect([...second.status.installed].toSorted()).toEqual(["acme.paused", "acme.tunes"])
@@ -120,7 +117,6 @@ describe("plugin sync", () => {
         { key: "acme.tunes", value: { enabled: false, source: "acme/tunes" }, timestamp: at(10) }
       ])
     )
-    // The plugin already exists locally, enabled — first contact defers.
     world.state.plugins = [{ id: "acme.tunes", enabled: true, origin: "acme/tunes" }]
 
     const first = await reconcilePlugins(world.deps)
@@ -128,7 +124,6 @@ describe("plugin sync", () => {
     expect(world.calls.enabled).toEqual([["acme.tunes", false]])
     expect(first.status.applied).toEqual(["acme.tunes"])
 
-    // A local re-enable after adoption publishes back to the fleet.
     world.state.plugins = [{ id: "acme.tunes", enabled: true, origin: "acme/tunes" }]
     const second = await reconcilePlugins(world.deps)
     expect(second.status.published).toEqual(["acme.tunes"])
@@ -137,8 +132,6 @@ describe("plugin sync", () => {
       source: "acme/tunes"
     })
 
-    // A fleet-side source move with the same enabled state re-records
-    // without touching the plugin.
     const before = [...world.calls.enabled]
     await run(
       world.deps.db.mergeSyncEntries(PLUGINS_SYNC_NAMESPACE, [
@@ -163,11 +156,8 @@ describe("plugin sync", () => {
     const deleted = await reconcilePlugins(world.deps)
     expect(deleted.status.published).toEqual(["acme.tunes"])
     expect(deleted.changedEntries.find((entry) => entry.key === "acme.tunes")?.deleted).toBe(true)
-    // Idempotent: the tombstone does not republish.
     expect((await reconcilePlugins(world.deps)).status.published).toEqual([])
 
-    // Another machine with the plugin applied: a refused uninstall blocks
-    // and retries, then the removal lands.
     const other = await makeWorld("server-e")
     other.state.plugins = [{ id: "acme.tunes", enabled: true, origin: "acme/tunes" }]
     await reconcilePlugins(other.deps)
@@ -189,7 +179,6 @@ describe("plugin sync", () => {
   it("leaves sovereign local plugins alone and skips malformed entries", async () => {
     const world = await makeWorld("server-f")
     const future = 10_000_000_000_000
-    // A LINKED plugin sharing an id with a fleet entry stays untouched.
     world.state.plugins = [{ id: "acme.tunes", enabled: true }]
     await run(
       world.deps.db.mergeSyncEntries(PLUGINS_SYNC_NAMESPACE, [
@@ -198,12 +187,9 @@ describe("plugin sync", () => {
         { key: "half", value: { enabled: true }, timestamp: at(10) },
         { key: "bad-enabled", value: { enabled: "yes", source: "x/y" }, timestamp: at(10) },
         { key: "nothing", value: null, timestamp: at(10) },
-        // A tombstone for a plugin this machine never had: no-op.
         { key: "ghost", value: null, deleted: true, timestamp: at(10) }
       ])
     )
-    // One this machine once applied whose replica entry is ALREADY a
-    // tombstone: nothing to republish either.
     await run(
       world.deps.db.mergeSyncEntries("local.plugins-applied", [
         { key: "ghost", value: "stale-fp", timestamp: at(5) }
@@ -214,7 +200,6 @@ describe("plugin sync", () => {
     expect(world.calls.enabled).toEqual([])
     expect(result.status.applied).toEqual([])
     expect(result.status.removed).toEqual([])
-    // The malformed entries with sources never became installs either.
     expect(world.calls.installs).toEqual([])
   })
 

@@ -4,10 +4,6 @@ import ScreenSharing
 import ScreenSharingWebRTC
 
 extension ComputerUseLivePreview {
-  /// A viewer of the window a chat's agent controls on another Mac. It
-  /// finds the agent's activity by polling the host, connects over the
-  /// screen-sharing WebRTC path, and reconnects when the agent resumes.
-  /// Call `detach()`; that also stops the host-side stream.
   public func makeRemoteViewer(
     chatSession id: UUID,
     client: any CodevisorServerClienting,
@@ -21,9 +17,6 @@ extension ComputerUseLivePreview {
     return viewer
   }
 
-  /// Whether the agent of a chat on another Mac is controlling an app right
-  /// now, asked without streaming it: nil when the host can't say (offline,
-  /// no permission, an error). An idle agent counts as not controlling.
   public func remoteActivityIsActive(
     chatSession id: UUID,
     client: any CodevisorServerClienting,
@@ -37,13 +30,10 @@ extension ComputerUseLivePreview {
     return Self.remoteActivityIsActive(reply: reply, target: target)
   }
 
-  /// How often to ask a host about its agent: often while the chat's turn runs.
   public static func remotePollInterval(prefersFastPolling: Bool) -> Duration {
     ComputerUseRemotePreviewTiming.pollInterval(prefersFastPolling: prefersFastPolling)
   }
 
-  /// Reads a capabilities reply: the host answers "unavailable" when the
-  /// agent isn't controlling an app. Other refusals say nothing about it.
   static func remoteActivityIsActive(reply: ServerScreenSharingReply, target: String) -> Bool? {
     guard reply.version == 1 else { return nil }
     switch reply.status {
@@ -54,13 +44,9 @@ extension ComputerUseLivePreview {
   }
 }
 
-/// Timing of the remote viewer's search for an active agent.
 enum ComputerUseRemotePreviewTiming {
-  /// While the chat's turn is running an agent may start controlling an
-  /// app at any moment.
   static let activePoll: Duration = .seconds(3)
   static let quietPoll: Duration = .seconds(15)
-  /// How long an ended stream stays on screen with its reason.
   static let endedLinger: Duration = .seconds(2)
 
   static func pollInterval(prefersFastPolling: Bool) -> Duration {
@@ -108,7 +94,6 @@ final class ComputerUseRemotePreviewConnection {
     }
   }
 
-  /// Cancelling ends the stream, which sends the host an authenticated stop.
   func cancel() {
     task?.cancel()
     task = nil

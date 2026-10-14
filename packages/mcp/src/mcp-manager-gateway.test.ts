@@ -18,10 +18,6 @@ afterEach(cleanupMcpManagerTests)
 
 describe("MCP manager gateway", () => {
   it("accepts harness redials: fresh initialize handshakes reuse the same gateway", async () => {
-    // codex 0.145+ tears down and re-initializes its MCP connections on
-    // mid-session events. The gateway must accept the redial instead of
-    // rejecting the second initialize (the pre-fix behavior, which made the
-    // harness silently drop every gateway tool).
     const upstream = await workingUpstream()
     const { db, manager } = await testManager()
     const gatewayBase = await listen(createServer(manager.handleGatewayRequest))
@@ -65,7 +61,6 @@ describe("MCP manager gateway", () => {
         )
       ).toContain("lookup_project")
 
-      // The redial: a brand-new initialize against the same gateway URL.
       const second = await connect()
       try {
         expect(
@@ -81,7 +76,6 @@ describe("MCP manager gateway", () => {
             ).content
           )
         ).toContain("list_issues")
-        // The first connection keeps working alongside the second.
         expect(
           (
             await first.client.callTool({
@@ -94,8 +88,6 @@ describe("MCP manager gateway", () => {
           ).isError
         ).not.toBe(true)
 
-        // Terminating one MCP session leaves the other connected and makes
-        // the terminated session id unknown to the gateway.
         const secondSessionId = second.transport.sessionId
         await second.transport.terminateSession()
         expect(
@@ -124,7 +116,6 @@ describe("MCP manager gateway", () => {
         await second.client.close().catch(() => undefined)
       }
 
-      // Session-less requests that are not an initialize are rejected.
       expect(
         await fetch(issued.url, { method: "GET", headers: authorization }).then(
           (response) => response.status
@@ -144,7 +135,6 @@ describe("MCP manager gateway", () => {
           body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" })
         }).then((response) => response.status)
       ).toBe(400)
-      // Batches count as an initialize when any entry is one.
       expect(
         await fetch(issued.url, {
           method: "POST",
@@ -172,10 +162,6 @@ describe("MCP manager gateway", () => {
       await first.client.close().catch(() => undefined)
     }
   })
-
-  // Same real-HTTP gateway harness as the upstream test above; the plugin
-  // tool source is the structural seam the server wires the plugins manager
-  // into.
 
   it(
     "exposes plugin tools through the gateway and refreshes on installed-set changes",
@@ -228,8 +214,6 @@ describe("MCP manager gateway", () => {
         }) as unknown as Transport
       )
       try {
-        // The execute description names the plugin; the execute skill names
-        // each plugin tool path outright, so agents can call it directly.
         const advertised = (await client.listTools()).tools.find((tool) => tool.name === "execute")
         expect(advertised?.description).toContain("owner.notes")
         const executeGuide = async (): Promise<string> =>
@@ -262,7 +246,6 @@ describe("MCP manager gateway", () => {
           sessionCwd === undefined ? {} : { cwd: sessionCwd }
         ])
 
-        // Remainders that cannot split into <pluginId>.<toolName> are refused.
         expect(
           (
             await client.callTool({
@@ -286,8 +269,6 @@ describe("MCP manager gateway", () => {
           ).isError
         ).toBe(true)
 
-        // An install changes the set: the subscription refreshes the
-        // advertised inventory on every live connection.
         const inventoryChanged = Promise.withResolvers<void>()
         client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
           inventoryChanged.resolve()
@@ -348,7 +329,6 @@ describe("MCP manager gateway", () => {
       const read = await client.callTool({ name: "skills", arguments: { name: "deploy" } })
       expect(read.content).toEqual([{ type: "text", text: "Run deploy.sh" }])
 
-      // Disabling a builtin retracts its skills from the description.
       const builtinChanged = Promise.withResolvers<void>()
       client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
         builtinChanged.resolve()

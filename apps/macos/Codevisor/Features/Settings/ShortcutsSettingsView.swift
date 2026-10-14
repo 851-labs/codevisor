@@ -1,10 +1,6 @@
 import CodevisorUI
 import SwiftUI
 
-/// The Settings ▸ Shortcuts tab: a read-only reference for every keyboard
-/// shortcut in the app, grouped by area and rendered straight from
-/// `ShortcutCatalog` — the same table the menus and the terminal key handlers
-/// read, so this list cannot go stale.
 struct ShortcutsSettingsView: View {
   @Environment(\.theme) private var theme
 
@@ -24,8 +20,6 @@ struct ShortcutsSettingsView: View {
   }
 }
 
-/// One command: its name (plus the context it applies in, when narrower than
-/// the whole window) against its key glyphs.
 private struct ShortcutRow: View {
   let shortcut: ShortcutDefinition
 
@@ -58,8 +52,6 @@ private struct ShortcutRow: View {
   }
 }
 
-/// The key glyphs on a subtle keycap, matching how macOS renders shortcuts in
-/// menus without pretending to be an editable control.
 private struct ShortcutKeycapView: View {
   let display: String
 
@@ -67,7 +59,6 @@ private struct ShortcutKeycapView: View {
 
   var body: some View {
     Text(display)
-      // 12 pt = the macOS `.callout` text style.
       .font(.callout.weight(.medium))
       .monospacedDigit()
       .foregroundStyle(theme.textPrimary)

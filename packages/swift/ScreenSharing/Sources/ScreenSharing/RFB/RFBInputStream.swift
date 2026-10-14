@@ -1,6 +1,5 @@
 import Foundation
 
-/// Big-endian message assembly.
 public struct RFBByteWriter: Sendable {
   public private(set) var bytes: [UInt8] = []
   public init() {}
@@ -14,28 +13,17 @@ public struct RFBByteWriter: Sendable {
   public mutating func append(_ more: [UInt8]) { bytes.append(contentsOf: more) }
 }
 
-/// Buffered big-endian reads over a transport. Owned by exactly one read
-/// loop, which is why it is unchecked: two concurrent readers would
-/// interleave bytes. The transport's chunking never shows through, which is
-/// what the fixture tests rely on.
 public final class RFBInputStream: @unchecked Sendable {
   private let transport: any RFBTransport
   private var buffer: [UInt8] = []
   private var offset = 0
   private let chunk: Int
-  /// Bytes handed out so far, for per-message wire sizes.
   public private(set) var consumed = 0
-  /// Bytes moved by compaction: at most one move per byte on average (851-2320).
   private(set) var bytesMoved = 0
-  /// Link timing (851-2331): while on, bytes from reads that had to wait for
-  /// the network and the time spent waiting. Data already buffered locally
-  /// (kernel, a WebSocket message that arrived whole) adds neither, so it
-  /// can't make the link look faster than it is.
   private var timing = false
   private var timedBytes = 0
   private var timedWait: Duration = .zero
   private let now: @Sendable () -> ContinuousClock.Instant
-  /// A read that returned faster than this found its data already there.
   static let blockedThreshold: Duration = .milliseconds(1)
 
   public init(
@@ -47,15 +35,12 @@ public final class RFBInputStream: @unchecked Sendable {
     self.now = now
   }
 
-  /// Starts counting the link's arrivals (after an update's header: the wait
-  /// for the header includes the idle time before the update).
   public func startTiming() {
     timing = true
     timedBytes = 0
     timedWait = .zero
   }
 
-  /// Stops counting: the bytes that arrived while the reader waited, and how long it waited.
   public func stopTiming() -> (bytes: Int, duration: Duration) {
     timing = false
     return (timedBytes, timedWait)

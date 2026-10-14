@@ -2,10 +2,6 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
 import { randomBytes } from "node:crypto"
 import { readFile } from "node:fs/promises"
 
-/// The control-plane side of OpenCode authentication: a short-lived
-/// `opencode serve` per operation, its authenticated HTTP requests, and the
-/// translation of OpenCode's provider/method/prompt shapes onto the API.
-
 export interface OpenCodeProfile {
   readonly command: string
   readonly cwd: string
@@ -84,9 +80,6 @@ export const startServer = async (profile: OpenCodeProfile): Promise<OpenCodeSer
       cwd: profile.cwd,
       env: {
         ...profile.env,
-        // Provider discovery and credential exchange don't need OpenCode's session data.
-        // Keeping this control-plane server in memory prevents it from racing a chat
-        // process (or another auth request) through opencode.db startup migrations.
         OPENCODE_DB: ":memory:",
         OPENCODE_SERVER_PASSWORD: password
       },
@@ -170,9 +163,7 @@ export const request = async <A>(
     try {
       const parsed = JSON.parse(text) as { data?: { message?: string }; message?: string }
       detail = parsed.data?.message ?? parsed.message ?? text
-    } catch {
-      // Preserve the response body when OpenCode did not return JSON.
-    }
+    } catch {}
     throw new Error(detail.trim() || `OpenCode authentication request failed (${response.status})`)
   }
   return (text.length === 0 ? undefined : JSON.parse(text)) as A

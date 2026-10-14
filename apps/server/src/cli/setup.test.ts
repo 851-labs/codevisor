@@ -27,7 +27,7 @@ const makeWorld = (options: FakeOptions = {}): FakeWorld => {
 
   const deps: SetupDeps = {
     exec: () => Promise.resolve(failure),
-    /* v8 ignore next 3 -- setup never runs interactive child processes. */
+    /* v8 ignore next 3 */
     execInteractive: () => Promise.resolve(0),
     spawnDetachedServer: () => Promise.resolve(4242),
     fetchJson: (url, init) => {
@@ -125,7 +125,6 @@ describe("codevisor setup", () => {
   })
 
   it("stops when the server cannot start", async () => {
-    // Health never succeeds and the spawned server never comes up.
     const world = makeWorld()
     expect(await setupCommand(world.deps)).toBe(1)
     expect(world.logins).toEqual([])

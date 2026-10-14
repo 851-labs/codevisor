@@ -87,9 +87,6 @@ describe("@codevisor/db", () => {
         content: { type: "text", text: "Draft answer" }
       })
     )
-    // Older or partially upgraded producers may omit optional finalization
-    // fields. The projection still replaces the Markdown and treats
-    // attachments as empty.
     await run(
       db.appendEvent("session.output", fallbackSession.id, {
         sessionUpdate: "assistant_message_finalized",
@@ -192,8 +189,6 @@ describe("@codevisor/db", () => {
         messageId: "msg-1"
       })
     )
-    // A mid-stream restore adopts the live span identity, so the streaming
-    // snapshot must carry the provider message id of its answer candidate.
     expect((await run(db.getTranscriptPage(session.id, undefined, 8))).items.at(-1)).toMatchObject({
       isGenerating: true,
       text: "first half",
@@ -203,8 +198,6 @@ describe("@codevisor/db", () => {
       (await run(db.getTranscriptPage(session.id, undefined, 8))).items.at(-1)?.phase
     ).toBeUndefined()
 
-    // An empty chunk without provider identity cannot classify any existing
-    // span and must leave the optimistic candidate untouched.
     await run(
       db.appendEvent("session.output", session.id, {
         sessionUpdate: "agent_message_chunk",
@@ -216,7 +209,6 @@ describe("@codevisor/db", () => {
       messageId: "msg-1"
     })
 
-    // Anonymous spans receive a stable server identity.
     await run(
       db.appendEvent("session.output", session.id, {
         sessionUpdate: "agent_message_chunk",
@@ -227,7 +219,6 @@ describe("@codevisor/db", () => {
       (await run(db.getTranscriptPage(session.id, undefined, 8))).items.at(-1)?.messageId
     ).toMatch(/^text:/)
 
-    // Completion keeps the same stable identity.
     await run(db.appendEvent("session.updated", session.id, { turnState: "ended" }))
     const completed = (await run(db.getTranscriptPage(session.id, undefined, 8))).items.at(-1)
     expect(completed?.isGenerating).toBe(false)
@@ -259,8 +250,6 @@ describe("@codevisor/db", () => {
     })
     expect(optimistic?.phase).toBeUndefined()
 
-    // Claude sends this when a tool starts after streamed prose. The empty
-    // correction must demote the restored span just as the live reducer does.
     await run(
       db.appendEvent("session.output", session.id, {
         sessionUpdate: "agent_message_chunk",
@@ -316,12 +305,8 @@ describe("@codevisor/db", () => {
     const beforeEvents = new Date(Date.now() - 60 * 60 * 1000).toISOString()
     const afterEvents = new Date(Date.now() + 60 * 60 * 1000).toISOString()
 
-    // Events since the cutoff: the turn may still be live.
     expect(await run(db.listQuietStreamingSessions(beforeEvents))).toEqual([])
-    // Quiet log + streaming row = stuck-turn candidate; sessions whose items
-    // all completed never qualify no matter how quiet they are.
     expect(await run(db.listQuietStreamingSessions(afterEvents))).toEqual([streaming.id])
-    // Once repaired, the session drops out.
     await run(db.closeStaleAssistantChatItems(streaming.id))
     expect(await run(db.listQuietStreamingSessions(afterEvents))).toEqual([])
     await run(db.close)
@@ -345,8 +330,6 @@ describe("@codevisor/db", () => {
     insertShell.run("empty-assistant", session.id, 2, "assistant", "complete")
     sqlite.close()
 
-    // Filtering happens before LIMIT, so ghost rows cannot consume a page or
-    // manufacture `hasMore`/bottom-space state in a virtualized client.
     const page = await run(db.getTranscriptPage(session.id, undefined, 1))
     expect(page.items).toMatchObject([{ role: "user", text: "visible" }])
     expect(page.hasMore).toBe(false)
@@ -399,12 +382,8 @@ describe("@codevisor/db", () => {
       kind: meta.kind
     }
 
-    // An explicit EMPTY attachments array still coalesces (length 0, row stays
-    // attachment-free) — same as passing none.
     await run(db.appendConversationItem(session.id, "assistant", "m1", "He", true, []))
     await run(db.appendConversationItem(session.id, "assistant", "m1", "llo", false, []))
-    // A chunk CARRYING attachments never coalesces onto/around: it inserts its
-    // own row, and a following chunk can't extend it (its attachments != null).
     await run(db.appendConversationItem(session.id, "assistant", "m2", "pic", false, [ref]))
     await run(db.appendConversationItem(session.id, "assistant", "m2", "more", false, []))
 

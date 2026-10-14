@@ -1,11 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// On macOS 27 betas a freshly created `NavigationSplitView` window ignores
-/// `defaultSize` and opens at SwiftUI's 100 000pt width cap (the detail
-/// column reports an unbounded ideal width). Windows restored from saved
-/// state are unaffected. This probe clamps such a window to the intended
-/// default size the first time it lands on screen.
 struct WindowFrameGuard: NSViewRepresentable {
   static let defaultSize = NSSize(width: 1040, height: 720)
 
@@ -18,8 +13,6 @@ struct WindowFrameGuard: NSViewRepresentable {
   private final class GuardView: NSView {
     override func viewDidMoveToWindow() {
       super.viewDidMoveToWindow()
-      // Resizing from inside the display cycle raises; do it on the next
-      // turn of the run loop.
       DispatchQueue.main.async { [weak self] in self?.clampIfNeeded() }
     }
 

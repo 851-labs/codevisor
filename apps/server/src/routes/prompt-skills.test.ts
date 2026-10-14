@@ -27,7 +27,6 @@ describe("Codevisor skills in prompts", () => {
     expect(expandCodevisorSkills("/release-notes for v2.", ["release-notes"], undefined)).toBe(
       `\`release-notes\` for v2.\n\n<codevisor-skills>\n${NOTE}\n</codevisor-skills>`
     )
-    // Codex users invoke with `$`; a sentence can end right after the name.
     expect(expandCodevisorSkills("then $release-notes.", ["release-notes"], undefined)).toBe(
       `then \`release-notes\`.\n\n<codevisor-skills>\n${NOTE}\n</codevisor-skills>`
     )
@@ -108,7 +107,6 @@ describe("Codevisor skills in prompts", () => {
       expect(connected.status).toBe(200)
     }
 
-    // A fresh session in the same folder offers them before it starts.
     const capabilities = await jsonRequest(
       server,
       `/v1/capabilities?cwd=${encodeURIComponent(folderPath)}`
@@ -155,11 +153,9 @@ describe("Codevisor skills in prompts", () => {
       "codevisor-agents",
       "release-notes"
     ])
-    // A guide leaves with its tool.
     await services.mcp.setProjectEnabled(project.id, "computer", false)
     expect(await offered()).toEqual(["browser-use", "codevisor-agents", "release-notes"])
 
-    // Without a tool gateway no Codevisor skill can load.
     const { mcp: _gateway, ...withoutGateway } = services
     const gatewayless = await startWithApp(withoutGateway)
     runningServers.push(gatewayless)

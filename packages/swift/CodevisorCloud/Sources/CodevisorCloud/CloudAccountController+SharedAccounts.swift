@@ -2,8 +2,6 @@ import CodevisorClient
 import Foundation
 
 extension CloudAccountController {
-  /// A paired machine participates in the same refresh coordinator as relay
-  /// machines. Existing registrations remain under their original owner.
   public func prepareAccountSync(on client: any CodevisorServerClienting, machineId: String) async -> Bool {
     guard state.isSignedIn, let token = storedToken else { return false }
     let server = serverURL
@@ -19,8 +17,6 @@ extension CloudAccountController {
         _ = try await client.connectCloud(serverURL: server, sessionToken: token)
         return true
       } catch {
-        // The normal per-machine account status shows any missing coordinator.
-        // The next connection or sync pass retries a failed registration.
         return false
       }
     }

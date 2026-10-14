@@ -1,7 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// Anchor the zoom bubble to the address bar without taking focus from CEF.
 struct ChromiumBrowserZoomPopover: NSViewRepresentable {
   let model: ChromiumBrowserModel
   let request: Int
@@ -56,8 +55,6 @@ struct ChromiumBrowserZoomPopover: NSViewRepresentable {
       dismissal?.cancel()
       if bubble == nil {
         guard let content = window.contentView else { return }
-        // Keep the interactive glass in the key window's view hierarchy
-        // so it shares the address bar's active appearance.
         let controls = NSHostingView(
           rootView: ChromiumBrowserZoomControls(model: model)
             .onHover { [weak self] hovering in

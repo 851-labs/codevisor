@@ -3,8 +3,6 @@ import Testing
 
 @testable import ScreenSharingRigKit
 
-/// The socket boundary is the behavior under test here; the port is chosen by
-/// the OS and every connection is closed by the server after one response.
 struct RigHTTPServerTests {
   @Test func servesOneRequestPerConnectionOnLoopback() async throws {
     let server = try RigHTTPServer(port: 0, loopbackOnly: true) { request in

@@ -23,7 +23,6 @@ import {
   type CodevisorApiToolSpec
 } from "./codevisor-api-tool-spec.js"
 
-/// Plugin and harness tools, including account and provider authentication.
 export const codevisorHarnessApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   apiTool(
     "skills.delete",

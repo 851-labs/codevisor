@@ -1,7 +1,5 @@
 import SwiftUI
 
-/// The Copy button in a code block's header: "Copy", then "Copied" with a
-/// checkmark for a moment, as markdown code blocks show it.
 struct CodeHeaderCopyButton: View {
   let text: String
   @State private var didCopy = false
@@ -11,7 +9,6 @@ struct CodeHeaderCopyButton: View {
     Button {
       PlatformPasteboard.copy(text)
       didCopy = true
-      // Re-copying restarts the confirmation.
       resetTask?.cancel()
       resetTask = Task {
         try? await Task.sleep(for: .seconds(1.5))
@@ -22,8 +19,6 @@ struct CodeHeaderCopyButton: View {
       Label {
         Text(didCopy ? "Copied" : "Copy")
       } icon: {
-        // Fixed box: the two glyphs have different intrinsic heights,
-        // which would otherwise resize the header.
         Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
           .frame(width: 13, height: 13)
       }

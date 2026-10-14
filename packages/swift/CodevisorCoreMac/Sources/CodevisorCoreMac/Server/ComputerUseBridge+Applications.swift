@@ -19,9 +19,6 @@ func computerUseApplicationIsProtected(_ identity: ComputerUseApplicationIdentit
   return protected.contains(where: normalized.contains)
 }
 
-/// App lookup accepts a display name, bundle identifier, or full app
-/// path. Keep that matching logic independent from NSWorkspace so installed
-/// and running app resolution cannot drift apart.
 func computerUseApplicationMatchScore(
   query: String,
   identity: ComputerUseApplicationIdentity
@@ -87,8 +84,6 @@ extension ComputerUseBridge {
         }),
       ] as [String: Any]
     }
-    // Include running apps outside the standard install roots (development
-    // builds and apps launched from mounted volumes are common examples).
     for app in running {
       let identity = runningIdentity(app)
       guard seen.insert(identity.id.lowercased()).inserted else { continue }

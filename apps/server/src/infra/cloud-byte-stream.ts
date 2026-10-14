@@ -25,9 +25,6 @@ const loopbackTarget = (localBaseUrl: string): { host: string; port: number } | 
   return { host, port }
 }
 
-/// Bridges one encrypted relay byte stream onto this Codevisor server's own
-/// loopback TCP listener. The open payload selects only the fixed service;
-/// clients cannot turn the relay into an arbitrary host/port proxy.
 export const byteStreamChannelHandler = (
   localBaseUrl: string,
   log: (line: string) => void,

@@ -11,13 +11,6 @@ func computerUseResolvedDeliveryMode(
 }
 
 extension ComputerUseBridge {
-  /// AX requests that target our own process run their side effects on the
-  /// calling thread — a bridge worker, not main. A SwiftUI action invoked
-  /// there trips main-actor isolation and kills the app, and an agent
-  /// driving Codevisor itself (same pid) is a real, supported flow. Marshal
-  /// those mutations onto the main thread; other processes are unaffected.
-  /// The AX C types predate Sendable; this crossing is a synchronous hop to
-  /// the main thread with the caller blocked, so nothing races.
   private struct UncheckedAXPayload<Value>: @unchecked Sendable {
     let value: Value
   }
@@ -29,10 +22,6 @@ extension ComputerUseBridge {
     func load() -> AXError { lock.withLock { error } }
   }
 
-  /// Dispatched, never `sync`: a self-targeted action can open a menu or
-  /// sheet, and AppKit runs those in a nested tracking loop that would not
-  /// return until the user dismissed it — blocking this worker (and the
-  /// whole helper socket) for the duration. A timeout reports uncertainty.
   func axPerformAction(
     _ element: AXUIElement,
     _ action: CFString,
@@ -45,9 +34,6 @@ extension ComputerUseBridge {
       return AXUIElementPerformAction(element, action)
     }
     let payload = UncheckedAXPayload(value: (element, action))
-    // Wait (on this worker thread, never main) until the main queue has
-    // actually run the action before the caller snapshots. The timeout is
-    // a safety valve for actions that open a nested tracking loop.
     let applied = DispatchSemaphore(value: 0)
     let result = AXMutationResult()
     DispatchQueue.main.async {
@@ -81,10 +67,6 @@ extension ComputerUseBridge {
     return applied.wait(timeout: .now() + 2) == .success ? result.load() : .cannotComplete
   }
 
-  /// Pop-up buttons do not always publish AXValue — a freshly built sheet
-  /// often reports nothing — which leaves the model unable to read the
-  /// current selection. Recover it from the selected child or the button's
-  /// own label instead of showing an empty control.
   func selectionDescription(of element: AXUIElement, role: String) -> String? {
     guard role == "AXPopUpButton" || role == "AXComboBox" else { return nil }
     if let selected = elementsAttribute(element, kAXSelectedChildrenAttribute).first,
@@ -171,8 +153,6 @@ extension ComputerUseBridge {
           "Foreground delivery requires foreground_reason explaining why background cannot complete this action.")
       }
     }
-    // Background is an explicit focus choice, including on other Spaces.
-    // Synthetic input validates visibility separately; AX actions need no activation.
     return resolved
   }
 
@@ -304,10 +284,6 @@ extension ComputerUseBridge {
     return AXValueGetValue(raw as! AXValue, .cfRange, &range) ? range : nil
   }
 
-  /// Notes and other rich editors expose their semantic formatting through
-  /// AXAttributedStringForRange. Render lightweight markdown cues
-  /// so a model can distinguish title/heading/body
-  /// text without guessing from screenshot pixels.
   func formattedTextValue(element: AXUIElement, plainText: String) -> String? {
     let utf16Length = (plainText as NSString).length
     guard utf16Length > 0 else { return nil }

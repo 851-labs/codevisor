@@ -4,8 +4,6 @@ import Observation
 import SwiftUI
 import UIKit
 
-/// A queued send has no transcript row to land in. Its presentation belongs
-/// to the composer cluster and ends only at a confirmed, laid-out queue.
 @MainActor @Observable
 final class IOSQueueSendAnimation {
   private(set) var isFormingQueue = false
@@ -20,7 +18,6 @@ final class IOSQueueSendAnimation {
   @ObservationIgnored private var watchdog: DispatchWorkItem?
   @ObservationIgnored private var startScheduled = false
 
-  /// A queued prompt the server never confirms leaves no proxy behind.
   private static let watchdogDuration: TimeInterval = 0.71
 
   func stage(text: String, queue: [ServerPromptQueueItem], sourceFrame: CGRect, in window: UIWindow?) {
@@ -36,8 +33,6 @@ final class IOSQueueSendAnimation {
     self.proxy = proxy
     IOSNavigationDiagnostics.record("queueSend.stage", "first=\(isFormingQueue)")
 
-    // Failed uploads, rejected prompts, and navigation must never leave a
-    // window-level proxy or an invisible queue card behind.
     let watchdog = DispatchWorkItem { [weak self] in self?.cancel() }
     self.watchdog = watchdog
     DispatchQueue.main.asyncAfter(
@@ -67,9 +62,6 @@ final class IOSQueueSendAnimation {
   private func scheduleFlight() {
     guard proxy != nil, acceptedID != nil, animator == nil, !startScheduled else { return }
     startScheduled = true
-    // Queue publication and SwiftUI layout may happen in the same pass.
-    // Read the destination after that pass, including keyboard dismissal
-    // and the expanded composer's collapse.
     DispatchQueue.main.async { [weak self] in
       guard let self else { return }
       startScheduled = false
@@ -88,8 +80,6 @@ final class IOSQueueSendAnimation {
     if formingQueue {
       destination = queueFrame
     } else {
-      // Later messages tuck into the trailing count, leaving the next
-      // queued message readable throughout the interaction.
       destination = CGRect(
         x: queueFrame.maxX - 50, y: queueFrame.midY - 18, width: 40, height: 36
       )
@@ -106,8 +96,6 @@ final class IOSQueueSendAnimation {
     }
     move.addCompletion { [weak self, weak proxy] position in
       guard let self, let proxy, self.proxy === proxy, position == .end else { return }
-      // Install the real glass and content under the proxy before the
-      // final dissolve. Only additions to an existing queue give it a pulse.
       var transaction = Transaction()
       transaction.disablesAnimations = true
       withTransaction(transaction) { self.isFormingQueue = false }
@@ -140,8 +128,6 @@ final class IOSQueueSendAnimation {
   }
 }
 
-/// A local anchor avoids global-frame estimates and cannot be overwritten
-/// by another session or a prewarmed copy of this transcript.
 struct IOSQueueSendTarget: UIViewRepresentable {
   let animation: IOSQueueSendAnimation
 
@@ -180,10 +166,6 @@ final class IOSQueueSendTargetView: UIView {
 }
 
 extension UIWindow {
-  /// The foreground scene's key window: where send proxies float.
-  /// iPad can have several windows in the foreground; only one of them is
-  /// key (it just took the send tap), so search every foreground scene
-  /// rather than taking the first.
   static var codevisorKeyWindow: UIWindow? {
     let scenes = UIApplication.shared.connectedScenes
       .compactMap { $0 as? UIWindowScene }

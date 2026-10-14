@@ -5,11 +5,7 @@ import CodevisorUI
 import StreamMarkdown
 import UniformTypeIdentifiers
 
-// MARK: - Thumbnails
-
 extension Attachment {
-  /// PDFs render like images (NSImage/PDFKit handle the data) rather than
-  /// as generic file chips.
   var isPDF: Bool {
     mimeType == "application/pdf" || name.lowercased().hasSuffix(".pdf")
   }
@@ -29,11 +25,6 @@ extension PreviewFile {
   var hasVisualPreview: Bool { kind == .image || isPDF || isVideo }
 }
 
-// PDFBadge and VideoPlayBadge are shared with the iOS app via CodevisorUI.
-
-/// A small rounded thumbnail for an image, PDF, or video attachment in the
-/// transcript, or a file chip for other types. Every attachment opens with
-/// Quick Look.
 struct AttachmentThumbnailView: View {
   @Environment(\.openFileDocument) private var openFileDocument
   @Environment(\.theme) private var theme
@@ -94,8 +85,6 @@ struct AttachmentThumbnailView: View {
         resolveFallbackGeometry()
       }
     }
-    // A cold fetch must not keep the whole transcript invisible. Once the
-    // deadline wins, late pixels can fill the frame but cannot resize it.
     .task(id: AttachmentThumbnailLoadID(file: file, store: attachmentImages)) {
       guard inline, file.hasVisualPreview, attachmentImages != nil else { return }
       try? await Task.sleep(for: .milliseconds(450))
@@ -110,8 +99,6 @@ struct AttachmentThumbnailView: View {
 
   private var imageThumb: some View {
     let size = thumbnailSize
-    // A tap gesture rather than a Button: buttons add their own
-    // hover/press highlight over the artwork.
     return ZStack {
       if !inline || file.kind != .image {
         RoundedRectangle(cornerRadius: 8)
@@ -184,8 +171,6 @@ struct AttachmentThumbnailView: View {
   }
 
   private func preview() {
-    // A second click while the file is still downloading would only
-    // restart the same download.
     guard !isLoadingPreview else { return }
     quickLook?.present(QuickLookItem(file), attachmentStore: attachmentImages)
   }
@@ -201,9 +186,6 @@ private struct AttachmentThumbnailLoadID: Hashable {
   }
 }
 
-// PDFBadge and VideoPlayBadge are shared with the iOS app via CodevisorUI.
-
-/// A generic non-image attachment chip: document icon plus filename.
 struct AttachmentFileChip: View {
   @Environment(\.theme) private var theme
   let name: String
@@ -237,11 +219,6 @@ struct AttachmentFileChip: View {
   }
 }
 
-// MARK: - Drop target
-
-/// Makes one chat pane a drop target for files and images, with a full-area
-/// "Drop to attach" overlay while a file hovers. Only file/image types are
-/// registered, so text drags never light it up.
 struct AttachmentDropModifier: ViewModifier {
   let controller: SessionController?
   @State private var isTargeted = false
@@ -360,8 +337,6 @@ struct DropToAttachOverlay: View {
   }
 }
 
-/// Normalizes arbitrary dropped/pasted image data (TIFF and friends) to PNG so
-/// the stored file has a well-known type.
 nonisolated func pngData(from imageData: Data) -> Data? {
   guard let bitmap = NSBitmapImageRep(data: imageData) else { return nil }
   return bitmap.representation(using: .png, properties: [:])

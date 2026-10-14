@@ -5,7 +5,6 @@ import Testing
 @Suite("Computer Use live preview resizing")
 struct ComputerUseLivePreviewResizeTests {
   private typealias Layout = ComputerUseLivePreviewLayout
-  // 976 × 776 available; 60% of the width is 585.6 pt.
   private let container = CGSize(width: 1000, height: 800)
   private let insets = ComputerUseLivePreviewInsets(top: 12, leading: 12, bottom: 12, trailing: 12)
 
@@ -29,7 +28,6 @@ struct ComputerUseLivePreviewResizeTests {
   @Test("Never wider than 60% of the pane or taller than the space above the composer")
   func maximum() {
     #expect(size(10_000_000, 1.6) == CGSize(width: 586, height: 366))
-    // A short pane: height is the binding limit.
     let composer = ComputerUseLivePreviewInsets(top: 12, leading: 12, bottom: 500, trailing: 12)
     let clamped = Layout.size(area: 10_000_000, aspect: 1.6, container: container, insets: composer)
     #expect(clamped == CGSize(width: 461, height: 288))
@@ -61,9 +59,7 @@ struct ComputerUseLivePreviewResizeTests {
     #expect(width(.leading, 80, 0) == 240)
     #expect(width(.bottom, 0, 50) == 400)
     #expect(width(.top, 0, -50) == 400)
-    // A vertical drag on a side handle is ignored.
     #expect(width(.trailing, 0, 300) == 320)
-    // Corners follow the axis that moved further.
     #expect(width(.topLeading, -30, -100) == 480)
     #expect(width(.bottomTrailing, 100, 10) == 420)
   }

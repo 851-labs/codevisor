@@ -6,8 +6,6 @@ export const migrations55: ReadonlyArray<Migration> = [
   {
     id: 55,
     name: "shared tab order",
-    // Panes gain a shared tab order key; existing tabs start in creation
-    // order.
     sql: `
       alter table workspace_panes add column position text not null default '';
     `,

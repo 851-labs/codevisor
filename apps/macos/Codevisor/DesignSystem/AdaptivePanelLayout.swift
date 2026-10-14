@@ -5,9 +5,6 @@ enum AdaptiveDrawer: Equatable {
   case leading
 }
 
-/// Window-scoped presentation state for the navigation sidebar. Docking is
-/// derived from window width; the drawer is transient, so responsive changes
-/// never overwrite the user's saved visibility choices.
 @MainActor
 @Observable
 final class AdaptivePanelLayout {
@@ -40,9 +37,6 @@ final class AdaptivePanelLayout {
   }
 }
 
-/// A floating, edge-aligned panel above the primary content. Keeping this as
-/// an overlay instead of another split-view column protects the chat's width
-/// in compact windows.
 struct AdaptiveDrawerLayer<DrawerContent: View>: View {
   @Environment(AdaptivePanelLayout.self) private var panelLayout
   @Environment(\.accessibilityReduceMotion) private var reduceMotion

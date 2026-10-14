@@ -20,7 +20,6 @@ import CodevisorClient
   }
 
   @Test func aPaneWithoutADeviceOpensOnThePickerAndNewerSchemasAreLeftAlone() throws {
-    // A pane created by another client before it chose a device.
     var record = ServerWorkspacePane(
       id: UUID().uuidString, workspaceId: UUID().uuidString, providerId: "codevisor",
       paneType: "simulator", title: "Simulator", createdAt: "2026-01-01T00:00:00.000Z")

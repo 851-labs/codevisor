@@ -3,13 +3,9 @@ import type { CanonicalModeId, SessionConfigOption, SessionModeState } from "@co
 
 import type { CodexModel, CodexSession } from "./session.js"
 
-/// The wire value Codex uses for its fast service tier (the UI calls it
-/// "priority"); "default" is the explicit standard-routing sentinel.
 export const CODEX_FAST_TIER = "priority"
 export const CODEX_STANDARD_TIER = "default"
 
-/// Approval/sandbox presets, mirroring the modes the codex-acp adapter (and
-/// the Codex IDE extensions) expose. Applied as sticky turn/start overrides.
 export interface CodexMode {
   readonly id: string
   readonly name: string
@@ -17,8 +13,6 @@ export interface CodexMode {
   readonly canonicalId: CanonicalModeId
   readonly approvalPolicy: string
   readonly sandboxPolicy: Record<string, unknown>
-  /// When set, turn/start also sends the EXPERIMENTAL collaborationMode
-  /// preset (unlocked by `capabilities.experimentalApi` at initialize).
   readonly collaboration?: "plan"
 }
 
@@ -110,8 +104,6 @@ export const configOptionsFor = (session: CodexSession): ReadonlyArray<SessionCo
   return options
 }
 
-/// The speed the next turn runs at: the user's pick, else the current
-/// model's catalog default. Undefined when the model has no fast tier.
 export const effectiveSpeed = (session: CodexSession): "standard" | "fast" | undefined => {
   const current = currentCodexModelFor(session)
   if (current?.supportsFast !== true) return undefined

@@ -22,9 +22,9 @@ struct RFBFramebufferTests {
     for y in 0..<4 {
       try framebuffer.fill(RFBRectangle(x: 0, y: y, width: 2, height: 1), blue: UInt8(y), green: 0, red: 0)
     }
-    try framebuffer.copy(RFBRectangle(x: 0, y: 1, width: 2, height: 3), fromX: 0, fromY: 0)  // down
+    try framebuffer.copy(RFBRectangle(x: 0, y: 1, width: 2, height: 3), fromX: 0, fromY: 0)
     #expect((0..<4).map { framebuffer.pixel(x: 0, y: $0).blue } == [0, 0, 1, 2])
-    try framebuffer.copy(RFBRectangle(x: 0, y: 0, width: 2, height: 3), fromX: 0, fromY: 1)  // up
+    try framebuffer.copy(RFBRectangle(x: 0, y: 0, width: 2, height: 3), fromX: 0, fromY: 1)
     #expect((0..<4).map { framebuffer.pixel(x: 1, y: $0).blue } == [0, 1, 2, 2])
     #expect(throws: RFBError.self) {
       try framebuffer.copy(RFBRectangle(x: 0, y: 0, width: 2, height: 1), fromX: 1, fromY: 0)

@@ -23,17 +23,11 @@ export const handleAssistantMessage = (
   readFile: (path: string) => string | undefined
 ): void => {
   const parentId = message.parent_tool_use_id ?? undefined
-  // Error replies surface through turn recovery, never as answer text.
   const isErrorReply = parentId === undefined ? observeAssistantStatus(session, message) : false
   const content = message.message.content
   if (!Array.isArray(content)) return
   const inner = message.message as unknown as Record<string, unknown>
   const messageId = typeof inner.id === "string" ? inner.id : undefined
-  // The CLI does not forward subagent stream events, so a subagent's prose
-  // exists only here, in its consolidated assistant messages. Emit it
-  // tagged with the parent tool call — unless this message DID stream
-  // (older CLIs), in which case the chunks are already out and re-emitting
-  // would double the text.
   const alreadyStreamed =
     parentId !== undefined &&
     messageId !== undefined &&
@@ -49,9 +43,6 @@ export const handleAssistantMessage = (
 const observeAssistantStatus = (session: ClaudeSession, message: AssistantMessage): boolean => {
   const contextUsage = claudeContextUsageFromAssistant(message.message)
   if (contextUsage !== undefined) session.latestContextUsage = contextUsage
-  // Remember the SDK's per-message error (overloaded/rate_limit/… or
-  // max_output_tokens) so a following error `result` can be classified
-  // transient vs permanent, and a truncation can be recovered.
   const assistantError = (message as { error?: unknown }).error
   const usageLimitText = detectUsageLimitMessage(message)
   const isErrorReply =
@@ -88,11 +79,6 @@ const recordUnstructuredAssistantError = (
     session.lastAssistantError = "rate_limit"
     session.lastUsageLimitText = usageLimitText
   }
-  // Some transient failures (e.g. a 529 overload) carry no structured
-  // error — the CLI renders them as an assistant text message ending on
-  // a stop sequence (e.g. "API Error: 529 Overloaded …"). Detect that
-  // shape so the turn retries instead of surfacing the error as if it
-  // were the answer.
   const apiError = usageLimitText === undefined ? detectApiErrorMessage(message) : undefined
   if (apiError !== undefined) {
     isErrorReply = true
@@ -138,7 +124,6 @@ const handleAssistantTool = (
     session.taskToolUses.set(toolUseId, { input: block.input, name: toolName })
     return
   }
-  // AskUserQuestion surfaces as a blocking question via canUseTool.
   if (HIDDEN_TOOLS.has(toolName)) return
   emitAssistantTool(session, toolName, toolUseId, block, parentId, readFile)
 }
@@ -157,9 +142,6 @@ const emitAssistantTool = (
   void session.emit({
     kind: "session.output",
     payload: {
-      // The streamed tool_call may never have existed for subagent
-      // tools (no subagent stream events), so this update must carry
-      // enough to create the call outright — including its kind.
       kind: toolKind(toolName),
       rawInput: block.input,
       sessionUpdate: "tool_call_update",
@@ -195,7 +177,6 @@ const emitAssistantReply = (
   }
 }
 
-/// A message's text blocks joined, or undefined when it has none.
 export const messageProse = (content: ReadonlyArray<unknown>): string | undefined => {
   const texts = content.flatMap((block) =>
     isRecord(block) && block.type === "text" && typeof block.text === "string" && block.text !== ""
@@ -230,11 +211,6 @@ const emitUnannouncedAssistantReply = (
   messageId: string | undefined,
   isErrorReply: boolean
 ): void => {
-  // The CLI writes some replies itself (model "<synthetic>"), such as a
-  // forked command's report. They never stream, so a top-level message no
-  // `message_start` announced is shown from here. A completed forked
-  // command's report stays in its agent's thread: Claude answers with it
-  // once the command's turn ends (see `handleResult`).
   if (
     parentId === undefined &&
     messageId !== undefined &&

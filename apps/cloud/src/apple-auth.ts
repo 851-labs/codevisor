@@ -16,8 +16,6 @@ const appleKeys = createRemoteJWKSet(new URL(`${issuer}/auth/keys`))
 export const hasAppleAuth = (env: CloudEnv): boolean =>
   Boolean(env.APPLE_CLIENT_ID && env.APPLE_TEAM_ID && env.APPLE_KEY_ID && env.APPLE_PRIVATE_KEY)
 
-/// Sign short-lived client assertions on demand. A deployed Worker never
-/// depends on an expiring six-month secret copied from a developer's laptop.
 export const appleClientSecret = async (
   env: CloudEnv,
   clientId = env.APPLE_CLIENT_ID!
@@ -35,8 +33,6 @@ export const appleClientSecret = async (
 }
 
 export const appleOptions = async (env: CloudEnv): Promise<AppleOptions> => ({
-  // The Services ID is grouped with the native iOS App ID in Apple Developer.
-  // Both resolve by Apple subject; email (including relay email) is not identity.
   clientId: env.APPLE_CLIENT_ID!,
   clientSecret: await appleClientSecret(env),
   disableIdTokenSignIn: true,
@@ -67,7 +63,6 @@ export const appleUserInfo = async (
   suppliedName?: { firstName?: unknown; lastName?: unknown }
 ) => {
   if (typeof payload.sub !== "string" || !payload.sub) return null
-  // Resolve omitted profile fields by verified subject, never by email.
   const existing = await env.DB.prepare(
     `SELECT u.email, u.name, u.email_verified FROM account a
        JOIN user u ON u.id = a.user_id WHERE a.provider_id = 'apple' AND a.account_id = ?`
@@ -95,8 +90,6 @@ export const appleUserInfo = async (
   }
 }
 
-/// Native authorization codes are single-use and exchanged for this exact App ID.
-/// The nonce ties Apple's response to a challenge issued by this Cloud instance.
 export const exchangeNativeAppleCode = async (env: CloudEnv, code: string, nonce: string) => {
   const clientId = env.APPLE_NATIVE_CLIENT_ID!
   const response = await fetch(`${issuer}/auth/token`, {
@@ -130,8 +123,6 @@ export const exchangeNativeAppleCode = async (env: CloudEnv, code: string, nonce
   return { tokens, payload }
 }
 
-/// Run before deleting account records: keep the refresh token available if
-/// Apple is temporarily unavailable so the user can retry the whole operation.
 export const revokeAppleAuthorization = async (env: CloudEnv, userId: string): Promise<void> => {
   const { results } = await env.DB.prepare(
     "SELECT refresh_token, access_token, id_token FROM account WHERE user_id = ? AND provider_id = 'apple'"
@@ -141,8 +132,6 @@ export const revokeAppleAuthorization = async (env: CloudEnv, userId: string): P
   for (const account of results) {
     const token = account.refresh_token ?? account.access_token
     if (!token) throw new Error("Sign in with Apple again before deleting your account")
-    // Stored ID tokens were verified before saving. Their audience identifies
-    // whether Apple issued this refresh token to the Services ID or native App ID.
     const clientId = account.id_token ? decodeJwt(account.id_token).aud : env.APPLE_CLIENT_ID
     if (
       typeof clientId !== "string" ||

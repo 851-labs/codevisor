@@ -7,7 +7,6 @@ import Testing
 @MainActor
 @Suite("MarkdownTableRenderer")
 struct MarkdownTableRendererTests {
-  /// (row, column, bottom-border width) for each cell paragraph, in order.
   private func cells(
     _ attributed: NSAttributedString
   ) -> [(row: Int, column: Int, bottomBorder: CGFloat)] {
@@ -35,8 +34,6 @@ struct MarkdownTableRendererTests {
     TableModel(headers: headers, alignments: [], rows: rows, theme: .default)
   }
 
-  /// Lays an attributed string out in a TextKit 1 stack and returns the width
-  /// it actually occupies at the given container width.
   private func laidOutWidth(_ attributed: NSAttributedString, containerWidth: CGFloat) -> CGFloat {
     let storage = NSTextStorage(attributedString: attributed)
     let layoutManager = NSLayoutManager()
@@ -75,9 +72,6 @@ struct MarkdownTableRendererTests {
     let container = try #require(textView.textContainer)
     let storage = try #require(textView.textStorage)
 
-    // Exercise both a fitting calendar and an overflowing one, then return
-    // to a cached width. A half-point document must not make TextKit scale
-    // all the integer columns down and lose one point per column again.
     for width: CGFloat in [832, 831.5, 700, 320, 838, 832] {
       table.frame = NSRect(x: 0, y: 0, width: width, height: table.contentHeight(forWidth: width))
       table.needsLayout = true
@@ -107,7 +101,6 @@ struct MarkdownTableRendererTests {
     }
   }
 
-  /// The width assigned to each column of a rendered table, by column index.
   private func columnWidths(_ attributed: NSAttributedString) -> [Int: CGFloat] {
     var result: [Int: CGFloat] = [:]
     let full = NSRange(location: 0, length: attributed.length)
@@ -122,8 +115,6 @@ struct MarkdownTableRendererTests {
 
   @Test("A long prose column never crushes short columns below min-content")
   func shortColumnsKeepMinContentWidth() {
-    // Regression: one dominant column used to shrink the scale factor so
-    // far that "Swift"-sized columns got ~5pt and wrapped per character.
     let prose = String(
       repeating: "a fairly long description of the repository and what it does ",
       count: 8
@@ -139,12 +130,10 @@ struct MarkdownTableRendererTests {
     let langMin = MarkdownTableRenderer.prepareResolvedCell(
       MarkdownParser().parseInline("Swift"), isHeader: false, theme: .default
     ).minimumWidth
-    // Sanity: the min-content measurement is real, not a degenerate 1pt.
     #expect(repoMin > 20)
     #expect(langMin > 20)
     #expect(widths[0] ?? 0 >= repoMin)
     #expect(widths[1] ?? 0 >= langMin)
-    // The prose column absorbs the squeeze (and wraps) instead.
     #expect(widths[2] ?? 0 > (widths[0] ?? 0) + (widths[1] ?? 0))
   }
 
@@ -155,11 +144,9 @@ struct MarkdownTableRendererTests {
       minimumWidths: [60, 40, 120],
       toFit: 500
     )
-    // Zero-slack columns keep their natural width exactly.
     #expect(widths[0] >= 60)
     #expect(widths[1] >= 40)
     #expect(widths[2] >= 120)
-    // The content budget (width minus 12pt padding per cell edge) is spent.
     let contentBudget: CGFloat = 500 - 12 * 2 * 3
     #expect(abs(widths.reduce(0, +) - contentBudget) < 1)
   }
@@ -172,7 +159,6 @@ struct MarkdownTableRendererTests {
       toFit: 120
     )
     #expect(widths.allSatisfy { $0 >= 1 })
-    // Minimums shrink proportionally, so equal minimums stay equal.
     #expect(abs(widths[0] - widths[1]) < 0.001)
   }
 
@@ -196,8 +182,6 @@ struct MarkdownTableRendererTests {
       headers: ["Head", "Other"], alignments: [.leading, .leading], rows: [[long, "x"]], theme: theme)
     #expect(cache.minimumWidth(for: model) == minimum)
 
-    // Rendered at a width far narrower than the unbreakable word, every
-    // column still keeps its min-content width instead of shredding.
     let attributed = MarkdownTableRenderer.make(
       prepared: prepared, alignments: [.leading, .leading], theme: theme, width: 200
     )
@@ -216,9 +200,6 @@ struct MarkdownTableRendererTests {
 
   @Test("distribute without compression keeps min-content and overflows")
   func distributeOverflowsInsteadOfCompressing() {
-    // The iOS renderer's mode: a wide table on a narrow phone keeps every
-    // column at min-content (readable, horizontally scrollable) rather
-    // than shredding columns below their widest word.
     let widths = MarkdownTableMetrics.distribute(
       contentWidths: [300, 300],
       minimumWidths: [200, 180],
@@ -237,11 +218,8 @@ struct MarkdownTableRendererTests {
     let word = MarkdownTableRenderer.prepareResolvedCell(
       MarkdownParser().parseInline("ordinary"), isHeader: false, theme: .default
     )
-    // The widest word here is "ordinary"/"sentence"-sized, far below the
-    // full unwrapped line.
     #expect(cell.minimumWidth < word.naturalWidth * 2)
     #expect(cell.minimumWidth >= word.naturalWidth * 0.8)
-    // A single word cannot wrap at all: its minimum is its natural width.
     #expect(word.minimumWidth == word.naturalWidth)
   }
 
@@ -259,8 +237,6 @@ struct MarkdownTableRendererTests {
 
   @Test("Every row but the last carries a hairline separator")
   func rowSeparators() {
-    // Header (row 0) + 2 body rows (rows 1, 2). Rows 0 and 1 get a bottom
-    // hairline; the last row (2) does not — the outer border closes it off.
     let attributed = MarkdownTableRenderer.make(
       headers: ["A", "B"], alignments: [],
       rows: [["1", "2"], ["3", "4"]], theme: .default
@@ -289,7 +265,6 @@ struct MarkdownTableRendererTests {
       headers: ["A", "B", "C"], alignments: [],
       rows: [["1"], ["2", "3", "4"]], theme: .default
     )
-    // 3 columns × (1 header + 2 body) = 9 cells, even though a row was short.
     #expect(cells(attributed).count == 9)
     #expect(fullTSV(attributed) == "A\tB\tC\n1\t\t\n2\t3\t4")
   }
@@ -305,7 +280,6 @@ struct MarkdownTableRendererTests {
       if value != nil { sawBackground = true }
     }
     #expect(sawBackground)
-    // Backticks are consumed by the inline parser, so copied text is clean.
     #expect(fullTSV(attributed) == "Call\nfoo()")
   }
 
@@ -335,7 +309,6 @@ struct MarkdownTableRendererTests {
   func tsvNoCells() {
     let plain = NSAttributedString(string: "not a table")
     #expect(TableTextView.tsv(from: plain, in: NSRange(location: 0, length: plain.length)) == nil)
-    // Empty selection is also nil.
     let table = MarkdownTableRenderer.make(
       headers: ["A"], alignments: [], rows: [["1"]], theme: .default
     )
@@ -414,8 +387,6 @@ struct MarkdownTableRendererTests {
     #expect(cache.cellPreparationCount == 4)
     _ = cache.attributedString(for: grown, width: 420)
 
-    // The two headers and first row are cache hits; only Bob/Engineer are
-    // new inline-Markdown preparations.
     #expect(cache.cellPreparationCount == 6)
     #expect(cache.preparationCount == 2)
     #expect(cache.renderCount == 2)
@@ -445,7 +416,6 @@ struct MarkdownTableRendererTests {
     #expect(cache.preparationCount == 40)
     #expect(cache.renderCount == 40)
     #expect(cache.measurementCount == 40)
-    // Two shared headers, one shared body value, and forty distinct keys.
     #expect(cache.cellPreparationCount == 43)
   }
 }

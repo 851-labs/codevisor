@@ -28,7 +28,6 @@ describe("sync service", () => {
     )
     expect(first.changed).toHaveLength(2)
 
-    // A newer write wins; an older one changes nothing.
     const second = await run(
       db.mergeSyncEntries("settings", [entry("channel", "alpha", 20), entry("theme", "light", 5)])
     )
@@ -38,10 +37,8 @@ describe("sync service", () => {
       entry("theme", "dark", 10)
     ])
 
-    // Namespaces are isolated.
     expect(await run(db.getSyncEntries("skills"))).toEqual([])
 
-    // Tombstones persist and round-trip.
     const removal = await run(
       db.mergeSyncEntries("settings", [entry("theme", null, 30, "device-b", true)])
     )

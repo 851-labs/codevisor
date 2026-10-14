@@ -3,8 +3,6 @@ import ScreenSharingDiagnostics
 import Foundation
 import VideoToolbox
 
-/// Isolated hardware experiment. No WebRTC, capture permission, private codec
-/// identifiers or software fallback. Unsupported cases are reported individually.
 enum ProbeCodecCheck {
   struct Variant {
     let name: String
@@ -136,8 +134,6 @@ private final class CodecRunner: @unchecked Sendable {
       metrics.label("supportedProfiles", String(describing: entry))
     }
     if variant.advertised444 {
-      // Select only a value returned by the public property-query API. No
-      // assumption that an undeclared profile exists on another OS or encoder.
       let profileInfo =
         (supported as? [String: Any])?[kVTCompressionPropertyKey_ProfileLevel as String] as? [String: Any]
       let profiles = profileInfo?[kVTPropertySupportedValueListKey as String] as? [String] ?? []
@@ -167,7 +163,6 @@ private final class CodecRunner: @unchecked Sendable {
     hardware(encoder, key: kVTCompressionPropertyKey_UsingHardwareAcceleratedVideoEncoder, label: "encoderHardware")
     let started = ScreenSharingMetrics.nowNs
     for sequence in 0..<180 {
-      // This is paced diagnostic traffic, not correctness-test synchronization.
       let deadline = started + Int64(sequence) * 1_000_000_000 / Int64(configuration.framesPerSecond)
       let wait = Double(deadline - ScreenSharingMetrics.nowNs) / 1_000_000_000
       if wait > 0 { Thread.sleep(forTimeInterval: wait) }

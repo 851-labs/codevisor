@@ -3,12 +3,6 @@ import type { CodevisorDatabaseService } from "@codevisor/db"
 import { latestSyncTimestamp, nextSyncTimestamp, type SyncEntryRecord } from "@codevisor/sync"
 import { Effect } from "effect"
 
-/// The fleet catalog is the ONE desired-state document for harnesses: what
-/// the user wants enabled and installed, everywhere. There is no
-/// machine-local override layer — a machine either follows the catalog or,
-/// for harnesses the catalog doesn't mention yet, its own discovery default.
-/// Every write path (Settings toggle, Install, Uninstall, PATCH) lands here,
-/// so the Settings list and the composer's picker can never disagree.
 export const HARNESSES_SYNC_NAMESPACE = "harnesses"
 const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 
@@ -17,7 +11,6 @@ export const harnessPreference = (value: unknown): HarnessPreference | undefined
   const candidate = value as Record<string, unknown>
   if (typeof candidate.enabled !== "boolean" || typeof candidate.installed !== "boolean")
     return undefined
-  // Legacy `installed: false` recorded absence, never permission to uninstall.
   if (candidate.installed !== true && candidate.uninstall !== true) return undefined
   return { enabled: candidate.enabled, installed: candidate.installed }
 }
@@ -47,10 +40,6 @@ export interface HarnessCatalogIdentity {
   readonly symbolName: string
 }
 
-/// Writes one harness's desired state into the fleet catalog, in the exact
-/// shape the Settings page authors (name and symbol ride along so a row
-/// written by a machine renders like one written by a client). Returns the
-/// entries that changed so the caller can publish `sync.changed`.
 export const setHarnessPreference = async (
   db: CodevisorDatabaseService,
   serverId: string,

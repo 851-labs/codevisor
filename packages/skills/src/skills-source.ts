@@ -1,7 +1,5 @@
 import { SkillsError } from "./skills-store.js"
 
-/// A skill source: something git can clone, or a site publishing skills via
-/// RFC 8615 well-known endpoints.
 export type ParsedSkillSource =
   | {
       readonly kind: "git"
@@ -11,11 +9,6 @@ export type ParsedSkillSource =
     }
   | { readonly kind: "wellKnown"; readonly url: string }
 
-/// Parse the `npx skills` source formats: GitHub/GitLab `owner/repo`
-/// shorthand (with optional `#ref` and `/subpath`), `github:`/`gitlab:`
-/// prefixes, repository URLs (including `/tree/...` and GitLab `/-/tree/...`
-/// paths), raw git/ssh URLs, local paths — and any other HTTP(S) URL, which
-/// resolves through the site's `/.well-known/agent-skills` endpoint.
 export const parseSkillSource = (input: string): ParsedSkillSource => {
   let source = input.trim()
   if (source === "") throw new SkillsError("A skill source is required", "invalid")
@@ -33,14 +26,11 @@ const parseNormalizedSkillSource = (
   forcedHost: "github.com" | "gitlab.com",
   input: string
 ): ParsedSkillSource => {
-  // Raw git/ssh URLs pass straight through (with optional #ref).
   if (source.startsWith("git@") || source.startsWith("ssh://")) {
     const [url, ref] = splitRef(source)
     return { kind: "git", ref, url }
   }
 
-  // Local filesystem paths clone directly (useful for testing and local
-  // skill repositories), with the same optional #ref suffix.
   if (source.startsWith("/") || source.startsWith("./") || source.startsWith("../")) {
     const [url, ref] = splitRef(source)
     return { kind: "git", ref, url }
@@ -61,8 +51,6 @@ const parseHttpSkillSource = (source: string, input: string): ParsedSkillSource 
   if (url.hostname === "gitlab.com" || url.hostname === "www.gitlab.com") {
     return parseGitLabSkillSource(url, ref, input)
   }
-  // Explicit git remotes clone; anything else is a site that may publish
-  // skills via its well-known endpoint.
   if (withoutRef.endsWith(".git")) {
     return { kind: "git", ref, url: withoutRef }
   }
@@ -80,7 +68,6 @@ const parseGitHubSkillSource = (
     throw new SkillsError(`Not a repository URL: ${input}`, "invalid")
   }
   const repo = repoRaw.endsWith(".git") ? repoRaw.slice(0, -4) : repoRaw
-  // github.com/o/r/tree/<ref>/<subpath...>
   if (marker === "tree" && treeRef !== undefined) {
     return {
       kind: "git",
@@ -115,8 +102,6 @@ const parseGitLabSkillSource = (
   input: string
 ): ParsedSkillSource => {
   const segments = url.pathname.split("/").filter((part) => part !== "")
-  // GitLab tree URLs use a `/-/tree/<ref>/<subpath...>` marker, with the
-  // repository path (including subgroups) before the `-`.
   const dashIndex = segments.indexOf("-")
   const repoSegments = dashIndex === -1 ? segments : segments.slice(0, dashIndex)
   const repoPath = gitLabRepositoryPath(repoSegments, input)
@@ -155,7 +140,6 @@ const parseShorthandSkillSource = (
   forcedHost: "github.com" | "gitlab.com",
   input: string
 ): ParsedSkillSource => {
-  // owner/repo[#ref][/subpath] shorthand.
   const [withoutRef, ref] = splitRef(source)
   const segments = withoutRef.split("/").filter((part) => part !== "")
   const [owner, repo, ...subpath] = segments

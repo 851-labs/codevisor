@@ -118,11 +118,9 @@ describe("@codevisor/terminal terminal manager", () => {
       { type: "output", seq: 1, data: "hello" },
       { type: "exit", seq: 2, exitCode: 7 }
     ])
-    // While a client is still attached, the exited terminal stays readable.
     expect(await run(replayedFrames(manager, terminal.terminalId, 1))).toEqual([
       { type: "exit", seq: 2, exitCode: 7 }
     ])
-    // Its session key is released at exit, so the next create respawns.
     const replacement = await run(
       manager.createTerminal({
         sessionId: "session-2",
@@ -134,7 +132,6 @@ describe("@codevisor/terminal terminal manager", () => {
     expect(replacement.terminalId).not.toBe(terminal.terminalId)
     expect(spawner.requests).toHaveLength(2)
 
-    // The last client leaving reaps the exited shell and its scrollback.
     disconnect()
     await expect(
       run(manager.connectTerminal(terminal.terminalId, 0, () => undefined))
@@ -215,7 +212,6 @@ describe("@codevisor/terminal terminal manager", () => {
     const spawner = makeSpawner()
     const manager = makeTerminalManager({ spawner })
 
-    // No terminal for the session at all.
     expect(await run(manager.closeTerminalForSession("session-5"))).toBe(false)
 
     const terminal = await run(
@@ -227,7 +223,6 @@ describe("@codevisor/terminal terminal manager", () => {
       })
     )
 
-    // Live terminal: killed and unregistered, so the next create respawns.
     expect(await run(manager.closeTerminalForSession("session-5"))).toBe(true)
     expect(spawner.processes[0]?.killCount).toBe(1)
     await expect(run(replayedFrames(manager, terminal.terminalId))).rejects.toBeInstanceOf(
@@ -243,8 +238,6 @@ describe("@codevisor/terminal terminal manager", () => {
     )
     expect(replacement.terminalId).not.toBe(terminal.terminalId)
 
-    // A pty that exited on its own already released its session: closing
-    // reports false and does not double-kill the process.
     spawner.handlers[1]?.onExit(0)
     expect(await run(manager.closeTerminalForSession("session-5"))).toBe(false)
     expect(spawner.processes[1]?.killCount).toBe(0)

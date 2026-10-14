@@ -21,8 +21,6 @@ import {
 const BASE = "http://localhost:8787"
 const SEARCH_URL = "https://api.github.com/search/repositories"
 
-// -- Fixtures ------------------------------------------------------------------
-
 const manifest = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   protocolVersion: 1,
   id: "octocat.notes",
@@ -41,10 +39,7 @@ interface RepoFixture {
   stars?: number
   pushedAt?: string
   branch?: string
-  /// Resolved default-branch commit; a number returns that status.
   commit?: string | number
-  /// Raw manifest body served for this repo; a number means "respond with
-  /// that HTTP status instead".
   manifest: string | number
 }
 
@@ -61,8 +56,6 @@ interface StubFetch {
   requests: string[]
 }
 
-/// Serves the GitHub search API (paginated) and raw-content manifests from
-/// in-memory fixtures — the whole pipeline runs with zero network.
 const githubStub = (repos: RepoFixture[]): StubFetch => {
   const requests: string[] = []
   return {
@@ -109,8 +102,6 @@ const readIndex = async (): Promise<PluginIndex> => {
   expect(raw).not.toBeNull()
   return JSON.parse(raw as string) as PluginIndex
 }
-
-// -- Manifest validation ---------------------------------------------------------
 
 describe("manifest validation", () => {
   it("accepts a well-formed manifest owned by the repo owner", () => {
@@ -168,8 +159,6 @@ describe("manifest validation", () => {
   })
 })
 
-// -- Refresh pipeline ------------------------------------------------------------
-
 describe("refreshPluginIndex", () => {
   it("indexes valid tagged repos and records diagnostics for the rest", async () => {
     const stub = githubStub([
@@ -182,9 +171,7 @@ describe("refreshPluginIndex", () => {
           manifest({ id: "hubber.clock", name: "Clock", description: undefined, tools: undefined })
         )
       },
-      // Impersonation attempt: a fork claiming octocat's id.
       { owner: "evil", name: "notes", manifest: JSON.stringify(manifest()) },
-      // Second repo by the same owner claiming an already-indexed id.
       { owner: "octocat", name: "notes-fork", manifest: JSON.stringify(manifest()) },
       { owner: "octocat", name: "untagged-manifest", manifest: 404 },
       { owner: "octocat", name: "flaky", manifest: 500 },
@@ -199,7 +186,6 @@ describe("refreshPluginIndex", () => {
 
     const index = await readIndex()
     expect(index.generatedAt).toBe(summary.generatedAt)
-    // Sorted by stars descending.
     expect(index.entries.map((entry) => entry.id)).toEqual(["hubber.clock", "octocat.notes"])
     expect(index.entries[1]).toEqual({
       commit: "a".repeat(40),
@@ -216,7 +202,6 @@ describe("refreshPluginIndex", () => {
       stars: 3,
       pushedAt: "2026-08-01T00:00:00Z"
     })
-    // Optional fields are omitted, not null.
     expect(index.entries[0]).not.toHaveProperty("description")
     expect(index.entries[0]).not.toHaveProperty("tools")
     const reasons = Object.fromEntries(index.rejected.map((r) => [r.repo, r.reason]))
@@ -226,14 +211,12 @@ describe("refreshPluginIndex", () => {
     expect(reasons["octocat/flaky"]).toContain("failed with status 500")
     expect(reasons["octocat/broken"]).toContain("not valid JSON")
 
-    // Per-entry keys are written for /plugins/:id.json.
     const entry = await env.PLUGIN_INDEX.get(pluginEntryKey("octocat.notes"))
     expect(JSON.parse(entry as string)).toMatchObject({
       id: "octocat.notes",
       repo: "octocat/notes"
     })
 
-    // The search carried the token and the topic query.
     const search = stub.requests.find((url) => url.startsWith(SEARCH_URL))
     expect(search).toContain(encodeURIComponent("topic:codevisor-plugin"))
     expect(stub.requests).toContain(
@@ -279,7 +262,6 @@ describe("refreshPluginIndex", () => {
     await refreshPluginIndex({ ...env, GITHUB_FETCH: tagged.fetch })
     expect(await env.PLUGIN_INDEX.get(pluginEntryKey("hubber.clock"))).not.toBeNull()
 
-    // hubber/clock no longer carries the topic → next poll forgets it.
     const untagged = githubStub([
       { owner: "octocat", name: "notes", manifest: JSON.stringify(manifest()) }
     ])
@@ -303,8 +285,6 @@ describe("refreshPluginIndex", () => {
   })
 })
 
-// -- HTTP surface ----------------------------------------------------------------
-
 describe("plugin registry routes", () => {
   const seed = async (): Promise<PluginIndexEntry> => {
     const stub = githubStub([
@@ -315,7 +295,6 @@ describe("plugin registry routes", () => {
   }
 
   it("serves an honest empty index before the first poll", async () => {
-    // KV writes persist across tests in this file; recreate "never polled".
     await env.PLUGIN_INDEX.delete(PLUGIN_INDEX_KEY)
     const response = await SELF.fetch(`${BASE}/plugins/index.json`)
     expect(response.status).toBe(200)
@@ -393,8 +372,6 @@ describe("plugin registry routes", () => {
     expect(await right.json()).toMatchObject({ indexed: 0 })
   })
 })
-
-// -- Scheduled poll ----------------------------------------------------------------
 
 describe("scheduled poll", () => {
   it("rebuilds the index from the cron trigger", async () => {

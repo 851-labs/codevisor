@@ -1,26 +1,12 @@
 #if canImport(AppKit)
   import AppKit
 
-  // MARK: - NSTextView subclass
-
-  /// A read-only text view that renders a markdown table and copies selections as
-  /// tab-separated rows.
-  ///
-  /// It (re)builds its table in `layout()` at its assigned width, so the table
-  /// always fills the frame SwiftUI grants — no chopped-off content, no sideways
-  /// jitter while streaming.
-  ///
-  /// The copy override matters because copying spans of an `NSTextTable` otherwise
-  /// yields one cell per line (each cell is its own paragraph in the backing
-  /// store), losing the row/column shape when pasted as plain text. The rich (RTF)
-  /// representation from `super` is preserved for apps that accept it.
   final class TableTextView: TranscriptSelectableTextView {
     private var model: TableModel?
     private var renderMemo: MarkdownTableRenderMemo?
     private var builtWidth: CGFloat = -1
     var preparedWidth: CGFloat?
 
-    /// The narrowest width at which no column wraps mid-word.
     var minimumTableWidth: CGFloat {
       if let preparedWidth { return preparedWidth }
       guard let model, let renderMemo else { return 0 }
@@ -31,7 +17,7 @@
       guard self.model != model || self.renderMemo !== renderMemo else { return }
       self.model = model
       self.renderMemo = renderMemo
-      builtWidth = -1  // force a rebuild at the next layout pass
+      builtWidth = -1
       needsLayout = true
     }
 
@@ -49,20 +35,9 @@
       updateLinkHover(at: nil)
       textStorage?.setAttributedString(string)
       builtWidth = bounds.width
-      // A loaded image can replace a short placeholder and move cell borders.
-      // Redraw the whole transparent view so retained pixels from the old table
-      // do not survive TextKit's narrower glyph invalidation until scrolling.
       needsDisplay = true
     }
 
-    // MARK: Redraw granularity
-
-    /// Row separators and the header fill are text-block decorations drawn in
-    /// cell padding, outside every line fragment. AppKit paints a block's
-    /// decorations only while drawing glyphs, so a redraw of just a padding
-    /// strip (a scroll exposing a few points, a link hover) clears a separator
-    /// and paints nothing back. Every redraw spans the full width and reaches
-    /// the text of the rows on both sides of any padding strip.
     override func setNeedsDisplay(_ invalidRect: NSRect) {
       super.setNeedsDisplay(Self.redrawRect(covering: invalidRect, in: bounds))
     }
@@ -73,8 +48,6 @@
 
     static func redrawRect(covering rect: NSRect, in bounds: NSRect) -> NSRect {
       guard !rect.isEmpty, rect.height.isFinite else { return rect }
-      // The tallest glyph-free band is a row's bottom padding, its separator,
-      // and the next row's top padding.
       let reach = MarkdownTableMetrics.verticalPadding * 2 + 1
       let widened = NSRect(
         x: bounds.minX, y: rect.minY - reach,
@@ -94,9 +67,6 @@
       guard range.length > 16_384, let storage = textStorage else {
         return super.accessibilityAttributedString(for: range)
       }
-      // AppKit's bulk conversion repeatedly hashes NSTextTableBlock graphs.
-      // Export text styles directly for large requests; native selection,
-      // individual link queries, and table copying still use the text view.
       return MarkdownTableAccessibility.attributedText(storage, in: range)
     }
 
@@ -112,10 +82,6 @@
       return handled
     }
 
-    /// Rebuilds a range as TSV by grouping the cell paragraphs it covers (each
-    /// tagged with an `NSTextTableBlock`) by row and column. Returns nil when
-    /// the range contains no table cells, so non-table text (should there ever
-    /// be any) falls back to the default copy behavior.
     static func tsv(from storage: NSAttributedString, in range: NSRange) -> String? {
       guard range.length > 0, NSMaxRange(range) <= storage.length else { return nil }
 

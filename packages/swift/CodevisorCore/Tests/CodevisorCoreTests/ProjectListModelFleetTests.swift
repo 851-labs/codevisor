@@ -3,7 +3,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// Fleet-wide project ordering for the composer's machine-spanning picker.
 @MainActor
 @Suite("ProjectListModel fleet")
 struct ProjectListModelFleetTests {
@@ -38,8 +37,6 @@ struct ProjectListModelFleetTests {
       )
     }
 
-    // The remote machine's workspace history counts even though "local"
-    // is the selected machine — the picker is the fleet's.
     let ordered = model.fleetActiveProjectsByWorkspaceRecency([
       workspace(localProject, createdAt: 10),
       workspace(remoteProject, createdAt: 20),
@@ -48,7 +45,6 @@ struct ProjectListModelFleetTests {
       ordered.map(\.name) == ["remote-work", "local-work", "remote-idle"]
     )
 
-    // The newest workspace per project wins, not the first or last listed.
     let reordered = model.fleetActiveProjectsByWorkspaceRecency([
       workspace(localProject, createdAt: 10),
       workspace(remoteProject, createdAt: 20),
@@ -72,15 +68,11 @@ struct ProjectListModelFleetTests {
       client: client
     )
 
-    // Stamped with the PICKED machine, not the selected one; the awaited
-    // upsert reached the picked machine's client.
     #expect(added.serverId == "remote-b")
     #expect(model.projects.contains { $0.serverId == "remote-b" && $0.id == added.id })
     #expect(try await client.listProjects().contains { $0.id == added.id.uuidString })
-    // The outbox also keeps it until the machine's own state lists it.
     #expect(fixture.store.pendingIntents.map(\.machineId) == ["remote-b"])
 
-    // Re-adding the same folder on the same machine reuses the record.
     let again = await model.addProject(
       folderURL: URL(fileURLWithPath: "/srv/studio-work"),
       serverId: "remote-b",
@@ -105,7 +97,6 @@ struct ProjectListModelFleetTests {
     let model = fixture.projectList
     let project = try #require(model.projects.first { $0.serverId == "remote-b" })
 
-    // A fleet write routes to the record's OWN machine, not the selected one.
     let session = model.newSession(in: project, harnessId: "codex")
     #expect(fixture.store.pendingIntents.map(\.machineId) == ["remote-b"])
     await fixture.sync(with: remoteClient, machineId: "remote-b")

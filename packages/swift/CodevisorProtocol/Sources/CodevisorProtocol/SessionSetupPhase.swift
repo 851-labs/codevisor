@@ -1,11 +1,8 @@
 import Foundation
 import ACPKit
 
-/// One output line captured while a pre-chat setup step runs (e.g. `git
-/// worktree add` and its checkout hooks, streamed as `worktree.setup` events).
 public struct SessionSetupLogLine: Identifiable, Equatable, Sendable {
   public let id: Int
-  /// "stdout" or "stderr".
   public let stream: String
   public let text: String
 
@@ -16,10 +13,6 @@ public struct SessionSetupLogLine: Identifiable, Equatable, Sendable {
   }
 }
 
-/// A step that runs before the chat can start (worktree setup, starting the
-/// agent). Rendered like the transcript's "Worked for…" section: a live timer
-/// while running, "<completedTitle> in 60s" when done, and expandable log
-/// lines / an error when something goes wrong.
 public struct SessionSetupPhase: Identifiable, Equatable, Sendable {
   public enum Outcome: Equatable, Sendable {
     case running
@@ -28,11 +21,8 @@ public struct SessionSetupPhase: Identifiable, Equatable, Sendable {
   }
 
   public let id: String
-  /// Present-tense title while running, e.g. "Setting up worktree".
   public let activeTitle: String
-  /// Past-tense title once done, e.g. "Set up worktree" → "Set up worktree in 60s".
   public let completedTitle: String
-  /// Title when the step fails, e.g. "Could not set up worktree".
   public let failedTitle: String
   public let startedAt: Date
   public private(set) var endedAt: Date?
@@ -66,7 +56,6 @@ public struct SessionSetupPhase: Identifiable, Equatable, Sendable {
     return nil
   }
 
-  /// Elapsed wall-clock time once the phase has ended; nil while running.
   public var duration: TimeInterval? {
     endedAt.map { $0.timeIntervalSince(startedAt) }
   }
@@ -77,8 +66,6 @@ public struct SessionSetupPhase: Identifiable, Equatable, Sendable {
     if logs.count > 256 { logs.removeFirst(logs.count - 256) }
   }
 
-  /// Marks success. A server-measured duration (ms) wins over local clocks
-  /// so the reported time matches what actually ran.
   public mutating func succeed(durationMs: Double? = nil, at date: Date = Date()) {
     outcome = .succeeded
     endedAt = endDate(durationMs: durationMs, fallback: date)

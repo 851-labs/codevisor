@@ -4,10 +4,6 @@ import Foundation
 
 @testable import CodevisorCore
 
-/// A `MachineController` following one machine through `SyncFakeServerClient`,
-/// rendering into a `NavigationFixture`. The machine's last snapshot is
-/// already cached, as after an earlier launch: `workspace` holds the anchor
-/// chat on `serverId`, and `otherWorkspace` belongs to another machine.
 @MainActor
 final class WorkspaceEventFixture {
   let serverId = "local"
@@ -55,7 +51,6 @@ final class WorkspaceEventFixture {
       preservingSelectedPane: true)
   }
 
-  /// The workspace's server record as a `workspace.updated` payload.
   func payload(isArchived: Bool, name: String) -> JSONValue {
     var record = WorkspaceSyncModel.serverWorkspace(from: workspace)
     record.name = name
@@ -64,14 +59,12 @@ final class WorkspaceEventFixture {
     return navigationFixtureJSON(record)
   }
 
-  /// A server snapshot with this workspace archived.
   func archivedSnapshot() -> FakeWorkspaceSnapshot {
     var record = WorkspaceSyncModel.serverWorkspace(from: workspace)
     record.isArchived = true
     return FakeWorkspaceSnapshot(workspaces: [record], panes: fake.workspacePanes ?? [])
   }
 
-  /// Stops every navigation task and waits for them to finish.
   func stop() async {
     let connection = controller.connection(for: serverId)
     let tasks = [

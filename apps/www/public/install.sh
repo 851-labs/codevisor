@@ -1,35 +1,4 @@
 #!/bin/sh
-# Codevisor installer — https://www.codevisor.dev/install.sh
-#
-#   curl -fsSL https://www.codevisor.dev/install.sh | sh
-#
-# macOS (Apple silicon) : installs the Codevisor app into /Applications and
-#                         links the bundled codevisor CLI onto your PATH.
-# macOS (Intel)         : the app is not available; after confirmation, installs
-#                         the standalone codevisor-server instead so the
-#                         Codevisor app on another machine can connect to it.
-# Linux                 : installs codevisor-server and sets it up as a systemd
-#                         service so the Codevisor app on your Mac can connect
-#                         to this machine.
-#
-# Options (environment variables):
-#   CODEVISOR_VERSION        install a specific version instead of the latest stable
-#   CODEVISOR_INSTALL_DIR    server install dir   (default: ~/.codevisor/server, /opt/codevisor as root)
-#   CODEVISOR_BIN_DIR        CLI symlink dir      (default: ~/.local/bin; /usr/local/bin as root on Linux)
-#   CODEVISOR_PORT           server port          (default: 49361)
-#   CODEVISOR_DATA_DIR       server data dir      (default: ~/.codevisor/data)
-#   CODEVISOR_NO_SERVICE     set to 1 to skip systemd setup on Linux
-#   CODEVISOR_INSTALL_SERVER set to 1 to install the server on an Intel Mac
-#                            without the confirmation prompt
-#   CODEVISOR_NO_SETUP       set to 1 to skip the interactive onboarding (it
-#                            also never runs without a terminal)
-#   CODEVISOR_INVITE         one-time invite from a machine already on your
-#                            account (`codevisor machines invite`): joins this
-#                            machine to the account without a prompt
-#   CODEVISOR_MACHINE_NAME   name for this machine when joining with an invite
-#                            (default: the hostname)
-#
-# The former HERDMAN_* option names remain accepted for upgrade compatibility.
 
 set -eu
 
@@ -44,7 +13,6 @@ fail() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 command -v curl >/dev/null 2>&1 || fail "curl is required"
 
 fetch() { curl -fsSL "$@"; }
-# Progress bars only when a human is watching; CI logs stay clean.
 download() {
   if [ -t 1 ]; then
     curl -fSL --progress-bar -o "$2" "$1"
@@ -59,13 +27,8 @@ resolve_version() {
     printf '%s' "${requested_version#v}"
     return
   fi
-  # Resolve the same stable version as the server updater, then download its
-  # versioned assets. The manifest remains authoritative if GitHub's Latest
-  # pointer has not yet advanced during publication.
   release=$(fetch -H 'Cache-Control: no-cache' "$STABLE_MANIFEST_URL") ||
     fail "could not fetch the latest stable release from $STABLE_MANIFEST_URL; retry or set CODEVISOR_VERSION"
-  # The manifest has one version field. Accept only a complete stable version,
-  # whether the JSON is formatted or compact, without requiring jq or Node.
   version=$(printf '%s' "$release" | tr '\n' ' ' | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"v\{0,1\}\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)".*/\1/p')
   [ -n "$version" ] || fail "could not parse a stable version from $STABLE_MANIFEST_URL; retry or set CODEVISOR_VERSION"
   printf '%s' "$version"
@@ -84,8 +47,6 @@ install_macos() {
 
   say "Installing Codevisor $version for macOS"
 
-  # Prefer the Apple silicon disk image, then the universal image and the zip
-  # that older pinned versions (CODEVISOR_VERSION) published instead.
   archive="$tmp_dir/Codevisor.dmg"
   kind="dmg"
   if curl -fsSL -o "$archive" "$RELEASE_DOWNLOAD_BASE/v$version/Codevisor-arm64.dmg"; then
@@ -126,11 +87,6 @@ install_macos() {
     trap cleanup EXIT
   fi
 
-  # Mirror the Linux install: link the CLI launchers bundled inside the app
-  # onto PATH so `codevisor` works from a terminal. The launchers resolve
-  # symlinks before locating the runtime root, so linking straight into the
-  # bundle is safe, and the app updates itself in place so the links stay
-  # valid across updates.
   bin_dir="${CODEVISOR_BIN_DIR:-${HERDMAN_BIN_DIR:-$HOME/.local/bin}}"
   runtime_bin="$app_dest/Contents/Resources/server/darwin-arm64/bin"
   if [ -x "$runtime_bin/codevisor" ]; then
@@ -156,8 +112,6 @@ systemd_escape() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s/%/%%/g'
 }
 
-# Standalone codevisor-server for Linux and Intel Macs. `os` is the release
-# target prefix: linux or darwin.
 install_server() {
   version="$1"
   os="$2"
@@ -189,7 +143,6 @@ install_server() {
   say "Downloading $archive_url"
   download "$archive_url" "$archive"
 
-  # Linux ships sha256sum; macOS ships shasum.
   sha256_tool=""
   if command -v sha256sum >/dev/null 2>&1; then
     sha256_tool="sha256sum"
@@ -221,8 +174,6 @@ install_server() {
     *) note "note: $bin_dir is not on your PATH" ;;
   esac
 
-  # The database must live outside the OS temp directory (the pre-1.x default)
-  # so machine state survives reboots.
   mkdir -p "$data_dir" "$logs_dir"
   serve_cmd="\"$(systemd_escape "$install_dir/bin/codevisor-server")\" serve --host 0.0.0.0 --port $port --auth token --db \"$(systemd_escape "$data_dir/codevisor-server.sqlite")\""
   data_environment=""
@@ -232,14 +183,10 @@ install_server() {
 
   no_service="${CODEVISOR_NO_SERVICE:-${HERDMAN_NO_SERVICE:-0}}"
   if [ "$os" = "darwin" ]; then
-    # macOS has no systemd; `codevisor start` runs a detached background
-    # process that does not survive a reboot.
     say "codevisor-server $version installed"
     note "Start it with:"
     note "  codevisor start"
     note "Run it again after a reboot; it does not start automatically on macOS."
-  # A systemctl binary alone isn't systemd: containers and WSL often ship
-  # one without running systemd, and every unit command then fails.
   elif [ "$no_service" = "1" ] || ! command -v systemctl >/dev/null 2>&1 ||
     ! systemctl show --property=Version >/dev/null 2>&1; then
     say "codevisor-server $version installed"
@@ -266,8 +213,6 @@ WantedBy=multi-user.target
 UNIT
     systemctl daemon-reload
     systemctl enable codevisor-server.service
-    # Restart, not `enable --now`: upgrades must pick up the new runtime and
-    # unit file even when the old server is still running.
     systemctl restart codevisor-server.service
     say "codevisor-server is running (systemctl status codevisor-server)"
   else
@@ -297,11 +242,6 @@ UNIT
     note "  sudo loginctl enable-linger $USER"
   fi
 
-  # Onboarding: sign this machine into the user's Codevisor account. With an
-  # invite from another machine on the account, join without a prompt (the
-  # code goes over stdin, never argv). Otherwise a device code, approved in a
-  # browser or by scanning the QR code with the iOS app; `curl | sh` leaves
-  # stdin as the script, so setup reads /dev/tty.
   if [ -n "${CODEVISOR_INVITE:-}" ]; then
     say "Joining your Codevisor account"
     invite="$CODEVISOR_INVITE"
@@ -325,15 +265,10 @@ UNIT
   fi
 }
 
-# `uname -m` reports x86_64 for a shell running under Rosetta, so ask the
-# hardware directly before treating this Mac as Intel.
 is_apple_silicon() {
   [ "$(uname -m)" = "arm64" ] || [ "$(sysctl -in hw.optional.arm64 2>/dev/null)" = "1" ]
 }
 
-# The app is Apple silicon only. Explain, then get consent before installing
-# the standalone server in its place. `curl | sh` leaves stdin as the script,
-# so the prompt reads /dev/tty.
 confirm_intel_mac_server() {
   printf '\033[1;33m==>\033[0m %s\n' "The Codevisor app is not supported on Intel Macs"
   note "The macOS app requires Apple silicon. You can still run codevisor-server on this"
@@ -361,8 +296,6 @@ confirm_intel_mac_server() {
   esac
 }
 
-# Frees port 49361 for the standalone server: the app's LaunchAgent keeps its
-# bundled server alive, and the app re-registers it on launch.
 stop_unsupported_mac_app() {
   [ -d "$APP_PATH" ] || return 0
   say "Stopping the Codevisor app and its bundled server"

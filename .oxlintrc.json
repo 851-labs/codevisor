@@ -40,6 +40,8 @@
     "unicorn/prefer-add-event-listener": "error",
     "unicorn/require-module-specifiers": "error",
     "no-await-in-loop": "off",
-    "oxc/no-map-spread": "off"
-  }
+    "oxc/no-map-spread": "off",
+    "codevisor/no-comments": "error"
+  },
+  "jsPlugins": ["./scripts/lint/no-comments.mjs"]
 }

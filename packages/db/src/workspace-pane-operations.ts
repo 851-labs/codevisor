@@ -58,9 +58,6 @@ export const upsertWorkspacePane = (
   const now = isoTimestamp()
   const resourceId = upsertResourceId(sqlite, workspaceId, id, request)
   sqlite.transaction(() => {
-    // The explicit client pane wins over a legacy session-id pane,
-    // preserving its stable identity during placeholder conversion, and
-    // takes over the replaced pane's tab slot rather than the end.
     const replacedPosition =
       request.resourceKind !== undefined && resourceId !== null
         ? discardConflictingPanes(sqlite, id, request.resourceKind, resourceId, workspaceId)
@@ -136,8 +133,6 @@ export const deleteWorkspacePane = (
   const paneId = canonicalUuid(rawPaneId)
   const workspace = sqlite.prepare("select id from workspaces where id = ?").get(workspaceId)
   if (workspace === undefined) throw new Error(`Workspace not found: ${workspaceId}`)
-  // Retrying a close is complete. Closing the last pane leaves an empty
-  // workspace; clients render their own local empty page.
   sqlite
     .prepare("delete from workspace_panes where id = ? and workspace_id = ?")
     .run(paneId, workspaceId)
@@ -160,8 +155,6 @@ const validatePromotion = (
     .prepare("select id, project_id from sessions where id = ?")
     .get(sessionId) as { readonly id: string; readonly project_id: string } | undefined
   if (session === undefined) throw new Error(`Session not found: ${sessionId}`)
-  // The pane's foreign key makes this unreachable unless SQLite's
-  // integrity guarantees are disabled or the database is corrupt.
   /* v8 ignore next */
   if (workspace === undefined) throw new Error(`Workspace not found: ${workspaceId}`)
   if (session.project_id !== workspace.project_id) {
@@ -183,8 +176,6 @@ export const promoteWorkspacePaneToSession = (
   const sessionId = canonicalUuid(rawSessionId)
   sqlite.transaction(() => {
     validatePromotion(sqlite, workspaceId, paneId, sessionId)
-    // Replace the globally unique compatibility pane and this placeholder
-    // in the same transaction.
     discardConflictingPanes(sqlite, paneId, "session", sessionId, workspaceId)
     writePanePromotion(sqlite, workspaceId, paneId, sessionId, title)
     assignPaneSession(sqlite, workspaceId, "session", sessionId)

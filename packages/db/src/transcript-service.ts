@@ -80,13 +80,6 @@ export const makeTranscriptService = (
       attempt("appendConversationItem", () => {
         const sessionId = canonicalUuid(rawSessionId)
         const now = isoTimestamp()
-        // Streamed messages arrive as token-sized chunks sharing a messageId.
-        // Extend the newest item in place when the chunk continues it —
-        // materializing one row per token grew a single answer into
-        // thousands of rows, bloating the store and making session opens
-        // replay-heavy. Coalescing needs a provable same-span signal, so
-        // rows without a messageId (and attachment-bearing rows) still
-        // insert normally.
         sqlite.transaction(() => {
           const routeKey = messageId === undefined ? undefined : `message:${role}:${messageId}`
           const routed = routeKey === undefined ? undefined : chatRoute(sqlite, sessionId, routeKey)
@@ -157,7 +150,6 @@ export const makeTranscriptService = (
         (
           sqlite
             .prepare(
-              // Activity belongs to current state, independent of journal retention.
               `select distinct item.session_id from chat_items as item join sessions on sessions.id = item.session_id
                where item.role = 'assistant' and item.status = 'streaming'
                  and coalesce(sessions.last_event_at, sessions.created_at) <= ?`
@@ -181,8 +173,6 @@ export const makeTranscriptService = (
           for (const row of stale) {
             finishAssistantChatItem(sqlite, sessionId, row.id, now, "end_turn")
           }
-          // A finished row can never be the write target again; a pointer
-          // left on one would resurrect it on the next assistant event.
           if (stale.length > 0) {
             sqlite
               .prepare(

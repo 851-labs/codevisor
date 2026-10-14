@@ -1,15 +1,11 @@
 import Foundation
 
-/// Splits terminal text into characters and whole escape sequences without
-/// owning prediction state or the output scanner’s carried mode-sequence tail.
 enum TerminalEscapeTokenizer {
   enum Token {
     case character(Character)
     case escapeSequence
   }
 
-  /// Splits text into characters and whole escape sequences (CSI, OSC, and
-  /// two-character escapes). An unfinished sequence at the end counts as one.
   static func tokens(_ text: String) -> [Token] {
     var tokens: [Token] = []
     var index = text.startIndex
@@ -38,7 +34,6 @@ enum TerminalEscapeTokenizer {
   }
 
   private static func consumeCSI(in text: String, at index: inout String.Index) {
-    // CSI: parameters and intermediates, then a final byte @...~.
     while index < text.endIndex {
       let scalar = text[index].unicodeScalars.first!.value
       index = text.index(after: index)
@@ -47,7 +42,6 @@ enum TerminalEscapeTokenizer {
   }
 
   private static func consumeControlString(in text: String, at index: inout String.Index) {
-    // OSC / DCS / APC: until BEL or ST (ESC \).
     while index < text.endIndex {
       let next = text[index]
       index = text.index(after: index)

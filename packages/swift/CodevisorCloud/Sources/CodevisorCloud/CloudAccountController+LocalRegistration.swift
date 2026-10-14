@@ -13,9 +13,6 @@ extension CloudAccountController {
       defer { self.localRegistrationTask = nil }
       do {
         var registration = try await localClient.cloudRegistration()
-        // A machine this app registered keeps its credential when the app's
-        // session ends on its own. If the cloud has since refused that
-        // credential, replace it with one from this sign-in.
         if registration.connected, registration.state == "revoked", registration.managedBy == "app" {
           guard !Task.isCancelled else { return nil }
           try await localClient.disconnectCloud()

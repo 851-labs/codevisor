@@ -21,8 +21,6 @@ struct MarkdownListMarkerLayoutTests {
     }
   }
 
-  /// The parser emits simple bullet/ordered blocks for tight one-line lists
-  /// and full lists otherwise; both must wrap under the same marker column.
   @Test(arguments: ["- One\n- Two", "1. One\n2. Two", "- [ ] One\n- [x] Two", "- One\n\n  More\n- Two"])
   func everyListShapeSharesOneHangingIndent(source: String) throws {
     let theme = MarkdownTheme()

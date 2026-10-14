@@ -1,8 +1,6 @@
 import CodevisorCore
 import SwiftUI
 
-/// Reusable launch gate for breaking data-version changes. The server owns
-/// migration correctness; this view only reflects its durable batch progress.
 struct DataUpgradeView: View {
   let progress: LocalDataUpgradeProgress
   let retry: () -> Void

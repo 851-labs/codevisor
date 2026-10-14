@@ -1,8 +1,5 @@
 import CodevisorCore
 
-/// Everything the MCP editor collects, in the shape the create and
-/// update endpoints want. Pure model: it is the one piece of the editor
-/// that was already platform-free, which is why both apps can share a form.
 public struct McpFormValues {
   public var name: String
   public var transport: String

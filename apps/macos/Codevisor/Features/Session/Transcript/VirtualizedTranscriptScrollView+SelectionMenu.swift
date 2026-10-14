@@ -3,12 +3,7 @@ import AppKit
 import StreamMarkdown
 import TranscriptKit
 
-// MARK: - Selection menu and actions
-
 extension VirtualizedTranscriptScrollView {
-  /// A secondary click inside the selection keeps it; one anywhere else
-  /// moves the selection to the word under the pointer, as native text views
-  /// do, so the menu always acts on what was clicked.
   func transcriptSelectionMenu(for surface: NSTextView, with event: NSEvent) -> NSMenu? {
     guard initialPresentationGate.isReady,
       let surface = surface as? TranscriptSurfaceTextView,
@@ -24,8 +19,6 @@ extension VirtualizedTranscriptScrollView {
     menu.addItem(copyItem)
     return menu
   }
-
-  // MARK: Actions
 
   @objc func copy(_: Any?) {
     guard let text = selectedTranscriptText(), !text.isEmpty else { return }
@@ -59,7 +52,6 @@ extension VirtualizedTranscriptScrollView {
     }
   }
 
-  /// Selects the word at `point` with no gesture in flight.
   private func selectWord(at point: TranscriptSelectionPoint) {
     stopSelectionAutoScroll()
     textSelection.isDragging = false

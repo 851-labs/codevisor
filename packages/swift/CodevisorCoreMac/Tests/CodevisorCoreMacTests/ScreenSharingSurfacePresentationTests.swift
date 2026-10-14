@@ -6,9 +6,6 @@ import Foundation
 import Testing
 @testable import CodevisorCoreMac
 
-/// The real Metal surface in a real window, fed one BGRA frame the way the
-/// VNC session feeds it. Needs a window server, so it runs only with
-/// SCREEN_SHARING_WINDOW_TESTS=1.
 @MainActor
 struct ScreenSharingSurfacePresentationTests {
   @Test(

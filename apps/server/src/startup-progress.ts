@@ -4,8 +4,6 @@ import { dirname, join, resolve } from "node:path"
 
 import { resolveServerDataLayout } from "./infra/data-dir.js"
 
-// Keep this module limited to Node builtins: main writes a checkpoint before
-// importing the server, including native libraries that can stall during load.
 export const parseServeArgs = (args: ReadonlyArray<string>): Record<string, string> => {
   const parsed: Record<string, string> = {}
   for (let index = 0; index < args.length; index += 1) {
@@ -88,7 +86,6 @@ export const makeStartupReporter = (
       writeFileSync(temporary, `${JSON.stringify(progress)}\n`, { mode: 0o600 })
       renameSync(temporary, path)
     } catch (cause) {
-      // Diagnostics must not turn a healthy server into a failed launch.
       log(`Startup status unavailable: ${String(cause)}`)
     }
   }

@@ -1,7 +1,3 @@
-/** Removes only the unused Codex thread history arrays while they stream.
- * Neither a giant JSON line nor the array is ever assembled in memory.
- * Transcript content remains in the provider rollout and our transcript store.
- */
 export class JsonHistoryFilter {
   private stack: Array<{ path: string[]; object: boolean; key: string; expectsKey: boolean }> = []
   private inString = false

@@ -2,9 +2,6 @@ import CodeHighlighter
 import Foundation
 import TranscriptKit
 
-/// Syntax colors for diff rows, shared by transcript edit cards and the
-/// Review pane. Each side is highlighted as a whole document (so multi-line
-/// constructs color correctly) and mapped onto rows by line number.
 @MainActor
 enum DiffHighlighting {
   static func highlights(
@@ -28,8 +25,6 @@ enum DiffHighlighting {
     }
     guard !Task.isCancelled else { return [:] }
 
-    // Added/context rows read from the new text's token lines, removed
-    // rows from the old text's — both 1-based like LineDiff.Row.
     var result: [Int: AttributedString] = [:]
     for row in rows {
       let line: [CodeHighlighter.Token]?

@@ -2,21 +2,10 @@ import CodevisorClient
 import CodevisorCore
 import Foundation
 
-/// One timeline for the local server. Every lifecycle step the app takes —
-/// probing, registering the LaunchAgent, waiting for health, draining and
-/// stopping for an update — is appended to `server.log`, the same file the
-/// agent script and the server process write to, tagged `[app <pid>]`. A
-/// stuck or failed start then reads as one ordered story: the old app's
-/// shutdown, the new app's steps, the agent script, the server's own boot.
-///
-/// Lines are mirrored to the unified log (`Log.server`) at default level so
-/// they persist there too, but the file is the durable copy: unified log
-/// retention on a busy machine is about a day.
 public struct ServerLifecycleLog: Sendable {
   private let fileURL: URL?
   private let processIdentifier: Int32
 
-  /// The production timeline: `~/.codevisor/logs/server.log`.
   public static let `default` = ServerLifecycleLog(
     fileURL: CodevisorAppVariant.serverLogsDirectoryURL().appendingPathComponent("server.log")
   )
@@ -36,8 +25,6 @@ public struct ServerLifecycleLog: Sendable {
     append("ERROR \(message)")
   }
 
-  /// A broken expectation worth finding first in the log (a watchdog
-  /// firing, a step that never returned).
   public func fault(_ message: String) {
     Log.server.fault("\(message, privacy: .public)")
     append("FAULT \(message)")
@@ -49,8 +36,6 @@ public struct ServerLifecycleLog: Sendable {
     guard let data = line.data(using: .utf8) else { return }
     let directory = fileURL.deletingLastPathComponent()
     try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    // O_APPEND: each line lands atomically after whatever the server or the
-    // agent script wrote last, so interleaved writers never corrupt a line.
     let descriptor = open(fileURL.path, O_WRONLY | O_APPEND | O_CREAT, 0o644)
     guard descriptor >= 0 else { return }
     defer { close(descriptor) }
@@ -65,8 +50,6 @@ public struct ServerLifecycleLog: Sendable {
   }
 }
 
-/// Elapsed-time bookkeeping for a multi-step operation whose steps are
-/// logged as they complete: "step (elapsed ms)".
 public struct StepClock {
   private let clock = ContinuousClock()
   private let start: ContinuousClock.Instant
@@ -77,7 +60,6 @@ public struct StepClock {
     last = start
   }
 
-  /// Milliseconds since the previous mark, then resets the mark.
   public mutating func lap() -> Int {
     let now = clock.now
     defer { last = now }
@@ -89,11 +71,7 @@ public struct StepClock {
   }
 }
 
-/// Reads the pieces of `launchctl print <domain>/<label>` output the app
-/// cares about. launchctl is the only public view of a launchd job's live
-/// process; SMAppService reports registration, not liveness.
 public enum LaunchctlPrintOutput {
-  /// Unknown command failures must not be mistaken for a stopped process.
   public static func isRunning(_ result: CommandResult) -> Bool? {
     if result.exitCode == 3 || result.exitCode == 113 { return false }
     guard result.exitCode == 0 else { return nil }
@@ -104,7 +82,6 @@ public enum LaunchctlPrintOutput {
     return nil
   }
 
-  /// The job's live process id, or nil while the job has no process.
   public static func pid(in output: String) -> Int? {
     for line in output.split(whereSeparator: \.isNewline) {
       let trimmed = line.trimmingCharacters(in: .whitespaces)

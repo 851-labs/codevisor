@@ -1,16 +1,6 @@
 import SwiftUI
 import UIKit
 
-/// The macOS sidebar's Herdr-inspired working glyph, ported: ten braille
-/// frames advancing at roughly eight steps per second in a chat row's icon
-/// slot.
-///
-/// As on macOS, the frame cycle is a `CAKeyframeAnimation` on a layer's
-/// `contents` rather than a `TimelineView` — the render server keeps it
-/// stepping through main-thread hitches (a transcript rebuild, a large list
-/// diff) that would freeze any SwiftUI-driven frame swap. The glyphs are
-/// rasterized against the row's color, so callers pass the color the row
-/// would otherwise have applied.
 struct AgentActivityIndicator: View {
   var color: Color = .secondary
 
@@ -29,13 +19,9 @@ struct AgentActivityIndicator: View {
   }
 }
 
-/// The ten braille frames, pre-rasterized per (color, appearance, scale).
 @MainActor
 private enum BrailleSpinnerFrames {
   static let glyphs = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-  /// A braille cell is narrow and about half an em tall, so it renders a
-  /// size up from the row text to read at the same visual weight as the
-  /// kind glyphs beside it.
   static let pointSize: CGFloat = 20
   static let size = CGSize(width: 20, height: 20)
   static let cycleDuration = Double(glyphs.count) / 8
@@ -66,8 +52,6 @@ private enum BrailleSpinnerFrames {
     let format = UIGraphicsImageRendererFormat()
     format.scale = scale
     format.opaque = false
-    // `.secondary` and friends resolve per appearance; bake them against
-    // the row's current scheme.
     let traits = UITraitCollection(userInterfaceStyle: colorScheme == .dark ? .dark : .light)
     let resolved = UIColor(color).resolvedColor(with: traits)
     let image = UIGraphicsImageRenderer(size: size, format: format).image { _ in
@@ -91,8 +75,6 @@ private enum BrailleSpinnerFrames {
   }
 }
 
-/// Hosts the pre-rasterized frames on a layer and cycles them in the render
-/// server, phase-aligned so every spinner on screen steps in lockstep.
 private struct BrailleSpinnerLayer: UIViewRepresentable {
   let color: Color
   let colorScheme: ColorScheme
@@ -107,8 +89,6 @@ private struct BrailleSpinnerLayer: UIViewRepresentable {
   }
 }
 
-/// Owns the animation independently of SwiftUI's row updates. A cached pixel
-/// configuration does not imply that an animation survived a window change.
 @MainActor
 final class BrailleSpinnerView: UIView {
   private static let animationKey = "brailleFrames"
@@ -180,8 +160,6 @@ final class BrailleSpinnerView: UIView {
       glyphLayer.removeAnimation(forKey: Self.animationKey)
       return
     }
-    // UIKit may remove animations while a List row is detached. Check the
-    // layer itself even when the color, scale, and activity are unchanged.
     guard glyphLayer.animation(forKey: Self.animationKey) == nil else { return }
 
     let animation = CAKeyframeAnimation(keyPath: "contents")

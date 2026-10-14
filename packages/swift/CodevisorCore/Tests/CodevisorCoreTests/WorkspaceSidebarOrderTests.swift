@@ -65,8 +65,6 @@ struct WorkspaceSidebarOrderTests {
       createdAt: Date(timeIntervalSince1970: 99), sidebarOrderHead: head
     )
     #expect(created.effectiveSidebarPosition < head)
-    // Saving a workspace the server doesn't have makes it a draft, which
-    // keeps the position it was given so it stays put in the sidebar.
     let repository = NavigationFixture().workspaces
     repository.save(created)
     #expect(repository.workspace(id: created.id) == created)

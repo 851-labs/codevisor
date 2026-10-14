@@ -12,12 +12,6 @@
 	<string>https://updates.codevisor.dev/appcast-arm64.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>1FsNm9QTvUciP2sETZFfeTkWHCPjRNU6mEQ1wzqQz2k=</string>
-	<!--
-	  Codevisor servers speak plain HTTP: the local server on 127.0.0.1 and
-	  remote machines over private networks (e.g. Tailscale, which encrypts
-	  the transport itself). App Transport Security would otherwise reject
-	  every remote machine connection with NSURLError -1022.
-	-->
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
@@ -27,19 +21,12 @@
 	<string>Codevisor uses window sharing to show which apps Computer Use can see and control.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Websites opened in Codevisor use Bluetooth to connect to nearby devices and security keys with your permission.</string>
-	<!-- Public event-ingestion configuration; this token cannot read PostHog data. -->
 	<key>CodevisorPostHogProjectToken</key>
 	<string>$(CODEVISOR_POSTHOG_PROJECT_TOKEN)</string>
 	<key>CodevisorPostHogHost</key>
 	<string>$(CODEVISOR_POSTHOG_HOST)</string>
-	<!-- Public crash-event ingestion configuration; this DSN cannot read Sentry data. -->
 	<key>CodevisorSentryDSN</key>
 	<string>$(CODEVISOR_SENTRY_DSN)</string>
-	<!--
-	  codevisor:// deeplinks (codevisor-dev:// in Debug so the dev app and
-	  the installed production app never race for the same handler): cloud
-	  sign-in handoffs and the web plugin directory's install links.
-	-->
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

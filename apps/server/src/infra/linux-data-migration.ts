@@ -42,9 +42,6 @@ const hash = async (path: string): Promise<string> => {
   return digest.digest("hex")
 }
 
-/// Validate the entire merge before moving anything. In particular a login
-/// stranded in ~/.codevisor/data can join a database in /var/lib/codevisor,
-/// but two different credentials or databases must never be silently merged.
 const preflight = async (source: string, target: string): Promise<void> => {
   const destination = await statIfPresent(target)
   if (destination === undefined) return
@@ -65,9 +62,6 @@ const preflight = async (source: string, target: string): Promise<void> => {
   )
 }
 
-/// Each cross-filesystem copy is staged before becoming visible. A retry can
-/// finish after either rename or source removal, without accepting a partial
-/// destination. The caller holds leases on both databases throughout.
 export const moveLinuxDataEntry = async (source: string, target: string): Promise<void> => {
   const destination = await statIfPresent(target)
   if (destination !== undefined) {
@@ -97,8 +91,6 @@ export const moveLinuxDataEntry = async (source: string, target: string): Promis
 }
 
 export const canonicalLinuxService = (text: string, source: string, target: string): string => {
-  // Only the installer-owned --db argument changes; keep ports, names and
-  // administrator settings. systemd treats % as a specifier, even in quotes.
   const quoted = `"${target.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("%", "%%")}"`
   const escaped = source.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
   const argument = new RegExp(`(--db(?:=|\\s+))(?:"${escaped}"|'${escaped}'|${escaped})(?=\\s|$)`)
@@ -142,16 +134,10 @@ const updateService = async (options: MigrationOptions, source: string): Promise
   try {
     await options.reloadService()
   } catch (error) {
-    // The old ExecStart is also translated by resolveServerDataLayout. This
-    // covers containers/chroots where a unit exists without a running systemd.
     options.log(`Updated the service data path; systemd reload was unavailable: ${String(error)}`)
   }
 }
 
-/// Runs before opening SQLite on the first updated Linux root startup. Both
-/// old and new launches converge on the canonical path. The small journal
-/// permits interrupted moves to resume, and the legacy alias preserves stored
-/// absolute attachment paths and older launchers without a second data store.
 export const migrateLinuxDataLayout = async (options: MigrationOptions): Promise<void> => {
   const source = options.layout.legacyDataDirectory
   if (source === undefined) return
@@ -172,8 +158,6 @@ export const migrateLinuxDataLayout = async (options: MigrationOptions): Promise
   try {
     const sourceStat = await statIfPresent(source)
     if (sourceStat === undefined) {
-      // A process can stop between removing the emptied legacy directory and
-      // installing its compatibility alias. Finish that final step on retry.
       if (
         (await statIfPresent(journalPath)) !== undefined &&
         (await readFile(journalPath, "utf8")) === journal
@@ -204,8 +188,6 @@ export const migrateLinuxDataLayout = async (options: MigrationOptions): Promise
       if ((await realpath(target)) !== (await realpath(source))) {
         throw new Error(`Cannot migrate into a custom data symlink: ${target}`)
       }
-      // Recover the workaround used by older installs: make the canonical
-      // location the real directory, then leave only the legacy alias.
       await rm(target)
     }
     await mkdir(target, { recursive: true })

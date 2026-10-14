@@ -127,8 +127,6 @@ export async function requireIOSSimulator(repoRoot, dependencies = {}) {
   return manifest
 }
 
-// Ownership survives deletion of the worktree: it is stored beside this device,
-// never inferred from a friendly name or a recycled worktree name alone.
 export async function deleteOwnedSimulator(manifest, dependencies = {}) {
   const control = dependencies.simctl ?? simctl
   const read = dependencies.read ?? readJSON

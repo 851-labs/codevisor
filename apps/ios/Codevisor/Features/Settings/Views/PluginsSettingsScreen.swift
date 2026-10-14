@@ -4,11 +4,6 @@ import CodevisorUI
 import SwiftUI
 import os
 
-// MARK: - Plugins
-
-/// The Plugins screen: one row per plugin as the fleet wants it, with each
-/// machine's condition nested beneath — the same shared section the Mac
-/// renders, and the same actions.
 struct PluginsSettingsScreen: View {
   @Environment(AppEnvironment.self) private var environment
   @State private var model = PluginGlobalModel()
@@ -19,11 +14,8 @@ struct PluginsSettingsScreen: View {
   @State private var activeSheet: PluginsSheet?
   @State private var actionError: String?
 
-  /// One sheet slot for every flow, so "Install" inside the browse sheet
-  /// can swap straight into the install sheet's consent stages.
   private enum PluginsSheet: Identifiable {
     case session(PluginSettingsSession)
-    /// An update plan is prepared on one machine and must be applied there.
     case update(ServerPluginUpdatePlan, machineId: String)
     var id: String {
       switch self {
@@ -33,8 +25,6 @@ struct PluginsSettingsScreen: View {
     }
   }
 
-  /// Removing a link names the machine as well as the plugin: the same
-  /// plugin id can be linked on more than one machine.
   private struct PluginUnlinkRequest: Identifiable {
     let entry: PluginFleetEntry
     let machineId: String
@@ -162,8 +152,6 @@ struct PluginsSettingsScreen: View {
     environment.machines.allMachines.map { environment.pluginStateRevision(for: $0.id) }
   }
 
-  /// Installs land on the machine this device is pointed at when it can take
-  /// them, else any reachable one; the fleet entry carries it everywhere.
   private var installMachineId: String? {
     let available = availableMachines.map(\.id)
     let selected = environment.machines.selectedMachineId
@@ -246,8 +234,6 @@ struct PluginsSettingsScreen: View {
     }
   }
 
-  /// Uninstall is only ever offered for a shared plugin; a machine-bound
-  /// one is removed by Remove Link instead.
   private func uninstall(_ entry: PluginFleetEntry) async {
     pendingRemoval = nil
     PluginFleet.remove(entry.id, in: environment.configSync)

@@ -102,7 +102,6 @@ struct CloudMachineKeyPinCacheTests {
     }
     let prepare = Task { try await cache.prepare() }
     await entered.wait()
-    // Always release the fake storage read, including if saving throws.
     defer { release.signal() }
     try cache.save(["machine": "new-key"])
     release.signal()

@@ -1,13 +1,3 @@
-//  The plugin WebKit surface. Browser panes use BrowserPaneModel with their
-//  own proxy configuration and no plugin bridge or theme injection.
-//
-//  A WebPaneController owns a WKWebView configured with bridge v1 (frozen):
-//  `window.codevisor.getContext()/openUrl()/setTitle()`, `--codevisor-*`
-//  CSS custom properties on `:root`, and the `codevisor:themechange` window
-//  event. Navigation is scoped to the pane's proxy origin — anything else is
-//  cancelled and routed to the system browser. WebPaneView is the SwiftUI
-//  host; panes cache their controller so tab switches never reload.
-
 import CryptoKit
 import Foundation
 import SwiftUI
@@ -20,8 +10,6 @@ import WebKit
   import UIKit
 #endif
 
-/// The values `window.codevisor.getContext()` returns, templated into the
-/// bridge's document-start user script.
 public struct WebPaneBridgeContext: Equatable, Sendable {
   public var workspaceId: String?
   public var cwd: String?
@@ -36,15 +24,9 @@ public struct WebPaneBridgeContext: Equatable, Sendable {
   }
 }
 
-/// The bridge's theme surface: "light"/"dark" plus the `--codevisor-*` CSS
-/// custom properties, derived from the active `DerivedPalette` (or the stock
-/// system look when no palette is active).
 public struct WebPaneThemeTokens: Equatable, Sendable {
   public var mode: String
-  /// CSS custom property name -> CSS value, applied to `:root`.
   public var variables: [String: String]
-  /// The pane surface color, painted behind the document so loads never
-  /// flash a white webview.
   public var background: RGBA?
 
   public init(mode: String, variables: [String: String], background: RGBA? = nil) {
@@ -87,9 +69,6 @@ public struct WebPaneThemeTokens: Equatable, Sendable {
     "--codevisor-font-family-mono": "ui-monospace, 'SF Mono', Menlo, monospace",
   ]
 
-  /// Stock-look values matching the system light/dark themes closely
-  /// enough for plugin chrome (the same constants PaletteDeriver falls
-  /// back to for status/diff colors).
   private static func systemVariables(isDark: Bool) -> [String: String] {
     var variables = fontVariables
     variables["--codevisor-bg"] = isDark ? "#1e1e1e" : "#ffffff"
@@ -123,12 +102,10 @@ public struct WebPaneThemeTokens: Equatable, Sendable {
     if color.a >= 1 {
       return "rgb(\(r), \(g), \(b))"
     }
-    // %g trims trailing zeros ("0.2", not "0.200").
     return "rgba(\(r), \(g), \(b), \(String(format: "%g", color.a)))"
   }
 }
 
-/// scheme+host+port identity used by the navigation policy.
 private struct WebPaneOrigin: Equatable {
   var scheme: String
   var host: String
@@ -143,8 +120,6 @@ private struct WebPaneOrigin: Equatable {
   }
 }
 
-/// Breaks the retain cycle WKUserContentController.add would otherwise
-/// create (the controller owns the webView which retains its handlers).
 private final class WebPaneMessageProxy: NSObject, WKScriptMessageHandler {
   weak var controller: WebPaneController?
 
@@ -160,9 +135,6 @@ private final class WebPaneMessageProxy: NSObject, WKScriptMessageHandler {
   }
 }
 
-/// Owns one plugin pane's WKWebView plus its bridge/theme injection and
-/// navigation policy. Long-lived: the owning pane caches it so tab switches
-/// re-host the same webView without reloading.
 @MainActor
 public final class WebPaneController: NSObject {
   private static let bridgeMessageName = "codevisorBridge"
@@ -174,10 +146,7 @@ public final class WebPaneController: NSObject {
   }()
 
   public let webView: WKWebView
-  /// The plugin called `codevisor.setTitle` — rename the pane's tab.
   public var onSetTitle: ((String) -> Void)?
-  /// A main-frame load failed; the message is user-presentable. The owner
-  /// must render a native error state — never a blank webview.
   public var onNavigationFailed: ((String) -> Void)?
   public var onConnectionFailure: ((any Error) -> Void)?
   private var mainFrameMethod: String?
@@ -187,11 +156,6 @@ public final class WebPaneController: NSObject {
   private var theme: WebPaneThemeTokens
   private var allowedOrigin: WebPaneOrigin?
 
-  /// A stable per-plugin identity for WKWebsiteDataStore: the same plugin
-  /// always maps to the same store (durable HTTP cache + localStorage
-  /// across app restarts), and different plugins can never read each
-  /// other's storage. Derived from the plugin id so no mapping file is
-  /// needed.
   public static func pluginDataStoreIdentifier(for pluginId: String) -> UUID {
     let digest = SHA256.hash(data: Data(pluginId.utf8))
     let bytes = Array(digest.prefix(16))
@@ -205,13 +169,8 @@ public final class WebPaneController: NSObject {
   ) {
     self.context = context
     self.theme = theme
-    // No explicit WKProcessPool: since macOS 12/iOS 15 every WKWebView
-    // shares the one web-content process pool automatically.
     let configuration = WKWebViewConfiguration()
     if let dataStoreIdentifier {
-      // Identifier-based stores persist to disk under the app's
-      // container, so plugin assets served with Cache-Control survive
-      // pane teardown and app relaunch.
       configuration.websiteDataStore = WKWebsiteDataStore(forIdentifier: dataStoreIdentifier)
     }
     self.webView = WKWebView(frame: .zero, configuration: configuration)
@@ -231,22 +190,15 @@ public final class WebPaneController: NSObject {
     installUserScripts()
   }
 
-  /// Starts (or restarts) the pane load. The URL's origin becomes the only
-  /// origin in-webview navigation may stay on.
   public func load(_ url: URL) {
     allowedOrigin = WebPaneOrigin(url: url)
     webView.load(URLRequest(url: url))
   }
 
-  /// Stops any in-flight load — owner teardown, kept here so owners don't
-  /// need WebKit member visibility for it.
   public func stopLoading() {
     webView.stopLoading()
   }
 
-  /// Re-injects the theme for future document loads and pushes it into the
-  /// live document: CSS vars update in place and the page receives the
-  /// bridge's `codevisor:themechange` event.
   public func applyTheme(_ tokens: WebPaneThemeTokens) {
     guard tokens != theme else { return }
     theme = tokens
@@ -255,8 +207,6 @@ public final class WebPaneController: NSObject {
     installUserScripts()
     webView.evaluateJavaScript(themeUpdateScript()) { _, _ in }
   }
-
-  // MARK: - Bridge
 
   fileprivate func handleBridgeMessage(_ body: Any) {
     guard let payload = body as? [String: Any],
@@ -298,8 +248,6 @@ public final class WebPaneController: NSObject {
     }
   }
 
-  /// Seeds `window.__codevisorBridgeState` (what plugin-bridge.js reads)
-  /// and applies the `--codevisor-*` variables to `:root`.
   private func bridgeStateScript() -> String {
     """
     window.__codevisorBridgeState = \(stateJSON());
@@ -339,8 +287,6 @@ public final class WebPaneController: NSObject {
     """
   }
 
-  /// The bridge state as a JSON literal. JSONSerialization escapes every
-  /// templated value, so context strings can never break out of the script.
   private func stateJSON() -> String {
     var contextObject: [String: Any] = [
       "paneId": context.paneId,
@@ -359,9 +305,6 @@ public final class WebPaneController: NSObject {
     return json
   }
 
-  // MARK: - External navigation
-
-  /// Schemes that may leave the app for the system browser/handlers.
   private static func externalURL(_ url: URL) -> URL? {
     switch url.scheme?.lowercased() {
     case "http", "https", "mailto":
@@ -382,11 +325,6 @@ public final class WebPaneController: NSObject {
   private func applyBackground() {
     guard let background = theme.background else { return }
     #if canImport(AppKit)
-      // WKWebView on macOS paints an opaque white page before the first
-      // content render, which flashes against dark pane chrome. There is
-      // no public opacity API on macOS; this KVC key has been stable
-      // since 10.12 and makes the view transparent so the themed pane
-      // background underneath shows until the plugin's document paints.
       webView.setValue(false, forKey: "drawsBackground")
       webView.underPageBackgroundColor = NSColor(
         srgbRed: background.r / 255, green: background.g / 255,
@@ -404,8 +342,6 @@ public final class WebPaneController: NSObject {
 
   private static func isNavigationNoise(_ error: any Error) -> Bool {
     let nsError = error as NSError
-    // -999: a new load superseded this one. 102 (WebKitErrorDomain):
-    // our own policy cancelled the navigation (external-link routing).
     return nsError.code == NSURLErrorCancelled
       || (nsError.domain == "WebKitErrorDomain" && nsError.code == 102)
   }
@@ -430,9 +366,6 @@ extension WebPaneController: WKNavigationDelegate {
     guard let url = navigationAction.request.url else { return .cancel }
     if url.scheme?.lowercased() == "about" { return .allow }
     if let allowedOrigin, WebPaneOrigin(url: url) == allowedOrigin { return .allow }
-    // Off-origin: main-frame link-outs go to the system browser
-    // (codevisor.openUrl semantics); embedded off-origin content is
-    // simply blocked.
     if navigationAction.targetFrame?.isMainFrame != false,
       let external = Self.externalURL(url)
     {
@@ -461,7 +394,6 @@ extension WebPaneController: WKNavigationDelegate {
 }
 
 extension WebPaneController: WKUIDelegate {
-  /// target=_blank and window.open land here; both route externally.
   public func webView(
     _ webView: WKWebView,
     createWebViewWith configuration: WKWebViewConfiguration,
@@ -475,9 +407,6 @@ extension WebPaneController: WKUIDelegate {
   }
 }
 
-/// SwiftUI host for a WebPaneController's webView. The controller (and the
-/// webView it owns) outlives this view — remounting re-attaches, never
-/// reloads.
 #if canImport(AppKit)
   public struct WebPaneView: NSViewRepresentable {
     private let controller: WebPaneController

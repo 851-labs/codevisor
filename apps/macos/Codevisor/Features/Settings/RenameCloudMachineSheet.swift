@@ -2,7 +2,6 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// Sheet for renaming a machine connected to the cloud account.
 struct RenameCloudMachineSheet: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(\.theme) private var theme

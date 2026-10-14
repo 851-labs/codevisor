@@ -14,12 +14,8 @@ public struct BrowserPaneView: View {
   @State private var address = ""
   @State private var selection: TextSelection?
   @State private var isCollapsed = false
-  /// The safe area over the page, measured in SwiftUI (see BrowserWebView).
   @State private var pageSafeArea = EdgeInsets()
-  /// The page's width; sizes the address field when it sits in the top bar.
   @State private var pageWidth: CGFloat = 0
-  /// Editing in the top bar's field, which keeps its own focus state:
-  /// SwiftUI focus doesn't cross into content hosted in the toolbar.
   @State private var navigationAddressEditing = false
   @FocusState private var addressFocused: Bool
   @Namespace private var glass
@@ -28,7 +24,6 @@ public struct BrowserPaneView: View {
 
   public var body: some View {
     surface
-      // The glass and WebKit's obscured viewport share one animation transaction.
       .animation(toolbarAnimation, value: compact)
       .animation(toolbarAnimation, value: addressFocused)
       .animation(toolbarAnimation, value: model.canGoForward)
@@ -77,7 +72,6 @@ public struct BrowserPaneView: View {
         } action: {
           pageSafeArea = $0
         }
-        // The model picks mobile or desktop sites by this width.
         .onGeometryChange(for: CGFloat.self) {
           $0.size.width
         } action: {
@@ -94,7 +88,6 @@ public struct BrowserPaneView: View {
             .padding(.bottom, 8)
           }
         }
-        // In the top bar, suggestions drop down beneath the address field.
         .overlay(alignment: .top) {
           if usesNavigationBar, navigationAddressEditing {
             suggestionList
@@ -128,8 +121,6 @@ public struct BrowserPaneView: View {
             webView: webView, isCollapsed: $isCollapsed,
             keepExpanded: keepExpanded,
             isLoading: model.isLoading, onRefresh: model.reload,
-            // In the top bar the page keeps its whole height; the bottom
-            // toolbar otherwise floats over it.
             bottomInset: usesNavigationBar ? 0 : (compact ? compactHeight + 10 : toolbarHeight) + 16,
             minimumBottomInset: usesNavigationBar ? 0 : compactHeight + 26,
             maximumBottomInset: usesNavigationBar ? 0 : max(compactHeight + 26, toolbarHeight + 16),
@@ -177,9 +168,6 @@ public struct BrowserPaneView: View {
     #endif
   }
 
-  /// Regular width (iPad) puts the controls in the top bar, as Safari and
-  /// the macOS pane do; compact width keeps the floating bottom toolbar.
-  /// Accessibility text sizes keep the bottom toolbar, which can wrap.
   private var usesNavigationBar: Bool {
     #if os(iOS)
       horizontalSizeClass == .regular && !dynamicTypeSize.isAccessibilitySize
@@ -203,8 +191,6 @@ public struct BrowserPaneView: View {
   }
 
   #if os(iOS)
-    /// Back and forward beside the sidebar button; the address field in
-    /// the middle of the bar, where the title would be.
     @ToolbarContentBuilder private var navigationBarItems: some ToolbarContent {
       ToolbarItemGroup(placement: .topBarLeading) {
         Button("Back", systemImage: "chevron.left") { model.webView?.goBack() }
@@ -214,9 +200,6 @@ public struct BrowserPaneView: View {
         }
       }
       ToolbarItem(placement: .principal) {
-        // The bar sizes its middle item to fit, so give the field its width
-        // outright: as wide as Safari's, leaving room for the bar's buttons
-        // on either side in a narrower window.
         NavigationAddressField(
           model: model, address: $address, isEditing: $navigationAddressEditing, onSubmit: submitAddress
         )
@@ -292,8 +275,6 @@ public struct BrowserPaneView: View {
 
   private var addressBar: some View {
     HStack(spacing: 0) {
-      // Keep the label, editor, and glass in one persistent view. Replacing the
-      // compact button with an HStack crossfades two different address surfaces.
       Button(action: activateAddress) {
         Text(displayAddress)
           .font(compact ? .subheadline.weight(.medium) : .body.weight(.medium))
@@ -400,10 +381,6 @@ public struct BrowserPaneView: View {
 }
 
 #if os(iOS)
-  /// The address field in the iPad top bar, as Safari's: the short address
-  /// centered until tapped, then the full URL, selected, for editing.
-  /// SwiftUI focus state doesn't track a field hosted in the toolbar, so
-  /// editing follows the field's own begin/end callbacks instead.
   private struct NavigationAddressField: View {
     @Bindable var model: BrowserPaneModel
     @Binding var address: String
@@ -423,8 +400,6 @@ public struct BrowserPaneView: View {
             .opacity(editing ? 0 : 1)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
-          // Always the tap target; its text shows only while editing so
-          // the short address reads through until then.
           TextField("Search or enter website address", text: $address, onEditingChanged: editingChanged)
             .textFieldStyle(.plain)
             .focused($focused)
@@ -489,8 +464,6 @@ public struct BrowserPaneView: View {
       if isEditing != began { isEditing = began }
       guard began else { return }
       address = model.url?.absoluteString ?? address
-      // Select the whole address once the new text is in the field, as
-      // Safari does, so typing replaces it.
       DispatchQueue.main.async {
         UIApplication.shared.sendAction(#selector(UIResponder.selectAll(_:)), to: nil, from: nil, for: nil)
       }

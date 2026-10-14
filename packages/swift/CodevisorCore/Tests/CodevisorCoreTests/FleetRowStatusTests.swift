@@ -3,10 +3,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// The presentation contract every fleet page shares. Each plane maps its
-/// own states here, so these tests pin the rules the four pages rely on:
-/// exactly one emphasis per row, quiet states stay quiet, and anything
-/// the user must act on carries the text that explains it.
 @MainActor
 @Suite("FleetRowStatus")
 struct FleetRowStatusTests {
@@ -15,7 +11,6 @@ struct FleetRowStatusTests {
       FleetMachineInfo(id: "studio", name: "Studio", syncKey: "studio-key", isReachable: true),
       FleetMachineInfo(id: "book", name: "MacBook", syncKey: "book-key", isReachable: true),
       FleetMachineInfo(id: "vps", name: "vps-1", syncKey: "vps-key", isReachable: false),
-      // Never probed: no sync key, so no report can be matched to it.
       FleetMachineInfo(id: "fresh", name: "Fresh", syncKey: nil, isReachable: true),
     ]
   }
@@ -43,7 +38,6 @@ struct FleetRowStatusTests {
     let readiness: [String: [PluginFleet.MachineReadiness]] = [
       "studio-key": [.init(pluginId: "scratch", state: "ready", reason: nil)],
       "book-key": [.init(pluginId: "scratch", state: "blocked", reason: "needs ffmpeg")],
-      // The offline machine's last report said ready; being offline wins.
       "vps-key": [.init(pluginId: "scratch", state: "ready", reason: nil)],
     ]
     let rows = PluginFleet.machineRows(
@@ -76,15 +70,12 @@ struct FleetRowStatusTests {
         .init(name: "Linear", state: "blocked", reason: "spawn psql ENOENT", code: "error")
       ],
     ]
-    // The machine switched off here reads as off at once, without waiting
-    // for it to notice and republish.
     let rows = McpFleet.machineRows(
       name: "Linear", readiness: readiness, disabledKeys: ["studio-key"], machines: machines())
     #expect(rows[0].status == .offHere)
     #expect(rows[0].status.isOnHere == false)
     #expect(rows[1].status == .needsAuthorization(reason: "Sign-in expired"))
     #expect(rows[1].status.rowStatus.needsAttention)
-    // Offline still outranks a stale blocked report.
     #expect(rows[2].status == .unreachable)
     #expect(rows[3].status == .syncing)
   }
@@ -93,7 +84,6 @@ struct FleetRowStatusTests {
     "A machine still reporting off after the user turned it on reads as syncing on every plane")
   func pendingTurnOnIsBusy() {
     let studio = [machines()[0]]
-    // MCP: only the machine the user wants on is waiting; the other is off.
     let mcp = McpFleet.machineRows(
       name: "Linear",
       readiness: [
@@ -104,7 +94,6 @@ struct FleetRowStatusTests {
       wantsOn: { $0 == "studio" })
     #expect(mcp.map(\.status) == [.syncing, .offFleet])
     #expect(mcp[0].status.rowStatus.isBusy)
-    // Harness and plugin rows follow the fleet's wish the same way.
     let harness = HarnessFleet.machineRows(
       harnessId: "codex",
       readiness: ["studio-key": [.init(harnessId: "codex", state: "disabled", reason: nil)]],
@@ -116,7 +105,6 @@ struct FleetRowStatusTests {
       readiness: ["studio-key": [.init(pluginId: "notes", state: "disabled", reason: nil)]],
       machines: studio, wantsOn: true)
     #expect(plugin.map(\.status) == [.syncing])
-    // Without the wish, "disabled" is simply off.
     #expect(
       PluginFleet.machineRows(
         pluginId: "notes",
@@ -138,14 +126,10 @@ struct FleetRowStatusTests {
 
   @Test("A machine-bound plugin still counts as running, so it can be restarted")
   func machineBoundPluginIsRunning() {
-    // It reports machineOnly rather than ready — it is on that machine and
-    // running, and the fleet page is now the only place to restart it.
     #expect(PluginFleet.MachineStatus.localOnly.isRunningHere)
     #expect(PluginFleet.MachineStatus.ready.isRunningHere)
     #expect(PluginFleet.MachineStatus.off.isRunningHere == false)
     #expect(PluginFleet.MachineStatus.blocked(reason: "died").isRunningHere == false)
-    // Quiet states never earn a mark on a folded single-machine row; a
-    // column of checks saying "fine" is the noise this rule exists to stop.
     #expect(PluginFleet.MachineStatus.ready.rowStatus.isWorthFoldingUp == false)
     #expect(PluginFleet.MachineStatus.off.rowStatus.isWorthFoldingUp == false)
     #expect(PluginFleet.MachineStatus.blocked(reason: "died").rowStatus.isWorthFoldingUp)

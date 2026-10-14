@@ -31,14 +31,10 @@ export interface DeviceCodeGrant {
   userCode: string
   verificationUri: string
   verificationUriComplete?: string
-  /// Seconds between token polls.
   interval: number
-  /// Seconds until the codes expire.
   expiresIn: number
 }
 
-/// Start the RFC 8628 device flow: returns the code the user must approve at
-/// `<serverUrl>/device`.
 export const requestDeviceCode = async (
   fetchImpl: FetchLike,
   serverUrl: string
@@ -74,7 +70,6 @@ export type DevicePollResult =
   | { status: "denied" }
   | { status: "expired" }
 
-/// One token poll. Callers loop on pending/slow-down at the grant's interval.
 export const pollDeviceToken = async (
   fetchImpl: FetchLike,
   serverUrl: string,
@@ -104,8 +99,6 @@ export const pollDeviceToken = async (
   }
 }
 
-/// A machine's stored cloud identity: everything needed to reconnect to the
-/// hub across restarts. `secretKey` never leaves the machine.
 export interface MachineCredentials {
   serverUrl: string
   deviceId: string
@@ -114,9 +107,6 @@ export interface MachineCredentials {
   apiKey: string
 }
 
-/// Exchange a (possibly short-lived) session token for the machine's durable
-/// identity: fresh device keypair + long-lived api key carrying the device
-/// metadata the relay needs.
 export const provisionMachine = async (
   fetchImpl: FetchLike,
   serverUrl: string,
@@ -129,8 +119,6 @@ export const provisionMachine = async (
     fetchImpl,
     `${serverUrl}/api/auth/api-key/create`,
     {
-      // Credential labels have a 32-character limit. The relay advertises
-      // the full display name independently, including long hostnames.
       name: machineName.slice(0, 32),
       metadata: { deviceId, publicKey: keys.publicKey }
     },
@@ -147,11 +135,6 @@ export const provisionMachine = async (
   }
 }
 
-/// Removes this machine from its account (`codevisor auth logout`): the
-/// cloud revokes the machine's api key and drops it from every app's machine
-/// list. Authenticated by the machine's own api key. Throws CloudApiError on
-/// a refusal — 401 means the key is no longer valid (the machine was already
-/// removed, or the account is gone).
 export const removeMachineFromAccount = async (
   fetchImpl: FetchLike,
   credentials: Pick<MachineCredentials, "serverUrl" | "apiKey">,
@@ -173,7 +156,6 @@ export interface CloudInstanceInfo {
   authProviders: string[]
 }
 
-/// Validate a server URL before trusting it (settings UI, `--server` flag).
 export const discoverInstance = async (
   fetchImpl: FetchLike,
   serverUrl: string
@@ -187,11 +169,6 @@ export const discoverInstance = async (
   return body
 }
 
-// -- Machine invites -----------------------------------------------------------
-
-/// Prefix of a machine invite code. The code carries the cloud's URL so the
-/// new machine joins the same instance (hosted, self-hosted, or dev) as the
-/// machine that minted it: `cvi1.<base64url(serverUrl)>.<secret>`.
 const INVITE_PREFIX = "cvi1"
 
 const toBase64Url = (text: string): string =>
@@ -207,8 +184,6 @@ const fromBase64Url = (value: string): string => {
 }
 
 export interface MachineInvite {
-  /// Pass to `codevisor auth login --invite` on the new machine. Secret:
-  /// anyone holding it can add one machine to the account until it expires.
   readonly code: string
   readonly expiresAt: string
 }
@@ -216,7 +191,6 @@ export interface MachineInvite {
 export const encodeMachineInviteCode = (serverUrl: string, token: string): string =>
   `${INVITE_PREFIX}.${toBase64Url(serverUrl.replace(/\/+$/, ""))}.${token}`
 
-/// The cloud URL and secret inside an invite code; undefined when malformed.
 export const decodeMachineInviteCode = (
   code: string
 ): { readonly serverUrl: string; readonly token: string } | undefined => {
@@ -235,7 +209,6 @@ export const decodeMachineInviteCode = (
   }
 }
 
-/// Mint a one-time invite as this machine (authenticated by its api key).
 export const createMachineInvite = async (
   fetchImpl: FetchLike,
   credentials: Pick<MachineCredentials, "serverUrl" | "apiKey">
@@ -259,8 +232,6 @@ export const createMachineInvite = async (
   }
 }
 
-/// Redeem an invite code for this machine's durable identity: a fresh device
-/// keypair (the secret key never leaves this machine) and its own api key.
 export const redeemMachineInvite = async (
   fetchImpl: FetchLike,
   code: string,
@@ -289,8 +260,6 @@ export const redeemMachineInvite = async (
   }
 }
 
-/// Removes another machine from this machine's account. 404 when the account
-/// has no such machine.
 export const removeMachinePeer = async (
   fetchImpl: FetchLike,
   credentials: Pick<MachineCredentials, "serverUrl" | "apiKey">,

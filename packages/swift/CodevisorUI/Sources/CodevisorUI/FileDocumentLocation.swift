@@ -9,7 +9,6 @@ public enum FileDocumentLocation {
     return target.hasSuffix("/") && !path.hasSuffix("/") ? path + "/" : path
   }
 
-  /// Resolve a preview's relative link while retaining its cursor destination.
   static func navigationTarget(_ target: String, relativeTo directory: String) -> String? {
     guard let path = resolve(target, relativeTo: directory) else { return nil }
     guard markdownAttachmentFile(path) == nil, let line = line(target) else { return path }

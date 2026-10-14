@@ -3,8 +3,6 @@ import CoreGraphics
 import StreamMarkdown
 import TranscriptKit
 
-/// Access to the shared state from native side effects. Yielding the stored
-/// value avoids copy-on-write copies when an adapter mutates a ledger.
 @MainActor
 public protocol TranscriptSurfaceOwner: AnyObject {
   var surfaceController: TranscriptSurfaceController { get }

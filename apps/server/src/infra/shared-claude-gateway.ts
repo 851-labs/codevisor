@@ -8,9 +8,6 @@ import type { SharedTokenBundle } from "@codevisor/harness-manager"
 const digest = (token: string) => createHash("sha256").update(token).digest("hex")
 const MAX_BODY = 32 * 1024 * 1024
 
-/// Claude keeps its subscription OAuth mode. Only its API base URL changes;
-/// this loopback gateway substitutes the current access token at request time.
-/// Provider refresh tokens never enter the Claude process or its profile.
 export const makeSharedClaudeGateway = (options: {
   readonly token: (id: string, rejected?: string) => Promise<SharedTokenBundle>
   readonly fetch?: typeof fetch
@@ -27,8 +24,6 @@ export const makeSharedClaudeGateway = (options: {
     close: () => credentials.clear(),
     handle: async (request: IncomingMessage, response: ServerResponse, url: URL): Promise<void> => {
       response.setHeader("Cache-Control", "no-store")
-      // Do not expose the gateway through the native client's sealed relay or
-      // to websites using the machine API's trusted-loopback exception.
       const address = request.socket.remoteAddress
       if (
         request.headers.origin !== undefined ||

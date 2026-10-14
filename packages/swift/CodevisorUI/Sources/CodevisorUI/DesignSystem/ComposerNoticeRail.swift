@@ -10,12 +10,8 @@ public struct ComposerNoticeRail: View {
   @Environment(\.theme) private var theme
 
   private let message: String
-  /// The full text behind a summarized `message`, shown on request.
   private let details: String?
   private let kind: Kind
-  /// Overrides the kind's default glyph. Notices that aren't about invalid
-  /// configuration read better with their own icon — a stalled turn is a
-  /// clock, not a warning triangle — while keeping one notice surface.
   private let systemImage: String?
   private let actionTitle: String?
   private let action: (() -> Void)?
@@ -50,7 +46,6 @@ public struct ComposerNoticeRail: View {
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        // Long dumps scroll inside the banner instead of taking the chat.
         .frame(maxHeight: 240)
       }
     }
@@ -59,16 +54,12 @@ public struct ComposerNoticeRail: View {
     .frame(maxWidth: .infinity, alignment: .leading)
     .background {
       ZStack {
-        // Notices float beyond the transcript mask, so their base must
-        // be opaque or transcript text bleeds through the status tint.
         cardStyle.shape
           .fill(theme.windowBackground)
         cardStyle.shape
           .fill(foregroundColor.opacity(0.08))
       }
     }
-    // Actionable notices expose their controls as separate VoiceOver
-    // elements; passive notices read as one concise announcement.
     .accessibilityElement(children: hasControls ? .contain : .combine)
   }
 
@@ -81,9 +72,6 @@ public struct ComposerNoticeRail: View {
         .fixedSize(horizontal: false, vertical: true)
       Spacer(minLength: 8)
       if hasControls {
-        // Expanded touch targets must not overlap. The visible
-        // controls stay compact while their hit regions meet at the
-        // midpoint of this platform-aware gap.
         HStack(spacing: max(8, Typography.minimumInteractiveTargetSize - 20)) {
           if details != nil {
             Button(isShowingDetails ? "Hide Details" : "Show Details") { isShowingDetails.toggle() }

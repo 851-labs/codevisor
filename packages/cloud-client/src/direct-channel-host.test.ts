@@ -20,8 +20,6 @@ import {
   type IncomingChannel
 } from "./index.js"
 
-/// The direct pipe from the app's point of view: text control frames come
-/// back as JSON, envelopes as binary batches.
 class FakeDirectSocket implements CloudSocket {
   controls: unknown[] = []
   envelopes: { header: { machineId: string; frame: RelayFrameHeader }; payload: Uint8Array }[] = []
@@ -149,7 +147,6 @@ describe("DirectChannelHost", () => {
     expect(welcome).toMatchObject({ t: "welcome", protocol: CLOUD_PROTOCOL_VERSION })
     expect(timers[0]!.cancelled).toBe(true)
 
-    // Open + data, sealed with the same crypto as the relay.
     const opened = openChannel(appKeys.secretKey, machineKeys.publicKey)
     socket.relay(
       "machine-1",
@@ -173,13 +170,11 @@ describe("DirectChannelHost", () => {
       output: "hello back"
     })
 
-    // Envelopes addressed to some other machine are ignored.
     socket.relay("someone-else", { t: "credit", channelId: "d-1", seq: 2, bytes: 1 })
     expect(socket.envelopes.filter((envelope) => envelope.header.frame.t === "close")).toHaveLength(
       0
     )
 
-    // Ping keeps the pipe warm; close drops the channels.
     socket.onmessage?.(encodeCloudFrame({ t: "ping" }))
     expect(socket.controls.at(-1)).toMatchObject({ t: "pong" })
     const closes: string[] = []
@@ -248,8 +243,6 @@ describe("DirectChannelHost", () => {
     const channel = channels[0]!
     expect(channel.flowControlRequested).toBe(true)
 
-    // No credit yet: structured sends queue instead of hitting the wire, and
-    // a close waits its turn behind them.
     channel.send({ n: 1 })
     channel.send({ n: 2 })
     const dataFrames = () => socket.envelopes.filter((e) => e.header.frame.t === "data")
@@ -258,14 +251,12 @@ describe("DirectChannelHost", () => {
     channel.close("done")
     expect(socket.envelopes.filter((e) => e.header.frame.t === "close")).toHaveLength(0)
 
-    // Grant exactly one frame's worth: {"n":1} is 7 bytes + 16-byte tag.
     socket.relay("machine-1", { t: "credit", channelId: "f-1", seq: 1, bytes: 23 })
     expect(dataFrames()).toHaveLength(1)
     expect(
       openJson(opened.cipher, "f-1", "responder-to-opener", 0, dataFrames()[0]!.payload)
     ).toEqual({ n: 1 })
 
-    // A generous grant drains the queue and releases the deferred close.
     socket.relay("machine-1", { t: "credit", channelId: "f-1", seq: 2, bytes: 10_000 })
     expect(dataFrames()).toHaveLength(2)
     expect(
@@ -282,7 +273,6 @@ describe("DirectChannelHost", () => {
     host.accept(socket)
     socket.hello({ deviceId: "app-1", publicKey: appKeys.publicKey })
 
-    // Opener data without any machine grant → protocol error.
     const starved = openChannel(appKeys.secretKey, machineKeys.publicKey)
     socket.relay(
       "machine-1",
@@ -301,8 +291,6 @@ describe("DirectChannelHost", () => {
     )
     expect(closes).toEqual(["protocol-error"])
 
-    // A grant that would overflow the budget kills the channel. (Zero and
-    // negative grants never get this far — the header parser drops them.)
     const flooded = openChannel(appKeys.secretKey, machineKeys.publicKey)
     socket.relay(
       "machine-1",
@@ -320,7 +308,6 @@ describe("DirectChannelHost", () => {
     socket.relay("machine-1", { t: "credit", channelId: "f-3", seq: 2, bytes: huge })
     expect(floodCloses).toEqual(["protocol-error"])
 
-    // Handlers replenish the window from the sealed size of consumed frames.
     const budgeted = openChannel(appKeys.secretKey, machineKeys.publicKey)
     socket.relay(
       "machine-1",
@@ -337,7 +324,6 @@ describe("DirectChannelHost", () => {
     socket.relay("machine-1", { t: "data", channelId: "f-4", seq: 1 }, sealed)
     expect(sizes).toEqual([sealed.byteLength])
 
-    // With credit in hand, sends go straight out — no queue detour.
     socket.relay("machine-1", { t: "credit", channelId: "f-4", seq: 2, bytes: 10_000 })
     channels[2]!.send({ pong: true })
     expect(channels[2]!.queuedOutboundBytes()).toBe(0)
@@ -353,14 +339,11 @@ describe("DirectChannelHost", () => {
   it("drops malformed relay batches and rides out socket send failures", () => {
     vi.useFakeTimers()
     try {
-      // No injected scheduleTimeout: the real setTimeout path arms the
-      // hello deadline.
       const host = new DirectChannelHost({
         deviceId: "machine-1",
         secretKey: machineKeys.secretKey,
         channelHandlers: {},
         peerKeyPins: makePeerKeyPinStore({ initial: { "app-1": appKeys.publicKey } }),
-        // Same negotiated-compression hooks as the relay connection.
         compressPayload: (bytes) => bytes,
         decompressPayload: (bytes) => bytes
       })
@@ -372,16 +355,12 @@ describe("DirectChannelHost", () => {
       const socket = new FakeDirectSocket()
       host.accept(socket)
       socket.hello({ deviceId: "app-1", publicKey: appKeys.publicKey })
-      // A duplicate hello is ignored, not re-welcomed.
       socket.hello({ deviceId: "app-1", publicKey: appKeys.publicKey })
       expect(socket.controls).toHaveLength(1)
       expect(socket.closed).toBeUndefined()
-      // A welcomed pipe that sends garbage envelopes is torn down.
       socket.onmessage?.(new Uint8Array([1, 2, 3]))
       expect(socket.closed?.code).toBe(4000)
 
-      // A dying socket must not throw out of the host's send path: the
-      // rejection open below answers onto a socket whose send explodes.
       const failing = new FakeDirectSocket()
       host.accept(failing)
       failing.hello({ deviceId: "app-1", publicKey: appKeys.publicKey })
@@ -402,9 +381,6 @@ describe("DirectChannelHost", () => {
   })
 
   it("drops control replies onto a socket that is already closing", () => {
-    // A ping still in flight when the pipe's send failed gets answered onto
-    // a socket whose send throws; that throw used to escape the tunnel's
-    // read loop and exit the whole server.
     const { host } = makeHost()
     const closing = new FakeDirectSocket()
     closing.send = () => {

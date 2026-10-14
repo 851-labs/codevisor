@@ -102,7 +102,6 @@ describe("diff-stats", () => {
       oldText: null,
       newText: "new\n"
     })
-    // A context line whose leading space was stripped still counts as context.
     expect(textsFromUnifiedDiff("-a\n+b\nplain")).toEqual({
       oldText: "a\nplain\n",
       newText: "b\nplain\n"

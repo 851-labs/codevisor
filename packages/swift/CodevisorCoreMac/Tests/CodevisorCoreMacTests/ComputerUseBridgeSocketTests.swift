@@ -7,7 +7,6 @@ import Testing
 struct ComputerUseBridgeSocketTests {
   @Test("Shares the server socket address across users and Unicode data paths")
   func serverSocketContract() {
-    // The server test uses this same fixture to check the wire contract.
     let path = "/Users/test/Codevisor café/data"
     let socketPath = ComputerUseBridge.socketPath(supportDirectoryPath: path, userID: 501)
     #expect(socketPath == "/tmp/codevisor-cu-501-26606633.sock")

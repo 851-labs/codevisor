@@ -73,7 +73,6 @@ describe("@codevisor/agent-runtime", () => {
     await run(runtime.prompt(sessionId, "two"))
     await run(runtime.prompt(sessionId, "three"))
 
-    // Each refresh lands before its prompt reaches the harness.
     expect(order).toEqual(["refresh 0", "refresh 2"])
     expect(beforeTurn).toHaveBeenCalledTimes(3)
     expect(connector.connections[0]?.prompts.map(([, text]) => text)).toEqual([

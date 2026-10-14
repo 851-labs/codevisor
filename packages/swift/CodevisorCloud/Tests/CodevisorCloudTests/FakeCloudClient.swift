@@ -4,10 +4,6 @@ import CodevisorTestSupport
 import Foundation
 @testable import CodevisorCloud
 
-// Shared fakes and factories for CloudAccountController suites (extracted so
-// the test files stay under the structural lint limits).
-
-/// A scriptable stand-in for the cloud REST client.
 final class FakeCloudClient: CloudAccountClienting, @unchecked Sendable {
   private let lock = NSLock()
 
@@ -16,12 +12,8 @@ final class FakeCloudClient: CloudAccountClienting, @unchecked Sendable {
   )
   var verifyResult: Result<String, any Error> = .failure(CloudAccountClientError.missingToken)
   var devLoginResult: Result<String, any Error> = .failure(CloudAccountClientError.missingToken)
-  /// Tokens the fake accepts, mapped to the user get-session reports.
   var sessions: [String: CloudSessionUser] = [:]
-  /// Thrown by get-session instead of answering (an unreachable server).
   var sessionError: (any Error)?
-  /// When set, get-session suspends until the signal fires, so tests can
-  /// observe state while validation is still waiting on the network.
   var sessionGate: TestSignal?
   private(set) var discoverCount = 0
   var machinesResult: Result<[CloudMachine], any Error> = .success([])
@@ -40,7 +32,6 @@ final class FakeCloudClient: CloudAccountClienting, @unchecked Sendable {
   private(set) var machineTokens: [String] = []
   private(set) var renames: [(deviceId: String, name: String)] = []
   private(set) var removals: [String] = []
-  /// Device-code decisions sent, as (decision, userCode, token).
   private(set) var deviceDecisions: [(decision: String, userCode: String, token: String)] = []
 
   func discover() async throws -> CloudInstanceInfo {
@@ -126,8 +117,6 @@ final class FakeCloudClient: CloudAccountClienting, @unchecked Sendable {
   }
 }
 
-/// The embedded local server, reduced to its /v1/cloud registration surface.
-/// Everything else is the minimal boilerplate the protocol requires.
 final class FakeLocalServerClient: CodevisorServerClienting, @unchecked Sendable {
   private let lock = NSLock()
   private var _registration: ServerCloudRegistration
@@ -183,8 +172,6 @@ final class FakeLocalServerClient: CodevisorServerClienting, @unchecked Sendable
     }
   }
 
-  // MARK: - Unused protocol surface
-
   func health() async throws -> ServerHealth {
     ServerHealth(ok: true, version: "0.1.0", database: "ready", bootId: nil)
   }
@@ -230,7 +217,6 @@ final class FakeLocalServerClient: CodevisorServerClienting, @unchecked Sendable
   }
 }
 
-/// Every call fails like an unreachable host.
 struct OfflineError: Error {}
 
 struct OfflineCloudClient: CloudAccountClienting {
@@ -252,7 +238,6 @@ struct OfflineCloudClient: CloudAccountClienting {
   func denyDevice(userCode: String, token: String) async throws { throw OfflineError() }
 }
 
-/// A canned cloud machine presence entry (key defaults to `pk_<deviceId>`).
 func testMachine(
   _ deviceId: String,
   name: String = "Mac Studio",
@@ -284,8 +269,6 @@ func makeController(
     clientFactory: { _ in client },
     credentialStore: store,
     environmentCloud: environmentCloud,
-    // A scripted hub: signing in connects it, and account tests must never
-    // open a real socket.
     hubConnectionFactory: { serverURL, store in
       CloudHubConnection(
         serverURL: serverURL,
@@ -294,8 +277,6 @@ func makeController(
         sleep: TestClock().sleep
       )
     },
-    // Inert direct-path probing: account tests must never open real
-    // sockets when a refresh sees online machines.
     directPaths: directPaths
       ?? CloudDirectPathController(
         credentialStore: store,
@@ -307,7 +288,6 @@ func makeController(
   return (controller, client, store)
 }
 
-/// A controller signed in via the OTT flow with a canned machine list.
 @MainActor
 func makeSignedIn(
   machines: [CloudMachine]

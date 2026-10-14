@@ -1,8 +1,3 @@
-/// Chrome tab groups for the Codevisor relay extension. Loaded into the
-/// service worker with importScripts, so everything here is a plain global.
-/// CDP has no tab-group surface; these commands wrap chrome.tabs.group and
-/// chrome.tabGroups for the server's tab_groups tool.
-
 const TAB_GROUP_NONE = -1
 
 const TAB_GROUP_COLORS = new Set([
@@ -42,7 +37,6 @@ const tabGroupUpdateProperties = (params) => {
   return properties
 }
 
-/// Only tabs Codevisor has been shown may be regrouped, mirroring closeTarget.
 const groupableTabIds = (allowedTabs, raw) => {
   if (!Array.isArray(raw) || raw.length === 0) throw new Error("tabIds must be a non-empty array")
   return raw.map((value) => {
@@ -62,7 +56,6 @@ const knownGroupId = (raw) => {
   return groupId
 }
 
-// Consumed by background.js after importScripts, so it is published explicitly.
 globalThis.handleTabGroupCommand = async (allowedTabs, message) => {
   switch (message.method) {
     case "Codevisor.tabGroups.list": {

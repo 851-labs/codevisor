@@ -5,8 +5,6 @@ import CodevisorTestSupport
 
 @testable import CodevisorCore
 
-/// The fleet-wide update fold: components across machines, per-row actions,
-/// and the ordered update-all.
 @MainActor
 @Suite("UpdateCenter")
 struct UpdateCenterTests {
@@ -118,8 +116,6 @@ struct UpdateCenterTests {
 
     await center.updateAll()
 
-    // Restart-free components first, then the remote server, then the
-    // app — whose install restarts this client.
     #expect(
       fake.operationLog == [
         "plugin.prepare:notes",
@@ -259,10 +255,8 @@ struct UpdateCenterTests {
     let center = UpdateCenter(machines: controller, appUpdate: appUpdate, store: store)
 
     await center.updateAll()
-    // Sparkle is about to restart this client: the marker survives.
     #expect(store.loadData(forKey: "updateCenter.pendingSession") != nil)
 
-    // The relaunched app consumes it: surface reopens, session clears.
     let relaunched = UpdateCenter(
       machines: controller,
       appUpdate: AppUpdateModel(currentVersion: "2.0.0"),
@@ -307,8 +301,6 @@ struct UpdateCenterTests {
     let fake = SyncFakeServerClient(projects: [], sessions: [])
     fake.configureUpdate(current: "0.1.0", latest: "0.2.0")
     fake.configureHarnesses([makeHarness(updateAvailable: true)])
-    // The triggered harness update keeps running on the machine for the
-    // next three inventory reads before it settles.
     fake.configureHarnessUpdateInProgress(polls: 3)
     let controller = try makeController(
       fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: fake],
@@ -324,9 +316,6 @@ struct UpdateCenterTests {
     await center.updateAll()
 
     #expect(fake.operationLog == ["harness.update:claude-code", "server.apply"])
-    // The server step only ran once the inventory reported the harness
-    // update finished (the harness refresh after the trigger, plus three
-    // "still updating" polls, plus the settled read).
     #expect(fake.harnessLifecycleReads >= 4)
     #expect(center.updateAllNotice == nil)
     controller.stopEventSync()
@@ -337,7 +326,6 @@ struct UpdateCenterTests {
     let remote = makeRemote("remote-a")
     let fake = SyncFakeServerClient(projects: [], sessions: [])
     fake.configureUpdate(current: "0.1.0", latest: "0.2.0")
-    // An old server that still refuses while busy: the server step fails.
     fake.configureBusy(true)
     let controller = try makeController(
       fakes: ["local": SyncFakeServerClient(projects: [], sessions: []), remote.id: fake],
@@ -357,7 +345,6 @@ struct UpdateCenterTests {
 
     #expect(appInstalls == 0)
     #expect(center.updateAllNotice?.contains("remote-a") == true)
-    // Nothing is left for a relaunch that never happens.
     #expect(store.loadData(forKey: "updateCenter.pendingSession") == nil)
     controller.stopEventSync()
   }
@@ -379,8 +366,6 @@ struct UpdateCenterTests {
     await center.refresh()
     #expect(center.availableCount == 1)
 
-    // The machine finished its update: the next lifecycle event makes
-    // the row disappear without a full sweep.
     fake.configureHarnesses([makeHarness(updateAvailable: false)])
     center.noteHarnessLifecycleChanged(onServer: remote.id)
     await awaitObserved { center.availableCount == 0 }
@@ -389,8 +374,6 @@ struct UpdateCenterTests {
   }
 }
 
-/// Grouping, row text, and the pre-sweep probe: kept in an extension so the
-/// suite stays within the type-body budget.
 extension UpdateCenterTests {
   @Test("Machine groups put each machine's Codevisor first, then harnesses, then plugins")
   func machineGroups() async throws {
@@ -412,7 +395,6 @@ extension UpdateCenterTests {
 
     let groups = center.machineGroups
     #expect(groups.map(\.id) == ["local", "cloud:remote-a"])
-    // Each machine's Codevisor is the section itself, never one of its rows.
     #expect(groups.first?.isLocal == true)
     #expect(groups.first?.codevisor?.kind == .app)
     #expect(groups.first?.codevisor?.title == "Codevisor")
@@ -423,9 +405,7 @@ extension UpdateCenterTests {
     #expect(groups.last?.codevisor?.detailText == "0.1.0 → 0.2.0")
     #expect(groups.last?.codevisor?.pendingVersionChange?.latest == "0.2.0")
     #expect(groups.last?.components.map(\.kind) == [.harness, .plugin])
-    // The Codevisor update counts toward the machine's total.
     #expect(groups.last?.availableCount == 3)
-    // One line per row, whatever the state.
     #expect(groups.last?.components.map(\.detailText) == ["1.0.0 → 1.2.0", "1.0.0 → 1.1.0"])
     controller.stopEventSync()
   }
@@ -446,7 +426,6 @@ extension UpdateCenterTests {
     )
     #expect(component.detailText == "Update failed: ld: symbol not found")
     #expect(component.isFailed)
-    // Only an idle row draws the version move; other states show their text.
     #expect(component.pendingVersionChange == nil)
     component = UpdateComponent(
       id: "app",
@@ -477,7 +456,6 @@ extension UpdateCenterTests {
       remotes: [remote]
     )
     let center = UpdateCenter(machines: controller, appUpdate: AppUpdateModel(currentVersion: "1.0.0"))
-    // No status probe has run yet — the state seconds after launch.
     #expect(controller.connectionsById[remote.id]?.status == nil)
 
     await center.refresh(force: true)

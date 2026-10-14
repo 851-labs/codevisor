@@ -28,12 +28,8 @@ const withWorktreesRoot = async <A>(body: () => Promise<A>): Promise<A> => {
   }
 }
 
-/// A started server owning one git-backed project, plus a helper that creates
-/// worktrees through the real route so their rows, branches and directories all
-/// exist exactly as production would leave them.
 const setUpProject = async () => {
   const { server, services } = await start()
-  // makeServices' temp dir (the newest entry) holds the server database.
   const serverDatabasePath = join(tempDirs[tempDirs.length - 1] as string, "codevisor.sqlite")
   const repoRoot = mkdtempSync(join(tmpdir(), "codevisor-reconcile-repo-"))
   tempDirs.push(repoRoot)
@@ -66,9 +62,6 @@ describe("worktree archive reconciliation", () => {
       const { services, repoFolder, makeWorktree, config, fanout } = await setUpProject()
       const worktree = await makeWorktree("sushi")
 
-      // Exactly the state a crash between recording the archive and deleting
-      // the files leaves: a durable snapshot, a `pending` row, and a worktree
-      // still on disk with its row intact.
       await run(
         services.db.createArchivedWorktree({
           id: worktree.id,
@@ -92,7 +85,6 @@ describe("worktree archive reconciliation", () => {
           (archived) => archived.id === worktree.id
         )?.state
       ).toBe("complete")
-      // The name is back in the pool: the row that reserved it is gone.
       expect(await run(services.db.listWorktrees("git-project"))).toEqual([])
     })
   })
@@ -115,8 +107,6 @@ describe("worktree archive reconciliation", () => {
 
       await reconcileWorktreeArchives(services, fanout, config)
 
-      // A stale row keeps its (finite) name reserved and makes restore claim
-      // success for files that are not there.
       expect(await run(services.db.listWorktrees("git-project"))).toEqual([])
     })
   })
@@ -140,8 +130,6 @@ describe("worktree archive reconciliation", () => {
           state: "complete"
         })
       )
-      // An archive interrupted BEFORE its row was written leaves this: a ref
-      // no row names, unreachable by restore and immune to `git gc`.
       await git(["update-ref", snapshotRefFor("orphan-worktree"), parentSha], repoFolder)
 
       await reconcileWorktreeArchives(services, fanout, config)
@@ -171,7 +159,6 @@ describe("worktree archive reconciliation", () => {
 
       await reconcileWorktreeArchives(services, fanout, config)
 
-      // Another machine owns those files; this server must not touch them.
       expect(existsSync(worktree.path)).toBe(true)
       expect(
         (await run(services.db.listArchivedWorktrees("git-project"))).find(
@@ -207,8 +194,6 @@ describe("worktree archive reconciliation", () => {
 
       await discardProjectWorktrees(services, config.id, project)
 
-      // Deleting a project is permanent, so nothing it owned may survive:
-      // row deletion cascades in SQLite, but none of this does.
       expect(existsSync(live.path)).toBe(false)
       expect(await listSnapshotRefWorktreeIds(repoFolder)).toEqual([])
       const branches = (
@@ -239,9 +224,6 @@ describe("worktree archive reconciliation", () => {
           state: "pending"
         })
       )
-      // The project's only checkout now belongs to another machine, so this
-      // server has no folder to run git in and must skip the project entirely
-      // rather than guess at a path.
       const sqlite = new Database(serverDatabasePath)
       sqlite.prepare("update project_locations set server_id = 'server-elsewhere'").run()
       sqlite.close()
@@ -249,8 +231,6 @@ describe("worktree archive reconciliation", () => {
       await reconcileWorktreeArchives(services, fanout, config)
 
       expect(existsSync(worktree.path)).toBe(true)
-      // The orphan ref survives too: a repository this server cannot locate is
-      // not one it may prune.
       expect(await listSnapshotRefWorktreeIds(repoFolder)).toEqual(["orphan-worktree"])
     })
   })
@@ -273,8 +253,6 @@ describe("worktree archive reconciliation", () => {
           state: "pending"
         })
       )
-      // A crash AFTER the files went but before the row was promoted. There is
-      // nothing left to delete, so the pass only has to finish the bookkeeping.
       rmSync(worktree.path, { recursive: true, force: true })
       await run(services.db.deleteWorktree(worktree.id))
 
@@ -285,7 +263,6 @@ describe("worktree archive reconciliation", () => {
           (archived) => archived.id === worktree.id
         )?.state
       ).toBe("complete")
-      // The branch is released too, or the name would stay taken forever.
       const branches = (
         await git(["for-each-ref", "--format=%(refname)", "refs/heads/"], repoFolder)
       ).stdout
@@ -297,8 +274,6 @@ describe("worktree archive reconciliation", () => {
     await withWorktreesRoot(async () => {
       const { services, repoFolder, makeWorktree, config, fanout } = await setUpProject()
       const worktree = await makeWorktree("farro")
-      // The archive request answered and the server stopped before its job
-      // ran: the workspace is archived but its worktree is untouched.
       const workspace = await run(
         services.db.upsertWorkspace({
           projectId: "git-project",
@@ -315,7 +290,6 @@ describe("worktree archive reconciliation", () => {
       expect(await listSnapshotRefWorktreeIds(repoFolder)).toEqual([worktree.id])
       expect(await run(services.db.listWorktrees("git-project"))).toEqual([])
 
-      // The next boot finds nothing left to do for it.
       await reconcileWorktreeArchives(services, fanout, config)
       expect(await listSnapshotRefWorktreeIds(repoFolder)).toEqual([worktree.id])
       expect(
@@ -347,10 +321,6 @@ describe("worktree archive reconciliation", () => {
           state: "complete"
         })
       )
-      // Reassign both records to another machine, and delete the directory
-      // under one of them. Server databases are single-owner, but a botched
-      // identity adoption can leave foreign rows behind: they must be skipped,
-      // not reclaimed, because their files belong to someone else.
       const sqlite = new Database(serverDatabasePath)
       sqlite
         .prepare("update worktrees set server_id = 'server-elsewhere' where id = ?")
@@ -363,14 +333,10 @@ describe("worktree archive reconciliation", () => {
 
       await reconcileWorktreeArchives(services, fanout, config)
 
-      // The foreign row survives even though its directory is gone.
       expect(
         (await run(services.db.listWorktrees("git-project"))).map((worktree) => worktree.id)
       ).toContain(foreign.id)
 
-      // A worktree that can be neither moved to the trash (something else
-      // occupies its path) nor removed by git (git no longer knows it) fails;
-      // the sweep must keep going and still clear the rest.
       writeFileSync(join(process.env["CODEVISOR_WORKTREES_ROOT"]!, ".trash"), "")
       rmSync(join(repoFolder, ".git", "worktrees", stubborn.name), { recursive: true, force: true })
       const project = (await run(services.db.listProjects)).find(
@@ -400,8 +366,6 @@ describe("worktree archive reconciliation", () => {
           state: "complete"
         })
       )
-      // Files already gone but the `worktrees` row still present: the archive
-      // pass owns this row, so the vanished-directory sweep must not race it.
       rmSync(worktree.path, { recursive: true, force: true })
 
       await reconcileWorktreeArchives(services, fanout, config)

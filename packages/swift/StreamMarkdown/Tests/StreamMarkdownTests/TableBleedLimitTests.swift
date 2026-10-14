@@ -48,7 +48,6 @@
       let documentWidth = try #require(container.scrollView.documentView).frame.width
       #expect(documentWidth > 520)
 
-      // Recycled hosts reset the limit for ordinary transcript rows.
       markdown.tableBleedLimit = .greatestFiniteMagnitude
       layout()
       #expect(container.bleed == 40)

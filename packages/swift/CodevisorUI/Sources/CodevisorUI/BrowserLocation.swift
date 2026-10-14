@@ -1,9 +1,6 @@
 import Foundation
 
-/// Addresses and shared starting locations, independent of the browser engine.
 public enum BrowserLocation {
-  /// Convert saved WebKit aliases back to the original origin for Chromium and
-  /// for shared pane metadata. WebKit applies its own routing aliases at load time.
   public static func canonicalURL(_ url: URL) -> URL? {
     guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
     let host = (components.host?.lowercased() ?? "").replacingOccurrences(
@@ -28,8 +25,6 @@ public enum BrowserLocation {
     return host + (url.port.flatMap { $0 == standardPort ? nil : ":\($0)" } ?? "")
   }
 
-  /// A saved starting location must never replay an OAuth handshake on another
-  /// device. Navigation remains local even when the location is shareable.
   public static func sharedURL(_ input: String) -> URL? {
     guard let url = navigationURL(input), let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
     else { return nil }
@@ -46,7 +41,6 @@ public enum BrowserLocation {
     return keys.isDisjoint(with: privateKeys) ? url : nil
   }
 
-  /// Bare local addresses default to HTTP; public hostnames default to HTTPS.
   public static func navigationURL(_ input: String) -> URL? {
     let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty, !text.contains(where: \.isWhitespace) else { return nil }
@@ -68,7 +62,6 @@ public enum BrowserLocation {
     return canonicalURL(url)
   }
 
-  /// Interpret typed text separately from URLs supplied by pages or saved panes.
   public static func addressBarURL(_ input: String) -> URL? {
     let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { return nil }
@@ -86,7 +79,6 @@ public enum BrowserLocation {
     search.host = "www.google.com"
     search.path = "/search"
     search.queryItems = [URLQueryItem(name: "q", value: text)]
-    // Google decodes '+' as a space, while URLQueryItem leaves it unescaped.
     search.percentEncodedQuery = search.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
     return search.url
   }

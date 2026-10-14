@@ -5,15 +5,11 @@ import ScreenSharing
 import Testing
 @testable import CodevisorCoreMac
 
-/// The Apps, Mission Control and Desktop buttons (851-2469, 851-2479), on the viewer's helpers.
 @MainActor
 struct ScreenSharingViewerSystemKeyTests {
   private let display = ScreenSharingViewerFixtures.display
   private let viewer = ScreenSharingViewerTests()
 
-  /// 851-2479: the system-key buttons are always enabled. Pressed while viewing, one switches to
-  /// Control and asks for it; the endpoint holds the key until the grant. Pressed while connecting
-  /// (no live video yet) it does nothing.
   @Test func aSystemKeyPressedWhileViewingAsksForControlAndHandsTheKeyOver() async {
     await withMainSerialExecutor {
       let backend = FakeBackend(displays: [display])

@@ -1,24 +1,10 @@
 import Foundation
 
-/// Builds the navigation projection incrementally.
-///
-/// A rebuild used to recompute every machine and re-fit every workspace's
-/// layout on the main actor whenever anything changed -- a mark-read, a pane
-/// publish, any other device's edit -- which made navigation slow in exactly
-/// the moments it had to feel instant. This keeps the last result per machine
-/// and per workspace and recomputes only what the change touched: a machine
-/// whose cache, outbox requests, or layouts didn't change is reused whole, and
-/// inside a machine only workspaces whose record, panes, layout, or worktree
-/// changed are fitted again. Everything it returns is identical to a full
-/// rebuild; only the work is smaller.
 @MainActor
 final class NavigationProjector {
   struct Result {
     var projection: NavigationProjection
-    /// Workspaces whose value differs from the previous rebuild, including
-    /// ones that are new; views of every other workspace stay untouched.
     var changedWorkspaceIds: Set<UUID>
-    /// Workspaces the previous rebuild showed and this one doesn't.
     var removedWorkspaceIds: Set<UUID>
   }
 
@@ -31,7 +17,6 @@ final class NavigationProjector {
   private struct MachineProjection {
     var projects: [Project] = []
     var sessions: [ChatSession] = []
-    /// Sorted by creation, then id -- the order the whole projection keeps.
     var workspaces: [Workspace] = []
     var sessionIndex: [UUID: UUID] = [:]
   }
@@ -47,7 +32,6 @@ final class NavigationProjector {
   private var fitted: [UUID: (key: WorkspaceKey, workspace: Workspace)] = [:]
   private var previous: [UUID: Workspace] = [:]
 
-  /// Forgets everything, so the next rebuild recomputes from scratch.
   func reset() {
     machines = [:]
     fitted = [:]
@@ -72,8 +56,6 @@ final class NavigationProjector {
       } else {
         machine = projectMachine(machineId, cache: cache(machineId), entries: inputs.entries, layouts: layouts)
       }
-      // Fitting may have saved layouts back; key the memo by what's stored
-      // now so the next rebuild doesn't mistake its own save for a change.
       current[machineId] = (
         MachineInputs(
           cacheGeneration: inputs.cacheGeneration, entries: inputs.entries,
@@ -108,9 +90,6 @@ final class NavigationProjector {
     NavigationOverlay.apply(entries, to: &records)
     var machine = MachineProjection(projects: records.projects, sessions: records.sessions)
     let panesByWorkspace = Dictionary(grouping: records.panes) { $0.workspaceId.lowercased() }
-    // Chats in a worktree workspace all run in the same worktree, so the first
-    // one that names it names it for the workspace. One pass, not one per
-    // workspace.
     var worktreeNames: [UUID: String] = [:]
     for session in records.sessions {
       guard let name = session.worktreeName, let workspaceId = records.assignments[session.id],
@@ -145,8 +124,6 @@ final class NavigationProjector {
       return lhs.id.orderKey < rhs.id.orderKey
     }
     machine.sessionIndex = records.assignments
-    // A chat the server hasn't placed in a workspace belongs to the one whose
-    // layout shows it -- typically the draft its first message creates.
     for workspace in machine.workspaces {
       for sessionId in workspace.chatSessionIds where machine.sessionIndex[sessionId] == nil {
         machine.sessionIndex[sessionId] = workspace.id
@@ -155,8 +132,6 @@ final class NavigationProjector {
     return machine
   }
 
-  /// A server workspace fitted with this device's layout. The fitted layout
-  /// is saved back so tab identities stay stable between rebuilds.
   private func fit(
     _ record: ServerWorkspace, key: WorkspaceKey, machineId: String, layouts: DeviceLayoutStore
   ) -> Workspace? {
@@ -177,7 +152,6 @@ final class NavigationProjector {
 }
 
 extension UUID {
-  /// Tuple of the raw bytes, so ids compare without building strings.
   fileprivate var orderKey: (UInt64, UInt64) {
     withUnsafeBytes(of: uuid) { bytes in
       (bytes.load(as: UInt64.self).bigEndian, bytes.load(fromByteOffset: 8, as: UInt64.self).bigEndian)

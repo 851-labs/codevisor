@@ -1,14 +1,11 @@
 import Foundation
 
-/// Cumulative cost information for a session (from a `usage_update`).
 public struct SessionCost: Sendable, Codable, Equatable {
   public enum Kind: String, Sendable, Codable, Equatable {
     case reported
     case estimated
   }
-  /// Total cumulative cost for the session.
   public var amount: Double
-  /// ISO 4217 currency code (e.g. "USD").
   public var currency: String
   public var kind: Kind?
 
@@ -19,18 +16,14 @@ public struct SessionCost: Sendable, Codable, Equatable {
   }
 }
 
-/// Context-window and cost usage for a session (from a `usage_update`).
 public struct SessionUsage: Sendable, Codable, Equatable {
-  /// Tokens currently in context.
   public var used: UInt64?
-  /// Total context-window size in tokens.
   public var size: UInt64?
   public var inputTokens: UInt64?
   public var cachedInputTokens: UInt64?
   public var outputTokens: UInt64?
   public var reasoningOutputTokens: UInt64?
   public var totalTokens: UInt64?
-  /// Cumulative session cost, if the agent reports it.
   public var cost: SessionCost?
 
   public init(

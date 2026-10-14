@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// Build the self-contained diagnostic app (the rig executable's `probe` subcommand), including the pinned WebRTC framework.
 import { spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
@@ -21,9 +20,6 @@ if (instanceIndex >= 0) {
   args.splice(instanceIndex, 2)
 }
 const app = join(root, `tmp/screen-sharing/ScreenSharingProbe${instance ? `-${instance}` : ""}.app`)
-// Separate installed identities prevent Launch Services and TCC from resolving
-// one diagnostic instance to another worktree's or instance's executable.
-// Ad-hoc rebuilds still change the code requirement and may need a new grant.
 const worktreeID = createHash("sha256").update(root).digest("hex").slice(0, 12)
 const bundleID = `com.codevisor.ScreenSharingProbe.w${worktreeID}.${instance || "default"}`
 const displayName = `Screen Sharing Probe${instance ? ` (${instance})` : ""}`

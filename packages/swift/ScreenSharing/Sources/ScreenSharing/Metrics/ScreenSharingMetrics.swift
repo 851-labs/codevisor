@@ -1,7 +1,5 @@
 import Foundation
 
-/// Bounded measurements from a single process's monotonic clock. No remote
-/// clock subtraction: network and input-to-photon measurements are separate.
 public final class ScreenSharingMetrics: @unchecked Sendable {
   private let lock = NSLock()
   private var counterValues: [String: Int] = [:]
@@ -17,7 +15,6 @@ public final class ScreenSharingMetrics: @unchecked Sendable {
   public init() {}
   public static var nowNs: Int64 { Int64(DispatchTime.now().uptimeNanoseconds) }
 
-  /// Returns the new value so callers can label first occurrences atomically.
   @discardableResult
   public func increment(_ name: String, by count: Int = 1) -> Int {
     lock.withLock {
@@ -30,19 +27,13 @@ public final class ScreenSharingMetrics: @unchecked Sendable {
     lock.withLock { labelValues[name] = value }
   }
 
-  /// One counter (0 before its first increment), one label, or every counter: what a
-  /// once-a-second check reads without building a whole `snapshot()`.
   public func counter(_ name: String) -> Int { lock.withLock { counterValues[name, default: 0] } }
   public func label(_ name: String) -> String? { lock.withLock { labelValues[name] } }
   public func counters() -> [String: Int] { lock.withLock { counterValues } }
 
-  /// Probe-only boundary tracing. Disabled by default: the entry autoclosure
-  /// is never evaluated, so no string is built on media paths in the app.
   public func enableTracing() { lock.withLock { tracing = true } }
   public var isTracing: Bool { lock.withLock { tracing } }
 
-  /// Bounded ordered diagnostic events (newest 64 per name) for boundary
-  /// tracing; a single string per event keeps the cost to one lock and copy.
   public func trace(_ name: String, _ entry: @autoclosure () -> String) {
     guard isTracing else { return }
     let value = entry()
@@ -65,8 +56,6 @@ public final class ScreenSharingMetrics: @unchecked Sendable {
     }
   }
 
-  /// Cadence within one stage and clock. Repeated timestamps are valid zero
-  /// intervals; backwards timestamps reset the baseline without a huge sample.
   public func event(_ name: String, atNanoseconds timestamp: Int64) {
     guard timestamp >= 0 else { return }
     let elapsed: Double? = lock.withLock {
@@ -91,11 +80,8 @@ public final class ScreenSharingMetrics: @unchecked Sendable {
     public let maximumMs: Double
   }
 
-  /// Copies the samples under the lock and sorts them outside it: capture, encode, decode and render
-  /// threads take the same lock for every frame.
   public func snapshot() -> Snapshot {
     let (counters, labels, samples, traces) = lock.withLock {
-      // A copy of its own, so the next sample written isn't the one that pays to copy the series.
       (counterValues, labelValues, samples.mapValues { $0.withUnsafeBufferPointer(Array.init) }, traces)
     }
     return Snapshot(

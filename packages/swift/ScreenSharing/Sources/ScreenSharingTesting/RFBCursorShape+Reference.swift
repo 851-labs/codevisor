@@ -1,8 +1,6 @@
 import ScreenSharing
 
 extension RFBCursorShape {
-  /// A classic 11 × 16 arrow (black outline, white fill, hotspot at the tip):
-  /// the pointer the reference server and the rig's Loopback server send.
   public static let referenceArrow: RFBCursorShape = {
     let art = [
       "X..........",

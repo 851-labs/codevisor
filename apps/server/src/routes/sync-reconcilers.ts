@@ -20,26 +20,14 @@ import {
   refreshPluginReadiness
 } from "./sync-readiness.js"
 
-/// The reconcile passes shared by two callers: the explicit
-/// /v1/sync/<plane>/reconcile routes clients drive, and the mutation hook —
-/// any config-changing request (add an MCP, create a skill, enable a
-/// harness, install a plugin) triggers the matching pass right after its
-/// response, so the change enters the replica and publishes sync.changed
-/// within a second instead of waiting for a client's periodic sweep.
-
 export type SyncReconcileNamespace = "skills" | "mcps" | "harnesses" | "plugins" | "credentials"
 
 export interface SyncReconcileOutcome {
   readonly status: unknown
   readonly changedEntries: ReadonlyArray<SyncEntryRecord>
-  /// Republishes this machine's readiness entry for the plane, carrying the
-  /// pass's own status; absent for planes without a readiness entry.
   readonly refreshReadiness?: (fanout: EventFanout) => Promise<void>
 }
 
-/// One reconcile pass for a plane; undefined when the backing services are
-/// absent on this machine (callers decide whether that is a 501 or a
-/// silent skip).
 export const reconcileForNamespace = async (
   services: CodevisorServerServices,
   config: CodevisorServerConfig,
@@ -77,8 +65,6 @@ export const reconcileForNamespace = async (
             symbolName: harness.symbolName,
             enabled: harness.enabled,
             installed: harness.readiness.state === "ready",
-            // Mirrors the PATCH enable gate: without an auth service there
-            // is nothing to gate on; with one, signed-in or auth-free only.
             authenticated:
               services.auth === undefined ||
               decorated.find((item) => item.id === harness.id)?.auth?.state === "authenticated" ||
@@ -107,8 +93,6 @@ export const reconcileForNamespace = async (
     case "credentials": {
       await services.sharedAccounts?.reconcile()
       if (services.credentialFerry === undefined) return undefined
-      // Ferried content landing locally forces an auth probe; the account
-      // state change then republishes the roster via the auth bridge.
       const harnessFor: Record<string, string> = {
         "pi-auth": "pi",
         "opencode-auth": "opencode",
@@ -183,10 +167,6 @@ export const publishSyncChanged = (
   }).catch(swallowError)
 }
 
-/// The mutation hook's half: run the pass and publish, silently skipping
-/// machines that lack the backing services. Never
-/// throws — a failed background pass must not affect the request that
-/// triggered it.
 export const runBackgroundSyncReconcile = async (
   services: CodevisorServerServices,
   config: CodevisorServerConfig,
@@ -198,22 +178,15 @@ export const runBackgroundSyncReconcile = async (
     if (result === undefined) return
     publishSyncChanged(services, fanout, namespace, result.changedEntries)
     await result.refreshReadiness?.(fanout)
-    // Auth mutations ride the harnesses trigger; the credential ferry
-    // re-hashes its files on the same beat (cheap when nothing changed).
     if (namespace === "harnesses") {
       const credentials = await reconcileForNamespace(services, config, "credentials")
       if (credentials !== undefined) {
         publishSyncChanged(services, fanout, "credentials", credentials.changedEntries)
       }
     }
-  } catch {
-    // Best-effort by design; the periodic client sweep remains the backstop.
-  }
+  } catch {}
 }
 
-/// Maps a request to the plane its success would have mutated; undefined
-/// for reads and for surfaces too chatty to reconcile behind (plugin pane
-/// proxies, pane tokens, tool invocations).
 export const configMutationNamespace = (
   method: string | undefined,
   pathname: string

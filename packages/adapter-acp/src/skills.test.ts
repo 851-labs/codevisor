@@ -65,7 +65,6 @@ describe("ACP skills", () => {
     await writeSkill(join(repo, ".claude", "skills"), "release")
     await writeSkill(join(workspace, ".agents", "skills"), "folder-name", "---\nname: lint\n---\n")
     await writeSkill(join(home, ".cursor", "skills"), "notes")
-    // The workspace's own copy shadows the user's.
     await writeSkill(join(home, ".agents", "skills"), "release")
     await mkdir(join(home, ".claude", "skills", "not-a-skill"), { recursive: true })
 
@@ -92,7 +91,6 @@ describe("ACP skills", () => {
       skills: [{ invocation: "/release", name: "release", source: "project" }]
     })
 
-    // An agent that never sends one costs only the grace period.
     const missing = tracker.current("session-2", 250)
     await vi.advanceTimersByTimeAsync(250)
     expect(await missing).toBeUndefined()

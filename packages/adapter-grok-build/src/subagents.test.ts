@@ -12,7 +12,6 @@ const payload = (event: RuntimeEvent | undefined): Record<string, unknown> | und
 
 const taskTool = { "x.ai/tool": { kind: "task", label: "Subagent", name: "task" } }
 
-/// Grok's Task tool call, as its ACP agent sends it.
 const taskCall = (id: string, description: string, extra: Record<string, unknown> = {}) => ({
   _meta: taskTool,
   kind: "other",
@@ -29,8 +28,6 @@ const subagentUpdate = (update: Record<string, unknown>) => ({
   update: { child_session_id: CHILD, parent_session_id: SESSION, subagent_id: CHILD, ...update }
 })
 
-/// The Grok Build extension with its notification handlers captured, as a
-/// connection would drive it.
 const grokExtension = () => {
   const emitted: Array<RuntimeEvent> = []
   const handlers = new Map<string, (params: unknown) => void>()
@@ -74,8 +71,6 @@ describe("Grok Build subagents", () => {
       title: "Find auth code"
     })
 
-    // Background is Grok's default: the call returns as soon as the subagent
-    // starts, naming it; the subagent settles it later.
     const [returned] = notify(SESSION, {
       rawOutput: {
         text: `Subagent started in background.\nsubagent_id: ${CHILD}\ntype: explore`,
@@ -125,7 +120,6 @@ describe("Grok Build subagents", () => {
     expect(payload(work[0])).toMatchObject({ toolCallId: `${CHILD}:grep-1` })
     expect(payload(work[1])).toMatchObject({ sessionUpdate: "agent_message_chunk" })
 
-    // The subagent's own turn ending isn't the chat's.
     expect(
       xai({ sessionId: CHILD, update: { prompt_id: "p1", sessionUpdate: "turn_completed" } })
     ).toEqual([])

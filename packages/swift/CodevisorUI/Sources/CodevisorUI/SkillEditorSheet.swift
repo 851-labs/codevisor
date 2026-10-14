@@ -1,9 +1,6 @@
 import CodevisorCore
 import SwiftUI
 
-/// Editing one skill's SKILL.md. Codevisor's skill store syncs across
-/// devices by content hash, so an edit here lands everywhere — the sheet
-/// names the skill, not a machine. Shared by both apps.
 public struct SkillEditorSheet: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(\.theme) private var theme

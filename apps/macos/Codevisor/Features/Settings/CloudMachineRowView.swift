@@ -3,17 +3,12 @@ import CodevisorCoreMac
 import CodevisorUI
 import SwiftUI
 
-/// A Settings ▸ Machines row for a machine reached through Codevisor Cloud:
-/// how it's reached, cloud account actions, and the TOFU "key changed"
-/// warning when the machine's presented key conflicts with the pinned one
-/// (its channels are cut off until the user explicitly re-trusts it).
 struct CloudMachineRowView: View {
   @Environment(\.theme) private var theme
 
   let machine: CodevisorMachine
   let presence: CloudMachine
   let keyChanged: Bool
-  /// How this device reaches the machine right now.
   let connection: MachineConnectionPresentation
   let onRename: () -> Void
   let onRemove: () -> Void

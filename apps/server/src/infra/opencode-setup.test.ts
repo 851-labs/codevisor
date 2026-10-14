@@ -19,8 +19,6 @@ const opencode2 = {
   majorVersion: async () => 2
 }
 
-/// A migration per data directory: pending for `pendingFor`, failing to
-/// start on "/broken".
 const migrations = (pendingFor: ReadonlyArray<string | undefined>) => {
   const finished: Array<string> = []
   const migration = vi.fn(
@@ -58,7 +56,6 @@ describe("OpenCode setup", () => {
       expect(await setup(env)).toBeUndefined()
     }
     expect(migration).not.toHaveBeenCalled()
-    // By default, only an installed OpenCode is run.
     const directory = await mkdtemp(join(tmpdir(), "codevisor-opencode-setup-"))
     directories.push(directory)
     expect(await makeOpenCodeSetup()({ HOME: directory, PATH: directory })).toBeUndefined()
@@ -72,7 +69,6 @@ describe("OpenCode setup", () => {
         account("default"),
         account("work", "/profiles/work"),
         account("work-again", "/profiles/work"),
-        // An account that hides nothing from OpenCode.
         { id: "done", profileKind: "managed", env: { XDG_DATA_HOME: "/profiles/done" } }
       ],
       migration

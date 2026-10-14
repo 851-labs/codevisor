@@ -1,9 +1,5 @@
 import SwiftUI
 
-/// A workspace's section header, above its card of tabs: one line of
-/// `name · machine` (the name always fits; the machine yields and truncates)
-/// and a menu of workspace actions. Long-pressing the header lifts the
-/// workspace to reorder it (see `HomeSidebarList`).
 struct HomeSidebarSectionHeader: View {
   let section: HomeSidebarSection
   let onNewTab: () -> Void
@@ -12,9 +8,6 @@ struct HomeSidebarSectionHeader: View {
 
   var body: some View {
     HStack(spacing: 6) {
-      // HIG: hierarchy by weight and color, not a third size — the name is
-      // `.headline` (17 semibold), the machine `.body` (17 regular) in
-      // secondary color on the same baseline.
       Text(section.displayName)
         .font(.headline)
         .foregroundStyle(.primary)

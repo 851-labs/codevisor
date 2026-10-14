@@ -8,9 +8,6 @@ struct OpenCodeProviderAuthenticationView: View {
   @Environment(\.sharedHarnessAccounts) var isShared
   @Environment(\.settingsMachineId) private var settingsMachineId
 
-  /// The machine this view operates on — pinned by the machine-scoped
-  /// Settings page that presented it, else the app's selected machine
-  /// (onboarding, previews).
   var scopedServerId: String {
     settingsMachineId ?? environment.defaultComposerServerId
   }
@@ -24,23 +21,15 @@ struct OpenCodeProviderAuthenticationView: View {
 
   let harness: ServerHarness
   var onChange: (ServerHarness) -> Void
-  /// Hidden when hosted inside the composer's sign-in sheet, which
-  /// carries its own title bar.
   var showsHeader = true
   var signInRequest: HarnessMachineSignIn?
-  /// The sign-in request applies to the profile first shown, once.
   @State var didOpenRequestedProvider = false
 
   @State var accounts: [ServerHarnessAccount] = []
   @State var selectedAccountId: String?
-  /// The running profile operation's label, or nil. Doubles as the
-  /// is-working flag so the two can never disagree.
   @State var workingLabel: String?
-  /// What the providers pane is doing, for this sheet's own footer.
   @State private var providersWorkingLabel: String?
   @State var errorMessage: String?
-  /// Profiles come in once per sheet; until then the sheet says it is
-  /// loading (or why it couldn't) instead of looking empty.
   @State var profilesLoaded = false
   @State var profilesError: String?
   @State private var showingNewProfile = false
@@ -75,7 +64,6 @@ struct OpenCodeProviderAuthenticationView: View {
         profiles
       }
     }
-    // The hosting sheet shows the current operation in its own footer.
     .harnessWorking(workingLabel)
     .task { await loadAccounts() }
     .onChange(of: environment.configSync.revisionsByNamespace[HarnessSharedCredentials.namespace]) { _, _ in

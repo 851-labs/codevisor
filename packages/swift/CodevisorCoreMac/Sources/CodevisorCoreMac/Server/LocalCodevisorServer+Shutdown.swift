@@ -2,16 +2,9 @@ import CodevisorCore
 import Foundation
 
 extension LocalCodevisorServer {
-  /// How long the app waits for the server's live chats to finish before
-  /// asking the server to interrupt them. The server has its own deadline;
-  /// this one only guards against a server that never reports drained.
   static let appUpdateDrainTimeout: Duration = .seconds(15 * 60)
   static let appUpdateDrainPollInterval: Duration = .seconds(1)
 
-  /// Drains live chats, stops launchd ownership before Sparkle replaces the
-  /// bundle, then waits for the old runtime to release its executable and
-  /// database lease. The drain snapshots the live sessions so the updated
-  /// server brings them back and dispatches any prompts held meanwhile.
   @discardableResult
   public func prepareForAppUpdate(
     onStatus: @escaping @MainActor (String) -> Void = { _ in }
@@ -41,9 +34,6 @@ extension LocalCodevisorServer {
     return stopped
   }
 
-  /// Asks the server to drain and polls until it reports drained. A server
-  /// that cannot answer (already gone, or predating the drain) is treated as
-  /// drained: the shutdown that follows behaves exactly as before.
   func drainForAppUpdate(
     onStatus: @escaping @MainActor (String) -> Void,
     drainTimeout: Duration = appUpdateDrainTimeout,
@@ -95,15 +85,10 @@ extension LocalCodevisorServer {
       startUpdateRequestMonitor()
       return
     }
-    // The server was already stopped for the update: bring it back so the
-    // app is usable again without a relaunch.
     lifecycleLog.note("abandonAppUpdate: server is down; starting it again")
     await ensureRunning()
   }
 
-  /// Stops the running local server so a newer bundled runtime can take over
-  /// on the next launch. Asks politely over HTTP first (the server may not be
-  /// a process we own), then force-terminates any owned process that lingers.
   @discardableResult
   public func shutdown() async -> Bool {
     let scheduler = startupScheduler

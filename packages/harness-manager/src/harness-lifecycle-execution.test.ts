@@ -26,8 +26,6 @@ afterEach(() => vi.useRealTimers())
 describe("harness lifecycle install/update execution", () => {
   it("resolves install methods with availability and preference", async () => {
     const db = await makeDb()
-    // Only npm exists on this PATH → npm is recommended despite brew ranking
-    // higher in the preference order.
     const bin = makeBinDir(["npm"])
     const lifecycle = makeHarnessLifecycleManager({
       agents: agentsStub([installableDefinition], []),
@@ -86,11 +84,9 @@ describe("harness lifecycle install/update execution", () => {
 
     const { terminalId } = await lifecycle.beginInstall("fake-cli")
     expect(terminalId).toBe("terminal-1")
-    // Preference: brew wins when available.
     expect(spawns[0]?.command).toBe("brew install fake-cli")
     expect(events.at(-1)?.payload.lifecycle?.phase).toBe("installing")
 
-    // A second begin while running is refused.
     await expect(lifecycle.beginInstall("fake-cli")).rejects.toThrow(/already running/)
 
     processes[0]?.emitOutput("downloading…\n")
@@ -135,7 +131,6 @@ describe("harness lifecycle install/update execution", () => {
       terminalId: "terminal-1"
     })
 
-    // Failed state does not block a retry.
     await expect(lifecycle.beginInstall("fake-cli", "npm")).resolves.toMatchObject({
       terminalId: "terminal-1"
     })
@@ -206,7 +201,6 @@ describe("harness lifecycle install/update execution", () => {
       harness("fake-cli", "/Users/dev/.local/bin/fake-cli", "1.0.0")
     ])
     expect(whileVerifying[0]?.lifecycle?.phase).toBe("updating")
-    // The local re-probe keeps waiting for the target for 2 minutes.
     await vi.advanceTimersByTimeAsync(2 * 60_000 - 1)
     const beforeDeadline = await lifecycle.decorateHarnesses([
       harness("fake-cli", "/Users/dev/.local/bin/fake-cli", "1.0.0")

@@ -1,6 +1,5 @@
 import { connect, type NetConnectOpts, type Socket } from "node:net"
 
-// A wildcard bind can shadow another loopback server, so probe before binding.
 export const hasExistingListener = (
   host: string,
   port: number,

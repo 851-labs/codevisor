@@ -8,8 +8,6 @@ import { jsonRequest, start, tempDirs } from "../test-support.js"
 
 type StartedServer = Awaited<ReturnType<typeof start>>["server"]
 
-/// A started server with one registered (and renamed) project so the global
-/// event stream opens with project.created then project.updated.
 export const setUpWorkspace = async () => {
   const { agents, server, services } = await start()
   const workspaceRoot = mkdtempSync(join(tmpdir(), "codevisor-server-workspace-"))
@@ -34,8 +32,6 @@ export const setUpWorkspace = async () => {
   return { agents, server, services, workspace, workspaceFolder, workspaceRoot }
 }
 
-/// The scenario's first codex chat, whose agent session the fake runtime
-/// names deterministically.
 export const createFirstSession = async (
   server: StartedServer,
   workspace: { readonly id: string }

@@ -1,11 +1,6 @@
 import SwiftUI
 import UIKit
 
-/// Reports the window-space frame UIKit actually gives a view. Platform
-/// views that ignore safe areas can extend past the frame SwiftUI's
-/// geometry reports (the transcript runs under the home indicator while
-/// its SwiftUI frame stops above it), so layout that must line up with
-/// UIKit content measures a probe carrying the same modifiers instead.
 struct WindowFrameProbe: UIViewRepresentable {
   let onChange: (CGRect) -> Void
 
@@ -47,7 +42,6 @@ final class WindowFrameProbeView: UIView {
     let frame = convert(bounds, to: window)
     guard frame != lastReported else { return }
     lastReported = frame
-    // Layout can run inside a SwiftUI update; publish on the next turn.
     Task { @MainActor [onChange] in
       onChange?(frame)
     }

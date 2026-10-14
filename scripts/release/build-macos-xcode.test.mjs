@@ -11,8 +11,6 @@ test("the release build passes the macOS Ghostty archive without overriding proj
   const script = join(root, "scripts/release/build-macos-xcode.sh")
   await mkdir(join(script, ".."), { recursive: true })
   await copyFile(new URL("./build-macos-xcode.sh", import.meta.url), script)
-  // Mirror a real GhosttyKit.xcframework: the iOS slices sort before the macOS
-  // slice and their archives also contain arm64 (the lipo stub reports it for all).
   const framework = join(root, "apps/macos/Frameworks/GhosttyKit.xcframework")
   const slices = [
     ["ios-arm64", "libghostty-internal.a"],
@@ -57,8 +55,6 @@ test("the release build passes the macOS Ghostty archive without overriding proj
   assert.ok(args.includes(`SWIFT_INCLUDE_PATHS=${slice}/Headers`))
   assert.ok(args.includes("ARCHS=arm64"))
   assert.ok(!args.some((arg) => arg.startsWith("OTHER_LDFLAGS=")))
-  // The framework is validated by the dev tooling's check (the stubbed node
-  // records the call), not a copy of its layout rules.
   assert.match(
     await readFile(nodeArgs, "utf8"),
     new RegExp(`^${join(root, "scripts/ghostty-artifact.mjs")}\nvalidate\n${framework}\n`)

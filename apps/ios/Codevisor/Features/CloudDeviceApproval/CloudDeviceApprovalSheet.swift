@@ -2,11 +2,6 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// "Authorize this machine?" — opened by scanning the QR code
-/// `codevisor auth login` prints (a universal link to the cloud's `/device`
-/// page). Signed out, it signs in first and then continues to the approval;
-/// a link from any cloud other than the account's own is refused, so the
-/// session token never leaves for another origin.
 struct CloudDeviceApprovalSheet: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.dismiss) private var dismiss
@@ -21,7 +16,6 @@ struct CloudDeviceApprovalSheet: View {
   var body: some View {
     NavigationStack {
       content
-        // A readable column on iPad, matching onboarding.
         .frame(maxWidth: 560)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemBackground))
@@ -66,8 +60,6 @@ struct CloudDeviceApprovalSheet: View {
       }
     }
   }
-
-  // MARK: Approval
 
   private func approvalContent(userEmail: String?) -> some View {
     ScrollView {
@@ -147,8 +139,6 @@ struct CloudDeviceApprovalSheet: View {
     Task { await request.send(decision, cloud: cloud) }
   }
 
-  // MARK: Sign-in
-
   private var signInContent: some View {
     ScrollView {
       VStack(spacing: 20) {
@@ -201,8 +191,6 @@ struct CloudDeviceApprovalSheet: View {
     }
   }
 
-  // MARK: Other states
-
   private func otherCloudContent(_ mismatch: CloudDeviceApprovalError) -> some View {
     resultLayout(
       symbol: "exclamationmark.triangle.fill", tint: .orange, title: "Can't authorize this machine",
@@ -245,8 +233,6 @@ struct CloudDeviceApprovalSheet: View {
     }
   }
 
-  // MARK: Building blocks
-
   private func header(subtitle: String) -> some View {
     VStack(spacing: 12) {
       Image(systemName: "laptopcomputer.and.iphone")
@@ -265,8 +251,6 @@ struct CloudDeviceApprovalSheet: View {
     .padding(.top, 24)
   }
 
-  /// The code the machine's terminal shows, so the user can check they
-  /// scanned their own request.
   private var codeCard: some View {
     VStack(spacing: 6) {
       Text(request.link.userCode.uppercased())

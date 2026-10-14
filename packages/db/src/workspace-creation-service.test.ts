@@ -33,8 +33,6 @@ describe("workspace creation service", () => {
         title: "Hello",
         revision: 1
       })
-      // The journal coalesces the three rows into ONE delta: no client can
-      // observe the workspace without its chat.
       const batch = await run(db.readSyncBatch(before))
       const deltas = batch.events.filter((event) => event.kind === "navigation.changed")
       expect(deltas).toHaveLength(1)
@@ -44,14 +42,12 @@ describe("workspace creation service", () => {
         panes: [expect.objectContaining({ id: "chat-atomic" })]
       })
 
-      // A retried request converges on the same records.
       const retried = await run(db.createWorkspaceWithSession(request))
       expect(retried.session.id).toBe("chat-atomic")
       expect(await run(db.listWorkspacePanes)).toEqual([
         expect.objectContaining({ id: "chat-atomic", revision: 2 })
       ])
 
-      // A cross-project pair is rejected and the transaction rolls back whole.
       const other = await run(db.createProject({ folderPath: "/tmp/atomic-workspace-other" }))
       await expect(
         run(
@@ -101,8 +97,6 @@ describe("workspace creation service", () => {
       })
       expect(created.pane).toMatchObject({ id: "pane-explicit", title: "Custom" })
 
-      // No pane options: the pane takes the session id and a "Chat" title for an
-      // untitled session. No workspace id: the server mints one.
       const untitled = await run(
         db.createWorkspaceWithSession({
           workspace: { projectId: project.id, name: "Minted", hasCustomName: false },

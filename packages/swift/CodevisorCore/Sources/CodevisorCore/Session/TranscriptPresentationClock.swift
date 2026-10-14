@@ -1,9 +1,6 @@
 import Foundation
 import Observation
 
-/// Elects one native display clock for a transcript visible in multiple surfaces.
-/// Owns registrations, pending-frame scheduling and the visibility count; the
-/// session binds presentation operations to its current model.
 @MainActor
 @Observable
 public final class TranscriptPresentationClock {
@@ -33,9 +30,6 @@ public final class TranscriptPresentationClock {
     self.onDisappear = onDisappear
   }
 
-  /// Transcript-view lifecycle, forwarded to the model to tune its stream
-  /// flush cadence. Reference-counted: a session can be visible in several
-  /// windows or splits at once.
   public func viewDidAppear() {
     visibleViewCount += 1
     onAppear()
@@ -47,8 +41,6 @@ public final class TranscriptPresentationClock {
     onDisappear()
   }
 
-  /// Registers a visible native surface. `requestFrame` must merely arm its
-  /// paused display link; all transcript work happens when that link fires.
   public func registerDriver(
     maximumFramesPerSecond: Int,
     requestFrame: @escaping @MainActor () -> Void
@@ -82,9 +74,6 @@ public final class TranscriptPresentationClock {
     }
   }
 
-  /// Called by a registered native display link. Non-elected callbacks are
-  /// ignored so two windows on unrelated display clocks cannot double-commit
-  /// one session inside a single physical frame.
   public func didFire(_ token: TranscriptFrameDriverToken) {
     guard token == electedDriver,
       drivers[token] != nil,
@@ -97,9 +86,6 @@ public final class TranscriptPresentationClock {
     revision &+= 1
   }
 
-  /// Arms the elected display link. Projection workers also call this after
-  /// preparing a new immutable row snapshot, so publication is gated by the
-  /// same clock as ACP event application.
   @discardableResult
   public func requestFrame() -> Bool {
     framePending = true
@@ -113,9 +99,6 @@ public final class TranscriptPresentationClock {
       return true
     }
 
-    // A surface can become observable just before AppKit/UIKit attaches it
-    // to a window. Preserve progress during that short gap without making
-    // the ordinary visible path timer-driven.
     guard fallbackTask == nil else { return true }
     fallbackTask = Task { @MainActor [weak self] in
       try? await Task.sleep(for: .milliseconds(16))
@@ -146,9 +129,6 @@ public final class TranscriptPresentationClock {
   }
 }
 
-/// Opaque registration for one native transcript surface's display clock.
-/// The clock elects the fastest visible registration as the session's
-/// presentation driver.
 public struct TranscriptFrameDriverToken: Hashable, Sendable {
   fileprivate let rawValue = UUID()
 }

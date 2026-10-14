@@ -2,24 +2,9 @@ import type { CloudMachinePresence, MachineCallOrigin, MachineSummary } from "@c
 import { CodeExecutionToolError } from "@codevisor/automation"
 import { GatewayChannelError, type GatewayExchange } from "@codevisor/cloud-client"
 
-/// This server's view of every machine on the account, and the transport
-/// that runs Codevisor gateway calls on them (the sandbox's `machines` API).
-///
-/// Sources, merged under one stable id per machine (its server id,
-/// "machine-<uuid>"):
-/// - this machine;
-/// - cloud hub presence (machines publish their server id in hello; older
-///   servers that don't appear as `cloud:<deviceId>`).
-///
-/// A call runs over the cloud relay. Nothing is retried once a request may
-/// have reached the target.
-
 export interface MachineLinkCloud {
-  /// This machine's own cloud device id (undefined while not registered).
   readonly deviceId: () => string | undefined
   readonly machines: () => ReadonlyArray<CloudMachinePresence> | undefined
-  /// Runs one POST /v1/gateway/invoke exchange over a sealed relay channel;
-  /// rejects with GatewayChannelError.
   readonly request: (
     deviceId: string,
     body: string,
@@ -35,18 +20,12 @@ export interface MachineLinkOptions {
 
 export interface MachineLink {
   readonly list: () => Promise<ReadonlyArray<MachineSummary>>
-  /// Finds a machine by id or case-insensitive name (ids win): "self" for
-  /// this machine, its cloud presence for another, undefined when unknown.
   readonly resolve: (
     machine: string
   ) =>
     | "self"
     | { readonly id: string; readonly name: string; readonly deviceId: string }
     | undefined
-  /// Runs gateway `path` with `args` on `machine` (an id, or a
-  /// case-insensitive name). Throws CodeExecutionToolError: the target's own
-  /// tool error, or code "machine_unavailable" with details
-  /// { machineId, name, lastSeen, phase: "before-send" | "in-flight" }.
   readonly invoke: (
     machine: string,
     path: string,
@@ -58,7 +37,6 @@ export interface MachineLink {
 
 export const GATEWAY_INVOKE_PATH = "/v1/gateway/invoke"
 
-/// Another machine on the account, as the hub reports it.
 interface Peer {
   readonly id: string
   readonly name: string
@@ -86,7 +64,6 @@ const parseJson = (text: string): unknown => {
   }
 }
 
-/// "just now", "3m ago", "5h ago", "2d ago".
 export const relativeAge = (iso: string, now: number): string => {
   const seconds = Math.max(0, Math.round((now - Date.parse(iso)) / 1000))
   if (seconds < 60) return "just now"
@@ -97,8 +74,6 @@ export const relativeAge = (iso: string, now: number): string => {
   return `${Math.floor(hours / 24)}d ago`
 }
 
-/// Why the relay could not deliver the request: the target is unreachable,
-/// or reachable but running a version without cross-machine calls.
 type PathMiss = "unreachable" | "unsupported"
 
 const summarize = (peer: Peer): MachineSummary => ({
@@ -128,7 +103,6 @@ export const makeMachineLink = (options: MachineLinkOptions): MachineLink => {
   const find = (machine: string): "self" | Peer | undefined => {
     const lowered = machine.toLowerCase()
     const all = peers()
-    // Ids win over names; this machine is matched like any other.
     if (machine === self.id) return "self"
     const byId = all.find((candidate) => candidate.id === machine)
     if (byId !== undefined) return byId
@@ -149,8 +123,6 @@ export const makeMachineLink = (options: MachineLinkOptions): MachineLink => {
       phase
     })
 
-  /// The target's answer: its result, or its own tool error re-thrown with
-  /// the same message/code/details.
   const interpret = (peer: Peer, answer: GatewayExchange): unknown => {
     const parsed = parseJson(answer.body)
     if (answer.status >= 200 && answer.status < 300 && isRecord(parsed) && "result" in parsed) {
@@ -167,8 +139,6 @@ export const makeMachineLink = (options: MachineLinkOptions): MachineLink => {
     throw toolError(`${peer.name} answered HTTP ${answer.status}${detail}`)
   }
 
-  /// One relay exchange, or why it provably never reached the target.
-  /// Nothing is retried once the request may have reached it.
   const viaCloud = async (
     peer: Peer,
     body: string,

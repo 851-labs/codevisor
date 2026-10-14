@@ -1,7 +1,4 @@
 ;(() => {
-  // WebKit applies blocking rules to WebSockets but ignores redirect actions.
-  // Change only loopback destinations before calling the native constructor.
-  // Unhandled contexts remain covered by the native loopback blocking rules.
   const NativeWebSocket = globalThis.WebSocket
   globalThis.WebSocket = new Proxy(NativeWebSocket, {
     construct(target, args, newTarget) {

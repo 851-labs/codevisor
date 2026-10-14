@@ -14,7 +14,6 @@ const symlinkIsDirectory = (path: string): boolean => {
 const isListedDirectory = (path: string, entry: Dirent, showHidden: boolean): boolean => {
   if (!showHidden && entry.name.startsWith(".")) return false
   if (entry.isDirectory()) return true
-  // Follow directory symlinks (common for workspace layouts); skip broken ones.
   if (!entry.isSymbolicLink()) return false
   return symlinkIsDirectory(join(path, entry.name))
 }

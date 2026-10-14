@@ -4,9 +4,6 @@ import type { SessionSkill, SessionSkillSource } from "@codevisor/api"
 import { isRecord } from "./internal.js"
 import type { CodexSession } from "./session.js"
 
-/// Codex's first-party plugin skills, which Codevisor-owned threads turn off
-/// (see start-session.ts): Codevisor's own browser and computer tools replace
-/// them.
 export const NATIVE_CODEX_PLUGIN_SKILL_NAMES = [
   "browser:control-in-app-browser",
   "chrome:control-chrome",
@@ -22,7 +19,6 @@ export const NATIVE_CODEX_PLUGIN_SKILL_NAMES = [
   "visualize:visualize"
 ] as const
 
-/// A plugin Codevisor-owned threads turn off as a whole.
 export const DISABLED_CODEX_PLUGIN = "unified-computer-use@openai-bundled"
 
 const DISABLED_SKILL_NAMES: ReadonlySet<string> = new Set(NATIVE_CODEX_PLUGIN_SKILL_NAMES)
@@ -35,15 +31,10 @@ const SCOPE_SOURCES: Readonly<Record<string, SessionSkillSource>> = {
 const text = (value: unknown): string | undefined =>
   typeof value === "string" && value.trim() !== "" ? value.trim() : undefined
 
-/// A Codex skill the thread can run, with the SKILL.md path `turn/start`
-/// takes to load it directly.
 export interface CodexSkill extends SessionSkill {
   readonly path: string
 }
 
-/// The skills in a `skills/list` answer for one directory. `skills/list`
-/// reads the user's global config, so the thread config's overrides
-/// (bundled `system` skills and first-party plugins off) are applied here.
 export const codexSkillsFrom = (response: unknown): ReadonlyArray<CodexSkill> => {
   const data = isRecord(response) && Array.isArray(response.data) ? response.data : []
   const entry = data.find(isRecord)
@@ -77,8 +68,6 @@ export const codexSkillsFrom = (response: unknown): ReadonlyArray<CodexSkill> =>
   })
 }
 
-/// Re-lists the thread directory's skills and publishes them when they
-/// changed. Codex servers without `skills/list` keep an empty list.
 export const refreshCodexSkills = async (
   session: CodexSession,
   forceReload: boolean
@@ -100,7 +89,6 @@ export const refreshCodexSkills = async (
   void session.emit(skillsUpdateEvent(session.key, codexSessionSkills(skills)))
 }
 
-/// The client-facing snapshot: Codex invokes every skill as `$name`.
 export const codexSessionSkills = (skills: ReadonlyArray<CodexSkill>) =>
   sessionSkills(
     skills.map(({ path: _path, ...skill }) => skill),
@@ -109,9 +97,6 @@ export const codexSessionSkills = (skills: ReadonlyArray<CodexSkill>) =>
 
 const SKILL_MENTION = /(?:^|\s)\$([\w.:-]+)/g
 
-/// The skills a prompt invokes by `$name`. `turn/start` takes each as a
-/// `skill` item next to the text so Codex loads its SKILL.md up front instead
-/// of having the model look for it.
 export const mentionedCodexSkills = (
   text: string,
   skills: ReadonlyArray<CodexSkill>
@@ -120,7 +105,6 @@ export const mentionedCodexSkills = (
   const mentioned = new Map<string, CodexSkill>()
   for (const match of text.matchAll(SKILL_MENTION)) {
     const token = match[1] ?? ""
-    // Trailing punctuation ends a sentence, not the name.
     const skill = byName.get(token) ?? byName.get(token.replace(/[.:-]+$/, ""))
     if (skill !== undefined) mentioned.set(skill.name, skill)
   }

@@ -2,16 +2,12 @@ import ScreenSharingDiagnostics
 import ScreenSharing
 import Foundation
 
-/// One per-second view of a session, derived from the process's own metrics
-/// and WebRTC statistics. Rates are deltas over the previous sample; no remote
-/// clock is subtracted anywhere.
 public struct RigTelemetrySample: Codable, Equatable, Sendable {
   public let elapsedSeconds: Double
   public let role: String
   public let connection: String
   public let sessionID: String?
   public let presentedFramesPerSecond: Double?
-  /// Drawables whose presented time was zero: rendered, but not shown, as when the window is covered.
   public let unpresentedDrawablesPerSecond: Double?
   public let capturedFramesPerSecond: Double?
   public let encodedFramesPerSecond: Double?
@@ -37,18 +33,13 @@ public struct RigTelemetrySample: Codable, Equatable, Sendable {
   public let captureSize: String?
   public let captureFPS: String?
   public let frameSize: String?
-  /// Set when a source started but produced no frames; empty otherwise.
   public let sourceStall: String?
-  /// Viewer: capture-to-presentation age of frames shown this interval, from the calibrated clock offset.
   public let imageAge: RigImageAge.Summary?
-  /// Viewer: half-width of the clock offset interval; every image age carries this uncertainty.
   public let clockErrorMilliseconds: Double?
   public let counters: [String: Int]
   public let timingsP95: [String: Double]
 }
 
-/// Turns raw snapshots into samples. Keeps the previous counters to compute
-/// rates; reset it when a new session starts so rates never span sessions.
 public struct RigTelemetryReducer: Sendable {
   private var previousElapsed: Double?
   private var previousCounters: [String: Int] = [:]
@@ -122,8 +113,6 @@ public struct RigTelemetryReducer: Sendable {
     return sample
   }
 
-  /// Statistics keys are `type.id.field`; the peer already filters to the
-  /// selected candidate pair, so the first match is the one that matters.
   public static func statistic(_ statistics: [String: String], type: String, field: String) -> String? {
     let prefix = type + "."
     let suffix = "." + field
@@ -132,5 +121,3 @@ public struct RigTelemetryReducer: Sendable {
     }
   }
 }
-
-/// Fixed-width lines for the on-screen HUD. Pure so the layout is testable.

@@ -56,10 +56,6 @@ const phaseCorrection = (
   }
 })
 
-/// Cursor's ACP implementation streams text deltas without message identity.
-/// This adapter treats tool starts as response boundaries, keeps every chunk
-/// in a contiguous response on one id, and retro-tags only the terminal span
-/// as final when the ACP prompt request settles.
 export class CursorStreamNormalizer {
   private readonly sessions = new Map<string, CursorTurnState>()
   private readonly nextTurnOrdinals = new Map<string, number>()
@@ -117,9 +113,6 @@ export class CursorStreamNormalizer {
         return []
       }
     }
-    // Terminal errors are the last assistant chunk of a prompt leg, but Cursor
-    // can still emit usage/config metadata before the ACP request resolves.
-    // Keep a complete sentinel buffered across those unrelated updates.
     const pending =
       state.pendingAgentText !== undefined &&
       parseCursorTerminalError(state.pendingAgentText.text) !== undefined

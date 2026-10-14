@@ -2,21 +2,10 @@
   import AppKit
   import SwiftUI
 
-  // MARK: - Attributed string construction
-
-  /// Builds the `NSAttributedString` for a markdown table as an `NSTextTable`:
-  /// each cell is a paragraph whose `NSParagraphStyle` carries a table block
-  /// pinning it to a (row, column). Inline markdown (emphasis, code, links)
-  /// inside cells is styled per-run.
   enum MarkdownTableRenderer {
     struct PreparedCell {
       let attributedString: NSAttributedString
-      /// The single-line, unwrapped width of the cell.
       let naturalWidth: CGFloat
-      /// The min-content width: the widest fragment that cannot wrap (the
-      /// longest word). A column is never squeezed below this, mirroring CSS
-      /// auto table layout, so short cells like "Swift" or "560" are never
-      /// shredded into one-character-wide vertical stacks.
       let minimumWidth: CGFloat
     }
 
@@ -31,8 +20,6 @@
     private static let horizontalPadding = MarkdownTableMetrics.horizontalPadding
     private static let verticalPadding = MarkdownTableMetrics.verticalPadding
 
-    /// - Parameter width: the width to fill (columns are scaled to it). Nil lays
-    ///   the table out at its natural content width — used by tests.
     static func make(
       headers: [String], alignments: [ColumnAlignment], rows: [[String]],
       theme: MarkdownTheme, width: CGFloat? = nil
@@ -51,9 +38,6 @@
       )
     }
 
-    /// Parses and styles every cell exactly once, retaining both its attributed
-    /// representation and natural width. The previous renderer repeated this
-    /// work during the width pass and again while constructing the table.
     static func prepare(
       headers: [MarkdownText],
       rows: [[MarkdownText]],
@@ -122,11 +106,6 @@
       )
     }
 
-    /// The widest whitespace-free fragment of the cell — the width below which
-    /// word wrapping runs out and TextKit starts breaking mid-word. Whitespace
-    /// is where table cells actually wrap; other break opportunities (hyphens,
-    /// CJK) only make this an overestimate, which errs toward keeping a column
-    /// readable.
     private static func minimumContentWidth(of attributed: NSAttributedString) -> CGFloat {
       let string = attributed.string
       var widest: CGFloat = 1
@@ -153,10 +132,6 @@
       width: CGFloat? = nil
     ) -> NSAttributedString {
       guard prepared.columnCount > 0 else { return NSAttributedString() }
-      // Like iOS: when even min-content widths do not fit, keep every
-      // column at its widest word and let the table overflow its host
-      // (`TableScrollView` scrolls it sideways) instead of wrapping
-      // mid-word into one-character-wide columns.
       let columnWidths = MarkdownTextTableGeometry.columns(
         MarkdownTableMetrics.distribute(
           contentWidths: prepared.columnContentWidths,
@@ -170,9 +145,6 @@
       table.layoutAlgorithm = .fixedLayoutAlgorithm
       table.hidesEmptyCells = false
 
-      // Header sits on a faint neutral fill (works in light and dark); rows
-      // are separated by hairlines in the theme's border color. The last row
-      // gets none — the SwiftUI rounded border closes off the bottom.
       let separatorColor = NSColor(theme.tableBorderColor)
       let headerBackground = NSColor.labelColor.withAlphaComponent(
         MarkdownTableMetrics.headerBackgroundOpacity
@@ -232,7 +204,6 @@
         if isHeader {
           block.backgroundColor = headerBackground
         }
-        // Hairline separator beneath every row except the last.
         if rowIndex < lastRowIndex {
           block.setBorderColor(separatorColor, for: .maxY)
           block.setWidth(1, type: .absoluteValueType, for: .border, edge: .maxY)
@@ -245,7 +216,6 @@
         let cell = NSMutableAttributedString(
           attributedString: MarkdownImageAttachment.fitting(cells[column].attributedString, width: columnWidths[column])
         )
-        // Each table cell must be its own paragraph.
         cell.append(NSAttributedString(string: "\n"))
         cell.addAttribute(
           .paragraphStyle, value: paragraph, range: NSRange(location: 0, length: cell.length)
@@ -254,9 +224,6 @@
       }
     }
 
-    /// Styles one cell's inline markdown. Fonts resolve from the semantic text
-    /// styles the theme uses by default (the host never overrides the markdown
-    /// fonts); colors come from the theme.
     private static func inlineAttributed(
       _ markdown: MarkdownText, isHeader: Bool, theme: MarkdownTheme, images: [String: MarkdownImageResource]
     ) -> NSAttributedString {

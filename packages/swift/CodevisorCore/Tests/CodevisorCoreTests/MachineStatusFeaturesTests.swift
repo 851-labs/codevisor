@@ -4,8 +4,6 @@ import CodevisorTestSupport
 
 @testable import CodevisorCore
 
-/// The status probe caches the server's advertised capabilities so views
-/// can gate on them synchronously instead of re-probing on every mount.
 @MainActor
 @Suite("MachineStatus features")
 struct MachineStatusFeaturesTests {

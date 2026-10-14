@@ -1,12 +1,10 @@
 import Foundation
 import ScreenSharing
 
-/// Network conditions for L2 tests and `vnc-bench`. `bitsPerSecond` nil is an unlimited link.
 public struct RFBNetworkProfile: Sendable, Equatable, Hashable {
   public var name: String
   public var roundTrip: Duration
   public var bitsPerSecond: Int?
-  /// Each delivery moves by a seeded uniform offset in ±`jitter`, never reordering bytes.
   public var jitter: Duration
 
   public init(name: String, roundTrip: Duration, bitsPerSecond: Int? = nil, jitter: Duration = .zero) {
@@ -28,10 +26,6 @@ public struct RFBNetworkProfile: Sendable, Equatable, Hashable {
   public static func named(_ name: String) -> RFBNetworkProfile? { all.first { $0.name == name } }
 }
 
-/// When each send arrives on one direction of a shaped link: serialization at
-/// the link's bandwidth (sends queue behind each other), half the round trip,
-/// then seeded jitter clamped so deliveries stay in order. Pure, so the timing
-/// rules are tested exactly; times are offsets from the link's start.
 public struct RFBLinkSchedule: Sendable {
   public let profile: RFBNetworkProfile
   private var random: SplitMix64
@@ -68,14 +62,9 @@ extension Duration {
   }
 }
 
-/// An `RFBTransport` behind a shaped link: bytes read from `inner` reach the
-/// caller, and bytes written reach `inner`, when `RFBLinkSchedule` says, as
-/// measured on `clock`. Writes return at once (the kernel buffers a real
-/// socket's too). Tests pass a `TestClock`; `vnc-bench` a `ContinuousClock`.
 public final class RFBShapedTransport<C: Clock>: RFBTransport, @unchecked Sendable where C.Duration == Duration {
   private struct Delivery {
     let at: Duration
-    /// Empty: the peer closed.
     let bytes: [UInt8]
   }
 
@@ -100,7 +89,6 @@ public final class RFBShapedTransport<C: Clock>: RFBTransport, @unchecked Sendab
   public var name: String { "\(inner.name) · shaped \(profile.name)" }
   private let profile: RFBNetworkProfile
 
-  /// Reads waiting for bytes, for tests that must order a read before `close`.
   public var waitingReads: Int { lock.withLock { readers.count } }
 
   public init(_ inner: any RFBTransport, profile: RFBNetworkProfile, clock: C, seed: UInt64 = 1) {
@@ -169,9 +157,6 @@ public final class RFBShapedTransport<C: Clock>: RFBTransport, @unchecked Sendab
 
   private var elapsed: Duration { origin.duration(to: clock.now) }
 
-  // MARK: Pumps
-
-  /// Reads `inner` as fast as it delivers and schedules each chunk.
   private func receive() async {
     while !Task.isCancelled {
       let bytes: [UInt8]
@@ -191,7 +176,6 @@ public final class RFBShapedTransport<C: Clock>: RFBTransport, @unchecked Sendab
     }
   }
 
-  /// Moves each scheduled chunk into the inbox at its delivery time.
   private func deliverInbound() async {
     while let delivery = await next(\.inbound, waiter: \.inboundWaiter) {
       let readers: [CheckedContinuation<Void, Never>] = lock.withLock {
@@ -204,7 +188,6 @@ public final class RFBShapedTransport<C: Clock>: RFBTransport, @unchecked Sendab
     }
   }
 
-  /// Writes each scheduled chunk to `inner` at its delivery time.
   private func deliverOutbound() async {
     while let delivery = await next(\.outbound, waiter: \.outboundWaiter) {
       do {
@@ -216,7 +199,6 @@ public final class RFBShapedTransport<C: Clock>: RFBTransport, @unchecked Sendab
     }
   }
 
-  /// The queue's head once it is due; nil when the transport closed.
   private func next(
     _ queue: ReferenceWritableKeyPath<RFBShapedTransport, [Delivery]>,
     waiter: ReferenceWritableKeyPath<RFBShapedTransport, CheckedContinuation<Void, Never>?>
@@ -234,7 +216,6 @@ public final class RFBShapedTransport<C: Clock>: RFBTransport, @unchecked Sendab
         if wait > .zero {
           do { try await clock.sleep(for: wait) } catch { return nil }
         }
-        // One consumer per queue; producers only append, so the head is still this delivery.
         return lock.withLock { failure == nil ? self[keyPath: queue].removeFirst() : nil }
       case .empty:
         await withCheckedContinuation { continuation in

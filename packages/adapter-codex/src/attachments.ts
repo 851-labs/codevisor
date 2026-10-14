@@ -7,9 +7,6 @@ export type CodexInputItem =
   | { readonly path: string; readonly type: "localImage" }
   | { readonly name: string; readonly path: string; readonly type: "skill" }
 
-/// Builds the turn/start input items: images go by materialized temp-file
-/// path (the app-server's `localImage`), other files by path note in the text,
-/// and each `$skill` the text mentions as a `skill` item.
 export const codexInput = (
   input: PromptInput,
   skills: ReadonlyArray<CodexSkill> = []

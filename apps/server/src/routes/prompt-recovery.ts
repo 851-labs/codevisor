@@ -37,8 +37,6 @@ const reconcileSession = async (
 ): Promise<void> => {
   const { services, fanout, serverId } = context
   if (await sessionIsArchived(services, session)) {
-    // Archived chats get no turn restoration, but unarchiving must not
-    // resurface a stale streaming row as an endless in-progress turn.
     await run(services.db.closeStaleAssistantChatItems(session.id))
     return
   }
@@ -47,13 +45,9 @@ const reconcileSession = async (
   const { page, hasOrphanedTurn, hasOrphanedTasks } = snapshot
   if (!hasOrphanedTurn && !hasOrphanedTasks && processingPrompts.length === 0) return
 
-  // The old provider's resolver vanished. Cancel its persisted question
-  // before ending the turn so replay cannot leave an answerable request.
   if (hasOrphanedTurn && page.pendingQuestion !== undefined) {
     await cancelPersistedQuestion(services, fanout, serverId, session.id, page.pendingQuestion)
   }
-  // Clear process-owned tasks before the terminal event. A crash between
-  // appends leaves the generating turn available for the next recovery pass.
   if (hasOrphanedTasks) await clearBackgroundTasks(services, fanout, serverId, session.id)
   if (processingPrompts.length > 0) {
     await restorePromptMessages(context, session.id, processingPrompts)
@@ -70,12 +64,9 @@ const inspectSession = async (
   const page = await run(services.db.getTranscriptPage(sessionId, undefined, 1))
   const active = page.items.at(-1)
   const hasOrphanedTurn = active?.role === "assistant" && active.isGenerating
-  // Startup precedes client admission: every streaming row is dead. Older
-  // rows settle silently; the newest orphan keeps its full terminal context.
   await run(
     services.db.closeStaleAssistantChatItems(sessionId, hasOrphanedTurn ? active.id : undefined)
   )
-  // Current database projections always supply this optional API field.
   const hasOrphanedTasks = page.backgroundTasks!.length > 0
   return { page, active, hasOrphanedTurn, hasOrphanedTasks }
 }
@@ -88,7 +79,6 @@ const reconcilePromptClaims = async (
   const processingPrompts: Array<PromptQueueItem> = []
   for (const item of claimedPrompts) {
     if (await run(services.db.hasTerminalAssistantAfterMessage(sessionId, item.id))) {
-      // A terminal chat row proves that only acknowledgement was lost.
       await run(services.db.completePromptQueueItem(sessionId, item.id))
     } else {
       processingPrompts.push(item)
@@ -121,8 +111,6 @@ const recoverTerminalTurn = async (
     terminalTurnId = `recovered-prompt:${processingPrompts[0]!.id}`
     await startRecoveredTurn(services, fanout, serverId, sessionId, terminalTurnId)
   }
-  // Keep each claim durable until a generating row exists: every crash point
-  // must leave a marker for the next startup pass before acknowledging input.
   for (const item of processingPrompts) {
     await run(services.db.completePromptQueueItem(sessionId, item.id))
   }

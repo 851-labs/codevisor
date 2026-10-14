@@ -224,7 +224,6 @@ describe("parsePluginManifest", () => {
             name: "notes_add",
             path: "/tools/add"
           },
-          // No trailing slash required and no inputSchema — both optional.
           { description: "List notes", name: "notes_list", path: "/tools/list" }
         ]
       })

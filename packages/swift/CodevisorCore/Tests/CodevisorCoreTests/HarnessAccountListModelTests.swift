@@ -149,10 +149,6 @@ struct HarnessAccountListModelTests {
     #expect(model.accountForSignIn?.id == named.id)
   }
 
-  /// The sheet chrome renders `operation` and gates interactive dismiss on
-  /// it, so a label that is missing while work runs — or lingers after it —
-  /// is either an invisible operation or a sheet the user cannot close.
-  /// `isWorking` must never disagree with it.
   @Test("A running operation always carries its label, and clears it on success")
   func operationLabelTracksWork() async throws {
     let model = HarnessAccountListModel()

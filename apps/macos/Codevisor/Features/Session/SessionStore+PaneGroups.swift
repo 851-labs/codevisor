@@ -5,8 +5,6 @@ import CodevisorCoreMac
 import CodevisorUI
 import ACPKit
 
-// MARK: - PaneGroups
-
 extension SessionStore {
   func localBrowserModel(paneId: UUID) -> ChromiumBrowserModel? {
     browserPanes.model(paneId: paneId)
@@ -16,9 +14,6 @@ extension SessionStore {
     localBrowserModel(paneId: paneId)?.title
   }
 
-  /// The center group hosting this session's chat: THE SAME model instance
-  /// the split view renders for that leaf (one model per leaf, ever —
-  /// duplicate instances would clobber each other's saves).
   func centerPaneGroup(for session: ChatSession, project: Project) -> PaneGroupModel {
     let workspace = workspace(for: session, project: project)
     guard
@@ -27,15 +22,11 @@ extension SessionStore {
       }).first
         ?? workspace.centerTree.allGroups.first?.id
     else {
-      // Unreachable (a workspace always has a leaf); satisfies the
-      // optional without a second cache.
       return makePaneGroup(for: session, project: project)
     }
     return centerGroup(leafId: leafId, workspace: workspace, session: session, project: project)
   }
 
-  /// The workspace owning this session's chat, created (backfilled from
-  /// the session + any pre-workspace pane state) on first access.
   func workspace(for session: ChatSession, project: Project) -> Workspace {
     let seed = WorkspaceSessionSeed(
       sessionId: session.id,
@@ -46,12 +37,6 @@ extension SessionStore {
       worktreeName: session.worktreeName,
       assignedWorkspaceId: environment.projectList.workspaceId(forSession: session.id)
     )
-    // A chat that is no longer active and has NO persisted workspace must
-    // not mint one: archiving a scratch chat deletes its workspace (index
-    // entry included), and the chat's still-mounted screen re-evaluates
-    // during the teardown transition — persisting here resurrected the
-    // just-deleted workspace as a zombie sidebar row. Hand such screens a
-    // stable ephemeral stand-in instead.
     if environment.workspaces.workspaceId(forSession: session.id) == nil,
       environment.projectList.session(session.id, serverId: session.serverId) == nil
     {
@@ -66,10 +51,6 @@ extension SessionStore {
     )
   }
 
-  /// A specific center-tree LEAF's group model (split groups beyond the
-  /// primary). Cached per (workspace, leaf) so panes survive navigation.
-  /// `session` is nil for a workspace that has never hosted a chat: the leaf
-  /// still has its own persisted layout, keyed by workspace and leaf.
   func centerGroup(
     leafId: UUID,
     workspace: Workspace,
@@ -78,7 +59,6 @@ extension SessionStore {
   ) -> PaneGroupModel {
     let key = CenterLeafKey(workspaceId: workspace.id, groupId: leafId)
     if let existing = centerLeafGroups[key] {
-      // The same leaf can be entered first without a chat and later with one.
       if let session, existing.sessionId == nil {
         adoptSession(session, project: project, workspace: workspace, in: existing)
       }
@@ -90,10 +70,6 @@ extension SessionStore {
     return group
   }
 
-  /// Pushes repository truth into pane models that are already mounted.
-  /// Workspace sync owns the repository write; these model updates are a
-  /// non-persisting presentation reconciliation so they cannot echo remote
-  /// changes back to the server.
   @discardableResult
   func reconcileMountedPaneGroups(in workspace: Workspace) -> Bool {
     var changed = false
@@ -119,9 +95,6 @@ extension SessionStore {
     return changed
   }
 
-  /// Unchanged entry point for every session-rooted call site: it resolves the
-  /// session's workspace (backfilling pre-workspace state on first access) and
-  /// then runs the same shared implementation a chatless workspace uses.
   func makePaneGroup(
     for session: ChatSession,
     project: Project,
@@ -132,10 +105,6 @@ extension SessionStore {
       leafId: leafId)
   }
 
-  /// The shared implementation. The WORKSPACE supplies identity (server,
-  /// persistence, publication); the session, when there is one, supplies chat
-  /// affordances: the leaf that hosts its chat, the pane context's session and
-  /// the browser link/automation hooks.
   func makePaneGroup(
     workspace: Workspace,
     session: ChatSession?,
@@ -143,17 +112,10 @@ extension SessionStore {
     leafId: UUID? = nil
   ) -> PaneGroupModel {
     let serverId = workspace.serverId
-    // A session mount keeps its historical fallback. A workspace mount must not:
-    // substituting `.local` for an unresolved REMOTE machine would quietly move
-    // that workspace's terminals and screen sharing onto this Mac. Unavailable
-    // is the correct answer, under the workspace's own server id.
     let machine =
       environment.machines.machine(for: serverId)
       ?? (session != nil || serverId == CodevisorMachine.local.id
         ? CodevisorMachine.local : CodevisorMachine.unresolved(id: serverId))
-    // Center groups pin to a specific tree leaf: the given one, else the leaf
-    // hosting this session's chat (a workspace without a chat has only the
-    // given leaf).
     let resolvedLeafId =
       leafId
       ?? session.flatMap { session in
@@ -168,7 +130,6 @@ extension SessionStore {
     )
     let client = environment.machines.client(for: serverId)
     let workspaceIdForPanes = workspace.id
-    // The workspace's own working directory anchors panes that have no chat.
     let workspaceRootDirectory = workspace.rootDirectory
     let model = PaneGroupModel(
       sessionId: session?.id,
@@ -180,16 +141,10 @@ extension SessionStore {
         workspaceId: workspaceIdForPanes, workspaceRootDirectory: workspaceRootDirectory)
     )
     model.browserIndex = browserPanes
-    // Browser links and automation are chat-rooted: they open next to a real
-    // session. A workspace without one leaves both hooks nil, which is also
-    // what makes `canHostBrowserAutomation` decline for its panes.
     if let session {
       installBrowserHooks(on: model, session: session, project: project)
     }
     model.onPaneChanged = { [weak environment] pane in
-      // A pane changing IN PLACE — a New Tab becoming Screen Sharing, a rename,
-      // a draft binding its chat — is already persisted by the time this runs,
-      // which updated the workspace's entry the sidebar row observes.
       guard let environment else { return }
       environment.workspaceSync.publishPane(
         pane,
@@ -209,7 +164,6 @@ extension SessionStore {
       return panes.count == 1 && panes[0].id == pane.id
     }
     model.onPaneRemoved = { [weak environment] pane, replacement in
-      // Subagent panes were never registered with the server.
       guard let environment, pane.kind != .subagent else { return }
       environment.workspaceSync.deletePane(
         id: pane.id,
@@ -221,8 +175,6 @@ extension SessionStore {
     return model
   }
 
-  /// One definition of a pane's context, used when a group is created and again
-  /// when a chatless group adopts the chat that later appears in its leaf.
   private func paneContextFactory(
     session: ChatSession?,
     project: Project,
@@ -237,10 +189,6 @@ extension SessionStore {
         weak projectList = environment.projectList,
         weak machines = environment.machines
       ] descriptor in
-      // Panes are built lazily, so this cached closure can outlive the snapshot
-      // passed in above: a fresh worktree session may not have synced its cwd
-      // yet. Resolve the live session at pane-creation time so terminals open in
-      // the worktree, not the project folder.
       let liveSession = session.map { session in
         projectList?.session(session.id, serverId: session.serverId) ?? session
       }
@@ -271,12 +219,6 @@ extension SessionStore {
     }
   }
 
-  /// Upgrades a cached group that was built for a workspace with no chat once a
-  /// real chat exists in its leaf. The model, its live panes and its persisted
-  /// state are kept; only the identity, the context factory and the chat-rooted
-  /// browser hooks are (re)established. Without this the cached group would keep
-  /// a nil identity forever and leave terminals, browser automation and
-  /// file-backed panes unavailable in a workspace that now has a chat.
   private func adoptSession(
     _ session: ChatSession,
     project: Project,
@@ -297,7 +239,6 @@ extension SessionStore {
     installBrowserHooks(on: model, session: session, project: project)
   }
 
-  /// The chat-rooted browser hooks, shared by creation and adoption.
   private func installBrowserHooks(
     on model: PaneGroupModel,
     session: ChatSession,
@@ -314,8 +255,6 @@ extension SessionStore {
     }
   }
 
-  /// Browser Use appends a workspace tab in the background, like a pane
-  /// arriving from another device. The user's selected tab and focus stay put.
   private func createBrowserTab(
     for session: ChatSession, project: Project, url: String
   ) -> ChromiumBrowserModel? {
@@ -340,8 +279,6 @@ extension SessionStore {
     return browser.model
   }
 
-  /// Drops a dissolved leaf's cached model (its panes have already moved
-  /// elsewhere — nothing to detach).
   func evictCenterLeaf(workspaceId: UUID, leafId: UUID) {
     centerLeafGroups[CenterLeafKey(workspaceId: workspaceId, groupId: leafId)] = nil
   }

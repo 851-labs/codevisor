@@ -32,10 +32,8 @@ describe("ClaudeProvider", () => {
 
     const promptPromise = run(created.handle.prompt("write a very long file"))
     await fake.nextPrompt()
-    expect(fake.userMessages).toHaveLength(1) // just the user's prompt so far
+    expect(fake.userMessages).toHaveLength(1)
 
-    // The model streams some text, then the response is cut off by the
-    // per-response output-token cap (stop_reason "max_tokens").
     fake.push(streamEvent({ message: { id: "msg-1" }, type: "message_start" }))
     fake.push(
       streamEvent({
@@ -57,13 +55,9 @@ describe("ClaudeProvider", () => {
     const continuations = () =>
       fake.userMessages.filter((message) => message.message.content === "Please continue.")
 
-    // A continuation was pushed to the live SDK query, the turn did NOT end,
-    // and the awaiting prompt is still unresolved.
     expect(continuations()).toHaveLength(1)
     expect(endedEvents()).toHaveLength(0)
 
-    // The model finishes the continuation normally; now the turn ends and the
-    // prompt resolves with a clean stop reason.
     fake.push(resultWith({ stop_reason: "end_turn" }))
     const result = await promptPromise
     expect(result.stopReason).toBe("end_turn")
@@ -84,8 +78,6 @@ describe("ClaudeProvider", () => {
     const promptPromise = run(created.handle.prompt("keep truncating"))
     await fake.nextPrompt()
 
-    // MAX_AUTO_CONTINUATIONS (12) continuations are issued, then the 13th
-    // truncation ends the turn instead of looping forever.
     for (let index = 0; index < 13; index += 1) {
       fake.push(resultWith({ stop_reason: "max_tokens" }))
       await fake.drain()
@@ -113,10 +105,8 @@ describe("ClaudeProvider", () => {
 
     const promptPromise = run(created.handle.prompt("do work"))
     await fake.nextPrompt()
-    expect(fake.userMessages).toHaveLength(1) // just the user's prompt
+    expect(fake.userMessages).toHaveLength(1)
 
-    // The API is overloaded: the SDK reports it on the assistant message, then
-    // gives up and ends the turn with error_during_execution.
     fake.push(assistantErrorMessage("overloaded"))
     fake.push(resultMessage("error_during_execution"))
     await fake.drain()
@@ -130,8 +120,6 @@ describe("ClaudeProvider", () => {
           (event.payload as Record<string, unknown>).turnState === "ended"
       )
 
-    // Backoff: not resumed yet and the turn stays alive, but the reason is
-    // already visible to the client.
     expect(continuations()).toHaveLength(0)
     expect(endedEvents()).toHaveLength(0)
     expect(events.some((event) => event.kind === "session.error")).toBe(false)
@@ -146,13 +134,11 @@ describe("ClaudeProvider", () => {
       }
     })
 
-    // Once the backoff elapses the turn resumes automatically.
     await vi.advanceTimersByTimeAsync(1000)
     await fake.drain()
     expect(continuations()).toHaveLength(1)
     expect(endedEvents()).toHaveLength(0)
 
-    // The retry succeeds; the turn ends cleanly with no error surfaced.
     fake.push(resultMessage("success"))
     await fake.drain()
     const result = await promptPromise
@@ -192,8 +178,6 @@ describe("ClaudeProvider", () => {
           (event.payload as Record<string, unknown>).turnState === "ended"
       )
 
-    // Three visible retries (MAX_TRANSIENT_RETRIES): the 529 arrives as text with
-    // no structured error, but is still detected, retried, and shown.
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       fake.push(assistantApiErrorMessage(errorText))
       fake.push(resultMessage("success"))
@@ -215,7 +199,6 @@ describe("ClaudeProvider", () => {
       expect(continuations()).toHaveLength(attempt)
     }
 
-    // Retries exhausted → end, surfacing the real error text in stopDetail.
     fake.push(assistantApiErrorMessage(errorText))
     fake.push(resultMessage("success"))
     await fake.drain()
@@ -248,8 +231,6 @@ describe("ClaudeProvider", () => {
     const result = await promptPromise
     expect(result.stopReason).toBe("end_turn")
 
-    // No auto-retry, and the turn ends carrying a human-readable stopDetail
-    // instead of a session-global error banner.
     expect(
       fake.userMessages.filter((message) => message.message.content === "Please continue.")
     ).toHaveLength(0)
@@ -280,10 +261,8 @@ describe("ClaudeProvider", () => {
     await fake.drain()
     const continuations = () =>
       fake.userMessages.filter((message) => message.message.content === "Please continue.")
-    expect(continuations()).toHaveLength(0) // scheduled, not yet fired
+    expect(continuations()).toHaveLength(0)
 
-    // Close the session, then let the backoff elapse — a dead session must not
-    // be resumed by a lingering timer.
     await run(created.handle.close)
     await vi.advanceTimersByTimeAsync(8000)
     await fake.drain()

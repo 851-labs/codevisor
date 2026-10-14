@@ -2,7 +2,6 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// Independent run-target controls share one surface and a bounded width.
 struct ComposerRunTargetBar: View {
   let machineName: String?
   let machineSymbol: String
@@ -122,15 +121,11 @@ struct ComposerRunTargetBar: View {
         .fixedSize()
       if let title {
         Text(title)
-          // Stacked rows still truncate: long names must not push the
-          // composer under the sheet's header while the keyboard is open.
           .lineLimit(1)
           .truncationMode(.middle)
           .fixedSize(horizontal: false, vertical: true)
       }
     }
-    // Styled here rather than on the bar: menus attached to the bar
-    // present sheets that would otherwise inherit the compact style.
     .font(.footnote)
     .foregroundStyle(.secondary)
     .padding(.horizontal, 8)

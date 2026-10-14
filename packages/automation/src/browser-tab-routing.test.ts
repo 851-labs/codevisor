@@ -109,8 +109,6 @@ it.each([false, true])(
     ])
     try {
       await Promise.all([...requested.values()].map(({ promise }) => promise))
-      // Both reads have reached their own CDP sessions. Change the default tab
-      // before either replies to prove it cannot redirect an in-flight operation.
       state.selectedTargets.set("managed:project:session", "first")
       for (const id of reverse ? ["second", "first"] : ["first", "second"]) reads.get(id)!.resolve()
       expect(await pending).toEqual([

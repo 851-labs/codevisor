@@ -11,24 +11,12 @@ import type { DirectChannelHost, PipePeer } from "./direct-channel-host.js"
 import type { CloudSocket } from "./machine-socket.js"
 import type { PeerKeyPinStore } from "./peer-pins.js"
 
-/// The machine side of the tunnel (docs/plans/codevisor-tunnel.md): one iroh
-/// endpoint that apps dial by key, directly or through our relays. Each
-/// `codevisor/channels/1` connection carries the existing sealed channel
-/// protocol on one message stream, handed to the same DirectChannelHost the
-/// LAN pipe uses — only the identity gate differs (admitTunnelHello).
-
 export const TUNNEL_ALPN_CHANNELS = "codevisor/channels/1"
 export const TUNNEL_ALPN_MEDIA = "codevisor/media/1"
 
 const TEXT = 0
 const BINARY = 1
 
-/// Adapts one tunnel message stream to the CloudSocket surface the channel
-/// hosts speak. Sends are chained so messages keep their order. Closing (or a
-/// failed send) closes the QUIC connection, which ends the stream; the read
-/// loop is the one place that reports `onclose`, so it fires exactly once.
-/// The read loop runs detached, so nothing thrown by the owner's handlers may
-/// escape it: that would be an unhandled rejection, and it exits the server.
 export const tunnelSocket = (
   stream: TunnelMessageStream,
   connection: Pick<TunnelConnection, "close">
@@ -71,9 +59,6 @@ export const tunnelSocket = (
         break
       }
       if (message === null) break
-      // A socket its owner closed delivers nothing further (as a browser
-      // WebSocket drops messages once it leaves OPEN); keep draining so the
-      // stream's end still reports onclose.
       if (requestedClose !== undefined) continue
       try {
         socket.onmessage?.(
@@ -86,26 +71,17 @@ export const tunnelSocket = (
               )
         )
       } catch {
-        // A handler that fails ends this connection, not the server.
         socket.close(1011, "message handler failed")
       }
     }
     ended = true
     try {
       socket.onclose?.(requestedClose ?? endCode)
-    } catch {
-      // Same detached loop: a failing close handler must not exit the server.
-    }
+    } catch {}
   })()
   return socket
 }
 
-/// The tunnel's identity gate. The QUIC handshake already proved which
-/// endpoint key is on the other end; the hello names a device and its X25519
-/// key. Admit when both match what this machine pinned, or — first contact —
-/// what the hub vouches for (then pin both). Pins are never overwritten: a
-/// device that later presents another key or endpoint is refused, so a
-/// misbehaving hub can't redirect an established pairing.
 export const admitTunnelHello =
   (
     pins: { keys: PeerKeyPinStore; endpoints: PeerKeyPinStore },
@@ -127,7 +103,6 @@ export const admitTunnelHello =
     return true
   }
 
-/// Serves one accepted media connection (Phase 4: screen-sharing UDP flows).
 export type MediaConnectionHandler = (connection: TunnelConnection) => void
 
 export interface MachineTunnelOptions {
@@ -145,8 +120,6 @@ export interface MachineTunnelOptions {
 const relayKey = (relays: readonly CloudRelayInfo[]): string =>
   JSON.stringify(relays.map((relay) => [relay.url, relay.quicPort ?? null]))
 
-/// Owns the endpoint's lifecycle: bound while the hub has the tunnel enabled,
-/// rebound when the relay map changes, closed on stop.
 export class MachineTunnel {
   #endpoint: TunnelEndpoint | undefined
   #relays: string | undefined
@@ -158,7 +131,6 @@ export class MachineTunnel {
     return this.#endpoint
   }
 
-  /// Applies a welcome's tunnel config. Safe to call repeatedly.
   async configure(config: { relays: readonly CloudRelayInfo[]; enabled: boolean }): Promise<void> {
     if (!config.enabled) {
       await this.stop()
@@ -166,7 +138,6 @@ export class MachineTunnel {
     }
     const key = relayKey(config.relays)
     if (this.#endpoint !== undefined && this.#relays === key) return
-    // stop claims ownership synchronously; capture it before awaiting teardown.
     const stopping = this.stop()
     const generation = this.#generation
     await stopping
@@ -183,7 +154,6 @@ export class MachineTunnel {
       alpns: [TUNNEL_ALPN_CHANNELS, TUNNEL_ALPN_MEDIA]
     })
     if (generation !== this.#generation) {
-      // stop()/configure() raced this bind; the newer call owns the tunnel.
       await endpoint.close()
       return
     }
@@ -208,7 +178,7 @@ export class MachineTunnel {
       try {
         addr = await endpoint.nextAddr()
       } catch {
-        return // endpoint closed
+        return
       }
       if (this.#endpoint !== endpoint) return
       this.options.onAddr({
@@ -219,9 +189,6 @@ export class MachineTunnel {
     }
   }
 
-  /// `accept` hands over connections in the order their handshakes finish
-  /// (codevisor-net runs them concurrently), so a dialer that stalls
-  /// mid-handshake never holds up the ones behind it.
   async #acceptLoop(endpoint: TunnelEndpoint): Promise<void> {
     for (;;) {
       let connection: TunnelConnection | null
@@ -250,7 +217,7 @@ export class MachineTunnel {
     try {
       stream = await connection.acceptMessageStream()
     } catch {
-      return // the peer went away before opening its stream
+      return
     }
     this.options.host.accept(tunnelSocket(stream, connection), {
       endpointId: connection.remoteId()

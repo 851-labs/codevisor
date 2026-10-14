@@ -344,11 +344,9 @@ describe("alpha channel", () => {
         { version: "0.5.0-alpha.7", buildNumber: 57 }
       )
     ).toBe(false)
-    // Same build is never an update.
     expect(
       isNewerRelease({ version: "0.5.0", buildNumber: 57 }, { version: "0.4.0", buildNumber: 57 })
     ).toBe(false)
-    // Either side missing a build number falls back to version comparison.
     expect(isNewerRelease({ version: "0.5.0" }, { version: "0.4.0", buildNumber: 57 })).toBe(true)
     expect(isNewerRelease({ version: "0.4.0", buildNumber: 57 }, { version: "0.5.0" })).toBe(false)
   })
@@ -395,7 +393,6 @@ describe("alpha channel", () => {
       fetchLatestServerRelease({ channel: "alpha", target: "linux-x64", fetch: alphaWins })
     ).resolves.toMatchObject({ version: "0.5.0-alpha.7" })
 
-    // A stable cut after the last alpha outranks it and must be offered.
     const stableWins = vi
       .fn<typeof globalThis.fetch>()
       .mockResolvedValueOnce(manifestResponse({ ...alphaManifest, buildNumber: 40 }))
@@ -406,7 +403,6 @@ describe("alpha channel", () => {
   })
 
   it("keeps working when either manifest is missing", async () => {
-    // No alpha manifest published yet: stable still resolves.
     const alphaMissing = vi
       .fn<typeof globalThis.fetch>()
       .mockResolvedValueOnce(new Response("missing", { status: 404 }))
@@ -415,7 +411,6 @@ describe("alpha channel", () => {
       fetchLatestServerRelease({ channel: "alpha", target: "linux-x64", fetch: alphaMissing })
     ).resolves.toMatchObject({ version: "0.4.0" })
 
-    // Stable manifest outage: the alpha release still resolves.
     const stableMissing = vi
       .fn<typeof globalThis.fetch>()
       .mockResolvedValueOnce(manifestResponse(alphaManifest))
@@ -424,7 +419,6 @@ describe("alpha channel", () => {
       fetchLatestServerRelease({ channel: "alpha", target: "linux-x64", fetch: stableMissing })
     ).resolves.toMatchObject({ version: "0.5.0-alpha.7" })
 
-    // Stable manifest resolves but without the target: the alpha still wins.
     const stableNoTarget = vi
       .fn<typeof globalThis.fetch>()
       .mockResolvedValueOnce(manifestResponse(alphaManifest))

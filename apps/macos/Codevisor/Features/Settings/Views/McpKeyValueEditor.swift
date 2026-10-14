@@ -2,8 +2,6 @@ import AppKit
 import SwiftUI
 import CodevisorUI
 
-/// A compact key/value editor using the shared container structure found in
-/// System Settings: header, rows, and an integrated add/remove bar.
 struct McpKeyValueEditor: View {
   @Environment(\.theme) private var theme
   @Binding var entries: [McpSecretEntry]

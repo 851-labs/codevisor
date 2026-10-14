@@ -18,7 +18,6 @@ import {
   type ExecutionTimers
 } from "./mcp-gateway-execution.js"
 
-/// A manual clock: timers fire only when the test advances time.
 const manualTimers = () => {
   let now = 0
   const scheduled = new Map<number, { at: number; callback: () => void }>()
@@ -112,7 +111,6 @@ describe("execution recorder", () => {
     const long = labeled("x".repeat(200))
     const first = (long.events[0]!.payload as { execution: CodevisorExecutionState }).execution
     expect(first.description).toHaveLength(80)
-    // A blank label is no label.
     const blank = labeled("  \n ")
     expect((blank.events[0]!.payload as { execution: CodevisorExecutionState }).execution).toEqual({
       state: "running",
@@ -146,7 +144,6 @@ describe("execution recorder", () => {
       calls: [{ path: "linear.list_issues", ok: true, ms: 12 }]
     })
 
-    // Past the interval, the next update goes out immediately.
     clock.advance(EXECUTION_EMIT_INTERVAL_MS)
     recorder.status("   ")
     expect(states().at(-1)).toEqual({
@@ -154,7 +151,6 @@ describe("execution recorder", () => {
       calls: [{ path: "linear.list_issues", ok: true, ms: 12 }]
     })
 
-    // A pending trailing update is replaced by the final state.
     recorder.call({ path: "xcode.build", machine: "MacBook", ok: false, ms: 3, error: "offline" })
     expect(clock.scheduledCount()).toBe(1)
     await recorder.finish("Script failed")
@@ -168,7 +164,6 @@ describe("execution recorder", () => {
       error: "Script failed"
     })
 
-    // Stragglers after the end change nothing.
     const count = events.length
     recorder.call({ path: "late.call", ok: true, ms: 1 })
     await recorder.finish()
@@ -220,7 +215,6 @@ describe("execution recorder", () => {
         200
       )
     ).toBe("codevisor.sessions.get does not accept `id`")
-    // Stacks flattened onto one line lose their frames too.
     expect(
       errorSummary(
         "Error: Error: boom at <anonymous> (codevisor-code-executor.js:1:2) at toError (file:///x.js:1:1)",
@@ -253,11 +247,9 @@ describe("execution recorder", () => {
     recorder.touch(browser)
     clock.advance(EXECUTION_EMIT_INTERVAL_MS)
     expect(states().at(-1)).toMatchObject({ icon: browser, activeIcon: browser })
-    // The site a browser call reached names the workflow instead of the bare browser.
     recorder.touch(linear)
     clock.advance(EXECUTION_EMIT_INTERVAL_MS)
     expect(states().at(-1)).toMatchObject({ icon: linear, activeIcon: linear })
-    // Later calls change only what is active; the name stays.
     recorder.touch(sentry)
     clock.advance(EXECUTION_EMIT_INTERVAL_MS)
     expect(states().at(-1)).toMatchObject({ icon: linear, activeIcon: sentry })
@@ -286,7 +278,6 @@ describe("execution recorder", () => {
     recorder.touch(music)
     clock.advance(EXECUTION_EMIT_INTERVAL_MS)
     expect(states().at(-1)).toMatchObject({ icon: music, activeIcon: music })
-    // A site never renames a desktop workflow, nor an app a browser one.
     recorder.touch({ kind: "site", origin: "https://linear.app" })
     clock.advance(EXECUTION_EMIT_INTERVAL_MS)
     expect(states().at(-1)).toMatchObject({ icon: music })
@@ -323,7 +314,6 @@ describe("execution call icons", () => {
       serverId: "linear-id",
       host: "mcp.linear.app"
     })
-    // A server this machine can't describe still gets its id.
     expect(await executionCallIcon("gone.tool", serverHost)).toEqual({
       kind: "mcp",
       serverId: "gone"

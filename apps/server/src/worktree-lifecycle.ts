@@ -2,8 +2,6 @@ import type { CodevisorServerServices } from "./server-context-types.js"
 
 const queues = new WeakMap<CodevisorServerServices, Map<string, Promise<unknown>>>()
 
-/// A workspace archive and its individual chat archives can arrive together.
-/// Serialize filesystem transitions so only one snapshot/removal can run.
 export const withWorktreeLifecycle = async <A>(
   services: CodevisorServerServices,
   key: string,

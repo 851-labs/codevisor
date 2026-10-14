@@ -5,9 +5,6 @@ import CodevisorTestSupport
 
 @testable import CodevisorCore
 
-/// Draft model selection across catalogs and machine switches. A draft never
-/// substitutes a model the user did not pick: a missing one reads "Select a
-/// model" instead.
 @MainActor
 @Suite("DefaultModelSelection")
 struct DefaultModelSelectionTests {
@@ -74,9 +71,6 @@ struct DefaultModelSelectionTests {
       to: other,
       serverClient: SyncFakeServerClient(projects: [], sessions: [])
     )
-    // The fake client cannot serve capabilities; the point is that the
-    // OLD machine's catalog is gone rather than rendering as the new
-    // machine's.
     #expect(controller.harnesses.isEmpty)
     #expect(controller.configOptionsByHarness.isEmpty)
     #expect(controller.modelOption == nil)
@@ -141,7 +135,6 @@ struct DefaultModelSelectionTests {
     controller.harnesses = [sourceCodex.harness]
     controller.selectedHarnessId = "codex"
     controller.configOptionsByHarness["codex"] = sourceCodex.configOptions
-    // The source draft's model is the user's own pick, staged like any pick.
     controller.pendingConfiguration.replaceValues(["model": "gpt-5.6-sol", "reasoning": "xhigh"], for: "codex")
     controller.preparationState = .ready
 
@@ -153,7 +146,6 @@ struct DefaultModelSelectionTests {
     #expect(controller.selectedHarnessId == "codex")
     #expect(controller.modelOption?.currentValue == "gpt-5.6-sol")
     #expect(controller.thoughtLevelOptions.first?.currentValue == "xhigh")
-    // Browsing to the machine does not replace its durable fallback.
     #expect(defaults.lastHarnessId(for: .newWorkspace(serverId: "machine-b")) == "claude-code")
     #expect(
       defaults.configSelections(forHarness: "codex", in: .newWorkspace(serverId: "machine-b")) == [
@@ -194,10 +186,8 @@ struct DefaultModelSelectionTests {
     )
     let client = SyncFakeServerClient(projects: [], sessions: [])
     client.capabilitiesHandler = { _ in
-      // Claude being first reproduces the catalog-order regression.
       ServerCapabilities(harnesses: [destinationClaude, destinationCodex])
     }
-    // The server confirms it could not apply the carried model.
     var resolved = destinationCodex
     resolved.unappliedConfigSelections = ["model": "gpt-5.6-sol"]
     client.resolvedCapabilitiesHandler = { [resolved] _, _, _ in ServerCapabilities(harnesses: [resolved]) }
@@ -210,7 +200,6 @@ struct DefaultModelSelectionTests {
     controller.harnesses = [sourceCodex.harness]
     controller.selectedHarnessId = "codex"
     controller.configOptionsByHarness["codex"] = sourceCodex.configOptions
-    // The source draft's model is the user's own pick, staged like any pick.
     controller.pendingConfiguration.replaceValues(["model": "gpt-5.6-sol", "reasoning": "xhigh"], for: "codex")
 
     await controller.retarget(
@@ -218,8 +207,6 @@ struct DefaultModelSelectionTests {
       serverClient: client
     )
 
-    // The carried harness stays; the model is not replaced by the
-    // destination's default or its remembered model.
     #expect(controller.selectedHarnessId == "codex")
     #expect(controller.modelPickerPresentation.modelChip == .selectModel)
     #expect(controller.requiresModelSelection)
@@ -227,7 +214,6 @@ struct DefaultModelSelectionTests {
       controller.modelUnavailableMessage
         == "gpt-5.6-sol is no longer available. Select another model.")
 
-    // Picking a model clears the notice.
     await controller.chooseModel("gpt-5.5", name: "gpt-5.5", harnessId: "codex")
     #expect(controller.modelUnavailableMessage == nil)
     #expect(controller.modelPickerPresentation.modelChip == .model(name: "gpt-5.5"))
@@ -273,7 +259,6 @@ struct DefaultModelSelectionTests {
     controller.harnesses = [sourceCodex.harness]
     controller.selectedHarnessId = "codex"
     controller.configOptionsByHarness["codex"] = sourceCodex.configOptions
-    // The source draft's model is the user's own pick, staged like any pick.
     controller.pendingConfiguration.replaceValues(["model": "gpt-5.6-sol", "reasoning": "xhigh"], for: "codex")
 
     await controller.retarget(
@@ -292,8 +277,6 @@ struct DefaultModelSelectionTests {
     let cache = ConfigOptionCache(store: store)
     var project = Project.fromFolder(URL(fileURLWithPath: "/tmp/machine-a"))
     project.serverId = "machine-a"
-    // The machine has nothing usable — only a fleet-enabled harness
-    // waiting on auth.
     let pending = ServerHarnessCapability(
       harness: ServerHarness(
         id: "claude-code",
@@ -314,15 +297,11 @@ struct DefaultModelSelectionTests {
     let controller = SessionController(project: project, configCache: cache)
     #expect(controller.harnesses.isEmpty)
 
-    // A catalog-revision bump (sync gossip, a dismissed sign-in sheet)
-    // marks the draft stale — but "Select a harness" plus sign-in rows
-    // is a settled answer, so no blocking state and no spinner.
     controller.invalidateHarnessCapabilities()
     #expect(controller.preparationState == .ready)
     #expect(controller.isRefreshingHarnessCapabilities)
     #expect(!controller.isLoadingModelMenu)
 
-    // A machine with NO knowledge at all still earns the spinner.
     var unknown = Project.fromFolder(URL(fileURLWithPath: "/tmp/machine-b"))
     unknown.serverId = "machine-b"
     let blank = SessionController(project: unknown, configCache: cache)
@@ -368,12 +347,9 @@ struct DefaultModelSelectionTests {
     }
     var machineA = Project.fromFolder(URL(fileURLWithPath: "/tmp/machine-a"))
     machineA.serverId = "machine-a"
-    // Retarget to A starts a capability fetch bound to A's client, which
-    // we hold open at the gate.
     async let retargetToA: Void = controller.retarget(to: machineA, serverClient: slowClient)
     await gate.awaitWaiter()
 
-    // A second retarget lands while A's fetch is still in flight.
     var machineB = Project.fromFolder(URL(fileURLWithPath: "/tmp/machine-b"))
     machineB.serverId = "machine-b"
     await controller.retarget(
@@ -384,9 +360,6 @@ struct DefaultModelSelectionTests {
     await gate.release()
     await retargetToA
 
-    // A's catalog belongs under A's key — and ONLY A's key. Before the
-    // fix, the stale task re-read the retargeted project and persisted
-    // machine A's harnesses/models as machine B's.
     #expect(controller.configCache.capabilities(forServer: "machine-b").isEmpty)
     #expect(controller.configOptionsByHarness["claude-code"] == nil)
     #expect(controller.modelOption == nil)
@@ -442,8 +415,6 @@ struct DefaultModelSelectionTests {
   }
 }
 
-/// One-shot gate: the fetch parks on `wait()`, the test observes the parked
-/// waiter via `awaitWaiter()` and later opens the gate with `release()`.
 actor FetchGate {
   private var continuation: CheckedContinuation<Void, Never>?
   private var released = false

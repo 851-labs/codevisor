@@ -6,33 +6,23 @@ import UIKit
 import UniformTypeIdentifiers
 import os
 
-/// Attachment-worthy content intercepted from the iOS composer's pasteboard.
 enum PastedAttachment: Sendable {
   case fileURL(URL)
-  /// The provider's original compressed representation whenever it fits the
-  /// pasted-image budget; oversized images are downsampled to JPEG.
   case image(data: Data, suggestedName: String, mimeType: String)
 }
 
-/// A paste is represented in the composer before its asynchronous item
-/// provider has supplied any bytes.
 enum ComposerPasteEvent {
   case began(id: UUID, name: String, mimeType: String, kind: Attachment.Kind)
   case resolved(id: UUID, attachment: PastedAttachment)
   case failed(id: UUID, message: String, kind: Attachment.Kind)
 }
 
-/// Loads the representations advertised by paste item providers without
-/// relying on `NSItemProvider` object coercion. In particular, synced Photos
-/// pasteboards can advertise `public.file-url` while refusing to load an
-/// `NSURL`; their raw URL data remains loadable.
 enum ComposerPasteProviderLoader {
   private enum LoadResult {
     case success(PastedAttachment)
     case failure(String)
   }
 
-  /// Nonisolated: item-provider completions log from their own queues.
   private nonisolated static let log = Logger(
     subsystem: "com.851labs.codevisor",
     category: "composer-paste"
@@ -53,8 +43,6 @@ enum ComposerPasteProviderLoader {
     )
   }
 
-  /// Emits `.began` synchronously so the attachment strip updates in the
-  /// same run-loop turn as Paste, then resolves the provider asynchronously.
   @MainActor
   static func startLoading(
     from provider: NSItemProvider,
@@ -127,11 +115,6 @@ enum ComposerPasteProviderLoader {
     )
   }
 
-  /// Universal Clipboard producers vary in how they vend public.file-url.
-  /// Prefer the typed data, then ask for the NSURL object, the temporary
-  /// file representation, and finally the explicitly advertised text URL.
-  /// Every branch still has to produce a local file URL; the ICNS display
-  /// representation is intentionally never considered content.
   private static func fileURL(from provider: NSItemProvider) async -> URL? {
     if let data = await dataRepresentation(for: .fileURL, from: provider) {
       if let url = decodePasteboardFileURL(data) {
@@ -224,9 +207,6 @@ enum ComposerPasteProviderLoader {
       .first {
         $0.conforms(to: .image)
           && $0.identifier != UTType.image.identifier
-          // Finder/Universal Clipboard can advertise the source
-          // file's icon alongside public.file-url. That icon is UI
-          // metadata, never the pasted image itself.
           && $0.identifier != "com.apple.icns"
       }
   }
@@ -267,10 +247,6 @@ enum ComposerPasteProviderLoader {
     return "\(stem).\(ext)"
   }
 
-  /// Pasted images larger than this are downsampled to JPEG. A pasted
-  /// photo rarely needs more, and it keeps the composer's paste path cheap;
-  /// it is deliberately independent of the machine's upload limit, which
-  /// governs files.
   nonisolated static let pastedImageBudgetBytes = 32 * 1024 * 1024
 
   static func prepareImage(
@@ -291,9 +267,6 @@ enum ComposerPasteProviderLoader {
     }.value
   }
 
-  /// The staged-file twin of `prepareImage(data:)`: validates the image
-  /// straight from disk, and only an image over the budget is re-encoded,
-  /// replacing the staged file.
   static func prepareImage(
     stagedFileURL: URL,
     attachmentID: UUID,
@@ -317,8 +290,6 @@ enum ComposerPasteProviderLoader {
     }.value
   }
 
-  /// Only oversized images pay for decoding. Downsample before JPEG
-  /// encoding so peak memory and output size both stay bounded.
   private nonisolated static func downsampledJPEG(from source: CGImageSource) -> Data? {
     let dimensions = [4096, 3072, 2048, 1536, 1024]
     let qualities: [CGFloat] = [0.9, 0.8, 0.7, 0.6]

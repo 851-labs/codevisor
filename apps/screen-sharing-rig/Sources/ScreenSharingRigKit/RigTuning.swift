@@ -2,46 +2,26 @@ import ScreenSharing
 import ScreenSharingWebRTC
 import Foundation
 
-/// Optional engine knobs from `rig.json`'s `tuning` object. Field trials are process-global and
-/// immutable, so every value here applies at process start on both ends; `rig tune` rewrites the
-/// configs and restarts the agents, which is a fresh process in a few seconds.
 public struct RigTuning: Equatable, Sendable {
-  /// `WebRTC-ForcePlayoutDelay` bounds in milliseconds (receiver playout).
   public let playoutDelayMs: (min: Int, max: Int)?
-  /// `WebRTC-JitterEstimatorConfig` frame-size window.
   public let jitterWindowFrames: Int?
-  /// Viewer renderer: draw on frame arrival (the product) instead of the display link.
   public let renderOnArrival: Bool
-  /// Viewer renderer: 2 or 3 drawables.
   public let maximumDrawableCount: Int
-  /// Viewer renderer: acquire and encode off the main actor (the product; needs `renderOnArrival`).
   public let offMainPreparation: Bool
-  /// Host: ScreenCaptureKit minimum-frame-interval request, independent of the video rate.
   public let captureIntervalFPS: Int?
-  /// Host encoder: nominal keyframe interval in seconds; nil keeps the product's 2 s.
   public let keyframeIntervalSeconds: Int?
-  /// Host encoder: VideoToolbox standard rate control instead of the low-latency controller. Main444 needs it.
   public let standardRateControl: Bool
-  /// Host encoder: frames admitted to VideoToolbox at once; nil keeps the product's 2.
   public let pendingFrames: Int?
-  /// Host transport: estimator/sender cap in bps above the encoder's average bitrate; nil keeps one ceiling.
   public let transportCeilingBps: Int?
-  /// Host encoder: ignore the transport's rate updates and hold the configured average bitrate, so a raised
-  /// ceiling changes only how fast bytes may leave, not how many the encoder makes.
   public let staticCodecRate: Bool
-  /// Host transport: `WebRTC-Video-Pacing factor` — the pacer's multiple of the target bitrate; nil keeps 2.5.
   public let pacingFactor: Double?
-  /// Process-wide WebRTC field trials on top of the knobs above (`"fieldTrials": {"WebRTC-…": "…"}`),
-  /// for experiments such as the frame dropper or the encoder bitrate adjuster (851-2482).
   public let fieldTrials: [String: String]
-  /// Host sender: whether to never adapt frame rate or resolution; nil keeps the product's (never, 851-2482).
   public let maintainSourceRate: Bool?
 
   public static let `default` = RigTuning(
     playoutDelayMs: nil, jitterWindowFrames: nil, renderOnArrival: true, maximumDrawableCount: 3,
     offMainPreparation: true, captureIntervalFPS: nil)
 
-  /// The product's one diagnostic profile, expressed as rig tuning.
   public static let paced15Worker = RigTuning(
     playoutDelayMs: (1, 15), jitterWindowFrames: nil, renderOnArrival: true, maximumDrawableCount: 2,
     offMainPreparation: true, captureIntervalFPS: 120)
@@ -81,7 +61,6 @@ public struct RigTuning: Equatable, Sendable {
       && lhs.maintainSourceRate == rhs.maintainSourceRate
   }
 
-  /// Parses the `tuning` object. `profile` sets a base the other keys override.
   public static func parse(_ object: [String: Any]) throws -> RigTuning {
     let known: Set<String> = [
       "profile", "playoutDelayMs", "jitterWindowFrames", "renderOnArrival", "drawables", "offMainPreparation",
@@ -98,7 +77,6 @@ public struct RigTuning: Equatable, Sendable {
       }
       base = .paced15Worker
     }
-    // JSON `true`/`false` and the numbers 0/1 both bridge to Bool and NSNumber; only the CF type tells them apart.
     func isBoolean(_ value: Any) -> Bool { CFGetTypeID(value as CFTypeRef) == CFBooleanGetTypeID() }
     func integer(_ key: String) throws -> Int? {
       guard let value = object[key] else { return nil }
@@ -177,7 +155,6 @@ public struct RigTuning: Equatable, Sendable {
       maintainSourceRate: try flag("maintainSourceRate") ?? base.maintainSourceRate)
   }
 
-  /// The process-wide WebRTC trial selection these knobs require.
   public var fieldTrialSelection: ScreenSharingFieldTrials.Selection {
     let knobs = ScreenSharingFieldTrials.Selection.probeOptions(
       jitterWindowFrames: jitterWindowFrames, lowLatencyPlayout: false, playoutDelayBoundsMs: playoutDelayMs,
@@ -186,12 +163,10 @@ public struct RigTuning: Equatable, Sendable {
     return .init(name: "rig tuning", trials: knobs.trials.merging(fieldTrials) { $1 })
   }
 
-  /// Short human label for status and the HUD; nil for the defaults.
   public var label: String? {
     var parts: [String] = []
     if let playoutDelayMs { parts.append("playout \(playoutDelayMs.min)/\(playoutDelayMs.max)") }
     if let jitterWindowFrames { parts.append("jitter window \(jitterWindowFrames)") }
-    // The product renders on arrival with the worker; only a departure from it is named.
     if !renderOnArrival {
       parts.append("display link")
     } else if !offMainPreparation {

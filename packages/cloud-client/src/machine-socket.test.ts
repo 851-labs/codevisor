@@ -53,7 +53,6 @@ describe("RelayOutbox", () => {
     expect(messages[0]!.map((envelope) => [...envelope.payload])).toEqual([[1], [2, 2]])
     expect(messages[0]!.map((envelope) => envelope.header)).toEqual([header(0), header(1)])
 
-    // The next push after a flush arms a fresh timer.
     outbox.push(header(2), new Uint8Array([3]))
     expect(timers).toHaveLength(2)
   })

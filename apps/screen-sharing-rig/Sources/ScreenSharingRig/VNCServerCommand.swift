@@ -3,9 +3,6 @@
   import ScreenSharing
   import ScreenSharingTesting
 
-  /// `screen-sharing-rig vnc-server`: a VNC server on 127.0.0.1 with an
-  /// animated desktop, logging the input it receives. The tophat target for
-  /// the app's VNC viewer when no other server is at hand.
   enum VNCServerCommand {
     static let usage = """
       Usage: screen-sharing-rig vnc-server [--port 5901] [--password secret | --no-password]
@@ -74,7 +71,7 @@
 
     static func main(arguments: [String]) {
       if arguments.contains("--help") { print(usage); return }
-      setvbuf(stdout, nil, _IOLBF, 0)  // the input log is read live from a redirected stdout
+      setvbuf(stdout, nil, _IOLBF, 0)
       do {
         let options = try Options(arguments: arguments)
         Task { @MainActor in
@@ -95,13 +92,11 @@
       var configuration = RFBLoopbackServer.Configuration()
       configuration.port = options.port == 0 ? nil : options.port
       configuration.echoPointer = options.echo
-      // A modern server: pushed updates paced by fences (851-2312), unless --requested-only.
-      // A scene played on request needs requests, so it implies --requested-only (851-2336).
       let requestedOnly = options.requestedOnly || (options.scene != nil && options.sceneFramesPerSecond == nil)
       configuration.continuousUpdates = !requestedOnly
       configuration.fences = !requestedOnly
       configuration.desktopResize = .accept
-      configuration.negotiateEncoding = true  // the client's preference (Tight first), as a real server (851-2313)
+      configuration.negotiateEncoding = true
       configuration.password = options.password
       configuration.securityTypes = [
         options.password == nil ? RFBSecurityType.none.rawValue : RFBSecurityType.vncAuthentication.rawValue
@@ -116,7 +111,6 @@
         print("Serving VNC on 127.0.0.1:\(server.port) (scene \(kind.rawValue), seed \(options.seed), \(pace))")
         let scene = SceneState(RFBLoopbackScene(kind: kind, seed: options.seed))
         if let fps = options.sceneFramesPerSecond {
-          // Time-paced: the desktop changes at `fps` whatever the viewer does.
           let interval = Duration.seconds(1) / fps
           var next = ContinuousClock.now
           while true {
@@ -125,12 +119,11 @@
             scene.play(on: server)
           }
         }
-        // Each incremental request gets the next frame; the request itself then flushes it.
         server.onClientMessage = { [weak server] message in
           guard let server, case .framebufferUpdateRequest(true, _) = message else { return }
           scene.play(on: server)
         }
-        while true { try await Task.sleep(for: .seconds(3600)) }  // `server` lives as long as this frame
+        while true { try await Task.sleep(for: .seconds(3600)) }
       }
       let log = InputLog()
       server.onClientMessage = { log.record($0) }
@@ -148,7 +141,6 @@
       }
     }
 
-    /// The scene a message handler advances, shared across the server's connection task.
     final class SceneState: @unchecked Sendable {
       private let lock = NSLock()
       private var scene: RFBLoopbackScene
@@ -158,7 +150,6 @@
       }
     }
 
-    /// A gradient, a sweeping bar and an orbiting square: enough to see motion, tearing and colour order.
     struct Painter {
       let width: Int
       let height: Int
@@ -199,7 +190,6 @@
       }
     }
 
-    /// Prints keys, button changes and clipboard text; pointer motion is counted, not printed.
     final class InputLog: @unchecked Sendable {
       private let lock = NSLock()
       private var buttons: UInt8 = 0

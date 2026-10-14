@@ -53,9 +53,6 @@ extension QuestionPickerContent {
     }
   }
 
-  /// On-screen copy for an option. The plan approval's choices read as
-  /// "Implement Plan" / "Request Changes" (matching iOS); the submitted
-  /// answers keep the agent-runtime's labels, which the harnesses match on.
   private func displayLabel(_ label: String, in question: QuestionSpec) -> String {
     guard question.id == QuestionRequest.exitPlanModeId else { return label }
     switch label {
@@ -76,9 +73,6 @@ extension QuestionPickerContent {
     return Button {
       highlighted = index
       activate(question, index: index)
-      // Mouse interaction makes the picker the keyboard target too,
-      // so a follow-up Return/arrow works no matter where focus was.
-      // Choosing "Other" goes straight to its answer field instead.
       if index >= question.options.count,
         selections[question.id, default: []].contains(Self.otherToken)
       {
@@ -87,11 +81,6 @@ extension QuestionPickerContent {
         focusPicker()
       }
     } label: {
-      // Same selection language as the slash-command menu in this
-      // card: the keyboard highlight is an accent pill with white
-      // content; a committed selection that ISN'T highlighted keeps a
-      // quiet themed fill (multi-select stays legible at a glance)
-      // with an accent checkmark.
       HStack(spacing: 10) {
         Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
           .font(.caption)
@@ -136,8 +125,6 @@ extension QuestionPickerContent {
     .accessibilityAddTraits(isSelected ? .isSelected : [])
   }
 
-  /// The same auto-resizing editor as the composer, boxed so it reads as a
-  /// field inside the picker. Always mounted — no layout shift on "Other".
   func notesEditor(_ question: QuestionSpec) -> some View {
     let isOtherSelected = selections[question.id, default: []].contains(Self.otherToken)
     return ZStack(alignment: .topLeading) {
@@ -148,8 +135,6 @@ extension QuestionPickerContent {
         maxHeight: 120,
         onSubmit: { advanceOrSubmit() },
         onKeyCommand: { command in
-          // Escape hops focus back to the option list; a second
-          // Escape there dismisses the question.
           if command == .dismissSelection {
             focusPicker()
             return true
@@ -170,8 +155,6 @@ extension QuestionPickerContent {
     }
     .padding(.horizontal, 10)
     .padding(.vertical, 2)
-    // Themed input-field chrome: quiet card fill on the glass, themed
-    // border — accented while "Other" makes this field the answer.
     .background(RoundedRectangle(cornerRadius: 8).fill(theme.cardQuietBackground))
     .overlay(
       RoundedRectangle(cornerRadius: 8)
@@ -205,7 +188,6 @@ extension QuestionPickerContent {
           }
         }
         if !isLastQuestion {
-          // More questions ahead: advance instead of submitting.
           ComposerNavigationButton(
             systemImage: "arrow.right",
             help: "Next question (→)",

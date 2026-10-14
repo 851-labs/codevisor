@@ -26,8 +26,6 @@ interface PluginStagingDeps {
   readonly findExecutable?: FindExecutable | undefined
 }
 
-/// Same containment rule as skills-store's isPathSafe: the candidate must be
-/// the root itself or live strictly under it.
 export const isPluginPathSafe = (root: string, candidate: string): boolean => {
   const normalizedRoot = normalize(resolve(root))
   const normalizedCandidate = normalize(resolve(candidate))
@@ -46,10 +44,6 @@ const sourceDirectory = (staging: string, source: ParsedPluginSource): string =>
 }
 
 const assertSourceOwner = (parsed: ParsedPluginSource, manifest: PluginManifest): void => {
-  // Anti-impersonation: a repo installed as `owner/repo` (or a
-  // github.com URL) may only provide plugins in the `owner.` namespace,
-  // so a fork cannot publish itself under someone else's plugin id.
-  // Local-path sources are dev installs with no owner to validate.
   if (
     parsed.local !== true &&
     parsed.owner !== undefined &&
@@ -97,10 +91,6 @@ const readSourceManifest = async (root: string, source: string): Promise<string>
   }
 }
 
-/// Stage a source into a fresh temp clone and read its manifest. The
-/// verbatim install/run commands surfaced from here are exactly what the
-/// consent UI shows — never derived, never normalized. On success the caller
-/// owns cleanup; every staging failure awaits cleanup before rejecting.
 export const stagePluginSource = async (
   source: string,
   deps: PluginStagingDeps,

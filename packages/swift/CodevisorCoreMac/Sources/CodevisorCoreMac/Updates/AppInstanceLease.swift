@@ -1,15 +1,6 @@
 import Darwin
 import Foundation
 
-/// Enforces one running process per exact application bundle and keeps that
-/// exclusion alive while an updater replaces the bundle.
-///
-/// The lock is advisory: every Codevisor process acquires it during AppKit's
-/// `applicationWillFinishLaunching`. Before Sparkle asks the current process
-/// to quit, a detached helper inherits the locked descriptor. The helper
-/// releases it only after the target bundle version is installed, closing the
-/// otherwise-unprotected gap between the old process exiting and the new one
-/// launching.
 @MainActor
 public final class AppInstanceLease {
   private let descriptor: Int32
@@ -22,9 +13,6 @@ public final class AppInstanceLease {
     Darwin.close(descriptor)
   }
 
-  /// A stable, per-user lock location scoped to the app's resolved bundle
-  /// path. Separate development worktrees may run together; two processes
-  /// launched from the same bundle may not.
   public static func defaultLockURL(
     for applicationBundleURL: URL = Bundle.main.bundleURL,
     applicationSupportURL: URL? = nil
@@ -39,10 +27,6 @@ public final class AppInstanceLease {
       .appendingPathComponent("app-instance-\(stableHash(bundlePath)).lock")
   }
 
-  /// Attempts to own `lockURL`. Returns `nil` when another process (or the
-  /// update handoff helper) owns it. `waitFor` is used by the freshly updated
-  /// app for the tiny interval between Sparkle launching it and the handoff
-  /// helper observing the replaced bundle.
   public static func acquire(
     at lockURL: URL,
     waitFor: TimeInterval = 0
@@ -86,10 +70,6 @@ public final class AppInstanceLease {
     try acquire(at: defaultLockURL(for: applicationBundleURL), waitFor: waitFor)
   }
 
-  /// Transfers the lease across this process's termination. The shell keeps
-  /// the inherited descriptor open while polling the installed Info.plist;
-  /// it performs no installation work and exits on success or after a bounded
-  /// timeout. The caller must cancel the handoff if Sparkle aborts before quit.
   public func beginUpdateHandoff(
     targetBundleVersion: String,
     applicationBundleURL: URL = Bundle.main.bundleURL,
@@ -122,9 +102,6 @@ public final class AppInstanceLease {
       targetBundleVersion,
       String(attempts),
     ]
-    // Process duplicates this descriptor onto the child's stdin. BSD flock
-    // ownership follows the open file description, so the lease survives
-    // after AppDelegate and the old application process are gone.
     process.standardInput = FileHandle(fileDescriptor: descriptor, closeOnDealloc: false)
     process.standardOutput = FileHandle.nullDevice
     process.standardError = FileHandle.nullDevice
@@ -161,10 +138,6 @@ public final class AppInstanceLease {
   }
 }
 
-/// The detached helper retaining an `AppInstanceLease` during a bundle swap.
-/// Deinitialization deliberately does not terminate it: successful updates
-/// destroy the owning object when the old app exits, which is when the helper
-/// is most important.
 @MainActor
 public final class AppUpdateLeaseHandoff {
   private let process: Process
@@ -183,8 +156,6 @@ public final class AppUpdateLeaseHandoff {
     }
   }
 
-  /// Releases the inherited lease when Sparkle aborts while the old app is
-  /// still alive.
   public func cancel() {
     guard process.isRunning else { return }
     process.terminate()

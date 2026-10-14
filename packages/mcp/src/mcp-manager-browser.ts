@@ -21,15 +21,11 @@ export type McpBrowserOperations = Pick<
   | "subscribeBrowserPreview"
 >
 
-/// A browser provider that can't preview (it failed to start) reports no
-/// activity, so the card never appears.
 const unavailablePreview = (viewer: BrowserPreviewViewer): BrowserPreviewSubscription => {
   viewer.status({ state: "inactive", title: "", url: "" })
   return { watch: () => undefined, unwatch: () => undefined, close: () => undefined }
 }
 
-/// Browser Use setup and extension plumbing, plus the base-URL update that
-/// re-points the extension relay when the server binds its port.
 export const makeMcpBrowserOperations = (core: McpManagerCore): McpBrowserOperations => {
   const {
     automationUse,

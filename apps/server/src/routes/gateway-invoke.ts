@@ -9,24 +9,12 @@ import {
 } from "../server-context.js"
 import { routeMachineEnrollment } from "./machines.js"
 
-/// The machines surface: GET /v1/machines lists every machine on the
-/// account (this one and its cloud peers), and
-/// POST /v1/gateway/invoke is the target end of a cross-machine gateway call
-/// — another machine's sandbox reaching this machine's tools over a sealed
-/// relay "gateway" channel (loopback).
-///
-/// Invoke answers `{ result }`, or `{ error: { message, code?, details? } }`:
-/// 400 for a malformed call, 422 when the tool call itself failed, 501 when
-/// this server has no gateway, 500 otherwise.
-
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
 
 const optionalString = (value: unknown): value is string | undefined =>
   value === undefined || typeof value === "string"
 
-/// The decoded origin, with absent fields omitted (the gateway's GatewayOrigin
-/// is exact about optional properties; the api schema is not).
 interface GatewayCallOrigin {
   readonly machineId: string
   readonly machineName: string
@@ -93,8 +81,6 @@ export const routeGatewayInvoke = async (
     })
     return true
   }
-  // The caller hanging up (its sandbox aborted, or the relay channel was
-  // cancelled) cancels the call here too.
   const controller = new AbortController()
   response.once("close", () => {
     if (!response.writableFinished) controller.abort(new Error("the calling machine cancelled"))

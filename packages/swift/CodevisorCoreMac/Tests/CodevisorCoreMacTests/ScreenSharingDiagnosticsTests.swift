@@ -79,7 +79,6 @@ struct ScreenSharingDiagnosticsTests {
     #expect(diagnostics.resolution == "1920 × 1080")
     #expect(diagnostics.decodeMilliseconds == 2.5)
     #expect(diagnostics.droppedFrames == 3)
-    // Reset or missing RTC counters cannot produce negative bitrate.
     diagnostics.update(metrics: metrics.snapshot(), statistics: [:], now: 13)
     #expect(diagnostics.framesPerSecond == 0)
     #expect(diagnostics.megabitsPerSecond == 0)
@@ -87,7 +86,6 @@ struct ScreenSharingDiagnosticsTests {
   }
 }
 
-/// Connection Details names the native streams beside the video.
 @MainActor
 struct ScreenSharingStreamsDiagnosticsTests {
   @Test func theStreamsLineListsWhatTheSessionReported() {

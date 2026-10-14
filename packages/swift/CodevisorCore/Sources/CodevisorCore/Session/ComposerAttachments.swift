@@ -4,9 +4,6 @@ import ACPKit
 import UniformTypeIdentifiers
 import os
 
-/// Owns optimistic attachment identity, staged files and eager uploads.
-/// The composer observes this collection directly; a session supplies only
-/// its current upload destination and presentation callbacks.
 @MainActor
 @Observable
 public final class ComposerAttachments {
@@ -35,8 +32,6 @@ public final class ComposerAttachments {
     self.rememberPreview = rememberPreview
   }
 
-  /// The accepted-send boundary temporarily removes these rows; setup
-  /// failure restores the same snapshot without restarting uploads.
   func clearAfterCollecting() {
     items = []
   }
@@ -50,13 +45,8 @@ public final class ComposerAttachments {
     for attachment in items { prepareSentPreview(for: attachment) }
   }
 
-  // MARK: - Attachments
-
   static public let maxAttachments = 10
 
-  /// Stages each URL as its own attachment. The returned task finishes once
-  /// every file has been copied in, so callers holding a security-scoped
-  /// URL can release the scope afterwards.
   @discardableResult
   public func attachFileURLs(_ urls: [URL]) -> Task<Void, Never> {
     var resolutions: [Task<Void, Never>] = []
@@ -78,10 +68,6 @@ public final class ComposerAttachments {
     }
   }
 
-  /// Resolves a placeholder that was inserted as soon as a file URL was
-  /// accepted. The file is copied into the attachment folder off the main
-  /// thread, so a large file or one on a slow network volume does not
-  /// freeze the run loop. The returned task finishes once the copy has.
   @discardableResult
   public func resolveLoadingAttachment(id: UUID, fromFileURL url: URL) -> Task<Void, Never> {
     let metadata = AttachmentFileStager.metadata(for: url)
@@ -161,8 +147,6 @@ public final class ComposerAttachments {
       id: id, name: name, mimeType: mimeType, kind: .image, data: data)
   }
 
-  /// Adds the optimistic row synchronously, before an item provider starts
-  /// resolving its bytes. Returns false when the attachment limit is full.
   @discardableResult
   public func beginLoadingAttachment(
     id: UUID,
@@ -183,10 +167,6 @@ public final class ComposerAttachments {
     return true
   }
 
-  /// Resolves a placeholder with in-memory bytes (a pasted image): the size
-  /// is validated immediately, then the bytes are written into the
-  /// attachment folder off the main thread and the eager upload begins.
-  /// Returns the failure message when the bytes are too large.
   @discardableResult
   public func resolveLoadingAttachment(
     id: UUID,
@@ -228,9 +208,6 @@ public final class ComposerAttachments {
     return nil
   }
 
-  /// Resolves a placeholder with a file already staged in `files`
-  /// (the collection takes ownership of it), then begins the eager upload.
-  /// Returns the failure message when the file is too large.
   @discardableResult
   public func resolveLoadingAttachment(
     id: UUID,
@@ -240,7 +217,6 @@ public final class ComposerAttachments {
     stagedFileURL: URL
   ) -> String? {
     guard let index = items.firstIndex(where: { $0.id == id }) else {
-      // The placeholder was removed while its bytes were arriving.
       files.remove(id: id)
       return nil
     }
@@ -263,9 +239,6 @@ public final class ComposerAttachments {
     return nil
   }
 
-  /// Resolves a placeholder and surfaces validation failures through the
-  /// session status. Native drop targets use this path because they do not
-  /// own a separate inline error presentation like the iOS picker does.
   public func resolveLoadingAttachmentReportingFailure(
     id: UUID,
     name: String,
@@ -302,10 +275,6 @@ public final class ComposerAttachments {
     }
   }
 
-  /// Provider failures cannot be retried without another paste operation,
-  /// so remove the empty placeholder. The platform composer that owns the
-  /// paste interaction presents the failure beside that composer instead
-  /// of turning it into a session-level connection failure.
   @discardableResult
   public func discardLoadingAttachment(id: UUID) -> Bool {
     guard let index = items.firstIndex(where: { $0.id == id }),
@@ -358,8 +327,6 @@ public final class ComposerAttachments {
         attachment.id, .failed("“\(attachment.name)” is no longer available. Remove it and attach it again."))
       return
     }
-    // A retarget can move the draft to a machine with a smaller limit;
-    // say so before spending the upload on a certain rejection.
     let limit = uploadLimitBytes()
     if let size = ComposerAttachmentFileStore.byteCount(of: fileURL), size > limit {
       setAttachmentState(
@@ -371,14 +338,6 @@ public final class ComposerAttachments {
     }
   }
 
-  /// Discards every server file ref and re-uploads from the staged files the
-  /// composer still holds. Server file ids are minted per machine, so this
-  /// is required whenever `serverClient` moves to a different machine
-  /// (`retarget`); restored drafts also go through here because their refs
-  /// are not assumed to survive a relaunch. Placeholders still waiting on
-  /// their drop/paste provider are skipped: they upload through whatever
-  /// client is current once their bytes resolve. So are placeholders whose
-  /// bytes never arrived: there is nothing to upload.
   func reuploadAllAttachments() {
     uploads.cancelAll()
     for index in items.indices {
@@ -395,8 +354,6 @@ public final class ComposerAttachments {
     items[index].state = state
   }
 
-  /// Encodes the small preview a sent image shows locally, while the staged
-  /// file still exists. The result is dropped if the attachment went away.
   private func prepareSentPreview(for attachment: ComposerAttachment) {
     guard attachment.isImage, attachment.sentPreviewData == nil, let fileURL = attachment.fileURL
     else { return }
@@ -412,15 +369,12 @@ public final class ComposerAttachments {
     }
   }
 
-  /// Deletes the staged files of attachments whose message went out.
   func releaseStagedFiles(of attachments: [ComposerAttachment]) {
     for attachment in attachments {
       files.remove(id: attachment.id)
     }
   }
 
-  /// Waits for in-flight uploads, then returns the attachments to send —
-  /// nil (with a surfaced status) if any upload failed.
   func collectAttachmentsForSend() async -> [Attachment]? {
     await uploads.waitForCurrentUploads()
     var attachments: [Attachment] = []
@@ -435,7 +389,6 @@ public final class ComposerAttachments {
         reportFailure("An attachment failed to upload. Retry or remove it, then send again.")
         return nil
       case .uploading:
-        // Unreachable: awaiting the tasks above settles every state.
         return nil
       case .loading:
         reportFailure("An attachment is still loading. Wait for it to finish, then send again.")

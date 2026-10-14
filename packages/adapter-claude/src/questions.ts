@@ -7,11 +7,6 @@ import { isRecord } from "./internal.js"
 import type { ClaudeSession, ClaudeToolDecision } from "./session.js"
 import { toolTitle } from "./tool-presentation.js"
 
-// MARK: questions
-
-/// Emits the AskUserQuestion as a blocking `question` event and holds the
-/// SDK's canUseTool promise open until the human answers. Malformed input
-/// falls back to auto-allow so an SDK shape drift can't wedge the turn.
 export const holdClaudeQuestion = (
   session: ClaudeSession,
   toolInput: Record<string, unknown>
@@ -53,8 +48,6 @@ export const holdClaudeQuestion = (
   })
 }
 
-/// Lenient mapping from AskUserQuestion input to the wire QuestionSpec.
-/// Ids are positional (`question_<n>`) — the answers map keys back by index.
 const claudeQuestionSpecs = (value: unknown): Array<QuestionSpec> => {
   if (!Array.isArray(value)) return []
   return value.flatMap((entry, index) => {
@@ -86,12 +79,6 @@ const claudeQuestionSpecs = (value: unknown): Array<QuestionSpec> => {
   })
 }
 
-/// Folds the human's answer back into the tool input the way the SDK's
-/// AskUserQuestion expects: `answers` keyed by the QUESTION TEXT, valued with
-/// the chosen label(s). A note supplements a selection (appended after an
-/// em-dash) and stands alone as the answer when nothing was selected (the
-/// "Other" path). Cancel denies the tool so the model knows the user
-/// dismissed the question.
 export const answerClaudeQuestion = async (
   session: ClaudeSession,
   questionId: string,
@@ -131,9 +118,6 @@ const emitClaudeQuestionResolved = (
     subjectId: session.key
   })
 
-/// Surfaces a tool-permission check as a blocking Allow/Deny question. Only
-/// reached when the CLI's permission mode requires asking (Ask/Plan modes);
-/// the bypassPermissions default never invokes canUseTool.
 export const holdClaudeApproval = (
   session: ClaudeSession,
   toolName: string,
@@ -169,20 +153,12 @@ export const holdClaudeApproval = (
   })
 }
 
-/// The stable question id + option labels that tag Claude's ExitPlanMode
-/// approval, so clients recognize a plan approval and answer it. Kept in sync
-/// with the Swift client (ACPKit `QuestionRequest`).
 const EXIT_PLAN_MODE_QUESTION_ID = "exit_plan_mode"
 const IMPLEMENT_PLAN_LABEL = "Implement plan"
 const KEEP_PLANNING_LABEL = "Keep planning"
 const KEEP_PLANNING_MESSAGE =
   "The user wants to keep refining the plan. Stay in plan mode and continue planning."
 
-/// ExitPlanMode's approval as a dedicated plan-approval question: the client
-/// renders an "implement this plan?" affordance (the plan markdown itself rides
-/// a separate `plan_document` update — see emitPlanUpdate). Approving lets the
-/// tool through so the model starts implementing; declining keeps it in plan
-/// mode, and the deny message nudges it to keep refining rather than stop.
 export const holdClaudePlanApproval = (
   session: ClaudeSession,
   toolInput: Record<string, unknown>
@@ -212,8 +188,6 @@ export const holdClaudePlanApproval = (
         if (entry?.answers[0] === IMPLEMENT_PLAN_LABEL) {
           return { behavior: "allow", updatedInput: toolInput }
         }
-        // Feedback typed with "Keep planning" is what the model should
-        // refine against; without it, just nudge it to keep planning.
         const feedback = entry?.note?.trim()
         return {
           behavior: "deny",
@@ -227,9 +201,6 @@ export const holdClaudePlanApproval = (
   })
 }
 
-/// Interrupts, turn results, and session close invalidate held questions:
-/// deny them (the model sees a dismissal) and emit the resolution so clients
-/// drop the picker.
 export const cancelClaudePendingQuestions = (session: ClaudeSession): Promise<void> => {
   const emissions: Array<Promise<void>> = []
   for (const [questionId, pending] of Array.from(session.pendingQuestions)) {

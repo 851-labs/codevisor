@@ -14,7 +14,6 @@ const deviceType: SimulatorDeviceTypeDetail = {
 }
 const chrome: SimulatorChrome = { identifier: "chrome", definition: {}, images: {} }
 
-/// Simulators that answer every call, so each route can be driven over HTTP.
 const fakeSimulators = (overrides: Partial<Simulators> = {}): Simulators => ({
   available: async () => true,
   list: async () => ({ devices: [], deviceTypes: [], runtimes: [] }),
@@ -104,7 +103,6 @@ describe("simulator routes", () => {
     expect((await jsonRequest(server, "/v1/simulators/device-type")).status).toBe(400)
     expect((await jsonRequest(server, "/v1/simulators/chrome?identifier=")).status).toBe(400)
     expect((await jsonRequest(server, "/v1/simulators/teleport")).status).toBe(404)
-    // Only /v1/simulators and paths under it belong to these routes.
     expect((await jsonRequest(server, "/v1/simulatorsx")).status).toBe(404)
   })
 

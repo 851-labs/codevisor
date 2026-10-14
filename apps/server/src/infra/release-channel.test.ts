@@ -33,7 +33,6 @@ describe("releaseChannelReader", () => {
     const channel = releaseChannelReader({ dataDir: dataDir(), syncedValue: () => read })
     await read
     expect(channel()).toBe("alpha")
-    // Each call refreshes the synced value for the next one.
     value = "bogus"
     read = Promise.resolve(value)
     expect(channel()).toBe("alpha")

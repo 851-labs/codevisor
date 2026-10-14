@@ -73,7 +73,6 @@ public final class PluginAccessController {
     let body = try JSONEncoder().encode(Consent(pluginId: pluginId, consentKey: consentKey, metadata: metadata))
     try consentOutbox.record(key: "\(pluginId):\(consentKey)", scope: cloud.pluginConsentScope, body: body)
     #if os(macOS)
-      // A cloud outage or a signed-out account must not prevent Mac installation.
       try? await syncConsent()
     #else
       guard cloud.pluginConsentScope != nil else { throw PluginAccessError("Sign in to install plugins.") }

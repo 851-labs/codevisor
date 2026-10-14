@@ -22,8 +22,6 @@ import { migrations61 } from "./migrations-61.js"
 
 export type { Migration } from "./migration-types.js"
 
-/// Every schema migration in order; the service applies the ones past the
-/// database's recorded version inside one transaction each.
 export const migrations: ReadonlyArray<Migration> = [
   ...migrations01To08,
   ...migrations09To29,

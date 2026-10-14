@@ -1,10 +1,6 @@
 import SwiftUI
 import ACPKit
 
-/// The session's todo checklist, pinned above the composer (codex-CLI style)
-/// for every harness — codex `update_plan`, Claude TodoWrite, ACP plans.
-/// Collapsible: the header always shows progress and the current step; the
-/// body lists every step.
 public struct TodoPanelView: View {
   private var cardStyle = ComposerCardStyle()
   let plan: Plan
@@ -37,8 +33,6 @@ public struct TodoPanelView: View {
   public var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       Button {
-        // The reveal below commits layout atomically and owns only the
-        // content's pixel entrance.
         isExpanded.toggle()
       } label: {
         HStack(spacing: 6) {
@@ -87,9 +81,6 @@ public struct TodoPanelView: View {
               .scrollIndicators(.visible)
             }
             .frame(maxHeight: maximumExpandedHeight)
-            // A flexible frame accepts the full proposed height up
-            // to its cap. Use its ideal height so short plans hug
-            // their rows; overflowing plans still scroll at the cap.
             .fixedSize(horizontal: false, vertical: true)
           } else {
             entries

@@ -1,10 +1,5 @@
 import UIKit
 
-/// New Chat's ordinary composer owns an ordinary local UITextView. The
-/// registry remembers only weak source/destination ports until Send explicitly
-/// begins promotion; only then does one entry temporarily own the concrete
-/// first responder. This distinction is what makes dismiss/reopen safe: draft
-/// data survives in SessionController, while UIKit presentation state does not.
 @MainActor
 enum ComposerTextViewHandoffRegistry {
   private final class Ports {
@@ -39,9 +34,6 @@ enum ComposerTextViewHandoffRegistry {
     to container: ComposerTextViewContainer,
     makeEditor: () -> HeightReportingTextView
   ) -> HeightReportingTextView? {
-    // Once Send has transferred this editor into window space, a source
-    // reconciliation must not create a replacement inside the retiring
-    // sheet or steal the responder back from its destination.
     guard entries[id] == nil else { return nil }
 
     let port = ports[id] ?? Ports()
@@ -91,10 +83,6 @@ enum ComposerTextViewHandoffRegistry {
       container.localEditor = nil
       return
     }
-    // Dismantling the modal's source port is the authoritative ownership
-    // boundary. The real workspace registered its destination port before
-    // dismissal, so transfer geometry/delegate ownership without ever
-    // removing the active editor from its stable UIWindow superview.
     if let destination = match.value.pendingDestination,
       destination.window != nil
     {
@@ -105,7 +93,6 @@ enum ComposerTextViewHandoffRegistry {
       destination.activateIfPossible()
       return
     }
-    // A normal composer teardown has no successor and retires its editor.
     match.value.editor.alpha = match.value.parkedAlpha ?? match.value.editor.alpha
     match.value.editor.removeFromSuperview()
     entries.removeValue(forKey: match.key)
@@ -113,9 +100,6 @@ enum ComposerTextViewHandoffRegistry {
     container.localEditor = nil
   }
 
-  /// Explicit terminal cleanup for a native sheet that closed without
-  /// sending. Normally there is no active entry at all; this also makes a
-  /// cancelled/failed partial handoff idempotently safe.
   static func cancel(_ id: UUID) {
     entries[id]?.editor.setPromotionResponderHold(false)
     if let entry = entries.removeValue(forKey: id) {
@@ -127,9 +111,6 @@ enum ComposerTextViewHandoffRegistry {
     ports.removeValue(forKey: id)
   }
 
-  /// Promotion state is transient; its destination view is not. Convert the
-  /// registry-owned editor into that same container's ordinary local editor
-  /// without changing object identity, focus, or responder chain.
   static func retirePromotionEditor(
     ownedBy container: ComposerTextViewContainer
   ) -> HeightReportingTextView? {
@@ -145,12 +126,6 @@ enum ComposerTextViewHandoffRegistry {
     return match.value.editor
   }
 
-  /// Ends the window portal synchronously at the structural commit. Waiting
-  /// for SwiftUI's next representable update leaves a real, interactive text
-  /// view above the entire app for at least one reconciliation; a fast tab
-  /// change can then expose it over non-chat content. Reparenting the same
-  /// responder within the same UIWindow preserves identity while restoring
-  /// ordinary ancestor clipping and visibility immediately.
   @discardableResult
   static func settlePromotedEditor(id: UUID) -> Bool {
     guard let entry = entries[id],
@@ -179,7 +154,6 @@ enum ComposerTextViewHandoffRegistry {
     }
     editor.frame = owner.bounds
     owner.setNeedsLayout()
-    // The dismissed sheet's focus bridge still fires after this commit.
     editor.setPromotionResponderHold(true, releaseAfter: 1.0)
     return editor.superview === owner
   }
@@ -204,9 +178,6 @@ enum ComposerTextViewHandoffRegistry {
     }
   }
 
-  /// Ordinary composition stays inside the SwiftUI-owned container so every
-  /// native sheet transform, clip, and dismissal gesture applies to the
-  /// editor exactly as it does to the rest of the composer.
   private static func contain(
     _ entry: Entry,
     in container: ComposerTextViewContainer
@@ -218,10 +189,6 @@ enum ComposerTextViewHandoffRegistry {
     entry.editor.frame = container.bounds
   }
 
-  /// Promotion editors live directly in their one app window only for the
-  /// sheet-to-route morph. The settled canonical workspace changes to role
-  /// `.none`, and `retirePromotionEditor` immediately returns this exact view
-  /// to its composer container before any other pane can become visible.
   private static func portal(_ entry: Entry, through container: ComposerTextViewContainer) {
     guard let window = container.window else { return }
     entry.isPortaled = true
@@ -233,9 +200,6 @@ enum ComposerTextViewHandoffRegistry {
     entry.editor.frame = container.convert(container.bounds, to: window)
   }
 
-  /// Briefly park the same editor in window space while the live sheet is
-  /// replaced by its ready workspace. This runs after the message lands;
-  /// the editor remains inside the visible composer throughout the flight.
   static func beginStablePortalTransition(id: UUID) -> Bool {
     guard entries[id] == nil,
       let port = ports[id],
@@ -246,13 +210,7 @@ enum ComposerTextViewHandoffRegistry {
     let entry = Entry(editor: editor, owner: owner, role: .promotionSource)
     entry.pendingDestination = port.destination
     entries[id] = entry
-    // Ownership changes only now. Before Send, the editor was an ordinary
-    // child of the ordinary sheet composer and could be freely destroyed.
     owner.localEditor = nil
-    // Reparent the existing first responder within the same UIWindow at
-    // the last possible moment. Before this call it remains a normal sheet
-    // descendant; after it, its stable window ancestry survives the
-    // sheet-to-route structural swap without retracting the keyboard.
     entry.editor.setPromotionResponderHold(true)
     portal(entry, through: owner)
     if entry.parkedAlpha == nil {
@@ -262,9 +220,6 @@ enum ComposerTextViewHandoffRegistry {
     return entry.editor.isFirstResponder
   }
 
-  /// Change only logical owner, bindings, and window-space frame. The
-  /// concrete UITextView stays in the same UIWindow and remains the same
-  /// first responder, so UIKit has no reason to end the keyboard session.
   static func completeStablePortalHandoff(id: UUID) -> Bool {
     guard let entry = entries[id],
       entry.ownerRole == .promotionSource,

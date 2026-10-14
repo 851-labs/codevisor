@@ -6,7 +6,6 @@ private struct RenameWorkspaceBody: Encodable {
 }
 
 extension CodevisorServerClient {
-  /// A partial update preserves archive state and other devices' metadata.
   public func renameWorkspace(id: UUID, name: String, hasCustomName: Bool) async throws {
     try await sendNoResponse(
       "/v1/workspaces/\(id.uuidString)",

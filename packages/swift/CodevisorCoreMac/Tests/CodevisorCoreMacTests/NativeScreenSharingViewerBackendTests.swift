@@ -7,9 +7,6 @@ import ScreenSharingTesting
 import Testing
 @testable import CodevisorCoreMac
 
-/// Signaling order, viewer-id reuse, restart limits, the video watchdog and
-/// the stop-after-cancellation rule of the shipped backend, driven through
-/// its event stream with scripted signaling and a virtual clock.
 @MainActor
 struct NativeScreenSharingViewerBackendTests {
   @Test func discoveryReportsDisplaysAndRejectsAnUnavailableHost() async throws {
@@ -108,8 +105,6 @@ struct NativeScreenSharingViewerBackendTests {
     #expect(harness.sessions.count == 1 && harness.sessions[0].closed)
   }
 
-  /// 851-2397: the host's capture failed and it ended the session; the viewer only saw its
-  /// connection drop, and blamed the network.
   @Test func aConnectionTheHostEndedShowsTheHostsReason() async throws {
     let reason = "The host Mac couldn't start capturing its screen. Try again."
     let harness = NativeBackendHarness(
@@ -147,7 +142,7 @@ struct NativeScreenSharingViewerBackendTests {
     harness.connect()
     harness.transport.releaseFirstStart.signal()
     await awaitObserved { harness.log.events.contains(.ready) }
-    harness.surfaces[0].present()  // the cancelled attempt's surface: never a second ready
+    harness.surfaces[0].present()
     #expect(harness.log.events.filter { $0 == .ready }.count == 1)
     let requests = await harness.transport.requests
     let starts = requests.filter { $0.operation == .start }
@@ -201,9 +196,6 @@ struct NativeScreenSharingViewerBackendTests {
     #expect(harness.clock.pendingCount == 0)
   }
 
-  /// A host restarting a stalled capture (851-2385) says so with its heartbeat. The viewer
-  /// passes the notice on and doesn't count those heartbeats toward "No video arrived"; the
-  /// host bounds its recovery and ends the session itself if it fails.
   @Test func aHostRecoveringItsCaptureHoldsOffTheMissingVideoTimeout() async throws {
     let stalled = ServerScreenSharingReply(status: "connecting", message: "Capture stalled, restarting…")
     let harness = NativeBackendHarness(
@@ -219,7 +211,6 @@ struct NativeScreenSharingViewerBackendTests {
     let endpoint = try #require(harness.log.endpoints.first)
     expectNoDifference(
       harness.log.events, [.opened(endpoint), .hostNotice("Capture stalled, restarting…"), .hostNotice(nil)])
-    // Counting resumes once the notice is gone: the third quiet heartbeat after it ends the wait.
     harness.clock.advance(by: .seconds(8))
     await awaitObserved { harness.log.finished == 1 }
     #expect(
@@ -239,8 +230,6 @@ struct NativeScreenSharingViewerBackendTests {
     #expect(harness.sessions[0].closed)
   }
 
-  /// A machine whose capabilities name the VNC provider: the display is
-  /// opened through the socket route, no WebRTC session or start request.
   @Test func aVNCProviderIsViewedOverTheSocketRouteWithoutSignaling() async throws {
     let server = try await RFBLoopbackServer(configuration: .init())
     defer { server.stop() }

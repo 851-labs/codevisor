@@ -1,12 +1,5 @@
-/// What a viewer's RFB message does, for the control lease (851-2338).
 export type RFBClientMessageKind = "input" | "clipboard" | "resize" | "other"
 
-/// Follows one viewer's client→server RFB stream (RFB 3.8, None or VNC
-/// authentication) message by message and drops the ones `allow` refuses,
-/// keeping every other byte in order. Handshake bytes always pass. Anything it
-/// can't follow (another protocol version or security type, an unknown message
-/// type) switches it to pass-through for the rest of the connection: never a
-/// corrupted stream, at worst an unfiltered one.
 export class RFBClientStreamFilter {
   private buffer: Buffer = Buffer.alloc(0)
   private phase:
@@ -16,10 +9,8 @@ export class RFBClientStreamFilter {
     | "clientInit"
     | "messages"
     | "passthrough" = "version"
-  /// The handshake unit being read (never dropped, so its bytes are forwarded as they come).
   private unit: Buffer = Buffer.alloc(0)
 
-  /// The bytes of `chunk` (with any held partial message) to forward now.
   push(chunk: Buffer, allow: (kind: RFBClientMessageKind) => boolean): Buffer {
     const out: Buffer[] = []
     let data = chunk
@@ -54,7 +45,6 @@ export class RFBClientStreamFilter {
     return Buffer.concat(out)
   }
 
-  /// A complete handshake unit: on to the next phase, or pass-through for anything unexpected.
   private advance(): void {
     const unit = this.unit
     this.unit = Buffer.alloc(0)
@@ -73,32 +63,31 @@ export class RFBClientStreamFilter {
     }
   }
 
-  /// The next complete message's length and kind; undefined until it's all here.
   private message(): [number, RFBClientMessageKind | "passthrough"] | undefined {
     const buffer = this.buffer
     if (buffer.length < 1) return undefined
     const need = (length: number, kind: RFBClientMessageKind) =>
       buffer.length < length ? undefined : ([length, kind] as [number, RFBClientMessageKind])
     switch (buffer[0]) {
-      case 0: // SetPixelFormat
+      case 0:
         return need(20, "other")
-      case 2: // SetEncodings
+      case 2:
         return buffer.length < 4 ? undefined : need(4 + 4 * buffer.readUInt16BE(2), "other")
-      case 3: // FramebufferUpdateRequest
+      case 3:
         return need(10, "other")
-      case 4: // KeyEvent
+      case 4:
         return need(8, "input")
-      case 5: // PointerEvent
+      case 5:
         return need(6, "input")
-      case 6: // ClientCutText; a negative length is Extended Clipboard
+      case 6:
         return buffer.length < 8
           ? undefined
           : need(8 + Math.abs(buffer.readInt32BE(4)), "clipboard")
-      case 150: // EnableContinuousUpdates
+      case 150:
         return need(10, "other")
-      case 248: // Fence
+      case 248:
         return buffer.length < 9 ? undefined : need(9 + buffer.readUInt8(8), "other")
-      case 251: // SetDesktopSize
+      case 251:
         return buffer.length < 8 ? undefined : need(8 + 16 * buffer.readUInt8(6), "resize")
       default:
         this.phase = "passthrough"

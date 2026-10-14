@@ -6,9 +6,6 @@
   import Testing
   @testable import CodevisorUI
 
-  /// A turn's opening line stands in for its worked header, and the header
-  /// replaces it once the harness's first event lands. In a bottom-pinned
-  /// transcript any height difference between them moves everything above.
   @Suite("Turn opening line layout")
   @MainActor
   struct TurnOpeningLineLayoutTests {

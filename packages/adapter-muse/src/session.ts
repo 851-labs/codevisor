@@ -33,12 +33,9 @@ import {
   turnInput
 } from "./updates.js"
 
-/// One chat's `muse serve` host: its session, turn lifecycle and controls.
-
 interface Turn {
   readonly id: string
   readonly initiatedBy: "user" | "agent"
-  /// Muse's id for the turn: the submitting command id for a prompt.
   museTurnId: string | undefined
   cancelled: boolean
   resolve?: (result: { stopReason: string }) => void
@@ -57,12 +54,10 @@ export interface MuseChat {
 
 export interface MuseChatOptions {
   readonly cwd: string
-  /// The Muse session to resume; a new session when absent.
   readonly resume?: string
   readonly toolGateway?: ToolGatewayConfig
 }
 
-/// Codevisor's MCP tool gateway, as a session-scoped MCP server.
 const sessionConfig = (gateway: ToolGatewayConfig | undefined) =>
   gateway === undefined
     ? {}
@@ -146,7 +141,6 @@ export const startMuseChat = async (
     const ended = turn
     if (ended === undefined) return
     turn = undefined
-    // Muse settles a turn's open asks itself; any left belong to it.
     for (const [questionId, question] of questions)
       void resolved(questionId, question, { outcome: "cancelled" })
     questions.clear()
@@ -164,7 +158,6 @@ export const startMuseChat = async (
 
   const ask = (id: string, question: MuseQuestion) => {
     const replaced = questions.get(id)
-    // A multi-stage approval re-asks under the same id with new choices.
     if (replaced !== undefined) void resolved(id, replaced, { outcome: "autoResolved" })
     questions.set(id, question)
     void send("session.output", {
@@ -177,7 +170,6 @@ export const startMuseChat = async (
     })
   }
 
-  /// A question Muse settled on its own (auto-resolution, another client).
   const settledElsewhere = (id: unknown) => {
     const question = typeof id === "string" ? questions.get(id) : undefined
     if (question === undefined) return
@@ -185,8 +177,6 @@ export const startMuseChat = async (
     void resolved(id as string, question, { outcome: "autoResolved" })
   }
 
-  /// Only the newest listing publishes: an older, slower one never
-  /// announces a list a newer one already replaced.
   let skillListings = 0
   const listSkills = async (): Promise<SessionSkills | undefined> => {
     try {
@@ -209,7 +199,6 @@ export const startMuseChat = async (
 
   client.onNotification((method, params) => {
     const event = record(params)
-    // Child sessions (subagents, reminders) report on their own ids.
     if (typeof event.sessionId === "string" && key !== "" && event.sessionId !== key) return
     switch (method) {
       case "turn/started":
@@ -232,7 +221,6 @@ export const startMuseChat = async (
               : {}),
             ...(error.retryable === true ? { retryable: true } : {})
           })
-        // A subagent's last steps land in its thread before the turn ends.
         const draining = subagents.drain()
         if (draining === undefined) finish()
         else void draining.then(finish)
@@ -306,8 +294,6 @@ export const startMuseChat = async (
       await client.request("session/start", {
         commandId: commandId(),
         workspaceRoot: options.cwd,
-        // Codevisor runs every harness with full access (see adapter-acp's
-        // permission policy); Muse still escalates what its reviewer flags.
         approvalMode: "allowAll",
         ...config
       })
@@ -324,15 +310,11 @@ export const startMuseChat = async (
     try {
       resumed = await resume(config)
     } catch (cause) {
-      // A session keeps the MCP servers it started with; a new gateway
-      // credential conflicts with the old one, so resume without it.
       if (!(cause instanceof MuseRequestError) || !/configuration_conflict/.test(cause.message))
         throw cause
       resumed = await resume({})
     }
     session = record(resumed).session as MuseSessionRecord
-    // A session started elsewhere (the Muse CLI) keeps its own approval
-    // mode; Codevisor's chats all run with full access.
     await client
       .request("session/setApprovalMode", {
         commandId: commandId(),
@@ -358,8 +340,6 @@ export const startMuseChat = async (
     configOptions: options_,
     skills,
     prompt: async (input) => {
-      // Muse queues a prompt sent mid-turn behind the running one; the turn
-      // Codevisor was tracking ends here so its caller isn't left waiting.
       await endTurn({})
       const command = commandId()
       const started = startTurn("user", command)
@@ -431,7 +411,6 @@ export const startMuseChat = async (
       try {
         await client.request(reply.method, reply.params)
       } catch (cause) {
-        // Muse is still waiting on it: the user can answer again.
         questions.set(questionId, question)
         throw cause
       }

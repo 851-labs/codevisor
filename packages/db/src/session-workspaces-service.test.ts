@@ -37,7 +37,6 @@ describe("session workspaces service", () => {
           expect.objectContaining({ workspaceId: target.id, resourceId: third.id })
         ])
       )
-      // The source workspace is left empty; no placeholder row stands in for it.
       expect(panes.filter((pane) => pane.workspaceId === workspace.id)).toEqual([])
     } finally {
       await run(db.close)
@@ -57,7 +56,6 @@ describe("session workspaces service", () => {
       await run(db.setSessionWorkspace(second.id, workspace.id))
       const before = await run(db.listWorkspacePanes)
 
-      // Opening the first chat sends the workspace it is already in.
       await run(db.setSessionWorkspace(first.id, workspace.id))
 
       expect(await run(db.listWorkspacePanes)).toEqual(before)
@@ -113,7 +111,6 @@ describe("session workspaces service", () => {
       await expect(run(db.setSessionWorkspace("missing", workspace.id))).rejects.toBeInstanceOf(
         DatabaseError
       )
-      // A session cannot point at a workspace that does not exist.
       await expect(
         run(db.setSessionWorkspace(detached.id, "missing-workspace"))
       ).rejects.toBeInstanceOf(DatabaseError)

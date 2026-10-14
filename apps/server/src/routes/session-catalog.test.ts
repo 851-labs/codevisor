@@ -30,13 +30,11 @@ describe("session catalog routes", () => {
       { id: "codex", enabled: true, installHint: "npm install -g @openai/codex" }
     ])
 
-    // Rescan re-resolves the runtime environment, then returns the fresh list.
     const rescanResponse = await jsonRequest(server, "/v1/harnesses/rescan", { method: "POST" })
     expect(rescanResponse.status).toBe(200)
     expect(rescanResponse.body).toMatchObject([{ id: "codex", enabled: true }])
     expect(agents.environmentRefreshes).toHaveLength(1)
 
-    // Native agent sessions come from the harness's own store via the runtime.
     expect((await jsonRequest(server, "/v1/harnesses/codex/agent-sessions")).body).toEqual([
       { sessionId: "native-1", cwd: "/repo/native", title: "Old codex chat" }
     ])

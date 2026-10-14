@@ -2,13 +2,9 @@ import ACPKit
 import CodevisorCore
 import SwiftUI
 
-/// Exactly one ephemeral label owns a turn. Session recovery/update status
-/// is rendered by the transcript itself and takes precedence over turn work.
 public struct AssistantTurnActivity: Equatable {
   public let message: String
   public let followsResponse: Bool
-  /// The finished turn waits on background work, shown as its subagents'
-  /// chips where they can be found.
   public var waitingOn: String?
 
   public static func resolve(
@@ -34,8 +30,6 @@ public struct AssistantTurnActivity: Equatable {
         return Self(message: "Waiting on \(backgroundTask)...", followsResponse: true, waitingOn: backgroundTask)
       }
     }
-    // An agent call being written has no chip yet: this line stands in for
-    // it until its input arrives, even beside other running work.
     if turn.isStartingSubagent {
       return Self(message: "Starting agent…", followsResponse: false)
     }
@@ -61,12 +55,6 @@ public struct AssistantTurnActivityView: View {
   }
 }
 
-/// The activity row's place while no label is showing. Before the
-/// harness's first event it times the wait, as the turn's worked header
-/// will; otherwise the turn keeps `reservesActivitySlot` across tool calls,
-/// so the row renders invisibly at the label's exact height instead of
-/// collapsing and bouncing the transcript each time a tool starts or
-/// finishes.
 public struct AssistantTurnActivitySlot: View {
   public let activity: AssistantTurnActivity?
   public let waitingSince: Date?
@@ -84,24 +72,16 @@ public struct AssistantTurnActivitySlot: View {
         TranscriptStartingWorkedHeader(startedAt: waitingSince)
           .suppressedDuringStreamingTextEntrance()
       } else {
-        // Plain text in the shimmer's font, no animation.
         Text("Thinking…")
           .font(.callout)
           .hidden()
           .accessibilityHidden(true)
       }
     }
-    // A retry or compaction label stands in for the turn's header too, so
-    // every state keeps the header's line height.
     .frame(minHeight: TranscriptWorkedSectionHeaderView.lineHeight)
   }
 }
 
-/// A chip for each subagent the finished turn waits on, shimmering while it
-/// runs; a chip opens its agent's thread. Chips stay put as their agents finish,
-/// so the line never reflows under the pointer, until it goes away with the
-/// wait. Falls back to the task's description when no spawning call is in
-/// the transcript.
 public struct WaitingOnAgentsLine: View {
   let description: String
   @Environment(\.transcriptController) private var controller
@@ -122,8 +102,6 @@ public struct WaitingOnAgentsLine: View {
     .onChange(of: calls.map(\.toolCallId), initial: true) { shown = calls }
   }
 
-  /// `shown` in place, refreshed from `waiting`, with newly waited-on calls
-  /// after them.
   nonisolated static func merging(_ shown: [ToolCall], _ waiting: [ToolCall]) -> [ToolCall] {
     let current = Dictionary(waiting.map { ($0.toolCallId, $0) }, uniquingKeysWith: { first, _ in first })
     let kept = shown.map { current[$0.toolCallId] ?? $0 }
@@ -133,7 +111,6 @@ public struct WaitingOnAgentsLine: View {
 }
 
 extension AssistantTurn {
-  /// When a live turn that has heard nothing from its harness yet started.
   public var harnessWaitStartedAt: Date? {
     guard isGenerating, !isThinking, !hasProviderContent else { return nil }
     return startedAt ?? Date()

@@ -29,38 +29,13 @@ import { admitRelayMessage } from "./relay-admission.js"
 import { routeAppRelay, routeMachineRelay, type RelayHubPort } from "./relay-routing.js"
 import { DEFAULT_RESUME_GRACE_MS, ResumeSessions } from "./resume-sessions.js"
 
-/// One hub per account (`getByName(userId)`): the rendezvous point every one
-/// of the user's app and machine sockets dials into. The hub is a dumb router:
-/// - hello/presence frames are understood and answered;
-/// - relay frames have their addressing rewritten (machineId ↔ peerId) and
-///   their sealed payloads forwarded untouched — content is end-to-end
-///   encrypted between devices and never readable here.
-///
-/// Authentication happens in the Worker before the request reaches the DO
-/// (session token for apps, api key for machines); the DO trusts the
-/// X-Codevisor-* headers the Worker attaches.
-///
-/// All sockets use the hibernation API, so an account with idle machines
-/// costs nothing between frames. In-memory state is cache only — everything
-/// durable lives in the DO's SQLite and socket attachments (≤16 KB).
-
 export const HUB_KIND_HEADER = "X-Codevisor-Kind"
 export const HUB_DEVICE_ID_HEADER = "X-Codevisor-Device-Id"
 
-/// Close codes (4xxx = application-defined). Clients treat 42xx as fatal
-/// (do not reconnect with the same credentials/protocol) and everything else
-/// as transient.
 export const CLOSE_INVALID_FRAME = 4000
 export const CLOSE_UNSUPPORTED_PROTOCOL = 4200
 export const CLOSE_REVOKED = 4201
-/// A newer socket completed hello for the same machine device id. The older
-/// socket is a zombie (half-open, or a superseded process) — routing to it
-/// would black-hole relay traffic. Non-fatal: a legitimately superseded
-/// process may reconnect and take over again.
 export const CLOSE_SUPERSEDED = 4003
-/// A socket failed an actual relay write before its close callback arrived.
-/// Retiring it immediately starts resume grace and makes the next hello a
-/// normal transient reconnect.
 export const CLOSE_DELIVERY_FAILED = 4004
 
 const MAX_FRAME_LENGTH = 64 * 1024
@@ -80,10 +55,7 @@ export class UserHub extends DurableObject<CloudEnv> {
     )
     ctx.blockConcurrencyWhile(async () => {
       this.#accountDeleted = (await ctx.storage.get<boolean>("account_deleted")) === true
-      const version =
-        (await ctx.storage.get<number>("schema_version")) ??
-        // Fresh instance — run every migration below.
-        0
+      const version = (await ctx.storage.get<number>("schema_version")) ?? 0
       for (let step = version; step < HUB_MIGRATIONS.length; step += 1) {
         ctx.storage.sql.exec(HUB_MIGRATIONS[step]!)
       }
@@ -91,7 +63,6 @@ export class UserHub extends DurableObject<CloudEnv> {
         await ctx.storage.put("schema_version", HUB_MIGRATIONS.length)
       }
     })
-    // Keep protocol-level keepalives from waking a hibernated hub.
     ctx.setWebSocketAutoResponse(
       new WebSocketRequestResponsePair(
         encodeCloudFrame({ t: "ping" }),
@@ -100,22 +71,15 @@ export class UserHub extends DurableObject<CloudEnv> {
     )
   }
 
-  // -- Worker-facing RPC -----------------------------------------------------
-
-  /// Tombstone the hub before clearing its data so in-flight connections
-  /// authorized just before account deletion cannot recreate it.
   async deleteAccount(): Promise<void> {
     this.#accountDeleted = true
     await deleteHubAccount(this.ctx, CLOSE_REVOKED)
   }
 
-  /// Registry + live presence; used by the REST surface and app settings.
   listMachines(): CloudMachinePresence[] {
     return listHubMachines(this.#notices())
   }
 
-  /// Disconnects and forgets a machine. The Worker revokes the api key first;
-  /// this makes the hub side immediate rather than next-auth-failure.
   removeMachine(deviceId: string): boolean {
     return removeHubMachine(this.#notices(), deviceId, CLOSE_REVOKED)
   }
@@ -124,12 +88,9 @@ export class UserHub extends DurableObject<CloudEnv> {
     return renameHubMachine(this.#notices(), deviceId, name)
   }
 
-  /// See recordMachineOrigin: the machine-invite redemption path.
   recordMachineOrigin(deviceId: string, addedBy: { deviceId: string; name: string }): void {
     recordMachineOrigin(this.ctx.storage.sql, deviceId, addedBy)
   }
-
-  // -- WebSocket lifecycle ---------------------------------------------------
 
   credentialCommand(id: string, owner: string, command: CredentialCommand) {
     return storeCredentialCommand(this.ctx.storage, this.#accountDeleted, id, owner, command)
@@ -164,8 +125,6 @@ export class UserHub extends DurableObject<CloudEnv> {
       socket.close(CLOSE_INVALID_FRAME, "missing attachment")
       return
     }
-    // Binary messages are relay envelope batches; text messages are the rare
-    // JSON control frames (hello/ping).
     if (typeof message !== "string") {
       const envelopes = admitRelayMessage(message, attachment.helloDone)
       if (typeof envelopes === "string") {
@@ -199,8 +158,6 @@ export class UserHub extends DurableObject<CloudEnv> {
   override async webSocketError(socket: WebSocket): Promise<void> {
     this.#onGone(socket)
   }
-
-  // -- Frame handling --------------------------------------------------------
 
   async #onAppFrame(
     socket: WebSocket,
@@ -243,7 +200,6 @@ export class UserHub extends DurableObject<CloudEnv> {
         this.#retireUndeliverable(socket)
         return
       }
-      // A resumed app never looked gone; replay what arrived meanwhile.
       if (resumed) this.#replayBuffers(socket, attachment.connectionId)
     }
   }
@@ -284,11 +240,7 @@ export class UserHub extends DurableObject<CloudEnv> {
         attachment.peerAware
       )
       attachment.tunnel = scope.tunnelMachine
-      // Machine openers present this key on channels they open; peers pin it.
       attachment.publicKey = frame.device.publicKey
-      // Install the durable generation before demoting the predecessor. From
-      // this point routing can select only this socket, even if close delivery
-      // for an older half-open connection is delayed.
       for (const stale of this.#net.machine(deviceId)) {
         if (stale !== socket) this.#supersede(stale, "superseded by a newer connection")
       }
@@ -313,24 +265,15 @@ export class UserHub extends DurableObject<CloudEnv> {
       }
       hubTunnel.sendPeerDevices(this.ctx.storage.sql, this.#net, socket)
       if (resumed) {
-        // Nobody was told the machine left: skip the reset/presence noise
-        // and replay what apps sent meanwhile.
         this.#replayBuffers(socket, attachment.connectionId)
         return
       }
-      // A fresh hello means the machine process restarted: any grace session
-      // for this device is moot (its channels are gone regardless).
-      // Channels the previous process opened toward other machines are dead.
       for (const connectionId of this.#resume.deleteForMachineDevice(
         deviceId,
         attachment.connectionId
       )) {
         this.#net.broadcastToPeerMachines({ t: "peer-gone", peerId: connectionId })
       }
-      // Channel state on the machine is in-memory and did not survive the
-      // restart: tell apps to reset their channels toward this machine
-      // *before* announcing it online, so re-opens park briefly and then
-      // dispatch to the fresh socket instead of racing the teardown.
       this.#net.broadcastMachineNotice({ t: "machine-reset", machineId: deviceId })
       const row = machineRow(this.ctx.storage.sql, deviceId)
       if (row !== undefined)
@@ -338,8 +281,6 @@ export class UserHub extends DurableObject<CloudEnv> {
     }
   }
 
-  /// Session resume at hello time: adopt or register, superseding any
-  /// half-open zombie socket that still holds the restored identity.
   async #adoptSession(
     attachment: SocketAttachment,
     kind: "app" | "machine",
@@ -360,7 +301,6 @@ export class UserHub extends DurableObject<CloudEnv> {
     return adopted
   }
 
-  /// Hands a resumed connection everything relayed while it was away.
   #replayBuffers(socket: WebSocket, connectionId: string): void {
     let replayed = 0
     for (const message of this.#resume.drainBuffers(connectionId)) {
@@ -370,13 +310,10 @@ export class UserHub extends DurableObject<CloudEnv> {
     this.#metrics.replayed(connectionId, replayed)
   }
 
-  /// Dependencies for the deferred death notices (hub-notices.ts).
   #notices(): HubNoticesPort {
     return { net: this.#net, resume: this.#resume, sql: this.ctx.storage.sql }
   }
 
-  /// The narrow surface relay routing (relay-routing.ts) uses to reach this
-  /// hub's sockets and registry.
   #relayPort(): RelayHubPort {
     return {
       isKnownMachine: (machineId) => machineRow(this.ctx.storage.sql, machineId) !== undefined,
@@ -419,8 +356,6 @@ export class UserHub extends DurableObject<CloudEnv> {
     if (this.#accountDeleted) return
     const attachment = this.#net.attachment(socket)
     if (attachment === undefined || !attachment.helloDone) return
-    // Make close/error callbacks idempotent and exclude this socket from all
-    // routing before changing session state.
     this.#net.deactivate(socket)
     if (attachment.kind === "machine") {
       const activeGeneration = machineRow(
@@ -429,8 +364,6 @@ export class UserHub extends DurableObject<CloudEnv> {
       )?.active_generation
       if ((attachment.machineGeneration ?? 0) !== activeGeneration) return
     }
-    // A newer socket already adopted this identity (resume supersede, or the
-    // one-live-socket-per-machine rule): this close is not a departure.
     const survivors = this.#net
       .byConnectionId(attachment.connectionId)
       .filter((candidate) => candidate !== socket && this.#net.isRoutable(candidate))
@@ -442,17 +375,12 @@ export class UserHub extends DurableObject<CloudEnv> {
         attachment.deviceId!
       )
     }
-    // One traffic summary per socket leg; a resumed connection accumulates
-    // (and later reports) a fresh run under the same connection id.
     this.#metrics.sessionEnd(attachment)
-    // Start the resume grace window instead of announcing death; the alarm
-    // delivers the deferred peer-gone/offline signals only if nobody resumes.
     const deadline = this.#resume.markDisconnected(attachment.connectionId, Date.now())
     if (deadline !== undefined) {
       void this.#ensureAlarm(deadline)
       return
     }
-    // No resumable session (it was abandoned or removed): announce now.
     announceExpired(this.#notices(), {
       connection_id: attachment.connectionId,
       kind: attachment.kind,

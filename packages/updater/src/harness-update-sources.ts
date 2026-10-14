@@ -2,11 +2,6 @@ import { realpathSync } from "node:fs"
 
 import type { InstallOrigin } from "@codevisor/agent-runtime"
 
-/// Pure latest-version checkers for harness update detection: npm registry,
-/// Homebrew API, GitHub releases. All of them degrade to `undefined` on any
-/// failure (offline, rate limit, unknown package) — an update check must
-/// never surface an error to the user, only silence.
-
 export interface LatestVersionResult {
   readonly latestVersion?: string
   readonly channel?: string
@@ -48,8 +43,6 @@ export const checkNpmLatest = async (
   fetchImpl: FetchLike = fetch
 ): Promise<LatestVersionResult> => {
   try {
-    // The abbreviated registry document is a fraction of the full metadata.
-    // Package names (incl. @scope/name) are registry-URL-safe as-is.
     const response = await fetchImpl(`https://registry.npmjs.org/${packageName}`, {
       headers: { accept: "application/vnd.npm.install-v1+json" },
       signal: AbortSignal.timeout(CHECK_TIMEOUT_MS)
@@ -89,8 +82,6 @@ export const checkBrewLatest = async (
   formula: string,
   fetchImpl: FetchLike = fetch
 ): Promise<LatestVersionResult> => {
-  // Try the formula API first, then the cask API — catalog entries only name
-  // the token and some CLIs (codex) ship as casks.
   try {
     const document = (await fetchJson(
       fetchImpl,
@@ -100,9 +91,7 @@ export const checkBrewLatest = async (
     if (typeof stable === "string" && stable.length > 0) {
       return { channel: "stable", latestVersion: stable }
     }
-  } catch {
-    // Fall through to the cask API.
-  }
+  } catch {}
   try {
     const document = (await fetchJson(
       fetchImpl,
@@ -125,7 +114,6 @@ export const checkGithubLatest = async (
       fetchImpl,
       `https://api.github.com/repos/${repo}/releases/latest`
     )) as { readonly tag_name?: string }
-    // Tags come prefixed in the wild: "v1.2.3", "rust-v0.4.0", "cli-2.0".
     const version = (document.tag_name ?? "").replace(/^[^0-9]*/, "")
     return version.length > 0 ? { channel: "stable", latestVersion: version } : none
   } catch {
@@ -133,10 +121,6 @@ export const checkGithubLatest = async (
   }
 }
 
-/// Classifies how a detected harness binary got installed, from its resolved
-/// path. Symlinks are resolved first: npm globals on a brew-installed node
-/// live at /opt/homebrew/bin/<cli> → /opt/homebrew/lib/node_modules/…, so the
-/// node_modules check must run on the real path and win over the brew prefix.
 export const detectInstallOrigin = (
   binaryPath: string,
   options: {
@@ -159,19 +143,12 @@ export const detectInstallOrigin = (
   if (/\.app\//.test(real)) return "appBundle"
   const home = options.home ?? process.env.HOME ?? ""
   if (home.length > 0 && real.startsWith(`${home}/`)) {
-    // Vendor curl installers land in home-dot directories: ~/.local/bin,
-    // ~/.opencode/bin, ~/.kilo/bin, ~/.factory/bin, ~/.codex/packages/… .
-    // The standalone/self-managed distinction doesn't change which update
-    // source matches, so home installs all classify as curl.
     return /\/\.[^/]+\//.test(real.slice(home.length)) ? "curl" : "standalone"
   }
   if (real.startsWith("/usr/local/bin/") || real.startsWith("/usr/bin/")) return "standalone"
   return "unknown"
 }
 
-/// Identifies the exact Homebrew owner of a resolved binary. The token comes
-/// from the Cellar/Caskroom path rather than the harness catalog so versioned
-/// channels such as `claude-code@latest` are preserved during updates.
 export const detectBrewPackage = (
   binaryPath: string,
   options: { readonly realpath?: (path: string) => string } = {}

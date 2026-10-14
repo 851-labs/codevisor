@@ -1,18 +1,8 @@
 import Foundation
 
-/// One end of a transcript-wide text selection: a character offset inside one
-/// text surface of one virtualized row.
-///
-/// Rows are addressed by layout key rather than by view because the
-/// virtualizer unmounts and recycles hosts freely; ordering is resolved
-/// against the current layout on demand. `surface` counts the row's text
-/// surfaces from top to bottom. `Int.max` in either field means "past the end
-/// of the row", which lets a selection reach a row without knowing how many
-/// surfaces it has.
 public struct TranscriptSelectionPoint: Equatable, Hashable, Sendable {
   public var rowKey: String
   public var surface: Int
-  /// UTF-16 offset within the surface.
   public var offset: Int
 
   public init(rowKey: String, surface: Int, offset: Int) {
@@ -30,8 +20,6 @@ public struct TranscriptSelectionPoint: Equatable, Hashable, Sendable {
   }
 }
 
-/// An anchor/focus pair. The anchor is where the gesture started; the focus
-/// follows the pointer, so either may come first in document order.
 public struct TranscriptTextSelection: Equatable, Sendable {
   public var anchor: TranscriptSelectionPoint
   public var focus: TranscriptSelectionPoint
@@ -41,8 +29,6 @@ public struct TranscriptTextSelection: Equatable, Sendable {
     self.focus = focus
   }
 
-  /// Orders the endpoints using the current row order. Returns nil when
-  /// either endpoint's row is no longer in the layout.
   public func resolve(rowIndex: (String) -> Int?) -> TranscriptSelectionSpan? {
     guard let anchorRow = rowIndex(anchor.rowKey),
       let focusRow = rowIndex(focus.rowKey)
@@ -56,7 +42,6 @@ public struct TranscriptTextSelection: Equatable, Sendable {
   }
 }
 
-/// A selection whose endpoints have been ordered against a concrete layout.
 public struct TranscriptSelectionSpan: Equatable, Sendable {
   public let start: TranscriptSelectionPoint
   public let startRow: Int
@@ -85,8 +70,6 @@ public struct TranscriptSelectionSpan: Equatable, Sendable {
     rowRange.contains(rowIndex)
   }
 
-  /// The selected portion of each surface in one row, given the surfaces'
-  /// lengths. `nil` marks a surface the selection does not touch.
   public func surfaceRanges(rowIndex: Int, surfaceLengths: [Int]) -> [Range<Int>?] {
     guard contains(rowIndex: rowIndex) else {
       return Array(repeating: nil, count: surfaceLengths.count)
@@ -109,11 +92,6 @@ public struct TranscriptSelectionSpan: Equatable, Sendable {
 }
 
 public enum TranscriptSelectionText {
-  /// How a copied row joins the text before it. Leaf rows of one
-  /// fragmented list or quote are laid out flush and join with a newline;
-  /// everything else reads as separate paragraphs, including a Markdown row
-  /// that starts a new block of the same document (those rows also sit
-  /// flush, the next row drawing the gap itself).
   public static func rowSeparator(
     previous: TranscriptPresentationRow?,
     current: TranscriptPresentationRow?
@@ -125,13 +103,6 @@ public enum TranscriptSelectionText {
     return previous.spacingAfter == 0 ? "\n" : "\n\n"
   }
 
-  /// Assembles the plain text covered by `span`.
-  ///
-  /// Rows contribute their surfaces in order. Surfaces within a row are
-  /// joined by a blank line; `rowSeparator` decides how each subsequent row is
-  /// joined to the text before it (typically a newline inside a fragmented
-  /// list, a blank line otherwise). Rows and surfaces that contribute nothing
-  /// are skipped so separators never pile up.
   public static func text(
     in span: TranscriptSelectionSpan,
     surfaceLengths: (_ rowIndex: Int) -> [Int],
@@ -157,7 +128,6 @@ public enum TranscriptSelectionText {
     return result
   }
 
-  /// UTF-16 slicing that tolerates ranges past the end of a shorter string.
   public static func substring(of text: String, in range: Range<Int>) -> String {
     let nsText = text as NSString
     let lower = min(max(0, range.lowerBound), nsText.length)

@@ -66,8 +66,6 @@ describe("shared workspace positions", () => {
       await run(
         db.updateWorkspace(first.id, { sidebarOrder: { position: earlier, expectedRevision: 1 } })
       )
-      // A second move of the same drag, sent before its sender saw the first
-      // one land, still carries the first revision.
       const latest = initialWorkspacePosition(50, first.id)
       const moved = await run(
         db.updateWorkspace(first.id, { sidebarOrder: { position: latest, expectedRevision: 1 } })

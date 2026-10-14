@@ -19,12 +19,10 @@ describe("shared account metadata", () => {
     expect(
       harnessesSignedInBy([
         { key: 'provider:["pi","default","anthropic"]', value: {} },
-        // A signed-out provider still names its harness.
         { key: 'provider:["opencode","work","openai"]', value: null },
         { key: 'provider:["pi","default","openai-codex"]', value: {} },
         { key: "selected:claude-code", value: "shared-account" },
         { key: row.id, value: row },
-        // Neither a valid provider key nor a valid account names one.
         { key: "provider:{", value: {} },
         { key: "provider:[1]", value: {} },
         { key: "shared-removed", value: null },

@@ -7,13 +7,6 @@ import { isPathSafe, sanitizeName, SkillsError } from "./skills-store.js"
 
 export { parseSkillSource, type ParsedSkillSource } from "./skills-source.js"
 
-/// Download skills published via RFC 8615 well-known endpoints into a
-/// staging directory. Mirrors the `npx skills` provider: probes
-/// `.well-known/agent-skills/index.json` (then the legacy
-/// `.well-known/skills/index.json`) against both the given URL path and the
-/// site origin, and supports both index formats — legacy per-file listings
-/// and v0.2.0 single artifacts (`skill-md` files or zip/tar.gz archives with
-/// sha256 digests).
 export const materializeWellKnownSkills = async (
   sourceUrl: string,
   staging: string
@@ -36,7 +29,6 @@ const readWellKnownIndex = async (
       (entry): entry is Record<string, unknown> => entry !== null && typeof entry === "object"
     )
   } catch {
-    // Unreachable host or invalid JSON at this candidate — try the next.
     return undefined
   }
 }
@@ -80,7 +72,6 @@ const materializeWellKnownEntry = async (
   const directory = join(staging, sanitizeName(name))
   try {
     if (Array.isArray(entry["files"])) {
-      // Legacy format: fetch each listed file from <indexDir>/<name>/.
       await materializeLegacyFiles(entry, name, indexDir, directory)
       return
     }
@@ -88,8 +79,6 @@ const materializeWellKnownEntry = async (
     if (artifactUrl === undefined) return
     await materializeSkillArtifact(entry, artifactUrl, indexDir, directory)
   } catch {
-    // A broken entry never poisons the rest of the index; the skill is
-    // simply absent from discovery.
     await rm(directory, { force: true, recursive: true })
   }
 }
@@ -152,9 +141,6 @@ const materializeSkillArtifact = async (
   await extractArchive(bytes, directory)
 }
 
-/// Extract a zip or tar.gz artifact (detected by magic bytes) with the
-/// system tools — bsdtar and unzip both sanitize `..`/absolute entries, and
-/// discovery re-validates every path before anything reaches the store.
 const extractArchive = async (bytes: Buffer, directory: string): Promise<void> => {
   const artifact = join(directory, `.artifact-${randomUUIDForArtifact()}`)
   await writeFile(artifact, bytes)
@@ -170,7 +156,7 @@ const extractArchive = async (bytes: Buffer, directory: string): Promise<void> =
       const stderr: Array<string> = []
       child.stderr.setEncoding("utf8")
       child.stderr.on("data", (chunk: string) => stderr.push(chunk))
-      /* v8 ignore next -- spawn-level failures (tool missing) need an environment tests can't fake. */
+      /* v8 ignore next */
       child.on("error", (cause) => rejectPromise(cause))
       child.on("close", (code) => {
         if (code === 0) {
@@ -178,7 +164,7 @@ const extractArchive = async (bytes: Buffer, directory: string): Promise<void> =
           return
         }
         const reason = stderr.join("").trim()
-        /* v8 ignore next -- tar and unzip always write a failure reason to stderr; exit-code fallback is a backstop. */
+        /* v8 ignore next */
         rejectPromise(new Error(reason === "" ? `extraction exited with ${code}` : reason))
       })
     })
@@ -187,12 +173,10 @@ const extractArchive = async (bytes: Buffer, directory: string): Promise<void> =
   }
 }
 
-/* v8 ignore next 2 -- trivial indirection so artifact temp names stay unique without Date/Math.random. */
+/* v8 ignore next 2 */
 const randomUUIDForArtifact = (): string =>
   createHash("sha256").update(process.hrtime.bigint().toString()).digest("hex").slice(0, 12)
 
-/// Default clone: shallow, optionally pinned to a branch or tag, with
-/// interactive prompts disabled so a bad URL fails fast instead of hanging.
 export const cloneSkillSource = (
   url: string,
   ref: string | undefined,
@@ -218,7 +202,7 @@ export const cloneSkillSource = (
     const stderr: Array<string> = []
     child.stderr.setEncoding("utf8")
     child.stderr.on("data", (chunk: string) => stderr.push(chunk))
-    /* v8 ignore next -- spawn-level failures (git missing) need an environment tests can't fake. */
+    /* v8 ignore next */
     child.on("error", (cause) => rejectPromise(cause))
     child.on("close", (code) => {
       if (code === 0) {
@@ -226,7 +210,7 @@ export const cloneSkillSource = (
         return
       }
       const reason = stderr.join("").trim()
-      /* v8 ignore next -- git always writes a failure reason to stderr; exit-code fallback is a backstop. */
+      /* v8 ignore next */
       rejectPromise(new Error(reason === "" ? `git clone exited with ${code}` : reason))
     })
   })

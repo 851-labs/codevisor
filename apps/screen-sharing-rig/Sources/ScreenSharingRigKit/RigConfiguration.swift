@@ -1,28 +1,16 @@
 import ScreenSharing
 import Foundation
 
-/// One resident rig process's configuration, read once from `rig.json`.
-/// Values are validated here so a bad file fails at start, not mid-session.
 public struct RigConfiguration: Sendable {
   public enum Role: String, Sendable { case host, viewer }
 
   public enum CaptureSource: Equatable, Sendable, CustomStringConvertible {
-    /// Generated motion; needs no permission and no display.
     case synthetic
-    /// The probe's own workload window, captured through current-process
-    /// shareable content; needs no Screen Recording grant.
     case workload(width: Int, height: Int, framesPerSecond: Int)
-    /// A physical display; requires Screen Recording on the host.
     case display(UInt32)
-    /// A virtual display created through the private CGVirtualDisplay API with
-    /// the workload window on it; requires Screen Recording on the host. Rig only.
     case virtual(width: Int, height: Int, framesPerSecond: Int)
-    /// The same virtual display left bare: its own desktop, for moving real applications onto
-    /// it. Requires Screen Recording. Rig only.
     case virtualDesktop(width: Int, height: Int, framesPerSecond: Int)
-    /// Every on-screen window of one application, by bundle identifier; requires Screen Recording.
     case app(String)
-    /// One window by CGWindowID, independent of what covers it; requires Screen Recording.
     case window(UInt32)
 
     public static func parse(_ text: String) throws -> CaptureSource {
@@ -89,18 +77,14 @@ public struct RigConfiguration: Sendable {
   public static let minimumTokenLength = 16
 
   public let role: Role
-  /// Host address (`host` or `host:port`) the viewer signals to.
   public let peer: String?
-  /// LAN listener port on the host.
   public let port: UInt16
-  /// Loopback control port on the viewer.
   public let controlPort: UInt16
   public let token: String
   public let video: ScreenSharingVideoConfiguration
   public let codec: ScreenSharingVideoCodec
   public let capture: CaptureSource
   public let hud: Bool
-  /// Viewer: whether to ask for HDR when its screen can show it (851-2480); off by default, as in the app.
   public let highDynamicRange: Bool
   public let telemetryDirectory: String?
   public let tuning: RigTuning
@@ -136,8 +120,6 @@ public struct RigConfiguration: Sendable {
     self.tuning = tuning
   }
 
-  /// Parse `rig.json`. Unknown keys are rejected so typos cannot silently
-  /// select defaults.
   public static func parse(_ data: Data) throws -> RigConfiguration {
     let object: Any
     do { object = try JSONSerialization.jsonObject(with: data) } catch {
@@ -212,7 +194,6 @@ public struct RigConfiguration: Sendable {
       telemetryDirectory: try string("telemetryDirectory"), tuning: tuning)
   }
 
-  /// `http://host:port` for the viewer's signaling requests.
   public var hostBaseURL: URL? {
     guard let peer else { return nil }
     let target = peer.contains(":") && !peer.hasPrefix("[") ? peer : "\(peer):\(port)"

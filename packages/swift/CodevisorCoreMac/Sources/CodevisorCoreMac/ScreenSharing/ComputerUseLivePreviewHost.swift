@@ -4,15 +4,11 @@ import Foundation
 import ScreenSharing
 import ScreenSharingWebRTC
 
-// MARK: - Target addressing
-
-/// `computer-use:<chat session id>` — the window that chat's agent controls.
 enum ComputerUseStreamTarget {
   static let prefix = "computer-use:"
 
   static func displayId(sessionID: String) -> String { prefix + sessionID.lowercased() }
 
-  /// The lowercased chat session id, or nil for anything else.
   static func sessionID(from displayId: String?) -> String? {
     guard let displayId, displayId.hasPrefix(prefix) else { return nil }
     let id = String(displayId.dropFirst(prefix.count))
@@ -20,20 +16,14 @@ enum ComputerUseStreamTarget {
   }
 }
 
-// MARK: - Peer seam
-
-/// The media side of one remote viewer. Production wraps a WebRTC sender;
-/// tests substitute a fake.
 @MainActor
 protocol ComputerUseStreamPeer: AnyObject {
   var onConnectionChanged: ((String) -> Void)? { get set }
-  /// Receives the window's frames and size changes.
   var sink: any ComputerUseFrameSink { get }
   func answer(offer: String) async throws -> String
   func close()
 }
 
-/// A view-only WebRTC sender: frames in, control requests politely denied.
 @MainActor
 final class ComputerUseSenderPeer: ComputerUseStreamPeer {
   private let sender: ScreenSharingSender
@@ -44,7 +34,6 @@ final class ComputerUseSenderPeer: ComputerUseStreamPeer {
     try ScreenSharingFieldTrials.process.install(profile: ScreenSharingDiagnosticProfile.process())
     let metrics = ScreenSharingMetrics()
     let configuration = try computerUseStreamVideoConfiguration(size: size)
-    // A small view-only preview: HEVC Main is plenty, and its frames aren't captured as BGRA.
     var options = ScreenSharingPeerOptions()
     options.codec = .hevc
     options.fallbackCodecs = [.h264]
@@ -76,8 +65,6 @@ final class ComputerUseSenderPeer: ComputerUseStreamPeer {
   }
 }
 
-/// The WebRTC encoder rejects frames whose size differs from its last
-/// configuration, so size changes reach it before the stream resizes.
 final class ComputerUseSenderSink: ComputerUseFrameSink {
   private let frameSender: ScreenSharingFrameSender
   @MainActor private weak var sender: ScreenSharingSender?
@@ -97,7 +84,6 @@ final class ComputerUseSenderSink: ComputerUseFrameSink {
   }
 }
 
-/// The preview stream's sizes are already even; the encoder also needs 64+.
 func computerUseStreamVideoConfiguration(size: CGSize) throws -> ScreenSharingVideoConfiguration {
   func dimension(_ value: CGFloat, limit: Int) -> Int {
     min(limit, max(64, Int(value) / 2 * 2))
@@ -110,11 +96,6 @@ func computerUseStreamVideoConfiguration(size: CGSize) throws -> ScreenSharingVi
   )
 }
 
-// MARK: - Host
-
-/// Streams the window a chat's agent controls to that chat's remote viewers.
-/// Unlike display sharing there is no exclusive lease: viewers only watch,
-/// and each one's frames come from the same native sharing stream.
 @MainActor
 final class ComputerUseLivePreviewHost {
   struct Dependencies {
@@ -145,7 +126,6 @@ final class ComputerUseLivePreviewHost {
   }
 
   static let maximumSessions = 4
-  /// Matches the display lease: a viewer heartbeats every 8 s.
   static let lifetime: TimeInterval = 25
 
   private struct Owner: Hashable {
@@ -229,8 +209,6 @@ final class ComputerUseLivePreviewHost {
       guard let activity = liveActivity(sessionID) else { return Self.notControlling }
       let size = dependencies.streamSize(activity.bridgeSessionID) ?? activity.windowFrame.size
       do {
-        // The peer is built off the main thread; shutdown or another request for this viewer may
-        // have happened meanwhile.
         let peer = try await dependencies.makePeer(size, try dependencies.makeConnectivity(request.viewerId))
         guard !isShutdown else {
           peer.close()
@@ -257,8 +235,6 @@ final class ComputerUseLivePreviewHost {
         do {
           let answer = try await peer.answer(offer: offer)
           guard !isShutdown, sessions[owner] === session else { throw CancellationError() }
-          // Frames flow only once the answer is out; the sink is told the
-          // current size first.
           session.token = dependencies.attach(session.bridgeSessionID, peer.sink)
           return .init(status: "connecting", answer: answer)
         } catch {
@@ -269,7 +245,6 @@ final class ComputerUseLivePreviewHost {
     }
   }
 
-  /// Ends every viewer of a chat whose agent stopped controlling its app.
   func activityChanged() {
     for (owner, session) in sessions where liveActivity(session.sessionID) == nil {
       end(owner: owner, session: session)

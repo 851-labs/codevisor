@@ -30,11 +30,6 @@ import { matchesLabelFilters } from "./label-filters.js"
 import { createSessionIfMissing } from "./session-workspace.js"
 import { routeWorkspaceCreate } from "./workspace-create.js"
 
-/// The workspace with this id, or undefined. Route handlers use it to answer
-/// a retried or stale request with its real outcome -- gone is 404 for an
-/// edit and a completed no-op for a delete -- instead of a 500 from the
-/// database layer. Clients retry requests from an outbox, so every mutation
-/// here has to be safe to receive twice.
 const findWorkspace = async (
   services: CodevisorServerServices,
   workspaceId: string
@@ -43,9 +38,6 @@ const findWorkspace = async (
     (candidate) => candidate.id.toLowerCase() === workspaceId.toLowerCase()
   )
 
-/// Pane workspaces are client-authored identity records, so writes are
-/// idempotent PUTs keyed by the client's workspace id. Creates and updates
-/// share one `workspace.updated` event to keep client mirroring simple.
 export const routeWorkspaces = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
@@ -150,9 +142,6 @@ export const routeWorkspaces = async (
     url.pathname,
     "/v1/workspaces/:workspaceId/panes/:paneId/close"
   )
-  // Close and DELETE are the same operation. Closing the last pane leaves the
-  // workspace empty; the response keeps its `{ pane }` shape (always absent
-  // now) for clients that predate that.
   if (
     (closeRoute !== undefined && request.method === "POST") ||
     (paneRoute !== undefined && request.method === "DELETE")
@@ -220,8 +209,6 @@ export const routeWorkspaces = async (
   const workspaceId = matchRoute(url.pathname, "/v1/workspaces/:id")
   if (workspaceId !== undefined && request.method === "PUT") {
     const payload = await readSchema(request, UpsertWorkspaceRequestSchema)
-    // UUID comparison is case-insensitive: the path id is canonicalized to
-    // lowercase while Swift clients send uppercase body ids.
     if (payload.id !== undefined && payload.id.toLowerCase() !== workspaceId.toLowerCase()) {
       throw new HttpFailure(
         400,
@@ -233,8 +220,6 @@ export const routeWorkspaces = async (
         candidate.id.toLowerCase() === workspaceId.toLowerCase() && candidate.isArchived
     )
     const workspace = await run(services.db.upsertWorkspace({ ...payload, id: workspaceId }))
-    // A PUT can flip the archive bit exactly like the PATCH below, so it owes
-    // the same teardown/restore.
     const settled = await applyWorkspaceArchiveEffects(
       services,
       fanout,
@@ -275,14 +260,7 @@ export const routeWorkspaces = async (
     }
     const workspace = await run(services.db.updateWorkspace(workspaceId, { isArchived: true }))
     await appendAndPublish(services.db, fanout, "workspace.updated", workspace.id, workspace)
-    // Read what the workspace runs before its chats and panes let go of it;
-    // the teardown itself is queued once the workspace is gone. A workspace
-    // that was already archived is torn down again, which is a no-op after a
-    // finished archive and a retry after a failed one.
     const runtime = await captureWorkspaceRuntime(services, routeState, workspace)
-    // `sessions.workspace_id` has no ON DELETE clause and foreign keys are
-    // enforced, so the chats must let go of the workspace before it can be
-    // dropped.
     for (const session of await run(services.db.listSessions)) {
       if (session.workspaceId?.toLowerCase() !== workspaceId.toLowerCase()) continue
       await run(services.db.setSessionWorkspace(session.id, null))

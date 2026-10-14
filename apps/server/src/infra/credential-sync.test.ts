@@ -4,9 +4,6 @@ import { describe, expect, it } from "vitest"
 import { makeServices, run } from "../test-support.js"
 import { CREDENTIALS_SYNC_NAMESPACE, reconcileCredentials } from "./credential-sync.js"
 
-/// In-memory stand-in for one credential file: the reconciler only ever
-/// sees the CredentialSource seam, so the file layer's real IO is tested
-/// in packages/harness-manager and stays out of here.
 const makeFakeSource = (id: string, tombstoneOnAbsence = false) => {
   const state: { content: string | undefined; failing: boolean; applies: number } = {
     content: undefined,
@@ -17,7 +14,6 @@ const makeFakeSource = (id: string, tombstoneOnAbsence = false) => {
     id,
     tombstoneOnAbsence,
     read: () => {
-      // A plain-string rejection also exercises the non-Error reason path.
       if (state.failing) return Promise.reject("unreadable")
       return Promise.resolve(state.content)
     },
@@ -114,7 +110,6 @@ describe("credential sync", () => {
     expect(localLogin.status.removed).toEqual([])
     expect((await reconcileCredentials(machine.deps)).changedEntries).toEqual([])
 
-    // Reconciliation is stateless; the database retains the local ownership IDs.
     overrides = []
     const signedOut = await reconcileCredentials({ ...machine.deps })
     expect(signedOut.status.published).toEqual([])
@@ -127,25 +122,20 @@ describe("credential sync", () => {
     const a = await makeMachine("cred-a", 1_000)
     const b = await makeMachine("cred-b", 2_000)
 
-    // A signs in; the content publishes once and is then settled.
     a.pi.state.content = '{"openai":{"key":"sk-1","type":"api_key"}}'
     const first = await reconcileCredentials(a.deps)
     expect(first.status.published).toEqual(["pi-auth"])
     expect((await reconcileCredentials(a.deps)).changedEntries).toEqual([])
 
-    // B adopts on merge, and the apply hook fires for the probe.
     await run(b.services.db.mergeSyncEntries(CREDENTIALS_SYNC_NAMESPACE, first.changedEntries))
     const adopted = await reconcileCredentials(b.deps)
     expect(adopted.status.applied).toEqual(["pi-auth"])
     expect(b.pi.state.content).toBe(a.pi.state.content)
     expect(b.appliedIds).toEqual(["pi-auth"])
-    // Idempotent second pass: no rewrite, no republish.
     const applies = b.pi.state.applies
     expect((await reconcileCredentials(b.deps)).changedEntries).toEqual([])
     expect(b.pi.state.applies).toBe(applies)
 
-    // First contact with a DIFFERING local file adopts the fleet instead
-    // of overwriting it — a join never clobbers the fleet's key.
     const c = await makeMachine("cred-c", 3_000)
     c.pi.state.content = '{"openai":{"key":"local-divergent","type":"api_key"}}'
     await run(c.services.db.mergeSyncEntries(CREDENTIALS_SYNC_NAMESPACE, first.changedEntries))
@@ -154,8 +144,6 @@ describe("credential sync", () => {
     expect(joined.status.applied).toEqual(["pi-auth"])
     expect(c.pi.state.content).toBe(a.pi.state.content)
 
-    // A join whose local file already MATCHES the fleet just baselines:
-    // nothing publishes, nothing applies, nothing rewrites.
     const d = await makeMachine("cred-d", 4_000)
     d.pi.state.content = a.pi.state.content
     await run(d.services.db.mergeSyncEntries(CREDENTIALS_SYNC_NAMESPACE, first.changedEntries))
@@ -163,7 +151,6 @@ describe("credential sync", () => {
     expect(matching.status).toMatchObject({ published: [], applied: [], failed: [] })
     expect(d.pi.state.applies).toBe(0)
 
-    // A later local edit (after baseline) wins and propagates.
     c.pi.state.content = '{"openai":{"key":"sk-2","type":"api_key"}}'
     const edited = await reconcileCredentials(c.deps)
     expect(edited.status.published).toEqual(["pi-auth"])
@@ -182,10 +169,7 @@ describe("credential sync", () => {
     await reconcileCredentials(b.deps)
     expect(b.codex.state.content).toBe('{"OPENAI_API_KEY":"sk-c"}')
 
-    // Codex signs out on A (file gone) → tombstone → B's file deletes.
     a.codex.state.content = undefined
-    // Pi's file also disappears — but pi is NOT tombstoneOnAbsence, so
-    // nothing propagates for it.
     a.pi.state.content = undefined
     const signedOut = await reconcileCredentials(a.deps)
     expect(signedOut.status.published).toEqual(["codex-auth-file"])
@@ -194,7 +178,6 @@ describe("credential sync", () => {
     expect(removedOnB.status.removed).toEqual(["codex-auth-file"])
     expect(b.codex.state.content).toBeUndefined()
     expect(b.pi.state.content).not.toBeUndefined()
-    // Settled afterwards.
     expect((await reconcileCredentials(b.deps)).changedEntries).toEqual([])
   })
 
@@ -206,8 +189,6 @@ describe("credential sync", () => {
     const seeded = await reconcileCredentials(a.deps)
     await run(b.services.db.mergeSyncEntries(CREDENTIALS_SYNC_NAMESPACE, seeded.changedEntries))
 
-    // The apply throws: the failure is reported and NOT baselined, so the
-    // next pass retries and succeeds.
     const applyOnce = b.pi.source.apply
     let applyCalls = 0
     Object.assign(b.pi.source, {
@@ -221,7 +202,6 @@ describe("credential sync", () => {
     expect(failing.status.failed).toEqual([{ id: "pi-auth", reason: "disk full" }])
     expect((await reconcileCredentials(b.deps)).status.applied).toContain("pi-auth")
 
-    // A failing applyDelete keeps the tombstone pending the same way.
     a.codex.state.content = undefined
     const signedOut = await reconcileCredentials(a.deps)
     await run(b.services.db.mergeSyncEntries(CREDENTIALS_SYNC_NAMESPACE, signedOut.changedEntries))
@@ -243,8 +223,6 @@ describe("credential sync", () => {
     const a = await makeMachine("cred-fail", 1_000)
     a.pi.state.failing = true
     a.codex.state.content = '{"OPENAI_API_KEY":"still-works"}'
-    // Entries for sources this machine lacks, malformed values, and a
-    // replica value for the FAILED source are all inert this pass.
     await run(
       a.services.db.mergeSyncEntries(CREDENTIALS_SYNC_NAMESPACE, [
         {
@@ -264,13 +242,10 @@ describe("credential sync", () => {
     expect(pass.status.published).toEqual(["codex-auth-file"])
     expect(pass.status.applied).toEqual([])
 
-    // Healed with no local file: the malformed replica value reaches the
-    // apply pass directly and stays inert.
     a.pi.state.failing = false
     const healed = await reconcileCredentials(a.deps)
     expect(healed.status).toMatchObject({ applied: [], failed: [] })
 
-    // Recovery: the source heals and publishes on the next pass.
     a.pi.state.content = '{"openai":{"key":"sk-1","type":"api_key"}}'
     expect((await reconcileCredentials(a.deps)).status.published).toEqual(["pi-auth"])
   })

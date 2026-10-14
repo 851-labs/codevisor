@@ -1,7 +1,5 @@
 import SwiftUI
 
-/// A foldable's postures as Device Hub shows them: one button each, drawn as the device in that
-/// posture, the current one tinted.
 struct SimulatorPostureButtons: View {
   let model: SimulatorPaneModel
 
@@ -25,8 +23,6 @@ struct SimulatorPostureButtons: View {
   }
 }
 
-/// The device in a posture, outlined: closed is the folded phone (its hinge the square edge),
-/// book is open part way (its top and bottom edges meet at the hinge), open is flat.
 struct SimulatorPostureGlyph: View {
   let posture: String
   let selected: Bool
@@ -53,7 +49,6 @@ struct SimulatorPostureGlyph: View {
     posture == "closed" ? CGSize(width: 12, height: 16) : CGSize(width: 20, height: 15)
   }
 
-  /// The body's edge, inset half a stroke so the line stays inside the frame.
   private struct Outline: Shape {
     let posture: String
 
@@ -61,7 +56,6 @@ struct SimulatorPostureGlyph: View {
       let r = rect.insetBy(dx: 0.75, dy: 0.75)
       switch posture {
       case "closed":
-        // Square at the hinge (left), rounded on the open side.
         let radius = r.width * 0.28
         var path = Path()
         path.move(to: CGPoint(x: r.minX, y: r.minY))
@@ -75,7 +69,6 @@ struct SimulatorPostureGlyph: View {
         path.closeSubpath()
         return path
       case "book":
-        // Both halves tilted toward you: the edges dip to the hinge.
         let dip = r.height * 0.1
         let radius = r.width * 0.12
         let top = [
@@ -90,7 +83,6 @@ struct SimulatorPostureGlyph: View {
         for index in 1...corners.count {
           let corner = corners[index % corners.count]
           let next = corners[(index + 1) % corners.count]
-          // The hinge points are sharp; the device's corners round.
           path.addArc(tangent1End: corner, tangent2End: next, radius: index % 3 == 1 ? 0.5 : radius)
         }
         path.closeSubpath()
@@ -101,7 +93,6 @@ struct SimulatorPostureGlyph: View {
     }
   }
 
-  /// The camera bar at the top of the inner screen, bent with it in book.
   private struct Camera: Shape {
     let posture: String
 

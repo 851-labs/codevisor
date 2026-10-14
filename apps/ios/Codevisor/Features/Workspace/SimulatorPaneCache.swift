@@ -1,7 +1,6 @@
 import Foundation
 import SimulatorPane
 
-/// A Simulator pane's model outlives tab switches; its stream stops while the pane is hidden.
 @MainActor
 final class SimulatorPaneCache {
   static let shared = SimulatorPaneCache()

@@ -5,8 +5,6 @@
   import Testing
   @testable import ScreenSharing
 
-  /// What the capture asks ScreenCaptureKit for in each dynamic range (851-2380). SDR is exactly
-  /// what it was; HDR is the canonical HDR preset, whose format the encoder tags and the viewer draws.
   @MainActor struct ScreenSharingCaptureDynamicRangeTests {
     private func configuration(_ range: ScreenSharingDynamicRange) throws -> SCStreamConfiguration {
       let video = try ScreenSharingVideoConfiguration(
@@ -31,7 +29,6 @@
       #expect(config.pixelFormat == ScreenSharingDynamicRange.highCapturePixelFormat)
       #expect(config.colorSpaceName == CGColorSpace.displayP3_PQ)
       #expect(config.colorMatrix == CGDisplayStream.yCbCrMatrix_ITU_R_709_2)
-      // Everything else is the session's, as for SDR.
       #expect(config.width == 1920 && config.height == 1200 && config.queueDepth == 3 && !config.showsCursor)
       #expect(!config.scalesToFit || !config.preservesAspectRatio)
     }

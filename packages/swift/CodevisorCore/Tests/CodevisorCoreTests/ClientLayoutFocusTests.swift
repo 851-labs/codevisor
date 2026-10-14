@@ -20,7 +20,6 @@ struct ClientLayoutFocusTests {
     )
   }
 
-  /// The selected pane of the selected tab's active leaf.
   private func focusedPaneId(in workspace: Workspace) -> UUID? {
     workspace.selectedCenterTab.flatMap { $0.root.group(id: $0.activeLeafId)?.selectedPaneId }
   }
@@ -47,8 +46,6 @@ struct ClientLayoutFocusTests {
     }
     let repository = NavigationFixture().workspaces
     var updated = original
-    // Model a batch of agent-created threads. Each committed result must
-    // preserve selection; there is no follow-up navigation to restore it.
     for _ in 0..<3 {
       updated = try apply(["kind": "new_tab"], to: updated, compact: compact, focus: focus)
       repository.save(updated)

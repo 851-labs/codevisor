@@ -9,18 +9,13 @@ export interface UpstreamConnection {
   readonly client: Client
   readonly close: () => Promise<void>
   tools: ReadonlyArray<Tool>
-  /// What the server said about itself at `initialize` (name, icons, site).
   readonly serverInfo?: Implementation
 }
 
 export const run = <A>(effect: Effect.Effect<A, unknown>): Promise<A> => Effect.runPromise(effect)
 
-/// Buffer and parse a JSON request body. The parsed value is handed to the
-/// SDK transport (which accepts pre-parsed bodies), so consuming the stream
-/// here is safe.
 export const readJsonBody = async (request: IncomingMessage): Promise<unknown> => {
   const chunks: Array<Buffer> = []
-  // Without setEncoding, node HTTP request streams always yield Buffers.
   for await (const chunk of request) {
     chunks.push(chunk as Buffer)
   }
@@ -28,9 +23,9 @@ export const readJsonBody = async (request: IncomingMessage): Promise<unknown> =
 }
 
 export const errorMessage = (cause: unknown): string => {
-  /* v8 ignore next -- SDK, database, HTTP, and runtime failures use Error instances. */
+  /* v8 ignore next */
   if (cause instanceof Error) return cause.message
-  /* v8 ignore next -- retained for defensive formatting of external throwables. */
+  /* v8 ignore next */
   return String(cause)
 }
 
@@ -96,7 +91,7 @@ export const validateRequest = (
 export const suggestedMcpName = (url: URL): string => {
   const labels = url.hostname.split(".").filter(Boolean)
   const candidate = labels.find((label) => !["www", "mcp", "api"].includes(label)) ?? labels[0]
-  /* v8 ignore next -- a valid HTTP(S) URL always has at least one hostname label. */
+  /* v8 ignore next */
   if (candidate === undefined) return "MCP Server"
   return candidate
     .split(/[-_]+/)

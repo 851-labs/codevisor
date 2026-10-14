@@ -3,14 +3,10 @@ import CodevisorCore
 import CodevisorUI
 import StreamMarkdown
 
-/// One retained native transcript presentation. Unlike `SessionScrollState`,
-/// this keeps the mounted AppKit/SwiftUI row window alive so revisiting a chat
-/// can reattach an already-laid-out surface on its first frame.
 @MainActor
 final class TranscriptPresentationSurface {
   let textAnimationVisibility = StreamingTextAnimationVisibility(initiallyVisible: false)
   let textAnimationRegistry = StreamingTextAnimationRegistry()
-  /// Find-in-chat state; survives the pane's SwiftUI view being rebuilt.
   let findModel = TranscriptFindModel()
 
   private weak var controller: SessionController?
@@ -27,9 +23,6 @@ final class TranscriptPresentationSurface {
   var isWarm: Bool { retainedScrollView?.isInitialPresentationReady == true }
   var isAttachedToWindow: Bool { retainedScrollView?.window != nil }
 
-  /// Native transcript construction is intentionally lazy. Looking up a
-  /// cached surface happens while SwiftUI is committing sidebar selection,
-  /// so that lookup must never instantiate the AppKit hierarchy.
   func ensureScrollView() -> VirtualizedTranscriptScrollView {
     if let retainedScrollView { return retainedScrollView }
     let scrollView = VirtualizedTranscriptScrollView()
@@ -42,9 +35,6 @@ final class TranscriptPresentationSurface {
     self.controller === controller
   }
 
-  /// Appearance callbacks from outgoing and incoming SwiftUI trees can
-  /// overlap. Reference-count them so a late disappear cannot pause the
-  /// newly reattached surface's streaming-text presentation.
   func appear(owner: UUID) {
     let wasHidden = visibilityOwners.isEmpty
     visibilityOwners.insert(owner)
@@ -76,9 +66,6 @@ final class TranscriptPresentationSurface {
   }
 }
 
-/// A small LRU of detached transcript presentations. Window-attached surfaces
-/// are never evicted, so split chats remain independent even when their count
-/// exceeds the warm-cache budget.
 @MainActor
 final class TranscriptPresentationSurfaceCache {
   struct Key: Hashable {
@@ -124,9 +111,6 @@ final class TranscriptPresentationSurfaceCache {
     }
   }
 
-  /// Cache maintenance is lower priority than navigation. Waiting until the
-  /// next frame keeps native teardown and deallocation out of the selection
-  /// transaction even when a workspace change crosses the LRU boundary.
   private func scheduleTrim(excluding protectedKey: Key) {
     trimTask?.cancel()
     trimTask = Task { @MainActor [weak self] in

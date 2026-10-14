@@ -8,8 +8,6 @@ import {
   type BrowserPreviewViewer
 } from "./browser-preview.js"
 
-/// A fake CDP connection for one browser: the commands the preview sends,
-/// the screencast events it listens for, and a target list with titles.
 const browser = (
   options: {
     failStart?: boolean
@@ -85,8 +83,6 @@ const viewer = () => {
   return { value, statuses, frames }
 }
 
-/// Manual timers and clock: pending timers fire, after time has passed,
-/// when the test says so.
 const timers = () => {
   const pending = new Map<() => void, number>()
   let time = 0
@@ -108,7 +104,6 @@ const timers = () => {
       now: () => time
     },
     fire: () => run(60_000),
-    /// Fires only the timers due within `ms`.
     advance: (ms: number) => run(ms),
     count: () => pending.size
   }
@@ -123,7 +118,6 @@ describe("Browser live preview", () => {
     expect(watcher.statuses).toEqual([{ state: "inactive", title: "", url: "" }])
 
     await previews.activity("chat", chrome.runtime, "tab-1")
-    // Active, but nobody is watching frames yet: no screencast.
     expect(chrome.methods()).not.toContain("Page.startScreencast@cdp:tab-1")
     subscription.watch(4000)
     await previews.activity("chat", chrome.runtime, "tab-1")
@@ -185,7 +179,6 @@ describe("Browser live preview", () => {
       "Page.stopScreencast@cdp:tab-1:",
       "Page.startScreencast@cdp:tab-2:1000"
     ])
-    // A tab without a title is named by its address.
     expect(first.statuses.at(-1)).toMatchObject({ title: "", url: "https://other.test/" })
   })
 
@@ -220,8 +213,6 @@ describe("Browser live preview", () => {
     await previews.activity("chat", chrome.runtime, "tab-1")
     expect(casts()).toEqual(["Page.startScreencast@cdp:tab-1"])
 
-    // Inside tab-1's hold, the agent works tab-2, then tab-1, then tab-2:
-    // the preview stays put until the hold ends, then shows the latest.
     clock.advance(BROWSER_PREVIEW_SWITCH_HOLD_MS / 3)
     await previews.activity("chat", chrome.runtime, "tab-2")
     await previews.activity("chat", chrome.runtime, "tab-1")
@@ -236,11 +227,8 @@ describe("Browser live preview", () => {
     clock.advance(1)
     await Promise.all([castRequested.promise, titlePublished.promise])
     expect(casts()).toEqual(["Page.startScreencast@cdp:tab-1", "Page.startScreencast@cdp:tab-2"])
-    // The new tab's title arrives with it, not a refresh window later.
     expect(watcher.statuses.at(-1)).toMatchObject({ title: "", url: "https://other.test/" })
 
-    // Once a tab has had its hold, the next one shows at once; a move still
-    // pending when the turn ends is dropped with it.
     clock.advance(BROWSER_PREVIEW_SWITCH_HOLD_MS)
     await previews.activity("chat", chrome.runtime, "tab-1")
     await previews.activity("chat", chrome.runtime, "tab-2")
@@ -262,14 +250,12 @@ describe("Browser live preview", () => {
     subscription.watch(800)
     await previews.activity("chat", chrome.runtime, "tab-1")
     await previews.activity("chat", chrome.runtime, "tab-1")
-    // The idle timeout, and the title refresh the second call deferred.
     expect(clock.count()).toBe(2)
 
     clock.fire()
     await previews.finish("other")
     await previews.activity("chat", chrome.runtime, "tab-1")
     const states = watcher.statuses.map((status) => status.state)
-    // State transitions; the page title arriving is an update of its own.
     expect(states.filter((state, index) => state !== states[index - 1])).toEqual([
       "inactive",
       "active",
@@ -288,7 +274,6 @@ describe("Browser live preview", () => {
     expect(watcher.statuses.at(-1)?.state).toBe("stopped")
     subscription.close()
     await new Promise((resolve) => setImmediate(resolve))
-    // A new subscriber starts over: the closed session was forgotten.
     const fresh = viewer()
     previews.subscribe("chat", fresh.value)
     expect(fresh.statuses).toEqual([{ state: "inactive", title: "", url: "" }])
@@ -365,7 +350,6 @@ describe("Browser live preview", () => {
     chrome.frame("cdp:tab-blank", "jpeg-1")
     expect(watching.frames).toEqual(["jpeg-1"])
     expect(idle.frames).toEqual([])
-    // A tab with neither title nor address is shown untitled.
     expect(watching.statuses.at(-1)).toMatchObject({ state: "active", title: "", url: "" })
 
     const unattached = browser({ failAttach: true })
@@ -398,7 +382,6 @@ describe("Browser live preview", () => {
     expect(watcher.statuses.at(-1)).toMatchObject({ title: "", url: "" })
     changed(undefined)
 
-    // A new browser takes over the watch; the turn's end drops it.
     const replacement = browser({ failTargets: true })
     await previews.activity("chat", replacement.runtime, "tab-1")
     expect(chrome.handlers.has("undefined:Target.targetInfoChanged")).toBe(false)
@@ -419,14 +402,12 @@ describe("Browser live preview", () => {
     const lookups = () => chrome.methods().filter((method) => method === "Target.getTargets").length
     expect(lookups()).toBe(1)
 
-    // Frames inside the window share one deferred lookup at its end.
     chrome.frame("cdp:tab-1", "jpeg-1")
     chrome.frame("cdp:tab-1", "jpeg-2")
     expect(lookups()).toBe(1)
     clock.fire()
     expect(lookups()).toBe(2)
 
-    // A lookup deferred past the turn's end is dropped with it.
     chrome.frame("cdp:tab-1", "jpeg-3")
     await previews.finish("chat")
     clock.fire()

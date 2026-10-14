@@ -2,8 +2,6 @@ import ACPKit
 import Foundation
 import TranscriptKit
 
-/// Storage paging ends here. Native transcript views receive complete values
-/// and keep their original row identities, disclosure, and streaming behavior.
 actor ServerTranscriptContent {
   enum LoadError: Error { case changed(ToolDetailResource) }
 
@@ -24,8 +22,6 @@ actor ServerTranscriptContent {
     let transport = self.transport
     var blocks: [ServerTranscriptBodyPage]
     if let count = field.pageCount {
-      // Fetch a bounded number concurrently. A large document must not incur
-      // one sequential network round trip for every 8K storage block.
       blocks = try await withThrowingTaskGroup(of: ServerTranscriptBodyPage.self) { group in
         var next = 0
         func enqueue(_ position: Int) {
@@ -60,8 +56,6 @@ actor ServerTranscriptContent {
     try Task.checkCancellation()
     var text = blocks.map(\.text).joined()
     if field.name == "text", field.generation != nil {
-      // Appends may extend the last block while it is being fetched. Install
-      // exactly this snapshot's prefix; the journal delivers the suffix.
       let length = field.sizeBytes / 2
       guard text.utf16.count >= length else { throw LoadError.changed(resource) }
       text = (text as NSString).substring(to: length)
@@ -76,8 +70,6 @@ actor ServerTranscriptContent {
     do {
       return try await transport.transcriptBodyPage(resource: resource, field: field, position: position)
     } catch CodevisorServerClientError.httpStatus(404, _) {
-      // A replacement can shorten the body or move a tool field back inline.
-      // Reload its metadata; repeated failure of unchanged metadata is an error.
       throw LoadError.changed(resource)
     }
   }

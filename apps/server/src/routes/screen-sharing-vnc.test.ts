@@ -61,7 +61,6 @@ describe("VNC screen sharing configuration", () => {
   })
 })
 
-/// Greets like an RFB server, then echoes whatever it receives.
 const fakeVNC = async (): Promise<{ server: Server; port: number; connections: Socket[] }> => {
   const connections: Socket[] = []
   const server = createServer((socket) => {
@@ -177,7 +176,7 @@ describe("VNC screen sharing provider", () => {
         socket.terminate()
         await closing
       })
-      await nextMessage(socket) // the server's greeting
+      await nextMessage(socket)
       const echoed = nextMessage(socket)
       socket.send(handshake)
       expect(await echoed).toEqual(handshake)
@@ -193,7 +192,6 @@ describe("VNC screen sharing provider", () => {
     b.send(JSON.stringify({ type: "request", name: "Laptop" }))
     expect(JSON.parse((await revoked).toString())).toEqual({ type: "revoked", by: "Laptop" })
     expect(JSON.parse((await grantedB).toString())).toEqual({ type: "granted" })
-    // A's key is dropped; the update request after it passes, so it is the first thing echoed.
     const echoedA = nextMessage(a)
     a.send(key)
     a.send(request)
@@ -201,7 +199,6 @@ describe("VNC screen sharing provider", () => {
     const echoedB = nextMessage(b)
     b.send(key)
     expect(await echoedB).toEqual(key)
-    // The desktop's size follows the controller: B's resize passes, A's doesn't.
     const resize = Buffer.concat([Buffer.from([251, 0, 4, 0, 3, 0, 1, 0]), Buffer.alloc(16, 5)])
     const resizedB = nextMessage(b)
     b.send(resize)
@@ -210,7 +207,6 @@ describe("VNC screen sharing provider", () => {
     a.send(resize)
     a.send(request)
     expect(await afterResizeA).toEqual(request)
-    // Close both here, as the echo test does: the server's own teardown waits for open sockets.
     for (const socket of [a, b]) {
       const done = closed(socket)
       socket.close()

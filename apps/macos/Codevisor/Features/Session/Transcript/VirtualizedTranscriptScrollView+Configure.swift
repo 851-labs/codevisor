@@ -6,8 +6,6 @@ import StreamMarkdown
 import SwiftUI
 import TranscriptKit
 
-// MARK: - Configure
-
 extension VirtualizedTranscriptScrollView {
   func configure(_ input: TranscriptSurfaceInput, callbacks: TranscriptSurfaceCallbacks) {
     let traceStart = TranscriptPerformanceTrace.begin()
@@ -33,9 +31,6 @@ extension VirtualizedTranscriptScrollView {
     let newIsAwaitingFirstActiveProjection = input.isAwaitingFirstActiveProjection
     let newLayoutFingerprint = input.layoutFingerprint
     let newScrollCommand = input.scrollCommand
-    // Each SwiftUI owner starts its own command counter. Its first value is
-    // a baseline, not a new jump; later changes (including during projection
-    // loading) remain actionable when the rows are ready.
     if !hasReceivedScrollCommandForAttachment {
       scrollCommand = newScrollCommand
       hasReceivedScrollCommandForAttachment = true
@@ -62,9 +57,6 @@ extension VirtualizedTranscriptScrollView {
     self.onBottomStateChange = onBottomStateChange
     self.onFollowStateChange = onFollowStateChange
     self.onNearTop = onNearTop
-    // Pagination feedback describes the fetch, not row projection. Apply
-    // it even when the native document is waiting for projected rows so a
-    // completed request can never leave the indicator running.
     updatePaginationLoadingIndicator(
       isPresented: newShowsOlderHistoryLoadingIndicator
     )
@@ -99,9 +91,6 @@ extension VirtualizedTranscriptScrollView {
     sendTransitions.onStarted = callbacks.onSendAnimationStarted
     sendTransitions.onCompleted = callbacks.onSendAnimationCompleted
     sendTransitions.receive(newSendAnimationRequest, isForeground: true)
-    // Everything below can move rows. While a send is live, rows that
-    // move are carried from their previous on-screen position by the
-    // send's springs instead of jumping.
     let contentShift = sendTransitions.beginContentShift()
     defer { sendTransitions.commitContentShift(contentShift) }
 
@@ -118,8 +107,6 @@ extension VirtualizedTranscriptScrollView {
     surfaceController.observeStreamingPresentation(input)
 
     if layoutFingerprintChanged {
-      // A new width re-lays out every row; land any flight first. (A new
-      // surface's first configure also lands here, with nothing in flight.)
       sendTransitions.landFlights()
     }
 

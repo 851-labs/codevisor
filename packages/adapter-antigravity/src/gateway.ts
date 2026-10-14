@@ -6,20 +6,9 @@ import type { ToolGatewayConfig } from "@codevisor/agent-runtime"
 
 import { record } from "./protocol.js"
 
-/// Codevisor's tool gateway (its tools, skills and MCP servers) reaches agy
-/// as an MCP server. agy reads MCP servers only from its data root's
-/// `config/mcp_config.json` and has no per-chat option, but it starts stdio
-/// servers with its own environment: so the root's config names a small
-/// stdio bridge, and each chat's agy carries its own gateway address and
-/// token, which the bridge forwards to over HTTP. The token stays in the
-/// environment, never on disk.
-
 export const GATEWAY_URL_ENV = "CODEVISOR_MCP_GATEWAY_URL"
 export const GATEWAY_TOKEN_ENV = "CODEVISOR_MCP_GATEWAY_TOKEN"
 
-/// The bridge: MCP over stdio in, MCP's streamable HTTP out. Self-contained
-/// so any Node runs it from wherever it's written. Outside Codevisor (no
-/// gateway in its environment) it's a server with no tools.
 export const BRIDGE_SOURCE = String.raw`import { createInterface } from "node:readline"
 
 const url = process.env.${GATEWAY_URL_ENV}
@@ -65,7 +54,6 @@ const events = async (body) => {
   }
 }
 
-// The gateway's own stream: list changes (a new skill, say) arrive here.
 const listen = async () => {
   if (listening) return
   listening = true
@@ -142,7 +130,6 @@ const exists = (path: string) =>
     () => false
   )
 
-/// Writes `content` to `path` unless it's already there, atomically.
 const writeIfChanged = async (path: string, content: string, mode: number) => {
   const current = await readFile(path, "utf8").catch(() => undefined)
   if (current === content) return
@@ -166,9 +153,6 @@ const linkInto = async (from: string, to: string, skip: (name: string) => boolea
   }
 }
 
-/// The user's own agy runs on an overlay root: their data and config,
-/// linked, with Codevisor's MCP config in place of theirs. Their sign-in is
-/// in the Keychain, not the root, so it carries over.
 const prepareOverlay = async (overlay: string, own: string) => {
   await mkdir(join(own, "antigravity-cli"), { recursive: true })
   await linkInto(own, overlay, (name) => name === "config" || name.startsWith("."))
@@ -176,24 +160,15 @@ const prepareOverlay = async (overlay: string, own: string) => {
 }
 
 export interface GatewaySetup {
-  /// Arguments the chat's agy runs with (the overlay root, for the user's
-  /// own agy).
   readonly args: ReadonlyArray<string>
   readonly env: Record<string, string>
 }
 
-/// Readies a data root for Codevisor's gateway: the bridge beside it, and an
-/// MCP config of the user's own servers plus the bridge. Every chat on the
-/// root shares this config; its environment says which gateway it reaches.
 export const prepareGateway = async (options: {
   readonly gateway: ToolGatewayConfig
-  /// The account's own data root; absent for the user's own agy.
   readonly geminiDir: string | undefined
-  /// The user's home, whose `.gemini` holds their own agy config.
   readonly home: string
-  /// Where overlay roots live.
   readonly overlays: string
-  /// The Node that runs the bridge.
   readonly node: string
 }): Promise<GatewaySetup> => {
   const own = join(options.home, ".gemini")

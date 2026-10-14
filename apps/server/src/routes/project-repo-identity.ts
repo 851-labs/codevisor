@@ -7,19 +7,9 @@ import { gitRemoteUrl, isGitWorkTree } from "@codevisor/worktrees"
 
 import { appendAndPublish, run, swallowError, type EventFanout } from "../server-context.js"
 
-/// A project's git remote is the machine-independent half of its identity:
-/// two machines that each hold a checkout of the same remote are showing the
-/// user one project. The remote is observed from the folder rather than
-/// asked for, so projects added from a local directory, managed clones, and
-/// rows created by older releases (which never recorded one) all line up.
-///
-/// Discovery spawns git, so results are memoized per folder for a minute:
-/// the project list is fetched on every navigation refresh, and a remote
-/// changes about as often as a repository is re-cloned.
 const discoveryTtlMs = 60_000
 const discovered = new Map<string, { readonly url: string | undefined; readonly at: number }>()
 
-/// Test seam: forget memoized results so a folder re-probes immediately.
 export const resetRepoUrlDiscoveryCache = (): void => {
   discovered.clear()
 }
@@ -38,18 +28,6 @@ export const discoverRepoUrl = async (
   return url
 }
 
-/// Brings each project's stored `repoUrl` in line with the remote actually
-/// configured in its folder on this machine, persisting any difference.
-/// A folder that is missing, not a repository, or has no remote leaves the
-/// stored value alone (a clone-from-git project keeps the URL it was cloned
-/// from even while its checkout is temporarily unreadable). Scratch folders
-/// are skipped outright: they are never repositories, and probing each one
-/// on every list would be wasted spawns.
-///
-/// Every machine reconciles only its own rows, so a fleet whose servers
-/// update at different times converges without coordination: an old
-/// server simply reports no remote for its folder projects until it is
-/// upgraded, and clients treat those as unlinked in the meantime.
 export const reconcileProjectRepoUrls = async (
   db: CodevisorDatabaseService,
   serverId: string,
@@ -84,12 +62,10 @@ export const reconcileProjectRepoUrls = async (
       }
       return updated
     } catch {
-      /* v8 ignore next -- a row deleted between the list and the write; the stale copy is still fine to return. */
+      /* v8 ignore next */
       return project
     }
   }
-  // Repository observation never holds a navigation request or starts an
-  // unbounded wave of Git processes for a large project catalog.
   let next = 0
   const worker = async (): Promise<void> => {
     while (next < projects.length) {
@@ -101,9 +77,6 @@ export const reconcileProjectRepoUrls = async (
   return results
 }
 
-/// Startup backfill: projects recorded by releases that never observed a
-/// remote get one the first time this server boots, with `project.updated`
-/// events so already-connected clients regroup without a manual refresh.
 const refreshes = new WeakMap<CodevisorDatabaseService, Promise<void>>()
 export const backfillProjectRepoUrls = async (
   db: CodevisorDatabaseService,

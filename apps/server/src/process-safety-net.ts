@@ -1,17 +1,3 @@
-/// Last line of defence for the server process. It hosts every running agent,
-/// so Node's default — exit on any uncaught exception or unhandled rejection —
-/// turns one stray throw on one connection (a send on a closing socket, an
-/// 'error' event nobody listened for) into every chat on the machine stopping
-/// mid-turn. The bugs themselves are fixed where they occur; this keeps the
-/// next one from costing more than its own connection, and makes it visible
-/// in server.log instead of a silent restart.
-///
-/// Unhandled rejections are logged and otherwise ignored: the promise is
-/// already settled, nothing else is torn down. Uncaught exceptions are logged
-/// and survived too, but a burst of them means something is spinning in a
-/// broken state, so past a budget the process exits and the app restarts it.
-
-/// Uncaught exceptions tolerated inside one window before exiting.
 export const UNCAUGHT_EXCEPTION_BUDGET = 20
 export const UNCAUGHT_EXCEPTION_WINDOW_MS = 60_000
 

@@ -61,7 +61,6 @@ describe("Muse chat", () => {
       client
     )
     expect(attempts).toBe(2)
-    // A resumed session runs with full access like a new one.
     expect(client.sent("session/setApprovalMode")).toEqual([
       { commandId: expect.any(String), sessionId: SESSION, mode: "allowAll" }
     ])
@@ -72,10 +71,8 @@ describe("Muse chat", () => {
     })
     expect(chat.configOptions()).toEqual([])
     expect(chat.skills).toBeUndefined()
-    // Without skills a leading slash is plain text.
     await send(chat, client, "/plan")
     expect(client.sent("turn/start")[0]!.input).toEqual([{ type: "text", text: "/plan" }])
-    // A session that names no model runs Muse's active one.
     const unnamed = new FakeMuseClient()
     unnamed.replies["session/start"] = { session: session({ modelId: null }) }
     expect((await start({}, unnamed)).chat.configOptions()[0]!.currentValue).toBe("spark")
@@ -83,7 +80,6 @@ describe("Muse chat", () => {
     odd.replies["model/list"] = { models: "none" }
     expect((await start({}, odd)).chat.configOptions()).toEqual([])
 
-    // A host that can't switch modes still resumes.
     const fixed = new FakeMuseClient()
     fixed.replies["session/setApprovalMode"] = new Error("commandRejected")
     expect((await start({ resume: SESSION }, fixed)).chat.key).toBe(SESSION)
@@ -174,12 +170,10 @@ describe("Muse chat", () => {
     client.replies["turn/start"] = new Error("busy")
     await chat.prompt("go")
     expect(turns(events).at(-1)).toMatchObject({ stopDetail: "busy" })
-    // A queued turn reclaimed before launch ends without turn/completed.
     client.replies["turn/start"] = { status: "accepted" }
     const queued = await send(chat, client, "later")
     client.emit("turn/unqueued", { turnId: queued.turnId })
     await expect(queued.finished).resolves.toEqual({ stopReason: "end_turn" })
-    // Muse can start a turn of its own (a background task settling).
     client.emit("turn/completed", { turnId: "x", terminal: "completed" })
     client.emit("turn/started", { turnId: "bg-1" })
     client.emit("turn/started", { turnId: "bg-2" })
@@ -206,7 +200,6 @@ describe("Muse chat", () => {
     ])
     client.emit("turn/completed", { turnId, terminal: "completed" })
     await expect(finished).resolves.toEqual({ stopReason: "cancelled" })
-    // An agent turn whose id Muse never sent is interrupted as "the current turn".
     client.emit("turn/started", {})
     await chat.cancel()
     expect(client.sent("turn/interrupt").at(-1)).toEqual({
@@ -226,7 +219,6 @@ describe("Muse chat", () => {
       sessionId: SESSION,
       reasoningEffort: "high"
     })
-    // Lite has no "high": its default takes over.
     const options = await chat.setConfigOption("model", "lite")
     expect(client.sent("session/setModel")[0]).toMatchObject({
       model: { modelId: "lite", providerId: "meta", profileId: null }
@@ -259,7 +251,6 @@ describe("Muse chat", () => {
     client.emit("session/contextUsage", { usedTokens: 9 })
     client.emit("session/todoListChanged", { items: [{ text: "a", status: "pending" }] })
     client.emit("model/listChanged", {})
-    // Another session's events (a subagent's) are not this chat's.
     client.emit("session/nameChanged", { sessionId: "child", name: "Child" })
     const options = payloads(events.slice(at)).filter((payload) => "configOptions" in payload)
     expect(
@@ -281,7 +272,6 @@ describe("Muse chat", () => {
       { sessionUpdate: "plan", entries: [{ content: "a", priority: "medium", status: "pending" }] }
     ])
 
-    // A listing that fails publishes nothing; the next good one does.
     const skillUpdates = () =>
       payloads(events).filter((payload) => payload.sessionUpdate === "available_skills_update")
     client.replies["skill/list"] = new Error("gone")
@@ -333,7 +323,6 @@ describe("Muse chat", () => {
             }
           }
         ],
-        // Another page follows: read on from the last cursor.
         nextCursor: "v:child:1"
       }
     }
@@ -356,7 +345,6 @@ describe("Muse chat", () => {
       payload.parentToolCallId === "a1" ? ["child"] : payload.turnState === "ended" ? ["ended"] : []
     )
     expect(order).toEqual(["child", "child", "ended"])
-    // Its thread is keyed by this chat: subagent ids repeat across chats.
     expect(payloads(events).find((payload) => payload.toolCallId === "a1")?._meta).toEqual({
       codevisorSubagent: { taskId: `${SESSION}:subagent-1` }
     })
@@ -403,7 +391,6 @@ describe("Muse chat", () => {
   it("ends a running turn when a new prompt arrives or the chat closes", async () => {
     const { client, chat, events } = await start()
     const first = await send(chat, client, "first")
-    // Muse queues the second prompt; the first one's caller is released.
     const second = await send(chat, client, "second")
     await expect(first.finished).resolves.toEqual({ stopReason: "end_turn" })
     chat.close()
@@ -426,7 +413,6 @@ describe("Muse chat", () => {
       message: "muse exited: out of memory"
     })
     expect(turns(events).at(-1)).toMatchObject({ stopDetail: "muse exited: out of memory" })
-    // Stopping again, with no turn running, only reports the error.
     const ended = turns(events).length
     client.crash(new Error("again"))
     expect(turns(events)).toHaveLength(ended)

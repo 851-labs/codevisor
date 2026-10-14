@@ -12,7 +12,6 @@ import { jsonRequest, run, start, tempDirs, waitFor, listEvents } from "../test-
 const execFileAsync = promisify(execFile)
 const git = (args: ReadonlyArray<string>, cwd: string) => execFileAsync("git", [...args], { cwd })
 
-/// Points the server at a fresh worktrees root for the duration of `body`.
 const withWorktreesRoot = async <A>(body: (worktreesRoot: string) => Promise<A>): Promise<A> => {
   const worktreesRoot = mkdtempSync(join(tmpdir(), "codevisor-worktrees-"))
   tempDirs.push(worktreesRoot)
@@ -24,11 +23,8 @@ const withWorktreesRoot = async <A>(body: (worktreesRoot: string) => Promise<A>)
   }
 }
 
-/// A started server with one git-backed project (git-project) and one plain
-/// folder project (plain-project).
 const setUpGitProjects = async () => {
   const { agents, server, services } = await start()
-  // makeServices' temp dir (the newest entry) holds the server database.
   const serverDatabasePath = join(tempDirs[tempDirs.length - 1] as string, "codevisor.sqlite")
   const repoRoot = mkdtempSync(join(tmpdir(), "codevisor-repo-"))
   tempDirs.push(repoRoot)
@@ -77,7 +73,6 @@ describe("project worktree routes", () => {
   it("creates worktrees with setup events, readable names, and worktree sessions", async () => {
     await withWorktreesRoot(async (worktreesRoot) => {
       const { agents, repoFolder, server, services } = await setUpGitProjects()
-      // Worktree creation on a non-git project is refused.
       expect(
         (
           await jsonRequest(server, "/v1/projects/plain-project/worktrees", {
@@ -87,8 +82,6 @@ describe("project worktree routes", () => {
         ).status
       ).toBe(422)
 
-      // A client-supplied id keys the worktree row and its setup events so
-      // callers can follow progress while the create request is in flight.
       const worktreeResponse = await jsonRequest(server, "/v1/projects/git-project/worktrees", {
         body: JSON.stringify({
           id: "wt-fix-auth",
@@ -109,15 +102,11 @@ describe("project worktree routes", () => {
         projectId: "git-project",
         serverId: "server-a"
       })
-      // A custom name stays clean when it is available.
       expect(worktree.name).toBe("fix-auth")
       expect(worktree.branch).toBe(`codevisor/${worktree.name}`)
       expect(worktree.path).toBe(join(worktreesRoot, "git-project", worktree.name))
       expect(existsSync(join(worktree.path, ".git"))).toBe(true)
 
-      // Setup progress was streamed as ordered worktree.setup events: started,
-      // git output lines (git narrates "Preparing worktree ..." on stderr),
-      // then completed with the elapsed duration.
       const setupPayloads = listEvents(services)
         .filter((event) => event.kind === "worktree.setup" && event.subjectId === "wt-fix-auth")
         .map(
@@ -156,7 +145,6 @@ describe("project worktree routes", () => {
         (await jsonRequest(server, "/v1/sessions/session-awaiting-worktree/events")).status
       ).toBe(410)
 
-      // Repeated custom names get a readable sequence number.
       const secondWorktree = (
         await jsonRequest(server, "/v1/projects/git-project/worktrees", {
           body: JSON.stringify({ name: "fix auth" }),
@@ -173,7 +161,6 @@ describe("project worktree routes", () => {
       ).body as { readonly name: string; readonly branch: string }
       expect(thirdWorktree.name).toBe("fix-auth-3")
       expect(thirdWorktree.branch).toBe(`codevisor/${thirdWorktree.name}`)
-      // Missing names get a compact food word from the curated production pool.
       const randomNamed = (
         await jsonRequest(server, "/v1/projects/git-project/worktrees", {
           method: "POST"
@@ -186,9 +173,6 @@ describe("project worktree routes", () => {
           .length
       ).toBe(4)
 
-      // Git refs outlive archived database rows and are shared by isolated
-      // development servers. A stale branch is included in allocation, so
-      // the request transparently moves to the next readable name.
       await git(["branch", "codevisor/doomed"], repoFolder)
       const recovered = await jsonRequest(server, "/v1/projects/git-project/worktrees", {
         body: JSON.stringify({ id: "wt-doomed", name: "doomed" }),
@@ -211,7 +195,6 @@ describe("project worktree routes", () => {
           .length
       ).toBe(5)
 
-      // Sessions created with a worktree run the agent inside the worktree.
       const sessionResponse = await jsonRequest(server, "/v1/sessions", {
         body: JSON.stringify({
           projectId: "git-project",
@@ -238,7 +221,6 @@ describe("project worktree routes", () => {
         ])
       )
 
-      // Reattaching (prompt after restart) resolves the same worktree cwd.
       await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
         body: JSON.stringify({ text: "hello worktree" }),
         method: "POST"

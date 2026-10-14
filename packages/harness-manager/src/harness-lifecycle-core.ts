@@ -13,18 +13,12 @@ import type {
   HarnessUpdateCheckOutcome
 } from "./harness-lifecycle-types.js"
 
-/// Update-check bookkeeping shared by detection and the operations that
-/// verify their outcome against it.
 export interface HarnessCheckState {
-  /// Last persisted state per harness, hydrated from the db on first use so
-  /// clients see last-known knowledge before the first live check.
   states: Map<string, HarnessUpdateInfo> | undefined
   lastCheckAt: number
   inFlight: Promise<ReadonlyArray<HarnessUpdateCheckOutcome>> | undefined
 }
 
-/// Resolved settings, event fanout, persisted-state cache, live operation
-/// registry, and the login-shell env cache every lifecycle module shares.
 export const makeHarnessLifecycleCore = (config: HarnessLifecycleManagerConfig) => {
   const listeners = new Set<(event: HarnessLifecycleEvent) => void>()
   const fetchImpl = config.fetchImpl ?? (fetch as FetchLike)
@@ -50,22 +44,16 @@ export const makeHarnessLifecycleCore = (config: HarnessLifecycleManagerConfig) 
       for (const record of await run(config.db.listHarnessUpdateStates)) {
         loaded.set(record.harnessId, record.info)
       }
-    } catch {
-      // A fresh database simply starts empty.
-    }
+    } catch {}
     checkState.states = loaded
     return loaded
   }
 
-  /// Live operation (installing/updating) or terminal failure per harness.
-  /// Success clears the entry (idle). In-memory on purpose: an interrupted
-  /// operation dies with the process and readiness re-probes the truth.
   const operations = new Map<string, HarnessLifecycleState>()
   const busyCounts = new Map<string, number>()
   const uninstallRequests = new Set<string>()
   const gateListeners = new Set<(harnessId: string) => void>()
   const startingOperations = new Set<string>()
-  /// Harnesses whose setup is being checked or finished; prompts hold.
   const settingUp = new Set<string>()
 
   const setOperation = (harnessId: string, state: HarnessLifecycleState | undefined): void => {
@@ -90,10 +78,6 @@ export const makeHarnessLifecycleCore = (config: HarnessLifecycleManagerConfig) 
   }
 
   const resolveEnvUncached = config.resolveEnv ?? (() => Promise.resolve(process.env))
-  /// resolveShellEnv spawns a login shell — expensive. One shared resolution
-  /// serves every install-method lookup for a minute; concurrent callers
-  /// share the in-flight promise. Invalidated after installs/updates so the
-  /// next lookup sees freshly installed package managers.
   let envCache: { readonly at: number; readonly promise: Promise<NodeJS.ProcessEnv> } | undefined
   const resolveEnv = (): Promise<NodeJS.ProcessEnv> => {
     if (envCache === undefined || now() - envCache.at > 60_000) {
@@ -108,8 +92,6 @@ export const makeHarnessLifecycleCore = (config: HarnessLifecycleManagerConfig) 
     envCache = undefined
   }
 
-  /// Sees the harness's pending setup through, holding its prompts until
-  /// it ends either way. `onPending` runs once setup turns out to be needed.
   const finishSetup = async (harnessId: string, onPending?: () => void): Promise<void> => {
     const setup = config.harnessSetup?.[harnessId]
     if (setup === undefined) return

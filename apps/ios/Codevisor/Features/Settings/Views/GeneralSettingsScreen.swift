@@ -5,12 +5,8 @@ import CodevisorUI
 import SwiftUI
 import os
 
-// MARK: - Privacy & Data
-
 struct GeneralSettingsScreen: View {
   @Environment(AppEnvironment.self) private var environment
-  /// Closes the ENTIRE settings sheet (not just this pushed screen) once a
-  /// delete is confirmed — the app is back at first launch underneath.
   let dismissSettings: () -> Void
   @State private var isConfirmingDelete = false
   @State private var isConfirmingWithdrawal = false

@@ -1,6 +1,5 @@
 import Foundation
 
-/// A partial update to an in-flight tool call. All fields except the id are optional.
 public struct ToolCallUpdate: Sendable, Codable, Equatable {
   public var toolCallId: String
   public var title: String?
@@ -77,7 +76,6 @@ public struct ToolCallUpdate: Sendable, Codable, Equatable {
     )
   }
 
-  /// Builds a `ToolCall` from an update, supplying defaults for required fields.
   public func asToolCall() -> ToolCall {
     ToolCall(
       toolCallId: toolCallId,

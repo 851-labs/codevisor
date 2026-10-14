@@ -1,7 +1,5 @@
 import Foundation
 
-/// Why normal server-backed UI is temporarily waiting. The reason is kept in
-/// shared core so macOS and iOS render the same lifecycle vocabulary.
 public enum ServerWaitingReason: Equatable, Sendable {
   case starting
   case connecting
@@ -9,9 +7,6 @@ public enum ServerWaitingReason: Equatable, Sendable {
   case restarting
 }
 
-/// The selected machine's ability to serve ordinary application requests.
-/// Health/status, startup, shutdown, and update requests use an ungated
-/// lifecycle path and drive this state.
 public enum ServerAvailability: Equatable, Sendable {
   case waiting(ServerWaitingReason)
   case ready
@@ -28,11 +23,6 @@ public struct ServerRequestGateError: Error, LocalizedError, Sendable {
   public var errorDescription: String? { message }
 }
 
-/// A synchronous-state, asynchronous-wait gate shared by every concrete
-/// client for a machine. Requests that have not yet been dispatched wait here
-/// while a known startup/restart is in progress. This deliberately does not
-/// retry a request after URLSession has dispatched it: mutation outcomes can
-/// be ambiguous after a connection loss.
 public final class ServerRequestGate: @unchecked Sendable {
   private enum State {
     case ready
@@ -129,8 +119,6 @@ private extension Clock where Duration == Swift.Duration {
         try await gate.waitUntilReady(for: machineId)
       }
       group.addTask {
-        // Keep the deadline typed across the child task, as CommandRunner does.
-        // Captured async sleep closures can corrupt Swift's task allocator.
         try await sleep(until: deadline, tolerance: nil)
         throw ServerRequestGateError(
           message: "Timed out waiting for the server to become ready."

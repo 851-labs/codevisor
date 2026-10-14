@@ -6,7 +6,6 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 
 import { evaluate, type BrowserRuntime, type PageHandle } from "./browser-cdp-engine.js"
 
-/** Export only the selected page. Binary content follows the existing attachment pipeline. */
 export const exportBrowserContent = async (
   runtime: BrowserRuntime,
   page: PageHandle,

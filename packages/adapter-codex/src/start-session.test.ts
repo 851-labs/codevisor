@@ -87,10 +87,6 @@ describe("CodexProvider", () => {
   })
 
   it("omits native automation disables when the codex config does not define those servers", async () => {
-    // A machine without the Codex desktop app (typical headless remote) has
-    // no native automation entries in config.toml. Sending bare
-    // `{ enabled: false }` stubs there creates transport-less servers that
-    // the app-server rejects at config load with "invalid transport".
     const toolGateway: ToolGatewayConfig = {
       name: "codevisor",
       url: "http://127.0.0.1:49361/mcp/gateway?gateway=test",

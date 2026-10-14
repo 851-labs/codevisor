@@ -16,11 +16,6 @@ import {
 } from "./harness-auth-support.js"
 import { MUSE_HARNESS_ID } from "./muse-auth.js"
 
-/// Sign-in status probes per harness family: Codex over its app-server
-/// protocol, Claude via `auth status --json`, Cursor via
-/// `status --format json`, everything else through the runtime's ACP
-/// authentication inspection. A harness only needs a branch here when its
-/// CLI can report an identity; the generic path reports state alone.
 export const makeHarnessAuthProbes = (core: HarnessAuthCore, grok: GrokAuth) => {
   const {
     accountCommand,
@@ -148,10 +143,6 @@ export const makeHarnessAuthProbes = (core: HarnessAuthCore, grok: GrokAuth) => 
     }
   }
 
-  /// Cursor ships `status --format json`, so its account can carry the same
-  /// real identity and sign-out affordance as Codex and Claude rather than
-  /// falling back to the generic ACP inspection, which reports no identity
-  /// at all and leaves the placeholder label in place.
   const probeCursor = async (account: HarnessAccountRecord): Promise<HarnessAccount> => {
     const command = await executable("cursor")
     const execution = await accountCommand(account)
@@ -184,8 +175,6 @@ export const makeHarnessAuthProbes = (core: HarnessAuthCore, grok: GrokAuth) => 
         detail: null
       })
     } catch (cause) {
-      // A non-zero exit is how the CLI reports "signed out" as well as real
-      // failures, so read the payload before assuming the worse of the two.
       const error = cause as { stdout?: string; stderr?: string; code?: number | string }
       const status = parseCursorAuthStatus(error.stdout)
       const signedOut =
@@ -228,17 +217,14 @@ export const makeHarnessAuthProbes = (core: HarnessAuthCore, grok: GrokAuth) => 
     return persistProbe(account, {
       authState: inspection.state,
       authMethod: null,
-      // Who is signed in, or back to the placeholder once nobody is.
       ...(inspection.label !== undefined
         ? { label: inspection.label }
         : account.harnessId === MUSE_HARNESS_ID && inspection.state !== "authenticated"
           ? { label: "Existing Muse Code account" }
           : {}),
-      // Muse's sign-in runs through Codevisor (muse-auth.ts), not the agent.
       canLogin:
         methods.length > 0 ||
         account.harnessId === MUSE_HARNESS_ID ||
-        // Codevisor signs in the accounts it manages (antigravity-auth.ts).
         (account.harnessId === "antigravity" && account.profileKind === "managed"),
       canLogout: inspection.canLogout,
       detail: inspection.detail ?? null

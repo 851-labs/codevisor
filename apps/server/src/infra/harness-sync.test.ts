@@ -64,12 +64,9 @@ describe("harness sync", () => {
         installed: true,
         authenticated: true
       },
-      // Installed but never signed in: not something the user set up.
       { id: "cursor", enabled: true, installed: true, authenticated: false },
-      // Installed and signed in but switched off locally.
       { id: "amp", enabled: false, installed: true, authenticated: true },
       { id: "codex", enabled: true, installed: false, authenticated: true },
-      // No display identity reported: the row still lands; clients name it.
       { id: "goose", enabled: true, installed: true, authenticated: true }
     ]
 
@@ -94,7 +91,6 @@ describe("harness sync", () => {
     })
     expect(entries.map((entry) => entry.key).toSorted()).toEqual(["claude", "goose"])
 
-    // Promotion happens once; the row is now authored.
     expect((await reconcileHarnesses(world.deps)).status).toEqual({
       published: [],
       applied: [],
@@ -125,7 +121,6 @@ describe("harness sync", () => {
     const result = await reconcileHarnesses(world.deps)
     expect(result.status.published).toEqual([])
     expect(result.changedEntries).toEqual([])
-    // The catalog wins over the machine's own state.
     expect(world.calls.enabled).toEqual([
       ["claude", false],
       ["codex", false]
@@ -141,21 +136,17 @@ describe("harness sync", () => {
         { key: "codex", value: { enabled: true, installed: true }, timestamp: at(11) }
       ])
     )
-    // A fresh machine: everything default-enabled, nothing installed.
     world.state.harnesses = [
       { id: "claude", enabled: true, installed: false, authenticated: true },
       { id: "codex", enabled: true, installed: false, authenticated: true }
     ]
 
-    // Pass 1: shared settings apply without publishing local discoveries.
     const first = await reconcileHarnesses(world.deps)
     expect(first.status.published).toEqual([])
     expect(world.calls.enabled).toEqual([["claude", false]])
     expect([...first.status.installing].toSorted()).toEqual(["claude", "codex"])
     expect(first.status.applied).toEqual(["claude"])
 
-    // Pass 2: installs still running — refusals surface as blocked (Error
-    // and non-Error shapes both), and nothing is recorded yet.
     world.state.installFailures = {
       claude: new Error("install already running"),
       codex: "no runnable method"
@@ -167,7 +158,6 @@ describe("harness sync", () => {
       "no runnable method"
     ])
 
-    // Pass 3: installed binaries satisfy the desired state.
     world.state.installFailures = {}
     world.state.harnesses = world.state.harnesses.map((harness) => ({
       ...harness,
@@ -200,8 +190,6 @@ describe("harness sync", () => {
   })
 
   it("follows the catalog even when a stale machine-local override row is present", async () => {
-    // Rows left behind by the retired override layer (an old uninstall on
-    // this machine) must not shadow a catalog that later re-enabled the harness.
     const world = await makeWorld("server-local")
     world.state.harnesses = [{ id: "grok", enabled: false, installed: true, authenticated: true }]
     await run(
@@ -280,18 +268,13 @@ describe("harness sync", () => {
     ]
     await run(
       world.deps.db.mergeSyncEntries(HARNESSES_SYNC_NAMESPACE, [
-        // Malformed catalog values cannot authorize changes.
         { key: "codex", value: "junk", timestamp: at(future) },
         { key: "half", value: { enabled: true }, timestamp: at(10) },
         { key: "bad-enabled", value: { enabled: "yes", installed: true }, timestamp: at(10) },
         { key: "nothing", value: null, timestamp: at(10) },
-        // A harness this machine has never heard of: valid, but skipped.
         { key: "unknown-harness", value: { enabled: true, installed: true }, timestamp: at(10) },
-        // Tombstones stop managing installed local harnesses.
         { key: "ghost", value: null, deleted: true, timestamp: at(10) },
-        // Future timestamps never resurrect deleted settings.
         { key: "zombie", value: null, deleted: true, timestamp: at(future) },
-        // A tombstone for a harness this machine does not even have.
         { key: "departed", value: null, deleted: true, timestamp: at(10) }
       ])
     )

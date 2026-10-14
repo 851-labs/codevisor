@@ -36,10 +36,6 @@ extension VirtualizedTranscriptScrollView {
   }
 
   func position(host: TranscriptMountedRowHost, frame: CGRect) {
-    // Height commits move every later row but do not change those rows'
-    // content geometry. Assigning the complete frame for a y-only move
-    // needlessly invalidates AppKit/SwiftUI layout; update size and origin
-    // independently so already-laid-out hosts remain clean.
     if host.frame.size != frame.size {
       host.setFrameSize(frame.size)
     }

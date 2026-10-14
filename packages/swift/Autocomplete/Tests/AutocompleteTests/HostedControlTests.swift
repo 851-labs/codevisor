@@ -187,7 +187,6 @@
       host.layoutSubtreeIfNeeded()
       let field = try #require(self.field(in: host))
       let container = try #require(field.superview as? Autocomplete.InputCapsuleView)
-      // Hold attachment until the pane is no longer the destination.
       _ = try #require(container.requestFocus)
       isCurrent = false
       let window = FocusTestWindow(

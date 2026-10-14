@@ -27,7 +27,6 @@ function truncateReleaseNotesContent(content, budget) {
   const truncated = content.length > budget
   let body = content.slice(0, truncated ? budget - 1 : budget)
   if (truncated) {
-    // Avoid cutting a surrogate pair or a partly displayed changelog entry.
     const lineEnd = body.lastIndexOf("\n")
     body = lineEnd > 0 ? body.slice(0, lineEnd) : body.replace(/[\uD800-\uDBFF]$/, "")
     body += "…"
@@ -124,8 +123,6 @@ async function ensureSubmission(client, buildId, existing) {
     return data
   } catch (error) {
     if (!(error instanceof AppStoreConnectError) || error.status !== 409) throw error
-    // A previous attempt or another reviewer may have submitted the same build.
-    // Do not retry unrelated conflicts such as Apple's review submission limit.
     const submitted = await submissionForBuild(client, buildId)
     if (
       !reviewPending.has(submitted?.attributes.betaReviewState) &&
@@ -158,7 +155,6 @@ export async function promoteTestFlightBuild(
   requireReviewable(build, existingSubmission)
   if (groups.data.length > 1) throw new Error(`Multiple TestFlight groups are named ${groupName}.`)
   let group = groups.data[0]
-  // Keep the existing group's identity when adopting the shorter default name.
   if (!group && groupName === "Beta") {
     const previous = await client("betaGroups", {
       query: { "filter[app]": configuration.appId, "filter[name]": "Public Beta" }
@@ -216,7 +212,6 @@ export async function promoteTestFlightBuild(
     group = data
   }
   await assignBuildToGroup(client, build, group, assignmentOptions)
-  // Group assignment may have started testing or advanced Apple's review state.
   const current = await findBuild(client, configuration)
   let submission = await submissionForBuild(client, build.id)
   const state = requireReviewable(current, submission)

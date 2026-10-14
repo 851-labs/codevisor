@@ -31,8 +31,6 @@ struct WorkspaceNavigationTests {
 
     workspace.selectDestination(.tab(destination.id))
 
-    // These reads are the first render's inputs. No controller, task,
-    // transcript, or mounted container is needed to resolve them.
     #expect(workspace.selectedCenterTabId == destination.id)
     #expect(workspace.centerTree == destination.root)
     let selected = try #require(workspace.selectedCenterTab)
@@ -59,7 +57,6 @@ struct WorkspaceNavigationTests {
     #expect(workspace.selectedCenterTab?.activeLeafId == browser.activeLeafId)
     #expect(workspace.selectedPane(inLeaf: browser.activeLeafId)?.kind == .browser)
 
-    // Returning through the tab preserves its selected split.
     workspace.selectDestination(.tab(workspace.centerTabs[0].id))
     workspace.selectDestination(.tab(split.id))
     #expect(workspace.selectedCenterTab?.activeLeafId == browser.activeLeafId)

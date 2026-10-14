@@ -3,28 +3,11 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// Settings › Updates — the one place updates live. Software Update's
-/// shape: a summary with the fleet-wide actions on top (the channel
-/// preference lives in Settings › Developer), then one section per machine listing what that machine can
-/// update (its Codevisor, then its harnesses and plugins).
-///
-/// The pane shows what the last sweep found — the same list behind the
-/// sidebar's update count — the moment it opens; opening it checks nothing.
-/// A sweep landing while it is open (the periodic one, or "Check Again")
-/// spins inside the button and updates rows in place, never hiding them.
-/// Only before the first sweep ever finishes is there nothing to show.
-///
-/// Every row keeps the same two-line geometry in every state — available,
-/// updating, failed — so a live update never reflows the pane, and failure
-/// output opens in a popover instead of expanding inline. Both are the
-/// difference between this and the layout that used to blank the window.
 struct UpdateCenterView: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.theme) private var theme
-  /// The component whose failure details popover is open.
   @State private var failureDetailsId: String?
 
-  /// A major-version update awaiting confirmation.
   @State private var majorUpdate: UpdateComponent?
 
   private var center: UpdateCenter { environment.updateCenter }
@@ -37,11 +20,8 @@ struct UpdateCenterView: View {
     }
   }
 
-  /// A sweep has finished at least once, so there is a list to show.
   private var hasLoaded: Bool { center.lastRefreshedAt != nil }
 
-  /// A sweep or an explicit check is running. Shown in the "Check Again"
-  /// button only; the list stays on screen.
   private var isChecking: Bool {
     center.isRefreshing || center.isCheckingForUpdates
   }
@@ -62,13 +42,9 @@ struct UpdateCenterView: View {
     }
     .animation(.default, value: center.components.map(\.id))
     .task {
-      // Opened before the launch sweep finished: join it (or start one)
-      // so there is something to show. Otherwise the last sweep stands.
       if !hasLoaded { await center.refresh() }
     }
   }
-
-  // MARK: - Summary
 
   private var summarySection: some View {
     Section {
@@ -81,15 +57,12 @@ struct UpdateCenterView: View {
             .foregroundStyle(.secondary)
         }
         Spacer(minLength: 12)
-        // Activity lives inside the button that started it, at the button's
-        // resting width, so a check or an update never shifts the row.
         Button {
           Task { await center.refresh(force: true) }
         } label: {
           BusyButtonLabel(title: "Check Again", isBusy: isChecking)
         }
         .settingsActionTint(theme)
-        // Nothing re-checks while an update runs, so the list stays put.
         .disabled(isChecking || center.hasUpdateInFlight)
         if hasLoaded, center.availableCount > 0 {
           Button {
@@ -128,9 +101,6 @@ struct UpdateCenterView: View {
     return "Last checked \(refreshed.formatted(date: .omitted, time: .shortened))"
   }
 
-  // MARK: - Machines
-
-  /// Codevisor leads the machine's updates, followed by harnesses and plugins.
   private func machineSection(_ group: UpdateMachineGroup) -> some View {
     Section {
       if let codevisor = group.codevisor,
@@ -170,9 +140,6 @@ struct UpdateCenterView: View {
     .padding(.vertical, 2)
   }
 
-  /// Versions are never truncated. A pending update reads "installed →
-  /// latest" on one line when it fits and otherwise breaks at the arrow, one
-  /// version per line. In-flight and failure status stays on one line.
   @ViewBuilder
   private func detail(for component: UpdateComponent) -> some View {
     if let change = component.pendingVersionChange {
@@ -257,8 +224,6 @@ struct UpdateCenterView: View {
   }
 }
 
-/// A button label that swaps its title for a spinner while its action runs,
-/// keeping the title's width so the control never resizes.
 private struct BusyButtonLabel: View {
   let title: String
   let isBusy: Bool
@@ -276,8 +241,6 @@ private struct BusyButtonLabel: View {
   }
 }
 
-/// The full output of a failed update, in a popover: selectable, copyable,
-/// and bounded — so a long updater log never dictates the row's height.
 private struct UpdateFailureDetails: View {
   let component: UpdateComponent
   let message: String

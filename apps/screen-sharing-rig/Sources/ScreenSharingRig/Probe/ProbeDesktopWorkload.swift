@@ -3,8 +3,6 @@ import ScreenSharing
 import ScreenSharingDiagnostics
 import QuartzCore
 
-/// A common desktop target for external viewers. Counters describe AppKit draw
-/// calls and received events, never claimed source/display presentation times.
 @MainActor
 enum ProbeDesktopWorkload {
   static func run(options: ProbeOptions) async throws {

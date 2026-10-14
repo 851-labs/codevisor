@@ -1,15 +1,5 @@
 import Foundation
 
-/// Host capture activity, shared by the capture queue (submissions),
-/// VideoToolbox's output queue (encoded output) and the main actor
-/// (evaluation). Trailing packet loss before an idle desktop is invisible to
-/// RTP sequence feedback, so the host announces idle once with the identity
-/// of its newest encoded content. Content that was submitted but never
-/// encoded (admission, a WebRTC bandwidth pause, or an adaptation drop) is
-/// re-offered: four times at the idle threshold, then at a slow bounded
-/// rate until it is encoded, a newer capture arrives or the peer closes.
-/// Older content is never announced as current. There is no periodic
-/// re-encode: a re-offer costs an encode only when WebRTC accepts it.
 package final class ScreenSharingSourceIdleMonitor: @unchecked Sendable {
   package enum Evaluation: Equatable, Sendable {
     case inactive
@@ -18,9 +8,6 @@ package final class ScreenSharingSourceIdleMonitor: @unchecked Sendable {
     case idle(latestEncodedNs: Int64)
   }
 
-  /// Product default, promoted after the brief-loss measurements: 100 ms of
-  /// capture silence announces idle. Diagnostics can still pass another
-  /// threshold, such as the former 500 ms, explicitly.
   package static let defaultThresholdNs: Int64 = 100_000_000
   package static let maximumQuickResubmissions = 4
   package static let slowResubmissionIntervalNs: Int64 = 2_000_000_000
@@ -40,18 +27,13 @@ package final class ScreenSharingSourceIdleMonitor: @unchecked Sendable {
   ) {
     precondition(thresholdNs > 0 && slowIntervalNs > 0)
     self.thresholdNs = thresholdNs
-    // The slow phase never re-offers faster than the quick phase.
     self.slowIntervalNs = max(slowIntervalNs, thresholdNs)
   }
 
   package var slowResubmissionIntervalNs: Int64 { slowIntervalNs }
 
-  /// Re-offers since the latest capture; at least the quick maximum means the
-  /// host is in its slow recovery phase.
   package var resubmissionCount: Int { lock.withLock { resubmissions } }
 
-  /// Returns true only on the idle-to-active transition, which schedules one
-  /// evaluation loop. Later submissions during activity cost a lock only.
   package func recordSubmission(timestampNs: Int64, nowNs: Int64) -> Bool {
     lock.withLock {
       guard !stopped else { return false }
@@ -64,7 +46,6 @@ package final class ScreenSharingSourceIdleMonitor: @unchecked Sendable {
     }
   }
 
-  /// Output delivered to WebRTC; discarded or failed output is never recorded.
   package func recordEncoded(timestampNs: Int64) {
     lock.withLock {
       if let lastEncodedNs, timestampNs <= lastEncodedNs { return }
@@ -101,9 +82,6 @@ package final class ScreenSharingSourceIdleMonitor: @unchecked Sendable {
   }
 }
 
-/// Runs only while capture is active: one wake per threshold and none while
-/// idle. The capture queue activates it once per activity period. A notice
-/// that cannot be sent yet is retained (newest wins) until the channel opens.
 @MainActor
 package final class ScreenSharingSourceIdleNotifier {
   private let monitor: ScreenSharingSourceIdleMonitor
@@ -133,7 +111,6 @@ package final class ScreenSharingSourceIdleNotifier {
     task = Task { @MainActor [weak self] in await self?.run() }
   }
 
-  /// Retry a retained notice, e.g. when the channel becomes available.
   package func flush() {
     guard !closed, let pendingNotice, notify(pendingNotice) else { return }
     self.pendingNotice = nil
@@ -168,8 +145,6 @@ package final class ScreenSharingSourceIdleNotifier {
   }
 }
 
-/// Handles of a peer's cancelled owned tasks, retained until they complete so
-/// that every waiter — concurrent or repeated — joins the same completions.
 @MainActor
 package final class ScreenSharingOwnedWork {
   package init() {}
@@ -180,8 +155,6 @@ package final class ScreenSharingOwnedWork {
     handles = tasks
   }
 
-  /// Awaits every retained handle. Returns the number awaited, or nil when the
-  /// work was never closed (the call then returns immediately).
   package func join() async -> Int? {
     guard let handles else { return nil }
     for task in handles { await task.value }
@@ -189,9 +162,6 @@ package final class ScreenSharingOwnedWork {
   }
 }
 
-/// Viewer record of the newest decoded content identity and the host's
-/// announced target. The target survives recovery: a delayed older keyframe
-/// can complete the keyframe request without delivering the announced content.
 package final class ScreenSharingDeliveryAudit: @unchecked Sendable {
   package init() {}
   private let lock = NSLock()
@@ -199,15 +169,11 @@ package final class ScreenSharingDeliveryAudit: @unchecked Sendable {
   private var targetNs: Int64?
   private var recovering = false
   private var targetMetAtNs: Int64?
-  /// Bounded recent decode times so a target that arrived before its notice
-  /// still has a first-decode time (diagnostic only; one second at 60 fps).
   private var recentDecodes: [(identity: Int64, atNs: Int64)] = []
   package static let recentDecodeCapacity = 64
 
   package var latestDecodedTimestampNs: Int64? { lock.withLock { latestDecodedNs } }
   package var pendingTargetNs: Int64? { lock.withLock { targetNs } }
-  /// Viewer clock at which the decoder first delivered the announced target
-  /// (or newer content), whether before the notice, during grace or after recovery.
   package var targetMetAtTimestampNs: Int64? { lock.withLock { targetMetAtNs } }
 
   package func decoded(sourceTimestampNs: Int64, nowNs: Int64 = ScreenSharingMetrics.nowNs) {
@@ -220,7 +186,6 @@ package final class ScreenSharingDeliveryAudit: @unchecked Sendable {
     }
   }
 
-  /// True when the announced content (or newer) has already been decoded.
   package func noticed(latestTimestampNs: Int64) -> Bool {
     lock.withLock {
       recovering = false
@@ -235,8 +200,6 @@ package final class ScreenSharingDeliveryAudit: @unchecked Sendable {
     }
   }
 
-  /// True when the target is still unmet after the grace period; recovery
-  /// then starts and the target remains until it is met or abandoned.
   package func verify() -> Bool {
     lock.withLock {
       guard let targetNs, !recovering else { return false }
@@ -249,8 +212,6 @@ package final class ScreenSharingDeliveryAudit: @unchecked Sendable {
     }
   }
 
-  /// After a keyframe completed recovery: nil when nothing was awaited, false
-  /// when the target is now met (and cleared), true when it is still missing.
   package func recoveryFinished() -> Bool? {
     lock.withLock {
       guard let targetNs, recovering else { return nil }
@@ -263,8 +224,6 @@ package final class ScreenSharingDeliveryAudit: @unchecked Sendable {
     }
   }
 
-  /// Before a retry: true while the target is still missing; a target met
-  /// meanwhile (for example by a delta frame) is cleared instead.
   package func targetMissing() -> Bool {
     lock.withLock {
       guard let targetNs else { return false }
@@ -278,16 +237,6 @@ package final class ScreenSharingDeliveryAudit: @unchecked Sendable {
   }
 }
 
-/// Waits one grace period for frames still in the jitter buffer, then asks
-/// for a keyframe only if the announced content never arrived. Optionally
-/// (diagnostic experiment; the product default allows no extension) the wait
-/// extends by further grace windows while strictly newer content keeps
-/// arriving, up to a fixed cap, and recovery is requested once progress
-/// stalls; duplicated or older frames never extend it. When recovery
-/// completes without that content (a delayed older keyframe), it asks again
-/// after an exponentially growing, capped delay, until the content arrives
-/// or the peer closes; stale content is never silently accepted. A newer
-/// notice replaces pending work; no timer runs otherwise.
 @MainActor
 package final class ScreenSharingDeliveryVerifier {
   package enum Outcome: Equatable, Sendable {
@@ -297,15 +246,9 @@ package final class ScreenSharingDeliveryVerifier {
     case refresh
     case recovered
     case retry
-    /// A scheduled retry ran and found the target still missing; a refresh follows.
     case retryExecuted
   }
 
-  /// Product defaults, promoted after the brief-loss measurements: a 100 ms
-  /// grace extended up to four more windows while newer content keeps
-  /// arriving (at most 500 ms after the notice). Diagnostics can still pass
-  /// another grace, such as the former fixed 500 ms with no extension,
-  /// explicitly.
   package static let defaultGrace: Duration = .milliseconds(100)
   package static let defaultGraceExtensions = 4
   package static let maximumGraceExtensions = 10
@@ -319,14 +262,11 @@ package final class ScreenSharingDeliveryVerifier {
   private let sleep: @Sendable (Duration) async throws -> Void
   private var task: Task<Void, Never>?
   private var retryTask: Task<Void, Never>?
-  /// The grace window in progress, if any. It completes right after reporting
-  /// its outcome, so awaiting it observes the verdict.
   package var pendingGrace: Task<Void, Never>? { task }
   private var revision: UInt64 = 0
   private var retries = 0
   private var closed = false
 
-  /// Delay before retry number `retry` (1-based): 100 ms doubling to 5 s.
   nonisolated static func retryDelay(_ retry: Int) -> Duration {
     .milliseconds(min(initialRetryDelayMs << min(max(retry - 1, 0), 10), maximumRetryDelayMs))
   }
@@ -364,8 +304,6 @@ package final class ScreenSharingDeliveryVerifier {
         do { try await sleep(grace) } catch { return }
         guard let self, !Task.isCancelled, !self.closed else { return }
         let latest = self.audit.latestDecodedTimestampNs
-        // Strictly newer content still short of the target is progress; the
-        // audit ignores duplicates and older frames, so `latest` only advances.
         guard extended < extensions, let latest, latest < target, latest != mark else { break }
         mark = latest
         extended += 1
@@ -382,7 +320,6 @@ package final class ScreenSharingDeliveryVerifier {
     }
   }
 
-  /// Keyframe recovery state from the decoder signal, in revision order.
   package func recoveryChanged(_ event: ScreenSharingRefreshSignal.Event) {
     guard !closed, event.revision > revision else { return }
     revision = event.revision

@@ -41,7 +41,6 @@ const rawUpgradeStatus = (url: string, path: string): Promise<string> =>
     })
   })
 
-/// Seeds a project and a workspace so tests can attach pane records to it.
 const seedWorkspaces = async (
   server: Awaited<ReturnType<typeof startWithApp>>,
   workspaceIds: ReadonlyArray<string>
@@ -120,8 +119,6 @@ describe("plugin registry route", () => {
     const { services } = await makeServices("server-a")
     const server = await startWithApp({ ...services, plugins: pluginsStub([]) })
     runningServers.push(server)
-    // Registry availability is independent of the runtime manager: its 501
-    // fires before the manager's :pluginId matching could turn this into 404.
     expect((await jsonRequest(server, "/v1/plugins/registry")).status).toBe(501)
   })
 
@@ -172,7 +169,6 @@ describe("plugin routes", () => {
     const server = await startWithApp(services)
     runningServers.push(server)
     expect((await jsonRequest(server, "/v1/plugins")).status).toBe(501)
-    // Proxy-shaped paths fall through the pre-auth branch and 501 too.
     expect((await jsonRequest(server, "/v1/plugins/owner.example/app/panes/main/")).status).toBe(
       501
     )
@@ -211,8 +207,6 @@ describe("plugin routes", () => {
     expect(token.status).toBe(201)
     const issued = token.body as { token: string; path: string; url: string }
     expect(issued.token).toBe("tok")
-    // The route enriches the manager's server-relative path with an absolute
-    // URL against the origin the caller reached (Host header).
     expect(issued.url).toBe(`${server.url}${issued.path}`)
 
     const pluginIcon = await fetch(`${server.url}/v1/plugins/owner.example/icon`)
@@ -254,7 +248,6 @@ describe("plugin routes", () => {
     expect(restarted.status).toBe(200)
     expect((restarted.body as { id: string; state: string }).state).toBe("stopped")
     expect(calls).toContainEqual(["restart", "owner.example"])
-    // Open panes reload on plugin.updated (never on plugin.state.updated).
     expect(await live).toContainEqual(
       expect.objectContaining({
         kind: "plugin.updated",
@@ -356,8 +349,6 @@ describe("plugin routes", () => {
     expect(linked.status).toBe(201)
     expect((linked.body as { id: string }).id).toBe("owner.example")
     expect(calls).toContainEqual(["link", { path: "/tmp/dev-plugin" }])
-    // Both install paths change the plugin's code on disk, so both tell
-    // clients to reload open panes.
     expect(await live).toEqual([
       expect.objectContaining({
         kind: "plugin.updated",
@@ -399,9 +390,6 @@ describe("plugin routes", () => {
     const calls: Array<Array<unknown>> = []
     const server = await startWithApp({ ...services, plugins: pluginsStub(calls) })
     runningServers.push(server)
-    // ws-shared: the plugin pane sits next to another pane.
-    // ws-lonely: the plugin pane is the workspace's only pane; the workspace
-    // is simply left empty (clients render their own New Tab page).
     await seedWorkspaces(server, ["ws-shared", "ws-lonely"])
     await seedPane(server, "ws-shared", "plugin-pane", "plugin:owner.example")
     await seedPane(server, "ws-shared", "other-pane", "plugin:owner.other")
@@ -412,7 +400,6 @@ describe("plugin routes", () => {
     const removed = await jsonRequest(server, "/v1/plugins/owner.example", { method: "DELETE" })
     expect(removed.status).toBe(200)
     expect(calls).toContainEqual(["remove", "owner.example"])
-    // Same payload shapes as the pane close route: clients close the tabs.
     const events = await live
     expect(events).toContainEqual(
       expect.objectContaining({
@@ -433,7 +420,6 @@ describe("plugin routes", () => {
       providerId: string
     }>
     expect(panes.some((pane) => pane.providerId === "plugin:owner.example")).toBe(false)
-    // Other plugins' panes are untouched.
     expect(panes.some((pane) => pane.id === "other-pane")).toBe(true)
   })
 
@@ -452,19 +438,14 @@ describe("plugin routes", () => {
   it("routes pane proxy traffic before bearer authorization", async () => {
     const { services } = await makeServices("server-a")
     const calls: Array<Array<unknown>> = []
-    const server = await startWithApp(
-      { ...services, plugins: pluginsStub(calls) },
-      undefined,
-      // Token-required auth: pane traffic must still flow with no bearer.
-      { auth: { allowLocalhostWithoutAuth: false, requireBearerToken: true } }
-    )
+    const server = await startWithApp({ ...services, plugins: pluginsStub(calls) }, undefined, {
+      auth: { allowLocalhostWithoutAuth: false, requireBearerToken: true }
+    })
     runningServers.push(server)
     const response = await fetch(`${server.url}/v1/plugins/owner.example/app/panes/main/`)
     expect(response.status).toBe(200)
     expect(await response.text()).toContain("pane")
     expect(calls).toContainEqual(["proxy", "/v1/plugins/owner.example/app/panes/main/"])
-    // Paths the manager declines fall through to authorized routing (401
-    // here, because this server requires a bearer token).
     const unhandled = await fetch(`${server.url}/v1/plugins/owner.example/app/unhandled/`)
     expect(unhandled.status).toBe(401)
   })
@@ -477,8 +458,6 @@ describe("plugin routes", () => {
     const handled = await rawUpgradeStatus(server.url, "/v1/plugins/owner.example/app/live")
     expect(handled).toContain("418 Plugin Socket")
     expect(calls).toContainEqual(["upgrade", "/v1/plugins/owner.example/app/live"])
-    // Unhandled plugin paths fall through to the normal upgrade chain, which
-    // destroys unknown sockets without a response.
     const unhandled = await rawUpgradeStatus(server.url, "/v1/plugins/owner.example/app/unhandled")
     expect(unhandled).toBe("")
   })

@@ -3,23 +3,13 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// One workspace in the sidebar: its chat's icon and name, over the
-/// Properties menu's project and branch, then its pull request, machine,
-/// and when it last changed. Its tabs live in the strip above the
-/// workspace's content.
 struct SidebarWorkspaceRow: View {
   let name: String
-  /// The second line. Nil keeps the row to one line.
   var subtitle: String? = nil
   let icon: SidebarWorkspaceIcon
   let store: SessionStore?
-  /// When the workspace last changed, shown as an elapsed time. Nil hides
-  /// it (the Properties menu's Updated option is off).
   var updatedAt: Date? = nil
-  /// The workspace branch's pull request, shown as a badge that opens it.
-  /// Nil hides it.
   var pullRequest: ServerGitPullRequest? = nil
-  /// The machine the workspace runs on, shown as its glyph. Nil hides it.
   var machine: SidebarRowMachine? = nil
   let isSelected: Bool
   let isReordering: Bool
@@ -28,10 +18,7 @@ struct SidebarWorkspaceRow: View {
   let onRename: () -> Void
   let onArchive: () -> Void
   var isPinned = false
-  /// Nil hides Pin/Unpin (previews).
   var onTogglePin: (() -> Void)? = nil
-  /// Latches one activation per press; resets when the gesture ends or is
-  /// cancelled.
   @GestureState private var isPressed = false
 
   var body: some View {
@@ -44,8 +31,6 @@ struct SidebarWorkspaceRow: View {
         SidebarWorkspaceRowLabel(name: name, subtitle: subtitle, icon: icon, store: store)
           .padding(.vertical, 5)
           .contentShape(Rectangle())
-          // Only the label activates on pointer-down. The archive button is
-          // a sibling, so pressing it cannot select the row first.
           .gesture(
             DragGesture(minimumDistance: 0)
               .updating($isPressed) { _, isPressed, _ in
@@ -54,14 +39,9 @@ struct SidebarWorkspaceRow: View {
                 onActivate()
               }
           )
-          // Pointer-down selection and the hover-only archive button are
-          // invisible to accessibility. Expose them as actions so assistive
-          // tech and background computer use can select and manage the
-          // workspace without hovering or focusing the window.
           .accessibilityElement(children: .combine)
           .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
           .accessibilityAction(.default, onActivate)
-          // Plain-title buttons: SwiftUI drops Label-built ones here.
           .accessibilityActions {
             if let onTogglePin { Button(isPinned ? "Unpin" : "Pin", action: onTogglePin) }
             Button("New Tab", action: onNewTab)
@@ -74,23 +54,16 @@ struct SidebarWorkspaceRow: View {
         if let machine {
           Image(systemName: machine.systemImage)
             .font(.system(size: SidebarRowIcon.trailingSize, weight: SidebarRowIcon.weight))
-            // The display's screen is a second, translucent layer even in
-            // monochrome; clearing it leaves the outline the row's other
-            // glyphs use.
             .symbolRenderingMode(.palette)
             .foregroundStyle(.secondary, .clear)
             .frame(width: SidebarRowIcon.trailingSlot, height: SidebarRowIcon.trailingSlot)
             .help(machine.name)
             .accessibilityLabel("On \(machine.name)")
         }
-        // One trailing slot: the archive button on hover, flush right with
-        // the glyphs' spacing, else the elapsed time.
         if isHovered {
           Button(action: onArchive) {
             Image(systemName: "archivebox")
               .font(.system(size: SidebarRowIcon.trailingSize, weight: SidebarRowIcon.weight))
-              // The same slot as the PR and machine glyphs, so the three sit
-              // evenly spaced.
               .frame(width: SidebarRowIcon.trailingSlot, height: SidebarRowIcon.trailingSlot)
               .contentShape(Rectangle())
           }
@@ -98,11 +71,8 @@ struct SidebarWorkspaceRow: View {
           .foregroundStyle(.secondary)
           .help("Archive workspace")
           .accessibilityLabel("Archive \(SidebarWorkspaceRowLabel.title(for: name))")
-          // Covered by the row's Archive action, which does not depend on
-          // hover.
           .accessibilityHidden(true)
         } else if let updatedAt {
-          // Re-reads the clock each minute so the time keeps counting.
           TimelineView(.everyMinute) { context in
             Text(RelativeTime.short(from: updatedAt, now: context.date))
               .font(.caption2)
@@ -139,8 +109,6 @@ struct SidebarWorkspaceRow: View {
   }
 }
 
-/// The row's icon, name, and second line, shared with the reorder ghost so
-/// the lifted row and its stand-in never drift apart in style.
 struct SidebarWorkspaceRowLabel: View {
   let name: String
   var subtitle: String? = nil
@@ -152,7 +120,6 @@ struct SidebarWorkspaceRowLabel: View {
   }
 
   var body: some View {
-    // The icon sits centered across both lines.
     HStack(spacing: 7) {
       leadingIcon
       VStack(alignment: .leading, spacing: 2) {
@@ -168,8 +135,6 @@ struct SidebarWorkspaceRowLabel: View {
       }
       .frame(maxWidth: .infinity, alignment: .leading)
     }
-    // Native sidebar rows keep the label color whether or not they are
-    // selected; only the glyph and the second line read as secondary.
     .foregroundStyle(.primary)
     .accessibilityElement(children: .combine)
   }
@@ -193,31 +158,21 @@ struct SidebarWorkspaceRowLabel: View {
   }
 }
 
-/// A workspace's machine as its row shows it: the machine's glyph, named
-/// in the tooltip.
 struct SidebarRowMachine: Equatable {
   let name: String
   let systemImage: String
 
-  /// A machine's outline glyph in the sidebar, matching the rows' line
-  /// icons: a display for this Mac, a cloud for any other machine.
   static func systemImage(isLocal: Bool) -> String {
     isLocal ? "display" : "cloud"
   }
 }
 
-/// What a workspace row's icon shows: one of its chats (the chat's status,
-/// else its model), an agent terminal that is working, or, for a workspace
-/// with neither, the workspace glyph.
 enum SidebarWorkspaceIcon: Equatable {
   case chat(ChatSession)
   case workingTerminal
   case workspace
 }
 
-/// GitHub's own pull request icon for the state (Primer Octicons, bundled as
-/// template images), colored GitHub's way with an open pull request's color
-/// following its checks; clicking opens it in the browser.
 struct SidebarPullRequestBadge: View {
   let pullRequest: ServerGitPullRequest
 
@@ -283,16 +238,9 @@ struct SidebarPullRequestBadge: View {
   }
 }
 
-/// Glyph sizes and stroke weight for sidebar rows. Leading icons (the model
-/// logo, a group's project or machine) draw at 13pt; the trailing glyphs (PR
-/// badge, machine, archive) sit 1pt smaller, each in its own slot. SF Symbols
-/// at regular weight and GitHub's 24px Octicons draw matching strokes at the
-/// same size (the 16px Octicons would be heavier, like SF's
-/// medium-to-semibold).
 enum SidebarRowIcon {
   static let size: CGFloat = 13
   static let trailingSize: CGFloat = 12
-  /// A trailing glyph's slot: the glyph plus 2pt either side.
   static let trailingSlot: CGFloat = 16
   static let weight: Font.Weight = .regular
 }

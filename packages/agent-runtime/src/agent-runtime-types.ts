@@ -19,56 +19,27 @@ import type {
   SetGoalUpdate
 } from "./types.js"
 
-/// Constructs a provider against the runtime's live environment. Adapter
-/// packages export `make*Provider` functions that plug in here; the app
-/// composes the set it wants.
 export type ProviderFactory = (environment: ProviderEnvironment) => AgentProvider
 
 export interface AgentRuntimeConfig {
   readonly env?: NodeJS.ProcessEnv
   readonly executableExists?: (name: string, env: NodeJS.ProcessEnv) => boolean
   readonly locateExecutable?: (name: string, env: NodeJS.ProcessEnv) => string | undefined
-  /// Harness adapters to register, constructed against the runtime's
-  /// environment. The runtime registers no providers on its own — the app
-  /// composes the adapter set (mix and match per deployment).
   readonly providerFactories?: ReadonlyArray<ProviderFactory>
-  /// Pre-built providers keyed by id, merged after `providerFactories`
-  /// (same-id wins). Exposed for tests and incremental provider rollout.
   readonly providers?: Partial<Record<ProviderId, AgentProvider>>
-  /// Re-resolves the runtime's environment (see `refreshEnvironment`).
-  /// Typically `() => resolveShellEnv()` so PATH-based harness detection can
-  /// pick up CLIs installed after the server started. Absent, refresh is a
-  /// no-op and the environment stays fixed at `env ?? process.env`.
   readonly resolveEnv?: () => Promise<NodeJS.ProcessEnv>
-  /// Reads a detected binary's --version output for readiness enrichment;
-  /// defaults to spawning the binary with the resolved environment. Exposed
-  /// for tests.
   readonly readVersionOutput?: (path: string, env: NodeJS.ProcessEnv) => Promise<string>
 }
 
 export interface AgentRuntimeService {
-  /// The harness catalog this runtime serves. Consumers (harness auth,
-  /// lifecycle, routes) read definitions from here rather than importing
-  /// `harnessCatalog`, so tests can stub the runtime with their own entries.
   readonly catalog: ReadonlyArray<HarnessDefinition>
   readonly discoverHarnesses: Effect.Effect<ReadonlyArray<Harness>, AgentRuntimeError>
-  /// Re-resolves the environment via the configured `resolveEnv` (no-op
-  /// without one). Subsequent readiness checks and session launches see the
-  /// refreshed PATH — this is how "Detect again" finds a CLI installed after
-  /// server start. Concurrent refreshes share one in-flight resolution.
   readonly refreshEnvironment: Effect.Effect<void, AgentRuntimeError>
-  /// Sessions from the harness's own on-disk store (run before/outside
-  /// Codevisor). Empty for harnesses without a native store or a provider
-  /// listing hook. Fails only for unknown harness ids.
   readonly listAgentSessions: (
     harnessId: string,
     account?: HarnessAccountContext,
     options?: AgentSessionListOptions
   ) => Effect.Effect<ReadonlyArray<AgentSessionSummary>, AgentRuntimeError>
-  /// The value a saved selection should be restored as when the live
-  /// option list no longer offers it verbatim: the provider's own
-  /// reconciliation (harness ids drift between releases), or `undefined`
-  /// when the value is really gone.
   readonly reconcileConfigValue: (
     harnessId: string,
     option: SessionConfigOption,
@@ -107,13 +78,7 @@ export interface AgentRuntimeService {
     input: string | PromptInput
   ) => Effect.Effect<PromptResult, AgentRuntimeError>
   readonly cancel: (sessionId: string) => Effect.Effect<CancelResult, AgentRuntimeError>
-  /// The agent session ids (harness-native ids, as passed to
-  /// `loadAgentSession`) with a live process in this runtime. The restart
-  /// drain snapshots these so a server restart can bring them back.
   readonly loadedAgentSessionIds: () => ReadonlyArray<string>
-  /// Closes a loaded agent session and its process (background shells
-  /// included). No-op when the session is not loaded — archiving a session
-  /// that was never opened this server-lifetime has nothing to tear down.
   readonly closeAgentSession: (sessionId: string) => Effect.Effect<void, AgentRuntimeError>
   readonly setMode: (sessionId: string, modeId: string) => Effect.Effect<void, AgentRuntimeError>
   readonly setConfigOption: (
@@ -121,15 +86,11 @@ export interface AgentRuntimeService {
     configId: string,
     value: string
   ) => Effect.Effect<ReadonlyArray<SessionConfigOption>, AgentRuntimeError>
-  /// Fails with AgentRuntimeError when the session's harness has no goal
-  /// support (see AgentSessionMetadata.supportsGoals).
   readonly setGoal: (
     sessionId: string,
     update: SetGoalUpdate
   ) => Effect.Effect<SessionGoal, AgentRuntimeError>
   readonly clearGoal: (sessionId: string) => Effect.Effect<void, AgentRuntimeError>
-  /// Fails when the harness cannot ask questions or the question is no longer
-  /// pending (already resolved, cancelled with the turn, or stale replay).
   readonly answerQuestion: (
     sessionId: string,
     questionId: string,

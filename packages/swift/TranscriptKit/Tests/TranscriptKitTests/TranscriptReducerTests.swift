@@ -93,11 +93,8 @@ struct TranscriptReducerTests {
   @Test("A zero-length phase chunk retro-tags an already streamed span")
   func retroactiveCommentaryDemotion() {
     var turn = AssistantTurn(isGenerating: true)
-    // Claude preamble streams untagged: it is the optimistic candidate.
     TranscriptReducer.apply(.agentMessageChunk(.text("Let me check."), messageId: "m1"), to: &turn)
     #expect(turn.finalText == .text(id: "acp:m1", markdown: "Let me check."))
-    // A tool call starting in the same message demotes it via a
-    // zero-length correction chunk — the candidate slot empties…
     TranscriptReducer.apply(
       .agentMessageChunk(.text(""), messageId: "m1", parentToolCallId: nil, phase: .commentary),
       to: &turn
@@ -108,7 +105,6 @@ struct TranscriptReducerTests {
     )
     #expect(turn.finalText == nil)
     #expect(turn.workedEntries.map(\.id) == ["text:acp:m1", "tool:a"])
-    // …until the real answer streams in a fresh message.
     TranscriptReducer.apply(.agentMessageChunk(.text("Tests pass."), messageId: "m2"), to: &turn)
     #expect(turn.finalText == .text(id: "acp:m2", markdown: "Tests pass."))
   }
@@ -125,10 +121,8 @@ struct TranscriptReducerTests {
   @Test("Only a final-tagged candidate counts as asserted")
   func finalTextAssertion() {
     var turn = AssistantTurn(isGenerating: true)
-    // Optimistic candidate (no phase): not asserted — could still demote.
     TranscriptReducer.apply(.agentMessageChunk(.text("maybe"), messageId: "m1"), to: &turn)
     #expect(turn.finalTextIsAsserted == false)
-    // Provider-asserted final answer: certainty from the first chunk.
     TranscriptReducer.apply(
       .agentMessageChunk(.text("Done."), messageId: "m2", parentToolCallId: nil, phase: .final),
       to: &turn
@@ -154,7 +148,6 @@ struct TranscriptReducerTests {
       .agentMessageChunk(.text("note")),
       .toolCallUpdate(ToolCallUpdate(toolCallId: "a", status: .completed, content: [.content(.text("done"))])),
     ])
-    // The tool entry stays at index 0 (order preserved), now completed.
     guard case let .tool(call) = turn.entries[0] else { Issue.record("expected tool"); return }
     #expect(call.status == .completed)
     #expect(call.title == "Read")
@@ -252,7 +245,6 @@ struct TranscriptReducerTests {
     TranscriptReducer.apply(.planDocument(markdown: "# Draft"), to: &turn)
     #expect(turn.planDocument == "# Draft")
     #expect(turn.isThinking == false)
-    // A later document replaces the first; the step plan is independent.
     TranscriptReducer.apply(.planDocument(markdown: "# Final Plan"), to: &turn)
     TranscriptReducer.apply(
       .plan(Plan(entries: [PlanEntry(content: "step", priority: .medium, status: .inProgress)])), to: &turn)
@@ -271,7 +263,6 @@ struct TranscriptReducerTests {
       answers: ["a": QuestionAnswerEntry(answers: ["Option A"])]
     )
     TranscriptReducer.apply(.questionResolved(resolution), to: &turn)
-    // Replay delivers the pair again; the row must upsert, not duplicate.
     TranscriptReducer.apply(.questionResolved(resolution), to: &turn)
     TranscriptReducer.apply(.question(QuestionRequest(questionId: "q-2", questions: [])), to: &turn)
     #expect(turn.entries.count == 1)
@@ -328,9 +319,6 @@ struct TranscriptReducerTests {
           questionId: "q", outcome: .answered, questions: [QuestionSpec(id: "a", question: "Pick")],
           statePosition: position))
     }
-    // Live (no durable position, as from an older server) and restored
-    // (server position, pages loaded newest-first) both keep the row
-    // between the work before and after the question.
     for updates in [
       [tool("before", position: 1), resolved(position: nil), tool("after", position: 3)],
       [tool("after", position: 3), resolved(position: 2), tool("before", position: 1)],
@@ -399,18 +387,12 @@ struct TranscriptReducerTests {
   }
 }
 
-/// Covers `AssistantTurn.showsActivityIndicator` — the "Thinking…" gate. The
-/// old gate was `isThinking` alone, a knife-edge cleared by the first non-thought
-/// chunk and only re-armed by another thought chunk, so any lull between steps
-/// (waiting on the model, or between tool calls) showed nothing and the chat
-/// looked frozen.
 @Suite("AssistantTurn activity indicator")
 struct AssistantTurnActivityTests {
   @Test("A finished turn never shows the indicator")
   func settledTurn() {
     let turn = AssistantTurn(isGenerating: false, isThinking: false)
     #expect(!turn.showsActivityIndicator)
-    // Even an explicit (stale) thinking flag can't light it once finished.
     let staleThinking = AssistantTurn(isGenerating: false, isThinking: true)
     #expect(!staleThinking.showsActivityIndicator)
   }
@@ -452,9 +434,7 @@ struct AssistantTurnActivityTests {
   @Test("The lull after a tool settles — preamble demoted, nothing running — shows the indicator")
   func gapAfterToolSettles() {
     var turn = AssistantTurn(isGenerating: true)
-    // Preamble streams as the optimistic final-answer candidate…
     TranscriptReducer.apply(.agentMessageChunk(.text("Let me check."), messageId: "m1"), to: &turn)
-    // …a tool call demotes it to commentary via a zero-length retro-tag…
     TranscriptReducer.apply(
       .agentMessageChunk(.text(""), messageId: "m1", parentToolCallId: nil, phase: .commentary),
       to: &turn
@@ -463,8 +443,6 @@ struct AssistantTurnActivityTests {
       .toolCall(ToolCall(toolCallId: "t1", title: "Read", kind: .read, status: .inProgress)),
       to: &turn
     )
-    // …then the tool completes. Model is now deciding the next step with
-    // nothing streaming: previously this window showed nothing (looked stuck).
     TranscriptReducer.apply(
       .toolCallUpdate(ToolCallUpdate(toolCallId: "t1", status: .completed)),
       to: &turn

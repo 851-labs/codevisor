@@ -53,7 +53,6 @@ describe("defaultNativeConfigFileSystem", () => {
 
   it("propagates non-ENOENT failures", async () => {
     const dir = await makeTempDir()
-    // Reading a directory as a file fails with EISDIR, not ENOENT.
     await expect(defaultNativeConfigFileSystem.readFile(dir)).rejects.toThrow()
   })
 
@@ -453,9 +452,6 @@ describe("surgical config editors", () => {
     })
 
     it("refuses when the excision would corrupt the document", () => {
-      // A multi-line nested array: its `[1, 2],` lines look like table
-      // headers to the section scanner, so the excision is incomplete and
-      // the reparse check must refuse.
       const content = `[mcp_servers.docs]\nmatrix = [\n  [1, 2],\n  [3, 4],\n]\n`
       expect(() => removeTomlTable(content, "mcp_servers", "docs")).toThrow(
         "would corrupt the file"

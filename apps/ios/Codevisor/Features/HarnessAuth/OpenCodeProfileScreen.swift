@@ -2,7 +2,6 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// One OpenCode profile: its providers, and using it for new chats.
 struct OpenCodeProfileScreen: View {
   @Environment(AppEnvironment.self) private var environment
   let isShared: Bool

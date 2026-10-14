@@ -9,19 +9,13 @@
   import Security
   import SwiftUI
 
-  /// One machine, viewed exactly as the product's Screen Sharing pane views
-  /// it: the product's `ScreenSharingViewer` feature (discovery, the control
-  /// lease, clipboard, diagnostics) over the product's backend for it. The rig
-  /// only supplies a server machine's token or a VNC machine's password.
   @MainActor
   @Observable
   final class RigMachineModel {
     let machine: RigMachine
     private(set) var store: StoreOf<ScreenSharingViewer>?
-    /// What the rig is doing before the store exists (token, first contact), or why that failed.
     private(set) var preparing: String?
     private(set) var failure: String?
-    /// Set while a Keychain-password VNC machine waits for the user to type its password.
     private(set) var passwordPrompt: PasswordPrompt?
     @ObservationIgnored private var prepareTask: Task<Void, Never>?
     @ObservationIgnored private var visible = false
@@ -38,24 +32,18 @@
       store?.send(.paneDisappeared)
     }
 
-    /// A failed pane starts over from the token or the stored password, so a
-    /// rotated token or a changed password is picked up too.
     func retry() {
       store?.send(.paneClosed)
       store = nil
       prepare()
     }
 
-    /// Connects with what the user typed (a Mac account, or the VNC password); it is kept
-    /// only once the server accepts it.
     func signIn(username: String?, password: String, remember: Bool) {
       store?.send(.paneClosed)
       store = nil
       prepare(typed: RigVNCSignIn.Typed(username: username, password: password, remember: remember))
     }
 
-    /// The machine's settings for the sheet (851-2367): the catalog's connection, read-only;
-    /// the saved sign-in (never the password), Dynamic Resolution and the display, editable.
     func machineSettings() -> ScreenSharingMachineSettings {
       var settings = ScreenSharingMachineSettings(
         name: machine.name, connection: "",
@@ -88,8 +76,6 @@
       return settings
     }
 
-    /// Done in the sheet: Dynamic Resolution applies now and is saved; another display
-    /// reconnects to it; changed sign-in is saved (or forgotten) and the machine signs in again.
     func applySettings(_ changes: ScreenSharingMachineSettingsChanges) {
       if let enabled = changes.dynamicResolution {
         RigMachineSettings.setDynamicResolution(enabled, for: machine.id)
@@ -122,7 +108,6 @@
       }
     }
 
-    /// Removes this machine's stored VNC password and asks for it again.
     func forgetPassword() {
       guard case .vnc(_, _, .keychain) = machine.connection else { return }
       RigKeychain.vncPasswords.delete(machine.id)
@@ -163,18 +148,12 @@
       }
     }
 
-    /// The backend the product's pane would use for this machine: `.native`
-    /// over its Codevisor server, or `.vnc` straight to a VNC server.
-    /// A Keychain-password machine is signed in first (one handshake), so a
-    /// missing or rejected password asks the user instead of failing the pane.
     private static func backend(
       _ machine: RigMachine, typed: RigVNCSignIn.Typed?, progress: @MainActor (String) -> Void
     ) async throws -> ScreenSharingViewerBackend {
       switch machine.connection {
       case .vnc(let host, let port, let source):
         if source == .keychain { progress("Signing in to \(host)…") }
-        // The sign-in's connection becomes the viewer's first one: one sign-in per
-        // connect (a Mac account's is a 4096-bit key exchange, 851-2353).
         let signedIn = RigSignedInConnection()
         let outcome = try await RigVNCSignIn.signIn(
           machineId: machine.id, password: source, typed: typed, store: RigKeychain.vncPasswords
@@ -188,7 +167,6 @@
         case .signedIn(let accepted): credential = accepted
         case .needsPassword(let reason):
           signedIn.close()
-          // Offer the account fields when the Mac supports Apple's account sign-in (type 30, 851-2342).
           let offered = (try? await VNCConnection.securityTypes(host: host, port: port)) ?? []
           throw PasswordPrompt(
             reason: reason, accountSignIn: offered.contains(RFBSecurityType.appleRemoteDesktop.rawValue))
@@ -206,10 +184,8 @@
           connected = try await Self.client(
             machine.id, url: url, sshTarget: sshTarget, fresh: false, progress: progress)
         } catch CodevisorServerClientError.httpStatus(401, _) {
-          // The machine rotated its token: ask it again, once.
           connected = try await Self.client(machine.id, url: url, sshTarget: sshTarget, fresh: true, progress: progress)
         }
-        // A native display (not the server's VNC socket) needs a real Screen Sharing pane (851-2384).
         guard connected.provider != "vnc", let token = connected.token else {
           return .native(client: connected.client, workspaceId: UUID(), paneId: UUID())
         }
@@ -219,7 +195,6 @@
       }
     }
 
-    /// A client whose token the server accepted (a `capabilities` round trip). `fresh` skips the Keychain.
     private static func client(
       _ id: String, url: URL, sshTarget: String, fresh: Bool, progress: @MainActor (String) -> Void
     ) async throws -> (client: CodevisorServerClient, token: String?, provider: String?) {
@@ -227,7 +202,6 @@
       if token == nil {
         progress("Asking \(sshTarget) for its token…")
         let fetched = try await RigMachineTokenStore.fetch(sshTarget: sshTarget)
-        // Not fatal: without it the next launch asks the machine again.
         try? RigKeychain.machineTokens.save(fetched, for: id)
         token = fetched
       }
@@ -242,7 +216,6 @@
     }
   }
 
-  /// The connection the rig's sign-in opened, handed to the viewer's first `open`.
   final class RigSignedInConnection: Sendable {
     private let connection = OSAllocatedUnfairLock<(client: RFBClient, outcome: RFBHandshake.Outcome)?>(
       uncheckedState: nil)
@@ -263,10 +236,8 @@
     deinit { close() }
   }
 
-  /// Why the rig is asking for a VNC password: nil before the first attempt, else the server's rejection.
   struct PasswordPrompt: Error, Equatable {
     let reason: String?
-    /// The Mac offers account sign-in: ask for a user name too (851-2342).
     var accountSignIn = false
   }
 
@@ -275,8 +246,6 @@
     init(_ message: String) { errorDescription = message }
   }
 
-  /// Fetches a server machine's token (`ssh <target> codevisor token`) when
-  /// the Keychain has none or the server rejected it.
   enum RigMachineTokenStore {
     static func fetch(sshTarget: String) async throws -> String {
       let process = Process()
@@ -310,8 +279,6 @@
     }
   }
 
-  /// The product pane's layout: lease and clipboard messages over the video,
-  /// progress while connecting, the failure and Retry in place.
   struct RigMachineView: View {
     let model: RigMachineModel
 
@@ -334,12 +301,9 @@
         }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
-      // Video arriving is what "last connected" means in the settings sheet (851-2367).
-      // Each new connection plays the machine's sound as its settings say (851-2379).
       .onChange(of: model.store?.endpoint?.id) { _, _ in
         model.store?.endpoint?.audio?.apply(RigMachineSettings.sound(model.machine.id))
         model.store?.endpoint?.highDynamicRange = RigMachineSettings.highDynamicRange(model.machine.id)
-        // Shared clipboard starts on, as in the app; the toolbar's toggle lasts the connection.
         model.store?.endpoint?.clipboard?.sharing = true
       }
       .onChange(of: model.store?.phase) { _, phase in
@@ -354,7 +318,6 @@
             applySettings: { model.applySettings($0) })
         }
       }
-      // View → Reconnect (⌘R): only the selected machine's view is mounted, so it is the one that reconnects.
       .onReceive(NotificationCenter.default.publisher(for: RigMainMenu.reconnect)) { _ in model.retry() }
       .onReceive(NotificationCenter.default.publisher(for: RigMainMenu.forgetPassword)) { _ in model.forgetPassword() }
       .onAppear {
@@ -413,8 +376,6 @@
     }
   }
 
-  /// A VNC machine's password, asked in place of the video. Remembered in the
-  /// login Keychain by default; kept only once the server has accepted it.
   private struct RigVNCPasswordForm: View {
     let machine: RigMachine
     let prompt: PasswordPrompt
@@ -475,7 +436,6 @@
     }
   }
 
-  /// The endpoint's video surface on the native window background, as the product's system theme shows it.
   private struct RigEndpointView: NSViewRepresentable {
     let endpoint: ScreenSharingViewerEndpoint
     func makeNSView(context: Context) -> NSView { endpoint.view }

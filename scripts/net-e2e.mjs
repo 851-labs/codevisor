@@ -1,14 +1,3 @@
-// Multi-process tunnel test (docs/plans/codevisor-tunnel.md): real wrangler
-// (local D1 + Durable Objects), two real relays launched exactly like
-// `bun run dev` (scripts/dev-net.mjs), two real servers, and a headless app
-// that dials the machines through the tunnel and makes sealed HTTP calls.
-//
-// Scenarios:
-//   1. relay-only machine: the call rides the relay; both relays restart
-//      mid-connection and a second call still succeeds on the same connection.
-//   2. auto machine: the connection upgrades to a direct path.
-//
-// Usage: node scripts/net-e2e.mjs   (builds what it needs; ~1 min warm)
 import { spawn } from "node:child_process"
 import { openSync } from "node:fs"
 import { mkdir, rm } from "node:fs/promises"
@@ -73,7 +62,6 @@ async function main() {
   const WebSocket = createRequire(join(repoRoot, "apps/server/package.json"))("ws")
   const net = loadNet()
 
-  // -- Cloud + relays --------------------------------------------------------
   const cloudPort = await findAvailablePort(47_000, 47_000, 1_000)
   const cloudUrl = `http://127.0.0.1:${cloudPort}`
   const devNet = await resolveDevNet({
@@ -140,7 +128,6 @@ async function main() {
   const { token } = await (await fetch(`${cloudUrl}/dev/login`, { method: "POST" })).json()
   log(`cloud ${cloudUrl}, relays ${devNet.relays.map((relay) => relay.url).join(" ")}`)
 
-  // -- Machines --------------------------------------------------------------
   const netEnvironment = await devNetEnvironment(devNet, { inline: true })
   const startMachine = async (name, pathPolicy, port) => {
     const data = join(root, name, "data")
@@ -175,7 +162,6 @@ async function main() {
           CODEVISOR_WORKTREES_ROOT: join(root, name, "worktrees"),
           CODEVISOR_REPOS_ROOT: join(root, name, "repos"),
           CODEVISOR_PLUGINS_ROOT: join(root, name, "plugins"),
-          // Development servers report the Alpha channel (tunnel on).
           CODEVISOR_DEV_INSTANCE_ID: `net-e2e-${name}`,
           CODEVISOR_DEV_CLOUD_URL: cloudUrl,
           CODEVISOR_DEV_CLOUD_TOKEN: token,
@@ -187,7 +173,6 @@ async function main() {
   await startMachine("E2E Relayed", "relay-only", await findAvailablePort(48_000, 48_000, 500))
   await startMachine("E2E Direct", "auto", await findAvailablePort(48_500, 48_500, 500))
 
-  // -- Headless app ----------------------------------------------------------
   const appKeys = crypto.generateDeviceKeyPair()
   const tunnelSecret = net.generateSecretKeyHex()
   const tunnelEndpointId = net.endpointIdForSecretKey(tunnelSecret)
@@ -220,7 +205,6 @@ async function main() {
         name: "net-e2e",
         publicKey: appKeys.publicKey,
         tunnelEndpointId,
-        // The hub turns the tunnel on for Alpha devices only.
         releaseChannel: "alpha"
       }
     })
@@ -235,8 +219,6 @@ async function main() {
     alpns: [ALPN_CHANNELS]
   })
 
-  /// Dials a machine's tunnel, completes the channel-protocol hello, and
-  /// returns a function making sealed HTTP GETs over it.
   const dial = async (name) => {
     const machine = await waitFor(`${name} tunnel address`, async () => {
       const presence = machines.get(name)
@@ -336,7 +318,6 @@ async function main() {
     log(`${label}: GET /v1/info -> ${response.status}`)
   }
 
-  // Scenario 1: relayed, surviving a restart of every relay.
   const relayed = await dial("E2E Relayed")
   await expectInfo("relayed", relayed.get)
   const relayedPaths = relayed.connection.paths()
@@ -357,7 +338,6 @@ async function main() {
   if (!(await waitForDevRelays(devNet))) throw new Error("relays unhealthy after restart")
   await expectInfo("relayed after relay restart (same connection)", relayed.get)
 
-  // Scenario 2: direct upgrade.
   const direct = await dial("E2E Direct")
   await expectInfo("direct", direct.get)
   await waitFor("a selected direct path", async () =>

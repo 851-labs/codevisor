@@ -3,7 +3,6 @@
   import CodevisorUI
   import SwiftUI
 
-  /// The production sidebar rows, populated from the same records as iOS.
   struct AppStoreScreenshotSidebar: View {
     let scene: String
     let store: SessionStore

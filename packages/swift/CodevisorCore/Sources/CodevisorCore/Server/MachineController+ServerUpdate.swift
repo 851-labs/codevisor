@@ -1,25 +1,12 @@
 import Foundation
 
-/// Server self-update orchestration: probing machines' release state and
-/// driving a remote update through restart confirmation. Lives in its own
-/// file (like the navigation-sync extension) to keep the core controller
-/// file within size limits.
 extension MachineController {
-  /// How long a replacement server may report a running data upgrade
-  /// before the update is declared stuck. Mirrors the local server's
-  /// startup budget: migrations are resumable, so a genuine one that runs
-  /// this long is wedged, not slow.
   static let migrationMaximumDuration: Duration = .seconds(10 * 60)
 
   public var isAnyServerUpdating: Bool {
     connectionsById.values.contains { $0.updatePhase == .updating }
   }
 
-  /// Sweeps release state for every reachable machine. Machines mid-update are
-  /// skipped; `updateServer`'s own polling drives their state. `force`
-  /// bypasses each server's check cache and belongs to the user's explicit
-  /// "Check Again" — the periodic sweep must NOT force, or every client
-  /// hammers the release origin on every pass.
   public func refreshServerUpdates(force: Bool = false) async {
     let machineIds = allMachines.map(\.id).filter { id in
       connectionsById[id]?.status?.isReachable == true
@@ -37,15 +24,10 @@ extension MachineController {
     }
   }
 
-  /// Restores the updated machine's event stream without changing any
-  /// composer or navigation preference.
   private func resumeEventStream(for machineId: String) {
     Task { await self.connectMachine(machineId) }
   }
 
-  /// Why a reachable server is still not on the requested release when
-  /// the wait ran out: it restarted onto some other build (the machine's
-  /// installer chose differently — try again), or it never restarted.
   static func notConvergedMessage(
     initial: ServerHealth?, current: ServerHealth?, refreshed: ServerUpdateInfo?
   ) -> String {
@@ -64,12 +46,6 @@ extension MachineController {
     return "The server restarted into \(installed), but \(latest) is still available. Try updating again."
   }
 
-  /// Asks a machine's server to update itself, then waits for it to
-  /// restart into the newer version before refreshing its state and
-  /// resubscribing to its event stream. Tracks progress on THAT machine's
-  /// connection, so the attempt survives the user switching machines. A
-  /// server with chats mid-turn drains them first (holding new prompts) and
-  /// reports that through `lastApply`; the wait extends while it does.
   public func updateServer(machineId: String) async {
     let connection = connection(for: machineId)
     guard connection.updatePhase != .updating else { return }
@@ -83,9 +59,6 @@ extension MachineController {
       connection.updateStatusMessage = nil
       connection.updateProgress = nil
     }
-    // Close the gate before dispatching the update request. The server
-    // may begin shutting down as soon as it handles that endpoint, before
-    // the response has made the round trip back to this client.
     beginWaiting(for: machineId, reason: .updating)
     let initialHealth = try? await client.health()
     do {
@@ -94,47 +67,27 @@ extension MachineController {
         markReady(for: machineId)
         resumeEventStream(for: machineId)
         if applied.reason == "busy" {
-          // The server still has chats mid-turn; updating now would
-          // kill them. The banner disables its button for this app's
-          // own chats, but another client could have started one.
           connection.updatePhase = .failed(
             "This server still has chats running. Wait for them to finish, then update."
           )
           return
         }
-        // Nothing to do (already up to date); refresh the banner state.
         await refreshStatus(for: machineId)
         connection.updatePhase = .idle
         return
       }
-      // The pre-apply handoff report, so a stale failure left by an
-      // earlier attempt is never mistaken for this one's outcome.
       let initialApplyAt = connection.updateInfo?.lastApply?.at
       if applied.draining == true {
         connection.updateStatusMessage = "Waiting for chats to finish…"
       }
-      // Deadline-based rather than a fixed attempt count: while the server
-      // reports it is still draining live chats, the deadline moves out —
-      // the server bounds the drain itself (and interrupts at its own
-      // deadline), so this never waits forever.
       let pollBudget = updatePollInterval * updatePollAttempts
       var deadline = updateScheduler.now() + pollBudget
-      // The build to wait for. The accepted target comes from the
-      // machine's release check; the install itself may land elsewhere
-      // (an app-hosted Mac's Sparkle can resume a download it staged
-      // before a newer release appeared), and the machine reports the
-      // build it is really installing. Converging on THAT build keeps a
-      // successful install from reading as a server that never returned.
       var targetBuildNumber = applied.targetBuildNumber
       var lastInstallProgress: Double?
       var lastInstallMessage: String?
       var migrationStartedAt: ContinuousClock.Instant?
       while updateScheduler.now() < deadline {
         try? await updateScheduler.sleep(updatePollInterval)
-        // The machine's own progress report: draining, installing (on
-        // app-hosted Macs, the host app's headless Sparkle session), or a
-        // fresh failure — which ends the wait with the real reason
-        // instead of a timeout.
         let update = try? await client.updateInfo(
           refresh: false,
           channel: updateChannel
@@ -158,8 +111,6 @@ extension MachineController {
           case "installing":
             let progress = lastApply.progress.flatMap { $0.isFinite ? min(1, max(0, $0)) : nil }
             let message = lastApply.message ?? "Installing…"
-            // A slow download is healthy while its progress advances. Repeated
-            // identical reports do not keep a stalled install alive forever.
             if progress != lastInstallProgress || message != lastInstallMessage {
               deadline = max(deadline, updateScheduler.now() + pollBudget)
             }
@@ -175,11 +126,6 @@ extension MachineController {
             break
           }
         }
-        // The replacement server is booting through a data upgrade: it
-        // answers health with the migration in flight while every other
-        // route is refused. Follow it live. Keep waiting while it keeps
-        // answering — one long step reports no granular progress — but
-        // bounded, so a wedged migration still ends in a failure.
         if let health = await probeDataUpgrade(for: machineId, client: client) {
           let migration = connection.dataUpgradeProgress
           if health.database == "failed" {
@@ -208,16 +154,8 @@ extension MachineController {
         if let targetBuild = targetBuildNumber,
           let currentBuild = (try? await client.health())?.buildNumber
         {
-          // Build numbers are the one release marker that agrees
-          // across feeds; >= tolerates a machine that jumped past
-          // the target on its own channel.
           converged = currentBuild >= targetBuild
         } else {
-          // Older servers: version-string heuristics. Alpha
-          // manifests include a prerelease suffix while the
-          // bundled runtime reports its base version, and a remote
-          // Mac may install an even newer release according to its
-          // own Sparkle channel.
           let exactTargetReached =
             applied.targetVersion == nil || info.version == applied.targetVersion
           var restartedWithDifferentVersion =
@@ -241,8 +179,6 @@ extension MachineController {
           converged = exactTargetReached || requestedChannelIsCurrent
         }
         if converged {
-          // Clear the spinner as soon as the replacement server is
-          // confirmed.
           connection.updatePhase = .idle
           markReady(for: machineId)
           await refreshStatus(for: machineId)
@@ -251,8 +187,6 @@ extension MachineController {
           return
         }
       }
-      // Out of time. A machine that answers is not gone: keep it usable,
-      // and say what actually happened instead of "did not come back".
       if (try? await client.info()) != nil {
         markReady(for: machineId)
         let refreshed = try? await client.updateInfo(refresh: true, channel: updateChannel)
@@ -260,7 +194,6 @@ extension MachineController {
         await refreshStatus(for: machineId)
         resumeEventStream(for: machineId)
         guard refreshed?.updateAvailable != false else {
-          // It landed on the target after all; the deadline just beat it.
           connection.updatePhase = .idle
           await refreshNavigationState(for: machineId)
           return
@@ -273,7 +206,6 @@ extension MachineController {
       let message = "The server did not come back after updating. Check it on the machine directly."
       connection.updatePhase = .failed(message)
       markFailed(for: machineId, message: message)
-      // It may still come back (a slow restart): keep checking.
       scheduleRemoteRecovery(for: machineId)
     } catch {
       let message = serverErrorMessage(error)

@@ -9,19 +9,10 @@ import { allocatePort, tcpProbe, httpProbe } from "./plugin-readiness.js"
 import type { InstalledPlugin } from "./plugin-store.js"
 import { PluginsError } from "./plugins-error.js"
 
-/// Minimal handle the supervisor needs over a plugin child process.
-/// Production uses defaultSpawnShell; tests inject fakes that bind the
-/// assigned port in-process.
 export interface PluginProcessHandle {
   readonly pid: number | undefined
   readonly kill: () => void
-  /// `exitCode` is the numeric process exit status when the spawner knows it
-  /// (null for signal deaths and launch failures). The supervisor only needs
-  /// the message; the install pipeline needs the code to gate success.
   readonly onExit: (listener: (message: string, exitCode?: number | null) => void) => void
-  /// Combined stdout/stderr stream, when the spawner can provide one. Feeds
-  /// the observability terminal ("Show Output"); optional so test fakes stay
-  /// tiny.
   readonly onOutput?: (listener: (data: string) => void) => void
 }
 
@@ -30,11 +21,6 @@ export interface PluginSpawnOptions {
   readonly env: NodeJS.ProcessEnv
 }
 
-/// Structural mirror of packages/terminal's external-terminal surface, so
-/// plugin output can stream into an attachable terminal without this package
-/// depending on @codevisor/terminal. The real
-/// TerminalManagerService.registerExternalTerminal satisfies
-/// RegisterPluginTerminal as-is.
 export interface PluginTerminalProcess {
   readonly write: (data: string) => void
   readonly resize: (cols: number, rows: number) => void
@@ -58,37 +44,20 @@ export type RegisterPluginTerminal = (
 ) => PluginTerminalHandle
 
 export interface PluginSupervisorConfig {
-  /// Root for per-plugin writable state (CODEVISOR_PLUGIN_DATA_DIR).
   readonly dataDir: string
   readonly spawnShell?: (command: string, options: PluginSpawnOptions) => PluginProcessHandle
   readonly spawnArgv?: (
     argv: ReadonlyArray<string>,
     options: PluginSpawnOptions
   ) => PluginProcessHandle
-  /// Per-plugin key for verifying X-Codevisor-Context, passed to the process
-  /// as CODEVISOR_PLUGIN_CONTEXT_SECRET. The manager owns the signer.
   readonly contextSecret?: (pluginId: string) => string
-  /// Login-shell environment for spawns; defaults to process.env.
   readonly resolveEnv?: () => Promise<NodeJS.ProcessEnv>
   readonly log?: (message: string) => void
-  /// Clock for readiness deadlines and crash backoff; defaults to Date.now.
   readonly now?: () => number
-  /// Waits between readiness probes and automatic restart attempts; defaults
-  /// to a real timer.
   readonly sleep?: (ms: number) => Promise<void>
-  /// Crash/restart circuit breaker: after this many consecutive failures
-  /// without a successful request or stable runtime in between, the plugin
-  /// is refused until an explicit stop/restart. Default 5.
   readonly maxConsecutiveFailures?: number
-  /// Observes every runtime state transition (fed into the server's event
-  /// fanout as plugin.state.updated).
   readonly onStateChange?: (pluginId: string, state: PluginRuntimeState) => void
-  /// A live process exited or stopped answering. The manager uses this seam
-  /// to restore the always-running installed-plugin invariant after backoff.
   readonly onUnexpectedExit?: (pluginId: string) => void
-  /// When present, each plugin process's output streams into an attachable
-  /// external terminal (sessionId `plugin:{pluginId}`) so clients can offer
-  /// "Show Output".
   readonly registerExternalTerminal?: RegisterPluginTerminal
 }
 
@@ -99,66 +68,43 @@ interface RunningPlugin {
   process?: PluginProcessHandle
   startPromise?: Promise<PluginLease>
   lease?: PluginLease
-  /// Consecutive failed starts/crashes since the last successful request or
-  /// stable runtime.
   failures: number
-  /// Start of the current healthy run, used to distinguish a crash loop from
-  /// occasional failures over a long-lived server session.
   runningSince?: number
-  /// Restart-backoff gate: ensureRunning refuses before this timestamp.
   notBefore: number
 }
 
 export interface PluginSupervisor {
   readonly acquire: (plugin: InstalledPlugin) => Promise<PluginLease>
-  /// Starts the plugin's server if needed and resolves its loopback port.
-  /// Concurrent callers share one start attempt. Refuses while the
-  /// crash circuit breaker is tripped or inside a restart-backoff window.
   readonly ensureRunning: (plugin: InstalledPlugin) => Promise<number>
   readonly state: (pluginId: string) => PluginRuntimeState
-  /// A proxied request completed successfully: resets the crash circuit
-  /// breaker.
   readonly noteSuccess: (pluginId: string, lease: PluginLease) => void
-  /// The proxy found the plugin's port dead while the supervisor thought it
-  /// was running: treat it as a crash so the manager relaunches it instead of
-  /// forwarding into a dead port forever.
   readonly markUnreachable: (pluginId: string, lease: PluginLease) => void
-  /// Stop + clear failure state; the next request starts fresh.
   readonly restart: (pluginId: string) => void
   readonly stop: (pluginId: string) => void
   readonly closeAll: () => void
 }
 
-// Object identity binds completion callbacks to exactly one process, even
-// when the kernel later reuses the same port.
 export interface PluginLease {
   readonly port: number
 }
 
-/// A crashed or killed plugin must never take the server with it: every
-/// stream gets an error listener from construction (stdio-transport
-/// invariant) and exits only flip supervisor state. Exported so the install
-/// pipeline runs manifest install commands through the same login-shell
-/// runner (with the same seam for tests).
 export const defaultSpawnShell = (
   command: string,
   options: PluginSpawnOptions
 ): PluginProcessHandle =>
   spawnPluginProcess(
-    /* v8 ignore next -- SHELL is always set in practice; /bin/sh is the documented fallback. */
+    /* v8 ignore next */
     options.env["SHELL"] ?? process.env["SHELL"] ?? "/bin/sh",
     ["-lc", command],
     options
   )
 
-/// Protocol v2 process runner. It launches the declared executable directly,
-/// preserving the argument boundaries shown on consent surfaces.
 export const defaultSpawnArgv = (
   argv: ReadonlyArray<string>,
   options: PluginSpawnOptions
 ): PluginProcessHandle => {
   const [executable, ...args] = argv
-  /* v8 ignore next -- manifest validation requires a non-empty argv. */
+  /* v8 ignore next */
   return spawnPluginProcess(executable ?? "", args, options)
 }
 
@@ -181,9 +127,9 @@ const spawnPluginProcess = (
       listener(data)
     }
   }
-  /* v8 ignore next -- defensive: an unhandled stream error is process-fatal (stdio-transport invariant). */
+  /* v8 ignore next */
   child.stdout?.on("error", () => undefined)
-  /* v8 ignore next -- defensive: an unhandled stream error is process-fatal (stdio-transport invariant). */
+  /* v8 ignore next */
   child.stderr?.on("error", () => undefined)
   child.stdout?.on("data", forward)
   child.stderr?.on("data", (chunk: Buffer) => {
@@ -205,13 +151,12 @@ const spawnPluginProcess = (
   })
   return {
     kill: () => {
-      /* v8 ignore start -- process-group kill paths depend on platform state. */
+      /* v8 ignore start */
       const pid = child.pid
       if (pid === undefined) {
         return
       }
       try {
-        // Kill the whole process group so the plugin's children die with it.
         process.kill(-pid, "SIGTERM")
       } catch {
         child.kill("SIGTERM")
@@ -228,14 +173,9 @@ const spawnPluginProcess = (
   }
 }
 
-/// How long a plugin gets from spawn to accepting connections.
 const READY_TIMEOUT_MS = 15_000
-/// First restart-backoff window after a crash; doubles per consecutive
-/// failure up to BACKOFF_CAP_MS.
 const BACKOFF_BASE_MS = 500
 const BACKOFF_CAP_MS = 30_000
-/// A process that stays up this long is no longer part of the previous
-/// crash sequence.
 const STABLE_RUNTIME_MS = 30_000
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
@@ -276,9 +216,6 @@ export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupe
     config.onStateChange?.(pluginId, state)
   }
 
-  /// One crash or failed start: arm the exponential-backoff window and pick
-  /// the next state — `failed` once the circuit breaker trips, `stopped`
-  /// while restarts are still allowed.
   const registerFailure = (current: RunningPlugin): PluginRuntimeState => {
     if (current.runningSince !== undefined && now() - current.runningSince >= STABLE_RUNTIME_MS) {
       current.failures = 0
@@ -319,8 +256,6 @@ export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupe
       runCommand.kind === "shell"
         ? spawnShell(runCommand.command, { cwd: plugin.path, env })
         : spawnArgv(runCommand.argv, { cwd: plugin.path, env })
-    // A restart re-registers under the same session key, replacing the old
-    // terminal, so "Show Output" always shows the live process.
     const terminal = config.registerExternalTerminal?.(
       { normalizeNewlines: true, sessionId: `plugin:${plugin.id}` },
       { kill: () => child.kill(), resize: () => undefined, write: () => undefined }
@@ -333,9 +268,6 @@ export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupe
       exitMessage = message
       terminal?.exit()
       const state = runtime(plugin.id)
-      // Exits during startup are consumed by the readiness loop; superseded
-      // processes (stop/restart already cleared them) only close their
-      // terminal. Only an unexpected exit of the live process is a crash.
       if (state.process === child && state.state === "running") {
         log(`Plugin ${plugin.id} ${message.split("\n")[0]}`)
         setState(plugin.id, state, registerFailure(state))
@@ -353,7 +285,7 @@ export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupe
           ? await tcpProbe(port)
           : await httpProbe(port, plugin.manifest.healthPath)
       checkOwner()
-      /* v8 ignore next -- success, retry, timeout, and connection-error outcomes are covered explicitly. */
+      /* v8 ignore next */
       if (ready) {
         current.port = port
         const lease = { port }
@@ -378,8 +310,6 @@ export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupe
     if (current === undefined) {
       return
     }
-    // Explicit stop/restart clears the crash accounting so the manager can
-    // relaunch fresh with no backoff and an open circuit breaker.
     current.failures = 0
     current.notBefore = 0
     current.generation += 1
@@ -444,9 +374,8 @@ export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupe
       }
       log(`Plugin ${pluginId} stopped answering on 127.0.0.1:${current.port}; treating as crashed`)
       const child = current.process
-      // Retire ownership before kill: an exit callback can arrive immediately.
       const nextState = registerFailure(current)
-      /* v8 ignore next -- a running runtime always tracks its process. */
+      /* v8 ignore next */
       child?.kill()
       setState(pluginId, current, nextState)
       config.onUnexpectedExit?.(pluginId)

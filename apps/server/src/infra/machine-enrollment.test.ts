@@ -31,14 +31,11 @@ const presence = (
   ...extra
 })
 
-/// A fake account: `onSsh` decides what the host does with the script.
 const harness = (options: {
   onSsh?: (script: string, machines: CloudMachinePresence[]) => SshRun
   invite?: () => Promise<{ code: string; expiresAt: string }>
-  /// Runs on each poll wait, with the account's machines.
   onSleep?: (machines: CloudMachinePresence[]) => void
   cloud?: Partial<MachineEnrollmentCloud>
-  /// What machines.list() answers, when it shouldn't follow the cloud.
   list?: () => Promise<ReadonlyArray<MachineSummary>>
 }) => {
   const machines: CloudMachinePresence[] = [
@@ -109,7 +106,6 @@ describe("remoteInstallScript", () => {
       installUrl: "https://example.test/install.sh",
       name: "it's-a-box"
     })
-    // Replace the download with a probe that prints what the installer sees.
     const probe = script.replace(
       /url=.*\n[\s\S]*$/,
       'printf "%s|%s|%s" "$CODEVISOR_INVITE" "$CODEVISOR_NO_SETUP" "$CODEVISOR_MACHINE_NAME"\n'
@@ -292,7 +288,6 @@ describe("machine enrollment edge cases", () => {
     const plain = harness({
       cloud: {
         machines: () => listed,
-        // The cloud's list names no inviter; the poll still matches our own device.
         deviceId: () => undefined
       },
       onSsh: () => {
@@ -316,7 +311,6 @@ describe("machine enrollment edge cases", () => {
       onSsh: joinAs("hetzner-1", { online: false }),
       onSleep: () => caller.abort()
     })
-    // Cancelled mid-wait, it answers with what it saw (still offline).
     expect((await enrollment.add({ ssh: "box" }, caller.signal)).online).toBe(false)
   })
 

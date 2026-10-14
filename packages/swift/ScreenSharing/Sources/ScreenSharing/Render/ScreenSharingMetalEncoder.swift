@@ -1,19 +1,12 @@
 import CoreVideo
 import MetalKit
 
-/// Pure Metal encoding of one frame into a surface — no actor, no AppKit.
-/// One instance per thread (the texture cache is not shared); the command
-/// queue and pipelines are shared (thread-safe / immutable per Metal).
 struct ScreenSharingMetalEncoder: @unchecked Sendable {
-  /// One pipeline per supported pixel layout, compiled once from the shared shader source.
   struct Pipelines: @unchecked Sendable {
     let biplanar: any MTLRenderPipelineState
     let bgra: any MTLRenderPipelineState
-    /// HDR planes into the HDR target (`ScreenSharingMetalEncoder.highDynamicRangePixelFormat`), as linear light.
     let biplanarHDR: any MTLRenderPipelineState
-    /// HDR planes into an 8-bit target: tone-mapped to SDR (a layer not yet switched, or a diagnostic path).
     let biplanarPQToSDR: any MTLRenderPipelineState
-    /// SDR planes and BGRA into the HDR target: the frames while a layer switches back from HDR.
     let biplanarSDRToLinear: any MTLRenderPipelineState
     let bgraSDRToLinear: any MTLRenderPipelineState
 
@@ -38,12 +31,9 @@ struct ScreenSharingMetalEncoder: @unchecked Sendable {
       bgraSDRToLinear = try pipeline(fragment: "screenFragmentBGRAToLinear", target: hdr)
     }
   }
-  /// Validated plane textures of one frame, created before any drawable is acquired.
   struct Textures {
     enum Planes {
-      /// 4:2:0 or 4:4:4 biplanar YCbCr, video or full range, 8 or 10 bits: the decoder's output.
       case biplanar(y: CVMetalTexture, uv: CVMetalTexture, range: PlaneRange)
-      /// Packed 8-bit BGRA: a framebuffer backend's output, drawn without conversion.
       case bgra(CVMetalTexture)
     }
     let frame: ScreenSharingVideoFrame
@@ -59,26 +49,20 @@ struct ScreenSharingMetalEncoder: @unchecked Sendable {
       }
     }
   }
-  /// How a biplanar format's samples map to Y and CbCr: 8-bit codes, or 10-bit codes in the
-  /// top of 16-bit words (CoreVideo's 10-bit biplanar layout), each video or full range.
   struct PlaneRange: Equatable {
     let dynamicRange: ScreenSharingDynamicRange
     let fullRange: Bool
 
-    /// The shader's `ScreenRange`: yOffset, yScale, cOffset, cScale, on normalized samples.
     var uniform: SIMD4<Float> {
-      // A normalized sample is code × step: 1/255 for 8 bits, 64/65535 for 10 bits in 16.
       let (step, maximum): (Float, Float) = dynamicRange == .high ? (64.0 / 65535.0, 1023) : (1.0 / 255.0, 255)
-      let black = (maximum + 1) / 16  // 16 or 64: black, video range
-      let half = (maximum + 1) / 2  // 128 or 512: zero chroma
+      let black = (maximum + 1) / 16
+      let half = (maximum + 1) / 2
       if fullRange { return SIMD4(0, 1 / (maximum * step), half * step, 1 / (maximum * step)) }
-      let lumaSpan = black * 219 / 16  // 219 or 876
-      let chromaSpan = black * 224 / 16  // 224 or 896
+      let lumaSpan = black * 219 / 16
+      let chromaSpan = black * 224 / 16
       return SIMD4(black * step, 1 / (lumaSpan * step), half * step, 1 / (chromaSpan * step))
     }
   }
-  /// The drawable format for HDR frames: half floats, linear light in an extended Display P3 layer,
-  /// SDR white at 1.0 and highlights above it.
   static let highDynamicRangePixelFormat = MTLPixelFormat.rgba16Float
   struct Encoded {
     let buffer: any MTLCommandBuffer
@@ -112,9 +96,6 @@ struct ScreenSharingMetalEncoder: @unchecked Sendable {
     CGSize(width: CVPixelBufferGetWidth(frame.pixelBuffer), height: CVPixelBufferGetHeight(frame.pixelBuffer))
   }
 
-  /// The aspect-fit placement of one video inside a drawable: scaled to fit,
-  /// centred, letterboxed on the short axis. Named so the letterbox geometry
-  /// can be checked without a GPU drawable.
   static func viewport(video: CGSize, target: CGSize) -> MTLViewport {
     let scale = min(target.width / video.width, target.height / video.height)
     return MTLViewport(
@@ -122,7 +103,6 @@ struct ScreenSharingMetalEncoder: @unchecked Sendable {
       width: video.width * scale, height: video.height * scale, znear: 0, zfar: 1)
   }
 
-  /// Pixel-format validation and plane textures; nil for an unsupported frame.
   func textures(for frame: ScreenSharingVideoFrame) -> Textures? {
     let pixel = frame.pixelBuffer
     let format = CVPixelBufferGetPixelFormatType(pixel)
@@ -141,16 +121,10 @@ struct ScreenSharingMetalEncoder: @unchecked Sendable {
     return Textures(frame: frame, planes: .biplanar(y: y, uv: uv, range: range))
   }
 
-  /// Encodes and ends encoding; the buffer is neither presented nor committed here.
-  /// The video is scaled to fit the target and centred, letterboxed on the short axis.
   func encode(_ textures: Textures, into target: Surface) -> Encoded? {
     encode(textures, into: target.pass, target: target.drawable.texture)
   }
 
-  /// The same drawing against a plain render target. A drawable contributes
-  /// only its texture here, so the rendered pixels can be checked against an
-  /// ordinary off-screen texture, with no CoreAnimation layer to acquire and
-  /// no window server session to depend on.
   func encode(
     _ textures: Textures, into pass: MTLRenderPassDescriptor, target targetTexture: any MTLTexture
   ) -> Encoded? {

@@ -2,7 +2,6 @@ import CodevisorCore
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Read-only inherited accounts sit alongside a machine's own providers.
 public struct HarnessSharedAccountRows: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.theme) private var theme
@@ -31,7 +30,6 @@ public struct HarnessSharedAccountRows: View {
   }
 }
 
-/// The editable account list used only in global harness settings.
 public struct HarnessSharedAccountsSection: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.theme) private var theme

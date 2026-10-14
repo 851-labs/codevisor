@@ -83,7 +83,6 @@ describe("session transcript routes", () => {
         })
       ])
     )
-    // Event replay is a bounded delivery protocol, never the history API.
     expect((await jsonRequest(server, `/v1/sessions/${session.id}/events`)).status).toBe(410)
     const scopedReplay = (await readWebSocketEvents(
       server,

@@ -59,8 +59,6 @@ const createServerSession = async (
   const sessionPayload = {
     ...payload,
     id: sessionId,
-    // Use the resolved project's canonical id (the client may have sent a
-    // different-cased UUID) so the session's foreign key matches the row.
     projectId: project.id,
     ...(harnessAccountId === undefined ? {} : { harnessAccountId }),
     agentSessionId
@@ -68,11 +66,6 @@ const createServerSession = async (
   if (payload.workspaceId === undefined) {
     return run(services.db.createSession(sessionPayload))
   }
-  // A chat born into a workspace commits with the workspace row (created here
-  // when the client has not uploaded it yet) and its chat pane in ONE
-  // transaction, so no other client can observe the workspace without its
-  // chat. The events below keep clients that predate the navigation journal
-  // informed, exactly as the discrete writes used to.
   const created = await run(
     services.db.createWorkspaceWithSession({
       workspace: {
@@ -100,10 +93,6 @@ const createServerSession = async (
   return created.session
 }
 
-/// Create-or-return for sessions: the existing-row and in-flight-create
-/// checks (concurrent POSTs for the same client-supplied id must not spawn
-/// two agent sessions) shared by POST /v1/sessions and the combined
-/// /open route.
 export const createSessionIfMissing = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
@@ -112,9 +101,6 @@ export const createSessionIfMissing = async (
   rawPayload: CreateSessionRequest,
   publishCreated = true
 ): Promise<{ readonly session: SessionSummary; readonly created: boolean }> => {
-  // Session ids are canonically lowercase; a client-supplied uppercase id
-  // (Swift renders uuids uppercase) must find the existing row — and share
-  // the in-flight-create key — rather than minting a case-twin duplicate.
   const payload: CreateSessionRequest =
     rawPayload.id === undefined ? rawPayload : { ...rawPayload, id: rawPayload.id.toLowerCase() }
   if (payload.id !== undefined) {
@@ -124,8 +110,6 @@ export const createSessionIfMissing = async (
     }
   }
   let created = false
-  // Register before even the existence lookup yields: a caller must not keep
-  // using a stale missing-row result after another creation has completed.
   const create = (async () => {
     if (payload.id !== undefined) {
       const existing = await findSession(services.db, payload.id)
@@ -150,13 +134,6 @@ export const createSessionIfMissing = async (
   return { session, created }
 }
 
-/// The full PATCH side-effect set, shared by PATCH /v1/sessions/:id and the
-/// combined /open route so opening a chat behaves exactly like the discrete
-/// update it replaced.
-///
-/// Chats carry no archive state: their workspace does, and the worktree is
-/// reclaimed when that workspace is archived. Closing a chat is pane removal,
-/// which `setSessionWorkspace(id, null)` performs.
 export const applySessionUpdate = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
@@ -186,8 +163,6 @@ export const applySessionUpdate = async (
   return session
 }
 
-/// Whether the workspace already exists, rejecting a cross-project pairing
-/// with the same 409 both the discrete and the atomic create paths owe.
 const assertWorkspaceProject = async (
   services: CodevisorServerServices,
   workspaceId: string | undefined,
@@ -208,11 +183,6 @@ const assertWorkspaceProject = async (
   return true
 }
 
-/// Native clients persist pane layout locally, but workspace identity and
-/// membership are server-owned. Assigning an EXISTING chat to a workspace the
-/// client has not uploaded yet lazily creates the metadata row first. The
-/// event lets every other client materialize its own local layout for the
-/// shared workspace.
 const ensureSessionWorkspace = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
@@ -231,16 +201,13 @@ const ensureSessionWorkspace = async (
       projectId: project.id,
       name: workspaceName,
       hasCustomName: false,
-      /* v8 ignore next -- server-created sessions always resolve a cwd; omission protects legacy rows without a local project location. */
+      /* v8 ignore next */
       ...(rootDirectory === undefined ? {} : { rootDirectory })
     })
   )
   await appendAndPublish(services.db, fanout, "workspace.updated", workspace.id, workspace)
 }
 
-/// Derives the directory a session runs in: the project's folder on this
-/// server, or its worktree at ~/codevisor/{projectId}/{worktreeName}. The result
-/// must stay deterministic per session so the agent-runtime session cache hits.
 export const resolveSessionCwdOrFail = async (
   services: CodevisorServerServices,
   serverId: string,
@@ -285,8 +252,6 @@ export const ensureAgentSessionFor = async (
     loadAgentSessionFor(services, fanout, serverId, sessionId)
   )
 
-// Caller owns withSessionMutation, including the restoration below. Picker
-// changes use this entry point while holding the same session ownership.
 export const loadAgentSessionFor = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
@@ -305,12 +270,6 @@ export const loadAgentSessionFor = async (
     try {
       accountContext = await services.auth.accountContext(session.harnessAccountId)
     } catch {
-      // Policy, not a fallback: a chat follows a working account, preferring
-      // its pin. The pinned account is used while it can authenticate; once it
-      // is dead (signed out, expired, removed) the session rebinds to the
-      // machine's usable active account and the turn continues under it, so a
-      // chat never keeps burning a dead account while a working one sits idle.
-      // Without a usable active account the turn still fails with 409 below.
       accountContext = await services.auth.activeAccountContext(session.harnessId)
       if (accountContext !== undefined && accountContext.id !== session.harnessAccountId) {
         session = await run(services.db.bindSessionHarnessAccount(session.id, accountContext.id))
@@ -318,15 +277,13 @@ export const loadAgentSessionFor = async (
       }
     }
   }
-  /* v8 ignore next -- authenticated and blocked session-resume paths are integration-tested. */
+  /* v8 ignore next */
   if (services.auth !== undefined && accountContext === undefined) {
     throw new HttpFailure(409, "Select a signed-in harness account before continuing this session")
   }
   if (session.harnessAccountId === undefined && accountContext !== undefined) {
     await run(services.db.bindSessionHarnessAccount(session.id, accountContext.id))
   }
-  // The chat's saved picks start the harness process, so it never runs on
-  // the harness default while restore catches up.
   const startOptions = { configSelections: session.configSelections ?? {} }
   if (session.agentSessionId === "") {
     const sink = sessionEventSink(services, fanout, serverId, sessionId)
@@ -396,16 +353,6 @@ export const configRestorePriority = (option: SessionConfigOption | undefined): 
   return 3
 }
 
-/// Rehydrates durable per-chat picker values after the provider has resumed
-/// its native thread. Model goes first because it can replace the available
-/// reasoning and speed lists. Every later value is validated against the
-/// latest options returned by the provider.
-///
-/// The saved selections are the user's picks, and restore never replaces
-/// them with what the runtime happens to be running: a value the runtime no
-/// longer offers is kept and recorded as unavailable, and a value it rejects
-/// is kept for the next reconnect to retry. The only rewrite is a drifted id
-/// the provider reconciles onto its current entry for the same pick.
 const restoreSessionConfigSelections = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
@@ -413,10 +360,6 @@ const restoreSessionConfigSelections = async (
   sessionId: string,
   metadata: AgentSessionMetadata
 ): Promise<AgentSessionMetadata> => {
-  // No option list is not an answer: the Claude adapter returns none when its
-  // model list loses the startup race, and nothing can be validated against
-  // it. Leave the saved selections untouched so the next reconnect (or a
-  // late config update) can still restore them.
   if (metadata.configOptions.length === 0) {
     await run(services.db.saveSessionRuntimeState(sessionId, metadata))
     return metadata
@@ -428,8 +371,6 @@ const restoreSessionConfigSelections = async (
     services.agents.reconcileConfigValue(summary.harnessId, option, value)
   let configOptions = metadata.configOptions
   const migrated: Record<string, string> = {}
-  // An earlier verdict stands while its pick is unchanged and nothing here
-  // contradicts it (an option absent from this runtime is not re-judged).
   const unavailable: Record<string, string> = Object.fromEntries(
     Object.entries(previouslyUnavailable).filter(([configId, value]) => saved[configId] === value)
   )
@@ -441,13 +382,7 @@ const restoreSessionConfigSelections = async (
   })
   for (const [configId, value] of ordered) {
     const option = configOptions.find((candidate) => candidate.id === configId)
-    // The option itself is absent — typically one the current model does
-    // not have (speed on a model without fast mode). The pick stays for a
-    // runtime that offers it again.
     if (option === undefined) continue
-    // A saved value the runtime no longer offers verbatim may still name a
-    // current entry under a newer id (Claude's Fable id drifts between CLI
-    // releases). The provider says which.
     const restored = placeConfigValue(option, value, reconcile)
     if (restored === undefined) {
       console.error(
@@ -458,19 +393,12 @@ const restoreSessionConfigSelections = async (
     }
     delete unavailable[configId]
     if (restored !== value) migrated[configId] = restored
-    // Runtimes report "" for a value they do not know, so a matching current
-    // value is one the runtime is really running (Claude starts on the saved
-    // model), not a default that happens to look like the pick.
     if (option.currentValue === restored) continue
     try {
       configOptions = await run(
         services.agents.setConfigOption(metadata.sessionId, configId, restored)
       )
     } catch (error) {
-      // A harness can reject a value between advertising it and applying it.
-      // Session open must still succeed; the saved pick stays so the next
-      // reconnect can retry instead of turning a transient startup race into
-      // a permanent preference change.
       console.error(
         `[session-config] ${sessionId}: could not restore ${configId}=${restored}: ${String(error)}`
       )
@@ -481,8 +409,6 @@ const restoreSessionConfigSelections = async (
     await run(services.db.replaceSessionConfigSelections(sessionId, selections, unavailable))
     await publishSessionSelections(services, fanout, sessionId)
   }
-  // A runtime that started on the saved picks needed no restore call, so it
-  // reported nothing; publish what it is running over any older report.
   await publishSessionConfigOptions(services, fanout, serverId, sessionId, configOptions)
   const current = { ...metadata, configOptions }
   await run(services.db.saveSessionRuntimeState(sessionId, current))

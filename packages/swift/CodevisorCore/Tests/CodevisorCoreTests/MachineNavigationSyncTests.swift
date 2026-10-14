@@ -66,13 +66,8 @@ struct MachineNavigationSyncTests {
     try await waitUntil {
       fake.listSessionCallCount == callCountBeforeRefresh + 1
     }
-    // A machine that already presented a current snapshot keeps it during
-    // a warm catch-up: the cursor makes the resync gapless, and demoting
-    // to `.catchingUp` would evict its rows from fleet-aggregated lists.
     #expect(controller.navigationSyncStateByMachineId["local"] == .current)
 
-    // This event lands after the cursor was captured but while the list
-    // request is blocked. It must replay after the snapshot commits.
     var replayed = snapshotUpdate
     replayed.title = "Updated during snapshot"
     replayed.updatedAt = "2026-08-21T21:00:01.000Z"
@@ -98,8 +93,6 @@ struct MachineNavigationSyncTests {
         == "Updated during snapshot"
     }
 
-    // The replayed event lands after the snapshot commits, so its title is
-    // the one that survives — the ordering this test exists to pin.
     let reconciled = try #require(projectList.sessions.first { $0.id == sessionId })
     #expect(reconciled.title == "Updated during snapshot")
     #expect(controller.navigationSyncStateByMachineId["local"] == .current)
@@ -161,9 +154,6 @@ struct MachineNavigationSyncTests {
 
   @Test("A settled sign-in probe invalidates the harness catalog without a lifecycle re-read")
   func authEventInvalidatesCatalog() async throws {
-    // Onboarding fetches the catalog passively; the server resolves the
-    // account in the background and announces it with `harness.auth.updated`.
-    // Without this hop the row stays on "Checking sign-in…" indefinitely.
     let fake = NavigationSyncFakeServerClient(projects: [], sessions: [])
     let controller = MachineController(
       store: InMemoryStore(),
@@ -200,7 +190,6 @@ struct MachineNavigationSyncTests {
       clientFactory: { _ in fake }
     )
 
-    // Nothing current yet: the machine has never synced this launch.
     let snapshotGate = Latch()
     fake.configureListSessionDelay { await snapshotGate.wait() }
     let refresh = Task {
@@ -255,7 +244,6 @@ struct MachineNavigationSyncTests {
       await snapshotStarted.wait()
       #expect(controller.navigationSyncStateByMachineId["local"] == failure)
 
-      // A catch-up joining an in-flight retry must also retain the error.
       let joining = TestSignal()
       let joinedRetry = Task { @MainActor in
         joining.signal()

@@ -6,27 +6,18 @@ enum ComposerKeyCommand {
   case moveSelectionDown
   case acceptSelection
   case dismissSelection
-  /// ↑ with the caret on the first visual line: recall an older prompt.
   case recallPreviousPrompt
-  /// ↓ with the caret on the last visual line: recall a newer prompt.
   case recallNextPrompt
 }
 
-/// Attachment-worthy pasteboard content intercepted by the composer's paste.
 enum PastedAttachment {
   case fileURL(URL)
-  /// PNG-normalized image bytes.
   case image(data: Data, suggestedName: String?)
 }
 
-/// A multiline text editor where **Return submits** and **Shift+Return inserts a
-/// newline**. Grows with its content between `minHeight` and `maxHeight`.
 struct ChatInputEditor: NSViewRepresentable {
   private static let verticalTextInset: CGFloat = 6
 
-  /// Starting at the same height TextKit will report prevents a newly
-  /// mounted composer from growing one frame later. Derive it from the
-  /// preferred body font so accessibility text sizing stays in sync too.
   static var singleLineHeight: CGFloat {
     NSLayoutManager().defaultLineHeight(
       for: NSFont.preferredFont(forTextStyle: .body)
@@ -35,22 +26,13 @@ struct ChatInputEditor: NSViewRepresentable {
 
   @Binding var text: String
   @Binding var calculatedHeight: CGFloat
-  /// Two-way caret/selection sync. The composer's slash palette derives its
-  /// query from the token at the caret, and accepting a command repositions
-  /// the caret after rewriting the text. Nil call sites opt out.
   var selection: Binding<NSRange>? = nil
   var minHeight: CGFloat = Self.singleLineHeight
   var maxHeight: CGFloat = 240
   var onSubmit: () -> Void
   var onKeyCommand: ((ComposerKeyCommand) -> Bool)? = nil
-  /// Returns true when the paste was consumed as attachments (file URLs or
-  /// image data); false falls through to the normal text paste.
   var onPasteAttachments: (([PastedAttachment]) -> Bool)? = nil
-  /// Called once with the underlying text view so callers can move focus to it
-  /// for tab selection and type-to-focus handoffs.
   var onTextViewReady: ((SubmittingTextView) -> Void)? = nil
-  /// Honors SwiftUI `.disabled(...)`: the text view stops accepting edits
-  /// (and Return stops submitting) while a send is being accepted.
   @Environment(\.isEnabled) private var isEnabled
 
   func makeNSView(context: Context) -> NSScrollView {
@@ -64,9 +46,6 @@ struct ChatInputEditor: NSViewRepresentable {
     textView.font = .preferredFont(forTextStyle: .body)
     textView.isRichText = false
     textView.writingToolsBehavior = .none
-    // No automatic formatting in a prompt box: smart quotes/dashes and
-    // autocorrect mangle code and identifiers, and these apply even in
-    // plain-text views (they follow the system defaults otherwise).
     textView.isAutomaticQuoteSubstitutionEnabled = false
     textView.isAutomaticDashSubstitutionEnabled = false
     textView.isAutomaticTextReplacementEnabled = false
@@ -90,8 +69,6 @@ struct ChatInputEditor: NSViewRepresentable {
     scroll.hasHorizontalScroller = false
     scroll.documentView = textView
     context.coordinator.textView = textView
-    // Height depends on the wrap width, which SwiftUI only settles after
-    // layout — re-measure whenever the text view's width changes.
     textView.postsFrameChangedNotifications = true
     NotificationCenter.default.addObserver(
       context.coordinator,
@@ -106,9 +83,6 @@ struct ChatInputEditor: NSViewRepresentable {
   func updateNSView(_ scrollView: NSScrollView, context: Context) {
     guard let textView = scrollView.documentView as? SubmittingTextView else { return }
     context.coordinator.parent = self
-    // Programmatic string/selection writes below fire the selection
-    // delegate; suppress the echo so SwiftUI state is not modified
-    // mid-view-update.
     context.coordinator.isApplyingUpdate = true
     defer { context.coordinator.isApplyingUpdate = false }
     textView.onSubmit = { onSubmit() }
@@ -132,10 +106,6 @@ struct ChatInputEditor: NSViewRepresentable {
         textView.setSelectedRange(clamped)
       }
     }
-    // Change-driven: this runs on EVERY SwiftUI invalidation of the
-    // composer (including transcript streaming re-renders), and
-    // `recalculateHeight` is a full TextKit layout pass of the draft.
-    // Only re-measure when the text or wrap width actually changed.
     context.coordinator.recalculateHeightIfNeeded()
   }
 
@@ -150,8 +120,6 @@ struct ChatInputEditor: NSViewRepresentable {
       if synchronously {
         calculatedHeight = clamped
       } else {
-        // Measurements made while SwiftUI is creating or updating the
-        // representable cannot write view state in that same update.
         DispatchQueue.main.async { calculatedHeight = clamped }
       }
     }
@@ -160,13 +128,7 @@ struct ChatInputEditor: NSViewRepresentable {
   final class Coordinator: NSObject, NSTextViewDelegate {
     var parent: ChatInputEditor
     weak var textView: SubmittingTextView?
-    /// True while `updateNSView` applies SwiftUI state to the text view.
     var isApplyingUpdate = false
-    /// The text/width the height was last measured for. Guards the
-    /// full-layout `recalculateHeight` so it runs once per real change
-    /// instead of once per SwiftUI invalidation (and prevents the
-    /// keystroke → binding write → update round-trip from laying the
-    /// same text out twice).
     private var measuredText: String?
     private var measuredWidth: CGFloat = -1
 
@@ -186,8 +148,6 @@ struct ChatInputEditor: NSViewRepresentable {
 
     @objc func textViewFrameDidChange(_ notification: Notification) {
       guard let textView else { return }
-      // Height changes are our own doing (the view grows with its
-      // content); only a width change re-wraps the text.
       guard abs(measuredWidth - textView.bounds.width) > 0.5 else { return }
       recordMeasurement(textView)
       parent.recalculateHeight(textView)
@@ -202,11 +162,6 @@ struct ChatInputEditor: NSViewRepresentable {
       guard let textView = notification.object as? NSTextView else { return }
       recordMeasurement(textView)
       parent.text = textView.string
-      // A native edit callback is outside updateNSView, so publish its
-      // height immediately. Deferring this by another main-queue turn
-      // lets NSTextView scroll the new caret inside the old, shorter
-      // viewport and produces a visible one-line jump before SwiftUI
-      // grows the composer.
       parent.recalculateHeight(textView, synchronously: true)
     }
 
@@ -218,16 +173,10 @@ struct ChatInputEditor: NSViewRepresentable {
       }
     }
 
-    /// Routes navigation commands to the composer (slash-command menu) via
-    /// the standard key-binding pipeline, so arrow keys, Tab, and Escape
-    /// steer the menu instead of the text view while it is open.
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
       switch commandSelector {
       case #selector(NSResponder.moveUp(_:)):
         if parent.onKeyCommand?(.moveSelectionUp) == true { return true }
-        // Past the menu, ↑ on the first line walks back through the
-        // chat's sent prompts, like a terminal. Anywhere else it moves
-        // the caret as usual.
         guard let textView = textView as? SubmittingTextView,
           textView.isCaretOnEdgeLine(.first)
         else { return false }
@@ -249,15 +198,6 @@ struct ChatInputEditor: NSViewRepresentable {
   }
 }
 
-/// Keeps an auto-growing text view top-pinned until it reaches its height cap.
-///
-/// NSTextView scrolls its insertion point into view after notifying its
-/// delegate of an edit. At that instant SwiftUI may not have applied the new
-/// measured height to the enclosing NSScrollView yet. The default clip view
-/// therefore scrolls down by one line, briefly clipping the top of the draft.
-/// Content that still fits in the editor's growing range should never scroll;
-/// once the document is taller than the cap, normal AppKit caret-following
-/// behavior resumes.
 private final class GrowingTextClipView: NSClipView {
   var maximumGrowingHeight: CGFloat = 0
 
@@ -277,15 +217,7 @@ private final class GrowingTextClipView: NSClipView {
   }
 }
 
-/// An `NSTextView` that submits on Return and inserts a newline on Shift+Return.
-/// Menu navigation (arrows, Tab, Escape) is handled by the coordinator's
-/// `textView(_:doCommandBy:)`; only Return needs special-casing here because the
-/// Shift modifier isn't visible at the command-selector level.
 extension NSTextView {
-  /// Replaces `range` as one undo step of its own, apart from the typing
-  /// around it: ⌘Z then restores exactly what was replaced, caret included.
-  /// Writing `string` instead bypasses undo and strands the typing steps
-  /// already on the stack against text that no longer matches them.
   func replaceAsUndoableEdit(_ range: NSRange, with replacement: String) {
     breakUndoCoalescing()
     guard shouldChangeText(in: range, replacementString: replacement) else { return }
@@ -308,22 +240,8 @@ final class SubmittingTextView: NSTextView {
   var onKeyCommand: ((ComposerKeyCommand) -> Bool)?
   var onPasteAttachments: (([PastedAttachment]) -> Bool)?
 
-  /// Accept only plain-text drags. NSTextView's default drag registration
-  /// includes file URLs/filenames/promises and inserts a dropped file's
-  /// *path* as text; narrowing `acceptableDragTypes` (the hook that
-  /// `updateDragTypeRegistration()` consults — NSTextView does NOT route
-  /// its registration through `registerForDraggedTypes`, so overriding that
-  /// is a no-op) leaves the text view unregistered for file drags, so
-  /// AppKit routes them past the composer to the chat pane's attachment
-  /// dropzone (`AttachmentDropModifier`) and the file attaches instead.
   override var acceptableDragTypes: [NSPasteboard.PasteboardType] { [.string] }
 
-  /// The composer is plain text, but NSTextView still honors alignment (a
-  /// paragraph attribute) and font-manager trait changes (which restyle the
-  /// WHOLE box in plain-text mode). The app ships no Format menu today, so
-  /// nothing routes these here — the refusal stays as a guard in case rich-
-  /// text formatting commands are reintroduced: the items disable while the
-  /// composer has focus, and the actions are no-ops if invoked anyway.
   private static let blockedFormatActions: Set<Selector> = [
     #selector(NSText.alignLeft(_:)),
     #selector(NSText.alignCenter(_:)),
@@ -350,12 +268,6 @@ final class SubmittingTextView: NSTextView {
   override func lowerBaseline(_ sender: Any?) {}
   override func changeFont(_ sender: Any?) {}
 
-  /// `NSTextView` validates the Edit > Paste command against its own
-  /// plain-text readable types before dispatching the action. An image-only
-  /// clipboard therefore disables the menu item (and its Command-V key
-  /// equivalent), even though `paste(_:)` below knows how to attach it.
-  /// Include attachment-worthy content in that validation without teaching
-  /// the text view to insert images into its text storage.
   override func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
     if let action = item.action, Self.blockedFormatActions.contains(action) {
       return false
@@ -370,17 +282,8 @@ final class SubmittingTextView: NSTextView {
     return super.validateUserInterfaceItem(item)
   }
 
-  /// Intercepts pastes carrying files or raw image data (e.g. copied
-  /// screenshots) and routes them to the composer as attachments; plain text
-  /// falls through to the normal paste. The pasteboard is read synchronously
-  /// (its contents can change once this returns), and the fall-through
-  /// decision depends only on the available types — but TIFF→PNG transcoding
-  /// (a Retina screenshot is a 20-60MB TIFF) happens off the main thread,
-  /// with the attachment delivered back on it.
   override func paste(_ sender: Any?) {
     let pasteboard = NSPasteboard.general
-    // File URLs win: a Finder copy also carries the filename as a string,
-    // which must not paste as text.
     if let urls = pasteboard.readObjects(
       forClasses: [NSURL.self],
       options: [.urlReadingFileURLsOnly: true]
@@ -391,9 +294,7 @@ final class SubmittingTextView: NSTextView {
       super.paste(sender)
       return
     }
-    // Raw image data (copied screenshots, images copied from a browser).
     if let data = pasteboard.data(forType: .png) {
-      // Already PNG: nothing to transcode.
       if onPasteAttachments?([.image(data: data, suggestedName: nil)]) == true {
         return
       }
@@ -410,8 +311,6 @@ final class SubmittingTextView: NSTextView {
     super.paste(sender)
   }
 
-  /// Cheap validation path: menu validation runs frequently, so avoid
-  /// decoding/converting TIFF data until Paste is actually invoked.
   private static func pasteboardContainsAttachments(_ pasteboard: NSPasteboard) -> Bool {
     if pasteboard.canReadObject(
       forClasses: [NSURL.self],
@@ -424,9 +323,6 @@ final class SubmittingTextView: NSTextView {
 
   enum EdgeLine { case first, last }
 
-  /// True when the caret (no selection) sits on the first or last *visual*
-  /// line, so ↑/↓ inside wrapped or multi-line text keeps moving the caret
-  /// and only the edge line hands off to prompt history.
   func isCaretOnEdgeLine(_ edge: EdgeLine) -> Bool {
     let selection = selectedRange()
     guard selection.length == 0, !hasMarkedText() else { return false }
@@ -442,8 +338,6 @@ final class SubmittingTextView: NSTextView {
     return abs(caretRect.minY - edgeRect.minY) < 0.5
   }
 
-  /// The line fragment holding the caret at `location`. A caret after a
-  /// trailing newline lives on the extra line fragment below the text.
   private func firstLineFragment(at location: Int, layoutManager: NSLayoutManager) -> NSRect {
     let length = (string as NSString).length
     if location >= length, layoutManager.extraLineFragmentTextContainer != nil {
@@ -455,22 +349,17 @@ final class SubmittingTextView: NSTextView {
   }
 
   override func keyDown(with event: NSEvent) {
-    // Let the input method finish/cancel marked text before interpreting
-    // Escape or Return as composer commands.
     if hasMarkedText() {
       super.keyDown(with: event)
       return
     }
-    // 53 = Escape. Consume it here as well as in the delegate so it can
-    // never fall through to NSTextView's default `complete:` behavior.
     if event.keyCode == 53, onKeyCommand?(.dismissSelection) == true {
       return
     }
-    // 36 = Return, 76 = numeric keypad Enter.
     if event.keyCode == 36 || event.keyCode == 76 {
       guard isEditable else { return }
       if event.modifierFlags.contains(.shift) {
-        super.keyDown(with: event)  // newline
+        super.keyDown(with: event)
       } else {
         if onKeyCommand?(.acceptSelection) != true {
           onSubmit?()

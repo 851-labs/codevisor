@@ -6,10 +6,6 @@ import { describe, expect, it } from "vitest"
 
 import { jsonRequest, run, start, tempDirs } from "../test-support.js"
 
-/// Clients send workspace and pane changes from an outbox and retry them until
-/// the server answers. A retry that arrives after the change already happened
-/// -- or after another device removed the row -- must get its real outcome,
-/// never a 500 that would keep it retrying forever.
 const setUp = async () => {
   const started = await start()
   const folder = mkdtempSync(join(tmpdir(), "codevisor-idempotency-"))
@@ -75,9 +71,6 @@ describe("workspace route idempotency", () => {
   })
 
   it("creates a chat's workspace once, however many times opening it is retried", async () => {
-    // A new workspace lives only on the device until its first chat opens;
-    // opening that chat is what creates it on the server, so the open has to
-    // be safe to resend.
     const { server, services, project } = await setUp()
     const open = () =>
       jsonRequest(server, "/v1/sessions/chat-1/open", {

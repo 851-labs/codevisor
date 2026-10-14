@@ -5,8 +5,6 @@ import {
 } from "@codevisor/agent-runtime"
 import type { EventKind } from "@codevisor/api"
 
-/// Maps Pi's RPC session events onto Codevisor's transcript events.
-
 export interface MappedEvent {
   readonly kind: EventKind
   readonly payload: Record<string, unknown>
@@ -26,7 +24,6 @@ const text = (value: unknown): string | undefined =>
 const finite = (value: unknown): number =>
   typeof value === "number" && Number.isFinite(value) ? value : 0
 
-/// Pi's built-in tools, as Codevisor's tool kinds.
 export const piToolKind = (name: string): string => {
   switch (name) {
     case "read":
@@ -45,7 +42,6 @@ export const piToolKind = (name: string): string => {
   }
 }
 
-/// What the call acts on: the file, command or pattern.
 export const piToolTitle = (name: string, args: Record<string, unknown>): string =>
   text(args.command) ?? text(args.path) ?? text(args.pattern) ?? name
 
@@ -54,7 +50,6 @@ const locations = (args: Record<string, unknown>) => {
   return path === undefined ? {} : { locations: [{ path }] }
 }
 
-/// The text a tool result carries.
 const resultText = (result: Record<string, unknown>): string | undefined => {
   const content = Array.isArray(result.content) ? result.content : []
   const joined = content
@@ -69,7 +64,6 @@ const resultText = (result: Record<string, unknown>): string | undefined => {
 const textContent = (value: string | undefined) =>
   value === undefined ? [] : [{ type: "content", content: { type: "text", text: value } }]
 
-/// An edit's or write's diff, for the transcript's diff view.
 const fileChange = (
   name: string,
   args: Record<string, unknown>,
@@ -105,14 +99,11 @@ const updated = (payload: Record<string, unknown>): MappedEvent => ({
 
 export interface PiEventMapper {
   readonly map: (event: Record<string, unknown>) => ReadonlyArray<MappedEvent>
-  /// How the newest assistant response ended.
   readonly outcome: () => PiAssistantOutcome | undefined
-  /// Forget the previous run's outcome.
   readonly startRun: () => void
 }
 
 export const makePiEventMapper = (contextWindow: () => number | undefined): PiEventMapper => {
-  /// Identifies the streaming assistant message; text blocks append their index.
   let message = ""
   let messages = 0
   let outcome: PiAssistantOutcome | undefined
@@ -143,9 +134,6 @@ export const makePiEventMapper = (contextWindow: () => number | undefined): PiEv
                 content: { type: "text", text: update.delta }
               })
             ]
-      // Pi announces reasoning as it starts, for every provider; its text
-      // may come late (OpenAI summaries) or never (redacted thinking), so
-      // the start itself turns on the client's "Thinking" state.
       case "thinking_start":
         return [
           output({ sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "" } })
@@ -201,7 +189,6 @@ export const makePiEventMapper = (contextWindow: () => number | undefined): PiEv
     return [
       updated({
         sessionUpdate: "usage_update",
-        // The context this response used: everything it read plus what it wrote.
         used: finite(usage.totalTokens),
         ...(size === undefined ? {} : { size }),
         inputTokens: totals.input,

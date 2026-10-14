@@ -14,10 +14,6 @@
         guard let context = UIGraphicsGetCurrentContext() else { return }
       #endif
 
-      // A paragraph and its spacing/newline can carry distinct decoration
-      // instances on the same line. Enumerating attribute runs first paints
-      // that line twice, darkening its translucent border. Quotes decorate
-      // whole lines, so visit each line once and use its starting decoration.
       enumerateLineFragments(forGlyphRange: glyphsToShow) {
         lineRect, _, _, lineGlyphRange, _ in
         guard lineGlyphRange.length > 0 else { return }

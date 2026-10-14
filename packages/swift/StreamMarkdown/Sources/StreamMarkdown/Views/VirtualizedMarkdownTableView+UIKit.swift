@@ -3,8 +3,6 @@
   import SwiftUI
   import UIKit
 
-  /// The table keeps one horizontal coordinate space. Only cells intersecting
-  /// the enclosing transcript viewport own native text views.
   struct VirtualizedMarkdownTableView: View {
     let headers: [MarkdownText]
     let alignments: [ColumnAlignment]
@@ -58,9 +56,6 @@
         .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { width in
           if width > bleed * 2 + 1 { measuredWidth = width - bleed * 2 }
         }
-        // A usable published snapshot can be shown while a newer stream
-        // revision is preparing. Waiting for exact equality would keep a
-        // continuously growing table hidden until generation stops.
         .preference(key: ContentLayoutReadinessPreferenceKey.self, value: prepared == nil ? 1 : 0)
         .task(id: key) {
           guard preparedKey != key else { return }
@@ -150,9 +145,6 @@
       horizontalScrollView.contentInsetAdjustmentBehavior = .never
       addSubview(horizontalScrollView)
       document.backgroundColor = .clear
-      // Keep the potentially enormous document out of an offscreen rounded
-      // mask. Cell padding stays inside the border; only the short header
-      // fill needs rounded clipping.
       headerFill.cornerRadius = MarkdownTableMetrics.cornerRadius
       headerFill.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
       document.layer.addSublayer(headerFill)
@@ -197,9 +189,6 @@
         {
           transcript = scroll
           viewportObservation = scroll.observe(\.bounds) { [weak self] _, _ in
-            // Offset notifications can arrive before the transcript has
-            // positioned its row hosts. Resolve coordinates in layout,
-            // after those ancestor frames have reached their final values.
             MainActor.assumeIsolated { self?.requestViewportUpdate() }
           }
           break
@@ -217,9 +206,6 @@
         guard let self else { return }
         viewportUpdateScheduled = false
         guard window != nil else { return }
-        // UIKit can skip layout of a giant row whose origin is far off
-        // screen. A coalesced update after containment/layout changes
-        // refreshes its visible descendants even when its frame is stable.
         updateViewport()
       }
     }
@@ -229,10 +215,6 @@
       updateViewport()
     }
 
-    /// The semantic row keeps its full height, but the actual horizontal
-    /// scroller and TextKit canvases stay close to the outer viewport. A
-    /// document-sized nested UIScrollView gives UIKit an enormous visible
-    /// region and can leave its tiled text layers unpainted.
     fileprivate func updateViewport() {
       guard let tableLayout else { return }
       let size = tableLayout.geometry.size

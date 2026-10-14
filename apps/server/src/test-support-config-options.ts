@@ -1,7 +1,5 @@
 import type { SessionConfigOption } from "@codevisor/api"
 
-/// The fake runtime's option list for "session-config" chats: reasoning and
-/// speed depend on the model, the way Claude's effort and fast mode do.
 export const dependencyConfigOptions = (
   model = "model-default",
   reasoning = "low",

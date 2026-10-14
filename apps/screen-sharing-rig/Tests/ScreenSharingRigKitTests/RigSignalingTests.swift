@@ -6,7 +6,6 @@ import Testing
 @testable import ScreenSharingRigKit
 
 struct RigSignalingTests {
-  /// The host rejects offers whose `version` is not 1, so viewers must send exactly that.
   @Test func offerDeclaresProtocolVersionOne() throws {
     let offer = RigOfferRequest(
       sessionID: "s1", offer: ScreenSharingDescription(kind: "offer", sdp: "v=0"), build: .unknown, name: "viewer")

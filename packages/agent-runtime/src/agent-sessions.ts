@@ -2,34 +2,17 @@ import { promises as fsPromises } from "node:fs"
 import { homedir as osHomedir } from "node:os"
 import { join } from "node:path"
 
-/// Native harness session discovery.
-///
-/// Onboarding suggests workspaces from the coding-agent sessions the user ran
-/// BEFORE ever installing Codevisor, and "import existing chats" lists them —
-/// so these must come from the harnesses' own on-disk stores (Claude Code's
-/// `~/.claude/projects`, Codex's `~/.codex/sessions`), not Codevisor's
-/// database, which is empty on a fresh install by definition.
-
-/// One session from a harness's native store.
 export interface AgentSessionSummary {
   readonly sessionId: string
   readonly cwd: string
   readonly title?: string
-  /// ISO timestamp of the session file's last modification.
   readonly updatedAt?: string
 }
 
-/// How much a native session listing should resolve. Workspace suggestions
-/// need only each session's cwd and activity time, so they skip the
-/// harness title lookups (Codex starts its app-server for those).
 export interface AgentSessionListOptions {
-  /// Resolve titles from the harness's own session API. Default true.
   readonly titles?: boolean
 }
 
-/// A title reported by the harness's own session API. Native providers merge
-/// these over the filesystem scanner's first-prompt title so older harnesses
-/// and failed title lookups retain the existing best-effort fallback.
 export interface HarnessSessionTitle {
   readonly sessionId: string
   readonly title?: string
@@ -52,17 +35,12 @@ export const preferHarnessSessionTitles = (
   })
 }
 
-/// Filesystem seam so scanners are fully testable without real home dirs.
 export interface AgentSessionFileSystem {
-  /// Directory entry names (files and directories); [] when unreadable.
   readonly listDirectory: (path: string) => Promise<ReadonlyArray<string>>
-  /// File stat, or undefined when unreadable / not a file.
   readonly statFile: (
     path: string
   ) => Promise<{ mtimeMs: number; isDirectory: boolean } | undefined>
-  /// Up to `maxBytes` from the start of the file; undefined when unreadable.
   readonly readHead: (path: string, maxBytes: number) => Promise<string | undefined>
-  /// Whether a directory exists (session cwds that were deleted are skipped).
   readonly directoryExists: (path: string) => Promise<boolean>
 }
 
@@ -106,14 +84,10 @@ export const defaultAgentSessionFileSystem: AgentSessionFileSystem = {
 
 export interface AgentSessionScanOptions {
   readonly homedir?: string
-  /// Newest sessions to return; bounds file reads on machines with hundreds
-  /// of session files. Default 40.
   readonly limit?: number
   readonly fs?: AgentSessionFileSystem
 }
 
-/// Bytes read from the head of each session file: 256 KiB is enough to find
-/// the cwd and the first user message.
 const maxReadBytes = 256 * 1024
 
 const resolved = (options: AgentSessionScanOptions) => ({
@@ -123,7 +97,6 @@ const resolved = (options: AgentSessionScanOptions) => ({
 })
 
 const truncatedTitle = (text: string): string | undefined => {
-  // split(..., 1) always yields at least one element.
   const firstLine = (text.trim().split("\n", 1)[0] as string).trim()
   if (firstLine.length === 0) {
     return undefined
@@ -147,8 +120,6 @@ interface SessionFileCandidate {
   readonly mtimeMs: number
 }
 
-/// Newest-first candidates capped at `limit` — file reads are the expensive
-/// part, so ordering happens on stat data alone.
 const newestFirst = (
   candidates: ReadonlyArray<SessionFileCandidate>,
   limit: number
@@ -218,7 +189,6 @@ const resolveClaudeSessionHeads = async (
     const { cwd, title } = parseClaudeSessionHead(head)
     if (cwd === undefined || !(await fs.directoryExists(cwd))) continue
     sessions.push({
-      // The filename is the session id.
       sessionId: fileStem(candidate.path),
       cwd,
       ...(title === undefined ? {} : { title }),
@@ -228,16 +198,11 @@ const resolveClaudeSessionHeads = async (
   return sessions
 }
 
-/// Claude Code: `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`.
-/// The cwd comes from the entries themselves (the encoded directory name is
-/// lossy); the title from the first real user message.
 export const listClaudeAgentSessions = async (
   options: AgentSessionScanOptions = {}
 ): Promise<ReadonlyArray<AgentSessionSummary>> => {
   const { homedir, limit, fs } = resolved(options)
   const root = join(homedir, ".claude", "projects")
-  // Stats and reads are independent, so they run concurrently; a machine
-  // with years of sessions otherwise pays one round trip per file.
   const candidates = await collectClaudeSessionFiles(root, fs)
   const newest = newestFirst(candidates, limit)
   const heads = await Promise.all(
@@ -263,10 +228,8 @@ const claudeUserText = (entry: Record<string, unknown>): string => {
     .join("\n")
 }
 
-/// Candidates are pre-filtered to `*.jsonl`, so stripping the suffix is safe.
 const fileStem = (path: string): string => {
   const parts = path.split("/")
-  // split always yields at least one element.
   const name = parts[parts.length - 1] as string
   return name.slice(0, -".jsonl".length)
 }
@@ -282,7 +245,6 @@ const walkCodexSessionFiles = async (
     const stat = await fs.statFile(path)
     if (stat === undefined) continue
     if (stat.isDirectory) {
-      // sessions/YYYY/MM/DD — bounded in case of unexpected nesting.
       if (depth < 4) await walkCodexSessionFiles(path, depth + 1, fs, candidates)
     } else if (entry.startsWith("rollout-") && entry.endsWith(".jsonl")) {
       candidates.push({ path, mtimeMs: stat.mtimeMs })
@@ -290,9 +252,6 @@ const walkCodexSessionFiles = async (
   }
 }
 
-/// Codex: `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`, first line is a
-/// `session_meta` entry carrying the id and cwd; the title comes from the
-/// first `user_message` event.
 export const listCodexAgentSessions = async (
   options: AgentSessionScanOptions = {}
 ): Promise<ReadonlyArray<AgentSessionSummary>> => {
@@ -362,10 +321,6 @@ const piSessionTitle = (lines: ReadonlyArray<string>): string | undefined => {
   return name ?? prompt
 }
 
-/// Pi: `<agent dir>/sessions/--<encoded cwd>--/<timestamp>_<id>.jsonl`, the
-/// agent dir being `PI_CODING_AGENT_DIR` or `~/.pi/agent`. The header line
-/// carries the id and cwd; the title is the session's name, or else its
-/// first user message.
 export const listPiAgentSessions = async (
   options: AgentSessionScanOptions & { readonly agentDir?: string | undefined } = {}
 ): Promise<ReadonlyArray<AgentSessionSummary>> => {
@@ -390,7 +345,6 @@ export const listPiAgentSessions = async (
   )
   for (const [index, candidate] of newest.entries()) {
     const lines = (heads[index] ?? "").split("\n")
-    // split() always yields a first element.
     const header = parseJsonLine(lines[0] as string)
     if (header?.type !== "session" || typeof header.id !== "string") continue
     if (typeof header.cwd !== "string" || !(await fs.directoryExists(header.cwd))) continue

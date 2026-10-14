@@ -217,11 +217,8 @@ describe("@codevisor/agent-runtime", () => {
     const sessionId = await run(
       runtime.createAgentSession("gemini", "/tmp/project", () => undefined)
     )
-    // The live set is what a restart drain snapshots.
     expect(runtime.loadedAgentSessionIds()).toEqual([sessionId])
 
-    // Closing a session that is not loaded is a no-op (archives of sessions
-    // never opened this server-lifetime have nothing to tear down).
     await run(runtime.closeAgentSession("missing"))
     await expect(run(runtime.cancel("missing"))).rejects.toMatchObject({
       operation: "cancel"
@@ -375,8 +372,6 @@ describe("@codevisor/agent-runtime", () => {
     expect(closeCount).toBe(1)
     expect(loadCount).toBe(1)
 
-    // The freshly loaded matching handle remains managed; stale retirement
-    // cleanup cannot remove it.
     await run(runtime.cancel(sessionId))
     expect(closeCount).toBe(1)
   })

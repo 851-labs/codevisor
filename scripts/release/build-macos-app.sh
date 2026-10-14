@@ -109,10 +109,6 @@ if [[ ! -d "$app_path" ]]; then
 fi
 
 plist_path="$app_path/Contents/Info.plist"
-# Xcode builds with stable placeholder metadata so a default-branch warm build
-# can be reused by a tag build of the same commit. Stamp the shipping metadata
-# into the unsigned product; changing it after signing would invalidate the
-# bundle signature and break the in-app updater's signature check.
 set_plist_string() {
   local key="$1" value="$2"
   if /usr/libexec/PlistBuddy -c "Print :$key" "$plist_path" >/dev/null 2>&1; then
@@ -133,9 +129,6 @@ if [[ "$stamped_version" != "$version" || "$stamped_build" != "$build_number" ]]
 fi
 echo "Stamped Codevisor.app version $stamped_version (build $stamped_build, revision $source_revision)"
 
-# Xcode's Icon Composer pipeline owns app icon generation. Keep the compiled
-# asset catalog in the bundle so LaunchServices resolves the .icon file output.
-# CFBundleIconFile is legacy and can be omitted by Xcode's asset catalog path.
 if [[ "$(/usr/libexec/PlistBuddy -c "Print :CFBundleIconName" "$plist_path")" != "AppIcon" ]]; then
   echo "error: expected CFBundleIconName=AppIcon in $plist_path" >&2
   exit 1
@@ -156,8 +149,6 @@ launch_agent_destination="$app_path/Contents/Library/LaunchAgents/com.851labs.Co
 mkdir -p "$(dirname "$launch_agent_destination")"
 cp "$agent_source" "$agent_destination"
 cp "$launch_agent_source" "$launch_agent_destination"
-# The synchronized Xcode group also sees the source plist as a resource.
-# SMAppService requires it only in Contents/Library/LaunchAgents.
 rm -f "$app_path/Contents/Resources/$(basename "$launch_agent_source")"
 chmod +x "$agent_destination"
 find "$app_path" -name "._*" -delete
@@ -169,9 +160,6 @@ else
   sign_args=(--force --sign -)
 fi
 
-# Xcode copies the prebuilt Sparkle framework while code signing is disabled.
-# Re-sign its independently sealed components inside-out with Codevisor's
-# identity, preserving the helper entitlement Sparkle uses for installation.
 sparkle_framework="$app_path/Contents/Frameworks/Sparkle.framework"
 sparkle_version="$sparkle_framework/Versions/Current"
 sparkle_components=(
@@ -187,8 +175,6 @@ done
 codesign "${sign_args[@]}" --preserve-metadata=entitlements "$sparkle_framework"
 codesign --verify --deep --strict "$sparkle_framework"
 
-# Chromium contains separately signed libraries and sandboxed helper apps.
-# Re-sign inside-out with the release identity, retaining renderer JIT rights.
 node "$script_dir/macos-browser-artifact.mjs" sign-libraries "$app_path" "${identity:--}"
 while IFS= read -r library; do
   codesign "${sign_args[@]}" "$library"
@@ -197,18 +183,6 @@ while IFS= read -r helper; do
   codesign "${sign_args[@]}" --preserve-metadata=entitlements "$helper"
 done < <(find "$app_path/Contents/Frameworks" -maxdepth 1 -name "Codevisor Browser Helper*.app" -type d)
 
-# Every other embedded framework needs the same treatment for a simpler
-# reason: a binary xcframework (Sentry) ships completely unsigned, and Xcode
-# embeds it with signing disabled, so nothing ever seals it. Signing the app
-# does not reach it either — that is a shallow signature by design.
-#
-# An unsigned nested bundle only surfaces at the app's deep verification after
-# the outer signature below, and it surfaces as "code has no resources but signature indicates they
-# must be present" — a message that describes the enclosing app rather than
-# the framework that is actually unsigned. Seal them here, next to the reason.
-#
-# Deliberately a sweep rather than a name: the next vendored framework should
-# not reintroduce a failure that lands minutes later under a misleading error.
 while IFS= read -r framework; do
   [[ -n "$framework" ]] || continue
   [[ "$(basename "$framework")" != "Sparkle.framework" ]] || continue
@@ -216,11 +190,6 @@ while IFS= read -r framework; do
   codesign --verify --deep --strict "$framework"
 done < <(find "$app_path/Contents/Frameworks" -maxdepth 1 -name "*.framework" -type d 2>/dev/null)
 
-# Sign every Mach-O in the bundled server runtimes. Detection is batched
-# through one xargs/file pipeline: the runtimes hold ~21k files but only ~14
-# Mach-O binaries, and the previous per-file `file` invocation spent ~4
-# minutes on process spawns alone. Paths from `file` output are newline-split,
-# which is safe here because npm rejects package files with newlines in names.
 macho_manifest="$repo_root/dist/release/work/macho-manifest.txt"
 mkdir -p "$(dirname "$macho_manifest")"
 find "$server_resources" -type f -print0 \
@@ -228,9 +197,6 @@ find "$server_resources" -type f -print0 \
   | grep ": Mach-O" \
   | sed 's/: Mach-O.*//' > "$macho_manifest"
 
-# The Node executables carry JIT entitlements; everything else signs in
-# parallel batches (each --timestamp signature round-trips to Apple's
-# timestamp service, so parallelism hides the network latency).
 while IFS= read -r macho; do
   case "$macho" in
     "$server_resources"/*/bin/node)
@@ -247,15 +213,10 @@ if [[ -n "$identity" ]]; then
   node "$script_dir/macos-browser-artifact.mjs" distribution "$app_path" arm64
 fi
 
-# Exercise the signed runtime before archiving. This catches production-only
-# signing and native-addon ABI drift that the Debug app cannot expose.
 (cd "$server_resources/$server_target" && ./bin/node -e 'require("better-sqlite3"); console.log(`Packaged Node runtime smoke passed: ${process.version}`)')
 
 finish_phase "Bundle signing and runtime smoke tests"
 
-# Builds a signed DMG for direct download from www.codevisor.dev (installs
-# without Homebrew). notarize-macos-app.sh later notarizes and staples it; the
-# app inside shares the ZIP copy's signature, so one DMG ticket covers both.
 make_dmg() {
   local app="$1" dmg="$2" staging="$3"
   local dmg_root="$repo_root/dist/release/work/dmg-root-$staging"

@@ -201,8 +201,6 @@ extension SessionModelTests {
       ))
     await settleUntil { model.sessionPlan?.entries.first?.status == .completed }
 
-    // Completed state remains in the durable model but no longer occupies
-    // the pinned checklist UI.
     #expect(model.sessionPlan?.entries.first?.status == .completed)
     #expect(controller.visibleTodos == nil)
   }
@@ -381,10 +379,6 @@ extension SessionModelTests {
     #expect(message.turn.hasHydratedWorkedDetails)
     #expect(client.transcriptDetailRequestCount == 1)
 
-    // A replacement canonical page contains the compact deferred summary
-    // again. The in-memory session restores its hydrated turn before that
-    // page is published, so reopening needs neither a loading row nor a
-    // second details request.
     await model.loadHistoryForInitialDisplay()
     guard case let .assistant(restoredMessage) = model.conversation.last else {
       Issue.record("expected cached hydrated assistant")
@@ -417,8 +411,6 @@ extension SessionModelTests {
       fileId: "file-9", name: "shot.png", mimeType: "image/png", sizeBytes: 3, kind: .image
     )
 
-    // The optimistic message has no attachments; the server echo does —
-    // the echo's refs are stamped onto it instead of appending a dupe.
     await model.send("look at this")
     client.emit(
       ServerEventEnvelope(
@@ -437,7 +429,6 @@ extension SessionModelTests {
     #expect(userMessages(model).count == 1)
     #expect(userMessages(model).first?.attachments == [expected])
 
-    // A remote user message with attachments but no text still appends.
     client.emit(
       ServerEventEnvelope(
         id: 2,

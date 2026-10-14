@@ -1,9 +1,5 @@
 import { query } from "@anthropic-ai/claude-agent-sdk"
 
-/// The native Claude OAuth flow, driven through the SDK's control channel
-/// instead of a rendered PTY: `start` yields the browser URL, `submit`
-/// completes the exchange with the code the user pasted back. One client
-/// per login attempt; `close` aborts the underlying CLI.
 export interface ClaudeAuthClient {
   readonly start: () => Promise<{ readonly url: string }>
   readonly submit: (pasted: string) => Promise<void>
@@ -14,14 +10,9 @@ export interface ClaudeAuthSpawn {
   readonly claudePath: string
   readonly cwd: string
   readonly env: NodeJS.ProcessEnv
-  /// Test seam; defaults to the SDK's query.
   readonly queryFn?: typeof query
 }
 
-/// The SDK's OAuth control requests exist at runtime (verified against
-/// sdk.mjs 0.3.211 and a live CLI) but are absent from its public Query
-/// type; this structural view is the seam we call them through. `interrupt`
-/// and `close` are declared on every Query.
 interface ClaudeAuthControl {
   claudeAuthenticate(loginWithClaudeAi: boolean): Promise<unknown>
   claudeOAuthCallback(code: string, state: string): Promise<unknown>
@@ -32,8 +23,6 @@ interface ClaudeAuthControl {
 export const spawnClaudeAuthClient = (spawn: ClaudeAuthSpawn): ClaudeAuthClient => {
   const q = (spawn.queryFn ?? query)({
     prompt: (async function* () {
-      // Auth-only query: no prompt is ever sent. Park until close(); the
-      // yield below is unreachable and exists to make that explicit.
       await new Promise(() => {})
       yield undefined as never
     })(),
@@ -55,13 +44,8 @@ export const spawnClaudeAuthClient = (spawn: ClaudeAuthSpawn): ClaudeAuthClient 
       return { url }
     },
     submit: async (pasted) => {
-      // The callback page shows `code#state`; a bare code reuses the state
-      // embedded in the URL the CLI generated.
       const [code, state] = pasted.trim().split("#", 2)
       if (!code) throw new Error("Paste the code from Claude's sign-in page")
-      // The callback waits for token persistence and clears the active flow
-      // before resolving. A subsequent wait-for-completion request would
-      // report "No active claude_authenticate flow" after a successful login.
       await control.claudeOAuthCallback(code, state ?? "")
     },
     close: () => {

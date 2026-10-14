@@ -14,14 +14,8 @@ import { PluginsError } from "./plugins-error.js"
 
 export const PLUGIN_MANIFEST_FILENAME = "codevisor-plugin.json"
 
-/// Owner-namespaced plugin id: lowercase `owner.name`. The dot is the
-/// namespace separator, so exactly one is allowed; segments are constrained
-/// to url/cookie/path-safe characters because the id appears in proxy paths
-/// and cookie names.
 const PLUGIN_ID_PATTERN = /^[a-z0-9][a-z0-9-]*\.[a-z0-9][a-z0-9-]*$/
 
-/// Tool names appear as `plugin.<pluginId>.<toolName>` catalog paths, so they
-/// must never contain the dot the path grammar splits on.
 const PLUGIN_TOOL_NAME_PATTERN = /^[a-z0-9_]+$/
 const EXECUTABLE_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/
 
@@ -31,10 +25,6 @@ const validateServerPath = (label: string, path: string): void => {
   }
 }
 
-/// Parses and validates a codevisor-plugin.json payload. Every rule here is
-/// part of the plugin protocol: reject early with a message an author (or an
-/// agent authoring a plugin) can act on, never let a malformed manifest reach
-/// the supervisor or proxy.
 export const parsePluginManifest = (raw: string): PluginManifest => {
   const json = parseManifestJson(raw)
   validateProtocolVersion(json)
@@ -75,7 +65,7 @@ const decodeManifest = (json: unknown): PluginManifest => {
   try {
     manifest = decode(PluginManifestSchema)(json)
   } catch (cause) {
-    /* v8 ignore next -- Effect Schema decode failures are always Errors. */
+    /* v8 ignore next */
     const message = cause instanceof Error ? cause.message : String(cause)
     throw new PluginsError("invalid", `Invalid plugin manifest: ${message}`)
   }
@@ -193,8 +183,6 @@ const validatePanePaths = (pane: PluginPaneDescriptor): void => {
 }
 
 const validatePaneDocumentPath = (path: string): void => {
-  // Trailing-slash discipline is what makes relative URLs inside pane
-  // documents resolve under the proxied prefix without HTML rewriting.
   if (!path.startsWith("/") || !path.endsWith("/")) {
     throw new PluginsError(
       "invalid",
@@ -229,14 +217,10 @@ const validateToolEndpoint = (tool: PluginToolDescriptor): void => {
   if (tool.description.trim().length === 0) {
     throw new PluginsError("invalid", `Tool ${tool.name} needs a non-empty description`)
   }
-  // Tool paths are RPC endpoints, not documents: absolute, but with no
-  // trailing-slash requirement — nothing resolves relative URLs under them.
   validateServerPath(`Tool ${tool.name} path`, tool.path)
 }
 
 const validateToolInputSchema = (tool: PluginToolDescriptor): void => {
-  // The schema is passed through to agents verbatim, so the only structural
-  // requirement is "a JSON object" (arrays and primitives are not schemas).
   if (
     tool.inputSchema !== undefined &&
     (typeof tool.inputSchema !== "object" ||

@@ -7,8 +7,6 @@ export const settleCleanup = async (operations: ReadonlyArray<Promise<unknown>>)
   if (errors.length > 0) throw new AggregateError(errors, "Workspace process cleanup failed")
 }
 
-/// User-created terminals can exist without a chat. Their persisted pane
-/// resourceId is the terminal session key; it is not an agent session id.
 export const workspaceTerminalKeys = async (
   services: CodevisorServerServices,
   workspaceIds: ReadonlyArray<string>

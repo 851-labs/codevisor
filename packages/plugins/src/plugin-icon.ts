@@ -93,9 +93,6 @@ const validateSvgResources = (pluginId: string, source: string): void => {
   }
 }
 
-/// SVGs render as images in client-owned chrome, never as documents. Reject
-/// active markup and network-capable references before the bytes leave the
-/// machine so every current and future client gets the same safe subset.
 const validateSvg = (pluginId: string, data: Uint8Array): void => {
   const source = decodeSvg(pluginId, data)
   validateSvgMarkup(pluginId, source)
@@ -134,9 +131,6 @@ const readBoundedBody = async (pluginId: string, response: Response): Promise<Ui
   return data
 }
 
-/// Normalize every supported source format to a bounded, high-resolution PNG.
-/// Clients therefore use their ordinary native raster-image path and never
-/// need a platform-specific runtime SVG implementation.
 const normalizeIcon = async (
   pluginId: string,
   contentType: PluginIconSourceContentType,
@@ -160,9 +154,7 @@ const normalizeIcon = async (
     throw new PluginsError(
       "invalid",
       `Plugin ${pluginId} icon could not be decoded: ${
-        cause instanceof Error
-          ? cause.message
-          : /* v8 ignore next -- sharp rejects with Error objects. */ String(cause)
+        cause instanceof Error ? cause.message : /* v8 ignore next */ String(cause)
       }`
     )
   }
@@ -198,9 +190,7 @@ export const fetchPluginIcon = async (
     throw new PluginsError(
       "unavailable",
       `Plugin ${plugin.id} icon request failed: ${
-        cause instanceof Error
-          ? cause.message
-          : /* v8 ignore next -- fetch implementations reject with Error objects. */ String(cause)
+        cause instanceof Error ? cause.message : /* v8 ignore next */ String(cause)
       }`
     )
   }

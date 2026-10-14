@@ -2,8 +2,6 @@ import AppKit
 import CodevisorUI
 
 extension QuickLookController {
-  /// The app's Quick Look controller: failures show as a sheet on the key
-  /// window so a click that cannot preview never fails silently.
   static func withAlerts() -> QuickLookController {
     let controller = QuickLookController()
     controller.onFailure = { name, error in

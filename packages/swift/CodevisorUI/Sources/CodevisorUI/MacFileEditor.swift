@@ -37,7 +37,6 @@
       container.automaticallyAdjustsContentInsets = false
       container.documentView = textView
       container.gutter.textView = textView
-      // AppKit scrolls this with the document vertically and pins it horizontally.
       container.addFloatingSubview(container.gutter, for: .horizontal)
     }
 
@@ -52,8 +51,6 @@
       textView.isEditable = session.document.isEditable
       container.gutter.isHidden = !session.showsLineNumbers
       container.gutter.update()
-      // System themes composite the text onto the window's live backdrop,
-      // like the terminal surface; custom palettes paint their own color.
       let paintsBackground = !theme.isSystem
       textView.drawsBackground = paintsBackground
       container.drawsBackground = paintsBackground
@@ -94,7 +91,6 @@
 
     override func reflectScrolledClipView(_ clipView: NSClipView) {
       super.reflectScrolledClipView(clipView)
-      // Document height can change after TextKit lays out an edit or wraps lines.
       gutter.setFrameSize(
         NSSize(width: gutter.width, height: max(contentSize.height, documentView?.frame.height ?? 0)))
       gutter.scrolledHorizontally = clipView.bounds.origin.x > 0
@@ -102,7 +98,6 @@
 
     override func layout() {
       super.layout()
-      // Reveal the selection after the editor has its final viewport size.
       if let range = pendingSelection, window != nil, contentSize.width > 0,
         let textView = documentView as? NSTextView
       {

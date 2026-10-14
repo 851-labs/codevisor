@@ -56,8 +56,6 @@ const fixture = async (
   return { lifecycle, state, ...spawn, ...terminal }
 }
 
-/// Starts an uninstall and returns the command it ran, then fails the fake
-/// package manager so no operation outlives the test.
 const uninstallCommand = async (world: Awaited<ReturnType<typeof fixture>>, id = "fake-cli") => {
   const settled = waitForLifecycleSettle(world.lifecycle)
   await world.lifecycle.beginUninstall(id)

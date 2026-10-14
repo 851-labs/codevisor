@@ -3,13 +3,8 @@ import CryptoKit
 import ImageIO
 import SwiftUI
 
-/// The icon column every tool row shares, so a group's rows line up their
-/// icons in one column and their labels after it.
 enum ToolIconMetrics {
   static var font: Font {
-    // One notch under the row label on both platforms: macOS pairs a 12pt
-    // callout icon with 13pt body text; iOS rows label at callout 16, so the
-    // icon sits at subheadline 15.
     #if os(iOS)
       .subheadline
     #else
@@ -19,8 +14,6 @@ enum ToolIconMetrics {
 
   static var columnWidth: CGFloat {
     #if os(iOS)
-      // The terminal symbol is slightly wider than the old 16pt column.
-      // Keep its ink inside the clipped transcript-row host.
       18
     #else
       16
@@ -29,14 +22,12 @@ enum ToolIconMetrics {
 
   static var spacing: CGFloat {
     #if os(iOS)
-      // Preserve the existing 24pt icon-column-plus-gap label inset.
       6
     #else
       8
     #endif
   }
 
-  /// Artwork reads at the symbol's cap height, not the column's width.
   static var artworkSide: CGFloat {
     #if os(iOS)
       15
@@ -45,8 +36,6 @@ enum ToolIconMetrics {
     #endif
   }
 
-  /// Codevisor's mark fills its box edge to edge, so it sits a little
-  /// smaller than artwork to match the symbols' optical size.
   static var markSide: CGFloat {
     #if os(iOS)
       13
@@ -58,10 +47,6 @@ enum ToolIconMetrics {
   static var labelInset: CGFloat { columnWidth + spacing }
 }
 
-/// A tool call's icon: its SF Symbol, replaced by server-resolved artwork
-/// (a site's favicon, an MCP server's icon) once that is available. Artwork
-/// comes from a memory cache in the first frame and from disk on reopen,
-/// so a returning chat draws its icons without waiting on the network.
 public struct ToolCallIconView: View {
   let icon: ToolCallIcon
 
@@ -88,8 +73,6 @@ public struct ToolCallIconView: View {
     ) {
       Group {
         if icon.symbol == ToolCallIcon.codevisorMark {
-          // Codevisor's own tools: the product mark, as a template so it
-          // takes the symbols' color, at their visual size.
           Image("CodevisorMark", bundle: .module)
             .renderingMode(.template)
             .resizable()
@@ -107,10 +90,6 @@ public struct ToolCallIconView: View {
   }
 }
 
-/// Server-resolved artwork at `side` points, drawn in place of `placeholder`
-/// once it is available: from memory in the first frame, from disk on
-/// relaunch, from the server otherwise. Dark marks get a light plate in
-/// dark mode.
 struct ToolArtworkImage<Placeholder: View>: View {
   let request: ToolIconImages.Request?
   let side: CGFloat
@@ -126,8 +105,6 @@ struct ToolArtworkImage<Placeholder: View>: View {
     }
     Group {
       if let artwork {
-        // Dark marks (GitHub's octocat) vanish on a dark background; give
-        // them the light plate browsers give such tab icons.
         let plated = artwork.isDark && colorScheme == .dark
         artworkImage(artwork.image)
           .resizable()
@@ -165,17 +142,11 @@ private struct LoadedArtwork {
   let artwork: ToolIconArtwork
 }
 
-/// Decoded tool artwork, and whether its ink is dark enough to need a light
-/// plate in dark mode.
 struct ToolIconArtwork {
   let image: OSImage
   let isDark: Bool
 }
 
-/// Decoded tool artwork shared by every transcript row: a process-wide
-/// memory tier, a bounded on-disk tier that survives relaunch, and one
-/// in-flight fetch per icon. "No artwork" is remembered too, so a site
-/// without a favicon isn't asked again on every row mount.
 @MainActor
 enum ToolIconImages {
   struct Request: Hashable, Sendable {
@@ -224,7 +195,6 @@ enum ToolIconImages {
   private static var inFlight: [String: Task<ToolIconArtwork?, Never>] = [:]
   private static let disk = ToolIconDiskCache()
 
-  /// Artwork already decoded this run, for a row's first frame.
   static func memoryArtwork(for request: Request) -> ToolIconArtwork? {
     memory.object(forKey: request.key as NSString)?.artwork
   }
@@ -240,7 +210,6 @@ enum ToolIconImages {
       let stored = await disk.load(key: key)
       if case let .image(data, isFresh) = stored, let artwork = await decode(data) {
         memory.setObject(Box(artwork: artwork, expiresAt: .distantFuture), forKey: key as NSString)
-        // Stale artwork still draws now; the refresh replaces it quietly.
         if !isFresh { Task { await refresh(request, fetch: fetch, fallback: artwork) } }
         return artwork
       }
@@ -270,19 +239,15 @@ enum ToolIconImages {
       memory.setObject(Box(artwork: artwork, expiresAt: .distantFuture), forKey: key as NSString)
       return artwork
     } catch let CodevisorServerClientError.httpStatus(status, _) where status == 404 {
-      // The server looked and found nothing; it will look again later.
       await disk.storeMissing(key: key)
       memory.setObject(Box(artwork: fallback, expiresAt: .now.addingTimeInterval(60)), forKey: key as NSString)
       return fallback
     } catch {
-      // Offline or unreachable: keep any artwork, retry on a later mount.
       memory.setObject(Box(artwork: fallback, expiresAt: .now.addingTimeInterval(30)), forKey: key as NSString)
       return fallback
     }
   }
 
-  /// The sharpest frame (ICO files hold several), thumbnailed to row size.
-  /// Anything ImageIO can't read is no artwork at all.
   private static func decode(_ data: Data) async -> ToolIconArtwork? {
     let decoded = await Task.detached(priority: .utility) { () -> (CGImage, Bool)? in
       guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
@@ -320,9 +285,6 @@ enum ToolIconImages {
     return ToolIconArtwork(image: image, isDark: isDark)
   }
 
-  /// Whether the visible (non-transparent) pixels are mostly dark ink on
-  /// transparency, judged on a 16×16 sample. Opaque artwork brings its own
-  /// background, so only see-through marks qualify.
   nonisolated static func isDarkInk(_ image: CGImage) -> Bool {
     let side = 16
     var pixels = [UInt8](repeating: 0, count: side * side * 4)
@@ -347,7 +309,6 @@ enum ToolIconImages {
         continue
       }
       visible += 1
-      // Premultiplied: divide alpha back out before weighing the channels.
       let red = Double(pixels[index]) / 255 / alpha
       let green = Double(pixels[index + 1]) / 255 / alpha
       let blue = Double(pixels[index + 2]) / 255 / alpha
@@ -358,8 +319,6 @@ enum ToolIconImages {
   }
 }
 
-/// Raw artwork bytes by request key under Caches. Artwork older than three
-/// days is revalidated in the background; a remembered miss lasts an hour.
 private actor ToolIconDiskCache {
   enum Stored {
     case image(Data, isFresh: Bool)
@@ -397,13 +356,11 @@ private actor ToolIconDiskCache {
       try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
       try data.write(to: url, options: .atomic)
     } catch {
-      // Caches may be cleared or full; the memory tier still serves this run.
     }
     writes += 1
     if writes % 64 == 0 { trim() }
   }
 
-  /// Oldest-first eviction once the directory outgrows its bound.
   private func trim() {
     let manager = FileManager.default
     guard

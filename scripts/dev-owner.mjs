@@ -99,8 +99,6 @@ try {
 } finally {
   clearInterval(monitor)
   if (claimed) {
-    // Stop startup/build work before externally launched resources, so a
-    // late install or launch cannot recreate them during teardown.
     const failures = []
     try {
       await tree?.stop({ graceMs: 4_000 })

@@ -4,8 +4,6 @@ import Foundation
 import Network
 import WebKit
 
-/// A machine is a browser profile: identical localhost origins on different
-/// machines must never share credentials, localStorage, or service workers.
 @MainActor
 final class BrowserWebsiteProfile {
   private static var profiles: [String: BrowserWebsiteProfile] = [:]

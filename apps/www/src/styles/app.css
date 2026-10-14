@@ -8,7 +8,6 @@
     -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
 
-  /* Monochrome, apple.com dark palette. */
   --color-page: #000000;
   --color-text: #f5f5f7;
   --color-muted: #86868b;
@@ -33,7 +32,6 @@ body {
   color-scheme: dark;
 }
 
-/* The document canvas also paints Safari / WebKit's overscroll area. */
 html:has(.marketing-shell),
 body:has(.marketing-shell) {
   background-color: var(--color-page);

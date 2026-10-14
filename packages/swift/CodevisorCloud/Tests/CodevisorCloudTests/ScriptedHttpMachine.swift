@@ -4,11 +4,6 @@ import Foundation
 import CodevisorClient
 @testable import CodevisorCloud
 
-// Scripted machine ends for the relay proxy transports, shared by the
-// transport round-trip and flow-control suites.
-
-/// Scripts the machine end of "http" channels: decrypts the open, gathers
-/// body chunks until `end`, then answers head → chunks → end → close.
 @Observable
 final class ScriptedHttpMachine: @unchecked Sendable {
   struct ReceivedRequest {
@@ -23,9 +18,6 @@ final class ScriptedHttpMachine: @unchecked Sendable {
     var headers: [String: String]
     var bodyChunks: [Data]
     var closeReason: CloudChannelCloseReason = .done
-    /// Off = leave the channel open after `end` (the live handler closes
-    /// immediately; tests that assert on the app's replenish grants keep
-    /// it open so late grants can't race the close).
     var sendsClose = true
   }
 
@@ -59,8 +51,6 @@ final class ScriptedHttpMachine: @unchecked Sendable {
   let machine = ScriptedRelayMachine()
   let scripted: ScriptedDirectMachine
   var respond: (@Sendable (ReceivedRequest) -> ScriptedResponse)?
-  /// Off = the machine never grants an upload window, so the app's gated
-  /// request frames must wait (or time out).
   var grantsUploadWindow = true
   private let lock = NSLock()
   private var requestsByChannel: [String: (params: OpenPayload.Params, body: Data)] = [:]
@@ -68,17 +58,14 @@ final class ScriptedHttpMachine: @unchecked Sendable {
   private var _receivedBodyBytes: [String: Int] = [:]
   private(set) var completedRequests: [ReceivedRequest] = []
 
-  /// Request body bytes that have arrived on a channel so far.
   func receivedBodyBytes(channelId: String) -> Int {
     lock.withLock { _receivedBodyBytes[channelId, default: 0] }
   }
 
-  /// Every http channel ever opened, in order (survives completion).
   var openChannelIds: [String] {
     lock.withLock { _channelIds }
   }
 
-  /// Credit envelopes the app has sent toward the machine.
   var creditGrants: [Int] {
     scripted.credits.map(\.bytes)
   }
@@ -106,8 +93,6 @@ final class ScriptedHttpMachine: @unchecked Sendable {
         requestsByChannel[channelId] = (open.params, Data())
         _channelIds.append(channelId)
       }
-      // Flow-controlled channels: the app's upload gates on our
-      // grants, so hand it a window like the live handler does.
       if grantsUploadWindow {
         grantUploadWindow(channelId: channelId)
       }
@@ -163,8 +148,6 @@ final class ScriptedHttpMachine: @unchecked Sendable {
   }
 }
 
-/// Scripts the machine end of "ws" channels: remembers accepted opens and
-/// lets the test push sealed frames toward the app.
 @Observable
 final class ScriptedWsMachine: @unchecked Sendable {
   let machine = ScriptedRelayMachine()
@@ -177,7 +160,6 @@ final class ScriptedWsMachine: @unchecked Sendable {
     scripted.onFrame = { [weak self] received in
       guard let self, case let .open(channelId, _, _) = received.frame else { return }
       self.lock.withLock { self._openChannelIds.append(channelId) }
-      // Grant the app's send window like the live handler does.
       self.scripted.sendToApp(frame: self.machine.creditFrame(channelId: channelId, bytes: 1_000_000))
     }
   }

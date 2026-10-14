@@ -3,16 +3,9 @@ import UniformTypeIdentifiers
 import CodevisorCore
 import CodevisorUI
 
-// MARK: - Model
-
-/// Selection state for the project setup grid shared by onboarding's project
-/// step and the new-chat empty state: folder suggestions from the machine's
-/// recent harness sessions, hand-picked folders, and freshly cloned
-/// repositories, multi-selected before being added as projects in one go.
 @MainActor
 @Observable
 final class ProjectSetupModel {
-  /// A selectable folder row: a recommendation, a custom pick, or a clone.
   struct FolderChoice: Identifiable {
     let url: URL
     let title: String
@@ -22,18 +15,10 @@ final class ProjectSetupModel {
 
   var recommendations: [ProjectRecommendation] = []
   var isLoadingRecommendations = true
-  /// Folders added through the open panel or remote browser (they aren't in
-  /// `recommendations` but should render as selectable rows alongside them).
   var customFolders: [URL] = []
-  /// Projects created by cloning. They already exist (the clone registers
-  /// them immediately); they render as selectable rows, and confirming with
-  /// one deselected removes it again.
   var clonedProjects: [Project] = []
-  /// Folders the user has ticked, in selection order — the first one is the
-  /// project a new chat opens in afterwards.
   var selectedFolders: [URL] = []
 
-  /// Cloned and hand-picked rows first (most deliberate), then suggestions.
   var folderChoices: [FolderChoice] {
     let clonedPaths = Set(clonedProjects.map { $0.folderURL.standardizedFileURL.path })
     let cloned = clonedProjects.map { project in
@@ -70,15 +55,10 @@ final class ProjectSetupModel {
     return cloned + custom + suggested
   }
 
-  /// Cloned projects the user deselected before confirming — "don't keep
-  /// it" (the checkout stays on disk, only the project entry is removed).
   var deselectedClonedProjects: [Project] {
     clonedProjects.filter { !isSelected($0.folderURL) }
   }
 
-  /// Drops staged selections (used when the selected machine changes —
-  /// folders staged for one machine don't apply to another). Suggestions
-  /// are cleared too; the caller reloads them for the new machine.
   func clearStagedWork() {
     selectedFolders = []
     customFolders = []
@@ -100,9 +80,6 @@ final class ProjectSetupModel {
     }
   }
 
-  /// Folders picked in the open panel or remote browser join the list
-  /// pre-selected; picks that match an existing suggestion just select
-  /// that suggestion's row.
   func addPickedFolders(_ urls: [URL]) {
     for url in urls {
       let path = url.standardizedFileURL.path
@@ -119,8 +96,6 @@ final class ProjectSetupModel {
     }
   }
 
-  /// A clone finished: the project already exists, so it joins the grid as
-  /// a pre-selected row (deselecting it before confirming removes it again).
   func cloneCompleted(_ project: Project) {
     if !clonedProjects.contains(where: { $0.id == project.id }) {
       clonedProjects.append(project)
@@ -140,14 +115,6 @@ final class ProjectSetupModel {
   }
 }
 
-// MARK: - Selection grid
-
-/// The project setup grid: suggested/picked/cloned folder rows in a
-/// two-column multi-select grid, with "add another folder" and "clone a
-/// repository" rows beneath. Extracted from onboarding's project step and
-/// reused verbatim on the new-chat empty state so both surfaces look and
-/// behave identically. The caller owns the pickers/sheets (and the confirm
-/// button) — this view only reports intent via the two callbacks.
 struct ProjectSetupSelectionView: View {
   @Environment(\.theme) private var theme
 
@@ -160,9 +127,6 @@ struct ProjectSetupSelectionView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
       if model.isLoadingRecommendations {
-        // HIG: recommendation discovery has no measurable duration,
-        // so show a small indeterminate activity indicator where
-        // its results will appear. Keep the manual picker available.
         HStack {
           Spacer()
           ProgressView()
@@ -261,19 +225,9 @@ struct ProjectSetupSelectionView: View {
   }
 }
 
-// MARK: - Self-contained panel (new-chat empty state)
-
-/// Onboarding's project setup, self-contained for the new-chat page: loads
-/// suggestions from the selected machine's recent harness sessions, owns the
-/// pickers (native importer locally, remote browser otherwise) and the
-/// git-clone sheet, and confirms with the same "Open Project"/"Add N
-/// Projects" button. `onComplete` receives the first selected project so the
-/// caller can open a new chat in it.
 struct ProjectSetupPanel: View {
   @Environment(AppEnvironment.self) private var environment
 
-  /// Owned by the caller so staged work (a completed clone, ticked rows)
-  /// survives the project list changing underneath the page.
   let model: ProjectSetupModel
   let onComplete: (Project) -> Void
 
@@ -297,8 +251,6 @@ struct ProjectSetupPanel: View {
         onCloneRepository: { showingGitClone = true }
       )
 
-      // Always present (disabled until something is selected) so the
-      // layout doesn't shift when the first row is ticked.
       Button {
         confirm()
       } label: {
@@ -318,8 +270,6 @@ struct ProjectSetupPanel: View {
     }
     .frame(maxWidth: 560)
     .task(id: targetServerId) {
-      // A machine switch mid-setup drops the staged folders — they
-      // belong to the previous machine. (No-op on first appearance.)
       model.clearStagedWork()
       model.isLoadingRecommendations = true
       model.recommendations = await environment.recommendedProjectsWithFallback(
@@ -348,9 +298,6 @@ struct ProjectSetupPanel: View {
     }
   }
 
-  /// Adds every selected folder as a project (cloned ones are reused, not
-  /// duplicated), removes clones the user deselected, and hands the first
-  /// selection to the caller.
   private func confirm() {
     for project in model.deselectedClonedProjects {
       environment.projectList.removeProject(project)
@@ -387,11 +334,6 @@ struct ProjectSetupPanel: View {
   }
 }
 
-// MARK: - Action card
-
-/// The card-style action row shared by the setup grid's "Add another
-/// folder…" / "Clone a repository…" rows, so every add-project affordance
-/// looks and behaves the same.
 struct ProjectSetupActionCard: View {
   @Environment(\.theme) private var theme
 

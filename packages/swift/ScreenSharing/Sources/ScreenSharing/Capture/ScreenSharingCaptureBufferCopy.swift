@@ -1,8 +1,6 @@
 import CoreVideo
 import VideoToolbox
 
-/// Used only on the serial capture callback queue. The experiment releases
-/// SCK's surface after a transfer into a separately bounded, IOSurface-backed pool.
 final class ScreenSharingCaptureBufferCopy {
   private var transfer: VTPixelTransferSession?
   private var pool: CVPixelBufferPool?

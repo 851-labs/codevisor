@@ -5,10 +5,6 @@ import UIKit
   import os
 #endif
 
-/// The SwiftUI-side state expected to produce the workspace's navigation
-/// chrome. Diagnostics-enabled builds pair it with UIKit snapshots so an intermittent
-/// missing-toolbar report can distinguish incorrect app state from a stuck
-/// `UINavigationController` transition.
 struct IOSNavigationDiagnosticState: Equatable {
   let screen: String
   let identifier: String
@@ -17,7 +13,6 @@ struct IOSNavigationDiagnosticState: Equatable {
   let isDraft: Bool
   let blocksServerContent: Bool
   let expectsNativeBack: Bool
-  /// Hosted as a split view's detail (no back button, depth 1 is normal).
   let hostedInSplitDetail: Bool
   let expectsLeadingButton: Bool
   let expectsTrailingButton: Bool
@@ -50,8 +45,6 @@ enum IOSNavigationDiagnostics {
     private static var sequence: UInt64 = 0
   #endif
 
-  /// `details` is only built in diagnostics builds; release builds never
-  /// pay for formatting the message.
   static func record(_ event: String, _ details: @autoclosure @MainActor () -> String = "") {
     #if DEBUG || NAVIGATION_DIAGNOSTICS
       sequence &+= 1
@@ -66,7 +59,6 @@ enum IOSNavigationDiagnostics {
 extension View {
   @ViewBuilder
   func iosNavigationDiagnostics(_ state: @autoclosure @MainActor () -> IOSNavigationDiagnosticState) -> some View {
-    // Release builds never evaluate the state, which reads half the screen.
     #if DEBUG || NAVIGATION_DIAGNOSTICS
       modifier(IOSNavigationDiagnosticsModifier(state: state()))
     #else
@@ -226,9 +218,6 @@ extension View {
           !state.expectsTrailingButton
           || labels.contains("New tab")
           || labels.contains("Cancel")
-        // A split view's detail column may host the screen beside, not
-        // under, the stack's top controller; ownership is only expected
-        // for a pushed screen.
         let anomaly =
           !barVisible
           || (!topOwnsProbe && !state.hostedInSplitDetail)

@@ -16,11 +16,6 @@ enum TranscriptTextReduction {
       turn.isThinking = false
       let entryId = appendText(
         text(from: block), messageId: messageId, entries: &turn.entries, nextTextId: &turn.nextTextId)
-      // Finality rides per chunk (codex tags whole messages) or as a
-      // zero-length retro-tag (Claude demoting streamed preamble once
-      // a tool call starts). Keyed by entry id so `finalText` can
-      // skip commentary spans; subagent threads never split a final
-      // answer out, so phases are main-thread only.
       if let phase, let entryId {
         turn.textPhases[entryId] = phase
       }
@@ -28,8 +23,6 @@ enum TranscriptTextReduction {
   }
 
   static func applyThought(parentToolCallId: String?, to turn: inout AssistantTurn) {
-    // Thoughts surface only as the ephemeral "Thinking…" indicator; they
-    // are not persisted as transcript entries.
     if let parent = parentToolCallId {
       var bucket = turn.subagents[parent] ?? SubagentTranscript()
       bucket.isThinking = true
@@ -69,11 +62,6 @@ enum TranscriptTextReduction {
     block.textValue ?? ""
   }
 
-  /// Appends streamed text. ACP `messageId` is the semantic boundary between
-  /// assistant messages, so it wins over adjacency when present. Returns the
-  /// id of the text entry the chunk addressed — for zero-length chunks with a
-  /// messageId that's the (possibly not yet created) span the chunk's phase
-  /// retro-tags; without one there is nothing to address.
   @discardableResult
   private static func appendText(
     _ newText: String,
@@ -114,11 +102,6 @@ enum TranscriptTextReduction {
     }
   }
 
-  /// Appends to a text entry without copying the accumulated run.
-  /// `existing + newText` re-copies everything streamed so far on every
-  /// flush — O(turn²) over a long answer. Taking the string out of the
-  /// entry first makes its storage uniquely referenced, so `+=` extends it
-  /// in place at amortized O(newText).
   private static func appendInPlace(
     _ newText: String,
     toTextEntryAt index: Int,
@@ -149,8 +132,6 @@ enum TranscriptTextReduction {
     var existing = ""
     if !replaces, let index, case let .text(_, text) = entries[index] { existing = text }
     let length = existing.utf16.count
-    // Storage snapshots and live deltas converge on the same complete text.
-    // Rendering keeps its original identity and streaming path at every length.
     if patch.offset <= length {
       appendOverlap(patch, length: length, existing: &existing)
     }
@@ -184,10 +165,6 @@ enum TranscriptTextReduction {
     if let index {
       entries[index] = .text(id: id, markdown: existing)
     } else if !existing.isEmpty {
-      // A zero-length span contributes no content and shifts no later
-      // offset, so it is never materialized. Whitespace-only spans DO carry
-      // length that subsequent patch offsets are measured against, so they
-      // are stored and filtered at presentation (`isBlankText`) instead.
       entries.append(.text(id: id, markdown: existing))
     }
   }

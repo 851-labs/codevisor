@@ -16,9 +16,6 @@ export type ReconcileQuietStreamingSession = (
   DatabaseError
 >
 
-// The quiet check, transcript lookup, question resolution, and terminal event
-// are one synchronous transaction. A newer event invalidates the candidate;
-// there is no await between validation and the destructive projection writes.
 export const makeStreamingReconciliationService = (
   context: ServiceContext
 ): Pick<CodevisorDatabaseService, "reconcileQuietStreamingSession"> => {

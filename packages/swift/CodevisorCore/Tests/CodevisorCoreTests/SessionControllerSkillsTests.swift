@@ -13,7 +13,6 @@ struct SessionControllerSkillsTests {
     let client = SyncFakeServerClient(projects: [], sessions: [])
     client.capabilitiesHandler = { cwd in
       var capability = Self.codexCapability()
-      // Project skills are specific to the inspected directory.
       if cwd == "/tmp/machine-a" {
         capability.skills = SessionSkills(
           skills: [SessionSkill(name: "review", invocation: "$review", source: .project)],

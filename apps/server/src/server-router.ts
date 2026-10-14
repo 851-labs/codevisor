@@ -49,9 +49,6 @@ import type {
   RouteState
 } from "./server-context.js"
 
-/// The top-level HTTP request router: server-scoped endpoints inline, then
-/// each resource's route module in turn.
-
 export const handleRequest = async (
   services: CodevisorServerServices,
   config: CodevisorServerConfig,
@@ -61,8 +58,6 @@ export const handleRequest = async (
   response: ServerResponse
 ): Promise<void> => {
   try {
-    // Absolute-form requests belong to the browser proxy, even when their path
-    // resembles a control API endpoint. Never pass them through loopback auth.
     if (isBrowserProxyRequest(request)) {
       if (routeState.browserProxy) routeState.browserProxy.handleHTTP(request, response)
       else response.writeHead(501).end()
@@ -79,10 +74,6 @@ export const handleRequest = async (
       await services.sharedAccounts.gateway.handle(request, response, url)
       return
     }
-    // Config mutations propagate instantly: after a successful response
-    // goes out, the matching sync plane reconciles in the background so
-    // the change enters the replica and publishes sync.changed within a
-    // second instead of waiting for a client's periodic sweep.
     const mutatedPlane = configMutationNamespace(request.method, url.pathname)
     if (mutatedPlane !== undefined) {
       response.once("finish", () => {
@@ -106,9 +97,6 @@ export const handleRequest = async (
       return
     }
 
-    // Tokenless on purpose: clients probe network peers with this manifest to
-    // identify Codevisor servers. Keep the payload minimal — nothing here may
-    // reveal projects, sessions, or tokens.
     if (request.method === "GET" && url.pathname === "/v1/discovery") {
       writeJson(response, 200, {
         serverId: config.id,
@@ -118,31 +106,23 @@ export const handleRequest = async (
         version: config.version,
         platform: process.platform,
         hostname: hostname(),
-        // A bare flag, never the device id: clients skip cloud-linked machines.
         cloudLinked: liveCloudDeviceId(config) !== undefined
       })
       return
     }
 
-    // The gateway carries its own short-lived per-session bearer credential;
-    // do not run it through the machine-pairing token verifier.
     if (url.pathname === "/mcp/gateway") {
       if (services.mcp === undefined) throw new HttpFailure(501, "MCP gateway unavailable")
       await services.mcp.handleGatewayRequest(request, response)
       return
     }
 
-    // Pane webviews cannot attach the machine bearer token to subresource
-    // loads (and the relay strips Authorization), so plugin pane traffic
-    // authenticates with per-pane tokens/cookies inside the proxy itself.
     if (url.pathname.startsWith("/v1/plugins/")) {
       if (await routePluginProxy(services, request, response, url)) {
         return
       }
     }
 
-    // OAuth providers redirect a browser without the Codevisor API token. The
-    // high-entropy, single-installation state value is validated by the manager.
     if (request.method === "GET" && url.pathname === "/v1/mcps/oauth/callback") {
       if (services.mcp === undefined) throw new HttpFailure(501, "MCP gateway unavailable")
       const state = url.searchParams.get("state")
@@ -185,8 +165,6 @@ export const handleRequest = async (
     if (await routeBrowserState(services, request, response, url)) return
 
     if (request.method === "POST" && url.pathname === "/v1/browser/proxy-session") {
-      // Native clients carry no Origin. A website must not mint capabilities
-      // through the local API's trusted-loopback exception.
       if (request.headers.origin !== undefined) throw new HttpFailure(403, "Native clients only")
       if (routeState.browserProxy === undefined)
         throw new HttpFailure(501, "Browser proxy unavailable")
@@ -239,12 +217,6 @@ export const handleRequest = async (
 
     if (request.method === "GET" && url.pathname === "/v1/update") {
       if (config.updater !== undefined) {
-        // `refresh=1` bypasses the updater's check cache: clients force it
-        // when the user is looking at a machine so the banner reflects a
-        // release cut minutes ago, not the last background probe.
-        // `channel=alpha` opts this check into pre-releases (the client
-        // forwards its own alpha-updates preference); anything else is
-        // stable.
         const force = url.searchParams.get("refresh") === "1"
         const channel = serverUpdateChannelFrom(url.searchParams.get("channel"))
         const info = withRestartDrain(routeState, await config.updater.check({ channel, force }))
@@ -262,15 +234,10 @@ export const handleRequest = async (
       }
       const busy =
         routeState.activePromptSessions.size > 0 || routeState.activeTurnSessions.size > 0
-      // The default drains: live turns finish (or are interrupted at the
-      // deadline) before the restart. `whenBusy=refuse` keeps the old
-      // contract for callers that would rather not wait.
       if (busy && url.searchParams.get("whenBusy") === "refuse") {
         writeJson(response, 200, { accepted: false, reason: "busy" })
         return
       }
-      // Forced: the decision to restart the server must rest on the live
-      // release state, never a stale cache entry.
       const channel = serverUpdateChannelFrom(url.searchParams.get("channel"))
       const info = await config.updater.check({ channel, force: true })
       publishUpdateChanged(services, fanout, routeState, info)
@@ -278,11 +245,6 @@ export const handleRequest = async (
         writeJson(response, 200, { accepted: false, targetVersion: info.currentVersion })
         return
       }
-      // Acknowledge first: applying restarts the process, so this response
-      // must be on the wire before the server goes away. The build number is
-      // the reliable "did it land" marker for clients: version strings
-      // diverge between the alpha manifest (full prerelease tag) and the
-      // installed runtime (base marketing version), build numbers never do.
       writeJson(response, 202, {
         accepted: true,
         targetVersion: info.latestVersion,
@@ -292,8 +254,6 @@ export const handleRequest = async (
         draining: busy
       })
       const updater = config.updater
-      // Detached from the request answered above, so a rejection here would
-      // be unhandled and exit the server with every agent in it.
       void applyAfterDrain(
         routeState.restart,
         { interrupt: url.searchParams.get("interrupt") === "1" },
@@ -301,23 +261,18 @@ export const handleRequest = async (
           publishUpdateChanged(services, fanout, routeState, withRestartDrain(routeState, info)),
         () => updater.apply({ channel })
       ).catch(
-        /* v8 ignore next -- defensive: the drain abandons itself on failure
-           and cancel never rejects, so only a throwing publish lands here. */
+        /* v8 ignore next */
         (cause: unknown) => console.log(`Update apply failed: ${failureMessage(cause)}`)
       )
       return
     }
 
-    // The restart drain, driven directly by the host app before it swaps the
-    // bundle: begin (idempotent; `interrupt` ends the remaining turns now),
-    // poll, or cancel when the update was abandoned.
     if (url.pathname === "/v1/restart/drain") {
       if (request.method === "GET") {
         writeJson(response, 200, routeState.restart.state())
         return
       }
       if (request.method === "POST") {
-        // An empty body means "begin with defaults".
         const payload = await readSchema(request, RestartDrainRequest).catch(
           (): RestartDrainRequestBody => ({})
         )
@@ -429,15 +384,9 @@ export const handleRequest = async (
   }
 }
 
-/// Lenient channel parsing: only an explicit `alpha` opts into
-/// pre-releases; absent, empty, or unknown values stay on stable.
 const serverUpdateChannelFrom = (value: string | null): ServerUpdateChannel =>
   value === "alpha" ? "alpha" : "stable"
 
-/// One release-state fingerprint per published update.changed: repeated
-/// checks with an unchanged outcome stay silent, while a new release, a
-/// converged install, or a fresh unattended-apply report each publish once.
-/// `checkedAt` is deliberately excluded — it changes on every check.
 const updateInfoSignature = (info: UpdateInfo): string =>
   JSON.stringify([
     info.updateAvailable,
@@ -451,15 +400,9 @@ const updateInfoSignature = (info: UpdateInfo): string =>
     info.lastApply?.at ?? null
   ])
 
-/// Overlays the restart drain onto the update state so a client watching
-/// this machine sees "waiting for N chats" and then "installing" live. A
-/// failure reported by the host app (app-hosted Macs) is the more specific
-/// outcome and is never masked.
 const withRestartDrain = (routeState: RouteState, info: UpdateInfo): UpdateInfo => {
   const drain = routeState.restart.state()
   if (drain.state === "idle" || info.lastApply?.state === "failed") return info
-  // Once drained, the host updater owns the download/install detail. A
-  // previous attempt's report must not mask this attempt's restart drain.
   if (
     drain.state === "drained" &&
     info.lastApply?.state === "installing" &&
@@ -481,10 +424,6 @@ const withRestartDrain = (routeState: RouteState, info: UpdateInfo): UpdateInfo 
   }
 }
 
-/// Emits update.changed when a check's outcome differs from the last one
-/// published. Every client already force-checks reachable machines on its
-/// own cadence, so any one client's probe keeps every other connected
-/// client's fleet state fresh — no server-side timer needed.
 const publishUpdateChanged = (
   services: CodevisorServerServices,
   fanout: EventFanout,

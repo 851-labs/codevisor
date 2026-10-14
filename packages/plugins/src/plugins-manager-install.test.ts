@@ -8,10 +8,6 @@ import type { PluginStateEvent } from "./plugins-manager.js"
 import { advancingClock } from "./test-support.js"
 import { exampleManifest, fakeSpawn, makeDir, makeManager } from "./test-support.js"
 
-/// Manager-level wiring for the install pipeline: the installer runs behind
-/// the same facade as the runtime, summaries come from a fresh scan, and list
-/// changes fan out as plugin.state.updated events.
-
 const makeFixture = (manifest: Record<string, unknown>): string => {
   const fixture = makeDir("codevisor-plugin-fixture-")
   writeFileSync(join(fixture, "codevisor-plugin.json"), JSON.stringify(manifest))
@@ -162,7 +158,6 @@ describe("manager install pipeline", () => {
     expect(linked.id).toBe("owner.fresh")
     expect(linked.source).toBe("linked")
     expect(existsSync(join(root, "owner.fresh"))).toBe(true)
-    // Linked plugins are refused by remove — they belong to the developer.
     await expect(manager.remove("owner.fresh")).rejects.toThrow(/linked, not managed/)
   })
 

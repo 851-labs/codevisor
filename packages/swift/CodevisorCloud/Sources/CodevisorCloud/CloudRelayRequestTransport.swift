@@ -24,34 +24,17 @@ public enum CloudRelayTransportError: Error, Equatable, Sendable, LocalizedError
         "The relay channel closed (\(reason?.rawValue ?? "unknown"))."
       }
     case .timedOut:
-      // Deliberately transport-neutral: the same client serves the
-      // cloud relay and the direct LAN pipe, and naming the relay for
-      // a LAN failure sent users debugging the wrong path.
       "The request to the machine timed out."
     }
   }
 }
 
-/// Shared window sizing for the flow-controlled http/ws relay channels
-/// (twin of @codevisor/cloud-client PROXY_INITIAL_CREDIT_BYTES): each
-/// receiver grants this much ciphertext budget up front and replenishes as
-/// it consumes, so no hop ever holds more than the window in flight.
 enum CloudRelayProxy {
   static let initialCreditBytes = 1024 * 1024
 }
 
-/// Tunnels ordinary HTTP requests through a flow-controlled "http" relay
-/// channel: the open params carry method/path/headers, the body streams as
-/// base64url chunks (gated on the machine's credit grants), and the machine
-/// answers head → chunks → end → close("done") behind ours. `stream(for:)`
-/// hands chunks to the caller as they arrive and replenishes the machine's
-/// window per pulled chunk, so a 32MB download is paced by its consumer
-/// instead of buffered anywhere.
 public struct CloudRelayRequestTransport: ServerRequestTransport {
-  /// Raw bytes per body chunk frame (b64url expansion happens on top).
   public static let chunkSize = 262_144
-  /// A relayed request whose channel never answers must fail visibly
-  /// instead of hanging its caller (and any UI gated on it) forever.
   public static let defaultTimeout: Duration = .seconds(30)
 
   private let endpoint: any CloudChannelTransport
@@ -85,8 +68,6 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
     var sealedBytes: Int
   }
 
-  /// The whole request/response under one deadline, body buffered — the
-  /// JSON API surface. Streaming callers use `stream(for:)`.
   public func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
     let requestTimeout = timeout(for: request)
     return try await raced(expiry: { [sleep] in try await sleep(requestTimeout) }) { deadline in
@@ -96,11 +77,6 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
     }
   }
 
-  /// Streams the file as request body chunks, reading one chunk at a time
-  /// so a large upload never sits in memory. A fixed deadline would cap an
-  /// upload's size by the link speed, so the body runs under an idle
-  /// deadline instead: every chunk sent and every credit grant restarts the
-  /// timer. Once the end frame is out, the response gets the normal timeout.
   public func upload(
     for request: URLRequest,
     fromFile fileURL: URL
@@ -131,10 +107,6 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
     return (body, response)
   }
 
-  /// Streams the response: the head is bounded by the transport timeout,
-  /// the body is paced by the consumer (each pulled chunk replenishes the
-  /// machine's send window). The stream must be drained or cancelled — a
-  /// cancelled/failed pull closes the channel on the way out.
   public func stream(
     for request: URLRequest
   ) async throws -> (HTTPURLResponse, AsyncThrowingStream<Data, any Error>) {
@@ -153,10 +125,6 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
     return (response, body)
   }
 
-  /// URLRequest's own default `timeoutInterval`: a request carrying any
-  /// other value set it deliberately (a clone that legitimately runs for
-  /// minutes, a config read that should give up early), and a direct
-  /// connection would honor it, so the relay does too.
   static let urlRequestDefaultTimeout: TimeInterval = 60
 
   private func timeout(for request: URLRequest) -> Duration {
@@ -164,10 +132,6 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
       ? timeout : .seconds(request.timeoutInterval)
   }
 
-  /// Races `operation` against the transport deadline (`expiry` returns
-  /// once it passes); the loser is cancelled (cancellation unblocks the
-  /// frame stream, and the request path then closes its channel on the way
-  /// out).
   private func raced<Value: Sendable>(
     expiry: @escaping @Sendable () async throws -> Void,
     _ operation: @escaping @Sendable (DeadlineFlag) async throws -> Value
@@ -179,8 +143,6 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
       }
       group.addTask {
         try await expiry()
-        // Marked before the operation is cancelled, so its unwind can
-        // tell a deadline from a caller's cancellation.
         deadline.markExpired()
         throw CloudRelayTransportError.timedOut
       }
@@ -192,9 +154,6 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
     }
   }
 
-  /// Opens the channel, uploads the request, and consumes frames up to and
-  /// including the head. The returned source yields decoded body chunks.
-  /// Whether the transport deadline fired for one request.
   final class DeadlineFlag: @unchecked Sendable {
     private let lock = NSLock()
     private var expired = false
@@ -202,9 +161,6 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
     var hasExpired: Bool { lock.withLock { expired } }
   }
 
-  /// Where a request's body comes from: buffered bytes, or a file read one
-  /// chunk at a time whose progress feeds the upload's idle deadline.
-  /// @unchecked: the file handle is read only by the single sending task.
   enum RequestBody: @unchecked Sendable {
     case data(Data?)
     case file(FileHandle, IdleWatchdog)
@@ -234,8 +190,6 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
       let response = try await source.readHead(url: url)
       return (response, source)
     } catch {
-      // No head by the deadline: let the pipe judge whether the machine
-      // answered at all (the host ignores channels that saw traffic).
       if deadline.hasExpired { await channel.reportUnanswered() }
       await source.finish(reason: .done)
       throw error
@@ -278,7 +232,6 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
         }
       },
       onCredit: { bytes in
-        // A grant is progress: the machine is draining the upload.
         body.watchdog?.touch()
         gate.add(bytes)
       },
@@ -293,8 +246,6 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
     )
   }
 
-  /// Uploads the body as chunk frames and the terminating end frame, each
-  /// gated on the machine's request-body window.
   private func sendRequestBody(
     _ body: RequestBody,
     channel: CloudRelayChannel,
@@ -330,8 +281,6 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
         watchdog.touch()
       }
       try await send(ClientFrame(kind: "end"))
-      // The body is out: from here the response runs under one fixed
-      // timeout, which later credit grants must not extend.
       watchdog.freeze()
     }
   }

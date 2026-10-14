@@ -34,11 +34,8 @@ const ICO = Buffer.from([0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x10, 0x10])
 const SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8"/></svg>'
 
-/// Each request gets a fresh response: a cloned body's cancel waits on its twin.
 type Route = (() => Response) | Error
 
-/// A fetch over fixed routes that records what was asked for. Unrouted
-/// URLs answer 404.
 const fakeFetch = (routes: Record<string, Route>) => {
   const requested: Array<{ url: string; init: RequestInit | undefined }> = []
   const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -59,10 +56,8 @@ const html = (head: string) => (): Response =>
 
 const image = (data: Uint8Array) => (): Response => new Response(Buffer.from(data))
 
-/// What bot protection answers a server-side request with.
 const blocked = (): Response => new Response("challenge", { status: 403 })
 
-/// A response that claims to come from `url`, as a followed redirect does.
 const redirected = (route: () => Response, url: string) => (): Response => {
   const response = route()
   Object.defineProperty(response, "url", { value: url })
@@ -216,7 +211,6 @@ describe("site icons", () => {
   })
 
   it("reads a long head only as far as it must", async () => {
-    // Over the page budget with no closing head: the start still counts.
     const filler = new TextEncoder().encode(`<style>${"x".repeat(1024 * 1024)}</style>`)
     const head = new TextEncoder().encode('<link rel="icon" href="/late.png">')
     const { icons, requested } = await store({
@@ -247,7 +241,6 @@ describe("site icons", () => {
       const original = await harness.icons.site("https://linear.app", "light")
       expect(harness.requested()).toHaveLength(2)
 
-      // A new store over the same directory reads the disk cache.
       const reopened = makeToolIconStore({
         dir: harness.dir,
         fetchImpl: harness.fetchImpl,
@@ -256,7 +249,6 @@ describe("site icons", () => {
       expect(await reopened.site("https://linear.app", "light")).toEqual(original)
       expect(harness.requested()).toHaveLength(2)
 
-      // A week on, the stale icon is still served at once while it refreshes.
       served = await png(48)
       harness.advance(8 * DAY)
       expect(await harness.icons.site("https://linear.app", "light")).toEqual(original)
@@ -358,7 +350,6 @@ describe("MCP server icons", () => {
     expect((await sharp(lightIcon!.data).metadata()).width).toBe(64)
     const darkIcon = await harness.icons.mcp("linear", undefined, "dark")
     expect((await sharp(darkIcon!.data).metadata()).width).toBe(32)
-    // Icons off the server's domain are never fetched.
     expect(harness.requested()).not.toContain("https://tracker.example/elsewhere.png")
   })
 

@@ -1,7 +1,5 @@
 import type { McpTransport } from "@codevisor/api"
 
-/// One native server entry translated out of a harness dialect. Secret values
-/// (env/headers) stay server-side; API rows expose only their names.
 export interface NormalizedNativeServer {
   readonly transport: McpTransport
   readonly url?: string | undefined
@@ -9,8 +7,6 @@ export interface NormalizedNativeServer {
   readonly args: ReadonlyArray<string>
   readonly env: Readonly<Record<string, string>>
   readonly headers: Readonly<Record<string, string>>
-  /// Present only for dialects with a real per-server enable flag
-  /// (opencode `enabled`, cline `disabled`, goose `enabled`).
   readonly enabled?: boolean | undefined
   readonly raw: Readonly<Record<string, unknown>>
 }
@@ -62,10 +58,6 @@ const stdio = (
   url: undefined
 })
 
-/// Translate one raw server entry from a harness's native dialect into the
-/// normalized shape. Returns undefined for entries with neither a URL nor a
-/// command (unrecognizable — skipped, not fatal). Dialects are the reverse of
-/// add-mcp's outbound transformConfig functions.
 export const normalizeNativeServer = (
   harnessId: string,
   raw: unknown
@@ -133,8 +125,6 @@ const normalizeClineServer = (
 const normalizeStandardServer = (
   entry: Record<string, unknown>
 ): NormalizedNativeServer | undefined => {
-  // Standard spec-aligned shape: claude-code, gemini, github-copilot-cli,
-  // and project .mcp.json files.
   const url = asString(entry["url"])
   if (url !== undefined) return remote(entry, url, asStringRecord(entry["headers"]))
   const command = asString(entry["command"])
@@ -142,8 +132,6 @@ const normalizeStandardServer = (
   return stdio(entry, command, asStringArray(entry["args"]), asStringRecord(entry["env"]))
 }
 
-/// Extract a server's cross-harness identity (URL, package name, or command
-/// line) from any dialect. Ported from add-mcp reader.ts.
 export const extractServerIdentity = (raw: Record<string, unknown>): string => {
   for (const key of ["url", "uri", "serverUrl"]) {
     const value = raw[key]
@@ -171,7 +159,6 @@ const nativeIdentityArguments = (raw: Record<string, unknown>): ReadonlyArray<st
       : []
 
 const nativeArrayCommandIdentity = (raw: Record<string, unknown>): string => {
-  // OpenCode encodes the whole invocation as a command array.
   if (Array.isArray(raw["command"])) {
     const parts = raw["command"].filter((item): item is string => typeof item === "string")
     const [first, ...rest] = parts
@@ -188,8 +175,6 @@ const nativeCommandIdentity = (command: string, rawArgs: ReadonlyArray<string>):
   return command
 }
 
-/// npx/bunx invocations identify by package name, so `npx -y foo` in Claude
-/// Code and `bunx foo` in OpenCode coalesce to the same server.
 const packageIdentity = (command: string, args: ReadonlyArray<string>): string | undefined => {
   if (command !== "npx" && command !== "bunx") return undefined
   const yIndex = args.indexOf("-y")
@@ -198,8 +183,6 @@ const packageIdentity = (command: string, args: ReadonlyArray<string>): string |
   return undefined
 }
 
-/// Canonicalize URL identities so trivial variants (host case, trailing
-/// slash) coalesce. Non-URL strings pass through untouched.
 export const normalizeUrlIdentity = (identity: string): string => {
   if (!identity.startsWith("http://") && !identity.startsWith("https://")) return identity
   try {

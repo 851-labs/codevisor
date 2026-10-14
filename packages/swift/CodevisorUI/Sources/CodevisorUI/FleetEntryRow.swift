@@ -1,23 +1,9 @@
 import CodevisorCore
 import SwiftUI
 
-/// The row every fleet page's top level is made of: one entry as the fleet
-/// wants it, with the machines that carry it nested underneath. Harnesses,
-/// MCP servers, skills, and plugins all render this, so the four pages read
-/// as one design.
-///
-/// `isEnabled` is optional because not every plane has a wish to express —
-/// skills are either in the store or not, and a toggle
-/// would be a control with nothing behind it.
 public struct FleetEntryRow<Icon: View, Accessory: View, Actions: View>: View {
-  /// The trailing column every row ends in: the entry row's menu button, a
-  /// machine row's status mark. One width so marks sit exactly under the
-  /// menu button they follow.
   public static var trailingControlWidth: CGFloat { FleetRowMetrics.trailingControlWidth }
-  /// Rows are one height whether they carry a toggle, a bordered button, or
-  /// a bare mark, so nested machine rows read as an indented continuation.
   public static var minContentHeight: CGFloat { FleetRowMetrics.minContentHeight }
-  /// The space the icon column takes; machine rows indent by it.
   public static var iconColumnWidth: CGFloat { FleetRowMetrics.iconColumnWidth }
 
   @Environment(\.theme) private var theme
@@ -31,12 +17,6 @@ public struct FleetEntryRow<Icon: View, Accessory: View, Actions: View>: View {
   private let accessory: Accessory
   private let actions: Actions
 
-  /// - Parameters:
-  ///   - caption: the secondary line under the name; nil renders one line.
-  ///   - isEnabled: the fleet's wish. Nil renders no toggle.
-  ///   - toggleDisabledReason: when non-nil the toggle is disabled and this
-  ///     is its help text — Computer Use cannot be turned on before its
-  ///     permissions are granted, and the row has to say why.
   public init(
     name: String,
     caption: String? = nil,
@@ -68,8 +48,6 @@ public struct FleetEntryRow<Icon: View, Accessory: View, Actions: View>: View {
           Text(caption).font(.caption).foregroundStyle(theme.textSecondary).lineLimit(2)
         }
       }
-      // The name is the row's identity: it keeps its width and the controls
-      // after it take what remains, not the other way round.
       .layoutPriority(1)
       Spacer(minLength: 8)
       accessory
@@ -79,8 +57,6 @@ public struct FleetEntryRow<Icon: View, Accessory: View, Actions: View>: View {
       if let isEnabled {
         Toggle("Enable \(name)", isOn: isEnabled)
           .labelsHidden().toggleStyle(.switch)
-          // Busy is a report, not a lock: a machine still converging on the
-          // last flip must not stop the user flipping it back.
           .disabled(isChanging || toggleDisabledReason != nil)
           .help(toggleDisabledReason ?? "")
           #if os(macOS)
@@ -102,8 +78,6 @@ public struct FleetEntryRow<Icon: View, Accessory: View, Actions: View>: View {
     .frame(minHeight: Self.minContentHeight)
     .padding(.vertical, 4)
     #if os(iOS)
-      // A phone row can't fit a name, a button, a switch, and a menu. The
-      // rare actions (edit, uninstall) go where iOS lists keep them.
       .swipeActions(edge: .trailing, allowsFullSwipe: false) {
         actions
       }
@@ -129,7 +103,6 @@ public extension FleetEntryRow where Accessory == EmptyView {
   }
 }
 
-/// The layout metrics nested rows indent by, without naming a generic.
 public enum FleetRowMetrics {
   public static let trailingControlWidth: CGFloat = 22
   public static let minContentHeight: CGFloat = 24
@@ -137,8 +110,6 @@ public enum FleetRowMetrics {
 }
 
 public extension View {
-  /// A row's bordered action. Regular on the Mac; small on the phone, where
-  /// the same row also has to fit a toggle and a menu beside the name.
   @ViewBuilder
   func fleetRowButton(_ theme: Theme) -> some View {
     let styled = buttonStyle(.bordered)

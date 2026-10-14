@@ -109,7 +109,6 @@ struct TranscriptRestorationTests {
     view.prepareForDismantle()
     view.prepareForPresentationAttachment()
     view.isDetaching = false
-    // ChatScreen creates a fresh @State command counter, starting at zero.
     configure(view, controller: controller, rows: rows)
     #expect(view.contentView.bounds.minY == top)
     #expect(view.currentViewportAnchor() == anchor)

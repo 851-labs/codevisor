@@ -2,17 +2,11 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// Project creation and settings live outside the composer's selection menu.
-///
-/// One navigation stack: the machine's projects, folders you've recently
-/// worked in (one tap adds), and a folder browser pushed in place. Adding is
-/// immediate — the project registers locally and syncs through the outbox.
 struct ManageProjectsSheet: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.dismiss) private var dismiss
 
   let serverId: String
-  /// Runs after a project is deleted from its settings.
   let onDeleted: (ProjectGroup) -> Void
 
   @State private var navigationPath = NavigationPath()
@@ -96,8 +90,6 @@ struct ManageProjectsSheet: View {
     }
   }
 
-  // MARK: Sections
-
   private var projectsSection: some View {
     Section {
       ForEach(projects) { project in
@@ -120,7 +112,6 @@ struct ManageProjectsSheet: View {
             Task { await load() }
           }
         } else if suggestions.isEmpty {
-          // With suggestions below, the first step is already on screen.
           Text("No Projects")
             .foregroundStyle(.secondary)
         }
@@ -160,10 +151,7 @@ struct ManageProjectsSheet: View {
     }
   }
 
-  // MARK: Actions
-
   private func addFolder(_ url: URL) {
-    // Registered locally at once; the outbox syncs it to the machine.
     withAnimation {
       _ = environment.projectList.addProject(folderURL: url, serverId: serverId)
       navigationPath = NavigationPath()
@@ -182,8 +170,6 @@ struct ManageProjectsSheet: View {
     isLoading = false
   }
 
-  /// Shows the machine's last suggestions at once, then refreshes them. A
-  /// failure only hides the section; choosing a folder still works.
   private func loadSuggestions() async {
     recommendations = environment.cachedRecommendedProjects(serverId: serverId)
     guard let loaded = try? await environment.recommendedProjects(serverId: serverId),
@@ -193,7 +179,6 @@ struct ManageProjectsSheet: View {
   }
 }
 
-/// A folder's name over its location.
 private struct FolderRow: View {
   let name: String
   let path: String

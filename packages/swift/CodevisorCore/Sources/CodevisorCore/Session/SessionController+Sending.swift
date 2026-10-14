@@ -3,8 +3,6 @@ import ACPKit
 import os
 
 extension SessionController {
-  /// Sends the composer text, transitioning immediately into the transcript.
-  /// Worktree and agent setup render after the optimistic first user message.
   public func send() async {
     let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty || !composerAttachments.isEmpty,
@@ -16,26 +14,15 @@ extension SessionController {
     else { return }
     showsNewChatAfterSetupFailure = false
     status = .idle
-    // Ask at the first moment notifications become useful instead of at
-    // launch: the user just started work that may finish while they are in
-    // another app. The task is intentionally nonblocking for the send.
     if let notificationDelivery {
       Task { await notificationDelivery.prepareAuthorizationIfNeeded() }
     }
     isSubmitting = true
-    // A first send owns the connection from here: view-driven connects
-    // that arrive while the scratch folder or worktree is being prepared
-    // must not start a competing attempt (see `connectIfNeeded`).
     if !hasSentFirst {
       isFirstSendConnecting = true
     }
     defer { isFirstSendConnecting = false }
 
-    // Attachment sends settle their eager uploads first (usually already
-    // done: uploads start when a file is attached). A failed upload blocks
-    // the send with an inline status instead of silently dropping the file.
-    // The composer's glyphs are already held above the composer by the
-    // platform's send staging, so this wait never shows as a gap.
     let attachments: [Attachment]
     if composerAttachments.isEmpty {
       attachments = []
@@ -48,39 +35,20 @@ extension SessionController {
     }
     let outgoingMessage = UserMessage(text: text, attachments: attachments)
     let shouldAnimateTranscriptSend = !isSending
-    // Sending expresses "take me to the newest content": the transcript
-    // re-pins only once the send is certain to proceed.
     userSendSignal &+= 1
 
-    // Fully optimistic: the row and its animation request are published
-    // together, before any network work. Configuration, goals, the
-    // scratch folder and the harness all catch up behind the bubble; the
-    // transcript only needs the row to be laid out to fly into it.
     if shouldAnimateTranscriptSend {
       requestUserSendAnimation(for: outgoingMessage.id)
       pendingSendStartedAt = Date()
       pendingUserMessage = outgoingMessage
     }
 
-    // A brand-new chat renders its pre-chat steps as setup sections; a
-    // resumed session's transcript shouldn't grow one retroactively.
     let showsSetupPhases =
       (pendingNewChatAnalytics || (!hasSentFirst && onFirstSend != nil))
       && resumeAgentSessionId?.isEmpty != false
-    // Clear the durable draft before mounting any first-send destination.
-    // The source UIKit editor keeps its already-rendered pixels until the
-    // transition surface covers it, while every newly mounted composer
-    // starts empty. Publishing this after `onFirstSend` let the promotion
-    // composer briefly rebuild with stale text, producing the visible
-    // empty -> sent text -> empty pop.
     let staged = composerAttachments
     composerText = ""
     self.attachments.clearAfterCollecting()
-    // A chat with no project runs in a fresh single-use folder the server
-    // allocates now, so the session is born there like in any project.
-    // This round-trip happens AFTER the optimistic row is published: the
-    // bubble must leave the composer on the tap, not when the folder
-    // exists. A failure puts the draft back exactly as it was.
     if project.isRunTargetPlaceholder {
       if let failure = await materializeScratchProject() {
         composerText = text
@@ -92,11 +60,7 @@ extension SessionController {
         return
       }
     }
-    // Materialize the durable session before setup so the workspace and
-    // pane keep a stable identity even if setup fails.
     if !hasSentFirst {
-      // The draft's visible selection becomes the new chat's own value
-      // until the server or runtime reports one.
       firstSendSelections = rememberedConfigValues
       hasSentFirst = true
       if onFirstSend != nil {
@@ -114,10 +78,6 @@ extension SessionController {
       cancelUserSendAnimation(for: outgoingMessage.id)
     }
 
-    // Materialize the worktree before the agent exists, so it is born
-    // with the worktree cwd. Progress (including checkout-hook output)
-    // streams into the "Setting up worktree…" section. A scratch folder
-    // never gets one: it has no repository of its own.
     if wantsNewWorktree, sessionCwdOverride == nil, !project.isScratch {
       if let failure = await createWorktree(showsSetupPhase: showsSetupPhases) {
         restoreComposer()
@@ -130,7 +90,6 @@ extension SessionController {
       await pendingConfiguration.apply(to: model)
       await applyPendingGoal(to: model)
       await model.send(outgoingMessage, startedAt: pendingSendStartedAt)
-      // The message holds server refs now; the staged copies are spent.
       self.attachments.releaseStagedFiles(of: staged)
       if pendingUserMessage?.id == outgoingMessage.id {
         pendingUserMessage = nil
@@ -144,13 +103,6 @@ extension SessionController {
       handleSetupFailure(message, returnsToNewChat: showsSetupPhases)
       return
     }
-    // No "Starting <agent>" phase here: the transcript already shows the
-    // turn's "Working for…" header once the worktree is up, and that
-    // header keeps counting through connect, the runtime-configuration replay
-    // (whose first call is what actually spawns the harness) and the
-    // prompt, until the live turn replaces it in place. A phase row that
-    // vanished after the cheap `/open` round trip left the transcript
-    // looking frozen for the seconds the spawn really took.
     status = .connecting("Starting \(harness.name)…")
     do {
       let model = try await connect(harnessId: harness.id)
@@ -159,7 +111,6 @@ extension SessionController {
       await pendingConfiguration.apply(to: model)
       await applyPendingGoal(to: model)
       await model.send(outgoingMessage, startedAt: pendingSendStartedAt)
-      // The message holds server refs now; the staged copies are spent.
       self.attachments.releaseStagedFiles(of: staged)
       if pendingUserMessage?.id == outgoingMessage.id {
         pendingUserMessage = nil
@@ -175,9 +126,6 @@ extension SessionController {
     userSendAnimationRequest = userSendAnimationCoordinator.issue(for: messageID)
   }
 
-  /// Called by a native transcript only after the target row is mounted and
-  /// ready to start its animation. The coordinator, rather than the view,
-  /// owns consumption so remounting cannot replay the request.
   public func claimUserSendAnimation(_ request: UserSendAnimationRequest) -> Bool {
     userSendAnimationCoordinator.claim(request)
   }
@@ -188,9 +136,6 @@ extension SessionController {
     userSendAnimationRequest = nil
   }
 
-  /// Continues the failed response in place. Automatic retries remain
-  /// provider-owned; this explicit recovery starts a new assistant attempt
-  /// under the original user message without duplicating that message.
   public func retryTurn(_ assistantID: UUID) async {
     guard let model, !model.isSending, !isConnecting, !isSubmitting else { return }
     guard
@@ -208,14 +153,6 @@ extension SessionController {
     await model.retryResponse(to: prompt)
   }
 
-  /// Asks the server to create a git worktree for this draft. The server
-  /// owns the fixed location (~/codevisor/{projectId}/{name}) and picks a
-  /// random memorable name; the app never computes either. The worktree id
-  /// is generated client-side so the server's `worktree.setup` events (git
-  /// output, checkout hooks, failures) can be followed live into the setup
-  /// section while the request is in flight. Returns the failure message on
-  /// error (nil on success); the caller either continues the transcript
-  /// transition or restores New Chat.
   func createWorktree(showsSetupPhase: Bool) async -> String? {
     guard let serverClient else {
       return "Worktrees need the Codevisor server. Start it and try again."
@@ -223,10 +160,6 @@ extension SessionController {
     let worktreeId = UUID().uuidString.lowercased()
     if showsSetupPhase { beginSetupPhase(.worktree()) }
     status = .connecting("Setting up worktree…")
-    // Best-effort live tail: the WebSocket usually opens well before git
-    // (and any long checkout hooks) produce output. Terminal state comes
-    // from the HTTP response, not from these events. Only this worktree's
-    // log lines reach the main actor.
     let log = WorktreeSetupEvent.liveLog(serverClient, worktreeId: worktreeId)
     let follow = Task { [weak self] in
       for await entry in log {
@@ -244,9 +177,6 @@ extension SessionController {
       )
       sessionCwdOverride = worktree.path
       worktreeName = worktree.name
-      // The session record was registered before the worktree existed;
-      // carry the name/cwd onto it so the first connect (and terminals)
-      // run in the worktree.
       if var session = serverSession {
         session.worktreeName = worktree.name
         session.cwd = worktree.path
@@ -263,11 +193,6 @@ extension SessionController {
     }
   }
 
-  /// Failed first-send setup returns to the centered composer with its prompt
-  /// restored. Existing-session failures remain in the transcript.
-  /// Asks the server for a scratch backing project (an empty folder under
-  /// ~/codevisor/workspaces on the draft's machine) and re-points the
-  /// draft at it. Returns the failure message, nil on success.
   func materializeScratchProject() async -> String? {
     guard let serverClient else {
       return "Starting a chat needs the Codevisor server. Start it and try again."
@@ -289,10 +214,6 @@ extension SessionController {
   func handleSetupFailure(_ message: String, returnsToNewChat: Bool) {
     if returnsToNewChat {
       setupPhases.removeAll()
-      // Restore the original draft lifecycle so every composer field is
-      // persisted again while the user edits or retries. The durable
-      // session remains registered; only this controller's draft-facing
-      // state is reset.
       hasSentFirst = false
       pendingNewChatAnalytics = false
       showsNewChatAfterSetupFailure = true

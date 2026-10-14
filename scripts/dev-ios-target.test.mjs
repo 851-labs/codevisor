@@ -48,7 +48,6 @@ for (const terminationExitCode of [0, 3]) {
 
     try {
       await terminationStarted.promise
-      // Even a long elapsed interval cannot release a pending termination.
       const elapsed = new Promise((resolve) => setTimeout(resolve, 60_000))
       t.mock.timers.tick(60_000)
       await elapsed

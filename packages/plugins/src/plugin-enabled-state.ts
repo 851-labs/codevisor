@@ -9,7 +9,6 @@ const DISABLED_DIRECTORY = ".codevisor-disabled-plugins"
 const markerPath = (pluginDataRoot: string, pluginId: string): string =>
   join(pluginDataRoot, DISABLED_DIRECTORY, pluginId)
 
-/// Enabled is the default, so older installs migrate without a write.
 const isPluginEnabled = (pluginDataRoot: string, pluginId: string): boolean =>
   !existsSync(markerPath(pluginDataRoot, pluginId))
 

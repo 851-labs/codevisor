@@ -2,8 +2,6 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// New-skill form: name + description, and an optional text area for pasting
-/// SKILL.md content directly.
 struct SkillCreateSheet: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(\.theme) private var theme
@@ -76,8 +74,6 @@ struct SkillCreateSheet: View {
   }
 }
 
-/// Two-stage import: enter a source (GitHub/GitLab repo, git URL, or a site
-/// publishing skills), discover what it offers, then import the selection.
 struct SkillRemoteImportSheet: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(\.theme) private var theme
@@ -110,9 +106,6 @@ struct SkillRemoteImportSheet: View {
     VStack(spacing: 0) {
       Form {
         Section {
-          // Same labeled-field pattern as the MCP editor's Server
-          // URL row; verbatim because the LocalizedStringKey
-          // initializer would markdown-link a bare URL prompt.
           TextField(
             "Source",
             text: $source,
@@ -231,7 +224,6 @@ struct SkillRemoteImportSheet: View {
     do {
       let found = try await discover(source.trimmingCharacters(in: .whitespaces))
       candidates = found
-      // Everything new is pre-selected — one click imports the lot.
       selection = Set(found.filter { !$0.alreadyExists }.map(\.directoryName))
       errorMessage = found.isEmpty ? "No skills found at this source." : nil
     } catch {

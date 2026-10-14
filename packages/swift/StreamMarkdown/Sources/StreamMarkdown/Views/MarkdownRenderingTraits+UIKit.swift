@@ -2,9 +2,6 @@
   import SwiftUI
   import UIKit
 
-  /// Immutable traits captured for an isolated text-preparation operation.
-  /// Dynamic Type and dynamic colors must match the requesting view even
-  /// when UIKit's thread-local current traits differ on the worker.
   struct MarkdownRenderingTraits: Sendable {
     private let traits: UITraitCollection
 

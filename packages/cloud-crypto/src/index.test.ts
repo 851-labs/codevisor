@@ -71,8 +71,6 @@ describe("channel encryption", () => {
   it("derives nonces deterministically from direction and seq", () => {
     const { opened } = setup()
     const payload = new Uint8Array([9])
-    // Same (direction, seq) → same box (callers must never reuse a seq for
-    // different payloads); different seq/direction → different boxes.
     const first = opened.cipher.seal("ch-1", "opener-to-responder", 0, payload)
     const repeat = opened.cipher.seal("ch-1", "opener-to-responder", 0, payload)
     const nextSeq = opened.cipher.seal("ch-1", "opener-to-responder", 1, payload)
@@ -109,8 +107,6 @@ describe("channel encryption", () => {
   it("authenticates the opener's static key (dual DH)", () => {
     const { machine, opened } = setup()
     const impostor = generateDeviceKeyPair()
-    // Machine believes the peer is `impostor`, but frames were sealed with the
-    // real app's static key — decryption must fail.
     const responder = acceptChannel(
       machine.secretKey,
       impostor.publicKey,

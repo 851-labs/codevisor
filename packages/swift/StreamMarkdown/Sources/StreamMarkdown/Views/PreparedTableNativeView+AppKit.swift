@@ -2,8 +2,6 @@
   import AppKit
   import SwiftUI
 
-  /// Keeps native table selection and TSV copying while mounting a TextKit
-  /// stack whose attributes and geometry were prepared off the UI actor.
   struct PreparedTableNativeView: NSViewRepresentable {
     let layout: PreparedNativeTextLayout
     let borderColor: Color

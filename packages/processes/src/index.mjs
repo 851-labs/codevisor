@@ -11,7 +11,7 @@ const exec = promisify(execFile)
 /** @typedef {{notBefore?: number, maxAgeMs?: number}} ListOptions */
 /** @typedef {{list: (options?: ListOptions) => Promise<ProcessIdentity[]>, signal: (pid: number, signal: NodeJS.Signals) => void, now: () => number, sleep: (ms: number) => Promise<unknown>}} ProcessSystem */
 
-/** Parse a locale-independent `ps` snapshot, including birth time to reject reused PIDs.
+/**
  * @param {string} output
  * @returns {ProcessTableEntry[]}
  */
@@ -26,8 +26,6 @@ export function parseProcessTable(output) {
         pid: Number(match[1]),
         ppid: Number(match[2]),
         pgid: Number(match[3]),
-        // RegExp captures can be slices of the entire ps snapshot. A caller
-        // retaining one process must not keep every other process's argv alive.
         startedAt: Buffer.from((match[4] ?? "").replace(/\s+/g, " ")).toString(),
         state: Buffer.from(match[5] ?? "").toString(),
         command: Buffer.from(match[6] ?? "").toString()
@@ -47,14 +45,7 @@ export async function readProcessTable({ includeCommand = true } = {}) {
   return parseProcessTable(stdout)
 }
 
-/** Share process-table reads between concurrent callers. Archiving a workspace
- * stops every chat and terminal at once, and each stop polls `ps`; without
- * sharing, dozens of full process listings run in parallel on every poll.
- * A caller joins an in-flight read only when that read started at or after
- * `notBefore`, so nobody acts on a table older than their own request.
- * Background polls pass `maxAgeMs` instead: they also accept the last
- * finished table while it is that recent, so every tracked tree shares one
- * listing per poll interval rather than each running its own.
+/**
  * @template T
  * @param {{read: () => Promise<T>, now: () => number}} source
  */
@@ -75,7 +66,6 @@ export function createProcessSampler({ read, now }) {
         if (inFlight === sample) inFlight = undefined
       }
       sample.table.then(() => {
-        // An older read finishing late must not replace a newer table.
         if (latest === undefined || latest.startedAt <= sample.startedAt) latest = sample
         settle()
       }, settle)
@@ -89,8 +79,7 @@ const sharedSampler = createProcessSampler({
   now: () => performance.now()
 })
 
-/** Read process identities, joining a concurrent read that started after this request
- * (or, with `maxAgeMs`, reusing one that recent).
+/**
  * @param {ListOptions} [options] */
 export const listProcessIdentities = (options) => sharedSampler.list(options)
 
@@ -122,7 +111,7 @@ export async function processIdentity(pid) {
   )
 }
 
-/** Include descendants before signalling any parent so reparenting cannot lose them.
+/**
  * @template {ProcessIdentity} T
  * @param {T[]} table @param {number[]} roots @param {boolean} includeRoots
  */
@@ -143,8 +132,7 @@ export function processTree(table, roots, includeRoots = true) {
   )
 }
 
-/** Stop only captured processes and descendants. Give supervisors time to release external
- * resources before escalation; keep following captured children after their parents exit.
+/**
  * @param {ProcessIdentity[]} initial
  * @param {{graceMs?: number, forceMs?: number, system?: ProcessSystem}} [options]
  */
@@ -169,7 +157,6 @@ export async function stopProcesses(initial, options = {}) {
       table,
       live.map((entry) => entry.pid)
     )
-    // Dedicated process groups retain children whose parent exited between snapshots.
     const groups = new Set(
       live.filter((entry) => known.get(entry.pgid)?.pid === entry.pgid).map((entry) => entry.pgid)
     )
@@ -185,16 +172,12 @@ export async function stopProcesses(initial, options = {}) {
     const remaining = table.filter((entry) => sameProcess(known.get(entry.pid), entry))
     if (remaining.length === 0) return
     const signal = system.now() < deadline ? "SIGTERM" : "SIGKILL"
-    // Shutdown handlers may spawn commands to release external resources.
-    // Track those commands, but let them finish during the grace period.
     const due = remaining.filter(
       (entry) =>
         (signal === "SIGKILL" || initialIds.has(entry.pid)) &&
         !signalled.has(`${entry.pid}:${entry.startedAt}:${signal}`)
     )
     if (due.length > 0) {
-      // Recheck identities immediately before signalling so a PID reused since
-      // the snapshot above is never signalled. One listing covers the whole pass.
       const current = await system.list({ notBefore: system.now() })
       for (const entry of due) {
         if (
@@ -224,8 +207,6 @@ export async function stopProcesses(initial, options = {}) {
         throw new Error(`Processes did not exit: ${survivors.map((entry) => entry.pid).join(", ")}`)
       return
     }
-    // Most processes exit within the first poll or two; back off after that so a
-    // stubborn process does not keep `ps` running twenty times a second.
     await system.sleep(pollMs)
     pollMs = Math.min(pollMs * 2, 400)
   }

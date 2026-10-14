@@ -43,8 +43,6 @@ struct NALUnitBitstreamTests {
   }
 
   @Test func aMultiNALAccessUnitKeepsEveryUnitAndItsOrder() throws {
-    // Delimiter, parameter sets, SEI and two slices in one access unit: the
-    // decoder's type filters depend on the order and on nothing being merged.
     let units = [
       Data([0x09, 0x30]), Data([0x67, 0x42, 0xe0, 0x34]), Data([0x68, 0xce, 0x3c, 0x80]),
       Data([0x06, 0x05, 0x02, 0xaa, 0xbb, 0x80]), Data([0x65, 0x88, 0x84]), Data([0x65, 0x88, 0x99]),
@@ -59,8 +57,6 @@ struct NALUnitBitstreamTests {
   }
 
   @Test func rejectsZeroLengthUnitsWhereverTheyAppear() {
-    // Back-to-back start codes of either width, and a trailing start code with
-    // nothing behind it: an empty unit is a framing bug, never a silent skip.
     for bytes: [UInt8] in [
       [0, 0, 0, 1], [0, 0, 0, 1, 0, 0, 0, 1, 0x65], [0, 0, 1, 0, 0, 1, 0x65], [0, 0, 0, 1, 0x65, 0, 0, 1],
     ] {
@@ -71,8 +67,6 @@ struct NALUnitBitstreamTests {
   }
 
   @Test func lengthPrefixedFramesRoundTripAtEveryPrefixWidth() throws {
-    // VideoToolbox reports the width its format description uses; 1...4 are the
-    // only legal ones, and every one of them must produce the same units.
     let units = [Data([0x67, 0x42]), Data([0x65, 0xaa, 0xbb])]
     for lengthSize in 1...4 {
       var prefixed = Data()
@@ -90,8 +84,6 @@ struct NALUnitBitstreamTests {
   }
 
   @Test func rejectsLengthPrefixesThatOverrunTheirFrame() {
-    // A declared length past the end, on the first unit and on a later one,
-    // then a prefix too short to hold its own width.
     for bytes: [UInt8] in [[0, 0, 0, 3, 0x65, 0xaa], [0, 0, 0, 1, 0x65, 0, 0, 0, 2, 0x65], [0, 0]] {
       #expect(throws: (any Error).self) { try NALUnitBitstream.annexB(Data(bytes)) }
     }
@@ -100,8 +92,6 @@ struct NALUnitBitstreamTests {
   }
 
   @Test func emulationPreventionBytesNeverSplitAUnit() throws {
-    // 00 00 03 xx is the escaped form of payload that would otherwise read as a
-    // start code. It must survive both framings byte for byte.
     let slice = Data([0x65, 0x88, 0, 0, 3, 0, 0, 0, 3, 1, 0, 0, 3, 2, 0xff])
     #expect(try NALUnitBitstream.nalUnits(Data([0, 0, 0, 1]) + slice) == [slice])
     #expect(try NALUnitBitstream.nalUnits(NALUnitBitstream.annexB(NALUnitBitstream.lengthPrefixed([slice]))) == [slice])
@@ -111,7 +101,6 @@ struct NALUnitBitstreamTests {
     let oversized = Data(repeating: 0, count: NALUnitBitstream.maximumFrameBytes + 1)
     #expect(throws: (any Error).self) { try NALUnitBitstream.nalUnits(oversized) }
     #expect(throws: (any Error).self) { try NALUnitBitstream.annexB(oversized) }
-    // The length prefix itself has to fit inside the same budget.
     let atTheLimit = Data(repeating: 0x65, count: NALUnitBitstream.maximumFrameBytes)
     #expect(throws: (any Error).self) { try NALUnitBitstream.lengthPrefixed([atTheLimit]) }
   }

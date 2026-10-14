@@ -12,9 +12,6 @@ const remoteNames = async (
     .filter((name) => name.length > 0)
     .toSorted((left, right) => right.length - left.length)
 
-/// Refreshes and lists the remote-tracking branches a project can use as a
-/// worktree base. Fetching is best-effort so the settings sheet remains useful
-/// offline; cached refs are still returned when the network is unavailable.
 export const listProjectGitBranches = async (
   repoDir: string,
   env?: NodeJS.ProcessEnv
@@ -61,9 +58,6 @@ export const listProjectGitBranches = async (
     })
 }
 
-/// Refreshes and returns the ref new worktrees should be cut from. Fetching is
-/// best-effort so worktree creation still works offline: a cached `origin/main`
-/// is preferred when it exists, otherwise `git worktree add` falls back to HEAD.
 export const worktreeStartPoint = async (
   repoDir: string,
   configuredBase?: ProjectWorktreeBase,

@@ -13,8 +13,6 @@ import { releaseElement, resolveElement } from "./browser-locators.js"
 import { snapshotPage } from "./browser-snapshot.js"
 import type { BrowserToolInvocation, BrowserToolSessionState } from "./browser-use-invoke-types.js"
 
-/// Tab information, navigation, and page capture (snapshot/screenshot).
-/// Returns undefined for tool names this family does not own.
 export const invokeNavigationTools = async (
   invocation: BrowserToolInvocation,
   _state: BrowserToolSessionState

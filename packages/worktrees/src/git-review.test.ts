@@ -71,7 +71,6 @@ describe("git review", () => {
     write(repo, "feature.txt", "feature\n")
     git(repo, "add", "feature.txt")
     git(repo, "commit", "-m", "feature")
-    // One file staged then edited again, so every mode sees a different side.
     write(repo, "tracked.txt", "staged\n")
     write(repo, "staged-new.txt", "staged new\n")
     git(repo, "add", "tracked.txt", "staged-new.txt")
@@ -81,7 +80,6 @@ describe("git review", () => {
     write(repo, "untracked.txt", "untracked\n")
     write(repo, "image.bin", Buffer.from([0x89, 0x50, 0x00, 0x01]))
     write(repo, "latin1.txt", Buffer.from("café\n", "latin1"))
-    // A submodule commit has no text in this repository, so it never appears.
     git(
       repo,
       "update-index",
@@ -155,14 +153,12 @@ describe("git review", () => {
     expect(await recordTurnStartSnapshot(repo)).toBe(true)
     write(repo, "notes.txt", "draft\nmore\n")
     write(repo, "created.txt", "created\n")
-    // A caller that stopped waiting must not get a snapshot of the turn itself.
     const expired = new AbortController()
     expired.abort()
     expect(await recordTurnStartSnapshot(repo, { signal: expired.signal })).toBe(false)
 
     expect((await gitDiff(repo, "lastTurn")).files).toEqual([
       added("created.txt", "created\n"),
-      // Untracked when the turn started, so it was captured and now diffs as an edit.
       modified("notes.txt", "draft\n", "draft\nmore\n")
     ])
     expect(indexBytes(repo).equals(index)).toBe(true)
@@ -184,8 +180,6 @@ describe("git review", () => {
     expect(changed.unchanged).toBeUndefined()
     expect(changed.revision).not.toBe(first.revision)
     expect(changed.files.map((file) => file.newText)).toEqual(["edited again\n"])
-    // A file's fingerprint follows its content: stable while unchanged,
-    // new once it changes.
     expect((await gitDiff(repo, "uncommitted")).files[0]!.fingerprint).toBe(
       changed.files[0]!.fingerprint
     )

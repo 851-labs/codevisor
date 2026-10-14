@@ -4,9 +4,6 @@ import Foundation
 public struct ClientStorage: Sendable {
   public let database: ClientDatabase
   public let store: ClientPersistenceStore
-  /// What the launch environment's stores need from `store`, decoded off
-  /// the main actor by `ClientStorageBootstrap.openAsync`. Nil from the
-  /// synchronous `open`, whose stores then read `store` themselves.
   public let launchSnapshot: ClientLaunchSnapshot?
 
   public init(database: ClientDatabase, store: ClientPersistenceStore, launchSnapshot: ClientLaunchSnapshot? = nil) {
@@ -16,12 +13,6 @@ public struct ClientStorage: Sendable {
   }
 }
 
-/// Opens the client database, upgrades its schema, imports every supported
-/// legacy client artifact, validates the result, and only then removes the
-/// active legacy copies.
-///
-/// Both native apps call this before constructing `AppEnvironment`, so no
-/// repository or server synchronization task can race the one-time import.
 public enum ClientStorageBootstrap {
   public static let legacyDataMigrationID = 1
   public static let legacyCleanupMigrationID = 1
@@ -49,13 +40,6 @@ public enum ClientStorageBootstrap {
     return storage
   }
 
-  /// Performs schema and legacy-data migrations away from the main actor so
-  /// the native apps can render an explicit whole-window bootstrap state.
-  /// Repositories are constructed only after this returns and preferences
-  /// are attached back on the main actor, preserving the same no-races
-  /// ordering as synchronous `open`. The same background work reads and
-  /// decodes the launch environment's persisted state (`launchSnapshot`),
-  /// after every migration has written it.
   public static func openAsync(directory: URL) async throws -> ClientStorage {
     let (storage, preferences) = try await Task.detached(priority: .userInitiated) {
       let opened = try openUnconfigured(
@@ -70,8 +54,6 @@ public enum ClientStorageBootstrap {
         store: opened.store,
         launchSnapshot: ClientLaunchSnapshot.read(from: opened.store)
       )
-      // Preloaded here so no preference read queries SQLite on main. A
-      // failed read just leaves the cache to fill lazily, as before.
       return (storage, try? opened.database.allPreferences())
     }.value
     await MainActor.run {
@@ -202,10 +184,6 @@ public enum ClientStorageBootstrap {
     var importedValues: [(key: String, data: Data, source: String, digest: String)] = []
     for file in files {
       var data = file.data
-      // The legacy machine list embedded bearer tokens for the retired
-      // directly paired machines: queue those machines for the cloud
-      // account and keep only the selection, so no token is imported or
-      // copied into migration recovery.
       if file.key == "machines" {
         data = try queueRetiredMachines(from: data, store: store)
       }
@@ -214,9 +192,6 @@ public enum ClientStorageBootstrap {
     return importedValues
   }
 
-  /// The persisted shape of a retired directly paired machine. Very old
-  /// installs stored its bearer token inline; newer ones keep it in the
-  /// Keychain under `id`.
   private struct RetiredMachineList: Decodable {
     struct Machine: Decodable {
       let id: String
@@ -227,10 +202,6 @@ public enum ClientStorageBootstrap {
     let remoteMachines: [Machine]?
   }
 
-  /// Queues a persisted machine list's retired directly paired machines for
-  /// `DirectMachineCloudAdoption` and returns the list reduced to its
-  /// selection. An unreadable list is returned unchanged: the machine list
-  /// handles (and quarantines) it on load.
   private static func queueRetiredMachines(from data: Data, store: ClientPersistenceStore) throws -> Data {
     guard let registry = try? JSONDecoder().decode(MachineRegistry.self, from: data) else { return data }
     let retired = (try? JSONDecoder().decode(RetiredMachineList.self, from: data))?.remoteMachines ?? []
@@ -249,13 +220,6 @@ public enum ClientStorageBootstrap {
     return try JSONEncoder().encode(registry.normalized())
   }
 
-  /// Directly paired remote machines were retired: every remote machine now
-  /// comes from Codevisor Cloud. Hands them to `DirectMachineCloudAdoption`,
-  /// which moves each onto the signed-in account (its Keychain token stays
-  /// until then), drops them from the persisted machine list, and forgets the
-  /// fleet roster's bookkeeping. An unreadable list must never block launch —
-  /// the machine list ignores retired entries anyway. A failure is recorded
-  /// and retried on the next launch.
   private static func retireDirectMachines(database: ClientDatabase, store: ClientPersistenceStore) {
     do {
       try database.beginDataMigration(

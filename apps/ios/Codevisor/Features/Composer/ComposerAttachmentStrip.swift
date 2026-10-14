@@ -5,13 +5,8 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-/// Staging picked media/files for the composer. Everything funnels through
-/// the controller's attachment folder (`SessionController.attachFileURLs`
-/// for picks), so the shared staging path derives the mime type and kind,
-/// and the eager upload starts exactly as it does on macOS.
 @MainActor
 enum ComposerAttachmentStaging {
-  /// Resolves a pasted file URL into an existing optimistic placeholder.
   static func resolve(
     pastedURL url: URL,
     attachmentID: UUID,
@@ -24,8 +19,6 @@ enum ComposerAttachmentStaging {
     let name = url.lastPathComponent.isEmpty ? "Pasted file" : url.lastPathComponent
     let files = controller.attachmentFiles
     Task {
-      // Copy (an APFS clone) straight into the attachment folder while
-      // the security scope is open; the bytes never pass through memory.
       let result = await Task.detached(priority: .userInitiated) {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
@@ -85,10 +78,6 @@ enum ComposerAttachmentStaging {
     }
   }
 
-  /// Hands security-scoped picker URLs to the controller, which copies them
-  /// into the attachment folder off the main actor (reading a picked iCloud
-  /// Drive file can block on a download). Each scope stays open until its
-  /// copy finishes.
   static func stage(pickedURLs urls: [URL], into controller: SessionController) {
     let scoped = urls.filter { $0.startAccessingSecurityScopedResource() }
     Task {
@@ -97,9 +86,6 @@ enum ComposerAttachmentStaging {
     }
   }
 
-  /// Loads PhotosPicker selections and stages them under a filename whose
-  /// extension matches the asset's real type, so images, HEICs, and videos
-  /// keep the right mime type.
   static func stage(photoItems items: [PhotosPickerItem], into controller: SessionController) async {
     for item in items {
       guard let data = try? await item.loadTransferable(type: Data.self) else { continue }
@@ -119,8 +105,6 @@ enum ComposerAttachmentStaging {
   static func stage(cameraImage image: UIImage, into controller: SessionController) {
     let name = "Photo \(timestamp()).jpg"
     Task {
-      // JPEG-encoding a full-resolution capture and writing it out are
-      // both too heavy for the main actor.
       let url = await Task.detached(priority: .userInitiated) { () -> URL? in
         guard let data = image.jpegData(compressionQuality: 0.9) else { return nil }
         return writeTemporary(data: data, name: name)
@@ -131,8 +115,6 @@ enum ComposerAttachmentStaging {
     }
   }
 
-  /// Stages a file this type wrote to the temporary folder, then deletes
-  /// that intermediate copy.
   private static func attachTemporary(_ url: URL, into controller: SessionController) async {
     await controller.attachments.attachFileURLs([url]).value
     try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
@@ -164,8 +146,6 @@ enum ComposerAttachmentStaging {
   }
 }
 
-/// The staged-attachment strip above the composer input: image thumbnails and
-/// file chips, each removable, with upload and failure state.
 struct ComposerAttachmentStrip: View {
   @Bindable var controller: SessionController
 
@@ -284,8 +264,6 @@ private struct ComposerAttachmentChip: View {
             .foregroundStyle(.secondary)
           Text(attachment.name)
             .font(.caption)
-            // At accessibility sizes, reflow to a second line and widen
-            // rather than truncating harder as text grows.
             .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
             .truncationMode(.middle)
             .frame(
@@ -315,9 +293,6 @@ private struct ComposerAttachmentChip: View {
 
   private var canPreview: Bool { attachment.fileURL != nil }
 
-  /// The staged file already carries the display filename Quick Look reads
-  /// its type from, and the preview closes with this chip, so it can be
-  /// shown in place.
   private func preview() {
     guard let fileURL = attachment.fileURL else { return }
     quickLookURL = fileURL
@@ -372,8 +347,6 @@ private struct ComposerAttachmentChip: View {
   }
 }
 
-/// Camera capture for the attach menu. UIKit's picker is still the shortest
-/// path to a single still capture on iOS.
 struct CameraPicker: UIViewControllerRepresentable {
   let onCapture: (UIImage) -> Void
   @Environment(\.dismiss) private var dismiss

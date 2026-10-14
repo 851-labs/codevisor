@@ -5,9 +5,6 @@ import ACPKit
 import CodevisorClient
 @testable import CodevisorCloud
 
-/// The sealed-channel protocol a direct pipe multiplexes: per-direction
-/// seqs, close reasons, crypto and framing failures, negotiated compression,
-/// and credit enforcement on flow-controlled channels.
 @Suite("CloudDirectConnection channels")
 struct CloudDirectChannelTests {
   @Test("Opens channels, routes sealed frames, and books seqs per direction")
@@ -24,14 +21,12 @@ struct CloudDirectChannelTests {
       onClosed: { recorder.recordClose($0) }
     )
 
-    // The machine saw the open (seq 0) and decrypted its payload.
     #expect(await waitUntil { machine.channel(channel.id)?.openPayload != nil })
     let openPayload = try #require(machine.channel(channel.id)?.openPayload)
     let decoded = try JSONDecoder().decode(JSONValue.self, from: openPayload)
     #expect(decoded["channelType"] == .string("test"))
     #expect(decoded["params"]?["hello"] == .string("world"))
 
-    // App → machine data frames carry seq 1, 2, ... after the open.
     try await channel.send(plaintext: JSONEncoder().encode(["kind": "first"]))
     try await channel.send(plaintext: JSONEncoder().encode(["kind": "second"]))
     #expect(await waitUntil { machine.channel(channel.id)?.messages.count == 2 })
@@ -41,18 +36,13 @@ struct CloudDirectChannelTests {
     }.map(\.seq)
     #expect(sentSeqs == [1, 2])
 
-    // Machine → app data frames (seq 0, 1) decrypt and arrive in order.
     scripted.sendToApp(sealed: try machine.sealData(channelId: channel.id, payload: Data("reply-1".utf8)))
     scripted.sendToApp(sealed: try machine.sealData(channelId: channel.id, payload: Data("reply-2".utf8)))
     #expect(await waitUntil { recorder.messages.count == 2 })
     #expect(recorder.messages.map { String(decoding: $0, as: UTF8.self) } == ["reply-1", "reply-2"])
 
-    // Structured channels carry NO credit traffic: machines don't gate
-    // sends without negotiated flow control, so auto-replenish would be a
-    // pure no-op frame per message.
     #expect(scripted.credits.isEmpty)
 
-    // A machine-initiated close reaches onClosed with its reason.
     scripted.sendToApp(frame: machine.closeFrame(channelId: channel.id, reason: .done))
     #expect(await waitUntil { recorder.closes == [.done] })
     await connection.shutdown()
@@ -73,8 +63,6 @@ struct CloudDirectChannelTests {
     )
     #expect(await waitUntil { machine.channel(channel.id) != nil })
 
-    // Frame with seq 4 when 0 is expected → protocol error: the channel
-    // closes locally and a close frame goes back to the peer.
     let sealed = try machine.channel(channel.id)!.cipher.seal(
       Data("late".utf8), channelId: channel.id, direction: .responderToOpener, seq: 4
     )
@@ -89,7 +77,6 @@ struct CloudDirectChannelTests {
         }
       })
 
-    // The dead channel rejects further sends.
     await #expect(throws: CloudHubConnectionError.channelClosed) {
       try await channel.send(plaintext: JSONEncoder().encode(["kind": "after-close"]))
     }
@@ -132,14 +119,11 @@ struct CloudDirectChannelTests {
     )
     #expect(await waitUntil { machine.channel(channel.id)?.compressedFraming == true })
 
-    // App → machine payloads carry the RAW framing byte, which the
-    // scripted machine strips before recording.
     try await channel.send(plaintext: JSONEncoder().encode(["kind": "request"]))
     #expect(await waitUntil { machine.channel(channel.id)?.messages.count == 1 })
     let request = try #require(machine.channel(channel.id)?.messages.first)
     #expect(try JSONDecoder().decode([String: String].self, from: request) == ["kind": "request"])
 
-    // Machine → app: RAW and DEFLATE framings both decode to plaintext.
     let big = Data(String(repeating: "terminal output ", count: 256).utf8)
     scripted.sendToApp(sealed: try machine.sealData(channelId: channel.id, payload: Data("plain".utf8)))
     scripted.sendToApp(sealed: try machine.sealDeflated(channelId: channel.id, payload: big))
@@ -164,7 +148,6 @@ struct CloudDirectChannelTests {
       onClosed: { recorder.recordClose($0) }
     )
     #expect(await waitUntil { machine.channel(channel.id) != nil })
-    // An unknown framing byte is refused like any undecodable payload.
     let bogus = try machine.channel(channel.id)!.cipher.seal(
       Data([7, 1, 2, 3]), channelId: channel.id, direction: .responderToOpener, seq: 0
     )
@@ -192,8 +175,6 @@ struct CloudDirectChannelTests {
       }
     )
     #expect(await waitUntil { machine.channel(channel.id) != nil })
-    // An empty raw box costs 16 bytes (the tag). Granting only that much
-    // cannot authorize the following one-byte payload (17 bytes).
     try await channel.grantCredit(bytes: 16)
     scripted.sendToApp(sealed: try machine.sealData(channelId: channel.id, payload: Data([1])))
 

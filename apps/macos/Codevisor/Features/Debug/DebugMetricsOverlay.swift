@@ -5,8 +5,6 @@ import Observation
 import QuartzCore
 import SwiftUI
 
-/// Live diagnostics for one app window. Sampling is completely dormant while
-/// the overlay is hidden so the debug tool does not become a permanent cost.
 @MainActor
 @Observable
 final class DebugMetricsModel {
@@ -51,7 +49,6 @@ final class DebugMetricsModel {
 
     if let previousTimestamp = sampledFrameTimestamps.last {
       let duration = timestamp - previousTimestamp
-      // Ignore clock discontinuities while still retaining real stalls.
       if duration > 0, duration < 2 {
         sampledFrameDurations.append(duration * 1_000)
         if sampledFrameDurations.count > Self.frameHistoryLimit {
@@ -118,7 +115,6 @@ final class DebugMetricsModel {
       let elapsed = sample.timestamp - previousResourceSample.timestamp
       let cpuNanoseconds = sample.cpuNanoseconds - previousResourceSample.cpuNanoseconds
       if elapsed > 0 {
-        // Like Activity Monitor, 100% represents one fully occupied CPU core.
         cpuPercent = Double(cpuNanoseconds) / 1_000_000_000 / elapsed * 100
       }
     }
@@ -146,8 +142,6 @@ private struct ProcessResourceSample {
   }
 }
 
-/// Attaches the window-scoped HUD and publishes its toggle to the focused
-/// scene, allowing the menu command to reach the correct window.
 struct DebugMetricsOverlayModifier: ViewModifier {
   @State private var model = DebugMetricsModel()
   private let actionID = UUID()
@@ -179,8 +173,6 @@ private struct DebugMetricsOverlay: View {
         Spacer()
         Text("\(ShortcutCatalog.display(for: .toggleDebugOverlay)) to hide")
           .font(.system(size: Typography.minimumTextSize, weight: .medium, design: .monospaced))
-          // Text at the minimum size needs contrast headroom —
-          // 0.42 white was doubly hard to read.
           .foregroundStyle(.white.opacity(0.6))
       }
 

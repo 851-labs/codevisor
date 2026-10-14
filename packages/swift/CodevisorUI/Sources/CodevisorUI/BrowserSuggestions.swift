@@ -30,8 +30,6 @@ public final class BrowserSuggestions {
 
   public var selected: BrowserSuggestion? { items.first { $0.id == selectedID } }
 
-  /// Returns the task so tests can acknowledge debounce, cancellation and reply
-  /// order without sleeping or relying on the main executor's scheduling.
   @discardableResult
   public func update(_ input: String) -> Task<Void, Never>? {
     task?.cancel()
@@ -74,7 +72,7 @@ public final class BrowserSuggestions {
           self.items.append(BrowserSuggestion(kind: .search, title: value, value: value))
           if self.items.count >= 9 { break }
         }
-      } catch { /* Local results and submitting the typed query always work. */  }
+      } catch {}
     }
     return task
   }
@@ -95,8 +93,6 @@ public final class BrowserSuggestions {
     return Self.completion(first.value, for: query)
   }
 
-  /// Completing a hostname must not silently append a previous search, deep
-  /// link or query string. Paths are completed only after the user starts one.
   private static func completionTarget(_ address: String, for input: String) -> String {
     var typed = input
     if let scheme = typed.range(of: "://") { typed = String(typed[scheme.upperBound...]) }
@@ -133,7 +129,6 @@ public final class BrowserSuggestions {
       text.rangeOfCharacter(from: CharacterSet(charactersIn: ":/\\@?#=")) == nil,
       !text.lowercased().contains("localhost")
     else { return false }
-    // Hostnames, IPs and paths are navigations, never search-provider input.
     return text.contains(where: \.isWhitespace) || !text.contains(".")
   }
 }

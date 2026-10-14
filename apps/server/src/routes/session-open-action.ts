@@ -24,9 +24,6 @@ export const openSessionAction = async (
 ): Promise<boolean> => {
   const payload = await readSchema(request, OpenSessionRequestSchema)
   const limit = admitOpenSession(payload, openSessionId)
-  // Project: create-if-missing. An existing record is never updated from
-  // the open snapshot — it may predate changes made elsewhere (archiving),
-  // and opening a chat must not revert them.
   if (payload.project?.id !== undefined) {
     await ensureOpenProject(services, fanout, payload)
   }

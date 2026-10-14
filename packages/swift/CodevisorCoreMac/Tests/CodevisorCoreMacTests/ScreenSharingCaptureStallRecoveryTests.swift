@@ -5,18 +5,13 @@ import ScreenSharing
 import Testing
 @testable import CodevisorCoreMac
 
-/// The stalled-capture recovery (851-2385) against a scripted capture and daemon: no real
-/// ScreenCaptureKit, `replayd` or clock. Each sleep advances a virtual clock; the capture
-/// calls back once per poll while it delivers.
 @MainActor
 struct ScreenSharingCaptureStallRecoveryTests {
   @MainActor final class Host {
     enum Step: Equatable { case restartCapture, restartDaemon }
-    /// Whether the running capture calls back; `restart` and `daemon` decide what each restart gives.
     var delivering: Bool
     var restartDelivers = false
     var restartThrows = false
-    /// A fresh daemon makes the next capture restart deliver.
     var daemonFixes = true
     var daemonRunning = true
     var daemonRestartedAt: TimeInterval?
@@ -57,14 +52,12 @@ struct ScreenSharingCaptureStallRecoveryTests {
     let host = Host(delivering: true)
     #expect(try await host.recovery.run(baseline: 0) == .healthy)
     #expect(host.steps.isEmpty && host.stalls == 0)
-    // It noticed within one poll, not after the whole grace period.
     #expect(host.time - 1000 == 0.25)
   }
 
   @Test func silenceShorterThanTheGraceIsNotAStall() async throws {
     let host = Host(delivering: false)
     let recovery = host.recovery
-    // The first callback lands on the last poll before the deadline.
     var polls = 0
     var patched = recovery
     patched.sleep = { duration in
@@ -82,7 +75,6 @@ struct ScreenSharingCaptureStallRecoveryTests {
     #expect(try await host.recovery.run(baseline: 0) == .recovered(restartedDaemon: false))
     #expect(host.steps == [.restartCapture])
     #expect(host.stalls == 1)
-    // Stalled after the 3 s grace, delivering again one poll after the restart.
     #expect(host.time - 1000 == 3.25)
   }
 
@@ -91,7 +83,6 @@ struct ScreenSharingCaptureStallRecoveryTests {
     #expect(try await host.recovery.run(baseline: 0) == .recovered(restartedDaemon: true))
     #expect(host.steps == [.restartCapture, .restartDaemon, .restartCapture])
     #expect(host.stalls == 1)
-    // 3 s grace, 3 s after the first restart, 1 s for launchd, one poll: well inside ~10 s.
     #expect(host.time - 1000 == 7.25)
   }
 
@@ -143,15 +134,12 @@ struct ScreenSharingCaptureStallRecoveryTests {
   @Test func cancellationStopsTheRecoveryBeforeItKillsAnything() async throws {
     let host = Host(delivering: false)
     var recovery = host.recovery
-    // The session ends (its capture task is cancelled) the moment the stall is found.
     recovery.onStalled = { withUnsafeCurrentTask { $0?.cancel() } }
     let run = Task { try await recovery.run(baseline: 0) }
     await #expect(throws: CancellationError.self) { try await run.value }
     #expect(!host.steps.contains(.restartDaemon))
   }
 
-  /// The lookup behind the kill, on this test process instead of `replayd`: found by name among
-  /// this user's processes, with its descriptors counted. Nothing is killed.
   @Test func theDaemonLookupFindsThisUsersProcessByName() throws {
     let name = try #require(ScreenSharingCaptureDaemon.processName(getpid()))
     #expect(ScreenSharingCaptureDaemon.processes(named: name).contains(getpid()))
@@ -159,7 +147,6 @@ struct ScreenSharingCaptureStallRecoveryTests {
     #expect(ScreenSharingCaptureDaemon.processes(named: "no-such-process-\(UUID().uuidString.prefix(8))").isEmpty)
   }
 
-  /// The Computer Use preview counts its own stream's callbacks (851-2385); only the count is read here.
   @Test func theLiveRecoveryCanCountAnotherStreamsCallbacks() {
     var count = 7
     let recovery = ScreenSharingCaptureStallRecovery.live(
@@ -181,12 +168,8 @@ struct ScreenSharingCaptureStallRecoveryTests {
   }
 }
 
-/// A capture start that a wedged `replayd` leaves waiting (on tuftlord, a stopped daemon made the
-/// start hang until the daemon ran again, 851-2385): after 5 s the daemon is restarted, the
-/// waiting start fails or completes, and a failed one is tried once more.
 @MainActor
 struct ScreenSharingCaptureStartWatchdogTests {
-  /// A start that waits until the test finishes it.
   @MainActor final class Start {
     private var continuations: [CheckedContinuation<Void, any Error>] = []
     private(set) var calls = 0
@@ -216,7 +199,6 @@ struct ScreenSharingCaptureStartWatchdogTests {
     var stalls = 0
     let stalled = TestSignal()
     var lastRestart: TimeInterval?
-    /// What restarting the daemon does to the waiting start.
     var onRestart: (Start) -> Void = { $0.finish(throwing: CocoaError(.featureUnsupported)) }
 
     var recovery: ScreenSharingCaptureStallRecovery {
@@ -270,7 +252,6 @@ struct ScreenSharingCaptureStartWatchdogTests {
     #expect(harness.start.retries == [false, true])
   }
 
-  /// What tuftlord did: the killed daemon's reply never came, so the first start never returned.
   @Test func aStartThatNeverReturnsIsAbandonedOnceTheDaemonIsBack() async throws {
     let harness = Harness()
     harness.start.completesAtOnceFromCall = 2
@@ -301,7 +282,6 @@ struct ScreenSharingCaptureStartWatchdogTests {
     let run = harness.run()
     await harness.clock.waitForSleep(.seconds(5))
     harness.clock.advance(by: .seconds(5))
-    // Reported as stalled, but replayd was restarted 30 s ago: no second kill.
     await harness.stalled.wait()
     #expect(harness.restarts == 0)
     await harness.clock.waitForSleep(.seconds(5), count: 2)
@@ -311,8 +291,6 @@ struct ScreenSharingCaptureStartWatchdogTests {
     #expect(harness.start.calls == 1)
   }
 
-  /// tuftlord, 851-2390: replayd killed at 12:10:00 was stuck again at 12:10:31. The start used to
-  /// wait forever, the bridge gave up at 25 s, and the viewer was told to update Codevisor.
   @Test func withinTheRateLimitAStartThatStaysStuckFailsAfterTenSeconds() async throws {
     let harness = Harness()
     harness.lastRestart = 1000 - 30
@@ -351,7 +329,6 @@ struct ScreenSharingCaptureStartWatchdogTests {
     #expect(harness.start.retries == [false, true])
   }
 
-  /// Ending a session doesn't wait on a stop a wedged daemon holds.
   @Test func aStopThatHangsIsWaitedForAtMostThreeSeconds() async {
     let clock = TestClock()
     let start = Start()

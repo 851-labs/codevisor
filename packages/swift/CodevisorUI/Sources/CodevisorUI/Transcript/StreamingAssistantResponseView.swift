@@ -2,10 +2,6 @@ import CodevisorCore
 import StreamMarkdown
 import SwiftUI
 
-/// Renders a final response's Markdown slices and attachment previews on one
-/// ordered animation timeline. A file preview is a document boundary: it waits
-/// for the preceding Markdown to finish entering, fades as one native element,
-/// and only then allows later Markdown to mount.
 public struct StreamingAssistantResponseView<AttachmentContent: View>: View {
   @Environment(\.attachmentImages) private var attachmentImages
   private let turnID: UUID
@@ -53,9 +49,6 @@ public struct StreamingAssistantResponseView<AttachmentContent: View>: View {
       animationEnabled: animationEnabled,
       attachmentContent: attachmentContent
     )
-    // A final-answer candidate may demote while a newer text entry takes
-    // its place. Its timeline and reveal ledger must not leak into the new
-    // semantic response.
     .id(responseStreamID)
     .environment(\.markdownImageLoader, attachmentImages?.markdownImageLoader ?? .remote)
   }
@@ -113,13 +106,7 @@ private struct StreamingAssistantResponseContent<AttachmentContent: View>: View 
     let segments = assistantMarkdownSegments(
       markdown,
       attachments: attachments,
-      // A syntactically complete local image is already a stable
-      // document boundary. Resolve it while the answer is live so
-      // provider completion never retroactively splits one rendered
-      // Markdown surface around an image preview.
       includeServerPaths: true,
-      // These files were explicitly delivered by the server. Generated images
-      // must be visible even if the model never sends a final text response.
       includeUnreferencedAttachments: true
     )
     let mount = animationMount.resolve(
@@ -205,8 +192,6 @@ private struct StreamingAssistantResponseContent<AttachmentContent: View>: View 
       case .idle:
         return
       case let .revealFile(fileID):
-        // A response-level attachment must also wait for structural
-        // entrances inside the preceding Markdown slice.
         try await animationCoordinator.waitUntilFullyIdle()
         switch entranceSequence.beginReveal(fileID: fileID) {
         case .started:
@@ -224,9 +209,6 @@ private struct StreamingAssistantResponseContent<AttachmentContent: View>: View 
         guard entranceSequence.finishReveal(fileID: fileID) else { return }
         entranceRevision &+= 1
       case .finishPresentation:
-        // Provider completion freezes the input, but the streaming
-        // renderer remains mounted until all reserved visual work has
-        // drained. Only this transition enables the finalized merge.
         try await animationCoordinator.waitUntilFullyIdle()
         guard presentationState.finishPresentation() else { return }
         presentationRevision &+= 1

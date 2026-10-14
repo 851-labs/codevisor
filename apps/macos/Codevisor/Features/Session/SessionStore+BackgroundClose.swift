@@ -2,9 +2,6 @@ import CodevisorCore
 import Foundation
 
 extension SessionStore {
-  /// Closes an off-screen tab through the same pane lifecycle as a mounted
-  /// container, without running that container's stale navigation/focus hooks.
-  /// Asks first when that would close a working chat.
   func closeBackgroundTab(
     _ action: CenterTabRequest.Action,
     in workspace: Workspace,
@@ -24,7 +21,6 @@ extension SessionStore {
       return
     }
     confirmClosingWorkingChats(panes, serverId: workspace.serverId) { [weak self] in
-      // Act on the workspace as it is now; it may have changed while asking.
       let current = self?.environment.workspaces.workspace(id: workspace.id) ?? workspace
       self?.closeBackgroundTabNow(action, in: current, routingSession: routingSession)
     }
@@ -65,7 +61,6 @@ extension SessionStore {
       let previousClose = model.onPaneClosed
       let previousCanDissolve = model.canDissolve
       model.canDissolve = { true }
-      // This close records its own reopen entry from the tab captured above.
       model.onPaneWillClose = nil
       model.onPaneClosed = { [weak self] descriptor in
         guard let self else { return }

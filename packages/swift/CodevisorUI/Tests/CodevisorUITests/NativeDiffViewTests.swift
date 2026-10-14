@@ -26,7 +26,6 @@
       #expect(visible.height == natural.height)
       #expect(!scrollView.hasVerticalScroller)
       #expect(textView.frame.height == natural.height)
-      // Rows sit inside the padding; the edge rows' fills cover it.
       #expect(textView.rowRect(at: 0)?.minY == metrics.verticalPadding)
       #expect(textView.rowRect(at: rows.count - 1)?.maxY == natural.height - metrics.verticalPadding)
       #expect(textView.rowFillRect(at: 0)?.minY == 0)
@@ -38,7 +37,6 @@
       let rows = LineDiff.rows(old: "a\nb\n", new: "a\nb\nc\n")
       let scrollView = makeScrollView(rows: rows)
       let textView = scrollView.diffTextView
-      // TextKit may measure the text taller than its rows.
       textView.setFrameSize(
         CGSize(width: 400, height: scrollView.contentFittingSize.height + 5))
 
@@ -64,7 +62,6 @@
       _ = short.fitContent(toViewportWidth: 200)
       _ = wide.fitContent(toViewportWidth: 200)
 
-      // The short hunk can travel as far as the wide one.
       #expect(short.diffTextView.frame.width == wide.diffTextView.frame.width)
 
       wide.contentView.scroll(to: NSPoint(x: 120, y: 0))

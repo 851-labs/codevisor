@@ -168,8 +168,6 @@ export const makeMcpService = (
       }),
     saveNativeConfigBackup: (record) =>
       attempt("saveNativeConfigBackup", () => {
-        // First write wins: the backup captures the file before Codevisor
-        // ever touched it and must never be replaced by a later state.
         sqlite
           .prepare(
             `insert into native_config_backups (file_path, backup_path, created_at)

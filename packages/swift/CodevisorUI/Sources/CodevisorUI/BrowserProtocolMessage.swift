@@ -6,13 +6,6 @@ public struct BrowserProtocolError: LocalizedError, Sendable, Equatable {
   public var errorDescription: String? { message }
 }
 
-/// A DevTools protocol message addressed by its top-level members without
-/// decoding their values. One linear structural scan locates each member, so a
-/// multi-megabyte screenshot or cookie list is forwarded as bytes and only the
-/// small routing fields (`id`, `method`, `sessionId`) are ever decoded.
-///
-/// The scan checks structure, not every token. Use it for messages Chromium
-/// produced or that were already validated by a full parse.
 public struct BrowserProtocolMessage: Sendable {
   public let data: Data
   private let members: [BrowserProtocolScanner.Member]
@@ -25,7 +18,6 @@ public struct BrowserProtocolMessage: Sendable {
 
   public var keys: [String] { members.map(\.key) }
 
-  /// The value's exact JSON bytes.
   public func raw(_ key: String) -> Data? {
     members.first { $0.key == key }.map { slice($0.value) }
   }
@@ -40,13 +32,10 @@ public struct BrowserProtocolMessage: Sendable {
     raw(key).flatMap { Int(String(decoding: $0, as: UTF8.self)) }
   }
 
-  /// Fully decodes one member. Reserve this for small values.
   public func object(_ key: String) -> [String: Any]? {
     raw(key).flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] }
   }
 
-  /// The same message with one member's value replaced, appended, or (for
-  /// `nil`) removed. Every other member keeps its exact bytes and order.
   public func setting(_ key: String, to value: Data?) -> Data {
     var output = Data(capacity: data.count + (value?.count ?? 0) + key.utf8.count + 4)
     output.append(UInt8(ascii: "{"))
@@ -73,13 +62,11 @@ public struct BrowserProtocolMessage: Sendable {
     return output
   }
 
-  /// A JSON string literal for `value`.
   public static func encode(_ value: String) -> Data {
     (try? JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed, .withoutEscapingSlashes]))
       ?? Data("\"\"".utf8)
   }
 
-  /// `{"id":<id>,"result"|"error":<value>}`, assembled from raw member bytes.
   public static func response(id: Data, result: Data? = nil, error: Data? = nil) -> Data {
     var output = Data(capacity: id.count + (result?.count ?? 0) + (error?.count ?? 0) + 24)
     output.append(contentsOf: Array("{\"id\":".utf8))
@@ -95,7 +82,6 @@ public struct BrowserProtocolMessage: Sendable {
     return output
   }
 
-  /// The raw `result` of a command reply, or the reply's error.
   public static func result(ofReply reply: Data) throws -> Data {
     guard let message = BrowserProtocolMessage(reply) else { throw BrowserProtocolError("Invalid browser reply") }
     if message.raw("error") != nil {
@@ -114,15 +100,11 @@ public struct BrowserProtocolMessage: Sendable {
   }
 }
 
-/// Splits a newline-delimited byte stream into lines. Each byte is searched
-/// once, and consumed lines are dropped once per chunk rather than once per
-/// line, so arbitrarily large messages arriving in small chunks stay linear.
 public struct BrowserProtocolLineBuffer: Sendable {
   private var buffer = Data()
   private var scanned = 0
   public init() {}
 
-  /// Bytes of the incomplete line waiting for its newline.
   public var pendingCount: Int { buffer.count }
 
   public mutating func append(_ chunk: Data) -> [Data] {

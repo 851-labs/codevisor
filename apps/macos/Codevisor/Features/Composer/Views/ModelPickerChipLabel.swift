@@ -2,8 +2,6 @@ import SwiftUI
 
 struct ModelPickerChipLabel: View {
   let group: ModelMenuGroup?
-  /// The selected model's name, or "Select a model" (see
-  /// `ModelPickerPresentation`).
   let title: String
   let hasSelection: Bool
 
@@ -26,7 +24,6 @@ struct ModelPickerChipLabel: View {
           .lineLimit(1)
           .truncationMode(.tail)
       } else {
-        // No harness offers models (for example, only sign-in rows).
         Text("Select a harness")
           .foregroundStyle(.secondary)
           .lineLimit(1)

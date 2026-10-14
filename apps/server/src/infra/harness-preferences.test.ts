@@ -19,7 +19,6 @@ describe("harness preferences", () => {
       enabled: true,
       installed: true
     })
-    // `installed: false` without an explicit uninstall is a legacy discovery row.
     expect(harnessPreference({ enabled: false, installed: false })).toBeUndefined()
     expect(harnessPreference({ enabled: false, installed: false, uninstall: true })).toEqual({
       enabled: false,
@@ -39,7 +38,6 @@ describe("harness preferences", () => {
         { key: "codex", value: { enabled: true, installed: true }, timestamp }
       ])
     )
-    // A stale row from the retired override layer must be ignored entirely.
     await run(
       services.db.mergeSyncEntries("local.harness-overrides", [
         { key: "codex", value: { enabled: false, installed: false }, timestamp }
@@ -101,7 +99,6 @@ describe("harness preferences", () => {
     ])
     expect(decorated[0]?.desiredEnabled).toBe(false)
     expect(decorated[0]?.enabled).toBe(false)
-    // Not in the catalog: the machine's own discovery default stands.
     expect(decorated[1]?.desiredEnabled).toBe(true)
   })
 })

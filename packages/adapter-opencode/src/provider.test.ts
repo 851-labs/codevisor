@@ -77,7 +77,6 @@ describe("OpenCode provider", () => {
       Effect.flip(newest.createSession(definition, "/p", async () => undefined))
     )
     expect(commands).toEqual(["/home/me/.opencode/bin/opencode"])
-    // Other executables are found as before.
     expect(
       makeOpenCodeProvider(environment).readiness({ ...definition, detectBinaries: ["nope"] })
     ).toMatchObject({

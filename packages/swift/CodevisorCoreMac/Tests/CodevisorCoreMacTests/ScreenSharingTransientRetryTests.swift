@@ -5,11 +5,8 @@ import Testing
 
 @testable import CodevisorCoreMac
 
-/// 851-2392: the host's first answer after it found its capture stuck fails, the next one a few
-/// seconds later works; the viewer tries once more by itself instead of showing Retry.
 @MainActor
 struct ScreenSharingTransientRetryTests {
-  /// Replies (or errors) handed out in order; counts the requests.
   @MainActor final class Script {
     var outcomes: [Result<ServerScreenSharingReply, any Error>]
     private(set) var requests = 0

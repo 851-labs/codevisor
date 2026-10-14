@@ -1,9 +1,6 @@
 #if canImport(AppKit)
   import AppKit
 
-  /// Settled-transcript table: the same TextKit table as `MarkdownTableView`,
-  /// hosted directly (no SwiftUI) inside a `TableBleedContainer` so a table wider
-  /// than its min-content width scrolls sideways instead of wrapping mid-word.
   @MainActor
   final class NativeMarkdownTableBlockView: NativeMarkdownContentView {
     private let tableView: TableTextView
@@ -49,7 +46,6 @@
       tableView.isSelectable = true
       tableView.drawsBackground = false
       tableView.textContainerInset = .zero
-      // `TableScrollView` sizes the text view to the measured table height.
       tableView.isVerticallyResizable = false
       tableView.isHorizontallyResizable = false
       tableView.focusRingType = .none
@@ -97,8 +93,6 @@
       let width = max(1, proposedWidth)
       if abs(measuredWidth - width) <= 0.25 { return measuredHeight }
       measuredWidth = width
-      // Lay out at the min-content width when the granted width is
-      // narrower; the extra width scrolls inside `scrollView`.
       let layoutWidth = max(width, renderMemo.minimumWidth(for: model))
       measuredHeight = max(1, renderMemo.size(for: model, width: layoutWidth).height)
       return measuredHeight

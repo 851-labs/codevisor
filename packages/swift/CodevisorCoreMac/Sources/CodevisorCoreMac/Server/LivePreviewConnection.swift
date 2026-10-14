@@ -1,10 +1,3 @@
-//  A chat agent's live view from its server: which of Browser Use and
-//  Computer Use it touched last, and the tab it drives through Browser Use.
-//  The server streams that tab's viewport as JPEGs (a CDP screencast, so it
-//  works for the built-in browser, managed Chromium, and the user's Chrome
-//  alike); this connection follows its status and feeds decoded frames to a
-//  viewer, the same surface the Computer Use preview renders.
-
 import CodevisorCore
 import CoreGraphics
 import CoreVideo
@@ -17,7 +10,6 @@ import ScreenSharing
 @Observable
 public final class LivePreviewConnection {
   public enum State: String, Equatable, Sendable {
-    /// The agent hasn't used the browser in this chat.
     case inactive
     case active
     case idle
@@ -35,14 +27,9 @@ public final class LivePreviewConnection {
     case computer
   }
 
-  /// The browser tab's status; nil until the server first answers.
   public private(set) var status: Status?
-  /// The tool the agent touched last; nil until it touches one.
   public private(set) var lastUsedTool: Tool?
-  /// False while the socket is down and reconnecting.
   public private(set) var isConnected = false
-  /// Stops the tab's frames while its viewer is out of sight, without
-  /// dropping the viewer or the status.
   public var isPaused = false {
     didSet {
       guard isPaused != oldValue, sink != nil else { return }
@@ -62,7 +49,6 @@ public final class LivePreviewConnection {
     self.chatSession = chatSession
   }
 
-  /// Connects and stays connected, reconnecting after drops, until `stop`.
   public func start() {
     guard task == nil else { return }
     task = Task { [weak self] in
@@ -85,8 +71,6 @@ public final class LivePreviewConnection {
     isConnected = false
   }
 
-  /// A viewer of the agent's tab. Frames flow while it's attached; call
-  /// `detach()` on it to stop them. Nil when Metal is unavailable.
   public func makeViewer(title: String) -> ComputerUseLivePreviewViewer? {
     let mailbox = ScreenSharingFrameMailbox()
     let surface: ComputerUseLivePreviewSurface
@@ -114,7 +98,6 @@ public final class LivePreviewConnection {
     return viewer
   }
 
-  /// One connection's lifetime. Returns whether it ever connected.
   private func runConnection() async -> Bool {
     let socket: any ServerWebSocketConnecting
     do {
@@ -181,8 +164,6 @@ public final class LivePreviewConnection {
   }
 }
 
-/// Decodes JPEG frames off the main thread into BGRA pixel buffers for the
-/// viewer's Metal surface. Keeps only the newest frame when decoding lags.
 final class LivePreviewFrameSink: @unchecked Sendable {
   private let mailbox: ScreenSharingFrameMailbox
   private let queue = DispatchQueue(label: "com.codevisor.browser-preview-decode", qos: .userInitiated)

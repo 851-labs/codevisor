@@ -2,8 +2,6 @@ import AppKit
 import CodevisorCore
 import SwiftUI
 
-/// Bound to the root's actual host, never NSApp.keyWindow (which may belong
-/// to another client). Screen coordinates use AppKit points.
 @MainActor
 final class ClientWindowControl {
   weak var window: NSWindow?
@@ -72,8 +70,6 @@ final class ClientWindowControl {
   }
 }
 
-/// Subscribe before the action, with a bounded wait. Cancellation removes
-/// observers so a closed client never retains its window or a pending command.
 @MainActor
 func acknowledgeWindowChange(
   window: NSWindow?, notification: Notification.Name,
@@ -86,7 +82,6 @@ func acknowledgeWindowChange(
     continuation.yield(())
     continuation.finish()
   }
-  // Removed on every exit — acknowledged, timed out or cancelled.
   defer { NotificationCenter.default.removeObserver(observer) }
   action()
   try await withThrowingTaskGroup(of: Void.self) { group in
@@ -113,8 +108,6 @@ struct ClientWindowReader: NSViewRepresentable {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     override func viewDidMoveToWindow() {
       super.viewDidMoveToWindow()
-      // SwiftUI may attach a replacement probe before detaching the old
-      // one. The outgoing probe must not clear the new host reference.
       if let window { control.window = window }
     }
   }

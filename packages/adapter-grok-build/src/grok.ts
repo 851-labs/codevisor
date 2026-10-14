@@ -24,7 +24,7 @@ export interface GrokGoalNotification {
   readonly event: RuntimeEvent
 }
 
-/* v8 ignore start -- stdio ACP adapter is exercised by integration/packaging smoke tests. */
+/* v8 ignore start */
 const GROK_PLAN_QUESTION_ID = "grok_exit_plan_mode"
 const GROK_IMPLEMENT_PLAN_LABEL = "Implement plan"
 const GROK_KEEP_PLANNING_LABEL = "Keep planning"
@@ -59,8 +59,6 @@ const grokGoalStatus = (status: string): GoalStatus | undefined => {
   }
 }
 
-/// Maps Grok's x.ai goal progress extension onto Codevisor's shared goal
-/// snapshot. The lookup preserves createdAt across the many progress ticks.
 export const grokGoalNotification = (
   params: unknown,
   currentGoal: (sessionId: string) => SessionGoal | undefined = () => undefined,
@@ -270,10 +268,6 @@ export const grokAskUserQuestion = (
 }
 /* v8 ignore stop */
 
-/// Grok implements `session/set_mode` for these ids but currently omits the
-/// standard ACP `modes` field from session/new and session/load responses.
-/// Advertising the known modes lets Codevisor's existing plan toggle drive
-/// the upstream plan-mode state machine.
 export const grokModeState: SessionModeState = {
   currentModeId: "default",
   availableModes: [

@@ -4,17 +4,6 @@ import Testing
 
 @testable import TranscriptKit
 
-/// A blank text span must never be mistaken for the turn's answer.
-///
-/// Harnesses legitimately stream spans with nothing visible in them: Claude
-/// retro-tags a preamble with a zero-length chunk, and a message can open
-/// with a bare newline. Live text reaches the client as `agentMessagePatch`
-/// (the server rewrites every chunk into one), and that path used to
-/// materialize such a span unconditionally. `finalText` then went non-nil,
-/// which retires `showsActivityIndicator` — so the shimmer disappeared and
-/// what replaced it rendered nothing, leaving reserved blank space until the
-/// first real token. Codex never hit this because it keeps `isThinking` set,
-/// which short-circuits the gate before `finalText` is consulted.
 @Suite("Blank text spans never become the answer")
 struct TranscriptBlankTextSpanTests {
   private func patch(
@@ -42,10 +31,7 @@ struct TranscriptBlankTextSpanTests {
   func whitespaceSpan() {
     var turn = AssistantTurn(isGenerating: true)
     TranscriptReducer.apply(patch("\n"), to: &turn)
-    // Kept in `entries`: its length is what later patch offsets are measured
-    // against, so dropping it would desync the stream.
     #expect(turn.entries == [.text(id: "acp:m1", markdown: "\n")])
-    // …but invisible to every presentation query.
     #expect(turn.finalText == nil)
     #expect(turn.showsActivityIndicator)
     #expect(turn.workedItems.isEmpty)

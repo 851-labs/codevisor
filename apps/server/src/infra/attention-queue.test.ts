@@ -54,8 +54,6 @@ describe("queue completion notifications", () => {
               backgroundTasks: []
             })
           }
-          // Finish delivery precedes the provider returning and releasing its
-          // claim. Even an expired timer must not notify in this interval.
           await vi.advanceTimersByTimeAsync(24_000)
           expect((await run(db.getSessionSummary(session.id))).unreadCount).toBe(0)
           await run(db.completePromptQueueItem(session.id, item.id))
@@ -65,8 +63,6 @@ describe("queue completion notifications", () => {
         ).toBe(false)
         await publishPromptQueue(db, fanout, session.id)
         if (hasSubagent) {
-          // Releasing the queue must arm the remaining subagent grace even
-          // when no further runtime events arrive.
           await vi.advanceTimersByTimeAsync(11_999)
           expect((await run(db.getSessionSummary(session.id))).unreadCount).toBe(0)
           await vi.advanceTimersByTimeAsync(1)

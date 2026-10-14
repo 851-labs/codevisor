@@ -15,9 +15,6 @@ struct ScreenSharingPresentationMetricsTests {
     #expect(result.timings["receiverCallbackToPresentation"]?.p50Ms == 500)
   }
 
-  /// CoreAnimation's presentation time can land before the submission this
-  /// process timed, and a negative latency is not a measurement. The frame was
-  /// still on screen, so it counts; only the impossible interval is dropped.
   @Test func aPresentationTimeBeforeSubmissionCountsTheFrameAndDiscardsTheInterval() {
     let metrics = ScreenSharingMetrics()
     #expect(metrics.recordPresentation(isNewFrame: true, presentedAt: 1, submittedAt: 2, receivedAt: 0.5))
@@ -39,8 +36,6 @@ struct ScreenSharingPresentationMetricsTests {
     #expect(result.timings.isEmpty, "an unpresented drawable has no latency to report")
   }
 
-  /// A redraw of the cached frame reaches the same handler. It is not a
-  /// callback the renderer owes a frame for, so nothing at all is counted.
   @Test func aRedrawLeavesTheAccountingUntouched() {
     let metrics = ScreenSharingMetrics()
     #expect(!metrics.recordPresentation(isNewFrame: false, presentedAt: 2, submittedAt: 1, receivedAt: 0.5))
@@ -58,12 +53,9 @@ struct ScreenSharingPresentationMetricsTests {
     #expect(result.counters["presentedFrames"] == 2)
     #expect(result.counters["presentationCallbacks"] == 2)
     #expect(result.timings["submissionToPresentation"]?.count == 2)
-    // The interval is a subtraction of two doubles, so it is compared as one.
     #expect((result.timings["submissionToPresentation"]?.maximumMs).map { abs($0 - 100) < 1e-9 } == true)
   }
 
-  /// The receiver timestamp is absent for a frame the renderer redrew from its
-  /// own cache upstream; the submission latency is still worth having.
   @Test func aFrameWithoutAReceiveTimeStillTimesItsSubmission() {
     let metrics = ScreenSharingMetrics()
     #expect(metrics.recordPresentation(isNewFrame: true, presentedAt: 3, submittedAt: 2, receivedAt: nil))
@@ -72,8 +64,6 @@ struct ScreenSharingPresentationMetricsTests {
     #expect(result.timings["receiverCallbackToPresentation"] == nil)
   }
 
-  /// Zero is a sample, not a missing one: submission and presentation can share
-  /// a timestamp, and that must not read as "never measured".
   @Test func aZeroLengthLatencyIsRecordedRatherThanDropped() {
     let metrics = ScreenSharingMetrics()
     #expect(metrics.recordPresentation(isNewFrame: true, presentedAt: 2, submittedAt: 2, receivedAt: 2))
@@ -83,8 +73,6 @@ struct ScreenSharingPresentationMetricsTests {
     #expect(result.timings["receiverCallbackToPresentation"]?.count == 1)
   }
 
-  /// Presentations arriving out of order across frames: every one is counted,
-  /// and the percentiles come from the intervals that were measurable.
   @Test func outOfOrderPresentationsKeepTheCountersMonotone() {
     let metrics = ScreenSharingMetrics()
     let presentations: [(presentedAt: Double, submittedAt: Double)] = [

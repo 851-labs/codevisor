@@ -367,8 +367,6 @@ extension ProbeOptions {
     {
       throw ScreenSharingError.invalid("--codec requires a media probe.")
     }
-    // Without --standard-rate-control, 4:4:4 runs as the product does (851-2381): the encoder's
-    // speed preference in place of the low-latency rate control it can't use.
     if videoCodec == .hevc444, mode != .receive, syntheticPixelFormat == .nv12 {
       throw ScreenSharingError.invalid("HEVC 4:4:4 requires full-chroma source input.")
     }

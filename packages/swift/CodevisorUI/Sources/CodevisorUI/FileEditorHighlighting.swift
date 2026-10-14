@@ -10,8 +10,6 @@ import SwiftUI
   typealias FileTextEditActions = NSTextStorage.EditActions
 #endif
 
-/// Captures actual text-storage edits, coalesces pending work, and applies only
-/// current syntax patches. A skipped revision remains dirty in the parser session.
 @MainActor
 final class FileEditorHighlighting: NSObject, @preconcurrency NSTextStorageDelegate {
   private weak var textView: FileTextView?
@@ -81,8 +79,6 @@ final class FileEditorHighlighting: NSObject, @preconcurrency NSTextStorageDeleg
     requested = true
     guard task == nil else { return }
     task = Task { [weak self] in
-      // Returning to the executor lets TextKit finish its current edit before
-      // reading text or modifying attributes. No timer is involved.
       while let self, self.requested, !Task.isCancelled {
         self.requested = false
         guard let storage = self.storage else { break }
@@ -106,7 +102,6 @@ final class FileEditorHighlighting: NSObject, @preconcurrency NSTextStorageDeleg
           await session.acknowledge(revision: version)
         } catch {
           guard !Task.isCancelled else { break }
-          // Retry from a complete snapshot on the next edit, preserving text.
           self.session = self.language.map { CodeHighlightDocument(language: $0) }
           self.replaceSource = true
           if self.revision == version { self.applyPlainText(storage) }

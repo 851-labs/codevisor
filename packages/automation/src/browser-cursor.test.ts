@@ -39,7 +39,6 @@ describe("browser cursor presentation", () => {
     expect(() => parseExpression(pointerOverlaySource)).not.toThrow()
     expect(pointerOverlaySource).not.toContain("import(")
     expect(pointerOverlaySource).not.toContain("innerHTML")
-    // Without a document (Node), the overlay reports an idle reply instead of throwing.
     const overlay = new Function(`return (${pointerOverlaySource})`)() as (
       command: unknown
     ) => unknown
@@ -100,7 +99,6 @@ describe("browser cursor presentation", () => {
       expect(identities[0]!.color).not.toBe(identities[1]!.color)
       registry.release("extension:a")
       registry.release("extension:b")
-      // Once both are released, the next session may reuse either color again.
       return registry
         .cursorFor(runtime, page, "extension:b")
         .track(0, 0)

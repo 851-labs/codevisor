@@ -33,7 +33,6 @@ struct ComposerDefaultsStoreTests {
       #"{"machines":{"local":{"newWorkspaceInWorktree":true,"configSelections":{}}},"version":5,"workspaces":{}}"#
     let store = InMemoryStore(storage: ["composer-defaults": Data(legacy.utf8)])
     let defaults = ComposerDefaultsStore(store: store)
-    // No project record yet: the legacy machine-wide choice applies.
     #expect(defaults.prefersWorktreeForNewWorkspaces(forServer: "local", projectId: projectA))
     #expect(!defaults.prefersWorktreeForNewWorkspaces(forServer: "remote-a", projectId: projectA))
 
@@ -45,7 +44,6 @@ struct ComposerDefaultsStoreTests {
 
     let reopened = ComposerDefaultsStore(store: store)
     #expect(!reopened.prefersWorktreeForNewWorkspaces(forServer: "local", projectId: projectA))
-    // Another project keeps the fallback rather than A's choice.
     #expect(reopened.prefersWorktreeForNewWorkspaces(forServer: "local", projectId: projectB))
   }
 
@@ -109,9 +107,6 @@ struct ComposerDefaultsStoreTests {
       harnessId: "codex",
       configValues: ["model": "gpt-5.6", "effort": "high", "speed": "fast"]
     )
-    // A model without a speed picker reports only its currently available
-    // values. The prior speed preference should still be there if the user
-    // switches back to a fast-capable model later.
     defaults.rememberConfigSelections(
       in: .newWorkspace(serverId: "local"),
       harnessId: "codex",
@@ -296,9 +291,7 @@ struct ComposerDefaultsStoreTests {
       defaults.configSelections(forHarness: "codex", in: .newWorkspace(serverId: "remote-a")) == [
         "model": "gpt-5.6", "effort": "high",
       ])
-    // The workspace's last-focused chat no longer leaks into anything.
     #expect(defaults.configSelections(forHarness: "claude-code", in: .newWorkspace(serverId: "remote-a")).isEmpty)
-    // Projects without their own record fall back to the legacy choice.
     #expect(defaults.prefersWorktreeForNewWorkspaces(forServer: "remote-a", projectId: projectId))
     #expect(store.loadData(forKey: "composer-defaults-pre-v6-backup") == data)
     let migrated = try #require(store.loadData(forKey: "composer-defaults"))
@@ -363,8 +356,6 @@ struct ComposerDefaultsStoreTests {
     #expect(contents.contains { $0.hasPrefix("composer-defaults.json.corrupt-") })
   }
 
-  /// Schema tripwire: changing this string requires a decoder fixture for
-  /// this exact V6 shape before the golden value is updated.
   @Test("Persisted wire format is stable — schema changes require a migration")
   func wireFormatIsStable() throws {
     let store = InMemoryStore()

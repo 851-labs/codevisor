@@ -5,9 +5,6 @@ import Metal
 import Observation
 import ScreenSharing
 
-// MARK: - Geometry
-
-/// Aspect-fits a frame into the preview card's bounds.
 public func computerUseLivePreviewSize(
   frameSize: CGSize,
   maxWidth: CGFloat,
@@ -23,10 +20,6 @@ public func computerUseLivePreviewSize(
   )
 }
 
-// MARK: - Ledger
-
-/// What the agent of each chat session is controlling. Pure so transitions
-/// test without AppKit or ScreenCaptureKit.
 struct ComputerUseLivePreviewLedger: Equatable {
   enum Event: Equatable {
     case activated(
@@ -37,14 +30,11 @@ struct ComputerUseLivePreviewLedger: Equatable {
       windowFrame: CGRect,
       colorIndex: Int
     )
-    /// `point` is in the same screen coordinates as `windowFrame`.
     case cursorMoved(sessionID: String, point: CGPoint, at: TimeInterval)
     case cursorHidden(sessionID: String)
     case expireCursors(now: TimeInterval)
-    /// The controlled window moved or resized between tool calls.
     case windowFrameChanged(sessionID: String, windowID: CGWindowID, frame: CGRect)
     case idled(sessionID: String)
-    /// A nil pid stops the session whatever it controls.
     case stopped(sessionID: String, pid: pid_t?)
     case terminated(pid: pid_t)
     case removeAll
@@ -97,7 +87,6 @@ struct ComputerUseLivePreviewLedger: Equatable {
         activity.windowFrame != frame
       else { return }
       activity.windowFrame = frame
-      // A position normalized against the old frame no longer lines up.
       activity.cursor = nil
       activity.cursorExpiresAt = nil
       activities[key] = activity
@@ -128,7 +117,6 @@ struct ComputerUseLivePreviewLedger: Equatable {
   }
 }
 
-/// A point inside the window as a 0…1 fraction of its frame, or nil outside.
 func computerUseNormalizedCursor(point: CGPoint, in frame: CGRect) -> CGPoint? {
   guard frame.width > 0, frame.height > 0 else { return nil }
   let normalized = CGPoint(
@@ -139,10 +127,6 @@ func computerUseNormalizedCursor(point: CGPoint, in frame: CGRect) -> CGPoint? {
   return normalized
 }
 
-// MARK: - Facade
-
-/// The app-facing view of Computer Use activity per chat session, and the
-/// source of live previews of the window each agent controls.
 @MainActor
 @Observable
 public final class ComputerUseLivePreview {
@@ -151,19 +135,14 @@ public final class ComputerUseLivePreview {
   public enum State: Equatable, Sendable { case active, idle, stopped }
 
   public struct Activity: Equatable, Sendable {
-    /// Lowercased chat session id.
     public let sessionID: String
-    /// The id exactly as the bridge received it.
     let bridgeSessionID: String
     public let appName: String
     public let pid: pid_t
     public let windowID: CGWindowID?
-    /// Screen points, top-left origin.
     public internal(set) var windowFrame: CGRect
     let colorIndex: Int
-    /// The agent cursor as a 0…1 fraction of the window, when known.
     public internal(set) var cursor: CGPoint?
-    /// Monotonic deadline, independent of the retained capture/viewers.
     var cursorExpiresAt: TimeInterval? = nil
     public internal(set) var state: State
 
@@ -183,8 +162,6 @@ public final class ComputerUseLivePreview {
   }
 
   func apply(_ event: ComputerUseLivePreviewLedger.Event) {
-    // Mutating the @Observable property itself invalidates SwiftUI even when
-    // the value is unchanged. Polls must publish only actual state changes.
     var next = ledger
     next.apply(event)
     guard next != ledger else { return }
@@ -192,7 +169,6 @@ public final class ComputerUseLivePreview {
     onChange.values.forEach { $0() }
   }
 
-  /// Internal observers (the remote host) that are not SwiftUI.
   @ObservationIgnored private var onChange: [UUID: () -> Void] = [:]
 
   func observe(_ handler: @escaping () -> Void) -> UUID {
@@ -205,10 +181,6 @@ public final class ComputerUseLivePreview {
     onChange.removeValue(forKey: token)
   }
 
-  /// Swaps `viewer` for a fresh one from `make`, to recover a frozen or
-  /// blank preview. The old viewer detaches first, so its sink leaves the
-  /// stream before the new one subscribes and the stream reconfigures for
-  /// the new viewer rather than serving two.
   public static func replace(
     _ viewer: ComputerUseLivePreviewViewer?,
     with make: () -> ComputerUseLivePreviewViewer?
@@ -217,8 +189,6 @@ public final class ComputerUseLivePreview {
     return make()
   }
 
-  /// A viewer of the window the chat's agent controls on this Mac, or nil
-  /// when there is no activity or Metal is unavailable. Call `detach()`.
   public func makeLocalViewer(chatSession id: UUID) -> ComputerUseLivePreviewViewer? {
     guard let activity = activity(forChatSession: id) else { return nil }
     let mailbox = ScreenSharingFrameMailbox()
@@ -259,14 +229,10 @@ public final class ComputerUseLivePreview {
   func detachSink(sessionID: String, token: UUID) {
     ComputerUseNativeSharing.shared.detachSink(sessionID: sessionID, token: token)
     if !ComputerUseNativeSharing.shared.hasSinks(sessionID: sessionID) {
-      // A session kept alive only by its viewers gets a full idle grace
-      // from now, rather than an immediate release.
       ComputerUsePresentationState.shared.touch(sessionID: sessionID)
     }
   }
 }
-
-// MARK: - Viewer
 
 @MainActor
 @Observable
@@ -281,16 +247,9 @@ public final class ComputerUseLivePreviewViewer {
 
   public private(set) var phase: Phase
   public private(set) var title: String
-  /// The latest frame's pixel size; nil before the first frame.
   public private(set) var frameSize: CGSize?
-  /// Where the window sits in the frame and how round its corners are,
-  /// measured from local frames. Nil until measured, and for remote viewers.
   public private(set) var windowContent: ComputerUseWindowContent?
-  /// Remote viewers look for the agent's activity more often while the
-  /// chat's turn is running. Ignored by local viewers.
   @ObservationIgnored public var prefersFastPolling = false
-  /// Hosts the current surface; stable for the viewer's lifetime so a
-  /// remote reconnect can swap surfaces underneath SwiftUI.
   @ObservationIgnored public let view: NSView = ComputerUseLivePreviewContainer()
 
   @ObservationIgnored private var surface: ComputerUseLivePreviewSurface?
@@ -328,12 +287,8 @@ public final class ComputerUseLivePreviewViewer {
     self.windowContent = windowContent
   }
 
-  /// Local viewers ask the capture for enough pixels to fill this size.
   @ObservationIgnored var onDisplayDimension: ((CGFloat) -> Void)?
 
-  /// The card settled at `size` points on a display with `backingScale`.
-  /// Call when a resize ends rather than on every drag step: each change
-  /// reconfigures the capture stream.
   public func setDisplaySize(_ size: CGSize, backingScale: CGFloat) {
     guard !isDetached else { return }
     onDisplayDimension?(max(size.width, size.height) * max(1, backingScale))
@@ -344,7 +299,6 @@ public final class ComputerUseLivePreviewViewer {
     surface?.setLetterboxColor(color)
   }
 
-  /// Idempotent. Stops rendering and releases the frame source.
   public func detach() {
     guard !isDetached else { return }
     isDetached = true
@@ -355,13 +309,10 @@ public final class ComputerUseLivePreviewViewer {
   }
 }
 
-/// Never takes input: the card around it handles clicks.
 final class ComputerUseLivePreviewContainer: NSView {
   override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
-/// A view-only video surface: renders a mailbox, captures no input. Also
-/// the surface the remote viewer runner renders into.
 @MainActor
 final class ComputerUseLivePreviewSurface: NSView, ScreenSharingViewerSurface {
   private let metal: ScreenSharingMetalView
@@ -377,7 +328,6 @@ final class ComputerUseLivePreviewSurface: NSView, ScreenSharingViewerSurface {
   var view: NSView { self }
 
   init(mailbox: ScreenSharingFrameMailbox, metrics: ScreenSharingMetrics) throws {
-    // Acquisition and encoding on the render worker, as in the screen-sharing pane.
     metal = try ScreenSharingMetalView(
       mailbox: mailbox, metrics: metrics, renderOnArrival: true, offMainPreparation: true)
     super.init(frame: .zero)
@@ -405,8 +355,6 @@ final class ComputerUseLivePreviewSurface: NSView, ScreenSharingViewerSurface {
   }
 }
 
-/// Lets the capture-queue sink reach a viewer created after it, without
-/// keeping the viewer alive.
 @MainActor
 private final class ComputerUseWindowContentRelay: Sendable {
   weak var viewer: ComputerUseLivePreviewViewer?

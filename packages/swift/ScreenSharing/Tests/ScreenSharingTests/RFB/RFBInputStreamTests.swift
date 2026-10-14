@@ -2,8 +2,6 @@ import Foundation
 import Testing
 @testable import ScreenSharing
 
-/// The buffered big-endian reader every message parser sits on: what it makes
-/// of the transport's chunking, and where a short read turns into which error.
 struct RFBInputStreamTests {
   @Test func integersAreBigEndianRegardlessOfChunking() async throws {
     let bytes: [UInt8] = [0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0xff, 0xff, 0xff, 0xff]
@@ -25,15 +23,11 @@ struct RFBInputStreamTests {
     #expect(try await stream.s32() == -223)
   }
 
-  /// The chunk size is the transport's business: the same reads over the same
-  /// bytes give the same values however the bytes arrive, including one at a
-  /// time and all at once.
   @Test func theTransportsFramingNeverShowsThrough() async throws {
     let payload = (0..<1000).map { UInt8($0 % 251) }
     for chunk in [1, 2, 3, 7, 64, 999, 1000, 4096] {
       let stream = RFBInputStream(transport: ScriptedTransport(payload, chunk: chunk), chunk: 8)
       var read: [UInt8] = []
-      // Deliberately uneven reads, so the internal compaction runs mid-stream.
       for size in [1, 300, 7, 0, 92, 600] { read += try await stream.bytes(size) }
       #expect(read == payload)
     }
@@ -51,7 +45,6 @@ struct RFBInputStreamTests {
     await #expect(throws: RFBError.malformed("negative length")) { try await stream.skip(-8) }
   }
 
-  /// A field that is cut in half is a closed connection, not a short value.
   @Test func everyPartialFieldEndsTheConnection() async throws {
     await #expect(throws: RFBError.connectionClosed) {
       _ = try await RFBInputStream(transport: ScriptedTransport([], chunk: 1)).u8()
@@ -67,8 +60,6 @@ struct RFBInputStreamTests {
     await #expect(throws: RFBError.connectionClosed) { _ = try await short.bytes(4) }
   }
 
-  /// The bytes already buffered before the peer went away are lost with it:
-  /// the stream has no resynchronisation, so the error is terminal.
   @Test func aClosedStreamKeepsFailing() async throws {
     let stream = RFBInputStream(transport: ScriptedTransport([1, 2], chunk: 2))
     #expect(try await stream.u16() == 0x0102)
@@ -94,8 +85,6 @@ struct RFBInputStreamTests {
     #expect(writer.bytes == [UInt8](hex: "ab 1234 deadbeef fffffffe 000000 0707"))
   }
 
-  /// 851-2320: a 1 MiB rectangle read from 64 KiB transport chunks moves each
-  /// byte at most once on compaction.
   @Test func compactionMovesEachByteAtMostOnce() async throws {
     let payload = (0..<(1 << 20)).map { UInt8(truncatingIfNeeded: $0 &* 13) }
     let stream = RFBInputStream(transport: ScriptedTransport(payload, chunk: 1 << 16), chunk: 1 << 16)
@@ -105,11 +94,7 @@ struct RFBInputStreamTests {
     #expect(stream.bytesMoved <= payload.count)
   }
 
-  // MARK: Link timing (851-2331)
-
-  /// Reads that waited for the network count, with their wait; the rate is the link's.
   @Test func linkTimingCountsBytesThatArrivedWhileTheReaderWaited() async throws {
-    // 10 KB chunks arriving 10 ms apart: an 8 Mbit/s link.
     let link = TimedTransport(
       (0..<5).map { _ in (bytes: [UInt8](repeating: 1, count: 10_000), wait: .milliseconds(10)) })
     let stream = RFBInputStream(transport: link, chunk: 10_000, now: link.now)
@@ -120,14 +105,11 @@ struct RFBInputStreamTests {
     #expect(timed.duration == .milliseconds(50))
   }
 
-  /// Data already buffered locally (a WebSocket message that arrived whole, the
-  /// kernel's buffer) returns at once: it adds neither bytes nor time, so it
-  /// can't make a slow link look fast.
   @Test func bufferedDataIsNotLinkTime() async throws {
     let link = TimedTransport([
-      (bytes: [UInt8](repeating: 1, count: 20_000), wait: .milliseconds(160)),  // waited: counted
-      (bytes: [UInt8](repeating: 2, count: 20_000), wait: .zero),  // already there: not counted
-      (bytes: [UInt8](repeating: 3, count: 20_000), wait: .microseconds(500)),  // under the threshold
+      (bytes: [UInt8](repeating: 1, count: 20_000), wait: .milliseconds(160)),
+      (bytes: [UInt8](repeating: 2, count: 20_000), wait: .zero),
+      (bytes: [UInt8](repeating: 3, count: 20_000), wait: .microseconds(500)),
     ])
     let stream = RFBInputStream(transport: link, chunk: 20_000, now: link.now)
     stream.startTiming()
@@ -137,7 +119,6 @@ struct RFBInputStreamTests {
     #expect(timed.duration == .milliseconds(160))
   }
 
-  /// Outside a timed span (e.g. the wait for an update's header, which includes idle time) nothing counts.
   @Test func nothingIsTimedOutsideASpan() async throws {
     let link = TimedTransport([
       (bytes: [0], wait: .seconds(5)),
@@ -151,7 +132,6 @@ struct RFBInputStreamTests {
   }
 }
 
-/// Hands out scripted chunks, each after a scripted wait on its own clock (no real time passes).
 private final class TimedTransport: RFBTransport, @unchecked Sendable {
   private let lock = NSLock()
   private var chunks: [(bytes: [UInt8], wait: Duration)]

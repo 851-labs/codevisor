@@ -1,13 +1,5 @@
 import Foundation
 
-/// Gates native Markdown blocks behind the streamed content that precedes
-/// them. Text segments before the first pending block may mount and schedule
-/// their word fades; the block and every later segment remain unmounted until
-/// that prefix has finished entering.
-///
-/// The sequence keeps only semantic block identities. Code and table content
-/// may grow on every provider flush without replaying the block entrance, and
-/// a navigation baseline can settle every block that was already present.
 @MainActor
 final class StreamingMarkdownBlockEntranceSequence {
   enum BeginRevealResult: Equatable {
@@ -75,8 +67,6 @@ final class StreamingMarkdownBlockEntranceSequence {
     )
   }
 
-  /// Convenience for nested/static Markdown callers whose positional IDs
-  /// are already stable for the lifetime of the view.
   func resolve(
     segments: [MarkdownSegment],
     animationPath: String,
@@ -93,9 +83,6 @@ final class StreamingMarkdownBlockEntranceSequence {
     )
   }
 
-  /// Starts a block entrance or resumes one whose view task was cancelled by
-  /// a temporary disappearance. Resumption preserves the original timeline
-  /// deadline instead of replaying the fade.
   func beginReveal(blockID: String) -> BeginRevealResult {
     guard !revealedBlockIDs.contains(blockID) else { return .unavailable }
     if revealingBlockID == blockID { return .resumed }

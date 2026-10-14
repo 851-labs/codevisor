@@ -10,39 +10,13 @@ import {
 export * from "./cloud-channel-types.js"
 export * from "./cloud-tunnel-protocol.js"
 
-/// Wire protocol for the cloud relay (apps/cloud). Both planes — app↔hub and
-/// machine↔hub — speak over a WebSocket to the user's hub using two message
-/// kinds:
-///
-/// - **Text frames** carry rare JSON control messages (hello/welcome,
-///   presence, ping/pong, errors) validated by the schemas below.
-/// - **Binary frames** carry relay traffic: one or more envelopes, each a
-///   small JSON header plus the raw ciphertext payload. No base64, no JSON
-///   escaping of bulk bytes — see `encodeRelayEnvelopes`.
-///
-/// Design invariants (see docs/cloud.md):
-/// - The hub is a dumb router: it understands hello/presence and rewrites
-///   addressing on relay envelope headers, but never parses payloads —
-///   content is end-to-end encrypted between devices and never readable
-///   there. Even `channelType` lives inside the sealed open payload.
-/// - Channels are ephemeral (they die with either WebSocket); durable session
-///   state (e.g. terminal replay) is reattached by the opener after reconnect.
 export const CLOUD_PROTOCOL_VERSION = 2
 
-/// Upper bound for one relay WebSocket message (all envelopes included):
-/// far above coalesced terminal output, far below platform message limits.
 export const MAX_RELAY_MESSAGE_BYTES = 2 * 1024 * 1024
-
-// ---------------------------------------------------------------------------
-// Identity & presence
-// ---------------------------------------------------------------------------
 
 export const CloudDeviceKind = Schema.Literals(["app", "machine"])
 export type CloudDeviceKind = typeof CloudDeviceKind.Type
 
-/// Public identity a device presents in `hello` and the hub redistributes in
-/// presence. `publicKey` is the device's static X25519 key (base64url); peers
-/// pin it on first use (TOFU) — the hub is not trusted for key continuity.
 export const CloudDeviceInfo = Schema.Struct({
   deviceId: Schema.String,
   kind: CloudDeviceKind,
@@ -50,18 +24,9 @@ export const CloudDeviceInfo = Schema.Struct({
   os: Schema.optional(Schema.String),
   appVersion: Schema.optional(Schema.String),
   publicKey: Schema.String,
-  /// Machines only: the stable Codevisor server id ("machine-<uuid>") this
-  /// device runs, so peers list hub presence under the same id the machine
-  /// reports in /v1/info. Absent on older servers.
   serverId: Schema.optional(Schema.String),
-  /// Hex Ed25519 id of the device's tunnel endpoint (docs/plans/
-  /// codevisor-tunnel.md). Absent on devices that predate the tunnel.
   tunnelEndpointId: Schema.optional(Schema.String),
-  /// The device's update channel. The hub turns the tunnel on for Alpha
-  /// devices only (development builds report Alpha). Absent means stable.
   releaseChannel: Schema.optional(Schema.Literals(["stable", "alpha"])),
-  /// Apps that reach machines over the tunnel only (no hub-relay data
-  /// path): the hub always turns the tunnel on for them.
   tunnelOnly: Schema.optional(Schema.Boolean)
 })
 export type CloudDeviceInfo = typeof CloudDeviceInfo.Type
@@ -72,21 +37,11 @@ export const CloudMachinePresence = Schema.Struct({
   os: Schema.optional(Schema.String),
   appVersion: Schema.optional(Schema.String),
   publicKey: Schema.String,
-  /// See CloudDeviceInfo.serverId.
   serverId: Schema.optional(Schema.String),
-  /// The machine advertised MACHINE_PEERS_FEATURE on its last hello: it
-  /// accepts (gateway) channels from other machines. The hub routes
-  /// machine-opened channels only to such machines — older ones would not
-  /// know to restrict machine openers to the gateway.
   machinePeers: Schema.optional(Schema.Boolean),
-  /// Present once the machine has reported a tunnel endpoint.
   tunnel: Schema.optional(CloudTunnelInfo),
-  /// Present when the machine joined the account through another machine's
-  /// invite (`codevisor machines invite` / `machines_add`) rather than a
-  /// human approval: the inviting machine and its name at invite time.
   addedBy: Schema.optional(Schema.Struct({ deviceId: Schema.String, name: Schema.String })),
   online: Schema.Boolean,
-  /// ISO timestamp of the last connect/disconnect the hub observed.
   lastSeenAt: Schema.String
 })
 export type CloudMachinePresence = typeof CloudMachinePresence.Type
@@ -101,48 +56,14 @@ export const ChannelCloseReason = Schema.Literals([
 ])
 export type ChannelCloseReason = typeof ChannelCloseReason.Type
 
-// ---------------------------------------------------------------------------
-// Relay envelopes (binary; opaque to the hub apart from header addressing)
-// ---------------------------------------------------------------------------
-//
-// A binary WebSocket message is a concatenation of one or more envelopes —
-// senders may coalesce several relay frames into one message (cheaper for
-// radios and for the hub's per-message billing); receivers process them in
-// order. Each envelope is:
-//
-//   u32 BE header length | header JSON (UTF-8) | u32 BE payload length | payload
-//
-// The header is the addressing + frame metadata (`sealed` ciphertext never
-// appears in JSON — it IS the payload):
-// - open:   payload = ciphertext of the sealed { channelType, params }
-// - data:   payload = ciphertext
-// - credit: payload empty (`bytes` in the header)
-// - close:  payload empty (`reason` in the header)
-//
-// Addressing is asymmetric and rewritten by the hub:
-// - Apps address machines by their stable `deviceId` (`machineId` field).
-// - Machines see an opaque per-app-connection `peerId` assigned by the hub,
-//   so a machine can answer the right app socket without learning anything
-//   else about it. `peerId` values do not survive reconnects.
-//
-// Headers are validated manually (not via Schema): they are the relay's hot
-// path, and the hub forwards the original `frame` object untouched so future
-// additive fields survive routing.
-
 export type RelayFrameHeader =
   | {
       t: "open"
       channelId: string
-      /// Monotonic per-(channel, direction) counter starting at 0; bound into
-      /// the AAD of the payload. A gap or repeat is a protocol error → close.
       seq: number
-      /// Opener's ephemeral X25519 public key (base64url) for the channel's
-      /// key agreement.
       ephemeralKey: string
     }
   | { t: "data"; channelId: string; seq: number }
-  /// Flow control between peers; the hub relays it like data. `bytes` grants
-  /// the sender that much additional ciphertext-payload budget.
   | { t: "credit"; channelId: string; seq: number; bytes: number }
   | { t: "close"; channelId: string; seq: number; reason: ChannelCloseReason }
 
@@ -158,17 +79,8 @@ export interface MachineRelayHeader {
 
 export interface HubToMachineRelayHeader {
   peerId: string
-  /// Present ("machine") when the opener is another machine on the account
-  /// rather than an app. Machines accept machine openers only for
-  /// GATEWAY_CHANNEL_TYPE; absent means an app opened the channel.
   peerKind?: CloudDeviceKind
-  /// The opener app device's static public key, attached by the hub to `open`
-  /// relays so the machine can complete key agreement and (TOFU-)pin the app.
   peerPublicKey?: string
-  /// The opener app device's stable self-assigned device id, attached by the
-  /// hub to `open` relays alongside `peerPublicKey`. This is the identity the
-  /// machine pins `peerPublicKey` under: a key change for a known device id is
-  /// refused, so a misbehaving hub cannot swap keys on an established pairing.
   peerDeviceId?: string
   frame: RelayFrameHeader
 }
@@ -179,7 +91,6 @@ export interface HubToAppRelayHeader {
 }
 
 export interface WireRelayEnvelope {
-  /// JSON-parsed header; validate with the parse helpers below.
   header: unknown
   payload: Uint8Array
 }
@@ -214,8 +125,6 @@ export const encodeRelayEnvelopes = (
   return message
 }
 
-/// Decodes a binary relay message into its envelopes. Throws on malformed
-/// input; payloads are subarray views into the message (zero-copy).
 export const decodeRelayEnvelopes = (message: Uint8Array): WireRelayEnvelope[] => {
   const view = new DataView(message.buffer, message.byteOffset, message.byteLength)
   const envelopes: WireRelayEnvelope[] = []
@@ -248,8 +157,6 @@ const CLOSE_REASONS: ReadonlySet<string> = new Set([
   "crypto-error"
 ])
 
-/// Validates a relay frame header. Returns the ORIGINAL object (typed) so
-/// routers can forward it with future additive fields intact.
 export const parseRelayFrameHeader = (value: unknown): RelayFrameHeader | undefined => {
   if (typeof value !== "object" || value === null) return undefined
   const frame = value as Record<string, unknown>
@@ -309,14 +216,9 @@ export const parseHubToMachineRelayHeader = (
   return header
 }
 
-/// Hub→opener relay header (apps, and machines for the channels they open).
 export const parseHubToAppRelayHeader = (value: unknown): HubToAppRelayHeader | undefined =>
   parseAddressedHeader<HubToAppRelayHeader>(value, "machineId")
 
-/// What a machine may send the hub: answers on channels peers opened
-/// (`peerId`), or — for machine→machine channels it opens itself — the
-/// app-shaped `machineId` addressing. The hub routes machine-opened channels
-/// only to other machines registered on the same account.
 export type MachineOutboundRelayHeader =
   | ({ direction: "answer" } & MachineRelayHeader)
   | ({ direction: "open" } & AppRelayHeader)
@@ -330,19 +232,10 @@ export const parseMachineOutboundRelayHeader = (
   return opened === undefined ? undefined : { direction: "open", ...opened }
 }
 
-// ---------------------------------------------------------------------------
-// App plane (JSON text control frames)
-// ---------------------------------------------------------------------------
-
 export const AppHello = Schema.Struct({
   t: Schema.Literal("hello"),
   protocol: Schema.Number,
   device: CloudDeviceInfo,
-  /// Resume token from a previous welcome: within the grace window the hub
-  /// restores the connection's identity (same connectionId → machines' peer
-  /// ids stay valid, channels survive) and replays frames it buffered while
-  /// this side was away. Opaque; its format is frozen independently of the
-  /// protocol version so it parses across deploy boundaries.
   resume: Schema.optional(Schema.String)
 })
 
@@ -354,15 +247,10 @@ export type AppToHub = typeof AppToHub.Type
 export const HubWelcome = Schema.Struct({
   t: Schema.Literal("welcome"),
   protocol: Schema.Number,
-  /// Hub-assigned id for this connection; also the peerId machines see.
   connectionId: Schema.String,
   machines: Schema.Array(CloudMachinePresence),
-  /// Fresh resume token for THIS connection (rotated every welcome).
   resume: Schema.optional(Schema.String),
-  /// True when the hello's resume token was honoured: the previous
-  /// connection's identity carried over and channels survive.
   resumed: Schema.optional(Schema.Boolean),
-  /// Tunnel relay map and rollout switch (see CloudRelayInfo).
   relays: Schema.optional(Schema.Array(CloudRelayInfo)),
   tunnel: Schema.optional(Schema.String)
 })
@@ -385,20 +273,12 @@ export const HubError = Schema.Struct({
   t: Schema.Literal("error"),
   code: HubErrorCode,
   message: Schema.String,
-  /// Present when the error concerns a specific relay attempt.
   machineId: Schema.optional(Schema.String),
   channelId: Schema.optional(Schema.String)
 })
 
 export const HubPong = Schema.Struct({ t: Schema.Literal("pong") })
 
-/// Sent to apps when a machine completes a (re)hello. Machine channel state
-/// is in-memory and does not survive a socket replacement, so every channel
-/// an app holds toward that machine is dead — even though the machine is
-/// online. `presence` covers machines that visibly go offline; this covers
-/// the reconnect race where the machine returns before (or without) its old
-/// socket being seen to close. Apps predating this frame ignore unknown
-/// kinds and fall back to presence/error-driven teardown.
 export const HubMachineReset = Schema.Struct({
   t: Schema.Literal("machine-reset"),
   machineId: Schema.String
@@ -407,23 +287,13 @@ export const HubMachineReset = Schema.Struct({
 export const HubToApp = Schema.Union([HubWelcome, HubPresence, HubMachineReset, HubError, HubPong])
 export type HubToApp = typeof HubToApp.Type
 
-// ---------------------------------------------------------------------------
-// Machine plane (JSON text control frames)
-// ---------------------------------------------------------------------------
-
-/// Machine hello feature flag: this machine understands the machine-plane
-/// peer frames (machine list in welcome, presence, machine-reset) and may
-/// open machine→machine channels. Hubs only send those frames to machines
-/// that advertise it, so older servers never see a frame kind they reject.
 export const MACHINE_PEERS_FEATURE = "machine-peers-v1"
 
 export const MachineHello = Schema.Struct({
   t: Schema.Literal("hello"),
   protocol: Schema.Number,
   device: CloudDeviceInfo,
-  /// See AppHello.resume.
   resume: Schema.optional(Schema.String),
-  /// Optional capabilities (e.g. MACHINE_PEERS_FEATURE).
   features: Schema.optional(Schema.Array(Schema.String))
 })
 
@@ -436,27 +306,18 @@ export const HubMachineWelcome = Schema.Struct({
   t: Schema.Literal("welcome"),
   protocol: Schema.Number,
   connectionId: Schema.String,
-  /// Fresh resume token for THIS connection (rotated every welcome).
   resume: Schema.optional(Schema.String),
-  /// True when the hello's resume token was honoured (see HubWelcome).
   resumed: Schema.optional(Schema.Boolean),
-  /// The account's machines (this one included), for machines that
-  /// advertised MACHINE_PEERS_FEATURE. Kept current by presence frames.
   machines: Schema.optional(Schema.Array(CloudMachinePresence)),
   relays: Schema.optional(Schema.Array(CloudRelayInfo)),
   tunnel: Schema.optional(Schema.String)
 })
 
-/// Sent to a machine when an app connection vanishes so it can tear down that
-/// peer's channels (and e.g. detach terminal sinks) without waiting on idle
-/// timeouts.
 export const HubPeerGone = Schema.Struct({
   t: Schema.Literal("peer-gone"),
   peerId: Schema.String
 })
 
-/// Presence and machine-reset reach machines only when they advertised
-/// MACHINE_PEERS_FEATURE (they may hold channels to other machines).
 export const HubToMachine = Schema.Union([
   HubMachineWelcome,
   HubPeerGone,
@@ -467,10 +328,6 @@ export const HubToMachine = Schema.Union([
   HubPong
 ])
 export type HubToMachine = typeof HubToMachine.Type
-
-// ---------------------------------------------------------------------------
-// Codecs (JSON text control frames)
-// ---------------------------------------------------------------------------
 
 const decodeJson = <A, I>(schema: Schema.Codec<A, I>, raw: string): A =>
   Schema.decodeUnknownSync(schema)(JSON.parse(raw))

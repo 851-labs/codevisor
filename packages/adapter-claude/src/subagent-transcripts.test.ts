@@ -12,7 +12,6 @@ afterEach(() => {
   for (const dir of configDirs.splice(0)) rmSync(dir, { force: true, recursive: true })
 })
 
-// A config directory holding one subagent transcript in an encoded project dir.
 const configWithTranscript = (content: string) => {
   const configDir = mkdtempSync(join(tmpdir(), "codevisor-claude-config-"))
   configDirs.push(configDir)

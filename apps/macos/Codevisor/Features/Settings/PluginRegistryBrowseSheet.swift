@@ -2,12 +2,6 @@ import CodevisorCore
 import SwiftUI
 import CodevisorUI
 
-/// Browse the public plugin registry: a searchable list of GitHub-indexed
-/// plugins served through this machine (`GET /v1/plugins/registry`). The list
-/// stays scannable — artwork, name, one-line description, Install — and a
-/// click on a row pushes the full story (panes, tools, repo facts). Purely
-/// discovery — Install hands the entry's repo to the existing install sheet,
-/// so consent (verbatim commands + declared tools) is unchanged.
 struct PluginRegistryBrowseSheet: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(\.theme) private var theme
@@ -86,8 +80,6 @@ struct PluginRegistryBrowseSheet: View {
       .formStyle(.grouped)
       .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
     } else if let errorMessage {
-      // Registry unreachable and nothing cached server-side: browsing
-      // is unavailable, but manual installs still work.
       ContentUnavailableView {
         Label("Registry Unavailable", systemImage: "exclamationmark.triangle")
       } description: {
@@ -115,9 +107,6 @@ struct PluginRegistryBrowseSheet: View {
     }
   }
 
-  /// One glanceable line per plugin: artwork, name, what it does, Install.
-  /// Everything else (version, repo, stars, capabilities) lives on the
-  /// detail page behind the row.
   private func entryRow(_ entry: ServerPluginRegistryEntry) -> some View {
     HStack(spacing: 10) {
       PluginRegistryAvatarView(urlString: entry.ownerAvatarUrl, size: 30)
@@ -174,10 +163,6 @@ struct PluginRegistryBrowseSheet: View {
   }
 }
 
-/// Everything the list row leaves out, shown before any commitment: what the
-/// plugin adds (panes, agent tools) and the GitHub facts that anchor it to a
-/// real owner (repo, stars, last push). Install goes through the same
-/// discover→consent flow as everywhere else.
 private struct PluginRegistryDetailView: View {
   @Environment(\.theme) private var theme
   let entry: ServerPluginRegistryEntry
@@ -228,8 +213,6 @@ private struct PluginRegistryDetailView: View {
         .listRowBackground(theme.formRowBackground)
       }
       Section("Information") {
-        // Pane titles as plain text: pane artwork is served by the
-        // plugin's own server, which isn't running pre-install.
         if !entry.panes.isEmpty {
           LabeledContent(
             "Panes",

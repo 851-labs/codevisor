@@ -235,7 +235,6 @@ describe("OpenCode provider authentication", () => {
     expect(api.state).toBe("complete")
     expect(savedApiKey).toHaveBeenCalledWith("account", "openai", false)
     expect(captureOAuth).toHaveBeenCalledTimes(2)
-    // providers acquires the same lock, acknowledging process cleanup.
     expect((await manager.providers("account"))[0]?.credentialType).toBe("api")
   })
   it("uses the profile XDG data directory", () => {

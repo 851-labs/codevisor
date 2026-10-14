@@ -32,8 +32,6 @@ const makeRepo = () => makeGitRepo()
 
 describe("git helper", () => {
   it("wraps spawn failures without stderr as GitError", async () => {
-    // A nonexistent cwd fails before git can write to stderr, so the error
-    // message comes from the spawn error itself.
     const failure = await addWorktree(
       "/nonexistent-codevisor-repo",
       "/tmp/nonexistent-codevisor-worktree",
@@ -44,8 +42,6 @@ describe("git helper", () => {
   })
 
   it("treats a nonexistent directory as not a git worktree", async () => {
-    // The spawn fails before git can write to stderr, exercising the
-    // error-message fallback in the buffered git helper.
     expect(await isGitWorkTree("/nonexistent-codevisor-repo")).toBe(false)
   })
 
@@ -64,7 +60,6 @@ describe("git helper", () => {
     })
     expect(await gitRemoteUrl(repo)).toBe("https://github.com/acme/widget.git")
 
-    // A linked worktree shares the main checkout's remotes.
     const linked = join(repo, "..", "linked")
     execFileSync("git", ["worktree", "add", linked, "-b", "linked"], { cwd: repo })
     expect(await gitRemoteUrl(linked)).toBe("https://github.com/acme/widget.git")
@@ -85,7 +80,6 @@ describe("git helper", () => {
       lines.push([stream, line])
     })
     expect(lines.length).toBeGreaterThan(0)
-    // Git narrates worktree creation on stderr ("Preparing worktree ...").
     expect(
       lines.some(([stream, line]) => stream === "stderr" && line.includes("Preparing worktree"))
     ).toBe(true)
@@ -241,9 +235,6 @@ describe("git helper", () => {
   })
 
   it("refreshes origin/main before cutting a worktree from it", async () => {
-    // Clone an origin, then advance both the remote and local branches without
-    // fetching. The worktree should start from the new remote tip, not stale
-    // origin/main or the drifted local main.
     const root = testTempDir(join(tmpdir(), "codevisor-git-remote-"))
     const origin = join(root, "origin")
     mkdirSync(origin)
@@ -297,7 +288,6 @@ describe("git helper", () => {
     )
     expect(sanitizeGitOutputLine("\u001B[2K\u001B[1G")).toBe("")
     expect(sanitizeGitOutputLine("plain text   ")).toBe("plain text")
-    // Tabs survive (legitimate log indentation); other control chars go.
     expect(sanitizeGitOutputLine("bell\u0007 and tab\u0009end")).toBe("bell and tab\u0009end")
   })
 
@@ -430,7 +420,6 @@ describe("cloneRepository", () => {
     }).catch((cause: unknown) => cause)
     expect(silent).toBeInstanceOf(CloneError)
     expect((silent as CloneError).message).toContain("exited with code 3")
-    // Empty PATH: the spawn itself fails.
     const spawnFailure = await cloneRepository(
       "https://example.com/x.git",
       "/tmp/unused",
@@ -445,7 +434,6 @@ describe("cloneRepository", () => {
   })
 })
 
-// Prescribed data events protect chunk boundaries that OS pipes may coalesce.
 describe("streamed Git command output", () => {
   it.each(["worktree", "clone"] as const)(
     "frames %s output and flushes before rejection",
@@ -492,7 +480,6 @@ describe("streamed Git command output", () => {
       const failure = await completed
       expect(failure).toBeInstanceOf(operation === "worktree" ? GitError : CloneError)
       expect((failure as GitError).operation).toBe(operation)
-      // Compatibility quirk: diagnostics/classification precede remainder flush.
       expect((failure as GitError).message).toBe("A\ncomplete failure")
       if (operation === "clone") expect((failure as CloneError).code).toBeUndefined()
     }

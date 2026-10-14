@@ -1,9 +1,5 @@
 import Foundation
 
-/// Phase 24: each machine's reported per-plugin condition — the third
-/// readiness plane, mirroring McpFleet and HarnessFleet. States: ready |
-/// disabled | notInstalled | blocked | machineOnly (linked/dev and
-/// local-path plugins never sync, and say so).
 @MainActor
 public enum PluginFleet {
   public struct MachineReadiness: Identifiable, Equatable, Sendable {
@@ -19,7 +15,6 @@ public enum PluginFleet {
     }
   }
 
-  /// machineId → that machine's readiness rows, parsed from the replica.
   public static func readiness(_ sync: ConfigSync) -> [String: [MachineReadiness]] {
     var result: [String: [MachineReadiness]] = [:]
     for entry in sync.entries(namespace: "plugin-readiness") where entry.deleted != true {

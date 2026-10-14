@@ -23,8 +23,6 @@ import {
 
 const machine = (id: string) => ({ id }) as CodevisorServerConfig
 
-/// Phase 17: the mcp-readiness surface over HTTP — the machine's published
-/// entry plus the reconcile pass keeping it fresh.
 describe("/v1/sync/mcp-readiness", () => {
   it("publishes this machine's MCP readiness and refreshes it after mcps reconciles", async () => {
     const { services } = await makeServices("server-readiness")
@@ -38,8 +36,6 @@ describe("/v1/sync/mcp-readiness", () => {
     expect(document.entries[0]?.key).toBe("server-readiness")
     expect(document.entries[0]?.value.servers.length).toBeGreaterThan(0)
 
-    // An mcps reconcile keeps readiness fresh as a side effect: a new
-    // definition shows up in the machine's readiness entry.
     const created = await jsonRequest(server, "/v1/mcps", {
       body: JSON.stringify({
         name: "Fresh",
@@ -64,7 +60,6 @@ describe("/v1/sync/mcp-readiness", () => {
     const server = await startWithApp(services, undefined, { id: "server-overlay" })
     await refreshMcpReadiness(services, machine("server-overlay"), await run(makeEventFanout))
 
-    // Disable a built-in on this machine via the generic overlay surface.
     const put = await jsonRequest(server, "/v1/sync/mcp-overlays", {
       body: JSON.stringify({
         entries: [
@@ -79,7 +74,6 @@ describe("/v1/sync/mcp-readiness", () => {
     })
     expect(put.status).toBe(200)
 
-    // Readiness already reflects the enforced suppression...
     const document = (await jsonRequest(server, "/v1/sync/mcp-readiness")).body as {
       entries: Array<{
         value: { servers: Array<{ name: string; state: string; reason?: string }> }
@@ -87,15 +81,11 @@ describe("/v1/sync/mcp-readiness", () => {
     }
     const computer = document.entries[0]?.value.servers.find((s) => s.name === "Computer Use")
     expect(computer).toMatchObject({ state: "disabled", reason: "Disabled on this machine" })
-    // ...and sessions on this machine no longer resolve the server.
     const resolved = await services.mcp?.resolved()
     expect(resolved?.some((s) => s.name === "Computer Use")).toBe(false)
   })
 })
 
-/// Phase 24: the harness-readiness surface — the reported half of the
-/// desired-vs-reported matrix, published on auth changes and after harness
-/// passes.
 describe("/v1/sync/harness-readiness", () => {
   it("publishes this machine's harness readiness", async () => {
     const { services } = await makeServices("server-hr")
@@ -189,8 +179,6 @@ describe("/v1/sync/harness-readiness", () => {
   it("reports sign-in-required for installed-but-unauthenticated harnesses", async () => {
     const { services } = await makeServices("server-hr2")
     const auth = {
-      // One installed harness awaiting sign-in, and one legacy-shaped row
-      // with no desiredEnabled field (the ?? fallback reads enabled).
       decorateHarnesses: (list: ReadonlyArray<Harness>) =>
         Promise.resolve([
           ...list.map((harness) => ({
@@ -212,17 +200,13 @@ describe("/v1/sync/harness-readiness", () => {
               auth: { state: "authenticated" }
             }
           }),
-          // A desired harness the machine hasn't installed, with the
-          // scanner's explanation riding along as the row's reason.
           ...list.map((harness) => ({
             ...harness,
             id: "missing-cli",
             desiredEnabled: true,
             enabled: false,
-            // A version left over from a removed CLI never reaches the fleet.
             readiness: { state: "notInstalled", detail: "CLI not found on PATH", version: "1.0.0" }
           })),
-          // A sign-in check that failed explains itself on the row.
           ...list.map((harness) => ({
             ...harness,
             id: "auth-error",
@@ -231,7 +215,6 @@ describe("/v1/sync/harness-readiness", () => {
             readiness: { state: "ready" },
             auth: { state: "error", detail: "Keychain is locked" }
           })),
-          // Nothing to sign in to: the only row that reports no auth need.
           ...list.map((harness) => ({
             ...harness,
             id: "auth-free",
@@ -274,7 +257,6 @@ describe("/v1/sync/harness-readiness", () => {
       reason: "Keychain is locked",
       authRequired: true
     })
-    // Display identity rides along so clients can build pickers from sync alone.
     expect(rows.find((row) => row.id === "auth-free")).toEqual({
       id: "auth-free",
       name: "Codex",
@@ -286,7 +268,6 @@ describe("/v1/sync/harness-readiness", () => {
   })
 })
 
-/// Phase 24: the plugin-readiness surface — third readiness plane.
 describe("/v1/sync/plugin-readiness", () => {
   it("publishes this machine's plugin readiness", async () => {
     const { services } = await makeServices("server-plr")
@@ -306,7 +287,6 @@ describe("/v1/sync/plugin-readiness", () => {
     }
     expect(document.entries).toHaveLength(1)
     expect(document.entries[0]?.key).toBe("server-plr")
-    // The stub's one plugin is linked — machine-only by definition.
     expect(document.entries[0]?.value.plugins).toEqual([
       { id: "owner.example", state: "machineOnly" }
     ])
@@ -319,7 +299,6 @@ describe("/v1/sync/plugin-readiness", () => {
       list: async () => ({
         plugins: [
           { ...pluginSummary, state: "failed" as const },
-          // A disabled plugin in the failed state is not a live failure.
           { ...pluginSummary, id: "owner.off", enabled: false, state: "failed" as const }
         ]
       })

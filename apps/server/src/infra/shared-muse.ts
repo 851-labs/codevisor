@@ -6,9 +6,6 @@ import {
   type SharedTokenBundle
 } from "@codevisor/harness-manager"
 
-/// A shared Muse Code account on this machine: its managed profile gets the
-/// synced sign-in as Muse's own credential file (or the synced API key as
-/// `META_API_KEY`), with the user's config linked in around it.
 export const museSharedContext = async (
   id: string,
   profile: string,
@@ -27,7 +24,6 @@ export const museSharedContext = async (
     id,
     profileKind: "managed",
     env: museProfileEnv(profile),
-    // A key exported in the user's shell would outrank the shared sign-in.
     unsetEnv: ["META_API_KEY"]
   }
 }

@@ -7,8 +7,6 @@ import Testing
 import WebKit
 @testable import CodevisorUI
 
-/// Real WebKit and loopback sockets are intentional: this verifies Apple's
-/// networking boundary, especially the historically special localhost route.
 @MainActor
 @Suite("WebKit browser proxy", .serialized, .timeLimit(.minutes(1)))
 struct BrowserProxyWebKitTests {
@@ -37,8 +35,6 @@ struct BrowserProxyWebKitTests {
     let updated = try BrowserWebsiteProfile.configuredStore(
       machineId: machineId, endpoint: URL(string: "http://127.0.0.1:\(secondPort)")!, credential: credential)
     #expect(updated === store)
-    // Round-trip to WebKit's networking process after updating its proxy,
-    // before the web-content process starts the request through that proxy.
     await withCheckedContinuation { continuation in
       store.httpCookieStore.getAllCookies { _ in continuation.resume() }
     }
@@ -102,8 +98,6 @@ struct BrowserProxyWebKitTests {
     #expect(proxy.authorities.contains("\(host):3000"))
     #expect(proxy.authorities.contains("api.proxy.localhost:3001"))
     #expect(proxy.authorizedConnections >= 2)
-    // These ports are occupied on the client by the proxy fixture. Literal
-    // subrequests must still reach CONNECT, never that listener directly.
     for localHost in ["localhost", "localhost.", "127.0.0.1", "127.4.3.2", "[::1]"] {
       let routed = try await webView.callAsyncJavaScript(
         "return await (await fetch(url)).text()",
@@ -159,8 +153,6 @@ struct BrowserProxyWebKitTests {
       arguments: ["url": "ws://localhost:\(port)/hmr"], in: nil, contentWorld: .page)
     #expect(workerSocket as? String == "blocked")
     #expect(proxy.directRequests == 0)
-    // A webpage link or redirect may navigate to literal localhost. Let the
-    // navigation delegate handle it without adding extension pages to history.
     try await navigation.load(
       webView, url: URL(string: "http://localhost:\(port)/")!, pageScript: "location.href = url")
     #expect(webView.url?.absoluteString == "http://proxy.localhost:\(port)/")

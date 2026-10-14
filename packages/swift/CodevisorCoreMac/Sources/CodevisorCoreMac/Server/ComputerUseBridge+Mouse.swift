@@ -104,37 +104,6 @@ func computerUseChromiumClickPlan(
   return steps
 }
 
-/*
- The Chromium WindowServer event sequence above is adapted from Cua
- (https://github.com/trycua/cua), commit
- b8a0f32a06c75225ba24ebb5ab14f6507fa90d15.
-
- MIT License
-
- Copyright (c) 2025 Cua AI, Inc.
-
- Permission is hereby granted, free of charge, to any person obtaining a copy
- of this software and associated documentation files (the "Software"), to deal
- in the Software without restriction, including without limitation the rights
- to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- copies of the Software, and to permit persons to whom the Software is
- furnished to do so, subject to the following conditions:
-
- The above copyright notice and this permission notice shall be included in all
- copies or substantial portions of the Software.
-
- THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- SOFTWARE.
-*/
-
-/// Small, dynamically-linked wrapper around the WindowServer event entry points
-/// used by Chromium-class apps. Every caller retains the public CGEvent post as
-/// a fallback, so an OS update that removes these symbols degrades cleanly.
 private final class SkyLightEventBridge: @unchecked Sendable {
   static let shared = SkyLightEventBridge()
 
@@ -257,8 +226,6 @@ extension ComputerUseBridge {
           groupID: groupID,
           phase: Int64(phase)
         )
-        // AppKit uses public PID delivery. The private WindowServer path
-        // is reserved for Chromium, and never duplicated with a second post.
         event.postToPid(pid)
         Thread.sleep(forTimeInterval: 0.03)
       }
@@ -376,8 +343,6 @@ extension ComputerUseBridge {
         return try operation()
       }
     }
-    // Foreground ownership belongs to this action only and expires even if
-    // an app stops responding. Every subsequent mutation checks that owner.
     try ComputerUseForeground.shared.check(pid: app.processIdentifier, requireFocus: false)
     _ = app.activate(options: [.activateAllWindows])
     _ = axPerformAction(window, kAXRaiseAction as CFString, pid: app.processIdentifier)
@@ -387,8 +352,6 @@ extension ComputerUseBridge {
     }
     if NSWorkspace.shared.frontmostApplication?.processIdentifier != app.processIdentifier {
       try ComputerUseForeground.shared.check(pid: app.processIdentifier, requireFocus: false)
-      // Avoid an asynchronous reopen/activation request that could execute
-      // after foreground ownership expires. This AX mutation is bounded.
       _ = axSetAttribute(
         AXUIElementCreateApplication(app.processIdentifier), kAXFrontmostAttribute as CFString,
         kCFBooleanTrue, pid: app.processIdentifier)
@@ -429,7 +392,6 @@ extension ComputerUseBridge {
     }
     try send(.mouseMoved, from)
     try send(.leftMouseDown, from)
-    // Always release the button, including if event construction fails mid-drag.
     defer { try? send(.leftMouseUp, to) }
     for step in 1...15 {
       let progress = CGFloat(step) / 15

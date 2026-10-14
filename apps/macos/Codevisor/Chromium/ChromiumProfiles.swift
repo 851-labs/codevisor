@@ -6,16 +6,12 @@ import OSLog
 typealias ChromiumProtocolError = BrowserProtocolError
 
 extension CVChromiumView {
-  /// Hands one pre-encoded command to CEF, which accepts it only on its UI
-  /// (main) thread, and returns the raw reply. Nothing is parsed here.
   func protocolReply(_ method: String, params: Data? = nil, sessionId: String? = nil) async -> Data {
     await withCheckedContinuation { continuation in
       sendProtocolMethod(method, params: params, sessionId: sessionId) { continuation.resume(returning: $0) }
     }
   }
 
-  /// Encodes and decodes on the caller's executor; only the hand-off to CEF
-  /// runs on the main actor. Use `protocolReply` for large results.
   nonisolated func cdp(
     _ method: String, _ params: [String: Any] = [:], sessionId: String? = nil
   ) async throws
@@ -63,7 +59,6 @@ final class ChromiumProfiles {
             "name": cookie.name, "value": cookie.value, "path": cookie.path,
             "secure": cookie.secure, "httpOnly": cookie.httpOnly,
           ]
-          // CDP's domain parameter creates a domain cookie. A URL preserves host-only cookies.
           if cookie.domain.hasPrefix(".") {
             params["domain"] = cookie.domain
           } else {
@@ -71,10 +66,6 @@ final class ChromiumProfiles {
           }
           if let expires = cookie.expires { params["expires"] = expires }
           if cookie.sameSite != "unspecified" { params["sameSite"] = cookie.sameSite.capitalized }
-          // Chromium refuses some cookies other engines accept. Skip that one cookie:
-          // failing here would block every page and agent that uses this profile.
-          // The sync reads the jar back, so a skipped cookie is neither retried nor
-          // published as a deletion.
           let result = try? await view.cdp("Network.setCookie", params)
           if result == nil || result?["success"] as? Bool == false {
             Self.log.error(
@@ -91,7 +82,6 @@ final class ChromiumProfiles {
     views[machineId] = views[machineId]?.filter { $0.view != nil && $0.view !== view }
     if views[machineId]?.isEmpty != false { syncs[machineId]?.stop() }
   }
-  /// A profile with no page on screen polls cookies rarely.
   func setVisible(_ visible: Bool, paneId: UUID, machineId: String) {
     if visible { visiblePanes[machineId, default: []].insert(paneId) } else { visiblePanes[machineId]?.remove(paneId) }
     syncs[machineId]?.setVisible(visiblePanes[machineId]?.isEmpty == false)

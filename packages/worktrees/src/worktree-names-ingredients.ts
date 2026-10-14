@@ -1,6 +1,3 @@
-// Compact, single-word food slugs for automatically named production worktrees:
-// raw ingredients. The broad vocabulary keeps names varied while remaining easy
-// to read in paths, branch names, and window titles.
 export const produceNames = [
   "ackee",
   "acorn",

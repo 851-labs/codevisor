@@ -2,10 +2,6 @@ import CodevisorTestSupport
 import Testing
 @testable import ScreenSharing
 
-/// The injected encoder fault. It holds no clock and no threshold of its own:
-/// the probe arms it at the decoder's reset edge, and the completion of the
-/// next forced keyframe consumes it exactly once, so one injected loss can
-/// never become a stream of them. The app never arms it.
 struct ScreenSharingEncoderDropCheckTests {
   @Test func anUnarmedCheckNeverDiscardsOutput() {
     let check = ScreenSharingEncoderDropCheck()
@@ -15,8 +11,6 @@ struct ScreenSharingEncoderDropCheckTests {
   @Test func oneArmDiscardsOneFrameHoweverOftenItIsArmed() {
     let check = ScreenSharingEncoderDropCheck()
     check.arm()
-    // The probe can arm again before the encoder completes the frame it
-    // already armed for; that must still cost the stream a single frame.
     check.arm()
     #expect(check.consume())
     #expect(!check.consume())
@@ -26,8 +20,6 @@ struct ScreenSharingEncoderDropCheckTests {
   }
 
   @Test func exactlyOneConcurrentCompletionDiscardsItsFrame() async {
-    // VideoToolbox completes frames on its own queue, so completions can reach
-    // the check together; whatever order they arrive in, one of them wins.
     let check = ScreenSharingEncoderDropCheck()
     let start = TestSignal()
     check.arm()

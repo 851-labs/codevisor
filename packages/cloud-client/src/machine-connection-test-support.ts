@@ -23,25 +23,18 @@ import type {
   PeerKeyPinStore
 } from "./index.js"
 
-/// Fake hub socket, scripted timers, and connection harness for the machine
-/// connection tests.
-
 export interface SentEnvelope {
   header: MachineRelayHeader
   payload: Uint8Array
 }
 
 export class FakeSocket implements CloudSocket {
-  /// JSON control frames, in order.
   sent: MachineToHub[] = []
-  /// Binary relay messages, one entry per WebSocket message (each may carry
-  /// several envelopes when the sender coalesces).
   relayMessages: SentEnvelope[][] = []
   closed: { code?: number; reason?: string } | undefined
   terminated = false
   sendError: Error | undefined
   onSend: ((frame: MachineToHub) => void) | undefined
-  /// Live relay hook (e.g. a fake hub forwarding to another machine).
   onRelay: ((envelopes: SentEnvelope[]) => void) | undefined
   onopen: (() => void) | null = null
   onmessage: ((data: string | Uint8Array) => void) | null = null
@@ -76,12 +69,10 @@ export class FakeSocket implements CloudSocket {
     this.onmessage?.(encodeCloudFrame(frame))
   }
 
-  /// Delivers one hub→machine relay envelope as its own binary message.
   receiveRelay(header: Record<string, unknown>, payload: Uint8Array = new Uint8Array(0)): void {
     this.onmessage?.(encodeRelayEnvelopes([{ header, payload }]))
   }
 
-  /// Every sent relay envelope across all messages, in order.
   get sentRelay(): SentEnvelope[] {
     return this.relayMessages.flat()
   }
@@ -239,7 +230,6 @@ export const connect = (h: Harness): FakeSocket => {
   return socket
 }
 
-/// Simulates the app side of a channel open, returning the opener's cipher.
 export const openEcho = (
   socket: FakeSocket,
   peerId: string,

@@ -5,7 +5,6 @@ import Testing
 
 @Suite("Codevisor gateway execution presentation")
 struct CodevisorExecutionPresentationTests {
-  /// The server's tool snapshot, as `session-events.ts` publishes it.
   private func snapshot(status: String, execution: String) throws -> ToolCall {
     let json = """
       {"toolCallId":"call","title":"mcp__codevisor__execute","status":"\(status)","isSnapshot":true,
@@ -63,7 +62,6 @@ struct CodevisorExecutionPresentationTests {
         #","_meta":{"codevisorExecution":{"state":"failed","description":"List my machines","calls":[],"error":"Error: no machines"}}"#
     )
     #expect(failed.displayTitle == "List my machines — failed: no machines")
-    // A skill read from inside OpenCode's code reads as one.
     let skill = try row(status: "completed", meta: #","_meta":{"codevisorSkill":{"name":"execute","ok":true}}"#)
     #expect(skill.isIntegrationPresentationCall)
     #expect(skill.displayTitle == "Read the execute skill")
@@ -73,14 +71,12 @@ struct CodevisorExecutionPresentationTests {
     #expect(missing.displayTitle == "Couldn’t read the nope skill")
     let listed = try row(status: "completed", meta: #","_meta":{"codevisorSkill":{"ok":true}}"#)
     #expect(listed.displayTitle == "Listed skills")
-    // A workflow it ran says more than a skill it read first.
     let both = try row(
       status: "completed",
       meta:
         #","_meta":{"codevisorSkill":{"name":"execute","ok":true},"codevisorExecution":{"state":"completed","description":"List my machines","calls":[]}}"#
     )
     #expect(both.displayTitle == "List my machines")
-    // Code that never reached the gateway is OpenCode's own tool.
     let plain = try row(status: "completed", meta: "")
     #expect(!plain.isIntegrationPresentationCall)
     #expect(plain.codevisorExecution == nil)
@@ -88,7 +84,6 @@ struct CodevisorExecutionPresentationTests {
 
   @Test("A harness's own skill tool, annotated by its adapter, reads like a Codevisor skill read")
   func harnessSkillTool() {
-    // Claude Code's `Skill`: the adapter tags it and puts the instructions in its output.
     var call = ToolCall(
       toolCallId: "sk", title: "Skill", kind: .other, status: .completed,
       rawInput: ["skill": "tophat", "args": "check the onboarding"],
@@ -98,7 +93,6 @@ struct CodevisorExecutionPresentationTests {
     #expect(call.displayTitle == "Read the tophat skill")
     #expect(call.icon == ToolCallIcon(symbol: "book"))
     #expect(call.skillText == "# Tophat\n\nRun the change.")
-    // Without the annotation it is just another tool.
     #expect(ToolCall(toolCallId: "sk", title: "Skill").codevisorGatewayOperation == nil)
   }
 
@@ -147,7 +141,6 @@ struct CodevisorExecutionPresentationTests {
     let settled = try snapshot(status: "completed", execution: #"{"state":"completed","calls":[],"# + touched + "}")
     #expect(settled.icon == ToolCallIcon(symbol: "globe", artwork: .site(origin: "https://linear.app")))
 
-    // Built-ins draw their own symbols; anything unreadable is the generic integration.
     let browser = try snapshot(
       status: "completed",
       execution: #"{"state":"completed","calls":[],"icon":{"kind":"builtin","id":"computer"}}"#
@@ -159,7 +152,6 @@ struct CodevisorExecutionPresentationTests {
     )
     #expect(codevisor.icon == ToolCallIcon(symbol: ToolCallIcon.codevisorMark))
 
-    // A desktop workflow draws the app it drove, over the desktop symbol.
     let music = try snapshot(
       status: "completed",
       execution:

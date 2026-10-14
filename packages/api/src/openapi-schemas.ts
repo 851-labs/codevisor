@@ -129,9 +129,6 @@ import { NavigationSnapshot } from "./navigation.js"
 import type { Endpoint } from "./openapi-endpoints.js"
 import { PutSyncRequest, SyncDocument } from "./sync.js"
 
-/// Request and response schemas per endpoint, rendered to JSON Schema for the
-/// OpenAPI document.
-
 export type JsonObject = Record<string, unknown>
 
 export const jsonSchema = (schema: Schema.Constraint): JsonObject => {
@@ -280,7 +277,6 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
   "POST /v1/plugins/:pluginId/update/prepare": PluginUpdatePlan,
   "POST /v1/plugins/:pluginId/update/apply": PluginSummary,
   "POST /v1/plugins/:pluginId/panes/:paneId/token": PluginPaneTokenResponse,
-  // The tool's own response body — opaque JSON, shaped by each plugin.
   "POST /v1/plugins/:pluginId/tools/:toolName": Schema.Unknown,
   "GET /v1/clients": arrayOf(ClientSummary),
   "GET /v1/clients/:clientId/context": ClientContext,

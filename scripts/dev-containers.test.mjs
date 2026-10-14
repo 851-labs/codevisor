@@ -77,19 +77,15 @@ test("syncLinuxWorkspace copies dists and manifests, never sources", async () =>
       "console.log(1)"
     )
     assert.equal(await readFile(join(first.appRoot, "bun.lock"), "utf8"), "lock-v1")
-    // Runtime resources travel with the dist that reads them.
     assert.equal(
       await readFile(join(first.appRoot, "packages/sync/resources/runtime.wasm"), "utf8"),
       "wasm-v1"
     )
-    // Sources never travel; the container needs dists + manifests only.
     await assert.rejects(readFile(join(first.appRoot, "packages/sync/src/index.ts")))
 
-    // Unchanged workspace: the copy is skipped entirely.
     const second = await syncLinuxWorkspace(root, containerRoot)
     assert.equal(second.changed, false)
 
-    // A resource change alone re-syncs.
     await writeFile(join(root, "packages/sync/resources/runtime.wasm"), "wasm-v2")
     await utimes(join(root, "packages/sync/resources/runtime.wasm"), 1600000010, 1600000010)
     const resourced = await syncLinuxWorkspace(root, containerRoot)
@@ -99,7 +95,6 @@ test("syncLinuxWorkspace copies dists and manifests, never sources", async () =>
       "wasm-v2"
     )
 
-    // A dist rebuild re-syncs; a removed package's copy disappears.
     await writeFile(join(root, "apps/server/dist/main.js"), "console.log(2)")
     await rm(join(root, "packages/sync"), { recursive: true })
     const third = await syncLinuxWorkspace(root, containerRoot)
@@ -138,7 +133,6 @@ test("alignDevCloudCredentialUrl rebinds shared accounts to the dev cloud's curr
   const credentialsPath = join(root, "cloud.json")
   try {
     await mkdir(shared)
-    // cloud.json already follows the route (an earlier run aligned it); the accounts don't yet.
     await writeFile(credentialsPath, JSON.stringify({ serverUrl: "http://192.168.64.1:4000" }))
     const sameCloud = { cloud: "http://localhost:4000", account: "account", record: { v: 1 } }
     const otherCloud = { cloud: "https://cloud.example.com", account: "account" }

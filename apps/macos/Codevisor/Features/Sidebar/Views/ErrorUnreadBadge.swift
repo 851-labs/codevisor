@@ -1,7 +1,5 @@
 import SwiftUI
 
-/// Higher-priority unread marker for an activity epoch that ended abnormally,
-/// or a terminal whose program reports it failed.
 struct ErrorUnreadBadge: View {
   let color: Color
   var subject = "chat"

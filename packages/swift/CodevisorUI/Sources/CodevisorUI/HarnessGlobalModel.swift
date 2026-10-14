@@ -1,7 +1,6 @@
 import CodevisorCore
 import Observation
 
-/// Shared state for the harness list and its platform-specific add control.
 @MainActor @Observable
 public final class HarnessGlobalModel {
   var showsPicker = false

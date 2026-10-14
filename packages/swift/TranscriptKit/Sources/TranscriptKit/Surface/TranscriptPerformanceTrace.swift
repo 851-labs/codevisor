@@ -1,7 +1,5 @@
 import Foundation
 
-/// Opt-in native-app performance evidence. Production builds compile this to
-/// no-ops. Records contain geometry and operation counts, never chat text.
 public enum TranscriptPerformanceTrace {
   public static let isEnabled: Bool = {
     #if DEBUG
@@ -35,7 +33,6 @@ public enum TranscriptPerformanceTrace {
   private static let writer = Writer()
   private final class Writer: @unchecked Sendable {
     let queue = DispatchQueue(label: "codevisor.transcript-performance", qos: .utility)
-    // All file access is confined to queue, outside native frame work.
     private var file: FileHandle?
     func append(_ record: Record) {
       if file == nil {

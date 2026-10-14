@@ -78,8 +78,6 @@ describe("plugin listing", () => {
       id: "owner.elsewhere",
       platforms: ["never-os"]
     })
-    // Plugins without a platforms allowlist run everywhere; the allowlisted
-    // one appears only when the platform matches.
     const otherList = await other.manager.list()
     expect(otherList.plugins.map((plugin) => plugin.id)).toEqual([
       "owner.elsewhere",
@@ -175,9 +173,6 @@ describe("pane proxy", () => {
     const setCookie = first.headers.get("set-cookie") ?? ""
     expect(setCookie).toContain("codevisor-plugin-owner-example=")
     expect(setCookie).toContain("Path=/v1/plugins/owner.example/")
-    // The plugin saw the pane id and extra params, never the token; context
-    // arrived signed with the secret the plugin received at spawn, and a
-    // tampered context no longer verifies.
     const seen = fake.requests[0]
     expect(seen?.path).toContain("paneId=pane-1")
     expect(seen?.path).toContain("extra=1")
@@ -197,8 +192,6 @@ describe("pane proxy", () => {
     expect(context["cwd"]).toBe("/tmp/project")
     expect(context["workspaceId"]).toBe("w1")
 
-    // Subresources authenticate by cookie alone, with our cookie stripped
-    // from what the plugin sees.
     const cookie = setCookie.split(";")[0] ?? ""
     const asset = await fetch(`${outer.origin}/v1/plugins/owner.example/app/panes/main/asset.js`, {
       headers: { cookie: `${cookie}; plugincookie=existing` }
@@ -242,8 +235,6 @@ describe("pane proxy", () => {
     const outer = await makeOuterServer(manager)
     const issued = await manager.issuePaneToken("owner.example", "pane-1", { paneType: "main" })
     expect((await fetch(`${outer.origin}${issued.path}`)).status).toBe(200)
-    // The process died behind the supervisor's back: the runtime still says
-    // running, but the port is dead.
     const restarted = nextRunningState(manager)
     fake.stop()
     const token = new URL(`http://x${issued.path}`).searchParams.get("codevisorPaneToken")
@@ -251,8 +242,6 @@ describe("pane proxy", () => {
     expect((await fetch(paneUrl)).status).toBe(502)
     await restarted
     expect(fake.spawnCount()).toBe(2)
-    // Recovery happens without pane traffic; the next request uses the
-    // replacement process instead of forwarding into the dead port again.
     expect((await fetch(paneUrl)).status).toBe(200)
     expect((await manager.get("owner.example")).state).toBe("running")
   })

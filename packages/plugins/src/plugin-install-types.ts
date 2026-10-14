@@ -25,8 +25,6 @@ export interface PreparePluginUpdateRequest {
   readonly sourceReceipt: PluginInstallSourceReceipt
 }
 
-/// Opaque handle to candidate bytes already fetched, checked, and prepared on
-/// the plugins filesystem. Only PluginInstaller may apply its directory.
 export interface PreparedPluginUpdate {
   readonly directory: string
   readonly manifest: PluginManifest

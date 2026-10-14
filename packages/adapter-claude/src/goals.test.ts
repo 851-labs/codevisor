@@ -39,7 +39,6 @@ describe("ClaudeProvider", () => {
     expect(commandTexts).toEqual(["/goal ship the feature"])
     expect(events.at(-1)?.payload).toMatchObject({ goal: { objective: "ship the feature" } })
 
-    // Pause/resume map to subcommands and update the synthetic snapshot.
     const paused = await run(created.handle.setGoal!({ status: "paused" }))
     await fake.drain()
     expect(paused.status).toBe("paused")
@@ -60,7 +59,6 @@ describe("ClaudeProvider", () => {
     ])
     expect(events.at(-1)?.payload).toEqual({ goalCleared: true })
 
-    // Status updates without an active goal are rejected.
     await expect(run(created.handle.setGoal!({ status: "paused" }))).rejects.toThrow(
       "No active goal"
     )
@@ -77,8 +75,6 @@ describe("ClaudeProvider", () => {
     fake.push(initMessage())
     const created = await createPromise
 
-    // The /goal turn's successful result marks the goal complete — the SDK
-    // stream has no goal-state snapshots to relay.
     await run(created.handle.setGoal!({ objective: "count to ten" }))
     fake.push(streamEvent({ message: { id: "msg-goal" }, type: "message_start" }))
     fake.push(resultMessage())
@@ -94,7 +90,6 @@ describe("ClaudeProvider", () => {
     })?.payload
     expect(goalTurn).toMatchObject({ initiatedBy: "user", turnState: "ended" })
 
-    // A new goal interrupted mid-run pauses instead (resumable).
     await run(created.handle.setGoal!({ objective: "count to twenty" }))
     const cancellation = run(created.handle.cancel)
     await fake.drain()

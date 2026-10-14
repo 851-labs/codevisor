@@ -6,7 +6,6 @@ import { describe, expect, it, vi } from "vitest"
 
 import { fleet } from "./shared-accounts-test-support.js"
 
-// Muse's file-backend sign-in as it lands in a managed profile (fake values).
 const meta = {
   access_token: "access-1",
   api_key: "LLM|1|key",
@@ -25,7 +24,6 @@ describe("Muse Code account sync", () => {
     const placeholder = await a.shared.create("muse-code")
     const fresh = await a.shared.prepareLogin(placeholder.id)
     a.setBundle(signIn)
-    // No refresh token: Muse's sign-in is long-lived, and still captured.
     await a.shared.captureLogin(fresh)
     a.setBundle(undefined)
     await f.sync(a, b)
@@ -34,8 +32,6 @@ describe("Muse Code account sync", () => {
     const [account] = (await b.shared.accounts("muse-code", true))!
     expect(account).toMatchObject({ id, label: "Meta", authState: "authenticated" })
 
-    // B's Muse reads the synced sign-in from its own profile, with B's
-    // config (gh, git, …) still reachable from Muse's shell commands.
     await mkdir(join(b.dataDir, ".config", "gh"), { recursive: true })
     const context = (await b.shared.context(id))!
     const profile = join(b.dataDir, "harness-profiles", "muse-code", id)
@@ -52,11 +48,8 @@ describe("Muse Code account sync", () => {
     })
     expect((await stat(written)).mode & 0o777).toBe(0o600)
     expect(await readlink(join(profile, "config", "gh"))).toBe(join(b.dataDir, ".config", "gh"))
-    // Nothing to refresh, ever.
     expect(f.rotate).not.toHaveBeenCalled()
 
-    // Signing out everywhere removes this machine's copy, and B can no
-    // longer start Muse with it once the change syncs.
     await a.shared.context(id)
     await a.shared.logout(id, true)
     await expect(

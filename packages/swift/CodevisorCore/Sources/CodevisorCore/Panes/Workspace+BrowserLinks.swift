@@ -8,8 +8,6 @@ public enum BrowserLinkDestination: Equatable, Sendable {
 }
 
 extension Workspace {
-  /// Insert beside the actual opener, even if another tab became active while
-  /// the browser was handling the click. Selection/focus belongs to the caller.
   public mutating func insertBrowserPane(
     _ pane: PaneDescriptorState, from sourcePaneId: UUID, destination: BrowserLinkDestination
   ) -> (tabId: UUID, leafId: UUID)? {
@@ -17,8 +15,6 @@ extension Workspace {
     return insertPane(pane, besidePane: sourcePaneId, destination: destination)
   }
 
-  /// Inserts a new pane beside `sourcePaneId`: as the next tab, or as a split
-  /// of the source's leaf. Nil when the source is gone or the pane exists.
   public mutating func insertPane(
     _ pane: PaneDescriptorState, besidePane sourcePaneId: UUID, destination: BrowserLinkDestination
   ) -> (tabId: UUID, leafId: UUID)? {

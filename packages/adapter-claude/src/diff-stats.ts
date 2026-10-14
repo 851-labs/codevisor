@@ -8,14 +8,7 @@ import { extractAllStringFields, extractStringField } from "./partial-json-strin
 import type { ClaudeSession, ToolInputAccumulator } from "./session.js"
 import { activeToolTitle } from "./tool-presentation.js"
 
-export { extractAllStringFields, extractStringField } from "./partial-json-string.js"
-
-/// Streaming diff-stat updates are throttled per tool call; every event is
-/// persisted server-side, so unbounded input_json_delta emission would bloat
-/// the events table.
 const STREAM_STATS_INTERVAL_MS = 250
-
-// MARK: diff stats
 
 const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"])
 
@@ -56,9 +49,6 @@ export const maybeEmitStreamStats = (
   })
 }
 
-/// Running estimate computed from the partially streamed tool input. Counts
-/// only ever grow as the strings stream in; the consolidated input and the
-/// PostToolUse hook later replace them with authoritative numbers.
 const streamingStats = (
   session: ClaudeSession,
   accumulator: ToolInputAccumulator,
@@ -101,7 +91,6 @@ const streamingStats = (
   }
 }
 
-/// Authoritative stats from the consolidated (fully parsed) tool input.
 export const authoritativeStatsFromInput = (
   session: ClaudeSession,
   toolName: string,
@@ -143,9 +132,6 @@ export const authoritativeStatsFromInput = (
   }
 }
 
-/// PostToolUse delivers the on-disk truth (structuredPatch reflects
-/// replace_all and the file's actual state); emit the final stats plus a
-/// renderable diff content block.
 export const emitAuthoritativeDiff = (
   session: ClaudeSession,
   hookInput: {
@@ -178,10 +164,6 @@ export const emitAuthoritativeDiff = (
   }
 
   const diffBlock = diffContentBlock(session, hookInput.tool_name, input, response, path, readFile)
-  // A file creation's tool_response carries an empty structuredPatch (there
-  // was nothing to patch — the whole file is new), which would report an
-  // authoritative +0 −0 that beats the client's content-derived totals. When
-  // the diff content shows a real change, recompute the stats from the texts.
   if (
     stats !== undefined &&
     stats.added === 0 &&

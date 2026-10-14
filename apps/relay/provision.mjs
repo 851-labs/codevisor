@@ -1,14 +1,3 @@
-// Idempotent provisioning for one relay (deploy-relays.yml runs it before
-// every deploy): the Fly app, dedicated IPv4 + IPv6, the relay_data volume,
-// the staged RELAY_AUTHORIZE_TOKEN secret, and grey-cloud A/AAAA records in
-// Cloudflare. Creates what's missing; never deletes anything.
-//
-// Env: FLY_API_TOKEN, CLOUDFLARE_API_TOKEN (the same token deploy-cloud.yml
-//      uses; needs Zone:DNS:Edit + Zone:Zone:Read on codevisor.dev),
-//      RELAY_AUTHORIZE_TOKEN, and optionally CLOUDFLARE_ZONE_ID (otherwise
-//      the zone is looked up by name).
-// Usage: node apps/relay/provision.mjs <relay-id>
-//        node apps/relay/provision.mjs --registry   (the image-holder app)
 import { execFile } from "node:child_process"
 import process from "node:process"
 import { promisify } from "node:util"
@@ -65,7 +54,6 @@ const cloudflareHeaders = () => ({
   "content-type": "application/json"
 })
 
-/// The zone that holds `hostname` (its last two labels, e.g. codevisor.dev).
 async function zoneId(hostname) {
   if (process.env.CLOUDFLARE_ZONE_ID) return process.env.CLOUDFLARE_ZONE_ID
   const name = hostname.split(".").slice(-2).join(".")
@@ -87,7 +75,6 @@ async function ensureDns(hostname, type, content) {
   const base = `https://api.cloudflare.com/client/v4/zones/${zone}/dns_records`
   const listed = await (await fetch(`${base}?type=${type}&name=${hostname}`, { headers })).json()
   const existing = listed.result?.[0]
-  // DNS-only: Cloudflare's proxy would break the relay's own TLS and UDP.
   const body = JSON.stringify({ type, name: hostname, content, proxied: false, ttl: 300 })
   if (existing?.content === content && existing.proxied === false) return
   const response = await fetch(existing ? `${base}/${existing.id}` : base, {
@@ -103,8 +90,6 @@ async function ensureDns(hostname, type, content) {
 const id = process.argv[2]
 const { org, relays } = await readRelays()
 if (id === "--registry") {
-  // Fly's registry only takes images named after an existing app. This one
-  // never runs Machines: it just holds the shared relay image.
   await ensureApp("codevisor-relay", org)
   process.exit(0)
 }

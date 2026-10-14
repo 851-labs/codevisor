@@ -8,8 +8,6 @@ export function requestsMacOSBuildReuse(arguments_) {
   return requested
 }
 
-/// Reusing a granted ad-hoc app must never fall back to a rebuild: that
-/// would change its signing requirement while appearing to preserve it.
 export async function verifyReusableMacOSApp({
   appBundle,
   bundleIdentifier,

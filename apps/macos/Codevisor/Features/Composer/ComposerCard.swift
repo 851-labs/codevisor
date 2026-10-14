@@ -5,66 +5,33 @@ import ACPKit
 import CodevisorUI
 import UniformTypeIdentifiers
 
-/// The chat composer card: a multiline input (Return sends, Shift+Return adds a
-/// newline) with an inline toolbar holding the combined model dropdown
-/// (models grouped by harness plus every model-owned setting), active modes,
-/// and a send button.
 struct ComposerCard: View {
   private var cardStyle = ComposerCardStyle()
 
   @Bindable var controller: SessionController
-  /// Surfaces the composer's text view so keyboard handoffs can move
-  /// first-responder focus to it.
   var onTextViewReady: ((SubmittingTextView) -> Void)? = nil
-  /// The session's AppKit focus controller and this chat's id: the
-  /// question picker registers its key anchor under them so it takes
-  /// first responder through the same reliable path as the composer text
-  /// view. Nil (previews, standalone composers) degrades to a local grab.
   var focus: TerminalFocusController? = nil
   var focusChatId: UUID? = nil
-  /// Supplied by the session's shared GlassEffectContainer. Standalone
-  /// composers (new chat and previews) don't need coordinated identities.
   var glassNamespace: Namespace.ID? = nil
 
   @Environment(\.theme) private var theme
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  /// Locks the submit action while the app is installing its own update so
-  /// no new turn starts during the restart. Defaults to false (previews).
   @Environment(\.isAppUpdateInProgress) private var isAppUpdateInProgress
-  /// This window's client-control id; sent with prompts as their origin.
   @Environment(\.clientControlId) private var clientControlId
-  // Match ChatInputEditor's first TextKit measurement so switching sessions
-  // never shows the shorter pre-measurement card for a frame.
   @State private var editorHeight: CGFloat = ChatInputEditor.singleLineHeight
-  /// The editor's caret/selection, synced from AppKit. The slash palette
-  /// keys off the token at the caret, so it triggers mid-message too.
   @State private var selection = NSRange(location: 0, length: 0)
   @State private var slashSelection = 0
-  /// ↑/↓ prompt-recall position; nil until the first ↑ of a navigation.
   @State private var promptHistory: ComposerPromptHistory?
   @State private var isSlashMenuDismissed = false
   @State private var slashMenuContentHeight: CGFloat = 0
   @State private var isStopButtonHovered = false
-  /// Owned by the shared composer shell so the question state can provide
-  /// immediate submission feedback before the controller's async flag flips.
   @State private var didStartResolvingQuestion = false
-  /// Set synchronously in the Return/button action. `SessionController.send`
-  /// starts in a child task, so relying on its `isSubmitting` publication
-  /// leaves the composer looking inert until that task reaches the main actor.
   @State private var didAcceptSubmission = false
-  /// Drives the attach-files importer. `.fileImporter` runs the open panel
-  /// as a window sheet (matching the add-project flow) instead of the
-  /// detached app-modal window `NSOpenPanel.runModal()` produces.
   @State private var isPickingFiles = false
-  /// The editor whose glyphs lift out of the composer on send.
   @State private var sendSource = ComposerSendSource()
 
-  /// Tallest the slash-command menu can grow before it scrolls (~6 rows).
   private static let slashMenuMaxHeight: CGFloat = 220
 
-  /// The palette's rendered height: its measured content, capped at the
-  /// scrolling maximum. Drives both its scroll frame and its lift above
-  /// the composer card.
   private var paletteHeight: CGFloat {
     if isLoadingSlashCommands, slashMenuContentHeight == 0 { return 40 }
     return min(slashMenuContentHeight, Self.slashMenuMaxHeight)
@@ -101,19 +68,11 @@ struct ComposerCard: View {
       }
     }
     .padding(ComposerCardStyle.contentPadding)
-    // Every composer state shares this one functional Liquid Glass layer.
-    // State-specific content must not recreate the card background.
     .composerGlassSurface(
       shape: cardStyle.shape,
       id: .composer,
       in: glassNamespace
     )
-    // The palette floats over the transcript as its own transient Liquid
-    // Glass surface (HIG: ephemeral overlays get their own glass layer)
-    // and blooms up from the input with the standard quick unfold.
-    // Anchored to the finished card: full card width, with its bottom
-    // held one cluster gap above the card's top edge so it never overlaps
-    // the composer glass.
     .overlay(alignment: .top) {
       ZStack(alignment: .top) {
         if controller.activeQuestion == nil, showsSlashCommandPopup {
@@ -128,8 +87,6 @@ struct ComposerCard: View {
           .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
         }
       }
-      // Lift the palette's own (measured) height plus one cluster gap
-      // above the card's top edge so it never overlaps the composer.
       .offset(y: -(paletteHeight + ComposerGlassStyle.clusterSpacing))
       .animation(
         Motion.quick(reduceMotion: reduceMotion),
@@ -169,12 +126,8 @@ struct ComposerCard: View {
       didStartResolvingQuestion = false
     }
     .onChange(of: slashToken) { oldToken, newToken in
-      // A new query invalidates both the keyboard selection and any
-      // Escape-dismissal of the previous menu.
       slashSelection = 0
       isSlashMenuDismissed = false
-      // Opening the palette refreshes the store skills in the background;
-      // it shows the last fetched list meanwhile.
       if oldToken == nil, newToken != nil {
         controller.refreshCodevisorSkills()
       }
@@ -185,8 +138,6 @@ struct ComposerCard: View {
 private extension ComposerCard {
   private var standardContent: some View {
     VStack(alignment: .leading, spacing: 10) {
-      // The attachment strip sits tight against the input, closer than
-      // the card's usual element spacing.
       VStack(alignment: .leading, spacing: 4) {
         if controller.isGoalEditing {
           HStack(spacing: 6) {
@@ -216,10 +167,6 @@ private extension ComposerCard {
           )
           .frame(height: editorHeight)
           .writingToolsAffordanceVisibility(.hidden)
-          // Frozen while a send is being accepted (the moment before
-          // the session page opens; the send button spins instead)
-          // and while an update is installing (the app/server is
-          // about to restart).
           .disabled(
             isAcceptingSubmission
               || controller.isResolvingQuestion
@@ -237,8 +184,6 @@ private extension ComposerCard {
 
       HStack(spacing: 10) {
         if controller.isGoalEditing {
-          // Editing a goal strips the chrome down to back + send;
-          // plain ⌖-armed goal setting keeps the normal toolbar.
           Text("esc to cancel")
             .font(.caption2)
             .foregroundStyle(.tertiary)
@@ -250,8 +195,6 @@ private extension ComposerCard {
         } else {
           attachButton
           ModelConfigMenu(controller: controller)
-          // Active modes show as removable chips (turned on via
-          // the /plan and /goal slash commands).
           if controller.hasPlanMode, controller.isPlanModeOn {
             ModeChip(
               label: "Plan",
@@ -267,19 +210,7 @@ private extension ComposerCard {
             }
           }
           Spacer(minLength: 0)
-          // Action buttons cluster tighter than the picker chips.
-          // While the agent runs, stop takes the send slot; a draft
-          // in the composer brings send back with stop beside it.
           HStack(spacing: 4) {
-            /* Usage gauge and popover are temporarily disabled.
-            UsageRingButton(
-                usage: controller.usage,
-                limits: controller.usageLimits,
-                isLoadingLimits: controller.isLoadingUsageLimits,
-                limitsError: controller.usageLimitsError,
-                onRequestLimits: { await controller.loadUsageLimits() }
-            )
-            */
             if controller.isSending, !hasComposerDraft {
               stopButton
             } else {
@@ -297,7 +228,6 @@ private extension ComposerCard {
     didStartResolvingQuestion || controller.isResolvingQuestion
   }
 
-  /// Leaves edit-goal mode without changing the goal (the banner returns).
   private var goalEditBackButton: some View {
     ComposerNavigationButton(
       systemImage: "arrow.left",
@@ -326,7 +256,6 @@ private extension ComposerCard {
     isPickingFiles = true
   }
 
-  /// Whether the composer holds something sendable (text or attachments).
   private var hasComposerDraft: Bool {
     !controller.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       || !controller.composerAttachments.isEmpty
@@ -384,17 +313,12 @@ private extension ComposerCard {
   @ViewBuilder
   private var sendButton: some View {
     if isAcceptingSubmission || controller.isResolvingQuestion {
-      // A send or question response is still being accepted; spin in
-      // place and keep further input out until its transaction settles.
       ProgressView()
         .controlSize(.small)
         .frame(width: 26, height: 26)
         .background(Circle().fill(Color.secondary.opacity(0.16)))
         .help(controller.isResolvingQuestion ? "Submitting response…" : "Sending…")
     } else {
-      // Goal mode still respects the connecting gate: `submitGoal…`
-      // silently drops input while connecting, so an enabled-looking
-      // button would be a lie.
       let hasSubmittableContent =
         controller.isGoalComposerArmed
         ? !controller.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -433,8 +357,6 @@ private extension ComposerCard {
     ComposerSlashToken(in: controller.composerText, selection: selection)
   }
 
-  /// Local commands run in the app itself instead of being sent to the
-  /// agent: /plan and /goal toggle their composer modes.
   private var localSlashCommands: [ComposerSlashItem] {
     var items: [ComposerSlashItem] = []
     if controller.hasPlanMode {
@@ -454,11 +376,6 @@ private extension ComposerCard {
     return items
   }
 
-  /// The palette offers skills only: the harness's own (built-in, project,
-  /// user, plugin) and the user's Codevisor store skills. Harness commands
-  /// such as /compact or /model stay protocol metadata and never appear.
-  /// Matching local commands lead, but only for "/"; "$" (Codex's skill
-  /// syntax) triggers skills alone.
   private var slashMatches: [ComposerSlashItem] {
     guard let token = slashToken else { return [] }
     let skills = ComposerSkillCatalog.matches(controller.composerSkills, query: token.query)
@@ -473,7 +390,6 @@ private extension ComposerCard {
     return exact + prefixed + skills
   }
 
-  /// The matches actually shown: empty while the menu is dismissed with Escape.
   private var visibleSlashMatches: [ComposerSlashItem] {
     isSlashMenuDismissed ? [] : slashMatches
   }
@@ -514,9 +430,6 @@ private extension ComposerCard {
     } else {
       guard controller.canSend, !isAppUpdateInProgress else { return }
       didAcceptSubmission = true
-      // A send into an idle chat becomes a transcript row: its glyphs
-      // leave the editor now and the transcript flies them into the
-      // bubble. A send during a turn joins the queue instead.
       if !reduceMotion, !controller.isSending {
         sendSource.stage(controller: controller, theme: theme)
       }
@@ -534,13 +447,9 @@ private extension ComposerCard {
     return matches[min(slashSelection, matches.count - 1)]
   }
 
-  /// Accepts in place: the token at the caret is rewritten (skills, to
-  /// their exact invocation) or excised (local commands), preserving the
-  /// rest of the draft around it.
   private func acceptSlashCommand(_ command: ComposerSlashItem) {
     guard let tokenRange = slashToken?.range else { return }
     let replacement = command.action == nil ? "\(command.title) " : ""
-    // Through the text view, so ⌘Z puts the typed token back.
     if let textView = sendSource.textView {
       textView.replaceAsUndoableEdit(tokenRange, with: replacement)
     } else {
@@ -556,22 +465,16 @@ private extension ComposerCard {
   }
 
   private func handleKeyCommand(_ command: ComposerKeyCommand) -> Bool {
-    // The palette handles keys first, so Escape always closes an open
-    // palette before it can mean anything else (e.g. leaving goal mode).
     if handleSlashMenuKeyCommand(command) {
       return true
     }
-    // Escape leaves goal mode (and restores the goal banner).
     if controller.isGoalComposerArmed, command == .dismissSelection {
       controller.exitGoalComposer()
       return true
     }
-    // Terminal-style recall of this chat's sent prompts.
     guard command == .recallPreviousPrompt || command == .recallNextPrompt else { return false }
     let older = command == .recallPreviousPrompt
     guard let caret = controller.recallPrompt(&promptHistory, older: older) else {
-      // At the oldest prompt, swallow ↑ so the caret stays put; at the
-      // draft (or with no history), the arrow moves the caret as usual.
       return older && promptHistory != nil
     }
     selection = caret

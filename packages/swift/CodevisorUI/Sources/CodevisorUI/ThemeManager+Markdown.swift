@@ -4,21 +4,10 @@ import CodevisorTheming
 import StreamMarkdown
 import SwiftUI
 
-/// Bridges the app theme into StreamMarkdown: on-palette code/quote/table
-/// colors plus the native highlighter closure. System themes keep the stock
-/// markdown look but still get highlighting via GitHub Light/Dark, so code
-/// blocks always have the IDE feel.
-/// Loaded highlight-theme JSON per theme id. `ThemedRoot.body` resolves the
-/// highlight theme on every evaluation; without this cache each one was a
-/// synchronous full-file read of the theme JSON on the main thread. Bounded
-/// by the number of themes ever activated in the process.
 @MainActor
 private var highlightThemeCache: [String: (key: String, json: String)] = [:]
 
 extension ThemeManager {
-  /// The theme document driving code-block highlighting for a scheme: the
-  /// selected theme itself (its full JSON, tokenColors included), or the
-  /// bundled GitHub themes for the system entries.
   public func highlightTheme(for scheme: ThemeDescriptor.SchemeType) -> (key: String, json: String)? {
     let id = themeId(for: scheme)
     let effectiveId =
@@ -36,19 +25,13 @@ extension ThemeManager {
   }
 }
 
-/// Builds the MarkdownTheme for the active app theme.
 public func makeMarkdownTheme(theme: Theme, highlight: (key: String, json: String)?) -> MarkdownTheme {
   var markdown = MarkdownTheme.default
   markdown.textForeground = theme.textPrimary
   markdown.secondaryTextForeground = theme.textSecondary
   markdown.codeForeground = theme.textPrimary
   if let palette = theme.palette {
-    // codeBackground, not cardBackground: a fenced block has no border, so
-    // the fill is its only affordance and must clear the window surface.
     markdown.codeBackground = Color(rgba: palette.codeBackground)
-    // Inline chips carry a heavier tint than the block (cardHoverBackground,
-    // a 12% fg mix): a few characters set in a line of prose need more
-    // separation than a full-width block does to read as code.
     markdown.inlineCodeBackground = Color(rgba: palette.cardHoverBackground)
     markdown.quoteBarColor = theme.border
     markdown.tableBorderColor = theme.separator
@@ -72,8 +55,6 @@ public func makeMarkdownTheme(theme: Theme, highlight: (key: String, json: Strin
   return markdown
 }
 
-/// Joins highlighted token lines into one attributed string with per-token
-/// foreground colors; uncolored tokens inherit the block's text color.
 private func attributedCode(_ lines: [[CodeHighlighter.Token]]) -> AttributedString {
   var result = AttributedString()
   for (index, line) in lines.enumerated() {
@@ -83,9 +64,6 @@ private func attributedCode(_ lines: [[CodeHighlighter.Token]]) -> AttributedStr
   return result
 }
 
-/// One highlighted token line as an attributed string; uncolored tokens
-/// inherit the surrounding text color. Shared with the diff viewer, which
-/// styles rows line-by-line.
 public func attributedLine(_ line: [CodeHighlighter.Token]) -> AttributedString {
   var result = AttributedString()
   for token in line {

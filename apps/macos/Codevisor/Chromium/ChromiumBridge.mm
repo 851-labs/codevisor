@@ -21,11 +21,6 @@ namespace {
 NSString *String(const CefString& value) { return [NSString stringWithUTF8String:value.ToString().c_str()] ?: @""; }
 CefString String(NSString *value) { return CefString(value.UTF8String ?: ""); }
 
-// DevTools messages arrive on the CEF UI thread, which is the main thread here,
-// and can be many megabytes (screenshots). Route them without parsing: Chromium
-// serializes a reply's "id" first and appends "sessionId" as the final member
-// of every session message (crdtp's Response/ProtocolError and content's and
-// Blink's DevToolsSession). CEF's own ProtocolParser relies on the same layout.
 std::string_view Message(const void *bytes, size_t length) { return {static_cast<const char *>(bytes), length}; }
 std::optional<int> LeadingMessageId(std::string_view message) {
   constexpr std::string_view prefix = "{\"id\":";
@@ -124,8 +119,6 @@ const char* devToolsOrigin = "https://devtools.codevisor.invalid/";
 bool IsDevToolsResource(const CefString& url) { return url.ToString().starts_with(devToolsOrigin); }
 bool IsDevToolsDockSide(NSString *side) { return [@[@"right", @"left", @"bottom", @"undocked"] containsObject:side]; }
 
-// This handler is installed only on the privileged frontend browser. Ordinary
-// web pages cannot load this origin or obtain its native debugging bindings.
 class DevToolsResource final : public CefResourceHandler {
  public:
   explicit DevToolsResource(NSString *path) {
@@ -196,8 +189,6 @@ class DevToolsClient final : public CefClient, public CefLifeSpanHandler, public
     if (!view || view->_closed || view->_toolsCloseRequested || !view->_toolsContainer || ChromiumRuntime::Shared().HasRequestedShutdown()) { browser->GetHost()->CloseBrowser(true); return; }
     view->_toolsBrowser = browser;
     registration_ = view->_browser->GetHost()->AddDevToolsMessageObserver(this);
-    // Own a CDP session so closing this frontend detaches debugger/emulation
-    // state, including paused execution and auto-attached workers.
     targetInfoRequest_ = view->_browser->GetHost()->ExecuteDevToolsMethod(0, "Target.getTargetInfo", nullptr);
     browser->GetHost()->SetAccessibilityState(STATE_ENABLED);
     NSView *child = (__bridge NSView *)browser->GetHost()->GetWindowHandle();
@@ -216,8 +207,6 @@ class DevToolsClient final : public CefClient, public CefLifeSpanHandler, public
   void OnBeforeClose(CefRefPtr<CefBrowser> browser) override {
     closed_ = true;
     CVChromiumView *view = view_;
-    // If attachment is still in flight, retain the observer until its reply
-    // arrives so that the newly created session can also be detached.
     if (!attachRequest_ || !session_.empty()) Detach(view ? view->_browser : nullptr);
     if (view) {
       view->_toolsBrowser = nullptr;
@@ -243,10 +232,6 @@ class DevToolsClient final : public CefClient, public CefLifeSpanHandler, public
     auto message = Message(bytes, length);
     auto session = TrailingSessionId(message);
     if (session.empty()) {
-      // Only this frontend's two setup replies matter on the root session. They
-      // can arrive inside ExecuteDevToolsMethod, before their request IDs are
-      // assigned, so defer them. Afterwards, root traffic (automation commands,
-      // cookie polls) is ignored without being copied or parsed.
       if (!awaitingControlReply_ || !LeadingMessageId(message)) return true;
       std::string reply(message);
       CefRefPtr<DevToolsClient> client = this;
@@ -256,7 +241,6 @@ class DevToolsClient final : public CefClient, public CefLifeSpanHandler, public
     CVChromiumView *view = view_;
     if (closed_ || !view || !view->_toolsBrowser || view->_closed) return true;
     std::string sessionId(session);
-    // Other sessions, such as automation screenshots, are not this frontend's.
     if (sessionId != session_ && !childSessions_.contains(sessionId)) return true;
     auto method = LeadingMethod(message);
     if (method == "Target.attachedToTarget" || method == "Target.detachedFromTarget") {
@@ -265,8 +249,6 @@ class DevToolsClient final : public CefClient, public CefLifeSpanHandler, public
       if (params && method == "Target.attachedToTarget") childSessions_.insert(params->GetString("sessionId").ToString());
       if (params && method == "Target.detachedFromTarget") childSessions_.erase(params->GetString("sessionId").ToString());
     }
-    // The frontend addresses its own session implicitly. "sessionId" is the
-    // final member, so dropping it truncates instead of rewriting the message.
     std::string forwarded;
     if (sessionId == session_) {
       forwarded.reserve(length);
@@ -385,9 +367,6 @@ class DevToolsClient final : public CefClient, public CefLifeSpanHandler, public
   IMPLEMENT_REFCOUNTING(DevToolsClient);
 };
 
-// Resolve the context-menu location before docking changes the page's viewport.
-// Backend node IDs survive the resize and can be revealed in the frontend's
-// own protocol session after it has initialized.
 class ContextInspection final : public CefDevToolsMessageObserver {
  public:
   explicit ContextInspection(CVChromiumView *view) : view_(view) {}
@@ -403,8 +382,6 @@ class ContextInspection final : public CefDevToolsMessageObserver {
   bool OnDevToolsMessage(CefRefPtr<CefBrowser>, const void *bytes, size_t length) override {
     auto message = Message(bytes, length);
     auto replyId = LeadingMessageId(message);
-    // The request ID is assigned once ExecuteDevToolsMethod returns. Until then,
-    // defer root replies and compare them on the main queue.
     if (!replyId || !TrailingSessionId(message).empty() || (request_ && *replyId != request_)) return true;
     std::string reply(message);
     int identifier = *replyId;
@@ -433,8 +410,6 @@ class ContextInspection final : public CefDevToolsMessageObserver {
   IMPLEMENT_REFCOUNTING(ContextInspection);
 };
 
-// Each caller gets a distinct request id. DevTools and automation can attach
-// independent CDP sessions without consuming each other's replies.
 class ProtocolObserver final : public CefDevToolsMessageObserver {
  public:
   explicit ProtocolObserver(CVChromiumView *view) : view_(view) {}
@@ -442,7 +417,6 @@ class ProtocolObserver final : public CefDevToolsMessageObserver {
   bool OnDevToolsMessage(CefRefPtr<CefBrowser>, const void *bytes, size_t length) override {
     auto message = Message(bytes, length);
     if (auto replyId = LeadingMessageId(message)) {
-      // Replies to DevTools and context-menu requests belong to their observers.
       auto found = pending.find(*replyId);
       if (found == pending.end()) return true;
       auto callback = found->second;
@@ -473,7 +447,6 @@ class ContextHandler final : public CefRequestContextHandler {
     NSString *host = view->_proxyHost;
     if ([host containsString:@":"] && ![host hasPrefix:@"["]) host = [NSString stringWithFormat:@"[%@]", host];
     proxy->SetString("server", String([NSString stringWithFormat:@"%@://%@:%ld", view->_proxyTLS ? @"https" : @"http", host, (long)view->_proxyPort]));
-    // Chromium otherwise implicitly sends localhost directly to the client machine.
     proxy->SetString("bypass_list", "<-loopback>");
     auto value = CefValue::Create(); value->SetDictionary(proxy);
     CefString error;
@@ -582,8 +555,6 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
     [view publish];
   }
   bool DoClose(CefRefPtr<CefBrowser> browser) override {
-    // Destroy only this pane's native child. The default CEF closer would
-    // close Codevisor's entire workspace window.
     NSView *child = (__bridge NSView *)browser->GetHost()->GetWindowHandle();
     dispatch_async(dispatch_get_main_queue(), ^{ [child removeFromSuperview]; });
     return true;
@@ -644,8 +615,6 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
     __weak CVChromiumView *weakView = view;
     CVDownloadFavicon(browser, urls, ^(NSData *data) {
       CVChromiumView *current = weakView;
-      // A response from the previous page or icon candidate must not replace
-      // the current page's icon, including after a pane has closed.
       if (!current || current->_closed || current->_faviconGeneration != generation) return;
       if (current.faviconChanged) current.faviconChanged(data);
     });
@@ -658,8 +627,6 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
   bool GetAuthCredentials(CefRefPtr<CefBrowser>, const CefString&, bool isProxy,
                           const CefString& host, int port, const CefString&, const CefString&,
                           CefRefPtr<CefAuthCallback> callback) override {
-    // This callback runs on CEF's IO thread. Credentials are immutable and are
-    // never supplied to a website's HTTP authentication challenge.
     if (isProxy) {
       if (host.ToString() == host_ && port == port_) callback->Continue(username_, password_);
       else callback->Cancel();
@@ -718,8 +685,6 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
         CefRect(0, 0, popup->_viewportHost.bounds.size.width, popup->_viewportHost.bounds.size.height));
     info.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
     client = popup->_client;
-    // Creation is asynchronous. Keep both the popup and opener client alive
-    // until CEF explicitly acknowledges creation or cancellation.
     popup->_client->created_ = [owner = CefRefPtr<BrowserClient>(this), popupID] {
       owner->pendingPopups_.erase(popupID);
     };
@@ -784,7 +749,6 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
   }
   static int nextRequest = 1000000000;
   int request = ++nextRequest;
-  // Wrap the caller's params in the envelope instead of parsing them.
   NSData *name = [NSJSONSerialization dataWithJSONObject:method options:NSJSONWritingFragmentsAllowed error:nil];
   NSData *session = sessionId ? [NSJSONSerialization dataWithJSONObject:sessionId options:NSJSONWritingFragmentsAllowed error:nil] : nil;
   NSMutableData *message = [NSMutableData dataWithCapacity:params.length + name.length + session.length + 64];
@@ -874,15 +838,12 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
 - (void)publishZoom {
   if (!_browser || _closed || !self.zoomChanged) return;
   auto host = _browser->GetHost();
-  // Chromium's logarithmic zoom level uses a factor of 1.2 per level.
   self.zoomChanged((NSInteger)std::lround(100 * std::pow(1.2, host->GetZoomLevel())),
       host->CanZoom(CEF_ZOOM_COMMAND_OUT), host->CanZoom(CEF_ZOOM_COMMAND_IN), host->CanZoom(CEF_ZOOM_COMMAND_RESET));
 }
 - (void)zoom:(cef_zoom_command_t)command {
   if (!_browser || _closed) return;
   _browser->GetHost()->Zoom(command);
-  // Per-site zoom is shared by pages in the same Chromium profile. Refresh
-  // their controls too, including other visible splits and detached windows.
   ChromiumRuntime::Shared().PublishZoom();
 }
 - (void)zoomIn { [self zoom:CEF_ZOOM_COMMAND_IN]; }
@@ -922,14 +883,8 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
   BOOL undocked = [side isEqualToString:@"undocked"];
   if ([_toolsDockSide isEqualToString:side] &&
       (undocked ? _toolsWindow != nil : _toolsContainer.superview == _splitView)) return;
-  // Keep the same frontend view and CDP session while changing its parent.
-  // Suppress intermediate split notifications so they cannot overwrite the
-  // user's preferred dimensions with a partially constructed layout.
   _layingOutTools = YES;
   _toolsDockSide = [side copy];
-  // Chromium's native accessibility tree retains its old parent when the
-  // host view is reparented. Rebuild that tree around the move; the browser
-  // and its debugging session stay alive.
   if (_toolsBrowser) _toolsBrowser->GetHost()->SetAccessibilityState(STATE_DISABLED);
   if (_toolsWindow) {
     _toolsWindow.delegate = nil;

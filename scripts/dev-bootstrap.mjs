@@ -7,18 +7,11 @@ import { ensureSwiftFramework } from "./net-artifact.mjs"
 
 export async function bootstrapDevelopment(repoRoot, options = {}) {
   await run("bun", ["install", "--frozen-lockfile"], repoRoot, options.environment)
-  // Both apps link CodevisorNet (packages/swift), so SwiftPM needs the tunnel
-  // xcframework before it resolves the package (docs/plans/codevisor-tunnel.md).
   await ensureSwiftFramework(options.environment)
   if (options.ghostty === true) await ensureNativeFrameworks(repoRoot, options)
-  // The iOS app's terminal (packages/ghostty-terminal) links GhosttyKit too,
-  // but not Chromium.
   else if (options.ghosttyKit === true) await ensureGhosttyFramework(repoRoot, options.environment)
 }
 
-/// The prebuilt native frameworks the macOS app links (GhosttyKit and the
-/// Chromium/CEF wrapper). Independent of the JavaScript install, so runners
-/// that want to overlap it with other work call this directly.
 export async function ensureNativeFrameworks(repoRoot, options = {}) {
   await ensureGhosttyFramework(repoRoot, options.environment)
   await ensureChromium(repoRoot, options.environment, options.architectures)

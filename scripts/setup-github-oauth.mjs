@@ -1,19 +1,3 @@
-// One-command GitHub sign-in setup for the Codevisor cloud.
-//
-//   bun run setup:github-oauth                 # dev app → main clone .dev.vars
-//   bun run setup:github-oauth -- --org NAME   # create under an organization
-//   bun run setup:github-oauth -- --prod --org NAME --out FILE
-//                                              # production app → credentials file
-//
-// Uses GitHub's app-manifest flow: the script serves a pre-filled manifest,
-// the browser shows a single "Create GitHub App" button, GitHub redirects
-// back with a one-time code, and the script exchanges it for the client
-// id/secret (POST /app-manifests/{code}/conversions). Dev mode writes
-// apps/cloud/.dev.vars in the MAIN clone — where every worktree's
-// `bun run dev` picks it up automatically. Prod mode writes a credentials
-// JSON (default tmp/github-app.json, gitignored) for `wrangler secret put`.
-//
-// Docs: https://docs.github.com/apps/sharing-github-apps/registering-a-github-app-from-a-manifest
 import { execFileSync, spawn } from "node:child_process"
 import { randomBytes } from "node:crypto"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
@@ -60,8 +44,6 @@ if (existing !== undefined && /^\s*GITHUB_CLIENT_ID\s*=/m.test(existing)) {
   process.exit(0)
 }
 
-// GitHub App names are globally unique and ≤34 chars; dev apps get a random
-// suffix so every developer's app can coexist.
 const username = userInfo()
   .username.toLowerCase()
   .replaceAll(/[^a-z0-9-]/g, "")
@@ -79,17 +61,13 @@ const callback = options.prod
 const manifest = (redirectUrl) => ({
   name: appName,
   url: homepage,
-  // Sign-in callback used by Better Auth's GitHub provider.
   callback_urls: [callback],
-  // Where GitHub sends the one-time conversion code after "Create".
   redirect_url: redirectUrl,
   public: options.prod,
-  // Read email addresses so sign-in works for private-email accounts.
   default_permissions: { emails: "read" },
   hook_attributes: { url: "https://example.com/unused", active: false }
 })
 
-// Org-owned apps are created from the organization's settings URL.
 const creationUrl =
   options.org !== undefined
     ? `https://github.com/organizations/${options.org}/settings/apps/new?state=${state}`
@@ -104,7 +82,6 @@ const done = new Promise((resolveDone, rejectDone) => {
   server.on("request", async (request, response) => {
     const url = new URL(request.url, redirectUrl)
     if (url.pathname === "/") {
-      // Auto-submitting form: the manifest must arrive as a POSTed form field.
       const payload = JSON.stringify(manifest(redirectUrl)).replaceAll("'", "&#39;")
       response.writeHead(200, { "content-type": "text/html" })
       response.end(

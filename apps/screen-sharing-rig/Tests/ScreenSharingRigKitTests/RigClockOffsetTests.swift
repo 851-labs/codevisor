@@ -6,7 +6,6 @@ struct RigClockOffsetTests {
   typealias Sample = RigClockOffset.Sample
 
   @Test func intervalBracketsTheTrueOffsetWithoutAssumingSymmetry() throws {
-    // True offset 1000 s; asymmetric delays: 1 ms out, 5 ms back; host processing 0.5 ms.
     let sample = Sample(
       sentAtSeconds: 10, hostReceivedAtSeconds: 1010.001, hostSentAtSeconds: 1010.0015, receivedAtSeconds: 10.0065)
     let interval = try #require(sample.interval)
@@ -37,7 +36,6 @@ struct RigClockOffsetTests {
       RigClockOffset(samples: [
         Sample(sentAtSeconds: 0, hostReceivedAtSeconds: 100, hostSentAtSeconds: 100, receivedAtSeconds: 0)
       ]))
-    // Captured at host 105.000 s, presented at viewer 5.080 s → 80 ms old.
     let age = offset.imageAgeSeconds(sourceTimestampNs: 105_000_000_000, presentedAtSeconds: 5.080)
     #expect(abs(age - 0.080) < 1e-9)
   }

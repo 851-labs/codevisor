@@ -1,7 +1,6 @@
 import Foundation
 import ScreenSharing
 
-/// Owns the subscribed audio encoder and capture hand-off for one host session.
 @MainActor
 final class ScreenSharingHostAudioStream {
   private var encoder: ScreenSharingAudioEncoder?
@@ -10,8 +9,6 @@ final class ScreenSharingHostAudioStream {
   private let isStopping: () -> Bool
   private let setCapturesAudio: (Bool) -> Void
 
-  /// `sendPacket` is called on the capture's audio queue for every 20 ms packet: the native
-  /// channel's send is thread-safe and never waits for WebRTC, so packets don't hop through main.
   init(
     channel: any ScreenSharingMessageChannel<ScreenSharingAudioMessage>,
     sendPacket: @escaping @Sendable (ScreenSharingAudioMessage) -> Bool,
@@ -49,7 +46,6 @@ final class ScreenSharingHostAudioStream {
     }
   }
 
-  /// Detach before closing the peer; the channel-close callback still releases the encoder.
   func detachCapture() { tap.set(nil) }
 
   private func stop() {

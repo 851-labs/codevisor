@@ -2,14 +2,6 @@ import CodevisorCore
 import SwiftUI
 
 #if os(iOS)
-  /// One MCP server's machines, as a pushed screen.
-  ///
-  /// A compact-width row cannot hold a name, a switch, a status and a
-  /// disclosure without truncating the name — and an iOS row must not carry
-  /// both a control and a navigation destination, since a tap would be
-  /// ambiguous. So on iPhone the list row reports and this screen controls,
-  /// which is the shape Settings.app uses for exactly this ("Wi-Fi › On").
-  /// Regular width (iPad) and macOS have room to stay inline.
   struct McpServerMachinesScreen: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.dismiss) private var dismiss
@@ -21,18 +13,10 @@ import SwiftUI
     let toggleDisabledReason: (McpFleetEntry, _ machineId: String) -> String?
 
     var body: some View {
-      // Re-read the entry every render: the sweep keeps landing while this
-      // screen is open, and a captured copy would freeze at whatever the
-      // fleet looked like when the row was tapped.
       let entry = model.entry(named: serverName)
-      // A machine switch writes the overlay locally; reading its revision is
-      // what re-renders this screen the moment one is flipped.
       let _ = environment.configSync.revisionsByNamespace["mcp-overlays"]
       List {
         if let entry {
-          // Authorizing is a fleet act — the material replicates and every
-          // other machine adopts it — so it sits above the machines, not on
-          // any one machine's row. The machines carry the only switches.
           if !entry.isMachineScoped, needsAuthorization(entry),
             let machineId = entry.machineId(preferring: nil)
           {
@@ -49,23 +33,13 @@ import SwiftUI
           } header: {
             Text("Machines")
           }
-          // Editing and removing reach the fleet from any client, so the
-          // phone gets them too — they just have nowhere to sit on a
-          // compact row, which is already spoken for by the disclosure.
           if entry.canEdit || entry.canRemove {
             Section {
               if entry.canEdit {
                 Button("Edit Server") { onEdit(entry) }
               }
               if entry.canRemove {
-                // The role alone does not colour a list row here: the
-                // themed root sets a foreground style for the whole app,
-                // which wins over the role's. Every other destructive row
-                // in the apps pairs the two for the same reason.
                 Button("Remove Server", role: .destructive) {
-                  // Both the confirmation and the result belong to the list
-                  // behind this screen — staying here would leave the user
-                  // on a page about a server that no longer exists.
                   dismiss()
                   onRemove(entry)
                 }
@@ -97,8 +71,6 @@ import SwiftUI
 
   }
 
-  /// A machine on the detail screen: the switch, the browser choice where
-  /// there is one, and the failure behind its mark.
   private struct McpMachineDetailRow: View {
     @Environment(AppEnvironment.self) private var environment
     let entry: McpFleetEntry
@@ -115,15 +87,11 @@ import SwiftUI
           McpMachineTrailing(
             entry: entry, row: row, model: model, disabledReason: disabledReason)
         }
-        // The status is its own line here: the screen has the vertical room
-        // the list row did not, so nothing has to be abbreviated.
         Button {
           guard row.status.rowStatus.reason != nil else { return }
           blocked = details
         } label: {
           HStack(spacing: 6) {
-            // The text beside it already says this; a mark that announces
-            // itself too makes VoiceOver read the state twice.
             FleetStatusMark(status: row.status.rowStatus)
               .accessibilityHidden(true)
             Text(row.status.label)

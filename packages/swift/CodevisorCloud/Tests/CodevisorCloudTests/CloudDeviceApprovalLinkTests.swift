@@ -18,7 +18,6 @@ struct CloudDeviceApprovalLinkTests {
     #expect(custom.userCode == "WXYZ1234")
     #expect(custom.host == "cloud.example.com:8443")
 
-    // The local dev cloud is a plain-http Worker on loopback.
     let dev = try #require(
       CloudDeviceApprovalLink.parse(URL(string: "http://127.0.0.1:41234/device?user_code=ABCDEFGH")!))
     #expect(dev.serverURL == URL(string: "http://127.0.0.1:41234")!)

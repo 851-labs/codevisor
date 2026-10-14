@@ -6,20 +6,10 @@ import type { PluginPaneTokenRequest, PluginPaneTokenResponse } from "@codevisor
 import type { InstalledPlugin } from "./plugin-store.js"
 import { PluginsError } from "./plugins-error.js"
 
-/// Pane traffic cannot carry the machine bearer token: WKWebView cannot set
-/// Authorization on subresource loads and the cloud relay strips the header.
-/// Instead the client exchanges an authorized POST for a short-lived pane
-/// token, the initial navigation carries it in the query, and the proxy
-/// swaps it for a scoped HttpOnly cookie that covers every subsequent
-/// subresource/fetch/WS request.
 export const PANE_TOKEN_QUERY_PARAM = "codevisorPaneToken"
 
-/// Initial tokens are only meant to survive the gap between token issue and
-/// the webview's first navigation.
 const INITIAL_TOKEN_TTL_MS = 10 * 60_000
 
-/// Once the navigation exchange succeeds the token backs a cookie session;
-/// panes stay open for hours, and every proxied request slides the window.
 const SESSION_TTL_MS = 12 * 60 * 60_000
 
 export interface PaneTokenScope {
@@ -38,20 +28,9 @@ interface PaneTokenRecord {
 
 export interface PaneTokenStore {
   readonly issue: (scope: PaneTokenScope) => { readonly token: string; readonly expiresAt: string }
-  /// Returns the scope when the token is live and belongs to the plugin;
-  /// slides the expiry window on every hit so active panes never expire.
   readonly verify: (token: string, pluginId: string) => PaneTokenScope | undefined
-  /// Verifies like `verify`, then promotes the initial token to a long-lived
-  /// cookie session (the navigation exchange that sets the cookie).
   readonly exchange: (token: string, pluginId: string) => PaneTokenScope | undefined
-  /// The plugin's context-signing key, handed to its process as
-  /// CODEVISOR_PLUGIN_CONTEXT_SECRET. Derived per plugin so one plugin cannot
-  /// forge context for another; stable for this server's lifetime so
-  /// restarted plugin processes keep verifying.
   readonly contextSecret: (pluginId: string) => string
-  /// HMAC-SHA256 (hex) of the exact X-Codevisor-Context header value, keyed
-  /// by the plugin's contextSecret string. Plugins holding that secret can
-  /// verify the context came from this server, not another local process.
   readonly signContext: (pluginId: string, payload: string) => string
 }
 
@@ -96,9 +75,6 @@ export const makePaneTokenStore = (now: () => number = Date.now): PaneTokenStore
   }
 }
 
-/// Encodes and signs a context payload with the target plugin's key so it
-/// can trust that X-Codevisor-Context came from this server — shared by
-/// pane proxying, icons, and tool invocation, which carry different shapes.
 export const makeSignedContextHeaders =
   (tokens: PaneTokenStore) =>
   (pluginId: string) =>
@@ -151,9 +127,6 @@ const verifyPaneCookie = (
   return undefined
 }
 
-/// Resolves the authenticated pane scope for a proxied request: an initial
-/// `?codevisorPaneToken=` exchange, an established cookie session, or (for
-/// upgrades only) the loopback exemption.
 export const makePaneAuthenticator =
   (tokens: PaneTokenStore) =>
   (pluginId: string, request: IncomingMessage, url: URL): AuthenticatedPane | undefined => {
@@ -218,9 +191,6 @@ export const issuePluginPaneToken = (
   return paneTokenResponse(pluginId, paneId, pane, issued)
 }
 
-/// Cookie names cannot safely carry the id's namespace dot everywhere, so it
-/// is flattened; the cookie is additionally path-scoped to the plugin's proxy
-/// prefix so plugins can never read each other's sessions.
 export const paneCookieName = (pluginId: string): string =>
   `codevisor-plugin-${pluginId.replace(/[^a-z0-9-]/g, "-")}`
 
@@ -246,9 +216,6 @@ export const readCookieValue = (
   return undefined
 }
 
-/// Strips our pane-session cookie from a forwarded Cookie header: it is proxy
-/// auth, not plugin state, and forwarding it would leak session tokens into
-/// arbitrary plugin processes.
 export const stripPaneCookie = (
   header: string | undefined,
   cookieName: string

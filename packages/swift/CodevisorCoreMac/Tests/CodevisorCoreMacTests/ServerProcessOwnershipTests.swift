@@ -23,7 +23,6 @@ struct ServerProcessOwnershipTests {
     #expect(await !ServerProcessOwnership.hasStopped(port: 1, databasePath: path, previousOwner: owner))
     await ServerProcessOwnership.terminate(owner, databasePath: path)
     #expect(process.isRunning)
-    // A changed identity is also insufficient authority to signal the PID.
     var stale = owner
     stale.bootId = "previous"
     await ServerProcessOwnership.terminate(stale, databasePath: path)

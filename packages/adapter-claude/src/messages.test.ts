@@ -42,7 +42,6 @@ describe("ClaudeProvider", () => {
         type: "content_block_start"
       })
     )
-    // First delta carries the path and the old_string; later deltas stream new_string.
     fake.push(
       streamEvent({
         delta: {
@@ -115,10 +114,7 @@ describe("ClaudeProvider", () => {
     const lastStreamed = statUpdates.at(-2)?.diffStats as Array<{ added: number; removed: number }>
     expect(firstStats[0]?.removed).toBe(2)
     expect(firstStats[0]?.added).toBe(1)
-    // Counts grew monotonically as new_string streamed in.
     expect(lastStreamed[0]?.added).toBeGreaterThanOrEqual(firstStats[0]?.added ?? 0)
-    // The consolidated input recomputes authoritative stats via a real diff
-    // (common "one" line drops out: +2/−1).
     const authoritative = statUpdates.at(-1)?.diffStats as Array<{ added: number; removed: number }>
     expect(authoritative[0]).toMatchObject({ added: 2, removed: 1 })
 
@@ -206,8 +202,6 @@ describe("ClaudeProvider", () => {
         sessionUpdate: "agent_thought_chunk"
       })
     )
-    // Subagent chunks never carry the main agent's message id, and main-agent
-    // chunks never carry a parent attribution.
     expect(
       payloads.some(
         (payload) =>
@@ -219,9 +213,6 @@ describe("ClaudeProvider", () => {
   })
 
   it("emits subagent prose and tools from consolidated assistant messages", async () => {
-    // Ground truth from current claude CLIs: subagent stream events are NOT
-    // forwarded; a subagent's thread exists only in consolidated assistant
-    // messages carrying parent_tool_use_id.
     const fake = new FakeQuery()
     const provider = makeProvider(fake)
     const events: Array<RuntimeEvent> = []
@@ -288,7 +279,6 @@ describe("ClaudeProvider", () => {
 
     const promptPromise = run(created.handle.prompt("spawn an agent"))
     await fake.nextPrompt()
-    // Older CLIs stream subagent deltas: message_start registers the id...
     fake.push(streamEvent({ message: { id: "msg-sub-1" }, type: "message_start" }, "parent-1"))
     fake.push(
       streamEvent(
@@ -300,7 +290,6 @@ describe("ClaudeProvider", () => {
         "parent-1"
       )
     )
-    // ...so the consolidated re-send of the same message must not double it.
     fake.push({
       message: {
         content: [{ text: "streamed text", type: "text" }],
@@ -337,8 +326,6 @@ describe("ClaudeProvider", () => {
     const promptPromise = run(created.handle.prompt("think, then answer"))
     await fake.nextPrompt()
     fake.push(streamEvent({ message: { id: "msg-1" }, type: "message_start" }))
-    // The shape current models stream: a thinking block whose text is
-    // omitted, carrying only a signature.
     fake.push(
       streamEvent({
         content_block: { signature: "", thinking: "", type: "thinking" },
@@ -395,9 +382,6 @@ describe("ClaudeProvider", () => {
     const promptPromise = run(created.handle.prompt("hi"))
     await fake.nextPrompt()
     fake.push(streamEvent({ message: { id: "msg-1" }, type: "message_start" }))
-    // Carries neither text nor a phase to retro-tag with. Forwarding it
-    // created an empty text span that clients counted as the final answer,
-    // retiring the activity shimmer with nothing to show in its place.
     fake.push(
       streamEvent({
         delta: { text: "", type: "text_delta" },
@@ -435,8 +419,6 @@ describe("ClaudeProvider", () => {
 
     const promptPromise = run(created.handle.prompt("check the tests"))
     await fake.nextPrompt()
-    // Preamble text streams, then a tool_use begins in the same message —
-    // the Anthropic stream's earliest proof the text was not the final answer.
     fake.push(streamEvent({ message: { id: "msg-pre" }, type: "message_start" }))
     fake.push(
       streamEvent({
@@ -452,7 +434,6 @@ describe("ClaudeProvider", () => {
         type: "content_block_start"
       })
     )
-    // A second tool_use with no text in between must not re-tag.
     fake.push(
       streamEvent({
         content_block: { id: "toolu-2", name: "Bash", type: "tool_use" },
@@ -460,7 +441,6 @@ describe("ClaudeProvider", () => {
         type: "content_block_start"
       })
     )
-    // The final answer arrives as a fresh message: no tool follows, no tag.
     fake.push(streamEvent({ message: { id: "msg-final" }, type: "message_start" }))
     fake.push(
       streamEvent({
@@ -475,20 +455,17 @@ describe("ClaudeProvider", () => {
     const chunks = events
       .map((event) => event.payload as Record<string, unknown>)
       .filter((payload) => payload.sessionUpdate === "agent_message_chunk")
-    // Streamed text carries no phase (unknown until proven otherwise)…
     expect(chunks[0]).toMatchObject({
       content: { text: "Let me check the tests.", type: "text" },
       messageId: "msg-pre"
     })
     expect(chunks[0]).not.toHaveProperty("phase")
-    // …then exactly one zero-length correction demotes the preamble span.
     const corrections = chunks.filter((payload) => payload.phase === "commentary")
     expect(corrections).toHaveLength(1)
     expect(corrections[0]).toMatchObject({
       content: { text: "", type: "text" },
       messageId: "msg-pre"
     })
-    // The fresh final-answer message streams untagged.
     const finalChunk = chunks.find((payload) => payload.messageId === "msg-final")
     expect(finalChunk).toMatchObject({ content: { text: "Tests pass.", type: "text" } })
     expect(finalChunk).not.toHaveProperty("phase")

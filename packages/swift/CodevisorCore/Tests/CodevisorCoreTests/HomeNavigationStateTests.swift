@@ -71,7 +71,6 @@ struct HomeNavigationStateTests {
     #expect(
       state.detailIdentity(promotedDraftSessionId: UUID(), draftGeneration: generation) == .workspace(workspaceId))
 
-    // A fresh draft after the promotion must not share the promoted identity.
     state.select(nil)
     let next = UUID()
     #expect(state.detailIdentity(promotedDraftSessionId: sessionId, draftGeneration: next) == .draft(next))
@@ -95,17 +94,14 @@ struct HomeNavigationStateTests {
 
   @Test("Following the workspace's own pane selection canonicalizes the route")
   func followPaneSelectionCanonicalizes() {
-    // A chat opened from the sidebar routes by chat, not by pane.
     var state = HomeNavigationState(path: [workspaceRoute(anchor: sessionId, chat: sessionId)])
     let chatPane = UUID()
 
     let followed = state.followPaneSelection(workspaceId: workspaceId, paneId: chatPane)
     #expect(followed)
     #expect(state.selection == workspaceRoute(anchor: sessionId, pane: chatPane))
-    // The anchor survives: it owns the detail's identity and its controller.
     #expect(state.presentedWorkspace?.anchorSessionId == sessionId)
 
-    // Already canonical: no write, so the detail is not re-rendered.
     let again = state.followPaneSelection(workspaceId: workspaceId, paneId: chatPane)
     #expect(!again)
   }
@@ -117,14 +113,10 @@ struct HomeNavigationStateTests {
     var state = HomeNavigationState(path: [workspaceRoute(anchor: sessionId, chat: sessionId)])
     state.followPaneSelection(workspaceId: workspaceId, paneId: chatPane)
 
-    // New Tab moves the workspace's selection without touching the route.
-    // Following it is what keeps the route honest.
     let followed = state.followPaneSelection(workspaceId: workspaceId, paneId: terminalPane)
     #expect(followed)
     #expect(state.selection == workspaceRoute(anchor: sessionId, pane: terminalPane))
 
-    // Tapping the chat row again must now be a real change, or the detail —
-    // which switches panes only when the route changes — would ignore it.
     #expect(state.selection != workspaceRoute(anchor: sessionId, chat: sessionId))
   }
 

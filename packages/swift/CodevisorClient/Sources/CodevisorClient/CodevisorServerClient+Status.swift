@@ -68,11 +68,7 @@ public struct ServerInfo: Decodable, Equatable, Sendable {
   public var platform: String
   public var bindHost: String
   public var features: [String]?
-  /// The largest `POST /v1/files` body the server accepts. Servers from
-  /// before streamed relay uploads omit it (their limit is 32 MiB).
   public var maxUploadBytes: Int?
-  /// The machine's Codevisor Cloud device id, when it is cloud-connected —
-  /// lets clients match this machine to its cloud presence entry.
   public var cloudDeviceId: String?
 
   public init(
@@ -98,14 +94,10 @@ public struct ServerInfo: Decodable, Equatable, Sendable {
   }
 }
 
-/// The machine's cloud registration, from `GET /v1/cloud`.
 public struct ServerCloudRegistration: Decodable, Equatable, Sendable {
   public var connected: Bool
   public var deviceId: String?
   public var state: String?
-  /// "app" when the desktop app provisioned this registration (it follows
-  /// the app's account session); "external" when `codevisor auth login` or
-  /// dev auto-provisioning did (the app never tears those down).
   public var managedBy: String?
 
   public init(
@@ -121,24 +113,16 @@ public struct ServerCloudRegistration: Decodable, Equatable, Sendable {
   }
 }
 
-/// Which release feed a server update check follows. `alpha` sees alpha AND
-/// stable releases (newest wins); `stable` sees stable only. Mirrors the
-/// server's `ServerUpdateChannel`.
 public enum ServerUpdateChannel: String, Equatable, Sendable {
   case stable
   case alpha
 }
 
-/// An app-hosted server's report of the host app's unattended update
-/// session (Sparkle running headless because a remote client asked that
-/// machine to update). Mirrors `UpdateInfo.lastApply` on the wire.
 public struct ServerUpdateApplyState: Decodable, Equatable, Sendable {
   public var progress: Double?
   public var state: String
   public var message: String?
   public var targetVersion: String?
-  /// The build the host app's Sparkle is actually installing — possibly
-  /// older than the feed's newest when Sparkle resumes an earlier download.
   public var targetBuildNumber: Int?
   public var at: String
 
@@ -166,14 +150,8 @@ public struct ServerUpdateInfo: Decodable, Equatable, Sendable {
   public var channel: String
   public var checkedAt: String?
   public var migrationState: String
-  /// CI build numbers, the one release marker that agrees across feeds:
-  /// alpha manifests carry the full prerelease tag while installed
-  /// runtimes report their base marketing version, so version strings
-  /// cannot confirm that an update landed. Absent on older servers.
   public var currentBuildNumber: Int?
   public var latestBuildNumber: Int?
-  /// Present on app-hosted servers while the host app is installing (or
-  /// after it failed to install) a remotely requested update.
   public var lastApply: ServerUpdateApplyState?
 
   public init(
@@ -199,8 +177,6 @@ public struct ServerUpdateInfo: Decodable, Equatable, Sendable {
   }
 }
 
-/// The server's restart drain (`/v1/restart/drain`): whether it is holding
-/// new prompts while live turns finish so it can restart safely.
 public struct ServerRestartDrainState: Decodable, Equatable, Sendable {
   public var state: String
   public var remaining: Int
@@ -217,21 +193,11 @@ public struct ServerRestartDrainState: Decodable, Equatable, Sendable {
   public var isDrained: Bool { state == "drained" }
 }
 
-/// Response of `POST /v1/update/apply`.
 public struct ServerUpdateApplied: Decodable, Equatable, Sendable {
   public var accepted: Bool
   public var targetVersion: String?
-  /// The accepted release's CI build number. Clients confirm the restart
-  /// against this instead of `targetVersion`: version strings differ
-  /// between alpha manifests and installed runtimes, build numbers never
-  /// do. Absent on older servers.
   public var targetBuildNumber: Int?
-  /// When `accepted` is false, why the server declined — e.g. "busy" while
-  /// chats are still running. Absent on older servers and on plain
-  /// already-up-to-date responses.
   public var reason: String?
-  /// True when the server accepted but is first waiting for live chats to
-  /// finish (its restart drain); `updateInfo().lastApply` reports progress.
   public var draining: Bool?
 
   public init(
@@ -314,10 +280,6 @@ extension CodevisorServerClient {
     try await sendNoResponse("/v1/cloud/disconnect", method: "POST")
   }
 
-  /// `refresh` bypasses the server's update-check cache so a banner shown
-  /// while the user is looking at a machine reflects the live release
-  /// state; `channel` forwards the app's alpha-updates preference. Older
-  /// servers ignore both query parameters.
   public func updateInfo(
     refresh: Bool = false,
     channel: ServerUpdateChannel = .stable
@@ -390,8 +352,6 @@ extension CodevisorServerClient {
     var interrupt: Bool
   }
 
-  /// Starts (or, with `interrupt`, hurries) the server's restart drain and
-  /// returns its current state; poll `restartDrainState()` until drained.
   public func beginRestartDrain(interrupt: Bool = false) async throws -> ServerRestartDrainState {
     try await send(
       "/v1/restart/drain",
@@ -404,8 +364,6 @@ extension CodevisorServerClient {
     try await get("/v1/restart/drain")
   }
 
-  /// Abandons a drain whose update is not happening after all, so held
-  /// prompts dispatch again.
   public func cancelRestartDrain() async throws {
     try await sendNoResponse("/v1/restart/drain", method: "DELETE")
   }

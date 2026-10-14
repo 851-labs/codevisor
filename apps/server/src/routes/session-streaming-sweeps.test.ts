@@ -42,8 +42,6 @@ describe("streaming turn sweeps and prompt gating", () => {
       restart: idleRestartCoordinator()
     })
 
-    // Strand a turn "in the past": its harness died (or its terminal event
-    // was lost) six minutes ago and nothing has been appended since.
     const strandedSession = async () => {
       const project = await run(services.db.createProject({ folderPath: folder }))
       const created = await run(
@@ -66,8 +64,6 @@ describe("streaming turn sweeps and prompt gating", () => {
           text: "half-finished answer"
         })
       )
-      // The turn died while a question was pending; the sweep must pair it
-      // before ending the turn.
       await run(
         services.db.appendEvent("session.output", created.id, {
           sessionUpdate: "question",
@@ -82,8 +78,6 @@ describe("streaming turn sweeps and prompt gating", () => {
           ]
         })
       )
-      // A second stranded row that never had turn accounting: the terminal
-      // event must close it without turn fields.
       const turnless = await run(
         services.db.createSession({
           projectId: project.id,
@@ -97,9 +91,6 @@ describe("streaming turn sweeps and prompt gating", () => {
           text: "no turn id"
         })
       )
-      // A streaming row stranded mid-transcript (the conversation moved past
-      // it): repaired without a terminal event, since the newest item is not
-      // an in-progress turn.
       const midTranscript = await run(
         services.db.createSession({
           projectId: project.id,
@@ -134,8 +125,6 @@ describe("streaming turn sweeps and prompt gating", () => {
 
     const fanout = await run(makeEventFanout)
 
-    // A drain that still owns the session's turn keeps the sweep away: long
-    // silent tool runs are quiet on the event log but perfectly alive.
     const owned = emptyRouteState()
     owned.activePromptSessions.add(session.id)
     owned.activePromptSessions.add(turnless.id)
@@ -145,10 +134,6 @@ describe("streaming turn sweeps and prompt gating", () => {
       items: [{ role: "assistant", isGenerating: true }]
     })
 
-    // A turn the harness started on its own (task-notification follow-up
-    // after a background task or subagent) has no prompt drain, but its
-    // `turnState: started` registered it as live — equally untouchable, no
-    // matter how long its current tool call has been silent.
     const liveTurn = emptyRouteState()
     liveTurn.activeTurnSessions.add(session.id)
     liveTurn.activeTurnSessions.add(turnless.id)
@@ -158,9 +143,6 @@ describe("streaming turn sweeps and prompt gating", () => {
       items: [{ role: "assistant", isGenerating: true }]
     })
 
-    // Unowned and quiet: the sweep closes every stranded row — silently. A
-    // lost terminal event is not the user's problem, so the row settles as
-    // an ordinary finished response with no failure status or stop detail.
     expect(
       await reconcileStaleStreamingTurns(services, fanout, emptyRouteState(), "server-a")
     ).toBe(3)
@@ -169,22 +151,16 @@ describe("streaming turn sweeps and prompt gating", () => {
       items: [{ role: "assistant", isGenerating: false, stopReason: "end_turn" }]
     })
     expect(repairedPage.items[0]).not.toHaveProperty("stopDetail")
-    // The orphaned question was paired before the turn ended.
     expect(repairedPage.pendingQuestion).toBeUndefined()
-    // The turnless row is closed by a terminal event without turn fields.
     expect(await run(services.db.getTranscriptPage(turnless.id, undefined, 8))).toMatchObject({
       items: [{ role: "assistant", isGenerating: false, stopReason: "end_turn" }]
     })
-    // The mid-transcript row is repaired quietly — the conversation had
-    // already moved on, so no terminal turn event is published.
     expect(await run(services.db.getTranscriptPage(midTranscript.id, undefined, 8))).toMatchObject({
       items: [
         { role: "assistant", isGenerating: false, stopReason: "end_turn" },
         { role: "user", text: "hello?" }
       ]
     })
-    // The repair flows through the event pipeline: connected clients receive
-    // a live terminal event instead of discovering the row on a full reload.
     const events = listSubjectEvents(services, session.id)
     expect(events.map((event) => event.kind)).toContain("session.updated")
     expect(
@@ -198,7 +174,6 @@ describe("streaming turn sweeps and prompt gating", () => {
       )
     ).toBe(true)
 
-    // Idempotent: nothing left to repair.
     expect(
       await reconcileStaleStreamingTurns(services, fanout, emptyRouteState(), "server-a")
     ).toBe(0)
@@ -271,8 +246,6 @@ describe("streaming turn sweeps and prompt gating", () => {
       makeTurnDispatchListener(services, fanout, routeState, "server-a")
     )
 
-    // The harness started a turn on its own (a task-notification follow-up
-    // after a background task finished) — no prompt drain owns it.
     await appendAndPublish(services.db, fanout, "session.updated", session.id, {
       initiatedBy: "agent",
       turnId: "agent-turn-1",
@@ -280,8 +253,6 @@ describe("streaming turn sweeps and prompt gating", () => {
     })
     expect(routeState.activeTurnSessions.has(session.id)).toBe(true)
 
-    // A prompt sent mid-turn stays queued instead of being injected into the
-    // live turn (where the turn's result would resolve it prematurely).
     await run(services.db.createPromptQueueItem(session.id, "queued behind agent turn"))
     await drainPromptQueue(services, fanout, routeState, "server-a", session.id)
     expect(agents.prompts).toEqual([])
@@ -300,7 +271,6 @@ describe("streaming turn sweeps and prompt gating", () => {
       )
         userTurnEnded.resolve()
     })
-    // The turn's terminal event releases the hold and dispatches the prompt.
     await appendAndPublish(services.db, fanout, "session.updated", session.id, {
       initiatedBy: "agent",
       stopReason: "end_turn",
@@ -318,8 +288,6 @@ describe("streaming turn sweeps and prompt gating", () => {
     expect(routeState.activeTurnSessions.has(session.id)).toBe(false)
     expect(routeState.turnHeldSessions.has(session.id)).toBe(false)
 
-    // Malformed payloads are tolerated: a terminal event whose payload is not
-    // an object still clears the turn instead of throwing.
     const listener = makeTurnDispatchListener(services, fanout, routeState, "server-a")
     for (const malformed of ["boom", null, ["boom"]]) {
       routeState.activeTurnSessions.add(session.id)
@@ -361,8 +329,6 @@ describe("streaming turn sweeps and prompt gating", () => {
       restartHeldSessions: new Set(),
       restart: idleRestartCoordinator()
     }
-    // Simulate a task-notification turn starting the instant the first
-    // dispatched turn ends — before the drain loop claims the next item.
     const unsubscribe = fanout.subscribe((event) => {
       const payload = event.payload as Record<string, unknown>
       if (event.kind === "session.updated" && payload.turnState === "ended") {
@@ -412,8 +378,6 @@ describe("streaming turn sweeps and prompt gating", () => {
     expect(accepted.status).toBe(202)
     expect((accepted.body as { queueItemId?: string }).queueItemId).toBe(messageId)
 
-    // The user echo event carries the client's id back, so clients can
-    // reconcile their optimistic message by identity.
     await waitFor(async () =>
       listSubjectEvents(services, session.id).some(
         (event) =>

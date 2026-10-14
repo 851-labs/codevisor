@@ -29,8 +29,6 @@ export type McpGatewayOperations = Pick<
   | "issueGateway"
 >
 
-/// Per-session tool gateways: issuing credentials, routing gateway HTTP
-/// traffic to the right MCP connection, and tearing everything down.
 export const makeMcpGatewayOperations = (
   core: McpManagerCore,
   deps: McpGatewayOperationDeps
@@ -120,9 +118,9 @@ export const makeMcpGatewayOperations = (
       response.end(JSON.stringify({ error: "Invalid Codevisor tool gateway token" }))
       return
     }
-    /* v8 ignore next -- Node HTTP requests always carry a URL. */
+    /* v8 ignore next */
     const gatewayId = new URL(request.url ?? "/", state.gatewayBaseUrl).searchParams.get("gateway")
-    /* v8 ignore next -- missing and unknown gateway capabilities share the tested 404 response. */
+    /* v8 ignore next */
     const runtime = gatewayId === null ? undefined : gateways.get(gatewayId)
     if (runtime === undefined) {
       response.writeHead(404, { "content-type": "application/json" })
@@ -130,9 +128,6 @@ export const makeMcpGatewayOperations = (
       return
     }
 
-    // Route follow-up requests to their existing MCP connection. (Node
-    // folds duplicate non-set-cookie headers into one string, so the
-    // header is a string or absent — never an array.)
     const sessionHeader = request.headers["mcp-session-id"]
     const mcpSessionId = typeof sessionHeader === "string" ? sessionHeader : undefined
     const existing = mcpSessionId === undefined ? undefined : runtime.connections.get(mcpSessionId)
@@ -141,17 +136,11 @@ export const makeMcpGatewayOperations = (
       return
     }
     if (mcpSessionId !== undefined) {
-      // A session id we no longer know (e.g. a connection from before a
-      // server restart). 404 tells spec-following clients to re-initialize.
       response.writeHead(404, { "content-type": "application/json" })
       response.end(JSON.stringify({ error: "Unknown MCP session — re-initialize" }))
       return
     }
 
-    // No session id: only a fresh `initialize` may open a new connection.
-    // Harnesses re-initialize mid-session (codex 0.145+ rebuilds its MCP
-    // connections on account/plugin changes), so every handshake gets its
-    // own server + transport pair for the lifetime of that MCP session.
     if (request.method !== "POST") {
       response.writeHead(405, { "content-type": "application/json" })
       response.end(JSON.stringify({ error: "Method not allowed without an MCP session" }))
@@ -180,7 +169,7 @@ export const makeMcpGatewayOperations = (
   const close: McpManager["close"] = async () => {
     unsubscribePluginTools?.()
     unsubscribeSkills?.()
-    /* v8 ignore next -- timers only exist for the live OAuth refresh adapter. */
+    /* v8 ignore next */
     for (const timer of refreshTimers.values()) clearTimeout(timer)
     await Promise.all([...connections.keys()].map(closeConnection))
     await browserSetupBroker.close()
@@ -188,7 +177,7 @@ export const makeMcpGatewayOperations = (
     await Promise.all(
       [...gateways.values()].flatMap((gateway) =>
         [...gateway.connections.values()].map(async (connection) => {
-          /* v8 ignore next -- best-effort cleanup; normal gateway shutdown resolves cleanly. */
+          /* v8 ignore next */
           await connection.server.close().catch(() => undefined)
         })
       )
@@ -205,8 +194,6 @@ export const makeMcpGatewayOperations = (
     ])
   }
   const beginTurn: McpManager["beginTurn"] = async (sessionId, options) => {
-    // Each turn names its own origin: a prompt without a client (automations,
-    // agent-sent prompts) clears the previous turn's window.
     if (options?.clientId === undefined) turnClientIds.delete(sessionId)
     else turnClientIds.set(sessionId, options.clientId)
     await builtinsReady

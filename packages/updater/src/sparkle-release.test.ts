@@ -7,9 +7,6 @@ import {
   serverReleaseFromAppcastItem
 } from "./sparkle-release.js"
 
-/// Shaped like scripts/release/update-appcast.mjs output: one feed per
-/// architecture, alpha items tagged with <sparkle:channel>, stable items
-/// untagged, newest first.
 const item = (build: number, version: string, alpha: boolean): string => `
     <item>
       <title>Codevisor ${version}${alpha ? " Alpha" : ""}</title>
@@ -45,7 +42,6 @@ describe("selectSparkleRelease", () => {
 
   it("on alpha, takes the highest build across both channels", () => {
     expect(selectSparkleRelease(parseAppcast(mixedFeed), "alpha")?.build).toBe("661")
-    // A stable cut after the last alpha still wins for alpha followers.
     const stableNewest = feed(item(700, "0.1.103", false), item(661, "0.1.102", true))
     expect(selectSparkleRelease(parseAppcast(stableNewest), "alpha")?.build).toBe("700")
   })
@@ -66,7 +62,6 @@ describe("selectSparkleRelease", () => {
     </channel></rss>`
     expect(selectSparkleRelease(parseAppcast(odd), "alpha")?.build).toBe("5")
     expect(selectSparkleRelease([], "alpha")).toBeUndefined()
-    // Digits alone are not enough: the build must be a safe integer.
     const huge = [{ url: "https://example.com/h.zip", build: "99999999999999999999" }]
     expect(selectSparkleRelease(huge, "alpha")).toBeUndefined()
   })

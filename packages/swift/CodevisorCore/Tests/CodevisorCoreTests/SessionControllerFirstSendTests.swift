@@ -14,7 +14,6 @@ struct SessionControllerFirstSendTests {
     let (gate, release) = AsyncStream.makeStream(of: Void.self)
     fixture.client.openSessionGate = gate
     defer { release.finish() }
-    // The sending window is chosen before the chat's model exists.
     fixture.controller.promptClientId = "window-1"
     let send = Task { await fixture.controller.send() }
     await fixture.client.openSessionRequests.wait()
@@ -86,7 +85,6 @@ struct SessionControllerFirstSendTests {
     #expect(message.text == "Send this message")
     #expect(message.attachments.map(\.name) == ["note.txt"])
     #expect(userMessages(in: fixture.controller).count == 1)
-    // The message went out with server refs; its staged copy is spent.
     #expect(!FileManager.default.fileExists(atPath: try #require(staged.fileURL).path))
     fixture.controller.model?.shutdown()
   }
@@ -108,7 +106,6 @@ struct SessionControllerFirstSendTests {
     #expect(fixture.controller.shouldShowNewChatComposer)
     #expect(fixture.controller.composerText == "Send this message")
     #expect(fixture.controller.composerAttachments == [staged])
-    // The restored attachment can still be retried or re-uploaded.
     #expect(FileManager.default.fileExists(atPath: try #require(staged.fileURL).path))
     #expect(fixture.controller.model == nil)
     #expect(fixture.controller.pendingUserMessage == nil)
@@ -131,8 +128,6 @@ struct SessionControllerFirstSendTests {
         payload: .object(["role": .string("assistant"), "text": .string("Already responding")])
       ))
     await fixture.client.eventReads.wait()
-    // Intake and presentation are separate: wait for the observable model
-    // to apply the event, not merely for the transport to deliver it.
     await awaitObserved {
       fixture.controller.conversation.contains { item in
         if case let .assistant(message) = item {

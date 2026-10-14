@@ -4,24 +4,15 @@ import CodevisorUI
 import Foundation
 import SwiftUI
 
-/// A palette row: a skill (accepted by rewriting the token to the harness's
-/// exact invocation) or a local command (accepted by excising the token and
-/// running its action).
 struct IOSComposerSlashItem: Identifiable {
   let name: String
   let description: String
-  /// Present only on skills: where the skill comes from.
   var source: SessionSkillSource? = nil
-  /// Present only on skills: the text that replaces the token.
   var insertion: String? = nil
-  /// Present only on local commands (/plan, /goal).
   var action: (@MainActor () -> Void)? = nil
 
-  /// What the row shows as its title: what accepting it inserts.
   var title: String { insertion ?? "/\(name)" }
 
-  /// A harness may offer a skill with a local command's name, so the two
-  /// kinds never share an identity.
   var id: String { action == nil ? "skill:\(title)" : "command:\(name)" }
 }
 
@@ -37,17 +28,12 @@ extension IOSComposerSlashItem {
 }
 
 extension ComposerBar {
-  /// Tallest the palette grows before it scrolls (~6 rows).
   static let slashMenuMaxHeight: CGFloat = 286
 
-  /// The "/" or "$" token at the caret. NSString keeps these offsets in
-  /// the same UTF-16 coordinate space used by UITextView's selectedRange.
   var slashToken: ComposerSlashToken? {
     ComposerSlashToken(in: text, selection: selection)
   }
 
-  /// Local commands run in the app itself: /plan and /goal toggle their
-  /// composer modes.
   var localSlashCommands: [IOSComposerSlashItem] {
     var commands: [IOSComposerSlashItem] = []
     if controller.hasPlanMode {
@@ -75,9 +61,6 @@ extension ComposerBar {
     return commands
   }
 
-  /// Skills only (the harness's own plus Codevisor store skills), never
-  /// harness commands; matching local commands lead for "/" alone, since
-  /// "$" is Codex's skill syntax.
   var slashMatches: [IOSComposerSlashItem] {
     guard let token = slashToken else { return [] }
     let skills = ComposerSkillCatalog.matches(controller.composerSkills, query: token.query)
@@ -101,9 +84,6 @@ extension ComposerBar {
     isLoadingSlashCommands || !slashMatches.isEmpty
   }
 
-  /// Keep the first presentation out of the composer before SwiftUI's
-  /// geometry callback arrives. Subsequent frames use the measured value,
-  /// preserving Dynamic Type without a visible overlap.
   var slashPaletteHeight: CGFloat {
     if isLoadingSlashCommands { return slashMenuContentHeight > 0 ? slashMenuContentHeight : 48 }
     if slashMenuContentHeight > 0 { return min(slashMenuContentHeight, Self.slashMenuMaxHeight) }
@@ -170,8 +150,6 @@ extension ComposerBar {
         Text(command.title)
           .fontWeight(.medium)
           .lineLimit(1)
-          // Long descriptions truncate first; the title and its source
-          // label stay whole.
           .layoutPriority(1)
         Text(command.description)
           .lineLimit(1)
@@ -207,14 +185,10 @@ extension ComposerBar {
     }
   }
 
-  /// Accepts in place, preserving text on either side and leaving the
-  /// keyboard focused: skills rewrite the token to their invocation; local
-  /// commands excise it before they run.
   func acceptSlashCommand(_ command: IOSComposerSlashItem) {
     guard let range = slashToken?.range else { return }
     let replacement = command.action == nil ? "\(command.title) " : ""
     let updatedText = (text as NSString).replacingCharacters(in: range, with: replacement)
-    // The editor applies it undoably, so undo puts the typed token back.
     pendingTextEdit = ComposerTextEdit(range: range, replacement: replacement)
     text = updatedText
     controller.composerText = updatedText

@@ -1,10 +1,6 @@
 #if canImport(AppKit)
   import AppKit
 
-  /// Horizontal transcript content owns only horizontal gestures. AppKit's
-  /// stock `NSScrollView` consumes both axes even when vertical scrolling is
-  /// disabled, which makes the surrounding transcript appear frozen whenever
-  /// the pointer is over a code or diff surface.
   @MainActor
   open class TranscriptHorizontalScrollView: NSScrollView {
     private enum GestureAxis {
@@ -13,8 +9,6 @@
     }
 
     private var gestureAxis: GestureAxis?
-    /// Whether the gesture's last event went to this view rather than the
-    /// transcript, so its motionless events reach the same one.
     private var routesToSelf: Bool?
 
     public override init(frame frameRect: NSRect) {
@@ -28,10 +22,6 @@
       fatalError("init(coder:) has not been implemented")
     }
 
-    /// Returns whether this scroll view can make progress for a vertical
-    /// wheel event. Horizontal-only surfaces leave this as `false`, while
-    /// bounded vertical surfaces can hand the gesture to their enclosing
-    /// transcript precisely when they reach either edge.
     open func shouldConsumeVerticalScroll(_ event: NSEvent) -> Bool {
       false
     }
@@ -42,8 +32,6 @@
         gestureAxis = nil
         routesToSelf = nil
       }
-      // A trackpad gesture often begins without moving; its axis is the
-      // direction of its first movement, not of that motionless start.
       if gestureAxis == nil { gestureAxis = preferredAxis(for: event) }
 
       let toSelf: Bool
@@ -51,13 +39,8 @@
       case .vertical where event.scrollingDeltaY != 0:
         toSelf = shouldConsumeVerticalScroll(event)
       case .horizontal:
-        // Content that fits has nothing to scroll sideways, so the gesture
-        // belongs to the transcript too; otherwise AppKit rubber-bands the
-        // content under the pointer.
         toSelf = overflowsHorizontally
       default:
-        // A motionless start or end goes wherever the gesture's movement
-        // goes, so neither view is left inside half a gesture.
         toSelf = routesToSelf ?? (overflowsHorizontally || hasVerticalScroller)
       }
       routesToSelf = toSelf
@@ -74,8 +57,6 @@
       }
     }
 
-    /// Whether the document is wider than the viewport, counting the
-    /// horizontal content insets the document can scroll into.
     private var overflowsHorizontally: Bool {
       guard let documentView else { return false }
       let scrollableWidth = documentView.frame.width + contentInsets.left + contentInsets.right

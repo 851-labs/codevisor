@@ -1,6 +1,5 @@
 import Foundation
 
-/// Index metadata deliberately excludes filesystem paths, tool schemas, and credentials.
 public struct PluginConsentMetadata: Encodable, Sendable {
   public struct Pane: Encodable, Sendable { let type: String; let title: String }
   public struct Tool: Encodable, Sendable { let name: String; let description: String }

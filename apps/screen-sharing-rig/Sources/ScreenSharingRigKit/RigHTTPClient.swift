@@ -1,6 +1,5 @@
 import Foundation
 
-/// Small bearer-token HTTP client for rig signaling and control.
 public enum RigHTTPClient {
   public struct Failure: Error, CustomStringConvertible {
     public let status: Int
@@ -29,7 +28,6 @@ public enum RigHTTPClient {
     return (status, data)
   }
 
-  /// POST JSON, decode JSON; non-200 becomes a `Failure` with the server's message.
   public static func post<Request: Encodable, Response: Decodable>(
     _ url: URL, token: String, body: Request, expecting: Response.Type, timeoutSeconds: Double = 10
   ) async throws -> Response {

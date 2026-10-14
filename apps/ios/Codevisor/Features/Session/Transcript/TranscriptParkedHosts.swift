@@ -1,6 +1,3 @@
-/// Owns prepared UIKit row hosts retained by identity outside the mounted window.
-/// Eviction detaches hosting controllers from their parent; taking a host keeps
-/// that parent relationship intact so mounting can reuse its prepared content.
 @MainActor
 final class TranscriptParkedHosts {
   private static let maximumCount = 16

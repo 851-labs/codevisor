@@ -1,9 +1,5 @@
 import CoreGraphics
 
-/// Immutable height index. Small leaves amortize allocation, while path copying
-/// preserves old geometry for anchor compensation without copying the document.
-/// A point update or coordinate lookup visits O(log rows) nodes; a full batch
-/// visits each affected subtree once.
 struct TranscriptHeightIndex: Sendable, Equatable {
   struct Row: Sendable, Equatable {
     let height: CGFloat
@@ -56,7 +52,6 @@ struct TranscriptHeightIndex: Sendable, Equatable {
       return Geometry(top: offset, height: rows[index].height)
     }
 
-    /// Both searches return count when the requested edge is past this subtree.
     func firstIndex(at offset: CGFloat, searchingBottom: Bool) -> Int {
       if let left, let right {
         if offset < left.extent {
@@ -118,7 +113,6 @@ struct TranscriptHeightIndex: Sendable, Equatable {
   }
 
   private let root: Node
-  /// Counts actual tree visits, allowing complexity assertions without a clock.
   let updatedNodeCount: Int
   var count: Int { root.count }
   var totalHeight: CGFloat { root.extent }

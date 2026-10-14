@@ -1,6 +1,3 @@
-// Chromium's hosted frontend supplies its normal host implementation. Replace
-// only the transport and native window actions before starting the inspector.
-// All modules come from the bundled CEF resource pack, with no debugging port.
 import * as Host from "./core/host/host.js"
 import * as UI from "./ui/legacy/legacy.js"
 import * as SDK from "./core/sdk/sdk.js"
@@ -39,10 +36,6 @@ host.openInNewTab = (url) => native.open(url)
 host.bringToFront = () => native.focus("")
 host.readyForTest = () => native.ready("")
 
-// AppKit owns the inspected page and its dock layout. Keep the SimpleApp
-// frontend instead of AdvancedApp's duplicate page placeholder, device-mode
-// viewport, and toolbox popup. DockController still reads can_dock directly
-// from the URL, so Chromium's Dock side menu and close button remain enabled.
 Root.Runtime.conditions.canDock = () => false
 
 await import("./entrypoints/devtools_app/devtools_app.js")

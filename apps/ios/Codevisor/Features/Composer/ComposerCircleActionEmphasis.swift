@@ -23,8 +23,6 @@ private struct ComposerCircleActionLabelModifier: ViewModifier {
         )
         .background(
           Circle().fill(
-            // The primary action carries the app's accent, matching
-            // the macOS composer's send button.
             isEnabled ? AnyShapeStyle(theme.accent) : AnyShapeStyle(Color.secondary.opacity(0.16))
           )
         )

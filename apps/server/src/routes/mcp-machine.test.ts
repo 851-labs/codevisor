@@ -26,7 +26,6 @@ describe("machine-specific MCP availability", () => {
       body: { disabledHere: false, enabled: true, server: { enabled: true } }
     })
     expect(await run(services.db.getSyncEntries("mcp-overlays"))).toMatchObject([{ deleted: true }])
-    // An already-enabled definition also clears an override without changing it.
     expect(
       await jsonRequest(server, path, { method: "PUT", body: JSON.stringify({ enabled: true }) })
     ).toMatchObject({ status: 200 })

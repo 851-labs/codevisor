@@ -22,13 +22,10 @@ describe("legacy sync identity adoption", () => {
     await run(
       services.db.mergeSyncEntries(MCP_OVERLAYS_NAMESPACE, [
         { key: "enable|local|GitHub", value: { enabled: false }, timestamp: at(1) },
-        // Already disabled under the real id: the legacy twin only tombstones.
         { key: "enable|local|Kept", value: { enabled: false }, timestamp: at(2) },
         { key: "enable|machine-abc|Kept", value: { enabled: false }, timestamp: at(3) },
-        // Someone else's overlay is not ours to touch.
         { key: "enable|machine-xyz|GitHub", value: { enabled: false }, timestamp: at(4) },
         { key: "enable|local|Gone", value: null, deleted: true, timestamp: at(5) },
-        // A malformed legacy key (no name) is left alone.
         { key: "enable|local|", value: { enabled: false }, timestamp: at(6) }
       ])
     )
@@ -64,7 +61,6 @@ describe("legacy sync identity adoption", () => {
     expect(await live(services.db, MCP_READINESS_NAMESPACE)).toEqual(["machine-xyz"])
     expect(await live(services.db, ACCOUNTS_SYNC_NAMESPACE)).toEqual([])
 
-    // Settled: a second pass changes nothing.
     expect(
       await adoptLegacySyncIdentity({ db: services.db, serverId: "machine-abc", kind: "local" })
     ).toEqual({ changed: [], adoptedOAuth: [] })

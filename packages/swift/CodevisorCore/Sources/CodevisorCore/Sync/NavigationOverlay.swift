@@ -1,7 +1,5 @@
 import Foundation
 
-/// One machine's navigation records: what the server last said, with the
-/// outbox's waiting requests laid over it.
 struct NavigationRecords: Sendable {
   var projects: [Project]
   var sessions: [ChatSession]
@@ -18,11 +16,6 @@ struct NavigationRecords: Sendable {
   }
 }
 
-/// Shows the user's waiting changes on top of the cached server state.
-///
-/// Each request has one small, obvious effect. Because the cache itself is
-/// never touched, a request the server refuses simply stops being applied and
-/// the server's state shows through again; nothing needs undoing.
 enum NavigationOverlay {
   static func apply(_ entries: [NavigationOutboxEntry], to records: inout NavigationRecords) {
     for entry in entries { apply(entry.intent, to: &records) }
@@ -91,8 +84,6 @@ enum NavigationOverlay {
     }
   }
 
-  /// The read state marking a chat read produces locally, identical to what
-  /// the server will compute for the same sequence.
   static func markRead(_ session: inout ChatSession, through throughSequence: Int) {
     let rendered = min(max(0, throughSequence), session.latestAttentionSequence)
     session.lastSeenAttentionSequence = max(session.lastSeenAttentionSequence, rendered)
@@ -114,8 +105,6 @@ enum NavigationOverlay {
     }
   }
 
-  /// A chat the server already has keeps the server's attention state: the
-  /// device's copy of those counters is older than the server's by definition.
   private static func upsertSession(_ session: ChatSession, into records: inout NavigationRecords) {
     guard let index = records.sessions.firstIndex(where: { $0.id == session.id }) else {
       records.sessions.append(session)
@@ -156,12 +145,9 @@ enum NavigationOverlay {
     let createdAt =
       current.flatMap { try? ServerDateCoding.date(from: $0.createdAt) } ?? Date(timeIntervalSince1970: 0)
     var record = WorkspaceSyncModel.serverPane(from: pane, workspaceId: workspaceId, createdAt: createdAt)
-    // The server owns the live title and terminal status, and an upsert
-    // never changes them; keep showing them while the request waits.
     record.liveTitle = current?.liveTitle
     record.terminalActivity = current?.terminalActivity
     if let index = records.panes.firstIndex(where: { UUID(uuidString: $0.id) == pane.id }) {
-      // Content edits never move a tab.
       record.position = records.panes[index].position
       records.panes[index] = record
     } else {

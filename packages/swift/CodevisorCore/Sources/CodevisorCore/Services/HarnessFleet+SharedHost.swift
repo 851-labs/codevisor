@@ -1,9 +1,5 @@
 import Foundation
 
-/// A fleet-shared sign-in still has to run on some machine. Finding one used
-/// to mean asking every machine in turn and waiting for each answer; this
-/// asks the likely candidates at once and takes the first that has the
-/// harness ready.
 public extension HarnessFleet {
   struct SharedHost: Equatable, Sendable {
     public var machineId: String
@@ -15,13 +11,6 @@ public extension HarnessFleet {
     }
   }
 
-  /// Reachable machines, most promising first: the caller's preferred
-  /// machine (the chat's, the selected one), then this machine, which
-  /// answers without a network hop, then machines whose report says the
-  /// harness is installed, then machines with no report yet. Hosting only
-  /// needs the harness installed: a machine that is signed out is as good
-  /// a host as a ready one. A machine reporting it doesn't have the harness
-  /// is never asked.
   nonisolated static func sharedHostCandidates(
     harnessId: String, machines: [FleetMachine], readiness: [String: [MachineReadiness]], preferred: String?
   ) -> [String] {
@@ -39,13 +28,11 @@ public extension HarnessFleet {
       if machine.isLocal { return 1 }
       return report(machine) == nil ? 3 : 2
     }
-    // Sorting is stable, so machines of equal rank keep their list order.
     return reachable.enumerated()
       .sorted { (rank($0.element), $0.offset) < (rank($1.element), $1.offset) }
       .map(\.element.id)
   }
 
-  /// One online machine that has the harness ready, or nil when none does.
   static func findSharedHost(
     harnessId: String, preferred: String? = nil, environment: AppEnvironment
   ) async -> SharedHost? {
@@ -61,9 +48,6 @@ public extension HarnessFleet {
           return (index, harness?.isReady == true ? harness : nil)
         }
       }
-      // Machines answer in any order; keep the best-ranked hit but stop as
-      // soon as the top-ranked candidate reports, or the first hit lands
-      // and nothing better is still pending.
       var best: (Int, ServerHarness)?
       var pending = Set(candidates.indices)
       for await (index, harness) in group {

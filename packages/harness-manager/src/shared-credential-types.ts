@@ -22,10 +22,7 @@ export interface SharedTokenBundle {
   readonly planType?: string
   readonly scopes?: ReadonlyArray<string>
   readonly providerId?: string
-  /// Provider-specific token fields remain inside the encrypted vault.
   readonly credential?: Readonly<Record<string, unknown>>
-  /// Existing terminal logins remain owned by their CLI. We may mirror their
-  /// access token, but must never introduce another independent refresher.
   readonly ownership: "managed" | "external"
 }
 

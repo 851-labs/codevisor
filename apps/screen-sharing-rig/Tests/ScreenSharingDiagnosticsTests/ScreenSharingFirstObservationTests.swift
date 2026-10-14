@@ -10,7 +10,6 @@ import ScreenSharing
     ])
     #expect(observation.record(elapsedSeconds: 0, values: [:]) == [])
     #expect(observation.record(elapsedSeconds: 1.02, values: ["anyCallback": 3]) == ["anyCallback"])
-    // A complete status alone is not an accepted frame: capturedFrames stays unobserved.
     #expect(
       observation.record(elapsedSeconds: 2.05, values: ["anyCallback": 60, "completeStatus": 57]) == ["completeStatus"])
     #expect(
@@ -43,7 +42,7 @@ import ScreenSharing
     #expect(summary["anyCallback"]?["firstObservedAtSeconds"] == "never observed")
     #expect(summary["anyCallback"]?["firstObservedTick"] == "never observed")
     #expect(summary["capturedFrames"]?["initialValue"] == "0" && summary["capturedFrames"]?["finalValue"] == "0")
-    #expect(observation.metrics.count == 2)  // bounded: one entry per metric, no per-tick history
+    #expect(observation.metrics.count == 2)
     var unrecorded = ScreenSharingFirstObservation(names: ["x"])
     #expect(unrecorded.summary["x"]?["initialValue"] == "not recorded")
     unrecorded.record(elapsedSeconds: 0, values: [:])
@@ -55,11 +54,9 @@ import ScreenSharing
   typealias Geometry = ScreenSharingOwnedWindowGeometry
 
   @Test func cocoaFrameConvertsToTopLeftUsingTheMainDisplayHeight() {
-    // The run's window: Cocoa (0, 540, 960, 540) on a 1080-point main display → top-left (0, 0, 960, 540).
     let frame = Geometry.Rect(x: 0, y: 540, width: 960, height: 540)
     #expect(
       Geometry.cocoaToTopLeft(frame, mainDisplayHeight: 1080) == Geometry.Rect(x: 0, y: 0, width: 960, height: 540))
-    // A different main display height gives a different answer: the conversion is only valid with the real height.
     #expect(
       Geometry.cocoaToTopLeft(frame, mainDisplayHeight: 900) == Geometry.Rect(x: 0, y: -180, width: 960, height: 540))
   }
@@ -76,7 +73,6 @@ import ScreenSharing
     #expect(Geometry.ownWindow(in: [other, mine], number: 12829, pid: 55188) == .found(mine))
     #expect(Geometry.ownWindow(in: [other], number: 12829, pid: 55188) == .absent)
     #expect(Geometry.ownWindow(in: nil, number: 12829, pid: 55188) == .queryUnavailable)
-    // Exact ID with an unreported owner: not "absent", and its fields are not persisted.
     #expect(Geometry.ownWindow(in: [other, unreported], number: 12829, pid: 55188) == .ownerUnreported)
     #expect(Geometry.ownWindow(in: [other, mine], number: 12829, pid: 1) == .ownerMismatch(reportedPID: 55188))
     #expect(Geometry.ownWindow(in: [mine, mine], number: 12829, pid: 55188) == .duplicate(count: 2))

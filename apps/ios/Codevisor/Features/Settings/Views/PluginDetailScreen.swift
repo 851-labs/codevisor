@@ -2,7 +2,6 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// The same destination for catalog entries, installed rows, and plugin links.
 struct PluginDetailScreen: View {
   @Environment(AppEnvironment.self) private var environment
   private enum Source {

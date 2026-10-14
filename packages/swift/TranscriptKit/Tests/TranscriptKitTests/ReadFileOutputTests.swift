@@ -23,12 +23,10 @@ struct ReadFileOutputTests {
       tabbed.readFileOutput
         == ReadFileOutput(
           path: "/repo/src/slugify.js", content: .text("export function slugify(text) {\n  return text\n}")))
-    // Older Claude Code numbers with an arrow, and may append a reminder.
     let arrowed = read(
       ["file_path": "/repo/a.py", "offset": 10],
       output: "    10→def a():\n    11→    return 1\n\n<system-reminder>\nBe careful.\n</system-reminder>\n")
     #expect(arrowed.readFileOutput?.content == .text("def a():\n    return 1"))
-    // Text blocks rather than one string.
     let blocks = read(["file_path": "/repo/b.txt"], output: .array([["type": "text", "text": "1\thello"]]))
     #expect(blocks.readFileOutput?.content == .text("hello"))
   }
@@ -56,7 +54,6 @@ struct ReadFileOutputTests {
     #expect(image.readFileOutput == ReadFileOutput(path: "/repo/shot.png", content: .media))
     #expect(read(["path": "/repo/demo.mov"], status: .inProgress).readFileOutput?.content == .media)
     #expect(read(["filePath": "/repo/spec.pdf"]).readFileOutput?.content == .media)
-    // TypeScript isn't a transport stream, nor SVG an image to look at.
     #expect(read(["file_path": "/repo/a.ts"], output: "1\tx").readFileOutput?.content == .text("x"))
     #expect(read(["file_path": "/repo/i.svg"], output: "1\t<svg/>").readFileOutput?.content == .text("<svg/>"))
   }
@@ -70,7 +67,6 @@ struct ReadFileOutputTests {
       toolCallId: "sh", title: "Ran cat", kind: .execute, status: .completed,
       rawInput: ["file_path": "/repo/a.js"], rawOutput: "x")
     #expect(shell.readFileOutput == nil)
-    // Text that merely starts with a number isn't line-numbered.
     #expect(read(["file_path": "/repo/n.txt"], output: "1\tone\ntwo").readFileOutput?.content == .text("1\tone\ntwo"))
   }
 

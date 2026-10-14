@@ -3,7 +3,6 @@ import QuartzCore
 import SwiftUI
 import TranscriptKit
 
-/// What a native virtualizer exposes to its send transitions.
 @MainActor
 public protocol TranscriptSendTransitionAdapter: AnyObject {
   associatedtype Host: TranscriptSendPlatformView
@@ -11,35 +10,13 @@ public protocol TranscriptSendTransitionAdapter: AnyObject {
   var sendTransitionMountedHosts: [String: Host] { get }
   var sendTransitionViewportHeight: CGFloat { get }
   func sendTransitionRowIndex(for key: String) -> Int?
-  /// The host's top edge in window coordinates (top-left origin).
   func sendTransitionScreenY(of host: Host) -> CGFloat
-  /// The host has laid out its current content.
   func sendTransitionIsReady(_ host: Host) -> Bool
-  /// The row's content at its transcript width, for the flight's copy.
   func sendTransitionRowContent(for key: String) -> AnyView?
-  /// How far below its slot a row starts when it lifts in without a
-  /// composer snapshot (positive is down).
   func sendTransitionLiftOffset(for host: Host) -> CGFloat
-  /// A send is about to present into this surface. A brand-new chat's
-  /// transcript has never been revealed (its first content is this very
-  /// row), so it opens its initial presentation gate here rather than
-  /// waiting for a harness reply while the flight plays unseen.
   func sendTransitionWillPresent()
 }
 
-/// Every send presentation of one transcript surface.
-///
-/// The model is optimistic end to end: the row is published on the tap, and
-/// nothing here waits on the server. A send only needs its row to be laid
-/// out; from then on everything is render-server animation:
-///
-/// - the composer's glyphs fly into the row (or, with no snapshot, the row
-///   lifts in from the composer's edge);
-/// - every layout change the transcript makes while the send is live (the
-///   new row making room, a status row arriving, a corrected height) is
-///   applied at once to the model and animated with an additive spring, so
-///   there is nothing to hold, defer, or reconcile afterwards;
-/// - rows that arrive below the bubble fade in as it lands.
 @MainActor
 public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAdapter> {
   public typealias Host = Adapter.Host
@@ -66,7 +43,6 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
       return false
     }
 
-    /// The real row is hidden under a flying copy; the copy follows it.
     var hidesRow: Bool {
       switch phase {
       case .awaitingFlight, .flying: true
@@ -92,10 +68,6 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
 
   public init() {}
 
-  // MARK: Requests
-
-  /// A new send from this surface's controller. Non-foreground surfaces (a
-  /// route prewarming under New Chat's sheet) show the landed row as-is.
   public func receive(_ request: UserSendAnimationRequest?, isForeground: Bool) {
     guard request?.token != receivedToken else { return }
     receivedToken = request?.token
@@ -124,17 +96,11 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
     }
   }
 
-  /// Rows are presented away from their model frames (a running shift or
-  /// flight). The virtualizer keeps their hosts mounted until this clears,
-  /// so a row sliding through the viewport is never retired mid-motion.
   public var isAnimatingRows: Bool {
     let now = CACurrentMediaTime()
     return shifts.contains { $0.shift.isRunning(at: now) } || entries.contains { !$0.isLanded }
   }
 
-  // MARK: Mounting
-
-  /// Called for every host the virtualizer mounts (after positioning).
   public func hostDidMount(_ host: Host, key: String) {
     guard !entries.isEmpty else { return }
     if let index = entries.lastIndex(where: { $0.rowKey == key }) {
@@ -148,7 +114,6 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
       let sendIndex = adapter?.sendTransitionRowIndex(for: latest.rowKey),
       rowIndex > sendIndex
     {
-      // Arrived under the bubble: appear as it lands, never under it.
       let revealAt = max(now, latest.startedAt + TranscriptSendMotion.followerRevealDelay)
       layer.add(
         TranscriptSendLayerAnimations.fade(
@@ -156,7 +121,6 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
         forKey: TranscriptSendAnimationKeys.follower)
       return
     }
-    // History mounted mid-shift joins the movement already under way.
     if let running = shifts.filter({ $0.shift.isRunning(at: now) }).max(by: { $0.members < $1.members }) {
       TranscriptSendLayerAnimations.replay(running.shift, on: layer)
     }
@@ -174,8 +138,6 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
           TranscriptSendLayerAnimations.hide(duration: TranscriptSendMotion.targetHoldLimit),
           forKey: TranscriptSendAnimationKeys.hide)
         entries[index].phase = .awaitingFlight(mountedAt: CACurrentMediaTime())
-        // Mounting can happen inside SwiftUI's update; the flight renders
-        // a copy of the row, so start it once that update has returned.
         scheduleAdvance()
         scheduleAdvance(after: 0.12)
       } else {
@@ -195,21 +157,12 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
     }
   }
 
-  // MARK: Layout
-
-  /// Wraps a model change that can move rows (applying a projection,
-  /// committing heights). Rows that moved get an additive spring from their
-  /// previous on-screen position; user scrolling and viewport resizes are
-  /// never wrapped, so they keep their native motion.
   public func animatingContentShift(_ body: () -> Void) {
     let capture = beginContentShift()
     body()
     commitContentShift(capture)
   }
 
-  /// Screen positions captured before a model change; see
-  /// `animatingContentShift`. Nil when no send is live or already inside
-  /// an outer capture.
   public struct ContentShiftCapture {
     fileprivate let screenYByKey: [String: CGFloat]
   }
@@ -236,8 +189,6 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
         !entries.contains(where: { $0.rowKey == key && $0.hidesRow })
       else { continue }
       let offset = previous - adapter.sendTransitionScreenY(of: host)
-      // Large moves are scroll jumps (a send from far up the history):
-      // those rows are about to leave the screen anyway.
       guard abs(offset) > 0.5, abs(offset) < limit else { continue }
       let bucket = Int((offset * 2).rounded())
       groups[bucket, default: (offset, [])].hosts.append(host)
@@ -263,8 +214,6 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
     advance()
   }
 
-  /// Starts flights whose destination is ready and keeps running flights
-  /// aimed at their rows. Cheap; call after any layout or measurement pass.
   public func advance() {
     guard !entries.isEmpty, let adapter else { return }
     let now = CACurrentMediaTime()
@@ -272,16 +221,11 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
       switch entries[index].phase {
       case .awaitingRow:
         if now - entries[index].startedAt > TranscriptSendMotion.transitionWindow {
-          // The row never arrived (the send failed before publishing it).
           finish(index: index, claimIfNeeded: true)
         }
       case let .awaitingFlight(mountedAt):
         guard let host = adapter.sendTransitionMountedHosts[entries[index].rowKey] else { continue }
         guard adapter.sendTransitionIsReady(host) || now - mountedAt > 0.1 else { continue }
-        // `advance` can run inside SwiftUI's update of the transcript; the
-        // flight renders a copy of the row in its own hosting view, so it
-        // always starts on the next main-queue turn. The staged glyphs
-        // hold the composer's text in place for that frame.
         guard isStartingFlights else {
           scheduleAdvance()
           continue
@@ -302,8 +246,6 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
       entry.isLanded && now - entry.startedAt >= TranscriptSendMotion.transitionWindow
     }
   }
-
-  // MARK: Presentation
 
   private func beginFlight(into host: Host, entryIndex index: Int) {
     let entry = entries[index]
@@ -343,16 +285,12 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
 
   private func flightDidLand(token: UInt64) {
     guard let index = entries.firstIndex(where: { $0.request.token == token }) else { return }
-    // Same transaction as the flight's removal: row and copy swap exactly.
     if let host = adapter?.sendTransitionMountedHosts[entries[index].rowKey] {
       host.transcriptSendLayer?.removeAnimation(forKey: TranscriptSendAnimationKeys.hide)
     }
     finish(index: index, claimIfNeeded: false)
   }
 
-  /// The row itself rises from the composer's edge and fades in. Used when
-  /// there is no composer snapshot (a queued prompt promoted into the
-  /// transcript, a send from another surface).
   private func lift(_ host: Host, entryIndex index: Int) {
     guard claimOnce(index: index), let adapter, let layer = host.transcriptSendLayer else {
       finish(index: index, claimIfNeeded: false)
@@ -387,11 +325,6 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
     notifyStart(index: index)
   }
 
-  /// Leaving the foreground or detaching: land every flight at once and
-  /// reveal everything. Sends this surface never claimed are left alone,
-  /// staged glyphs included: SwiftUI can replace a transcript surface
-  /// mid-send (a new chat's first screen is built as the send happens),
-  /// and the replacement presents them.
   public func interrupt() {
     landFlights()
     if let adapter {
@@ -403,19 +336,14 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
     }
     entries.removeAll()
     shifts.removeAll()
-    // A reattached surface receives the same request again.
     receivedToken = nil
   }
 
-  /// Lands flights already in the air (the layout is being rebuilt under
-  /// them); sends still waiting for their row are unaffected.
   public func landFlights() {
     for entry in entries {
       if case let .flying(flight) = entry.phase { flight.land() }
     }
   }
-
-  // MARK: Bookkeeping
 
   private func claimOnce(index: Int) -> Bool {
     if entries[index].isClaimed { return true }
@@ -460,8 +388,6 @@ public final class TranscriptSendTransitions<Adapter: TranscriptSendTransitionAd
     }
   }
 
-  /// `advance`, also starting flights whose rows are ready. Only for a
-  /// caller on a main-queue turn of its own, outside any view update.
   public func startReadyFlights() {
     isStartingFlights = true
     defer { isStartingFlights = false }

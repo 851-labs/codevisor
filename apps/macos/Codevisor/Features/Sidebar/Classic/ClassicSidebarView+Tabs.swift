@@ -2,16 +2,7 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// A workspace's top tabs are its sidebar rows. Each workspace
-/// lists its chats, terminals, plugins, and New Tab
-/// placeholders. ⌘T adds a tab row to the current workspace.
-///
-/// Tab selection commits synchronously before routing the workspace into
-/// the detail column. The routing chat supplies context; only visible chat
-/// panes load transcripts.
 extension ClassicSidebarView {
-  /// One workspace's tab row identities in order, driving its reflow
-  /// animation.
   func tabRowIDs(in workspace: Workspace) -> [UUID] {
     workspace.centerTabs.flatMap { tab -> [UUID] in
       let groups = tab.root.allGroups
@@ -19,10 +10,6 @@ extension ClassicSidebarView {
     }
   }
 
-  // MARK: - Rows
-
-  /// Each tab is one drag unit: a split's pane rows move together, and
-  /// the unit reports its frame so a drag can draw the line between tabs.
   @ViewBuilder
   func workspaceTabRows(_ item: SidebarWorkspaceListItem) -> some View {
     let workspace = item.workspace
@@ -31,7 +18,6 @@ extension ClassicSidebarView {
       VStack(alignment: .leading, spacing: 1) {
         tabRows(tab, in: item, routesSelection: routesSelection)
       }
-      // The picked-up tab stays dimmed in place while its copy travels.
       .opacity(draggingID == tab.id ? 0.4 : 1)
       .onGeometryChange(for: CGRect.self) { proxy in
         proxy.frame(in: .named(Self.reorderSpace))
@@ -39,15 +25,11 @@ extension ClassicSidebarView {
         recordTabFrame(frame, for: tab.id)
       }
       .onDisappear { forgetTabGeometry(for: tab.id) }
-      // Alongside the row's own press-to-select, so a drag selects too.
       .simultaneousGesture(reorderGesture(for: .tab(tab.id, workspaceID: workspace.id)))
       .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
     }
   }
 
-  /// One tab's rows. A split tab is FLATTENED into one row per pane at the
-  /// tab's own level (no grouping row): the active pane carries the
-  /// selection.
   @ViewBuilder
   func tabRows(_ tab: WorkspaceTab, in item: SidebarWorkspaceListItem, routesSelection: Bool) -> some View {
     let groups = tab.root.allGroups
@@ -137,9 +119,6 @@ extension ClassicSidebarView {
     )
   }
 
-  /// The pane that names the tab: its active leaf's selected pane. A
-  /// mounted leaf's live model runs ahead of the repository mid-edit (a New
-  /// Tab converting into a terminal), so prefer it when there is one.
   private func tabDescriptor(_ tab: WorkspaceTab, in workspace: Workspace) -> PaneDescriptorState? {
     leafDescriptor(
       leafId: tab.activeLeafId, persisted: tab.root.group(id: tab.activeLeafId), in: workspace
@@ -153,9 +132,6 @@ extension ClassicSidebarView {
   ) -> PaneDescriptorState? {
     let liveKey = SessionStore.CenterLeafKey(workspaceId: workspace.id, groupId: leafId)
     guard var live = store?.centerLeafGroups[liveKey]?.state.selectedPane else { return persisted?.selectedPane }
-    // Only this device's edits run ahead. Server-owned fields come from the
-    // record, which stays current even for a workspace no mounted container
-    // is reconciling its live models with.
     if let record = persisted?.panes.first(where: { $0.id == live.id }) {
       live.liveTitle = record.liveTitle
       live.terminalActivity = record.terminalActivity
@@ -163,7 +139,6 @@ extension ClassicSidebarView {
     return live
   }
 
-  /// Only browser rows look up a live page.
   private func browserFavicon(_ descriptor: PaneDescriptorState?) -> NSImage? {
     guard let descriptor, descriptor.kind == .browser else { return nil }
     return store?.localBrowserModel(paneId: descriptor.id)?.favicon
@@ -185,7 +160,6 @@ extension ClassicSidebarView {
   ) -> String {
     if descriptor?.kind == .chat { return tab.displayTitle(for: descriptor, chatTitle: chatSession?.title) }
     if let customTitle = tab.customTitle { return customTitle }
-    // Chat tabs follow the session's LIVE title (auto-titles, renames).
     return paneTitle(descriptor, chatSession: chatSession)
   }
 
@@ -199,8 +173,6 @@ extension ClassicSidebarView {
     return list.session(id, serverId: serverId)
   }
 
-  /// The live chat a tab can route through: its selected pane's chat first,
-  /// else any chat pane inside the tab's splits.
   private func routableChat(in tab: WorkspaceTab, serverId: String) -> ChatSession? {
     let selected = tab.root.group(id: tab.activeLeafId)?.selectedPane.map { [$0] } ?? []
     let panes = selected + tab.root.allGroups.flatMap(\.state.panes)
@@ -210,8 +182,6 @@ extension ClassicSidebarView {
     }
     return nil
   }
-
-  // MARK: - Actions
 
   func activateTab(_ tab: WorkspaceTab, in item: SidebarWorkspaceListItem) {
     let workspace = item.workspace
@@ -224,8 +194,6 @@ extension ClassicSidebarView {
       ))
   }
 
-  /// A pane row: name the leaf, and route through its own chat when it
-  /// has one so the sidebar selection lands right immediately.
   func activateLeaf(_ leafId: UUID, state: PaneGroupState, in item: SidebarWorkspaceListItem) {
     let workspace = item.workspace
     guard store?.selectDestination(.leaf(leafId), in: workspace.id) == true else { return }
@@ -239,8 +207,6 @@ extension ClassicSidebarView {
       ))
   }
 
-  /// Applies the resolved route. A nil route means the current selection
-  /// already shows this workspace and must not be disturbed.
   private func apply(_ route: WorkspaceSelectionRoute?) {
     switch route {
     case let .session(serverId, id):
@@ -260,8 +226,6 @@ extension ClassicSidebarView {
     requestTabAction(.new, in: item)
   }
 
-  /// Background closes use the store's pane lifecycle without mounting a
-  /// container. Only adding a tab should open an off-screen workspace.
   private func requestTabAction(_ action: CenterTabRequest.Action, in item: SidebarWorkspaceListItem) {
     let workspace = item.workspace
     if !routesSelectedSession(workspace) {
@@ -279,7 +243,6 @@ extension ClassicSidebarView {
     }
   }
 
-  /// Chat rows rename the shared session, including single-pane tabs.
   func renameTab(_ request: SidebarTabRenameRequest, to title: String) {
     environment.workspaceSync.renameTab(
       workspaceId: request.workspaceId, tabId: request.tabId,
@@ -287,17 +250,11 @@ extension ClassicSidebarView {
     )
   }
 
-  // MARK: - Keyboard stepping
-
-  /// One sidebar row: New Chat, a single-pane tab, or one pane of a split tab.
   private enum SidebarTabEntry {
     case newChat
-    /// The leaf is nil for a single-pane tab (the tab itself is the row).
     case tab(item: SidebarWorkspaceListItem, tab: WorkspaceTab, leaf: (id: UUID, state: PaneGroupState)?)
   }
 
-  /// The flat list exactly as the sidebar renders it, across workspaces.
-  /// Resolved on demand when a key steps, never while rendering.
   private var tabEntries: [SidebarTabEntry] {
     [.newChat]
       + listedWorkspaceItems.flatMap { item in
@@ -309,10 +266,6 @@ extension ClassicSidebarView {
       }
   }
 
-  /// ⇧⌘[ / ⇧⌘]: moves to the previous/next row of the flat list, crossing
-  /// workspace boundaries but stopping at either end (no wrap). False when
-  /// the routed workspace is not listed (filtered out), letting the
-  /// container cycle locally.
   func stepSidebarTab(_ offset: Int) -> Bool {
     let entries = tabEntries
     guard
@@ -328,8 +281,6 @@ extension ClassicSidebarView {
       })
     else { return false }
     let targetIndex = current + offset
-    // At the end of the list the key is consumed but nothing moves — the
-    // container must not fall back to wrapping within its own tabs.
     guard entries.indices.contains(targetIndex) else { return true }
     switch entries[targetIndex] {
     case .newChat:
@@ -346,7 +297,6 @@ extension ClassicSidebarView {
 
 }
 
-/// The tab or split chat a rename alert is editing.
 struct SidebarTabRenameRequest: Identifiable, Equatable {
   let workspaceId: UUID
   let tabId: UUID
@@ -354,7 +304,6 @@ struct SidebarTabRenameRequest: Identifiable, Equatable {
   var id: UUID { tabId }
 }
 
-/// The tab rename alert, chained after the sidebar's other alerts.
 struct SidebarTabRenameAlert: ViewModifier {
   @Binding var request: SidebarTabRenameRequest?
   @Binding var title: String

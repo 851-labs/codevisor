@@ -1,7 +1,5 @@
 import Foundation
 
-/// Bounds the UI handoff after a local send. Server and harness latency never
-/// consume this deadline; it starts only when navigation begins.
 @MainActor
 public final class NewChatPromotionWatchdog {
   public static let timeout: Duration = .seconds(3)
@@ -23,7 +21,6 @@ public final class NewChatPromotionWatchdog {
         try Task.checkCancellation()
         onTimeout()
       } catch {
-        // A completed or superseded transition cancels its deadline.
       }
     }
   }

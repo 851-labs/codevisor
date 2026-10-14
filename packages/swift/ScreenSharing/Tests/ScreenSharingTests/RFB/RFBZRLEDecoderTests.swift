@@ -18,14 +18,11 @@ struct RFBZRLEDecoderTests {
   }
 
   @Test func packedPalettesUseOneTwoAndFourBitsPerPixelRowByRow() throws {
-    // 2 colours, 1 bit: row 0 = 1,0,1 ; row 1 = 0,1,1 (each row padded to a byte)
     let two = try decode([2, 0, 0, 0, 9, 9, 9, 0b1010_0000, 0b0110_0000], width: 3, height: 2)
     #expect((0..<3).map { two.pixel(x: $0, y: 0).blue } == [9, 0, 9])
     #expect((0..<3).map { two.pixel(x: $0, y: 1).blue } == [0, 9, 9])
-    // 3 colours, 2 bits: indices 2,1,0
     let three = try decode([3, 1, 1, 1, 2, 2, 2, 3, 3, 3, 0b10_01_00_00], width: 3, height: 1)
     #expect((0..<3).map { three.pixel(x: $0, y: 0).blue } == [3, 2, 1])
-    // 5 colours, 4 bits: indices 4,0,3
     var five: [UInt8] = [5]
     for colour in 1...5 { five += [UInt8(colour), 0, 0] }
     five += [0x40, 0x30]
@@ -35,27 +32,22 @@ struct RFBZRLEDecoderTests {
   }
 
   @Test func plainRunLengthEncoding() throws {
-    // run of 3 (length byte 2), then run of 1 (length byte 0)
     let framebuffer = try decode([128, 1, 1, 1, 2, 2, 2, 2, 0], width: 4, height: 1)
     #expect((0..<4).map { framebuffer.pixel(x: $0, y: 0).blue } == [1, 1, 1, 2])
-    // one 64 x 5 tile: a run continued with 255 (255 + 44 + 1 = 300 pixels), then 20 more
     let long = try decode([128, 7, 7, 7, 255, 44, 8, 8, 8, 19], width: 64, height: 5)
     #expect(long.pixel(x: 43, y: 4).blue == 7)
     #expect(long.pixel(x: 44, y: 4).blue == 8)
     #expect(long.pixel(x: 63, y: 4).blue == 8)
-    #expect(throws: RFBError.self) { try decode([128, 1, 1, 1, 5], width: 4, height: 1) }  // overflow
+    #expect(throws: RFBError.self) { try decode([128, 1, 1, 1, 5], width: 4, height: 1) }
   }
 
   @Test func paletteRunLengthEncoding() throws {
-    // 2 palette entries: index 1 run of 3 (0x81, 2), index 0 single, index 1 single
     let framebuffer = try decode([130, 5, 5, 5, 6, 6, 6, 0x81, 2, 0, 1], width: 5, height: 1)
     #expect((0..<5).map { framebuffer.pixel(x: $0, y: 0).blue } == [6, 6, 6, 5, 6])
-    // Index out of palette.
     #expect(throws: RFBError.self) { try decode([130, 5, 5, 5, 6, 6, 6, 2], width: 1, height: 1) }
   }
 
   @Test func rectanglesSpanTilesAndRejectBadInput() throws {
-    // 100 x 1: two tiles (64 and 36 wide), both solid with different colours.
     let framebuffer = try decode([1, 1, 0, 0, 1, 2, 0, 0], width: 100, height: 1)
     #expect(framebuffer.pixel(x: 63, y: 0).blue == 1)
     #expect(framebuffer.pixel(x: 64, y: 0).blue == 2)

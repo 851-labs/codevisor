@@ -13,7 +13,6 @@ describe("orchestration links and labels", () => {
       db.createSession({
         projectId: project.id,
         harnessId: "codex",
-        // Swift renders uuids uppercase; the stored link is canonical.
         parentSessionId: parent.id.toUpperCase(),
         labels: { issue: "851-12", role: "worker" }
       })
@@ -25,7 +24,6 @@ describe("orchestration links and labels", () => {
     expect(parent.parentSessionId).toBeUndefined()
     expect(parent.labels).toBeUndefined()
 
-    // Unrelated metadata writes keep labels; an explicit write replaces them.
     expect((await run(db.updateSession(child.id, { title: "Renamed" }))).labels).toEqual({
       issue: "851-12",
       role: "worker"
@@ -44,7 +42,6 @@ describe("orchestration links and labels", () => {
     const workspace = await run(db.upsertWorkspace({ ...base, labels: { batch: "a" } }))
     expect(workspace.labels).toEqual({ batch: "a" })
 
-    // Native clients PUT the whole record without knowing about labels.
     expect(
       (await run(db.upsertWorkspace({ ...base, id: workspace.id, name: "renamed" }))).labels
     ).toEqual({ batch: "a" })

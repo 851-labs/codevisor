@@ -10,8 +10,6 @@ import {
 } from "./client.js"
 import { FakeMuseClient } from "./test-support.js"
 
-/// An in-memory transport: records what the client sends and lets a test
-/// write Muse's lines or fail the pipe.
 const transport = () => {
   const sent: Array<Record<string, unknown>> = []
   let line: ((line: string) => void) | undefined
@@ -51,7 +49,6 @@ describe("MSP client", () => {
       { jsonrpc: "2.0", id: 2, method: "turn/start" },
       { jsonrpc: "2.0", id: 3, method: "account/read" }
     ])
-    // Out of order, with garbage and a response for nobody in between.
     pipe.write("not json")
     pipe.write({ jsonrpc: "2.0", id: 99, result: {} })
     pipe.write({ jsonrpc: "2.0", id: "1", result: {} })
@@ -82,7 +79,6 @@ describe("MSP client", () => {
   it("delivers notifications and answers server requests with the handler's receipt", () => {
     const pipe = transport()
     const client = wireMuseClient(pipe.fake)
-    // Before a handler exists, Muse's request still gets an answer.
     pipe.write({ jsonrpc: "2.0", id: 7, method: "approval/request", params: {} })
     expect(pipe.sent.at(-1)).toMatchObject({ id: 7, error: { code: -32601 } })
     pipe.write({ jsonrpc: "2.0", method: "item/delta", params: { delta: "early" } })
@@ -139,7 +135,6 @@ describe("MSP client", () => {
     expect(closes.map((error) => error.message)).toEqual(["muse exited: credentials"])
     await expect(client.request("model/list")).rejects.toThrow("muse is no longer running")
 
-    // An explained exit keeps its explanation.
     const explained = transport()
     const other = wireMuseClient(explained.fake)
     const reasons: Array<Error> = []
@@ -202,7 +197,6 @@ describe("handshake", () => {
     client.replies.initialize = { serverInfo: { version: "2" } }
     await handshake(client, warn)
     expect(warn).toHaveBeenLastCalledWith(expect.stringContaining("schema unknown"))
-    // Exactly the minimum, and a short or odd version, still pass.
     for (const version of ["1.4.0", "1.4", "1.4.x"]) {
       client.replies.initialize = { serverInfo: { version } }
       await expect(handshake(client, warn)).resolves.toMatchObject({ version })

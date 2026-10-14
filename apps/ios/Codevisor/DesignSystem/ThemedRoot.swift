@@ -4,10 +4,6 @@ import CodevisorUI
 import StreamMarkdown
 import SwiftUI
 
-/// The iOS twin of the macOS ThemedRoot: resolves the active theme and
-/// injects the token set, the code-highlight theme, and the markdown theme —
-/// inline code chips, highlighted code blocks, on-palette markdown colors.
-/// Without this the transcript rendered with StreamMarkdown's bare defaults.
 struct ThemedRoot: ViewModifier {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.colorScheme) private var systemScheme
@@ -22,8 +18,6 @@ struct ThemedRoot: ViewModifier {
         \.codeHighlightTheme,
         highlight.map { CodeHighlightTheme(key: $0.key, json: $0.json) }
       )
-      // Markdown spacing is relative to the body font, so the phone's larger
-      // text gets proportionally more air without overrides.
       .markdownTheme(makeMarkdownTheme(theme: theme, highlight: highlight))
       .foregroundStyle(theme.isSystem ? AnyShapeStyle(.foreground) : AnyShapeStyle(theme.textPrimary))
       .tint(theme.isSystem ? nil : theme.accent)

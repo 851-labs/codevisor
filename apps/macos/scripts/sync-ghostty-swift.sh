@@ -1,14 +1,4 @@
 #!/usr/bin/env bash
-# Re-syncs the vendored Ghostty Swift surface layer from .repos/ghostty.
-#
-# Copies the manifest files verbatim over apps/macos/Codevisor/Vendor/GhosttySwift
-# and prints the resulting git diff stat. CODEVISOR-PATCH blocks are clobbered by
-# this copy ON PURPOSE — re-apply them by hand afterwards (see UPSTREAM.md;
-# `grep -rn CODEVISOR-PATCH` on the previous commit shows every patch).
-#
-# The vendored Swift layer must match the commit GhosttyKit.xcframework is
-# built from (GHOSTTY_REF in build-ghostty.sh). Run build-ghostty.sh first
-# when bumping the commit.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
@@ -20,7 +10,6 @@ if [[ ! -d "$SRC" ]]; then
   exit 1
 fi
 
-# Manifest: "upstream-relative-path -> vendor-relative-path"
 MANIFEST=(
   "Ghostty/GhosttyPackageMeta.swift|Ghostty/GhosttyPackageMeta.swift"
   "Ghostty/GhosttyPackage.swift|Ghostty/GhosttyPackage.swift"
@@ -37,9 +26,6 @@ MANIFEST=(
   "Ghostty/NSEvent+Extension.swift|Ghostty/NSEvent+Extension.swift"
   "Ghostty/Surface View/OSSurfaceView.swift|Ghostty/Surface View/OSSurfaceView.swift"
   "Ghostty/Surface View/SurfaceView_AppKit.swift|Ghostty/Surface View/SurfaceView_AppKit.swift"
-  # NOTE: Ghostty/Surface View/SurfaceConfiguration.swift is an EXTRACTION from
-  # upstream SurfaceView.swift (not copied here) — update it by hand from the
-  # ranges documented in its header.
   "Helpers/AppInfo.swift|Helpers/AppInfo.swift"
   "Helpers/CrossKit.swift|Helpers/CrossKit.swift"
   "Helpers/Cursor.swift|Helpers/Cursor.swift"

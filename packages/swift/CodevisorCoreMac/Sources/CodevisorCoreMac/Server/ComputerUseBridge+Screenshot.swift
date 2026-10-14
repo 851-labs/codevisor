@@ -10,9 +10,6 @@ extension ComputerUseBridge {
     let windowFrame: CGRect
   }
 
-  /// Why a snapshot has no image. A bare `null` left the model unable to
-  /// tell "nothing to see" from "blind", so every failure carries a reason
-  /// the model can act on.
   enum ScreenshotOutcome {
     case captured(ScreenshotCapture)
     case unavailable(String)
@@ -43,10 +40,6 @@ extension ComputerUseBridge {
       }
       return .unavailable("The app exposes no capturable window.")
     }
-    // Structured concurrency rather than nested completion handlers: the
-    // callback form delivers on a queue this worker may itself be
-    // blocking, which silently turned every capture into a ten-second
-    // timeout and looked like "macOS cannot capture this window".
     let semaphore = DispatchSemaphore(value: 0)
     let box = ScreenshotBox()
     let captureTask = Task {
@@ -96,9 +89,6 @@ extension ComputerUseBridge {
     if semaphore.wait(timeout: .now() + 10) == .timedOut { captureTask.cancel() }
     let result = box.finish()
     if let capture = result.capture { return .captured(capture) }
-    // A region fallback is valid only when the target is on the current
-    // Space. Otherwise it would return pixels belonging to whichever
-    // unrelated window happens to occupy the same coordinates.
     guard windowIsOnVisibleSpace(windowID) else {
       return .unavailable(
         "The window could not be captured: \(result.failure ?? "the capture timed out")."
@@ -147,8 +137,6 @@ private final class ScreenshotBox: @unchecked Sendable {
     lock.withLock { if !finished { failure = reason } }
   }
 
-  /// Timeout and successful completion both freeze one synchronized outcome.
-  /// CaptureKit can still complete after cancellation; late writes are ignored.
   func finish() -> (capture: ComputerUseBridge.ScreenshotCapture?, failure: String?) {
     lock.withLock {
       finished = true

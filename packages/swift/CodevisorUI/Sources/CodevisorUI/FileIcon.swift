@@ -1,7 +1,6 @@
 import Foundation
 import SwiftUI
 
-/// One file identity shared by browser rows, search results, and workspace panes.
 public struct FileIcon: View {
   private let path: String
   private let isDirectory: Bool
@@ -31,7 +30,6 @@ public struct FileIcon: View {
   }
 }
 
-/// Pure filename matching; never consults the local filesystem for remote paths.
 enum FileIconCatalog {
   private struct Associations: Decodable, Sendable {
     let fileNames: [String: String]
@@ -52,7 +50,6 @@ enum FileIconCatalog {
   static func assetName(for path: String) -> String? {
     let name = (path as NSString).lastPathComponent.lowercased()
     if let icon = associations.fileNames[name] { return "file_type_" + icon }
-    // Longest suffix wins: component.spec.ts precedes spec.ts, which precedes ts.
     for dot in name.indices where name[dot] == "." {
       let suffix = String(name[name.index(after: dot)...])
       if let icon = associations.fileExtensions[suffix] { return "file_type_" + icon }

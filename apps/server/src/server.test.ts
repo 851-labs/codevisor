@@ -203,8 +203,6 @@ describe("@codevisor/server", () => {
     runningServers.push(server)
     const logged = vi.spyOn(console, "error").mockImplementation(() => undefined)
     try {
-      // Node reports a failed accept (descriptors exhausted) as 'error' on
-      // the listening server.
       listener!.server.emit("error", Object.assign(new Error("accept EMFILE"), { code: "EMFILE" }))
       expect(logged).toHaveBeenCalledExactlyOnceWith("Server socket error: accept EMFILE")
     } finally {
@@ -269,8 +267,6 @@ describe("@codevisor/server", () => {
     )
     runningServers.push(first)
 
-    // A wildcard candidate must probe loopback, where an existing server is
-    // already accepting clients, and reject before attempting its own bind.
     await expect(
       run(
         startCodevisorServer(
@@ -308,7 +304,6 @@ describe("@codevisor/server", () => {
       hostname: expect.any(String),
       maxUploadBytes: 500 * 1024 * 1024
     })
-    // cloudDeviceId is only advertised when the machine is cloud-connected.
     expect((await jsonRequest(server, "/v1/info")).body).not.toHaveProperty("cloudDeviceId")
     const discovery = await jsonRequest(server, "/v1/discovery")
     expect(discovery.body).toMatchObject({
@@ -319,7 +314,6 @@ describe("@codevisor/server", () => {
       hostname: expect.any(String),
       cloudLinked: false
     })
-    // The machine identity is stable across requests.
     expect((await jsonRequest(server, "/v1/discovery")).body).toMatchObject({
       machineId: (discovery.body as { machineId: string }).machineId
     })
@@ -346,7 +340,6 @@ describe("@codevisor/server", () => {
       token: expect.stringMatching(/^hm_/)
     })
 
-    // The connection token is stable across calls, and rotation replaces it.
     const firstConnection = await jsonRequest(server, "/v1/auth/connection-token")
     expect(firstConnection.status).toBe(200)
     const connectionToken = (firstConnection.body as { token: string }).token
@@ -362,7 +355,6 @@ describe("@codevisor/server", () => {
 
     expect(defaultDatabasePath()).toContain("codevisor-server.sqlite")
 
-    // Shutdown is acknowledged even when the host process installed no handler.
     expect((await jsonRequest(server, "/v1/shutdown", { method: "POST" })).status).toBe(202)
 
     let shutdownRequests = 0
@@ -402,7 +394,6 @@ describe("@codevisor/server", () => {
     )
     runningServers.push(secured)
     expect((await jsonRequest(secured, "/v1/info")).status).toBe(401)
-    // Discovery stays reachable without a token so peers can be found.
     expect((await jsonRequest(secured, "/v1/discovery")).status).toBe(200)
     expect(
       (

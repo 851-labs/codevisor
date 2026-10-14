@@ -4,8 +4,6 @@ import Testing
 
 @Suite struct SimulatorKeyboardTests {
   @Test func charactersTypeTheirKeyOnTheSimulatorsUSKeyboard() {
-    // Typed text is mapped by character, so a Mac on another layout (or text sent without real
-    // key codes) still types what was meant.
     #expect(SimulatorKeyboard.key(for: "a")! == (0x04, false))
     #expect(SimulatorKeyboard.key(for: "A")! == (0x04, true))
     #expect(SimulatorKeyboard.key(for: "0")! == (0x27, false))

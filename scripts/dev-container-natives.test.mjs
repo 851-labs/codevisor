@@ -8,10 +8,6 @@ import { verifyTrustedDependencies, workspaceDirectories } from "./dev-container
 
 const writeJson = (path, value) => writeFile(path, JSON.stringify(value))
 
-/// A bun isolated-linker layout: the package lives in the node_modules/.bun
-/// store, only the declaring workspace links it, and the root never does.
-/// Each fixture is a unique directory, so Node's require cache cannot leak
-/// one test's module into another.
 const isolatedFixture = async (
   t,
   {
@@ -50,7 +46,6 @@ const isolatedFixture = async (
   })
   if (linked) await symlink(store, join(terminal, "node_modules", "fake-native"))
 
-  // A workspace that does not declare the dependency must not be checked.
   const www = join(root, "apps", "www")
   await mkdir(www, { recursive: true })
   await writeJson(join(www, "package.json"), { name: "@fixture/www", dependencies: {} })

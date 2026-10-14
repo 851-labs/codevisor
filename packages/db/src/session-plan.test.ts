@@ -36,8 +36,6 @@ describe("durable session checklists", () => {
       )
       expect((await run(db.getSessionDetail(session.id))).sessionPlan).toEqual(activePlan)
 
-      // A malformed provider event is retained in the log, but it must not
-      // erase the last valid cross-device snapshot.
       await run(
         db.appendEvent("session.output", session.id, {
           sessionUpdate: "plan",

@@ -1,12 +1,8 @@
 import ScreenSharing
 import Foundation
 
-/// A repeatable control check: the viewer asks for control, sends N clicks at one normalized point, then
-/// releases. On a host whose source is the workload on a virtual display, each click bumps the workload's
-/// Response counter, which the host publishes, so delivery is proven without touching anyone's desktop.
 public struct RigControlCheckRequest: Codable, Equatable, Sendable {
   public let clicks: Int
-  /// Space key presses after the clicks; the workload counts each non-repeat `keyDown`.
   public let keys: Int
   public let x: Double
   public let y: Double
@@ -36,7 +32,6 @@ public struct RigControlCheckResponse: Codable, Equatable, Sendable {
   public let responsesBefore: Int?
   public let responsesAfter: Int?
   public let revokedReason: String?
-  /// True when the host's Response counter advanced by exactly the clicks and keys sent.
   public var delivered: Bool {
     guard let responsesBefore, let responsesAfter else { return false }
     return responsesAfter - responsesBefore == clicksSent + keysSent
@@ -56,12 +51,8 @@ public struct RigControlCheckResponse: Codable, Equatable, Sendable {
 }
 
 public enum RigControlCheckPlan {
-  /// macOS virtual key code for the space bar.
   public static let spaceKeyCode: UInt16 = 49
 
-  /// The input events for `clicks` clicks at one point followed by `keys` space presses: one move, then
-  /// button down/up pairs each with their own coordinates as the protocol requires, then key down/up
-  /// pairs. Sequence numbers start at 1 and are contiguous.
   public typealias PlannedEvent = (sequence: UInt64, event: ScreenSharingInputEvent)
 
   public static func events(clicks: Int, keys: Int = 0, x: Double, y: Double) -> [PlannedEvent] {

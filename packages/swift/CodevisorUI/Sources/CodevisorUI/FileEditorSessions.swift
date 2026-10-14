@@ -1,7 +1,5 @@
 import Foundation
 
-/// The pane owns a bounded history, so browsing back preserves selection and undo.
-/// Closing the pane releases every native editor without discarding shared drafts.
 @MainActor
 final class FileEditorSessions {
   private var sessions: [String: FileEditorSession] = [:]

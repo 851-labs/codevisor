@@ -6,8 +6,6 @@ import Testing
 
 @Suite("Composer skill palette")
 struct ComposerSkillPaletteTests {
-  /// `|` marks the caret; `expected` is the trigger and query, or nil when
-  /// the palette must stay closed.
   @Test(
     "Opens on a / or $ token at the caret, never inside words or paths",
     arguments: [
@@ -35,7 +33,6 @@ struct ComposerSkillPaletteTests {
 
     #expect(token.map { "\($0.trigger.rawValue):\($0.query)" } == expected)
     if let token {
-      // The range spans trigger through caret, the span acceptance replaces.
       #expect(NSMaxRange(token.range) == location)
       #expect((text as NSString).substring(with: token.range).lowercased() == "\(token.trigger.rawValue)\(token.query)")
     }

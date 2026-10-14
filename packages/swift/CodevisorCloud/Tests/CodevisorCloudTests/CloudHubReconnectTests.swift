@@ -102,7 +102,6 @@ struct CloudHubReconnectTests {
 
     try await hub.waitUntilReady()
     first.socket.failsSends = true
-    // The next keepalive ping is the send that fails.
     await clock.waitForSleep(.seconds(30))
     clock.advance(by: .seconds(30))
     await clock.waitForSleep(.seconds(1))

@@ -1,19 +1,11 @@
 import Foundation
 
-/// The session token and custom server as last read from or written to
-/// `credentialStore`. Settings views read `serverURL`/`customServerURL`
-/// several times per render and every authenticated call checks
-/// `storedToken`; each used to be a Keychain query on the main thread.
-/// `bootstrap` reads them once in a detached task; every write goes through
-/// the store first and then the cache (`credentialWriteGeneration` keeps a
-/// read that started before a write from being adopted over it).
 extension CloudAccountController {
   struct StoredCredentials: Sendable {
     var token: String?
     var serverURL: URL?
   }
 
-  /// The user-entered self-hosted server, if any (see `serverURL`).
   public var customServerURL: URL? {
     credentials.serverURL
   }
@@ -25,7 +17,6 @@ extension CloudAccountController {
   var credentials: StoredCredentials {
     _ = credentialRevision
     if let cachedCredentials { return cachedCredentials }
-    // Only before `bootstrap` has loaded them off the main thread.
     let read = Self.readCredentials(from: credentialStore)
     cachedCredentials = read
     return read
@@ -35,9 +26,6 @@ extension CloudAccountController {
     StoredCredentials(token: (try? store.token()) ?? nil, serverURL: (try? store.serverURL()) ?? nil)
   }
 
-  /// Reads the stored credentials in a detached task (the Keychain can
-  /// block) and adopts them, unless the controller wrote newer ones
-  /// meanwhile.
   func loadCredentials() async {
     let generation = credentialWriteGeneration
     let store = credentialStore

@@ -113,7 +113,6 @@ it("fails closed on malformed identity, storage, and network responses", async (
   await expect(f.coordinator(id, { action: "read" })).rejects.toThrow("unavailable")
   f.status(200)
   expect((await f.coordinator(id, { action: "read" })).status).toBe("missing")
-  // A server that ignores the request's account binding is still rejected.
   const hostile = makeCredentialCoordinator({
     dataDir: f.dataDir,
     fetch: vi.fn<typeof fetch>(async () =>

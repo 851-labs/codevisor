@@ -8,8 +8,6 @@
   import ScreenSharingRigKit
   import os
 
-  /// One media session of the rig: a peer, its metrics, and whatever source or
-  /// surface it owns. Closed exactly once.
   @MainActor
   final class RigSession {
     let id: String
@@ -23,33 +21,24 @@
     var workload: ProbeOwnedWorkloadWindow?
     var virtualDisplay: RigVirtualDisplay?
     var displaySleepAssertion: ScreenSharingDisplaySleepAssertion?
-    /// Host: the display injected input maps to; nil for sources that are not a whole display.
     var controlDisplayID: CGDirectDisplayID? {
       didSet { cursorDisplayID.withLock { [controlDisplayID] in $0 = controlDisplayID } }
     }
-    /// `controlDisplayID` for the cursor publisher, which reads it off the main actor.
     let cursorDisplayID = OSAllocatedUnfairLock<CGDirectDisplayID?>(initialState: nil)
     var hostControl: ScreenSharingHostControl?
     var controlDeadlineTask: Task<Void, Never>?
-    /// Uptime of the last automatic source restart after a capture error; bounds the retry rate.
     var lastCaptureRecoveryNs: Int64 = 0
-    /// Set when the capture reported an error; stays set until a source restart succeeds.
     var captureRecoveryPending = false
     var synthetic: SyntheticSource?
     var metalView: ScreenSharingMetalView?
     var frameSize: CGSize?
     var sourceStarted = false
-    /// The pointer as its own stream once the viewer subscribed (851-2377); display-backed sources only.
     var cursor: ScreenSharingCursorPublisher?
-    /// The host's sound once the viewer subscribed (851-2379).
     var audioEncoder: ScreenSharingAudioEncoder?
-    /// The negotiated codec's capture format: BGRA for HEVC Main 4:4:4, NV12 otherwise (851-2381).
     var capturePixelFormat: OSType = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
-    /// The negotiated codec, and whether the viewer's screen can show HDR (851-2380).
     var codec: ScreenSharingVideoCodec?
     var viewerHighDynamicRange = false
 
-    /// The host role's frame sender; the host runner only creates sender sessions.
     var frameSender: ScreenSharingFrameSender {
       guard let sender = peer as? ScreenSharingSender else { preconditionFailure("Frame sender on a viewer session") }
       return sender.frameSender
@@ -69,8 +58,6 @@
 
     var frameSizeLabel: String? { frameSize.map { "\(Int($0.width))×\(Int($0.height))" } }
 
-    /// Stops whatever source feeds the peer and releases it; the peer stays open so a
-    /// different source can take over on the same session.
     func stopSource() async {
       controlDeadlineTask?.cancel()
       controlDeadlineTask = nil
@@ -90,7 +77,7 @@
       }
       workload = nil
       capture = nil
-      virtualDisplay = nil  // releasing the object removes the display
+      virtualDisplay = nil
       displaySleepAssertion = nil
       sourceStarted = false
     }
@@ -109,8 +96,6 @@
     }
   }
 
-  /// Resident host or viewer. Host and viewer flows live in their own
-  /// extensions; this file owns state and the shared telemetry tick.
   @MainActor
   final class RigRunner: NSObject, NSWindowDelegate {
     struct Sampling {
@@ -121,7 +106,6 @@
     }
 
     let configuration: RigConfiguration
-    /// The host's current source; starts as the configured one and changes through `POST /source`.
     var activeCapture: RigConfiguration.CaptureSource
     let build: RigBuildInfo
     let name: String
@@ -145,11 +129,9 @@
     var disconnectGrace: Task<Void, Never>?
     var screenRecordingRequested = false
     var accessibilityRequested = false
-    /// Viewer: calibrated `host - viewer` clock offset for image age; nil until the first calibration.
     var clockOffset: RigClockOffset?
     var clockTask: Task<Void, Never>?
     var imageAges = RigImageAge()
-    /// Viewer: what the shell's Native session scenario shows under the video.
     let nativeSession = RigNativeSessionStatus()
 
     init(configuration: RigConfiguration, build: RigBuildInfo) {
@@ -163,8 +145,6 @@
 
     var elapsedSeconds: Double { Double(ScreenSharingMetrics.nowNs - startedNs) / 1_000_000_000 }
 
-    /// Main444 only exists under VideoToolbox's standard rate controller; the low-latency flag silently
-    /// downgrades it to 4:2:0, so the codec choice overrides the tuning knob.
     var useLowLatencyRateControl: Bool {
       !configuration.tuning.standardRateControl && configuration.codec != .hevc444
     }
@@ -199,9 +179,6 @@
       telemetry?.close()
     }
 
-    /// Shared by both roles: records the state, starts the host source on
-    /// first connection, and ends the session on failure (with a grace period
-    /// for WebRTC's transient `disconnected`).
     func connectionChanged(_ state: String, in session: RigSession) {
       guard session === self.session, !session.closed else { return }
       session.record(state)
@@ -228,8 +205,6 @@
       case "disconnected":
         disconnectGrace?.cancel()
         disconnectGrace = Task { @MainActor in
-          // A viewer can ask the host whether this session still exists; a
-          // restarted host answers immediately and the grace period is skipped.
           if await self.hostForgotSession(session) {
             await self.endSession(session, reason: "host no longer has this session")
             return
@@ -337,7 +312,6 @@
 
     func metricsBody() async -> RigMetricsBody {
       if configuration.role == .host, let workload = session?.workload {
-        // Fresh at request time, not at the last telemetry tick: a control check reads this right after injecting.
         session?.metrics.label("workloadResponses", String(workload.view.responses))
       }
       return RigMetricsBody(
@@ -346,8 +320,6 @@
         snapshot: session?.metrics.snapshot(), statistics: latestStatistics, latestSample: latestSample)
     }
 
-    /// Authorization and the routes both roles serve; role-specific routes
-    /// are tried first by the caller.
     func handleSharedRequest(_ request: RigHTTPRequest) async -> RigHTTPServer.Response? {
       switch (request.method, request.path) {
       case ("GET", "/status"): return .json(200, status())

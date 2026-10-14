@@ -3,8 +3,6 @@ import Foundation
 import Testing
 @testable import ScreenSharing
 
-/// The guard that keeps a Network.framework state handler from resuming a
-/// continuation twice — a second resume is a crash, not a wrong answer.
 struct RFBOnceTests {
   @Test func theFirstClaimWinsAndEveryLaterOneLoses() {
     let once = RFBOnce()
@@ -19,8 +17,6 @@ struct RFBOnceTests {
     #expect(second.claim())
   }
 
-  /// Every caller reaches the gate before any of them is released, so the
-  /// claims genuinely contend rather than running one after another.
   @Test func exactlyOneOfManyConcurrentCallersWins() async {
     let callers = 64
     let once = RFBOnce()

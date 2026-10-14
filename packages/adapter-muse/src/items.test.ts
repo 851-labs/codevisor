@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest"
 import { makeMuseItemMapper } from "./items.js"
 import type { MuseItem } from "./protocol.js"
 
-// Frames as Muse Code 1.4.7 sent them for "create hello.txt, edit it, run ls".
 const write = (revision: number, status: string, extra: Partial<MuseItem> = {}): MuseItem => ({
   itemId: "w1",
   kind: "toolCall",
@@ -68,7 +67,6 @@ describe("Muse item mapping", () => {
         content: { type: "text", text: "hello.txt says hi." }
       }
     ])
-    // A replayed or older revision changes nothing.
     expect(mapper.item(completed, "completed")).toEqual([])
     expect(mapper.item({ ...completed, revision: 3 }, "updated")).toEqual([])
   })
@@ -211,7 +209,6 @@ describe("Muse item mapping", () => {
       ],
       diffStats: [{ path: "hello.txt", added: 1, removed: 1 }]
     })
-    // Without Muse's counts the diff is counted from the texts.
     const { patchSummary: _, ...uncounted } = edit
     expect(
       payloads(makeMuseItemMapper().item({ ...uncounted, itemId: "e2" }, "completed"))[1]
@@ -219,7 +216,6 @@ describe("Muse item mapping", () => {
     expect(
       payloads(makeMuseItemMapper().item(write(3, "completed"), "completed"))[1]
     ).toMatchObject({ diffStats: [{ path: "hello.txt", added: 1, removed: 0 }] })
-    // An edit shape without find/replace keeps Muse's counts, or nothing.
     const batch = { ...edit, itemId: "e3", args: '{"path":"a.ts","edits":[]}' }
     expect(payloads(makeMuseItemMapper().item(batch, "completed"))[1]).toMatchObject({
       diffStats: [{ path: "a.ts", added: 1, removed: 1 }]
@@ -241,7 +237,6 @@ describe("Muse item mapping", () => {
         content: [{ type: "content", content: { type: "text", text: "total 8\nhello world" } }]
       }
     ])
-    // A still-running update without a diff adds nothing.
     expect(mapper.item(bash(2, "inProgress", "total 8\nhello world"), "updated")).toEqual([])
     const envelope = JSON.stringify({ command: "ls", exit_code: 0, output: "total 8\nhello world" })
     expect(payloads(mapper.item(bash(3, "completed", envelope), "completed"))[0]).toMatchObject({

@@ -1,15 +1,9 @@
 import Foundation
 
-/// One pane a plugin contributes (mirrors `PluginPaneDescriptor` in
-/// packages/api). `path` is the plugin-server path the pane's webview loads
-/// through the proxy.
 public struct ServerPluginPaneDescriptor: Codable, Hashable, Identifiable, Sendable {
-  /// Pane type, unique within the plugin (e.g. "diff").
   public var type: String
   public var title: String
   public var path: String
-  /// Optional absolute path on the plugin server to pane artwork. When
-  /// absent, clients inherit the plugin-level artwork.
   public var iconPath: String?
 
   public var id: String { type }
@@ -22,14 +16,7 @@ public struct ServerPluginPaneDescriptor: Codable, Hashable, Identifiable, Senda
   }
 }
 
-/// One agent tool a plugin contributes (mirrors `PluginToolDescriptor` in
-/// packages/api). The server POSTs JSON arguments to `path` on the plugin's
-/// server when an agent invokes the tool. The descriptor's opaque
-/// `inputSchema` (a JSON Schema for the arguments) is not decoded
-/// client-side — consent and settings surfaces only need name + description.
 public struct ServerPluginToolDescriptor: Codable, Hashable, Identifiable, Sendable {
-  /// Tool name, unique within the plugin (lowercase letters, digits,
-  /// underscores).
   public var name: String
   public var description: String
   public var path: String
@@ -43,14 +30,11 @@ public struct ServerPluginToolDescriptor: Codable, Hashable, Identifiable, Senda
   }
 }
 
-/// A plugin installed on a machine (mirrors `PluginSummary` in packages/api).
 public struct ServerPluginSummary: Codable, Equatable, Identifiable, Sendable {
   public var ageRating: Int?
   public var consentKey: String?
   public var sourceRepo: String?
-  /// Absent on older servers, where installed plugins were always enabled.
   public var enabled: Bool?
-  /// Whether the server retains a verified pre-update backup.
   public var canRestore: Bool?
   public var id: String
   public var name: String
@@ -58,17 +42,10 @@ public struct ServerPluginSummary: Codable, Equatable, Identifiable, Sendable {
   public var description: String?
   public var iconPath: String?
   public var panes: [ServerPluginPaneDescriptor]
-  /// Agent tools the plugin declares; absent from older servers and from
-  /// plugins that declare none.
   public var tools: [ServerPluginToolDescriptor]?
-  /// managed | linked
   public var source: String
   public var path: String
-  /// stopped | starting | running | stopping | failed
   public var state: String
-  /// How many workspace pane records currently point at this plugin —
-  /// route-layer enrichment, so uninstall confirmations can warn that
-  /// those panes will close. Absent from older servers.
   public var openPaneCount: Int?
 
   public var isEnabled: Bool { enabled ?? true }
@@ -104,7 +81,6 @@ public struct ServerPluginSummary: Codable, Equatable, Identifiable, Sendable {
   }
 }
 
-/// One executable a plugin expects Codevisor to find before setup or launch.
 public struct ServerPluginExecutableRequirement: Codable, Equatable, Identifiable, Sendable {
   public var name: String
   public var installHint: String?
@@ -127,7 +103,6 @@ public struct ServerPluginRequirements: Codable, Equatable, Sendable {
   }
 }
 
-/// Exhaustive registry-update state for one installed plugin.
 public enum ServerPluginUpdateState: String, Codable, Equatable, Sendable {
   case current
   case available
@@ -164,7 +139,6 @@ public struct ServerPluginUpdateStatus: Codable, Equatable, Identifiable, Sendab
   }
 }
 
-/// Commands and capabilities on one side of a prepared update.
 public struct ServerPluginUpdateReview: Codable, Equatable, Sendable {
   public var ageRating: Int?
   public var version: String
@@ -203,7 +177,6 @@ public struct ServerPluginNamedChanges: Codable, Equatable, Sendable {
   }
 }
 
-/// A short-lived update prepared from exact, staged source bytes.
 public struct ServerPluginUpdatePlan: Codable, Equatable, Identifiable, Sendable {
   public var planId: String
   public var pluginId: String
@@ -240,10 +213,6 @@ public struct ServerPluginUpdatePlan: Codable, Equatable, Identifiable, Sendable
   }
 }
 
-/// What a staged plugin source offers (mirrors `DiscoverRemotePluginResult`
-/// in packages/api). `installCommand`/`runCommand` are the VERBATIM manifest
-/// command strings — the consent UI shows exactly these before anything runs
-/// on the user's machine.
 public struct ServerPluginRemoteDiscovery: Codable, Equatable, Sendable {
   public var ageRating: Int?
   public var consentKey: String?
@@ -254,8 +223,6 @@ public struct ServerPluginRemoteDiscovery: Codable, Equatable, Sendable {
   public var description: String?
   public var iconPath: String?
   public var panes: [ServerPluginPaneDescriptor]
-  /// Agent tools installation would add — shown on the consent sheet
-  /// alongside the verbatim commands. Absent from older servers.
   public var tools: [ServerPluginToolDescriptor]?
   public var installCommand: String?
   public var runCommand: String
@@ -286,12 +253,8 @@ public struct ServerPluginRemoteDiscovery: Codable, Equatable, Sendable {
   }
 }
 
-/// One plugin in the public registry index (mirrors `PluginRegistryEntry` in
-/// packages/api): manifest metadata renderable without running anything, plus
-/// the GitHub facts (repo, stars, push time) that anchor it to a real owner.
 public struct ServerPluginRegistryEntry: Codable, Hashable, Identifiable, Sendable {
   public var ageRating: Int?
-  /// Owner-namespaced plugin id, lowercase `owner.name`.
   public var id: String
   public var name: String
   public var version: String
@@ -299,17 +262,10 @@ public struct ServerPluginRegistryEntry: Codable, Hashable, Identifiable, Sendab
   public var iconPath: String?
   public var panes: [ServerPluginPaneDescriptor]
   public var tools: [ServerPluginToolDescriptor]?
-  /// GitHub "owner/name" — the directory always shows the real repo owner.
-  /// Feed this to the discover→consent→install flow as the plugin source.
   public var repo: String
-  /// GitHub avatar of the repo owner — the only artwork renderable before
-  /// install (`iconPath` is served by the plugin's own server, which isn't
-  /// running yet). Absent from older indexes.
   public var ownerAvatarUrl: String?
   public var stars: Int
   public var pushedAt: String
-  /// Curation groundwork: reserved for first-party verification of an
-  /// entry. The indexer never sets it yet, so it is always absent today.
   public var verified: Bool?
 
   public init(
@@ -341,13 +297,7 @@ public struct ServerPluginRegistryEntry: Codable, Hashable, Identifiable, Sendab
   }
 }
 
-/// The registry index served by `GET /v1/plugins/registry` (mirrors
-/// `PluginRegistryIndex` in packages/api). The wire document also carries
-/// `rejected` diagnostics for plugin authors; clients don't render them, so
-/// decoding simply ignores that key.
 public struct ServerPluginRegistryIndex: Codable, Equatable, Sendable {
-  /// Null until the indexer's first poll completes — the cloud serves an
-  /// honest empty index rather than a 404.
   public var generatedAt: String?
   public var entries: [ServerPluginRegistryEntry]
 
@@ -357,16 +307,9 @@ public struct ServerPluginRegistryIndex: Codable, Equatable, Sendable {
   }
 }
 
-/// A short-lived pane token plus the server-relative pane URL it unlocks
-/// (mirrors `PluginPaneTokenResponse` in packages/api). Append `path` to the
-/// machine's base URL and load it in a webview; the proxy exchanges the token
-/// for a scoped cookie on the initial navigation.
 public struct ServerPluginPaneTokenResponse: Codable, Equatable, Sendable {
   public var token: String
   public var path: String
-  /// Absolute pane URL against the origin the caller reached the server on —
-  /// for browser tooling. Native clients keep composing `path` against their
-  /// machine base URL. Absent from older servers.
   public var url: String?
   public var expiresAt: String
 
@@ -378,8 +321,6 @@ public struct ServerPluginPaneTokenResponse: Codable, Equatable, Sendable {
   }
 }
 
-/// Plugin artwork normalized by the server to a bounded PNG, regardless of
-/// whether the plugin supplied SVG, PNG, or WebP.
 public struct ServerPluginIconAsset: Equatable, Sendable {
   public var data: Data
   public var contentType: String

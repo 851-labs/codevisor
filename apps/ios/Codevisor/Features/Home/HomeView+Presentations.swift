@@ -2,15 +2,7 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// Presentations that must cover the whole window regardless of container:
-/// on the split layout a cover attached inside the sidebar column would only
-/// cover that column, so these sit above the container switch. The New Chat
-/// sheet is deliberately not here — it is compact-only and lives in
-/// `stackContainer` with its zoom transition source.
 extension HomeView {
-  /// Requests posted app-wide (a transcript row asking for sign-in) come
-  /// from the window the user just touched, which is the key window. Every
-  /// other iPad window ignores them. With no key window at all, answer.
   var isWorkingWindow: Bool {
     guard let window = hostWindow.window else { return true }
     if window.isKeyWindow { return true }
@@ -52,12 +44,8 @@ extension HomeView {
       } content: {
         OnboardingView(start: hasRemoteMachines || onboardingDismissed ? .connect : onboardingStart)
           .interactiveDismissDisabled(!hasAIDataSharingConsent)
-          // A QR code scanned during onboarding must present over the
-          // cover, so it carries its own copy of the approval sheet.
           .modifier(CloudDeviceApprovalPresentation(pending: $pendingDeviceApproval, hostedByOnboarding: true))
       }
-      // Parse and route codevisor:// deeplinks in one modifier;
-      // diagnostic chat opens come back through these closures.
       .modifier(
         HomeExternalRouting(
           pendingDeviceApproval: $pendingDeviceApproval,

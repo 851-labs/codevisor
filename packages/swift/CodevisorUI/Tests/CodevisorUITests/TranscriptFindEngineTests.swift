@@ -29,7 +29,6 @@ struct TranscriptFindEngineTests {
     let engine = TranscriptFindEngine()
     #expect(await engine.search("CONFIG", rows: rows, firstVisibleRow: 0, theme: .default).value)
 
-    // Prose ("config is", "config.yaml") and the code block; none from the narration.
     #expect(engine.results.count == 3)
     #expect(engine.results.rows.allSatisfy { row in !worked.contains { $0.layoutKey == row.rowKey } })
   }
@@ -75,7 +74,6 @@ struct TranscriptFindEngineTests {
     let engine = TranscriptFindEngine()
     let stale = engine.search("alpha", rows: [row], firstVisibleRow: 0, theme: .default)
     let latest = engine.search("beta", rows: [row], firstVisibleRow: 0, theme: .default)
-    // Return pressed before the count arrives moves past the first match.
     #expect(!engine.step(by: 1))
 
     #expect(await stale.value == false)

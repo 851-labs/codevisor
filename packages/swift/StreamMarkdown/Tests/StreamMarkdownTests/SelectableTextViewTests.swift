@@ -150,7 +150,6 @@ struct SelectableTextViewTests {
     let column = MarkdownFragmentMetrics.listColumn(markers: ["1.", "2."])
     #expect(outerStyle.firstLineHeadIndent == column.markerInset)
     #expect(outerStyle.headIndent == column.width)
-    // Nested markers start from the parent item's text, not the row edge.
     #expect(nestedStyle.firstLineHeadIndent == column.width + column.markerInset)
     #expect(nestedStyle.headIndent == 2 * column.width)
   }

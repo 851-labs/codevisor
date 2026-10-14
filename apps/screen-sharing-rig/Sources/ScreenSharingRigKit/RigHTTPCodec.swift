@@ -1,13 +1,11 @@
 import Foundation
 import QuartzCore
 
-/// A parsed HTTP/1.1 request. Header names are lowercased.
 public struct RigHTTPRequest: Equatable, Sendable {
   public let method: String
   public let path: String
   public let headers: [String: String]
   public let body: Data
-  /// `CACurrentMediaTime` when the request was fully received; 0 when constructed by hand.
   public let receivedAtSeconds: Double
 
   public init(method: String, path: String, headers: [String: String], body: Data, receivedAtSeconds: Double = 0) {
@@ -25,8 +23,6 @@ public enum RigHTTPParseResult: Equatable, Sendable {
   case complete(RigHTTPRequest, consumed: Int)
 }
 
-/// Just enough HTTP/1.1 for one request per connection on a trusted LAN: no
-/// chunked encoding, no keep-alive, bounded sizes.
 public enum RigHTTPCodec {
   public static let maximumHeaderBytes = 16_384
   public static let maximumBodyBytes = 524_288
@@ -92,7 +88,6 @@ public enum RigHTTPCodec {
     return Data(head.utf8) + body
   }
 
-  /// `Authorization: Bearer <token>`, compared in constant time.
   public static func isAuthorized(_ request: RigHTTPRequest, token: String) -> Bool {
     guard let header = request.headers["authorization"], header.hasPrefix("Bearer ") else { return false }
     let presented = Array(header.dropFirst("Bearer ".count).utf8)

@@ -2,9 +2,6 @@ import CoreVideo
 import Foundation
 import ScreenSharing
 
-/// Main-actor work a test releases explicitly, in place of the channel's default `Task` hop. It
-/// makes delivery order observable: nothing arrives until `drain()`, and work queued during a drain
-/// waits for the next one, exactly as the native channel's hop onto the main actor does.
 @MainActor
 public final class ScreenSharingManualHop {
   private var queued: [@Sendable @MainActor () -> Void] = []
@@ -17,24 +14,17 @@ public final class ScreenSharingManualHop {
 
   public var isEmpty: Bool { queued.isEmpty }
 
-  /// Runs the work queued so far. Work queued by that work is left for the next drain.
   public func drain() {
     let batch = queued
     queued = []
     for work in batch { work() }
   }
 
-  /// Runs queued work until nothing is left, for a flow whose replies queue more work.
   public func drainAll() {
     while !queued.isEmpty { drain() }
   }
 }
 
-/// A viewing session with no transport behind it: frames go straight into the viewer's mailbox and
-/// the typed protocols ride `ScreenSharingLocalChannel` pairs. It exists so the session contract —
-/// capabilities, frame delivery, control flow, a terminal media failure, transport state and an
-/// idempotent close — can be exercised without WebRTC, and so a feature can be driven against a
-/// session whose far end a test controls.
 @MainActor
 public final class ScreenSharingLocalViewingSession: ScreenSharingViewingSession {
   public let capabilities: ScreenSharingCapabilities
@@ -42,7 +32,6 @@ public final class ScreenSharingLocalViewingSession: ScreenSharingViewingSession
   public let metrics = ScreenSharingMetrics()
   public private(set) var failure: String?
   public var onConnectionChanged: ((String) -> Void)?
-  /// Whether `close()` has run. Every other operation is a no-op afterwards.
   public private(set) var isClosed = false
 
   private let controlChannel: ScreenSharingLocalChannel<ScreenSharingControlMessage>?
@@ -62,9 +51,6 @@ public final class ScreenSharingLocalViewingSession: ScreenSharingViewingSession
     clipboardChannel = clipboard
   }
 
-  /// A connected pair: the session the viewer sees, and the far end a test drives. Channels exist
-  /// only for the capabilities that were negotiated, which is how a backend without control or
-  /// clipboard reports itself.
   public static func connected(
     capabilities: ScreenSharingCapabilities = [.control, .clipboard, .statistics],
     hop: @escaping @Sendable (_ work: @escaping @Sendable @MainActor () -> Void) -> Void = { work in
@@ -82,8 +68,6 @@ public final class ScreenSharingLocalViewingSession: ScreenSharingViewingSession
     return (session, host)
   }
 
-  /// Statistics worth showing, or nothing at all when the backend did not negotiate them. A closed
-  /// session reports nothing: the transport it would have asked is gone.
   public func statistics() async -> [String: String] {
     guard capabilities.contains(.statistics), !isClosed else { return [:] }
     return reportedStatistics
@@ -117,9 +101,6 @@ public final class ScreenSharingLocalViewingSession: ScreenSharingViewingSession
   }
 }
 
-/// The far end of a `ScreenSharingLocalViewingSession`: what the host would send and what the
-/// transport would report. Everything it does is refused once the session has closed, so a test
-/// cannot accidentally observe a callback after a terminal close.
 @MainActor
 public final class ScreenSharingLocalViewingHost {
   public let control: ScreenSharingLocalChannel<ScreenSharingControlMessage>?
@@ -138,7 +119,6 @@ public final class ScreenSharingLocalViewingHost {
 
   public func deliver(_ frame: ScreenSharingVideoFrame) { session?.deliver(frame) }
 
-  /// One decoded frame identified by `identity`, for a test that only compares identities.
   public func deliverFrame(identity: Int64) {
     var pixel: CVPixelBuffer?
     CVPixelBufferCreate(nil, 2, 2, kCVPixelFormatType_32BGRA, nil, &pixel)

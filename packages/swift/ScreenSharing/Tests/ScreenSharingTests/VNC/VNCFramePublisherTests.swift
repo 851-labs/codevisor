@@ -4,10 +4,7 @@ import Testing
 import ScreenSharingTesting
 @testable import ScreenSharing
 
-/// Copy only what changed (851-2319): every published frame equals the
-/// framebuffer, and a small update copies a small number of bytes.
 struct VNCFramePublisherTests {
-  /// The rectangles a scene frame changed; nil when it resized.
   static func changed(_ rectangles: [RFBLoopbackServer.Rectangle]) -> [RFBRectangle]? {
     var out: [RFBRectangle] = []
     for rectangle in rectangles {
@@ -57,7 +54,6 @@ struct VNCFramePublisherTests {
       #expect(
         Self.pixels(published, width: framebuffer.width, height: framebuffer.height) == Self.colour(framebuffer),
         "frame \(frame) of \(kind)")
-      // Hold some frames for a while, as a renderer does, so buffers come back with different backlogs.
       held.append(published)
       if held.count > frame % 3 { held.removeFirst() }
     }
@@ -71,7 +67,6 @@ struct VNCFramePublisherTests {
     var scene = RFBLoopbackScene(kind: .typing, seed: 1)
     publisher.publish(framebuffer, changed: nil, to: mailbox, metrics: metrics)
     _ = mailbox.take()
-    // Warm the pool: its buffers are new the first time round and copied whole.
     for _ in 0..<6 {
       publisher.publish(
         framebuffer, changed: Self.changed(try scene.next(on: framebuffer)), to: mailbox, metrics: metrics)
@@ -85,7 +80,6 @@ struct VNCFramePublisherTests {
       _ = mailbox.take()
     }
     let perUpdate = (metrics.snapshot().counters["vncBytesCopied", default: 0] - before) / updates
-    // A glyph is 8 × 12; a buffer may also owe the glyphs of the updates it missed.
     let glyph = 8 * 12 * 4
     #expect(perUpdate <= glyph * VNCFramePublisher.maximumTrackedBuffers, "\(perUpdate) bytes per update")
     #expect(perUpdate * 1000 < 1280 * 800 * 4, "far below a full 4 MB frame")
@@ -109,8 +103,6 @@ struct VNCFramePublisherTests {
 }
 
 extension VNCFramePublisherTests {
-  /// Found by the first A/B run: a reused buffer's backlog repeated this
-  /// update's full-frame rectangle, so photo and scroll copied 8 MB, not 4.
   @Test(arguments: [RFBLoopbackScene.Kind.photo, .scroll])
   func fullFrameUpdatesCopyTheFrameOnce(kind: RFBLoopbackScene.Kind) throws {
     let framebuffer = try RFBFramebuffer(width: 320, height: 200)

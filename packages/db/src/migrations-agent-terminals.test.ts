@@ -12,7 +12,6 @@ it("drops the hidden terminal tabs clients made for agent background commands", 
   const workspace = await run(
     db.upsertWorkspace({ projectId: project.id, name: "agents", hasCustomName: false })
   )
-  // As macOS published them: the agent's dev server, and the user's own shell.
   for (const [id, resourceId, metadata] of [
     ["agent-pane", "chat-1:bg:tool-1", '{"attachOnly":true,"ownerChatSessionId":"chat-1"}'],
     ["user-pane", "user-shell", '{"attachOnly":false}']

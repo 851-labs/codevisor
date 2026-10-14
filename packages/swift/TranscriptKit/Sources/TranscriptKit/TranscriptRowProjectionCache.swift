@@ -2,8 +2,6 @@ import CoreGraphics
 import CodevisorProtocol
 import Foundation
 
-/// A cheap version token. Copying `TranscriptProjectionInput` is copy-on-write;
-/// this key lets SwiftUI cancel stale preparations without comparing the transcript.
 public struct TranscriptProjectionKey: Hashable, Sendable {
   public let sessionID: UUID
   public let controllerRevision: UInt64
@@ -19,11 +17,7 @@ public struct TranscriptProjectionKey: Hashable, Sendable {
 }
 
 public struct TranscriptProjectionOptions: Hashable, Sendable {
-  /// iOS presents the initial connection message inline. macOS keeps its
-  /// existing quiet connection treatment while sharing every other row.
   public let includesConnectingRow: Bool
-  /// Platform composer geometry. Supplying it here keeps the final O(n)
-  /// array materialization on the projection actor too.
   public let bottomSpacerHeight: CGFloat?
 
   public init(includesConnectingRow: Bool, bottomSpacerHeight: CGFloat? = nil) {
@@ -42,7 +36,6 @@ public struct TranscriptProjectionRequest: Hashable, Sendable {
   }
 }
 
-/// Stable, immutable rows shared by both native transcript virtualizers.
 public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
   public enum ID: Hashable, Sendable {
     case message(UUID)
@@ -67,8 +60,6 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
     case activeAttachment(UUID, sourceID: String, ordinal: Int)
     case active(UUID)
     case setup
-    /// The optimistic first send's "Working for…" header, shown before the
-    /// model exists and replaced in place by the real active row.
     case startingAgent
     case backgroundTask
     case updateGate
@@ -105,8 +96,6 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
       case let .assistantAttachment(id, sourceID, ordinal),
         let .activeAttachment(id, sourceID, ordinal):
         "message:\(id.uuidString):attachment:\(sourceID):\(ordinal)"
-      // An ordinary assistant keeps the same native host and measurement
-      // when it moves from the live slot into settled history.
       case let .active(id): "message:\(id.uuidString)"
       case .setup: "special:setup"
       case .startingAgent: "special:starting-agent"
@@ -204,12 +193,8 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
   public let estimatedHeight: CGFloat
   public let measurementRevision: Int
   public let layoutKey: String
-  /// Overrides ordinary message spacing for adjacent blocks in one document.
   public let spacingAfter: CGFloat?
   public let workedSection: TranscriptWorkedSectionMembership?
-  /// The completed assistant item represented by this visible slice. The
-  /// active slot can carry this after generation ends without changing its
-  /// stable row identity.
   public let finishedResponseItemId: UUID?
 
   public var isUserMessage: Bool {
@@ -267,9 +252,6 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
   }
 }
 
-/// Serializes and caches transcript projection away from the UI actor. A
-/// cache hit makes revisiting a chat O(1); cancellation checks stop a rapid
-/// sequence of sidebar taps from finishing obsolete transcript work.
 public actor TranscriptRowProjectionCache {
   public static let shared = TranscriptRowProjectionCache()
 
@@ -319,12 +301,6 @@ public actor TranscriptRowProjectionCache {
     try TranscriptRowAssembly.assemble(input, options: options)
   }
 
-  /// The optimistic first send shows the same "Working for…" header the
-  /// live turn will replace it with, as soon as nothing local stands in the
-  /// way: every setup phase has succeeded (or there is none) and no failure
-  /// or connection-recovery state owns the transcript's tail. Connect, the
-  /// runtime-configuration replay and the prompt round trip all happen
-  /// behind this line instead of a frozen transcript.
   static func showsOptimisticAgentActivity(_ input: TranscriptProjectionInput) -> Bool {
     guard input.activityMessage == nil, input.sessionErrorMessage == nil else { return false }
     if case .failed = input.status { return false }

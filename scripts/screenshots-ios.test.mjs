@@ -93,11 +93,9 @@ test("export cannot read an attachment outside its result directory", () => {
 test("export requires the exact dimensions for each App Store screenshot slot", () => {
   const bytes = Buffer.alloc(24)
   Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(bytes)
-  // The configured iPhone captures belong to the portrait 6.5-inch slot.
   bytes.writeUInt32BE(1284, 16)
   bytes.writeUInt32BE(2778, 20)
   assert.deepEqual(pngDimensions(bytes, devices.iphone), { width: 1284, height: 2778 })
-  // The former 6.9-inch captures are not accepted in the 6.5-inch slot.
   for (const [width, height] of [
     [2064, 2752],
     [1320, 2868],

@@ -5,9 +5,6 @@ import Testing
 
 @testable import CodevisorCloud
 
-/// Launch must show cached cloud machines without waiting on the network,
-/// and an offline launch must never sign the user out. The retry backoff runs
-/// on a TestClock, so no test here sleeps for real.
 @MainActor
 @Suite("CloudAccountController roster persistence")
 struct CloudAccountControllerRosterTests {
@@ -31,15 +28,12 @@ struct CloudAccountControllerRosterTests {
     let store = InMemoryCloudCredentialStore(token: "t", roster: cachedRoster())
     let (controller, _, _) = makeController(client: client, store: store)
 
-    // get-session is held open, so returning at all proves launch did not
-    // wait on the network.
     await controller.bootstrap()
 
     #expect(controller.state == .signedIn(userEmail: "cached@example.com"))
     #expect(controller.machines.map(\.deviceId) == ["m1"])
     #expect(controller.hasCompletedBootstrap)
     #expect(!controller.isRosterVerified)
-    // Discovery only serves the sign-in screen; token launches skip it.
     #expect(client.discoverCount == 0)
 
     gate.signal()
@@ -71,7 +65,6 @@ struct CloudAccountControllerRosterTests {
     #expect(try store.token() == "t")
     #expect(store.loadRoster() == cachedRoster())
 
-    // Still offline at the first retry: the next wait doubles.
     await clock.waitForSleep(.seconds(1))
     var retry = controller.validationRetryTask
     clock.advance(by: .seconds(1))
@@ -80,7 +73,6 @@ struct CloudAccountControllerRosterTests {
     #expect(controller.state.isSignedIn)
     await clock.waitForSleep(.seconds(2))
 
-    // A 5xx is just as transient as a dropped connection.
     client.sessionError = nil
     client.machinesResult = .failure(CloudAccountClientError.httpStatus(503))
     retry = controller.validationRetryTask
@@ -189,8 +181,6 @@ struct CloudAccountControllerRosterTests {
 
     await controller.bootstrap()
 
-    // Without a usable cache, launch waited for the (failed) attempt: the
-    // user stays signed in, but no foreign machines leaked onto the list.
     #expect(controller.state == .signedIn(userEmail: nil))
     #expect(controller.machines.isEmpty)
     #expect(!controller.isRosterVerified)
@@ -221,11 +211,9 @@ struct CloudAccountControllerRosterTests {
     #expect(controller.isRosterVerified)
     #expect(controller.machines.map(\.deviceId) == ["m2"])
     #expect(store.loadRoster()?.machines.map(\.deviceId) == ["m2"])
-    // The pending backoff sleep was cancelled, not left to fire later.
     #expect(clock.pendingCount == 0)
     #expect(controller.validationRetryTask == nil)
 
-    // Once verified, a foreground nudge costs no request.
     let sessionCalls = client.sessionTokens.count
     await controller.retryIfUnverified()
     #expect(client.sessionTokens.count == sessionCalls)
@@ -253,7 +241,6 @@ struct CloudAccountControllerRosterTests {
     #expect(controller.state == .signedOut)
     #expect(controller.machines.isEmpty)
     #expect(store.loadRoster() == nil)
-    // Signed-out launches still discover providers for the sign-in screen.
     #expect(client.discoverCount == 1)
   }
 }

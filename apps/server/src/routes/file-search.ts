@@ -8,8 +8,6 @@ export interface FileSearchEntry {
   isSymbolicLink: boolean
 }
 
-// Search on the machine that owns the files, without downloading every folder
-// to the phone. Never follow directory symlinks into cycles or outside the root.
 export async function searchFileEntries(
   root: string,
   query: string,

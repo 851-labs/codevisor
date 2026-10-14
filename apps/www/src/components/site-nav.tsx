@@ -1,6 +1,3 @@
-/// The marketing-site top bar, shared by every page (landing, plugin
-/// directory, plugin details) so navigation is identical everywhere. Fixed
-/// with a blur backdrop — pages must pad their first content block below it.
 export function SiteNav() {
   return (
     <header className="fixed inset-x-0 top-0 z-40 border-b border-hairline bg-black/80 backdrop-blur-xl">

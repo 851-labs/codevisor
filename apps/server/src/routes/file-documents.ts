@@ -117,9 +117,7 @@ function replaceDocument(
     if (fd !== undefined) closeSync(fd)
     try {
       unlinkSync(temporary)
-    } catch {
-      /* Renamed successfully, or never created. */
-    }
+    } catch {}
   }
 }
 
@@ -129,9 +127,6 @@ function save(path: string, input: unknown) {
   if (bytes.length > textLimit || textContent(bytes) === null) {
     throw new HttpFailure(413, "Save a UTF-8 text file smaller than 4 MB.", "file_too_large")
   }
-  // No asynchronous boundary between checking the revision and committing:
-  // concurrent saves through this server cannot both accept the same base.
-  // Resolve symlinks so atomic replacement preserves the link itself.
   const current = snapshot(path)
   if (current.version !== input.version) {
     throw new HttpFailure(

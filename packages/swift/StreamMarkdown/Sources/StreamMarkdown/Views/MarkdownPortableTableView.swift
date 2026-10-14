@@ -1,9 +1,6 @@
 #if canImport(UIKit) && !canImport(AppKit)
   import SwiftUI
 
-  /// A single native horizontal viewport with cells mounted on demand.
-  /// Content margins preserve text-column alignment while wide tables can
-  /// scroll through the transcript's side gutters.
   struct MarkdownPortableTableView: View {
     let headers: [MarkdownText]
     let alignments: [ColumnAlignment]

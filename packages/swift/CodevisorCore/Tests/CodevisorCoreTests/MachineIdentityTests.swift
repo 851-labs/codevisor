@@ -23,7 +23,6 @@ struct MachineIdentityTests {
     ]
     #expect(codevisorMachineIsThisMac("cloud:device-1", statusByMachineId: statuses))
     #expect(!codevisorMachineIsThisMac("remote-2", statusByMachineId: statuses))
-    // Unknown identity is never assumed local.
     #expect(!codevisorMachineIsThisMac("remote-3", statusByMachineId: statuses))
     #expect(!codevisorMachineIsThisMac("unprobed", statusByMachineId: statuses))
     #expect(

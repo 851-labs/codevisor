@@ -5,8 +5,6 @@ import Foundation
 import QuartzCore
 
 extension ComputerUsePresentationState {
-  /// A bounded compositor animation, without pumping/re-entering the main
-  /// run loop or delaying the actual input. Idle cursors never animate.
   func animateClick(presentation: SessionPresentation, at point: CGPoint) {
     let pulse = CABasicAnimation(keyPath: "opacity")
     pulse.fromValue = 0.45
@@ -38,9 +36,6 @@ extension ComputerUsePresentationState {
     panel.hasShadow = false
     panel.ignoresMouseEvents = true
     panel.hidesOnDeactivate = false
-    // Stay in the normal window band and pin immediately above the target.
-    // A floating panel would incorrectly draw over unrelated foreground
-    // windows that merely overlap the controlled window.
     panel.level = .normal
     panel.collectionBehavior = [
       .canJoinAllSpaces,

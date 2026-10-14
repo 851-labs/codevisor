@@ -1,11 +1,3 @@
-/**
- * The in-page half of the Browser Use cursor presentation. `pointerOverlay` is stringified and
- * evaluated inside the tab, so it must stay self-contained: no imports, no closure references,
- * and nothing the page's CSP could refuse. All styling goes through the CSSOM (never inline
- * `<style>` or `style=""` attributes) and the tree is built with DOM APIs rather than innerHTML so
- * Trusted Types enforcement is not tripped.
- */
-
 export interface PointerCommand {
   readonly kind: "move" | "track" | "pulse" | "hide" | "inspect"
   readonly session?: string
@@ -28,27 +20,23 @@ export interface PointerReply {
   }>
 }
 
-/* v8 ignore start -- this function only ever runs inside the page via Runtime.evaluate; the
- * headless Chromium test in browser-use-provider.chrome.test.ts exercises it end to end. */
-/* oxlint-disable unicorn/consistent-function-scoping -- the overlay is serialized with
- * toString() and evaluated in the page, so its helpers must stay inside it. */
+/* v8 ignore start */
+/* oxlint-disable unicorn/consistent-function-scoping */
 const pointerOverlay = (command: PointerCommand): PointerReply => {
   const LAYER_ID = "codevisor-pointer-layer"
   const VERSION = 1
   const PALETTE: ReadonlyArray<readonly [number, number, number]> = [
-    [0.35, 0.34, 0.84], // indigo
-    [0.83, 0.32, 0.31], // coral
-    [0.13, 0.55, 0.45], // teal
-    [0.8, 0.47, 0.13], // amber
-    [0.61, 0.31, 0.73], // purple
-    [0.17, 0.47, 0.82], // blue
-    [0.78, 0.31, 0.6], // magenta
-    [0.42, 0.56, 0.14] // olive
+    [0.35, 0.34, 0.84],
+    [0.83, 0.32, 0.31],
+    [0.13, 0.55, 0.45],
+    [0.8, 0.47, 0.13],
+    [0.61, 0.31, 0.73],
+    [0.17, 0.47, 0.82],
+    [0.78, 0.31, 0.6],
+    [0.42, 0.56, 0.14]
   ]
-  // The Computer Use pointer artwork (open-codex-computer-use, MIT). Tip is at (12, 3).
   const POINTER_PATH =
     "M19.8683 18.4886L13.8696 4.16156C13.7257 3.82006 13.4698 3.52606 13.1358 3.31858C12.8019 3.11111 12.4058 3 12 3C11.5942 3 11.1981 3.11111 10.8642 3.31858C10.5302 3.52606 10.2743 3.82006 10.1304 4.16156L4.13171 18.4886C3.97804 18.8506 3.95828 19.2476 4.07537 19.6206C4.19245 19.9935 4.44013 20.3224 4.78157 20.5585C5.1751 20.8443 5.66562 20.9999 6.17127 20.9995C6.6085 20.9989 7.03599 20.8832 7.401 20.6665L12 17.9127L16.599 20.6665C16.9918 20.9012 17.4574 21.0173 17.9283 20.9979C18.3993 20.9785 18.8512 20.8246 19.2184 20.5585C19.5599 20.3224 19.8075 19.9935 19.9246 19.6206C20.0417 19.2476 20.022 18.8506 19.8683 18.4886Z"
-  // ~14×16 px, matching the native Computer Use pointer (15×17 pt) rather than a page cursor.
   const POINTER_SCALE = 0.9
   const HALO_RADIUS = 20
   const POINTER_ROTATION = -32
@@ -173,7 +161,6 @@ const pointerOverlay = (command: PointerCommand): PointerReply => {
       const velocityX = (point.x - cursor.x) / frameSeconds
       cursor.x = point.x
       cursor.y = point.y
-      // Lean into the direction of travel, like the macOS pointer does.
       const lean = clamp(velocityX * 0.00035, -0.18, 0.18)
       cursor.tilt += (lean - cursor.tilt) * 0.3
       if (raw >= 1) {
@@ -262,7 +249,6 @@ const pointerOverlay = (command: PointerCommand): PointerReply => {
     layer.tick = () => {
       const time = now()
       let active = false
-      // Render may delete the current cursor, which Map iteration tolerates.
       for (const cursor of layer.cursors.values()) active = render(layer, cursor, time) || active
       layer.frame = active ? requestAnimationFrame(layer.tick) : 0
     }
@@ -305,8 +291,6 @@ const pointerOverlay = (command: PointerCommand): PointerReply => {
       height: `${HALO_RADIUS * 2}px`,
       "border-radius": "50%",
       "transform-origin": "50% 50%",
-      // closest-side puts the transparent stop exactly on the rim; the extra stops give an
-      // ease-out falloff so the glow dissolves into the page instead of ending at a clipped edge.
       background: `radial-gradient(circle closest-side, ${rgba(fog, 0.3)} 0%, ${rgba(fog, 0.24)} 30%, ${rgba(fog, 0.14)} 55%, ${rgba(fog, 0.06)} 75%, ${rgba(fog, 0.015)} 90%, ${rgba(fog, 0)} 100%)`
     })
     const ring = document.createElement("div")
@@ -370,7 +354,6 @@ const pointerOverlay = (command: PointerCommand): PointerReply => {
   const show = (cursor: Cursor): void => {
     if (cursor.shown) return
     cursor.shown = true
-    // Force the initial transform to land before the opacity transition starts.
     void cursor.element.offsetWidth
     style(cursor.element, { opacity: "1" })
   }
@@ -468,7 +451,6 @@ const pointerOverlay = (command: PointerCommand): PointerReply => {
 /* oxlint-enable unicorn/consistent-function-scoping */
 /* v8 ignore stop */
 
-/** Source of the page-side overlay, evaluated as `(source)(command)`. */
 export const pointerOverlaySource: string = pointerOverlay.toString()
 
 export const pointerOverlayExpression = (command: PointerCommand): string =>

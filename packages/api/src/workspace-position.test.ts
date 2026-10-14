@@ -49,8 +49,6 @@ describe("positions between neighbours", () => {
   const lower = initialWorkspacePosition(200, first)
   const upper = initialWorkspacePosition(100, second)
 
-  // The same vectors are asserted by the native WorkspacePosition tests, so a
-  // server-assigned key and a client drag agree digit for digit.
   it("matches the native midpoint keys", () => {
     expect(workspacePositionBetween(lower, upper, third)).toBe(
       "ffffffffff68000000000000000000000000000000038"

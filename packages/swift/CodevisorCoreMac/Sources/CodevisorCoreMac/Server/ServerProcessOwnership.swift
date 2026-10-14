@@ -22,8 +22,6 @@ enum ServerProcessOwnership {
   static func hasStopped(port: Int, databasePath: String, previousOwner: Owner?) async -> Bool {
     if let previousOwner, isAlive(previousOwner.pid) { return false }
     if let current = owner(databasePath: databasePath), isAlive(current.pid) { return false }
-    // A killed process can leave proper-lockfile's heartbeat directory. It
-    // becomes acquirable after five seconds; never delete an active lease.
     if let attributes = try? FileManager.default.attributesOfItem(atPath: databasePath + ".lock"),
       let modified = attributes[.modificationDate] as? Date,
       Date().timeIntervalSince(modified) <= 5
@@ -45,7 +43,6 @@ enum ServerProcessOwnership {
       expected.pid == current.pid, expected.bootId == current.bootId,
       current.pid != ProcessInfo.processInfo.processIdentifier, isAlive(current.pid)
     else { return }
-    // PID reuse or stale metadata must never signal an unrelated process.
     guard
       let result = try? await ProcessCommandRunner().run(
         executableURL: URL(fileURLWithPath: "/bin/ps"),

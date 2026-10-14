@@ -2,12 +2,6 @@ import SwiftUI
 import CodevisorCore
 import CodevisorUI
 
-/// Settings ▸ Machines: this Mac plus every machine on the Codevisor Cloud
-/// account, as a flat list — status and actions live on the rows. There is
-/// no per-machine page and no "connect" affordance: the fleet is always
-/// connected, and which machine the app points at is a routing detail that
-/// follows the chat you open. Machines join by signing in to the account
-/// (`codevisor auth login`), never by address.
 struct MachinesSettingsView: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.theme) private var theme
@@ -19,20 +13,11 @@ struct MachinesSettingsView: View {
 
   private var machines: MachineController { environment.machines }
 
-  /// The status poll below runs ONLY while this list can actually be seen:
-  /// the Machines section is selected and the Settings window is
-  /// key/active. An unguarded `.task` here kept a per-machine HTTP probe
-  /// (10s) running for the rest of the app's lifetime — even with the
-  /// window closed. `.task(id:)` restarts the loop (with an immediate
-  /// refresh) the moment the list becomes visible again.
   private var isPollingActive: Bool {
     controlActiveState != .inactive
       && SettingsRouter.shared.selectedTab == .machines
   }
 
-  /// A Bool presentation binding over optional state ("present while
-  /// non-nil"), kept out of `body` so the Release type-checker stays within
-  /// its budget.
   private func presenceBinding<Value>(_ state: Binding<Value?>) -> Binding<Bool> {
     Binding(
       get: { state.wrappedValue != nil },
@@ -40,15 +25,9 @@ struct MachinesSettingsView: View {
     )
   }
 
-  /// The machine list itself, separated from `body`'s presentation-modifier
-  /// chain: as one expression the two together exceeded the Release
-  /// type-checker's budget ("unable to type-check this expression in
-  /// reasonable time" in Alpha builds).
   private var machinesForm: some View {
     Form {
       Section {
-        // This Mac plus the cloud account's machines, deduplicated in
-        // the controller (this Mac's own cloud registration is hidden).
         ForEach(machines.allMachines) { machine in
           if machine.isCloud,
             let presence = machines.cloudMachine(forMachineId: machine.id)
@@ -112,10 +91,6 @@ struct MachinesSettingsView: View {
           "“\(machine.name)” is presenting a different encryption key than the one this device remembers. That happens if the machine was re-provisioned — but it can also mean something between you and the machine is intercepting traffic. Only trust the new key if you expected this change."
         )
       }
-      // Keep statuses honest while the pane is open: a machine that was mid
-      // restart (or briefly offline) when first probed recovers on the next
-      // pass instead of staying stuck on "Unreachable". No probes while
-      // nobody is looking.
       .task(id: isPollingActive) {
         guard isPollingActive else { return }
         while !Task.isCancelled {
@@ -124,8 +99,6 @@ struct MachinesSettingsView: View {
         }
       }
   }
-  /// A machine reached through the cloud account's relay (row extracted to
-  /// CloudMachineRowView; the sheets/dialogs it triggers live on this list).
   fileprivate func cloudMachineRow(_ machine: CodevisorMachine, presence: CloudMachine) -> some View {
     CloudMachineRowView(
       machine: machine,
@@ -138,8 +111,6 @@ struct MachinesSettingsView: View {
     )
   }
 
-  /// This Mac's own row (the embedded machine): its name follows the
-  /// computer name, so there is nothing to rename or remove.
   fileprivate func machineRow(_ machine: CodevisorMachine) -> some View {
     HStack(spacing: 10) {
       Image(systemName: EntitySystemSymbol.machine(machine))
@@ -164,13 +135,10 @@ struct MachinesSettingsView: View {
 
   fileprivate func statusLabel(_ machine: CodevisorMachine) -> some View {
     let status = machines.statusByMachineId[machine.id]
-    // An unreachable machine's probe error (e.g. the local server's launch failure) stays
-    // available as the tooltip; the label says Offline.
     return MachineConnectionBadge(connection(for: machine, presence: nil))
       .help(status?.isReachable == false ? status?.label ?? "" : "")
   }
 
-  /// One connection presentation for every kind of machine row.
   fileprivate func connection(for machine: CodevisorMachine, presence: CloudMachine?) -> MachineConnectionPresentation {
     MachineConnectionPresentation(
       isLocal: machine.isLocal,

@@ -4,17 +4,10 @@ import CodevisorCoreMac
 import CodevisorUI
 import SwiftUI
 
-/// The MCP pane: built-in tools and managed servers as the fleet wants them,
-/// each with its machines nested beneath. The server's row carries the fleet
-/// wish and the one fleet-wide act (authorizing); a machine row carries what
-/// is genuinely machine-specific — availability here, this Mac's Computer Use
-/// permissions, that machine's browser choice.
 struct McpSettingsView: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.theme) private var theme
   @State private var model = McpGlobalModel()
-  /// This Mac's TCC probes. They describe THIS machine only; a remote
-  /// machine's permissions are its own server's story, and its row says so.
   @State private var permissions = ComputerUsePermissionsModel(
     probes: AppPreview.isRunning ? .granted : .live)
   @State private var showingAdd = false
@@ -114,8 +107,6 @@ struct McpSettingsView: View {
         Task { await beginOAuth(serverId: serverId, machineId: machineId) }
       },
       toggleDisabledReason: { entry, machineId in
-        // Only this Mac's grants are knowable here; another machine's
-        // Computer Use reports its own condition through readiness.
         guard entry.kind == "computerUse", machineId == CodevisorMachine.local.id,
           !permissions.allGranted
         else { return nil }
@@ -123,15 +114,10 @@ struct McpSettingsView: View {
       },
       icon: { entry in McpEntryIcon(entry: entry) },
       machineExtras: { entry, machineId in
-        // Computer Use depends on TCC grants held by the Codevisor app on
-        // that machine. They can only be read — and only here — so the rows
-        // appear under this Mac and nowhere else.
         if entry.kind == "computerUse", machineId == CodevisorMachine.local.id {
           ComputerUsePermissionRowsView(model: permissions, embedded: true)
             .padding(.leading, FleetRowMetrics.iconColumnWidth + 8)
             .onChange(of: permissions.allGranted) { _, granted in
-              // Revoked underneath a running Computer Use: switch it off
-              // here so the row never claims to work when it can't.
               guard !granted, entry.enabledByMachine[machineId] == true else { return }
               Task {
                 await model.setEnabled(
@@ -146,9 +132,6 @@ struct McpSettingsView: View {
     environment.machines.allMachines.map { environment.mcpStateRevision(for: $0.id) }
   }
 
-  /// Authorizing is fleet-wide: the material replicates under a refresh
-  /// owner, and every other machine adopts it. Polling keeps the row honest
-  /// until the machine that ran the flow reports connected.
   private func beginOAuth(serverId: String, machineId: String) async {
     let client = environment.machines.client(for: machineId)
     do {

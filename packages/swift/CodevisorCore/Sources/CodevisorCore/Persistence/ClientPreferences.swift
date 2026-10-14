@@ -2,18 +2,6 @@ import Foundation
 import Observation
 import SwiftUI
 
-/// SQLite-backed replacement for the app's direct `UserDefaults` usage.
-///
-/// The singleton is configured by `ClientStorageBootstrap` before either
-/// platform constructs its view hierarchy. Reads intentionally touch
-/// `revision`, allowing Swift Observation to invalidate a view that accesses a
-/// value through `@ClientPreference`.
-///
-/// Reads and writes never touch SQLite on the main thread: a change lands in
-/// the in-memory cache at once (so every later read sees it) and reaches the
-/// database on the persistence queue, batched with the other changes made in
-/// the meantime. `PersistenceEncoding.drain()` (and the app-lifecycle flushes
-/// built on it) lands pending changes.
 @MainActor
 @Observable
 public final class ClientPreferences {
@@ -22,17 +10,8 @@ public final class ClientPreferences {
   private var database: ClientDatabase?
   private var fallback: [String: Data] = [:]
   private var revision: UInt64 = 0
-  /// Write-through cache of raw preference blobs, keyed by preference key.
-  /// A stored `nil` records a confirmed-absent (or removed) key so misses
-  /// don't re-query SQLite. All writes go through this class after
-  /// `configure(database:)`, which resets the cache, so entries can never go
-  /// stale. Ignored by Observation: views invalidate via `revision`, and
-  /// populating the cache during a read must not mutate observed state.
   @ObservationIgnored private var cache: [String: Data?] = [:]
-  /// The cache holds every preference (preloaded at launch, or cleared by
-  /// `removeAll`), so a miss means absent without asking SQLite.
   @ObservationIgnored private var cacheIsComplete = false
-  /// Changes not yet in `database`, applied in one transaction.
   @ObservationIgnored private var pendingWrites = PendingPreferenceWrites()
   @ObservationIgnored private let persistenceOwner = UUID()
 
@@ -40,12 +19,8 @@ public final class ClientPreferences {
     self.database = database
   }
 
-  /// Attaches the database. `preferences`, when given, is every stored
-  /// preference (read off the main thread by `openAsync`), which makes the
-  /// cache complete: no read ever queries SQLite from the main thread.
   public func configure(database: ClientDatabase, preferences: [String: Data]? = nil) {
     self.database = database
-    // Changes queued for a previous database still go to that one.
     pendingWrites = PendingPreferenceWrites()
     cache = preferences?.mapValues { Optional($0) } ?? [:]
     cacheIsComplete = preferences != nil
@@ -102,8 +77,6 @@ public final class ClientPreferences {
   public func removeAll() {
     if database != nil {
       persist { $0.clearAll() }
-      // The rows are still in SQLite until the write lands; the cache is
-      // now the whole truth, so a miss must not read them back.
       cacheIsComplete = true
     } else {
       fallback.removeAll()
@@ -112,8 +85,6 @@ public final class ClientPreferences {
     revision &+= 1
   }
 
-  /// Records a change and schedules the batch on the persistence queue.
-  /// Coalesced: changes made before the batch runs share its transaction.
   private func persist(_ change: (PendingPreferenceWrites) -> Void) {
     guard let database else { return }
     let pending = pendingWrites
@@ -137,7 +108,6 @@ public final class ClientPreferences {
     }
     let data: Data?
     if let database {
-      // Only before a preload (the synchronous `open` path, tests).
       data = cacheIsComplete ? nil : try? database.preference(forKey: key)
     } else {
       data = fallback[key]
@@ -147,18 +117,12 @@ public final class ClientPreferences {
   }
 }
 
-/// Preference changes waiting for the persistence queue: the newest value
-/// per key (nil: removed), and whether everything was cleared first. Shared
-/// between the main actor, which records changes, and the queue, which
-/// takes the batch.
 private final class PendingPreferenceWrites: @unchecked Sendable {
   struct Batch {
     var clearsAll = false
     var changes: [String: Data?] = [:]
   }
 
-  /// Distinguishes this batch's job from one for a previously configured
-  /// database, so replacing the job can never drop the other's changes.
   let key = "client-preferences-\(UUID().uuidString)"
   private let lock = NSLock()
   private var batch = Batch()
@@ -179,10 +143,6 @@ private final class PendingPreferenceWrites: @unchecked Sendable {
   }
 }
 
-/// SwiftUI-friendly typed preference backed by `ClientPreferences`.
-///
-/// This deliberately mirrors the small surface the app used from
-/// `@AppStorage`: direct value reads/writes and a projected `Binding`.
 @MainActor
 @propertyWrapper
 public struct ClientPreference<Value: Codable & Equatable> {

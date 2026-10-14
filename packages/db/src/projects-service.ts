@@ -29,14 +29,9 @@ export const makeProjectsService = (
   ) {
     return yield* attempt("createProject", () => {
       const now = isoTimestamp()
-      // UUIDs are case-insensitive identifiers. Canonicalize to lowercase on
-      // write so ids stay consistent no matter which client created them
-      // (Swift uppercases, Node lowercases) — a case-only difference must not
-      // spawn a duplicate project or merge one into a differently-cased row.
       const projectId = (request.id ?? randomUUID()).toLowerCase()
       const createdAt = request.createdAt ?? now
 
-      // Idempotency: re-creating an existing project id returns it.
       const byId = sqlite
         .prepare("select id from projects where id = ? collate nocase")
         .get(projectId) as { id: string } | undefined
@@ -44,11 +39,6 @@ export const makeProjectsService = (
         return getProject(byId.id)
       }
 
-      // A folder maps to exactly one project per server. If this folder is
-      // already claimed under a different project id (stale data, another
-      // client), merge that project into the requested id instead of failing
-      // on the unique(server_id, folder_path) constraint — its sessions and
-      // worktrees come along.
       const claimed = sqlite
         .prepare("select project_id from project_locations where server_id = ? and folder_path = ?")
         .get(config.serverId, request.folderPath) as { project_id: string } | undefined

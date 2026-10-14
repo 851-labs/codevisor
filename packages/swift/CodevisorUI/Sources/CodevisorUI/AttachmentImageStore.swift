@@ -12,9 +12,6 @@ import UniformTypeIdentifiers
   import UIKit
 #endif
 
-// `@unchecked` for the AppKit image: both apps already hop these decoded
-// previews between the main actor and detached decode/encode tasks (UIImage
-// is Sendable; immutable NSImage use here matches that shipped behavior).
 public struct AttachmentPreviewImage: @unchecked Sendable {
   public let image: OSImage
   public let aspectRatio: CGFloat
@@ -37,9 +34,6 @@ extension PreviewFile {
   fileprivate var isVideo: Bool { attachmentIsVideo(name: name, mimeType: mimeType) }
 }
 
-/// A per-session authenticated loader backed by one process-wide decoded
-/// image cache and one bounded on-disk thumbnail cache. The namespace keeps
-/// identical paths on different Codevisor machines isolated.
 @MainActor
 @Observable
 public final class AttachmentImageStore {
@@ -82,17 +76,10 @@ public final class AttachmentImageStore {
     self.version = version
   }
 
-  /// The decoded preview already in memory, synchronously. A view that
-  /// mounts over pixels another view already loaded (the copy of a row
-  /// that flies out of the composer) draws them in its first frame
-  /// instead of flashing a placeholder until its own load task runs.
   public func memoryPreview(for file: PreviewFile) -> AttachmentPreviewImage? {
     Self.memory.object(forKey: baseKey(for: file.source) as NSString)?.value
   }
 
-  /// Returns the most recently persisted preview without revalidation. It
-  /// provides stable geometry immediately on reopen; `image(for:)` then
-  /// validates live paths and replaces stale pixels without resizing them.
   public func cachedPreview(for file: PreviewFile) async -> AttachmentPreviewImage? {
     let key = baseKey(for: file.source)
     if let cached = Self.memory.object(forKey: key as NSString)?.value {
@@ -105,8 +92,6 @@ public final class AttachmentImageStore {
     return preview
   }
 
-  /// Returns a validator-matched preview, fetching and decoding only on a
-  /// true miss. Concurrent views requesting the same source share one task.
   public func image(for file: PreviewFile) async -> AttachmentPreviewImage? {
     let key = baseKey(for: file.source)
     let resolvedVersion = await fileVersion(for: file.source)
@@ -324,8 +309,6 @@ private actor AttachmentPreviewDiskCache {
       try JSONEncoder().encode(metadata).write(to: urls.metadata, options: .atomic)
       trimIfNeeded()
     } catch {
-      // The OS may clear Caches or reject a write under storage pressure;
-      // previews remain functional through the bounded memory tier.
     }
   }
 
@@ -383,9 +366,6 @@ private actor AttachmentPreviewDiskCache {
 
 #endif
 
-/// A composer thumbnail rendered straight from the staged file: ImageIO
-/// downsamples an image without decoding it at full size, PDFs render their
-/// first page, and AVFoundation grabs an early frame of a video.
 public nonisolated func attachmentPreviewImage(
   fileURL: URL,
   isVideo: Bool,

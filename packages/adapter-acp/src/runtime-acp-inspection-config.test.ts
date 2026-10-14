@@ -149,8 +149,6 @@ describe("@codevisor/agent-runtime inspection configuration", () => {
 
     expect(runtime.reconcileConfigValue("claude-code", option, "pro-legacy")).toBe("pro")
     expect(runtime.reconcileConfigValue("claude-code", option, "gone")).toBeUndefined()
-    // A provider without the hook, and an id outside the catalog, both say
-    // the value is gone rather than guessing.
     expect(runtime.reconcileConfigValue("codex", option, "pro-legacy")).toBeUndefined()
     expect(runtime.reconcileConfigValue("not-a-harness", option, "pro-legacy")).toBeUndefined()
   })

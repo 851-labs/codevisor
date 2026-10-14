@@ -8,8 +8,6 @@ import { developmentLayout, localDevelopmentEnvironment } from "./dev-layout.mjs
 const profileKey = "CODEVISOR_SCREEN_SHARING_DIAGNOSTIC_PROFILE"
 
 test("native diagnostic selection survives dev sanitization without inheriting app-hosted state", () => {
-  // Preserve unknown spellings too: native validation must reject them visibly
-  // instead of the runner silently turning the requested profile off.
   for (const selection of ["paced15-worker", "", "unknown-profile"]) {
     const supplied = {
       [profileKey]: selection,

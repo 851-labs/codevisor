@@ -18,9 +18,6 @@ import {
   writePlugin
 } from "./test-support.js"
 
-/// Manager-level supervision behaviors: explicit restart, state-change
-/// fanout, and always-running process ownership.
-
 describe("restart", () => {
   it("stops the running process, clears crash state, and returns the summary", async () => {
     const { manager } = makeManager()
@@ -148,8 +145,6 @@ describe("state events", () => {
     const events: Array<PluginStateEvent> = []
     manager.subscribe((event) => events.push(event))
     rmSync(join(root, "example"), { force: true, recursive: true })
-    // Shutdown still transitions the runtime, but there is no plugin left to
-    // summarize — the event is dropped instead of throwing.
     manager.close()
     expect(events).toHaveLength(0)
   })
@@ -157,8 +152,6 @@ describe("state events", () => {
 
 describe("always-running lifecycle", () => {
   it("starts installed plugins and restarts them after a crash", async () => {
-    // The injected clock advances only while the manager waits between
-    // restart attempts, so recovery crosses the real 500 ms crash backoff.
     const { fake, manager } = makeManager({ ...advancingClock() })
     await Promise.all([manager.startAll(), manager.startAll()])
     expect((await manager.get("owner.example")).state).toBe("running")
@@ -173,9 +166,6 @@ describe("always-running lifecycle", () => {
   })
 
   it("survives a restart pass that cannot read the plugins folder", async () => {
-    // A plugin exiting while its folder is unreadable used to throw from its
-    // exit handler (publishing the crash) and reject the detached restart
-    // pass; either one exits the whole server.
     const failure = Promise.withResolvers<string>()
     const { fake, manager, root } = makeManager({
       ...advancingClock(),
@@ -185,7 +175,6 @@ describe("always-running lifecycle", () => {
     })
     await manager.startAll()
     expect(fake.spawnCount()).toBe(1)
-    // A file where the plugins folder was: listing it fails with ENOTDIR.
     const moved = `${root}-moved`
     renameSync(root, moved)
     cleanups.push(() => rmSync(moved, { force: true, recursive: true }))
@@ -193,7 +182,6 @@ describe("always-running lifecycle", () => {
     fake.simulateExit("exited with code 1")
     expect(await failure.promise).toMatch(/^Plugin owner\.example maintenance failed: .*ENOTDIR/)
 
-    // Once the folder is back, the next pass starts the plugin again.
     rmSync(root)
     renameSync(moved, root)
     await manager.startAll()

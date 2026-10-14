@@ -14,8 +14,6 @@ final class ChromiumBrowserModel {
   let suggestions: BrowserSuggestions
   private(set) var webView: CVChromiumView?
   private(set) var url: URL?
-  /// Whether the page ever reached a web address. A Browser Use tab that never
-  /// did is an empty leftover, safe to close when its agent goes away.
   private(set) var hasLoadedPage = false
   private(set) var title = "Browser"
   private(set) var favicon: NSImage?
@@ -99,8 +97,6 @@ final class ChromiumBrowserModel {
         )
         wireView(view, token: token)
         webView = view
-        // Admit local panes while they initialize, so automation can report a
-        // blocked browser instead of mistaking it for an empty tab list.
         if isLocal { ChromiumAutomationBridge.shared.register(self) }
         if needsBackgroundHost { hostInBackgroundIfNeeded(view) }
       } catch {
@@ -115,8 +111,6 @@ final class ChromiumBrowserModel {
   @ObservationIgnored var onOpenLink: ((String, BrowserLinkDestination, CVChromiumView?) -> Bool)?
   @ObservationIgnored private(set) var browserWindow: ChromiumBrowserWindow?
 
-  /// CEF owns the pending navigation. Adopt its actual page without loading the
-  /// URL again, so form submissions, window.opener and window.close keep working.
   func adoptPopup(_ view: CVChromiumView) {
     BrowserPageRetention.shared.touch(self)
     isLoading = true
@@ -156,7 +150,6 @@ final class ChromiumBrowserModel {
       }
     }
     view.stateChanged = { [weak self] address, title, loading, back, forward in
-      // CEF callbacks can arrive while SwiftUI is mounting its native view.
       Task { @MainActor [weak self] in
         guard let self, self.generation == token else { return }
         if let current = URL(string: address), ["http", "https"].contains(current.scheme) {
@@ -248,9 +241,6 @@ final class ChromiumBrowserModel {
 
   func readyView() async throws -> CVChromiumView {
     needsBackgroundHost = true
-    // A failed start is not permanent. Rebuild the browser for each new caller
-    // instead of replaying the old error until someone presses Try Again. The
-    // tab stays admitted so attached agents don't see it close and reopen.
     if readyError != nil { resetBrowser(keepingAutomationTarget: true) }
     if let view = webView { hostInBackgroundIfNeeded(view) }
     if let view = webView, view.browserIsReady, synchronized { return view }
@@ -258,8 +248,6 @@ final class ChromiumBrowserModel {
     return try await withCheckedThrowingContinuation { readyWaiters.append($0) }
   }
 
-  /// CEF needs an NSWindow even before SwiftUI mounts a background tab. This
-  /// window is never ordered onscreen; the pane takes the same view when opened.
   private func hostInBackgroundIfNeeded(_ view: CVChromiumView) {
     guard view.window == nil else { return }
     if backgroundHost == nil {
@@ -293,8 +281,6 @@ final class ChromiumBrowserModel {
   }
 
   func reload(ignoringCache: Bool = false) {
-    // A failed navigation still has a live CEF browser. Retain it so a hard
-    // refresh retries that navigation with CEF's cache-bypass semantics.
     if ignoringCache, synchronized, let webView, webView.browserIsReady {
       errorMessage = nil
       webView.reloadIgnoringCache()

@@ -6,7 +6,6 @@ import process from "node:process"
 import { developmentLayout } from "./dev-layout.mjs"
 import { prepareSwiftArtifacts } from "./swift-artifacts.mjs"
 
-// Operations that never resolve packages, so there is nothing to share.
 const nonBuildingOperations = new Set([
   "-exportArchive",
   "-downloadPlatform",
@@ -22,14 +21,9 @@ export function xcodebuildArguments(layout, platform, arguments_) {
   if (platformLayout === undefined || !["macos", "ios", "pixelbook"].includes(platform)) {
     throw new Error(`Unknown Xcode platform ${platform}`)
   }
-  // Export and platform installation do not build a scheme. Xcode rejects
-  // the build-specific cache flags for these standalone operations.
   if (arguments_.includes("-exportArchive") || arguments_.includes("-downloadPlatform")) {
     return [...arguments_]
   }
-  // Package dependencies ship Swift macros (Composable Architecture and its
-  // macro packages). Xcode gates unapproved macro plugins behind an
-  // interactive prompt; command-line builds trust the pinned checkouts.
   return [
     "-derivedDataPath",
     platformLayout.derivedData,
@@ -38,16 +32,11 @@ export function xcodebuildArguments(layout, platform, arguments_) {
     "-packageCachePath",
     layout.build.packageCache,
     "-skipMacroValidation",
-    // Only an Xcode window reads an index store, and Xcode windows build into
-    // their own XcodeDerivedData (xcode-derived-data.mjs). Scripted builds
-    // writing one cost ~230 MB per platform per worktree for no reader.
     "COMPILER_INDEX_STORE_ENABLE=NO",
     ...arguments_
   ]
 }
 
-/// The -project/-workspace and -scheme arguments to resolve the packages an
-/// xcodebuild invocation builds, or undefined when it does not build.
 export function packageResolutionArguments(arguments_) {
   if (arguments_.some((argument) => nonBuildingOperations.has(argument))) return undefined
   const selected = []
@@ -59,8 +48,6 @@ export function packageResolutionArguments(arguments_) {
   return selected
 }
 
-/// Files whose contents decide what a project resolves: its pinned versions
-/// and the local CodevisorKit manifest, which declares the Sentry artifact.
 export function packageResolutionInputs(repoRoot, resolutionArguments) {
   const valueOf = (flag) => {
     const index = resolutionArguments.indexOf(flag)
@@ -88,9 +75,6 @@ export async function runXcodebuild(repoRoot, platform, arguments_, options = {}
     )
   )
 
-  // Resolve first and swap the unpacked binary artifacts for shared clones
-  // before anything builds from them (swift-artifacts.mjs). Skipped, along
-  // with the resolve, when the pins have not changed since the last run.
   const resolution = packageResolutionArguments(arguments_)
   if (resolution !== undefined) {
     await prepareSwiftArtifacts({

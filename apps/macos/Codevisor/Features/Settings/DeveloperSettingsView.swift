@@ -2,8 +2,6 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// Settings ▸ Developer: preferences for people who build or test
-/// Codevisor itself: the update channel and feature flags.
 struct DeveloperSettingsView: View {
   private enum UpdateChannel: Hashable, CaseIterable {
     case stable, alpha
@@ -77,7 +75,6 @@ struct DeveloperSettingsView: View {
       get: { channel },
       set: { channel in
         environment.setAlphaUpdatesEnabled(channel == .alpha)
-        // A different channel means a different list: check it afresh.
         Task { await center.refresh(force: true) }
       }
     )

@@ -13,13 +13,10 @@ import {
   shouldCaptureFile
 } from "./markdown-artifacts.js"
 
-/// Internal attachment references in persisted Markdown. New tool results
-/// expose local paths; older transcripts already contain these URLs.
 export const ATTACHMENT_URL_ORIGIN = "https://attachments.codevisor.invalid/"
 
 const referencePattern = /https:\/\/attachments\.codevisor\.invalid\/([A-Za-z0-9._-]+)/g
 
-/// File ids referenced by attachment URLs in Markdown, in order of first appearance.
 export const referencedAttachmentIds = (markdown: string): ReadonlyArray<string> => {
   const ids: Array<string> = []
   for (const match of markdown.matchAll(referencePattern)) {
@@ -29,9 +26,6 @@ export const referencedAttachmentIds = (markdown: string): ReadonlyArray<string>
   return ids
 }
 
-/// Capture files shared in the final reply before the turn closes. Generated
-/// images are already attached; other tool artifacts remain private until
-/// the assistant links or embeds them.
 export const promoteAssistantArtifacts = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
@@ -68,8 +62,6 @@ export const promoteAssistantArtifacts = async (
         (reference.embedded ? "" : "?name=" + encodeURIComponent(file.name)) +
         markdown.slice(reference.end)
     } catch (cause) {
-      // A missing file must not discard the other deliverables or prevent
-      // the turn ending. Leave its original link available for inspection.
       console.error(
         `Could not preserve assistant file ${path}: ${cause instanceof Error ? cause.message : String(cause)}`
       )

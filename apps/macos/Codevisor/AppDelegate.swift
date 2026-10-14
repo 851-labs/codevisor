@@ -3,31 +3,15 @@ import CodevisorCore
 import CodevisorCoreMac
 import os
 
-/// AppKit lifecycle policy behind the SwiftUI `App`: establishes exclusive
-/// ownership of this bundle before launch and confirms interactive ⌘Q because
-/// quitting tears down every terminal and agent view at once.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-  /// Both are `nil` until client storage has opened; a quit before that
-  /// has nothing to lose and is never questioned.
   var settings: AppSettingsModel?
   var appUpdate: AppUpdateModel?
 
-  /// Held for this process's lifetime. Sparkle temporarily shares the same
-  /// descriptor with a detached handoff helper while replacing the bundle.
   private(set) var appInstanceLease: AppInstanceLease?
 
-  /// Set by flows that quit on the user's behalf after they already agreed
-  /// to it (Restart Now, relaunch after a data reset). Consumed by the next
-  /// termination request so a later ⌘Q asks again.
   private var skipsNextConfirmation = false
 
-  /// The instance SwiftUI's `@NSApplicationDelegateAdaptor` created. Not
-  /// `NSApp.delegate as? AppDelegate`: under the adaptor `NSApp.delegate` is
-  /// SwiftUI's own forwarding delegate, so that cast is always nil. It was,
-  /// from 0.1.102 build 1073 until this fix: the runtime got no instance
-  /// lease, so no Sparkle updater ever started, and the app neither checked
-  /// for updates nor answered its server's update handoff.
   private(set) static weak var current: AppDelegate?
 
   override init() {
@@ -35,8 +19,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     Self.current = self
   }
 
-  /// Starts the app's runtime whether or not a window appears (851-2386). A duplicate instance,
-  /// which didn't get the lease, is quitting and starts nothing.
   func applicationDidFinishLaunching(_ notification: Notification) {
     guard appInstanceLease != nil else { return }
     Task { @MainActor in await AppRuntime.shared.startIfNeeded() }
@@ -50,9 +32,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return
       }
 
-      // A normal duplicate can leave immediately and focus its owner. During
-      // Sparkle's swap the old process is already gone but the handoff helper
-      // still owns the lock, so allow a short bounded wait for it to release.
       if activateExistingInstance(from: bundleURL) {
         Log.updates.log("launch: another instance owns this bundle; activating it")
         NSApp.terminate(nil)
@@ -67,8 +46,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       _ = activateExistingInstance(from: bundleURL)
       NSApp.terminate(nil)
     } catch {
-      // Updating without the lease would recreate the crash window. Fail
-      // closed and leave an actionable record instead of launching unsafely.
       Log.updates.fault("launch: could not acquire the app instance lease: \(error)")
       NSApp.terminate(nil)
     }
@@ -90,15 +67,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     return true
   }
 
-  /// Quits without the confirmation alert. For programmatic quits that
-  /// follow an explicit user action, never for ⌘Q itself.
   func terminateWithoutConfirmation() {
     skipsNextConfirmation = true
     NSApp.terminate(nil)
   }
 
-  /// The window whose sheet is currently asking; a second ⌘Q while it's
-  /// up just brings that window forward instead of stacking alerts.
   private var pendingQuitWindow: NSWindow?
   private var chromiumShutdownComplete = false
   private var chromiumShutdownInProgress = false
@@ -109,21 +82,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let skip = skipsNextConfirmation
     skipsNextConfirmation = false
     guard !skip, let settings, settings.shouldConfirmBeforeQuitting else { return terminateBrowsers(sender) }
-    // Sparkle quits the app itself to swap the bundle in; the user already
-    // chose "Install and Relaunch", and a cancelled quit would leave the
-    // installer waiting on this process forever.
     if appUpdate?.isUpdating == true { return terminateBrowsers(sender) }
     if let pendingQuitWindow {
       pendingQuitWindow.makeKeyAndOrderFront(nil)
       return .terminateCancel
     }
     let alert = Self.makeQuitAlert()
-    // ⌘Q from the Dock menu or another app's Quit request can arrive
-    // while Codevisor is in the background; the alert must be visible.
     NSApp.activate()
-    // As a window sheet the alert dims and centers on the window, matching
-    // the app's SwiftUI alerts. Without a usable window (all minimized, or
-    // only Settings closed) fall back to the standalone app-modal panel.
     guard let window = Self.quitAlertHost() else {
       return Self.recordQuit(alert, response: alert.runModal(), settings: settings)
         ? terminateBrowsers(sender) : .terminateCancel
@@ -142,9 +107,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   private func terminateBrowsers(_ sender: NSApplication) -> NSApplication.TerminateReply {
-    // CEF defers destruction until the current sendEvent unwinds. AppKit's
-    // terminateLater enters a nested event loop, so waiting there deadlocks
-    // browser teardown. Finish the event, close browsers, then terminate again.
     chromiumShutdownInProgress = true
     DispatchQueue.main.async {
       CVShutdownChromium {
@@ -169,14 +131,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     alert.alertStyle = .warning
     alert.showsSuppressionButton = true
     alert.suppressionButton?.title = "Do not ask me again"
-    // First button is the default (Return); "Cancel" also binds Escape.
     alert.addButton(withTitle: "Quit")
     alert.addButton(withTitle: "Cancel")
     return alert
   }
 
-  /// Records "Do not ask me again" only when the user actually quits, so a
-  /// ticked box on a cancelled alert doesn't silently disable the guard.
   private static func recordQuit(
     _ alert: NSAlert,
     response: NSApplication.ModalResponse,

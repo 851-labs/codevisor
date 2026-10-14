@@ -8,9 +8,6 @@ import {
   startWithApp
 } from "../test-support.js"
 
-/// POST /v1/plugins/:pluginId/tools/:toolName — the authorized invocation
-/// route behind agents' `plugin.<pluginId>.<toolName>` gateway tools.
-
 describe("plugin tool routes", () => {
   it("invokes plugin tools, forwarding args and caller context verbatim", async () => {
     const { services } = await makeServices("server-a")
@@ -32,7 +29,6 @@ describe("plugin tool routes", () => {
       { cwd: "/tmp/project", workspaceId: "w1" }
     ])
 
-    // args and context are all optional: an empty body invokes with defaults.
     const bare = await jsonRequest(server, "/v1/plugins/owner.example/tools/notes_add", {
       body: JSON.stringify({}),
       method: "POST"
@@ -71,7 +67,6 @@ describe("plugin tool routes", () => {
         })
       ).status
     ).toBe(400)
-    // Only POST invokes; other methods fall through to 404.
     expect((await jsonRequest(server, "/v1/plugins/owner.example/tools/notes_add")).status).toBe(
       404
     )

@@ -6,9 +6,6 @@ const codexErrorSignal = (
   if (typeof info === "string") return { kind: info, statusCode: undefined }
   if (!isRecord(info)) return { kind: undefined, statusCode: undefined }
 
-  // Unit variants serialize as strings, while variants carrying an HTTP
-  // status serialize as `{ responseStreamConnectionFailed: { httpStatusCode } }`.
-  // Keep accepting the older flattened shape too.
   const variant = Object.entries(info).find(([key]) => key !== "httpStatusCode")
   const variantDetails = variant === undefined || !isRecord(variant[1]) ? undefined : variant[1]
   const statusCode =
@@ -39,10 +36,6 @@ export const codexErrorDetails = (
       return ""
     }
   })()
-  // Codex distinguishes exhausted subscription/workspace usage from transient
-  // request throttling. UsageLimitExceeded is terminal and already carries
-  // richer user-facing copy (including reset time or credit guidance), so it
-  // must never be presented as a reconnecting server.
   const usageLimitExceeded = signal.kind === "usageLimitExceeded"
   const retryable =
     !usageLimitExceeded &&

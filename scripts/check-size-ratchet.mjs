@@ -1,12 +1,4 @@
 #!/usr/bin/env node
-// Enforces that the max-lines grandfather list in .oxlintrc.json only ever
-// shrinks. oxlint itself catches NEW oversized files; this check catches the
-// other direction — a listed file that no longer exists or has dropped to the
-// 500-line cap must be REMOVED from the list, so exemptions can't outlive the
-// problem they grandfathered. The SwiftLint side gets the same property from
-// `--strict --baseline`: baselined violations that stop matching are simply
-// dead entries, and the baseline is regenerated (only ever smaller) when
-// files move.
 import { readFileSync, existsSync } from "node:fs"
 
 const MAX_LINES = 500

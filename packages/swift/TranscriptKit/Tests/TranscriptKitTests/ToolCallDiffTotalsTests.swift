@@ -51,23 +51,18 @@ struct ToolCallDiffTotalsTests {
 
   @Test("Bare edit titles become a progress placeholder until data arrives")
   func displayTitle() {
-    // Bare tool name, running, no data → placeholder.
     #expect(
       ToolCall(toolCallId: "t", title: "Edit", kind: .edit, status: .inProgress).displayTitle == "Editing file…")
     #expect(ToolCall(toolCallId: "t", title: "", kind: .edit, status: .inProgress).displayTitle == "Editing file…")
-    // A real phrase passes through even without data.
     #expect(
       ToolCall(toolCallId: "t", title: "Editing README.md", kind: .edit, status: .inProgress).displayTitle
         == "Editing README.md")
-    // Once diff stats exist, the adapter title stands.
     #expect(
       ToolCall(
         toolCallId: "t", title: "Edit", kind: .edit, status: .inProgress,
         diffStats: [ToolCallDiffStat(path: "a", added: 1, removed: 0)]
       ).displayTitle == "Edit")
-    // Settled calls always show their final title.
     #expect(ToolCall(toolCallId: "t", title: "Edit", kind: .edit, status: .completed).displayTitle == "Edit")
-    // Non-edit calls are untouched (empty falls back generically).
     #expect(
       ToolCall(toolCallId: "t", title: "Ran ls", kind: .execute, status: .inProgress).displayTitle == "Ran ls")
     #expect(ToolCall(toolCallId: "t", title: "", kind: .execute, status: .inProgress).displayTitle == "Working…")
@@ -132,13 +127,11 @@ struct ToolCallDiffTotalsTests {
         toolCallId: "failed", title: "codevisor.execute", status: .failed, rawInput: input,
         meta: ["codevisorExecution": ["state": "failed", "calls": [], "error": "Linear is offline\nstack"]]
       ).displayTitle == "List open Linear issues — failed: Linear is offline")
-    // The gateway can report a failed script while the harness call itself completed.
     #expect(
       ToolCall(
         toolCallId: "script", title: "codevisor_execute", status: .completed, rawInput: input,
         meta: ["codevisorExecution": ["state": "failed", "calls": []]]
       ).displayTitle == "List open Linear issues — failed")
-    // Grok spells the gateway tool `codevisor__execute`.
     #expect(
       ToolCall(toolCallId: "grok", title: "codevisor__execute", status: .completed, rawInput: input)
         .displayTitle == "List open Linear issues")

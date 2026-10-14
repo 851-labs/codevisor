@@ -3,8 +3,6 @@ import { fileURLToPath } from "node:url"
 import { parseSimulatorArguments } from "./ios-simulator-state.mjs"
 import { runOwnedTask } from "./owned-task.mjs"
 
-// The resource owner has its own process group and watches this pipe. If Codex
-// or an operator SIGKILLs the launcher, EOF still lets the owner delete its device.
 const options = parseSimulatorArguments(process.argv.slice(2))
 if (options.help) {
   console.log(

@@ -2,9 +2,6 @@ import CodeHighlighter
 import SwiftUI
 import TranscriptKit
 
-/// What a file read shows when opened: the file itself. Text reads as a
-/// bare, syntax-highlighted code block; images, video, and PDFs as the
-/// transcript shows attachments.
 struct ReadFileBodyView: View {
   let read: ReadFileOutput
 

@@ -3,9 +3,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// Frames a terminal socket receives while the main actor is busy are
-/// handed over in one batch, in order, with runs of output merged into one
-/// renderer write.
 @Suite("Terminal inbound frames")
 struct TerminalInboundFramesTests {
   private func output(_ seq: Int, _ text: String, reset: Bool = false) -> TerminalInboundFrames.Item {
@@ -30,7 +27,6 @@ struct TerminalInboundFramesTests {
   @Test("A burst arrives as one ordered batch, output runs merged within history and within live output")
   func batchesInOrder() {
     let inbound = TerminalInboundFrames(liveBoundary: 3)
-    // Only the first frame asks the main actor for a drain.
     #expect(inbound.append(output(1, "a")))
     #expect(!inbound.append(output(2, "b")))
     #expect(!inbound.append(output(3, "c")))
@@ -44,18 +40,17 @@ struct TerminalInboundFramesTests {
     let batch = inbound.take()
     #expect(
       describe(batch) == [
-        "output#2:ab",  // history, never merged with live output
+        "output#2:ab",
         "output#4:cd",
         "size#4",
         "output#5:e",
-        "output#6:screen",  // a reset starts over; nothing merges into it
+        "output#6:screen",
         "output#7:f",
         "failed",
       ])
     if case let .frame(merged) = batch[1] {
       #expect(merged.output?.bytes == Array("cd".utf8))
     }
-    // Drained: the next frame asks for a drain again.
     #expect(inbound.append(output(8, "g")))
   }
 

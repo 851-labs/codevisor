@@ -3,8 +3,6 @@ import Foundation
 import Testing
 @testable import ScreenSharing
 
-/// The host's sound as its own stream (851-2379): wire format, the viewer's jitter buffer, and
-/// Opus through AudioToolbox end to end (no audio device involved).
 struct ScreenSharingAudioTests {
   @Test func everyMessageSurvivesTheWire() throws {
     let packet = ScreenSharingAudioPacket(
@@ -23,11 +21,8 @@ struct ScreenSharingAudioTests {
     }
   }
 
-  // MARK: Jitter buffer (frames are stereo; expectations are interleaved: 2 samples each)
-
   static func packet(_ value: Float, frames: Int = 10) -> [Float] { [Float](repeating: value, count: frames * 2) }
 
-  /// Pushes a packet whose every sample is `value` (and `-value` on the right when `signed`).
   static func push(
     _ buffer: ScreenSharingAudioJitterBuffer, _ sequence: UInt32, _ value: Float, frames: Int = 10,
     signed: Bool = false
@@ -41,7 +36,6 @@ struct ScreenSharingAudioTests {
     }
   }
 
-  /// Pulls into planar device buffers prefilled with NaN, returned interleaved.
   static func pull(_ buffer: ScreenSharingAudioJitterBuffer, frames: Int) -> [Float] {
     var left = [Float](repeating: .nan, count: frames)
     var right = [Float](repeating: .nan, count: frames)
@@ -87,7 +81,6 @@ struct ScreenSharingAudioTests {
     let buffer = ScreenSharingAudioJitterBuffer(targetFrames: 10, slackFrames: 1_000, drainFrames: 5)
     for sequence in 0..<10 { Self.push(buffer, UInt32(sequence), Float(sequence)) }
     #expect(buffer.bufferedFrames == 100)
-    // 100 buffered, pulling 20: 65 over, so 2 frames (a tenth of 20) are skipped first.
     _ = Self.pull(buffer, frames: 20)
     #expect(buffer.bufferedFrames == 78 && buffer.droppedFrames == 2)
     for _ in 0..<5 { _ = Self.pull(buffer, frames: 10) }
@@ -101,7 +94,6 @@ struct ScreenSharingAudioTests {
     #expect(buffer.lostPackets == 0 && buffer.bufferedFrames == 20)
   }
 
-  /// The ring is allocated once: reads and writes that cross its end keep order and channels.
   @Test func theRingKeepsOrderAndChannelsAcrossItsEnd() {
     let buffer = ScreenSharingAudioJitterBuffer(targetFrames: 1, slackFrames: 100, capacityFrames: 25)
     var expected: [Float] = []
@@ -114,8 +106,6 @@ struct ScreenSharingAudioTests {
     #expect(buffer.droppedFrames == 0 && buffer.underruns == 0)
   }
 
-  /// A device that stops pulling (output not started yet, or stopped) never makes the buffer grow:
-  /// past its capacity the oldest frames make way, as past the slack.
   @Test func aFullRingDropsTheOldestInsteadOfGrowing() {
     let buffer = ScreenSharingAudioJitterBuffer(targetFrames: 5, slackFrames: 1_000, capacityFrames: 30)
     for sequence in 0..<5 { Self.push(buffer, UInt32(sequence), Float(sequence)) }
@@ -123,7 +113,6 @@ struct ScreenSharingAudioTests {
     #expect(Self.pull(buffer, frames: 30) == Self.packet(2) + Self.packet(3) + Self.packet(4))
   }
 
-  /// A mono device gets the left channel and nothing is written past the frames asked for.
   @Test func aMonoDeviceGetsTheLeftChannel() {
     let buffer = ScreenSharingAudioJitterBuffer(targetFrames: 1, slackFrames: 100)
     Self.push(buffer, 0, 3, frames: 4, signed: true)
@@ -133,12 +122,9 @@ struct ScreenSharingAudioTests {
     #expect(left.suffix(2).allSatisfy { $0.isNaN })
   }
 
-  // MARK: Opus
-
   @Test func captureAudioBecomesStampedOpusPacketsThatDecode() async throws {
     var packets: [ScreenSharingAudioPacket] = []
     let encoder = try ScreenSharingAudioEncoder { packets.append($0) }
-    // 50 ms of a 44.1 kHz mono tone: resampled to 48 kHz stereo, two full 20 ms packets.
     let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1))
     let input = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 2_205))
     input.frameLength = 2_205

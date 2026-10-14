@@ -1,11 +1,6 @@
 #if os(macOS)
   import Foundation
 
-  /// The data-plane half of a control lease: numbers each captured input event
-  /// and puts it on the control channel under the active lease. Runs at input
-  /// rate, so it is a plain object driven by closures, not a reducer. A send the
-  /// channel refuses ends forwarding and reports the loss once; the lease's
-  /// state machine decides what to do about it.
   @MainActor
   public final class ScreenSharingInputForwarder {
     public private(set) var lease: UUID?

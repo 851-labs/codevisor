@@ -9,18 +9,10 @@ import {
   trackProcessTree
 } from "@codevisor/processes"
 
-/// A client for Pi's RPC mode (`pi --mode rpc`): JSON records over stdio.
-/// Commands carry an `id` their `response` repeats; everything else Pi
-/// writes is a session event or an extension UI request.
 export interface PiClient {
-  /// Sends a command and resolves with its response's `data`, or rejects
-  /// with Pi's error.
   command: <T = unknown>(type: string, fields?: Record<string, unknown>) => Promise<T>
-  /// Session events and extension UI requests, in the order Pi wrote them.
   onEvent: (handler: (event: Record<string, unknown>) => void) => void
-  /// Answers an extension UI request.
   respond: (response: Record<string, unknown>) => void
-  /// Pi exited or its pipe failed. Not called for `close()`.
   onClose: (handler: (error: Error) => void) => void
   close: () => void
 }
@@ -34,7 +26,7 @@ export interface PiSpawnRequest {
 
 export type PiConnector = (request: PiSpawnRequest) => Promise<PiClient>
 
-/* v8 ignore start -- spawning runs against a live pi binary; tests drive wirePiClient over fake endpoints. */
+/* v8 ignore start */
 export const spawnPiClient: PiConnector = async (request) => {
   const child = spawn(request.command, ["--mode", "rpc", ...request.args], {
     cwd: request.cwd,
@@ -51,7 +43,6 @@ export const spawnPiClient: PiConnector = async (request) => {
   )
   const pid = child.pid!
   const identity = await processIdentity(pid)
-  // Pi's bash tool starts commands of its own; they go with the chat.
   const tree = await trackProcessTree(pid)
   stopTreeOnExit(child, tree)
   return {
@@ -66,8 +57,6 @@ export const spawnPiClient: PiConnector = async (request) => {
 }
 /* v8 ignore stop */
 
-/// Pi itself stopped (it exited, or its pipe failed), as opposed to Pi
-/// answering a command with an error. Carries Pi's own account of why.
 export class PiExitedError extends Error {}
 
 interface Pending {
@@ -80,8 +69,6 @@ export const wirePiClient = (transport: NdjsonTransport): PiClient => {
   const pending = new Map<string, Pending>()
   let eventHandler: ((event: Record<string, unknown>) => void) | undefined
   const closeHandlers: Array<(error: Error) => void> = []
-  /// Why the client stopped, once it has: later commands fail with it, so a
-  /// Pi that died before its first command still says why.
   let stopped: Error | undefined
 
   const settle = (error: Error, notify: boolean): void => {
@@ -108,8 +95,6 @@ export const wirePiClient = (transport: NdjsonTransport): PiClient => {
       else entry.reject(new Error(typeof record.error === "string" ? record.error : "Pi failed."))
       return
     }
-    // Handlers run inside the stream listener: one bad event must not take
-    // the server (and every other chat) down with it.
     try {
       eventHandler?.(record)
     } catch (error) {

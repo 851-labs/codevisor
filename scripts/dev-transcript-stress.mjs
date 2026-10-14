@@ -1,8 +1,5 @@
 #!/usr/bin/env node
 
-// Run the native dev runner with TRANSCRIPT_STRESS=1 first. The endpoint
-// acknowledges durable events; issuing the next command never requires a
-// guessed delay. Only seed creates chats; chunk/finish require a fixture ID.
 const [action, value, ...words] = process.argv.slice(2)
 const baseURL = process.env.TRANSCRIPT_STRESS_URL
 if (!baseURL)

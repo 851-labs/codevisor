@@ -5,8 +5,6 @@ enum StartupDeadlineError: Error, LocalizedError {
   var errorDescription: String? { "The server did not respond before the request deadline." }
 }
 
-/// A timeout must return even when an underlying operation ignores cancellation.
-/// Only the winning task can resume the caller; late responses cannot advance startup.
 @MainActor
 enum StartupDeadline {
   static func run<Value: Sendable>(
@@ -23,7 +21,7 @@ enum StartupDeadline {
       do {
         try await scheduler.sleepUntil(deadline)
         outcome.resolve(.failure(StartupDeadlineError.expired))
-      } catch { /* The operation finished first. */  }
+      } catch {}
     }
     defer { worker.cancel(); timer.cancel() }
     return try await withTaskCancellationHandler {

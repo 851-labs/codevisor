@@ -1,7 +1,3 @@
-//! End-to-end tunnel behavior against real iroh endpoints on loopback and an
-//! in-process relay (trusted through `trust_anchors_pem`, the same mechanism
-//! local development uses for its dev CA).
-
 use std::{
     net::{Ipv4Addr, SocketAddr},
     sync::Arc,
@@ -51,7 +47,6 @@ async fn spawn_relay() -> TestRelay {
     TestRelay { _server: server, spec: RelaySpec { url, quic_port }, anchor_pem }
 }
 
-/// Server side of the channels service: echo every message back.
 fn spawn_echo(endpoint: Arc<NetEndpoint>) {
     tokio::spawn(async move {
         while let Ok(Some(connection)) = endpoint.accept().await {
@@ -120,7 +115,6 @@ async fn media_flow_bridges_loopback_udp_both_ways() {
     let host = Arc::new(NetEndpoint::bind(config(PathPolicy::DirectOnly, vec![], vec![])).await.unwrap());
     let viewer = NetEndpoint::bind(config(PathPolicy::DirectOnly, vec![], vec![])).await.unwrap();
 
-    // The "native WebRTC host": a UDP socket that answers every packet.
     let target = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let target_addr = target.local_addr().unwrap();
     tokio::spawn(async move {
@@ -144,19 +138,13 @@ async fn media_flow_bridges_loopback_udp_both_ways() {
     let _host_side = flow_rx.await.unwrap();
     assert!(connection.media().max_payload().unwrap() >= 1100);
 
-    // The "WebRTC viewer" only ever talks to its loopback port.
     let app = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let mut buffer = [0u8; 2048];
-    // Both flows are registered before the first packet (the host side is
-    // awaited above), so on loopback nothing is dropped.
     app.send_to(b"rtp-1", (Ipv4Addr::LOCALHOST, viewer_flow.local_port())).await.unwrap();
     let (len, _) = app.recv_from(&mut buffer).await.unwrap();
     assert_eq!(&buffer[..len], b"ack:rtp-1");
 }
 
-/// A UDP hop that forwards whatever a dialer sends to `target` and drops
-/// every reply, so `target` sees a dial whose handshake never completes.
-/// Resolves `forwarded` once the first datagram has been passed on.
 async fn spawn_reply_dropping_hop(target: SocketAddr) -> (SocketAddr, oneshot::Receiver<()>) {
     let hop = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let addr = hop.local_addr().unwrap();
@@ -185,18 +173,14 @@ async fn a_stalled_handshake_does_not_hold_up_later_dials() {
     let target: SocketAddr = server.addr().direct_addrs[0].parse().unwrap();
     let (hop, forwarded) = spawn_reply_dropping_hop(target).await;
 
-    // The machine is accepting before anyone dials.
     let accepting = tokio::spawn({
         let server = server.clone();
         async move { server.accept().await }
     });
-    // First in line: a dialer that never hears back (an app suspended
-    // mid-dial). Its handshake can only end by timing out.
     let stalled_addr = NetAddr { endpoint_id: server.endpoint_id(), relay_url: None, direct_addrs: vec![hop.to_string()] };
     let stalled = tokio::spawn(async move { stalled_client.connect(&stalled_addr, ALPN_CHANNELS).await.is_ok() });
     forwarded.await.unwrap();
 
-    // A dialer behind it still gets in, and is the first connection out.
     client.connect(&server.addr(), ALPN_CHANNELS).await.expect("dials past the stalled handshake");
     let accepted = accepting.await.unwrap().expect("handshake succeeds").expect("endpoint open");
     assert_eq!(accepted.remote_id(), client.endpoint_id());
@@ -206,7 +190,6 @@ async fn a_stalled_handshake_does_not_hold_up_later_dials() {
 #[tokio::test]
 async fn cancelling_a_dial_ends_it() {
     let client = NetEndpoint::bind(config(PathPolicy::DirectOnly, vec![], vec![])).await.unwrap();
-    // A peer address where nothing ever answers.
     let silent = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let addr = NetAddr {
         endpoint_id: endpoint_id_for(&generate_secret_key()),
@@ -218,7 +201,6 @@ async fn cancelling_a_dial_ends_it() {
         let cancel = cancel.clone();
         async move { client.connect_cancellable(&addr, ALPN_CHANNELS, &cancel).await.map(|_| ()) }
     });
-    // The dial is under way once its first packet arrives.
     let mut buffer = [0u8; 2048];
     silent.recv_from(&mut buffer).await.unwrap();
 

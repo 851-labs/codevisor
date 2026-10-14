@@ -5,8 +5,6 @@ import SwiftUI
 import UniformTypeIdentifiers
 import os
 
-/// What Quick Look is showing: a staged file on hand (composer drafts) or a
-/// remote file fetched from the session's server (history or a live path).
 public enum QuickLookItem: Equatable, Sendable {
   case local(fileURL: URL, name: String, mimeType: String)
   case remote(source: PreviewFile.Source, name: String, mimeType: String)
@@ -34,22 +32,12 @@ extension EnvironmentValues {
   @Entry public var quickLook: QuickLookController? = nil
 }
 
-/// Materializes attachment bytes as local files for the platform's Quick
-/// Look presentation, shared by macOS and iOS. Each app binds `previewURL`
-/// to its native presenter, which owns chrome, transitions, and dismissal;
-/// everything before that (download, temp file, loading state) lives here.
 @MainActor
 @Observable
 public final class QuickLookController {
   public private(set) var previewURL: URL?
-  /// The item whose bytes are being fetched and written for Quick Look, so
-  /// its thumbnail can show that the click is in progress.
   public private(set) var loadingItem: QuickLookItem?
-  /// Tells the user an item could not be prepared. Platform UI (an alert)
-  /// belongs to the app; without a handler the failure is only logged.
   @ObservationIgnored public var onFailure: (@MainActor (_ name: String, _ error: Error) -> Void)?
-  /// Quick Look may continue reading a replaced preview URL asynchronously,
-  /// so retain every directory used by the active system preview until it closes.
   private var temporaryDirectories: [URL] = []
   private var presentationTask: Task<Void, Never>?
   private var presentationID = UUID()
@@ -60,8 +48,6 @@ public final class QuickLookController {
     loadingItem == item
   }
 
-  /// Returns the preparation work, which finishes once the preview is
-  /// showing, has failed, or was superseded by another item.
   @discardableResult
   public func present(_ item: QuickLookItem, attachmentStore: AttachmentImageStore?) -> Task<Void, Never> {
     presentationTask?.cancel()
@@ -72,7 +58,6 @@ public final class QuickLookController {
     let task = Task { [weak self] in
       guard let self else { return }
       defer {
-        // A newer presentation owns `loadingItem` once it has started.
         if presentationID == self.presentationID { self.loadingItem = nil }
       }
       let itemName = item.name
@@ -106,7 +91,6 @@ public final class QuickLookController {
         self.temporaryDirectories.append(materialized.directory)
         self.previewURL = materialized.file
       } catch is CancellationError {
-        // A newer attachment was selected while this one was loading.
       } catch {
         guard presentationID == self.presentationID else { return }
         self.showFailure(for: itemName, error: error)
@@ -116,8 +100,6 @@ public final class QuickLookController {
     return task
   }
 
-  /// Called by the native SwiftUI Quick Look modifier. The system writes nil
-  /// when the user closes its preview.
   public func updatePreviewURL(_ url: URL?) {
     guard previewURL != url else { return }
     previewURL = url
@@ -138,8 +120,6 @@ public final class QuickLookController {
     let directories = temporaryDirectories
     temporaryDirectories.removeAll()
     Task.detached(priority: .utility) {
-      // Let the system preview finish its closing animation before the
-      // backing files disappear.
       try? await Task.sleep(nanoseconds: 1_000_000_000)
       for directory in directories {
         try? FileManager.default.removeItem(at: directory)
@@ -154,9 +134,6 @@ public final class QuickLookController {
     onFailure?(name, error)
   }
 
-  /// The bytes to preview: fetched from the server, or a composer's staged
-  /// file (cloned, so removing the attachment can't pull the file out from
-  /// under the open preview).
   private enum Contents: Sendable {
     case data(Data)
     case file(URL)
@@ -193,8 +170,6 @@ public final class QuickLookController {
     }
   }
 
-  /// Keeps Quick Look's type inference intact while preventing attachment
-  /// names from escaping their per-preview temporary directory.
   nonisolated private static func safeFilename(name: String, mimeType: String) -> String {
     var candidate = (name as NSString).lastPathComponent
       .trimmingCharacters(in: .whitespacesAndNewlines)

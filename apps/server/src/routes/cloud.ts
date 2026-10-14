@@ -2,13 +2,9 @@ import type { IncomingMessage, ServerResponse } from "node:http"
 
 import { HttpFailure, readJson, writeJson, type CodevisorServerConfig } from "../server-context.js"
 
-/// This machine's cloud device id: live (app-driven) registrations beat the
-/// boot-time snapshot, so a connect/disconnect is reflected immediately.
 export const liveCloudDeviceId = (config: CodevisorServerConfig): string | undefined =>
   config.cloud === undefined ? config.cloudDeviceId : config.cloud.deviceId()
 
-/// The server owns cloud credentials and relay lifecycle for both the native
-/// app and CLI. Callers never need to infer the server's data directory.
 export const routeCloud = async (
   config: CodevisorServerConfig,
   request: IncomingMessage,

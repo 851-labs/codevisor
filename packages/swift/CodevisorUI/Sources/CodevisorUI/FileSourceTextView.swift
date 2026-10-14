@@ -43,8 +43,6 @@ import SwiftUI
 
     override func layoutSubviews() {
       super.layoutSubviews()
-      // Navigation bars contribute to the adjusted insets only after layout.
-      // Revealing the selection earlier can put the first line behind the bar.
       if let range = pendingSelection, window != nil, bounds.width > 0, bounds.height > 0 {
         pendingSelection = nil
         scrollRangeToVisible(range)

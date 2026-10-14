@@ -33,8 +33,6 @@ export const routeTerminals = async (
         candidate.paneType === "terminal" && candidate.resourceId?.toLowerCase() === key
     )
     const workspaces = await run(services.db.listWorkspaces)
-    // The workspace carries the archive, and the chat's own workspace is
-    // already covered here, so there is no separate per-chat state to check.
     if (
       workspaces.some(
         (workspace) =>
@@ -45,7 +43,6 @@ export const routeTerminals = async (
       throw new HttpFailure(409, "Restore the workspace before starting a terminal")
     }
     const terminal = await run(services.terminal.createTerminal(payload))
-    // A concurrent archive may have happened while the PTY was spawning.
     const archivedNow = (await run(services.db.listWorkspaces)).some(
       (workspace) =>
         workspace.isArchived &&
@@ -59,8 +56,6 @@ export const routeTerminals = async (
     return true
   }
 
-  // Kills the session's live shell so the next createTerminal starts fresh
-  // (used by the clients' "Restart Terminal" action).
   const terminalSessionId = matchRoute(url.pathname, "/v1/terminals/session/:sessionId")
   if (terminalSessionId !== undefined && request.method === "DELETE") {
     const closed = await run(services.terminal.closeTerminalForSession(terminalSessionId))
@@ -68,9 +63,6 @@ export const routeTerminals = async (
     return true
   }
 
-  // The terminal's current screen and scrollback, from the server's own
-  // copy of its state: plain text for agents and tools, or VT that
-  // reproduces it (colors, cursor, modes) in a terminal emulator.
   const screenTerminalId = matchRoute(url.pathname, "/v1/terminals/:id/screen")
   if (screenTerminalId !== undefined && request.method === "GET") {
     const format = url.searchParams.get("format") ?? "text"

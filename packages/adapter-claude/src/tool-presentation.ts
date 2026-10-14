@@ -18,13 +18,10 @@ export const toolKind = (toolName: string): string => {
       return "search"
     case "WebFetch":
       return "fetch"
-    // Not ACP vocabulary — Codevisor's own extension so clients can phrase web
-    // searches as searches ("Searched the web") instead of fetches.
     case "WebSearch":
       return "web_search"
     case "TodoWrite":
       return "think"
-    // The subagent-spawn tool: "Task" historically, "Agent" in newer CLIs.
     case "Task":
     case "Agent":
       return "agent"
@@ -35,7 +32,6 @@ export const toolKind = (toolName: string): string => {
 
 const fileNameOf = (path: string): string => path.split("/").at(-1) ?? path
 
-/// Present-tense title while a file tool is running.
 export const activeToolTitle = (toolName: string, path: string): string | undefined => {
   const file = fileNameOf(path)
   switch (toolName) {
@@ -49,7 +45,6 @@ export const activeToolTitle = (toolName: string, path: string): string | undefi
   }
 }
 
-/// Past-tense title once the tool has finished.
 export const finishedToolTitle = (toolName: string, path: string): string | undefined => {
   const file = fileNameOf(path)
   switch (toolName) {
@@ -98,21 +93,11 @@ export const toolTitle = (toolName: string, input: unknown): string => {
   return toolName
 }
 
-/// A WebSearch result source (a search hit's title + URL).
 export interface WebSearchSource {
   readonly title: string
   readonly url: string
 }
 
-/// Extracts the sources from a Claude WebSearch tool_result. The CLI returns a
-/// string of the shape:
-///   Web search results for query: "…"
-///   Links: [{"title":"…","url":"…"}, …]
-///   …model commentary…
-/// The `Links:` array is the only structured payload; we parse it into the
-/// hits so the client can render a sources list. Returns `[]` for anything
-/// that isn't a web-search result, so non-search tool results never sprout a
-/// bogus sources card.
 export const webSearchSources = (content: unknown): Array<WebSearchSource> => {
   const text =
     typeof content === "string"
@@ -127,8 +112,6 @@ export const webSearchSources = (content: unknown): Array<WebSearchSource> => {
   if (marker === -1) return []
   const start = text.indexOf("[", marker)
   if (start === -1) return []
-  // Balanced-bracket scan that ignores brackets inside JSON strings, so the
-  // array is isolated even when a title contains "[" or "]".
   let depth = 0
   let inString = false
   let escaped = false
@@ -174,9 +157,6 @@ export const webSearchSources = (content: unknown): Array<WebSearchSource> => {
   return sources
 }
 
-/// Maps parsed web-search sources to ACP `resource_link` tool-call content so
-/// the client renders each as a titled, tappable link. Capped so a pathological
-/// result can't flood the card.
 export const sourcesContent = (sources: Array<WebSearchSource>): Array<Record<string, unknown>> =>
   sources.slice(0, 20).map((source) => ({
     content: { name: source.title, title: source.title, type: "resource_link", uri: source.url },

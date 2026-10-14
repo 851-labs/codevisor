@@ -1,7 +1,5 @@
 import Foundation
 
-/// Captures the account and server that authorized an authentication attempt.
-/// A delayed sheet must never restore a signed-out account or link a new one.
 public struct CloudAuthenticationContext: Sendable {
   let server: URL
   let token: String?

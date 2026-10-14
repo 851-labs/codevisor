@@ -30,9 +30,6 @@ fi
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/../.." && pwd)"
 scheme="${CODEVISOR_XCODE_SCHEME:-Codevisor}"
-# These values are deliberately constant. Changing either value makes Xcode
-# rebuild the app target even after an exact DerivedData cache restore. The
-# shipping values are written into Info.plist before the bundle is signed.
 placeholder_version="0.0.0"
 placeholder_build_number="1"
 
@@ -41,13 +38,10 @@ xcode_args=(
   -scheme "$scheme"
   -configuration Release
   -derivedDataPath "$derived_data"
-  # Pinned package dependencies ship Swift macros; trust them without Xcode's interactive approval.
   -skipMacroValidation
   MARKETING_VERSION="$placeholder_version"
   CURRENT_PROJECT_VERSION="$placeholder_build_number"
   CODE_SIGNING_ALLOWED=NO
-  # The app ships for Apple silicon only; Intel Macs run the standalone
-  # codevisor-server-darwin-x64 archive instead.
   ARCHS=arm64
   ONLY_ACTIVE_ARCH=NO
 )
@@ -56,11 +50,6 @@ ghostty_framework="$repo_root/apps/macos/Frameworks/GhosttyKit.xcframework"
 library_has_arch() {
   lipo -archs "$1" 2>/dev/null | tr " " "\n" | grep -qx "$2"
 }
-# The xcframework also carries iOS device and simulator slices whose archives
-# contain arm64 too, so an arm64 check alone cannot tell them apart. Xcode
-# names each slice <platform>-<archs>[-<variant>] and allows one per platform
-# and variant; macOS has no variant, so its library is the one under macos-*.
-# Mac Catalyst and simulator slices are ios-* and can never match.
 shopt -s nullglob
 ghostty_candidates=("$ghostty_framework"/macos-*/*.a)
 shopt -u nullglob
@@ -76,8 +65,6 @@ if ! library_has_arch "$ghostty_library" arm64; then
   echo "error: GhosttyKit macOS library $ghostty_library has no arm64 slice." >&2
   exit 1
 fi
-# The pinned version, every slice, and the header layout the project's
-# Swift include path (Headers/) expects: the same check the dev tooling uses.
 node "$repo_root/scripts/ghostty-artifact.mjs" validate "$ghostty_framework"
 if [[ ! -f "$ghostty_resources" ]]; then
   echo "error: Ghostty runtime resources are required at $ghostty_resources" >&2
@@ -87,8 +74,6 @@ echo "Building with GhosttyKit from $ghostty_library"
 
 node "$repo_root/scripts/chromium-artifact.mjs" arm64
 
-# Keep the project's linker settings, including startup-loaded browser storage.
-# Only the resolved Ghostty archive differs between local and release builds.
 xcodebuild "${xcode_args[@]}" \
   CODEVISOR_GHOSTTY_LIBRARY="$ghostty_library" \
   SWIFT_INCLUDE_PATHS="$ghostty_slice_dir/Headers" \

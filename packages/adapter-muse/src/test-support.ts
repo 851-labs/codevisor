@@ -53,9 +53,6 @@ export const session = (fields: Record<string, unknown> = {}) => ({
 
 type Reply = unknown | Error | ((params: Record<string, unknown>) => unknown)
 
-/// A scripted `muse serve`: answers requests from `replies` (a value, an
-/// Error to fail, or a function of the params), records what it was sent,
-/// and lets a test push notifications and server requests.
 export class FakeMuseClient implements MuseClient {
   readonly requests: Array<{ method: string; params: Record<string, unknown> }> = []
   readonly notified: Array<string> = []
@@ -93,7 +90,6 @@ export class FakeMuseClient implements MuseClient {
   private readonly closeHandlers: Array<(error: Error) => void> = []
   private readonly waiters: Array<{ method: string; resolve: () => void }> = []
 
-  /// Resolves once the client sends `method`.
   nextRequest(method: string): Promise<void> {
     return new Promise((resolve) => this.waiters.push({ method, resolve }))
   }
@@ -161,7 +157,6 @@ export const setup = (config: MuseProviderConfig = {}, client = new FakeMuseClie
   return { client, spawned, events, provider, emit }
 }
 
-/// The payloads of emitted events, for compact assertions.
 export const payloads = (events: ReadonlyArray<RuntimeEvent>) =>
   events.map((event) => event.payload as Record<string, unknown>)
 
@@ -177,7 +172,6 @@ export const startChat = async (
   return { client, chat, events }
 }
 
-/// Sends a prompt and waits until it reaches Muse.
 export const send = async (
   chat: Awaited<ReturnType<typeof startMuseChat>>,
   client: FakeMuseClient,
@@ -189,6 +183,5 @@ export const send = async (
   return { finished, turnId: client.sent("turn/start").at(-1)!.commandId as string }
 }
 
-/// The turn lifecycle markers among the emitted events.
 export const turns = (events: ReadonlyArray<RuntimeEvent>) =>
   payloads(events).filter((payload) => "turnState" in payload)

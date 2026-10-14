@@ -1,7 +1,6 @@
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { extractAllStringFields, extractStringField } from "./claude.js"
 import { definition, FakeQuery, initMessage, makeProvider, run } from "./test-support.js"
 
 describe("ClaudeProvider", () => {
@@ -65,9 +64,6 @@ describe("ClaudeProvider", () => {
     fake.push(initMessage())
     await createPromise
 
-    // The SDK reports file creations with an empty structuredPatch — there
-    // was nothing to patch. Counting its hunks yields an authoritative
-    // +0 −0 that used to beat the content-derived totals in the client.
     const hooks = fake.options?.hooks?.PostToolUse?.[0]?.hooks
     expect(hooks).toBeDefined()
     await hooks?.[0]?.(
@@ -95,29 +91,5 @@ describe("ClaudeProvider", () => {
     expect(payload.content).toEqual([
       { newText: "a\nb\nc\n", oldText: null, path: "/tmp/new.py", type: "diff" }
     ])
-  })
-})
-
-describe("partial JSON string extraction", () => {
-  it("extracts complete and streaming values", () => {
-    const complete = '{"file_path":"/a.txt","old_string":"one\\ntwo"}'
-    expect(extractStringField(complete, "file_path")).toBe("/a.txt")
-    expect(extractStringField(complete, "old_string")).toBe("one\ntwo")
-
-    const partial = '{"file_path":"/a.txt","new_string":"line one\\nline tw'
-    expect(extractStringField(partial, "new_string")).toBe("line one\nline tw")
-    expect(extractStringField(partial, "missing")).toBeUndefined()
-  })
-
-  it("decodes escapes including unicode", () => {
-    const json = '{"s":"tab\\there \\u0041 quote\\" done"}'
-    expect(extractStringField(json, "s")).toBe('tab\there A quote" done')
-  })
-
-  it("extracts every occurrence for MultiEdit", () => {
-    const json =
-      '{"edits":[{"old_string":"a\\nb","new_string":"c"},{"old_string":"d","new_string":"e\\nf"}]}'
-    expect(extractAllStringFields(json, "old_string")).toEqual(["a\nb", "d"])
-    expect(extractAllStringFields(json, "new_string")).toEqual(["c", "e\nf"])
   })
 })

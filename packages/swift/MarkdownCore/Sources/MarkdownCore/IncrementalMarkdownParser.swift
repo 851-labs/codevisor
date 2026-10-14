@@ -7,10 +7,6 @@ struct MarkdownParseResult {
   var tableByteRanges: [Range<Int>] = []
 }
 
-/// Reuses complete top-level blocks while an append changes the document's
-/// tail. MD4C supplies the boundary. Reference syntax disables reuse because
-/// a later definition can change any earlier inline span. Edits fall back to
-/// a complete parse; the result always has ordinary full-document semantics.
 public struct IncrementalMarkdownParser: Sendable {
   private var source = ""
   private var blocks: [MarkdownBlock] = []

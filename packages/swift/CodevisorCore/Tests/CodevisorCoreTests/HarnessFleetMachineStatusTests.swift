@@ -4,7 +4,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// The harness-major read: one shared harness, every machine's word on it.
 @MainActor
 @Suite("HarnessFleetMachineStatus")
 struct HarnessFleetMachineStatusTests {
@@ -52,7 +51,6 @@ struct HarnessFleetMachineStatusTests {
     let quiet: [Status] = [.ready, .off, .unreachable, .awaitingSignIn]
     for status in attention {
       #expect(status.needsAttention && !status.isBusy, "\(status)")
-      // A mark that asks for attention must have something to say when opened.
       #expect(status.rowStatus.reason?.isEmpty == false, "\(status)")
     }
     for status in busy {
@@ -85,7 +83,6 @@ struct HarnessFleetMachineStatusTests {
     arguments: [
       (HarnessFleet.SharedSignIn.notShared, Status.signInRequired),
       (.pending, .awaitingSignIn),
-      // Machine "a" has never reported a time, so it predates any sign-in.
       (.signedIn(at: Date(timeIntervalSince1970: 1)), .syncingSignIn),
       (.unresolved, .signInRequired),
     ])
@@ -166,8 +163,6 @@ struct HarnessFleetMachineStatusTests {
     sync.set(
       namespace: "harness-shared-accounts", key: anthropic,
       value: .object(["harnessId": .string("pi"), "credential": credential]))
-    // Neither another harness's sign-in, one without a credential, a removed
-    // one, nor a selection moves Pi's sign-in time.
     sync.set(
       namespace: "harness-shared-accounts", key: #"provider:["opencode","default","openai"]"#,
       value: .object(["harnessId": .string("opencode"), "credential": credential]))

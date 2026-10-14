@@ -1,9 +1,6 @@
 import SwiftUI
 import CodevisorUI
 
-/// The native AppKit segmented bezel doesn't consume SwiftUI theme tokens.
-/// This two-choice equivalent preserves the segmented interaction model while
-/// using the active palette for its surface, selection, border, and labels.
 struct McpThemedTransportPicker: View {
   private struct Option: Identifiable {
     let id: String

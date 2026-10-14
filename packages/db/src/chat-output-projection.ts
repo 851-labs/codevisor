@@ -49,9 +49,6 @@ const existingRetryUser = (
   sessionId: string,
   conversation: Conversation
 ): { readonly id: string } | undefined => {
-  // A response retry reuses the original user message id. The provider
-  // still receives a continuation prompt, but the semantic transcript
-  // keeps the user's instruction exactly once.
   const existingUser =
     conversation.role === "user" && conversation.messageId !== undefined
       ? (sqlite
@@ -79,9 +76,6 @@ const projectUserOrSystemConversation = (
       status: "complete",
       ...(conversation.attachments === undefined ? {} : { attachments: conversation.attachments })
     })
-  // Dispatch owns a response before harness initialization begins. Persist
-  // its waiting row atomically with the user echo so a history refresh can
-  // never observe the accepted prompt as a finished, user-only transcript.
   if (conversation.role === "user" && payload.startsTurn === true) {
     ensureAssistantChatItem(sqlite, sessionId, event.created_at)
   }
@@ -113,16 +107,10 @@ const projectPlanTiming = (
 ): void => {
   if (update === "plan_document" && typeof payload.markdown === "string") {
     upsertChatPart(sqlite, itemId, "plan", payload.markdown.slice(0, 24_000))
-    // A (re)proposed plan closes the planning section; any earlier
-    // resume belonged to the plan it replaces.
     sqlite
       .prepare("update chat_items set plan_proposed_at = ?, plan_resumed_at = null where id = ?")
       .run(event.created_at, itemId)
   } else if (update === "question_resolved") {
-    // Answering the plan — approve or keep planning — resumes the
-    // same turn. The first answer after a proposal starts the
-    // section below the plan; the wait for the user belongs to
-    // neither section.
     sqlite
       .prepare(
         `update chat_items set plan_resumed_at = ?
@@ -162,12 +150,6 @@ const projectWorkedDetail = (
   sessionId: string,
   update: string | undefined
 ): string | undefined => {
-  // ACP agents can publish session-scoped metadata (available commands,
-  // mode/config changes, usage) as `session.output` before the first
-  // prompt. Those events remain in the session event log, but they must
-  // not materialize an empty streaming assistant item ahead of the user's
-  // first message. Only updates that can render inside an assistant turn
-  // belong to the canonical chat projection.
   const rendersInAssistantTurn =
     hasRenderableWorkedDetail(payload) ||
     (update === "plan_document" && typeof payload.markdown === "string")

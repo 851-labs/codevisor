@@ -35,12 +35,10 @@ struct WorkedSectionActivityTests {
     #expect(
       WorkedTimelineText.waiting(for: [map, audit, agent("Third", .inProgress)]) == "Waiting for 3 agents")
 
-    // Run in the foreground to completion, or sent to the background.
     let ran = agent("Map the UI", .completed)
     let launched = agent("Map the UI", .completed, background: true)
     #expect(WorkedTimelineText.title(calls: [], agents: [ran], awaited: []) == "Ran an agent")
     #expect(WorkedTimelineText.title(calls: [], agents: [launched, launched], awaited: []) == "Started 2 agents")
-    // Still running while the turn works on: started, not waited on.
     turn.entries.append(.tool(ToolCall(toolCallId: "ls", title: "Ran ls", kind: .execute, status: .inProgress)))
     #expect(WorkedTimelineText.title(calls: [], agents: [map], awaited: turn.awaitedAgentCalls) == "Started an agent")
   }
@@ -55,11 +53,9 @@ struct WorkedSectionActivityTests {
     #expect(turn.workedSectionActivity == .step("Editing file"))
 
     turn.entries = [.tool(ToolCall(toolCallId: "ls", title: "Ran ls", kind: .execute, status: .completed))]
-    // Between tool calls the model is deciding its next step.
     #expect(turn.workedSectionActivity == .step("Thinking"))
 
     turn.entries.append(.text(id: "answer", markdown: "Done."))
-    // While the answer streams the header reads "Worked for", unlabeled.
     #expect(turn.workedSectionActivity == .answering)
   }
 
@@ -100,12 +96,10 @@ struct WorkedActivityLabelSmootherTests {
     smoother.observe(.answering, now: at(5))
     #expect(smoother.shown == .step("Thinking"))
     #expect(smoother.deadline == at(5.3))
-    // Claude retags its preamble when the next tool starts.
     smoother.observe(.pending, now: at(5.05))
     smoother.observe(.step("Ran sleep 6"), now: at(5.1))
     smoother.tick(now: at(5.3))
     #expect(smoother.shown == .step("Thinking"))
-    // Waking exactly at the deadline changes the label.
     let deadline = smoother.deadline
     #expect(deadline == at(5.1).addingTimeInterval(WorkedActivityLabelSmoother.settleInterval))
     smoother.tick(now: deadline!)
@@ -117,18 +111,14 @@ struct WorkedActivityLabelSmootherTests {
   func bursts() {
     var smoother = WorkedActivityLabelSmoother()
     smoother.observe(.step("Read a"), now: at(0))
-    // A new tool every 125 ms never holds long enough to settle…
     var shownAt: [Int: WorkedSectionActivity?] = [:]
     for index in 1...15 {
       smoother.observe(.step("Read \(index)"), now: at(Double(index) / 8))
       shownAt[index] = smoother.shown
     }
     #expect(shownAt[10] == .step("Read a"))
-    // …but once the header has been out of date for 1.2 s (from 0.125 s)
-    // it catches up to the latest, then waits out the next 1.2 s.
     #expect(shownAt[11] == .step("Read 11"))
     #expect(shownAt[15] == .step("Read 11"))
-    // Returning to what is shown is not out of date.
     smoother.observe(.step("Read 11"), now: at(2))
     #expect(smoother.deadline == nil)
   }

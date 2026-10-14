@@ -6,19 +6,12 @@ import OSLog
 import ScreenSharing
 import ScreenSharingWebRTC
 
-/// One simulator's screen streamed from its Mac: the WebRTC receiver negotiated through the
-/// machine's `/v1/screen-sharing` route with the target `simulator:<udid>`, kept alive by
-/// heartbeats and reconnected after a dropped transport. Input and device state travel on the
-/// receiver's simulator channel.
 @MainActor
 @Observable
 public final class SimulatorStreamConnection: SimulatorConnection {
   public private(set) var phase: SimulatorConnectionPhase = .connecting
-  /// The receiver frames arrive on; replaced on every reconnect.
   public private(set) var receiver: ScreenSharingReceiver?
-  /// What the host says about the device, from its latest state message.
   public private(set) var state: ScreenSharingSimulatorState?
-  /// The decoded video's size in pixels, upright as the device is held.
   public private(set) var frameSize: CGSize?
 
   @ObservationIgnored let udid: String
@@ -57,18 +50,15 @@ public final class SimulatorStreamConnection: SimulatorConnection {
     closeReceiver()
     let request = request(.stop)
     let client = client
-    // A fresh task: the runner's own was just cancelled.
     Task { _ = try? await client.screenSharing(request) }
   }
 
-  /// Sends input or a device command; false while nothing is connected.
   @discardableResult
   public func send(_ message: ScreenSharingSimulatorMessage) -> Bool {
     guard let receiver, receiver.simulatorChannel.isAvailable else { return false }
     return receiver.simulatorChannel.send(message)
   }
 
-  /// Called by the video view as frames reach the screen.
   public func presented(frameSize size: CGSize) {
     if frameSize != size { frameSize = size }
     if phase != .streaming {
@@ -110,7 +100,6 @@ public final class SimulatorStreamConnection: SimulatorConnection {
     do {
       let capabilities = try await client.screenSharing(request(.capabilities))
       try Task.checkCancellation()
-      // A device still booting, or whose screen isn't up yet: try again shortly.
       Self.log.info("capabilities \(capabilities.status, privacy: .public)")
       if capabilities.status == "starting" { return .lost }
       guard capabilities.version == 1, capabilities.status == "available" else {
@@ -156,7 +145,6 @@ public final class SimulatorStreamConnection: SimulatorConnection {
     }
   }
 
-  /// Heartbeats every 8 s until the transport drops or the host ends the stream.
   private func heartbeat(until lost: AsyncStream<Void>) async -> Outcome {
     let outcomes = AsyncStream<Outcome>.makeStream()
     let beats = Task { @MainActor [weak self] in
@@ -226,7 +214,6 @@ public final class SimulatorStreamConnection: SimulatorConnection {
       displayId: target, offer: offer)
   }
 
-  /// The product receiver: field trials installed (or proven installed) before the peer exists.
   private static func makeReceiver(
     connectivity: ServerScreenSharingConnectivity?
   ) async throws

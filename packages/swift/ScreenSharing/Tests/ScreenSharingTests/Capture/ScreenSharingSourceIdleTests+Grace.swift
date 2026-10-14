@@ -31,7 +31,6 @@ extension ScreenSharingSourceIdleTests {
       },
       sleep: { try await clock.sleep(for: $0) })
     audit.decoded(sourceTimestampNs: 10)
-    // Progress: strictly newer content short of the target extends the wait.
     verifier.noticed(latestTimestampNs: 50)
     await clock.waitForSleep(.milliseconds(100))
     audit.decoded(sourceTimestampNs: 20)
@@ -39,13 +38,11 @@ extension ScreenSharingSourceIdleTests {
     await settled.wait(for: 1)
     #expect(outcomes == [.graceExtended])
     await clock.waitForSleep(.milliseconds(100), count: 2)
-    // Duplicates and older frames are not progress.
     audit.decoded(sourceTimestampNs: 20)
     audit.decoded(sourceTimestampNs: 15)
     clock.advance(by: .milliseconds(100))
     await settled.wait(for: 2)
     #expect(outcomes == [.graceExtended, .refresh] && audit.pendingTargetNs == 50)
-    // The target arriving during an extension verifies without a refresh.
     audit.decoded(sourceTimestampNs: 50)
     verifier.noticed(latestTimestampNs: 80)
     await clock.waitForSleep(.milliseconds(100), count: 3)
@@ -58,7 +55,6 @@ extension ScreenSharingSourceIdleTests {
     clock.advance(by: .milliseconds(100))
     await settled.wait(for: 4)
     #expect(outcomes.last == .verifiedAfterGrace && audit.pendingTargetNs == nil)
-    // The cap bounds the extension: two windows, then refresh despite progress.
     verifier.noticed(latestTimestampNs: 200)
     for (index, identity) in [90, 100, 110].enumerated() {
       await clock.waitForSleep(.milliseconds(100), count: index + 5)
@@ -67,7 +63,6 @@ extension ScreenSharingSourceIdleTests {
       await settled.wait(for: index + 5)
     }
     #expect(outcomes.suffix(3) == [.graceExtended, .graceExtended, .refresh] && audit.pendingTargetNs == 200)
-    // A newer notice replaces an extended wait; closing cancels it.
     audit.decoded(sourceTimestampNs: 200)
     verifier.recoveryChanged(.init(revision: 1, needed: false))
     #expect(outcomes.last == .recovered)
@@ -76,8 +71,6 @@ extension ScreenSharingSourceIdleTests {
     audit.decoded(sourceTimestampNs: 210)
     clock.advance(by: .milliseconds(100))
     await settled.wait(for: 9)
-    // The report precedes registration of the extended sleep. Wait for that
-    // registration before cancelling it, so the replacement is sleep ten.
     await clock.waitForSleep(.milliseconds(100), count: 9)
     verifier.noticed(latestTimestampNs: 310)
     await clock.waitForSleep(.milliseconds(100), count: 10)
@@ -108,7 +101,6 @@ extension ScreenSharingSourceIdleTests {
       },
       sleep: { try await clock.sleep(for: $0) })
     verifier.noticed(latestTimestampNs: 100)
-    // Progressing content extends four times (500 ms after the notice), then refreshes.
     for window in 1...5 {
       await clock.waitForSleep(.milliseconds(100), count: window)
       audit.decoded(sourceTimestampNs: Int64(window * 10))
@@ -116,7 +108,6 @@ extension ScreenSharingSourceIdleTests {
       await settled.wait(for: window)
     }
     #expect(outcomes == Array(repeating: .graceExtended, count: 4) + [.refresh])
-    // The former defaults remain available as explicit overrides.
     let legacy = ScreenSharingDeliveryVerifier(
       audit: ScreenSharingDeliveryAudit(), grace: .milliseconds(500),
       graceExtensions: 0, refresh: {}, report: { _ in },

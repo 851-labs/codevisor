@@ -79,8 +79,6 @@ export const readTranscriptStatePage = (
         payload.stateRevision = row.revision
         payload.statePosition = row.position
       }
-      // Answered questions render as tool rows; without a durable position
-      // the client cannot place them among the tool calls around them.
       if (row.category === "question") payload.statePosition = row.position
       if (row.category === "text" || row.category === "plan") {
         const text = readTranscriptText(db, itemId, row.entry_key, 24_000)
@@ -133,8 +131,6 @@ export const readTranscriptStatePage = (
     and (position, entry_key) > (?, ?) limit 1`
         )
         .get(itemId, end.position, end.key) !== undefined
-    // A page may start inside a subagent. Include its compact parent headers so
-    // the children remain reachable without retaining all preceding pages.
     const included = new Set(entries.map((entry) => entry.key))
     const parents = new Set(
       entries

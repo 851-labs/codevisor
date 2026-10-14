@@ -6,10 +6,6 @@
     import UIKit
   #endif
 
-  /// An exclusively owned TextKit stack prepared without a text view. The
-  /// worker finishes all access before handing it to the UI actor. Native
-  /// views then draw and select through that same layout, avoiding a second
-  /// typesetting pass during mounting.
   final class PreparedNativeTextLayout: @unchecked Sendable {
     let text: NSAttributedString
     let storage: NSTextStorage
@@ -40,8 +36,6 @@
     }
 
     #if canImport(AppKit)
-      /// AppKit temporary attributes update syntax colors without invalidating
-      /// glyph geometry or replacing the native selection owner.
       @MainActor
       func updateForegroundColors(from text: NSAttributedString) {
         let range = NSRange(location: 0, length: storage.length)

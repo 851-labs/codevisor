@@ -6,8 +6,6 @@ import StreamMarkdown
 import SwiftUI
 import TranscriptKit
 
-// MARK: - DisclosureCollapse
-
 extension VirtualizedTranscriptScrollView {
   func automaticallyCollapsedWorkedSections(
     previousRowsByKey: [String: TranscriptVirtualRow]
@@ -49,10 +47,6 @@ extension VirtualizedTranscriptScrollView {
     }
   }
 
-  /// The automatic settlement path retains only pixels that are already in
-  /// the virtual window. One shared mask retracts them under the header while
-  /// the canonical row set is already collapsed, matching the old local
-  /// disclosure without measuring or mounting any additional content.
   func startAutomaticDisclosureCollapse(keys: [String]) {
     let hosts = keys.compactMap { key -> (String, TranscriptMountedRowHost)? in
       guard let host = mountedHosts.removeValue(forKey: key) else { return nil }
@@ -165,10 +159,6 @@ extension VirtualizedTranscriptScrollView {
     host.layer?.presentation()?.frame.minY ?? host.frame.minY
   }
 
-  /// The virtual layout and hit-testing geometry stay final throughout the
-  /// transition. Core Animation carries only the bounded set of mounted rows
-  /// from their old visual origins to those final frames, matching the
-  /// disclosure body's exit instead of making the following content jump.
   func animatePendingDisclosureCollapse() {
     guard let startingOrigins = pendingDisclosureCollapseOrigins else { return }
     pendingDisclosureCollapseOrigins = nil
@@ -187,9 +177,6 @@ extension VirtualizedTranscriptScrollView {
 
   func animateDisclosureMovement(_ view: NSView, fromViewportY: CGFloat) {
     guard let layer = view.layer else { return }
-    // Bottom compensation can already have kept a surviving answer at the
-    // same screen position. Animate only the remaining visible displacement,
-    // after both the document geometry and the viewport have been committed.
     let translation = fromViewportY - (view.frame.minY - contentView.bounds.minY)
     layer.removeAnimation(forKey: Self.disclosureCollapseAnimationKey)
     guard abs(translation) > 0.5 else { return }

@@ -1,6 +1,3 @@
-/// Extracts a JSON string field's (possibly still-streaming) value from a
-/// partial JSON buffer without a full parser: finds `"field":"` and decodes
-/// escapes until the closing quote or the end of the buffer.
 export const extractStringField = (json: string, field: string): string | undefined => {
   const key = `"${field}"`
   let index = json.indexOf(key)
@@ -12,7 +9,6 @@ export const extractStringField = (json: string, field: string): string | undefi
   return decodeJsonString(json, index).value
 }
 
-/// Extracts every occurrence of a string field (for MultiEdit's edits array).
 export const extractAllStringFields = (json: string, field: string): Array<string> => {
   const key = `"${field}"`
   const values: Array<string> = []

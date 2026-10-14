@@ -30,7 +30,6 @@ import type { GatewayOrigin, McpManager } from "./mcp-manager-types.js"
 
 afterEach(cleanupMcpManagerTests)
 
-/// A 1×1 transparent PNG.
 const PNG_PIXEL =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
 
@@ -41,7 +40,6 @@ const machineRoster = {
   ]
 }
 
-/// Serves the gateway plus GET /v1/machines (the codevisor.machines.list route).
 const listenWithMachines = async (manager: McpManager): Promise<void> => {
   manager.setBaseUrl(
     await listen(
@@ -57,7 +55,6 @@ const listenWithMachines = async (manager: McpManager): Promise<void> => {
   )
 }
 
-/// A manager on "Mac Studio" whose machine link is a fake.
 const studioGateway = async () => {
   const remoteCalls: Array<{
     machine: string
@@ -176,7 +173,6 @@ describe("gateway machines and execution annotations", () => {
         { machine: "mbp", path: "xcode.build", args: { scheme: "App" }, origin },
         { machine: "mbp", path: "xcode.test", args: {}, origin }
       ])
-      // The call record is transcript-only; the model sees just its result.
       expect(JSON.stringify(executed.content)).not.toContain("codevisor_execution")
 
       const annotations = events.map((event) => {
@@ -196,8 +192,6 @@ describe("gateway machines and execution annotations", () => {
           state: "completed",
           description: "Build the app on the MacBook",
           status: "Finding the MacBook",
-          // machines.get's own lookup is the prelude's, not the script's.
-          // Steps carry a label and icon; another machine's tools are labeled by name.
           calls: [
             {
               path: "xcode.build",
@@ -225,13 +219,11 @@ describe("gateway machines and execution annotations", () => {
               ms: expect.any(Number)
             }
           ],
-          // Named by its first call; another machine's server is known only by id.
           icon: { kind: "mcp", serverId: "xcode" },
           activeIcon: { kind: "builtin", id: "codevisor" }
         }
       })
 
-      // A long label is accepted as-is; a failing script ends "failed".
       const failed = await client.callTool({
         name: "execute",
         arguments: {
@@ -242,14 +234,11 @@ describe("gateway machines and execution annotations", () => {
       expect(failed.isError).toBe(true)
       expect((events.at(-1)!.payload as { execution: unknown }).execution).toEqual({
         state: "failed",
-        // The label the annotation carries is cut to one short line.
         description: `${"Check ".repeat(13)}C…`,
         calls: [],
         error: expect.stringContaining("boom")
       })
 
-      // Skill reads are reported too, for rows that can't show their own
-      // arguments (OpenCode's Code Mode).
       const skillReports = async (args: Record<string, unknown>) => {
         await client.callTool({ name: "skills", arguments: args })
         return events.at(-1)!.payload
@@ -280,7 +269,6 @@ describe("gateway machines and execution annotations", () => {
     const { db, manager } = await testManager({
       makeBrowserProvider: () => ({
         ...provider,
-        // Page actions lead with the page they left the tab on.
         invoke: async (_context, name) => {
           if (name === "screenshot") {
             return {
@@ -321,10 +309,8 @@ describe("gateway machines and execution annotations", () => {
       expect(execution).toMatchObject({
         state: "completed",
         icon: site,
-        // A browser call that reports no page keeps showing the site.
         activeIcon: site
       })
-      // Each step is labeled, shown on the site, and carries what it produced.
       expect(execution.calls.map((call) => [call.title, call.icon])).toEqual([
         ["Navigate", site],
         ["Snapshot", site],
@@ -373,7 +359,6 @@ describe("gateway machines and execution annotations", () => {
           origin: expect.objectContaining({ sessionId: session.id })
         })
       ])
-      // Finished once: a turn with no remote browser use sends nothing.
       await manager.finishTurn(session.id)
       await manager.closeSession(session.id)
       expect(remoteCalls).toHaveLength(1)

@@ -1,5 +1,3 @@
-// Compact, single-word food slugs for automatically named production worktrees:
-// prepared dishes, sweets, pantry staples, and drinks.
 export const dishNames = [
   "arepa",
   "aspic",

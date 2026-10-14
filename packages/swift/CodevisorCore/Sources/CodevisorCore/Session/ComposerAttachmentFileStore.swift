@@ -1,10 +1,5 @@
 import Foundation
 
-/// The app-owned directory composer attachments are staged in, one
-/// subdirectory per attachment id (`<root>/<id>/<name>`). Uploads, retries,
-/// machine retargets, and persisted drafts all read the staged file, so an
-/// attachment's bytes never have to sit in memory. File URLs are copied in
-/// with `FileManager.copyItem`, which clones on APFS.
 public struct ComposerAttachmentFileStore: Sendable, Equatable {
   public let root: URL
 
@@ -12,8 +7,6 @@ public struct ComposerAttachmentFileStore: Sendable, Equatable {
     self.root = root.standardizedFileURL
   }
 
-  /// A private directory under the temporary folder, for tests, previews,
-  /// and controllers that were not handed the app's store.
   public static func temporary() -> ComposerAttachmentFileStore {
     ComposerAttachmentFileStore(
       root: FileManager.default.temporaryDirectory
@@ -21,29 +14,22 @@ public struct ComposerAttachmentFileStore: Sendable, Equatable {
     )
   }
 
-  /// Copies `source` into the attachment's directory, replacing anything
-  /// staged for `id` before.
   public func stageCopy(of source: URL, id: UUID, name: String) throws -> URL {
     let destination = try prepareDestination(id: id, name: name)
     try FileManager.default.copyItem(at: source, to: destination)
     return destination
   }
 
-  /// Writes in-memory bytes (a pasted image) as the attachment's file.
   public func stage(data: Data, id: UUID, name: String) throws -> URL {
     let destination = try prepareDestination(id: id, name: name)
     try data.write(to: destination, options: .atomic)
     return destination
   }
 
-  /// Deletes everything staged for `id`.
   public func remove(id: UUID) {
     try? FileManager.default.removeItem(at: directory(for: id))
   }
 
-  /// Deletes staged attachments that no draft references. Only directories
-  /// created before `cutoff` qualify, so an attachment staged while the
-  /// sweep runs is never collected.
   public func removeAll(except keep: Set<UUID>, createdBefore cutoff: Date) {
     let keys: [URLResourceKey] = [.creationDateKey]
     guard
@@ -58,9 +44,6 @@ public struct ComposerAttachmentFileStore: Sendable, Equatable {
     }
   }
 
-  /// The staged file's path relative to `root` ("<id>/<name>"), which is
-  /// what drafts persist: iOS moves the app container between launches, so
-  /// an absolute path would not survive.
   public func relativePath(of fileURL: URL) -> String? {
     let rootPath = root.path.hasSuffix("/") ? root.path : root.path + "/"
     let path = fileURL.standardizedFileURL.path
@@ -79,7 +62,6 @@ public struct ComposerAttachmentFileStore: Sendable, Equatable {
       .appendingPathComponent(String(components[1]), isDirectory: false)
   }
 
-  /// The file's size from its attributes, without reading it.
   public static func byteCount(of fileURL: URL) -> Int? {
     guard let size = try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? NSNumber
     else { return nil }
@@ -98,8 +80,6 @@ public struct ComposerAttachmentFileStore: Sendable, Equatable {
     return directory.appendingPathComponent(Self.safeFilename(name), isDirectory: false)
   }
 
-  /// Keeps the display name (and its extension, which later type checks
-  /// read) while making sure it stays one path component.
   static func safeFilename(_ name: String) -> String {
     let cleaned = String(
       name.unicodeScalars.map { scalar -> Character in

@@ -15,11 +15,6 @@ describe("@codevisor/db attention and checklist upgrades", () => {
     await run(current.appendEvent("session.updated", session.id, { modeId: "plan" }))
     await Effect.runPromise(current.close)
 
-    // Recreate the exact v30 boundary: all prior migrations and persisted
-    // session events exist, while the attention tables and markers do not.
-    // Reopening runs 31 (ledger tables + mode backfill), 37 (receipt
-    // targets), and 42 (revision counter, which drops the ledger again)
-    // atomically.
     const legacy = new Database(filename)
     legacy.pragma("foreign_keys = OFF")
     legacy.exec(`
@@ -37,9 +32,6 @@ describe("@codevisor/db attention and checklist upgrades", () => {
       unreadCount: 0
     })
 
-    // The mode backfill is behaviorally important: a plan completed after the
-    // upgrade must become a durable approval action even though the mode event
-    // itself was written by v30. (It flows v31's backfill → v42's copy.)
     await run(
       upgraded.appendEvent("session.updated", session.id, {
         initiatedBy: "user",
@@ -90,9 +82,6 @@ describe("@codevisor/db attention and checklist upgrades", () => {
     const planning = await run(current.createSession({ projectId: project.id, harnessId: "codex" }))
     await Effect.runPromise(current.close)
 
-    // Recreate the v41 boundary with the old ledger populated: an unread
-    // error past the shared cursor, a stuck pending epoch (the dev-server
-    // hold bug this migration exists to unstick), and a pending approval.
     const legacy = new Database(filename)
     legacy.pragma("foreign_keys = OFF")
     legacy.exec(`
@@ -137,8 +126,6 @@ describe("@codevisor/db attention and checklist upgrades", () => {
       vi.useRealTimers()
     })
     const upgraded = await run(makeDatabase({ filename, serverId: "local" }))
-    // The revision inherits the ledger's sequence space, so the shared read
-    // cursor carries over exactly: 3 settled turns, 2 seen, 1 unread error.
     expect(await run(upgraded.getSessionSummary(read.id))).toMatchObject({
       latestAttentionSequence: 3,
       lastSeenAttentionSequence: 2,
@@ -146,12 +133,10 @@ describe("@codevisor/db attention and checklist upgrades", () => {
       hasUnreadError: true,
       sidebarState: "errored"
     })
-    // The stuck epoch became a parked finish for recovery to drain.
     expect((await run(upgraded.getSessionSummary(stuck.id))).sidebarState).toBe("inProgress")
     expect(await run(upgraded.listPendingAttentionSettles)).toEqual([
       { sessionId: stuck.id, dueAt: null }
     ])
-    // Recovery arms the grace deadline, then settles once it elapses.
     expect((await run(upgraded.settleSessionAttention(stuck.id))).settled).toBe(false)
     vi.setSystemTime(Date.now() + ATTENTION_SETTLE_GRACE_MS)
     expect((await run(upgraded.settleSessionAttention(stuck.id))).settled).toBe(true)
@@ -160,7 +145,6 @@ describe("@codevisor/db attention and checklist upgrades", () => {
       unreadCount: 1,
       sidebarState: "unread"
     })
-    // Intrinsic approval state carried over.
     expect(await run(upgraded.getSessionSummary(planning.id))).toMatchObject({
       actionRequired: true,
       actionRequiredKind: "planApproval",
@@ -208,8 +192,6 @@ describe("@codevisor/db attention and checklist upgrades", () => {
         ...activePlan
       })
     )
-    // The migration must walk past an invalid newest event and recover the
-    // last valid full snapshot rather than dropping this existing checklist.
     await run(
       current.appendEvent("session.output", active.id, {
         sessionUpdate: "plan",

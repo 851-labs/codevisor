@@ -2,8 +2,6 @@
   import CodevisorCore
   import SwiftUI
 
-  /// The review pane's base-branch sheet: its local and remote branches in
-  /// the shared `BranchPickerSheet`.
   struct ReviewBranchSheet: View {
     let model: ReviewPaneModel
 

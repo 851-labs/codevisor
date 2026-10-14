@@ -4,7 +4,6 @@ import Foundation
 
 enum FakeEnvironmentError: Error { case boom }
 
-/// A command runner returning a preconfigured result.
 final class FakeCommandRunner: CommandRunner, @unchecked Sendable {
   private let result: Result<CommandResult, FakeEnvironmentError>
   private let lock = NSLock()

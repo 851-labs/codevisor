@@ -2,10 +2,6 @@ import { bufferOrAbandon, type HubNoticesPort } from "./hub-notices.js"
 import { machineRow } from "./hub-schema.js"
 import type { HubSockets } from "./hub-sockets.js"
 
-/// The relay delivery policy kept separate from frame rewriting: select only
-/// the current machine generation, retry every eligible socket, retire failed
-/// transports synchronously, then fall back to the bounded resume buffer.
-
 export interface HubDeliveryPort extends HubNoticesPort {
   retire(socket: WebSocket): void
 }
@@ -47,8 +43,6 @@ export const deliverToPeer = (
   peerId: string,
   message: Uint8Array
 ): boolean => {
-  // Openers are apps, or machines on machine→machine channels (a peerId is
-  // the opener's connection id either way).
   const sockets = port.net.byConnectionId(peerId).filter((socket) => {
     const attachment = port.net.attachment(socket)
     return attachment?.helloDone === true && (attachment.kind === "app" || attachment.peerAware)

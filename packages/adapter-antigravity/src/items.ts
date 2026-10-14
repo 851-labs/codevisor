@@ -3,10 +3,6 @@ import type { EventKind } from "@codevisor/api"
 
 import { param, record, text, type AgyStep } from "./protocol.js"
 
-/// Maps agy's step stream onto Codevisor transcript events. A step is sent
-/// as it starts (`ACTIVE`) and again as it settles (`DONE`/`ERROR`) under
-/// the same index; text arrives as `text_delta` fragments of one step.
-
 export interface MappedEvent {
   readonly kind: EventKind
   readonly payload: Record<string, unknown>
@@ -20,7 +16,6 @@ const output = (payload: Record<string, unknown>): MappedEvent => ({
 const textContent = (value: string | undefined) =>
   value === undefined ? [] : [{ type: "content", content: { type: "text", text: value } }]
 
-/// agy's built-in tools, as Codevisor's tool kinds.
 export const agyToolKind = (tool: string): string => {
   switch (tool) {
     case "view_file":
@@ -48,8 +43,6 @@ export const agyToolKind = (tool: string): string => {
   }
 }
 
-/// What the call acts on: the command, file, query or address, else agy's
-/// own one-line summary of it.
 export const agyToolTitle = (tool: string, parameters: Record<string, unknown>): string =>
   text(param(parameters, "CommandLine", "Command")) ??
   text(param(parameters, "TargetFile", "AbsolutePath", "FilePath", "DirectoryPath")) ??
@@ -60,9 +53,6 @@ export const agyToolTitle = (tool: string, parameters: Record<string, unknown>):
 
 const EDIT_TOOLS = new Set(["write_to_file", "replace_file_content", "multi_replace_file_content"])
 
-/// An edit's diff, rebuilt from what the model wrote: agy reports no diff of
-/// its own. `write_to_file` carries the whole file; the replace tools carry
-/// one chunk inline or a `ReplacementChunks` list.
 const fileChange = (tool: string, parameters: Record<string, unknown>) => {
   const path = text(param(parameters, "TargetFile", "AbsolutePath"))
   if (path === undefined || !EDIT_TOOLS.has(tool)) return undefined
@@ -94,7 +84,6 @@ const fileChange = (tool: string, parameters: Record<string, unknown>) => {
   }
 }
 
-/// A subagent prompt's first line, cut at a word boundary.
 const snippet = (prompt: string): string => {
   const line = prompt.trim().split("\n")[0]!.trim()
   if (line.length <= 60) return line
@@ -103,8 +92,6 @@ const snippet = (prompt: string): string => {
   return `${(boundary > 20 ? cut.slice(0, boundary) : cut).trimEnd()}…`
 }
 
-/// `invoke_subagent` runs one or more subagents; the row is named for the
-/// first, as Claude and Codex title theirs.
 const subagentRow = (parameters: Record<string, unknown>) => {
   const listed = param(parameters, "Subagents")
   const prompts = (Array.isArray(listed) ? listed : [parameters]).flatMap((entry) => {
@@ -121,8 +108,6 @@ const subagentRow = (parameters: Record<string, unknown>) => {
   }
 }
 
-/// agy runs every MCP tool through `call_mcp_tool`; titled `server.tool`
-/// as Codex titles its MCP calls, with the tool's own arguments as input.
 const mcpCall = (parameters: Record<string, unknown>) => {
   const server = text(param(parameters, "ServerName"))
   const tool = text(param(parameters, "ToolName"))
@@ -131,8 +116,6 @@ const mcpCall = (parameters: Record<string, unknown>) => {
     : { title: `${server}.${tool}`, rawInput: record(param(parameters, "Arguments")) }
 }
 
-/// agy keeps each MCP tool's schema as a file in its data root and reads it
-/// before a call: plumbing, not the agent's work.
 const schemaRead = (name: string, path: string | undefined): boolean =>
   name === "view_file" && path !== undefined && /\/antigravity-cli\/mcp\//.test(path)
 
@@ -142,10 +125,7 @@ export interface AgyStepMapper {
   readonly step: (step: AgyStep) => Array<MappedEvent>
 }
 
-/// `scope` names the conversation the steps belong to: indexes are only
-/// unique within it.
 export const makeAgyStepMapper = (scope: () => string): AgyStepMapper => {
-  /// Tool rows opened so far, and those already settled.
   const opened = new Set<string>()
   const settled = new Set<string>()
 
@@ -191,8 +171,6 @@ export const makeAgyStepMapper = (scope: () => string): AgyStepMapper => {
 
   return {
     step: (step) => {
-      // A subagent's own steps report on its conversation; its row in the
-      // parent carries its result.
       const conversation = step.conversation_id
       if (conversation !== undefined && scope() !== "" && conversation !== scope()) return []
       const id = `${conversation ?? scope()}:${step.step_index}`
@@ -213,10 +191,8 @@ export const makeAgyStepMapper = (scope: () => string): AgyStepMapper => {
           events.push(...tool(step, id))
           break
         default:
-        // The prompt's echo (`user_input`) and checkpoints only carry usage.
       }
       const total = step.usage?.total_tokens
-      // The latest model call's prompt plus reply: what the context holds.
       if (typeof total === "number" && total > 0)
         events.push({
           kind: "session.updated",

@@ -55,8 +55,6 @@ struct TranscriptWorkedRowProjectionTests {
     #expect(!ConversationItem.assistant(historical).hasRenderableTranscriptContent)
   }
 
-  /// A live worked header says what the turn is doing, so it replaces the
-  /// separate activity row from the first event until the turn ends.
   @Test func liveWorkedHeaderReplacesTheActivityRow() {
     let messageID = UUID()
     let commentary = TranscriptEntry.text(id: "commentary", markdown: "Checking the code.")
@@ -96,14 +94,10 @@ struct TranscriptWorkedRowProjectionTests {
       #expect(projected.first?.id == headerID)
       #expect(!projected.contains { $0.id == activityID })
     }
-    // Reasoning before any work lands shows as the section's only line.
     #expect(
       thinking.map(\.id) == [headerID, .activeWorkedItem(messageID, .planning, itemID: WorkedItem.thinkingLineID)])
   }
 
-  /// The opening line times the wait for the harness; once it answers, the
-  /// header that takes over stays above the answer, live and settled, so
-  /// nothing above it moves as the turn ends.
   @Test func answerOnlyTurnKeepsItsHeaderAboveTheAnswer() throws {
     var message = AssistantMessage(
       turn: AssistantTurn(isGenerating: true, startedAt: Date(timeIntervalSince1970: 100)))
@@ -114,8 +108,6 @@ struct TranscriptWorkedRowProjectionTests {
     message.turn.entries = [.text(id: "answer", markdown: "Hello.")]
     let answering = TranscriptActiveRowProjection.rows(for: .assistant(message))
     #expect(answering.first?.id == header)
-    // The header takes the opening line's place with the same gap below it,
-    // so the bottom-pinned transcript doesn't move when it does.
     #expect(answering.first?.spacingAfter == opening.first?.spacingAfter)
     #expect(!answering.contains { $0.id == .activeChrome(message.id, .activity) })
 
@@ -274,14 +266,11 @@ struct TranscriptWorkedRowProjectionTests {
       message.id, .planning, itemID: WorkedItem.thinkingLineID)
     let reasoning = worked()
     #expect(reasoning.last?.id == thinkingLine)
-    // Nothing above the line ends the rail, nor puts space before it.
     #expect(reasoning.dropLast().allSatisfy { $0.spacingAfter == 0 })
     let note = try #require(
       reasoning.lazy.compactMap { if case let .markdownChunk(chunk) = $0.content { chunk } else { nil } }.first)
     #expect(note.timeline?.railBelow == true)
 
-    // The next tool takes the line's place, as a group of its own rather
-    // than joining the group above: same row count, nothing shifts.
     TranscriptToolReduction.applyCall(
       ToolCall(toolCallId: "sh", title: "Ran ls", kind: .execute, status: .inProgress, rawInput: ["command": "ls"]),
       to: &message.turn)
@@ -291,7 +280,6 @@ struct TranscriptWorkedRowProjectionTests {
     #expect(!running.contains { $0.id == thinkingLine })
     #expect(Array(running.dropLast().map(\.id)) == Array(reasoning.dropLast().map(\.id)))
 
-    // A gap the harness doesn't report as reasoning shows no line.
     message.turn.entries[2] = .tool(
       ToolCall(toolCallId: "sh", title: "Ran ls", kind: .execute, status: .completed, rawInput: ["command": "ls"]))
     #expect(!worked().contains { $0.id == thinkingLine })
@@ -331,11 +319,9 @@ struct AwaitedAgentTests {
       isGenerating: true)
     #expect(turn.awaitedAgentCalls.map(\.toolCallId) == ["map", "audit"])
 
-    // A background agent's call closes at launch: nothing to wait on.
     turn.entries = [agent("map", .completed, background: true)]
     #expect(turn.awaitedAgentCalls.isEmpty)
 
-    // An agent still running while the parent works on (Codex) isn't awaited.
     turn.entries = [
       agent("map", .inProgress),
       .tool(ToolCall(toolCallId: "ls", title: "Ran ls", kind: .execute, status: .inProgress)),

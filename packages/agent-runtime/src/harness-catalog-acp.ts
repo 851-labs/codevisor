@@ -1,8 +1,6 @@
 import { executableHarness } from "./harness-catalog-support.js"
 import type { HarnessDefinition } from "./types.js"
 
-// Reviewed against ACP's agent directory and registry on 2026-09-13.
-// docs/harness-catalog-audit.md records sources and integration limitations.
 const npmHarness = (
   id: string,
   name: string,
@@ -105,8 +103,6 @@ export const additionalAcpHarnesses: ReadonlyArray<HarnessDefinition> = [
       { kind: "curl", command: "curl -fsSL https://stakpak.dev/install.sh | sh" }
     ]
   }),
-  // The registry's Vibe archive is unavailable; the vendor's CLI distribution
-  // includes vibe-acp and remains installable through these other channels.
   executableHarness("mistral-vibe", "Mistral Vibe", "m.square", ["vibe-acp"], "vibe-acp", [], {
     installMethods: [
       { kind: "curl", command: "curl -LsSf https://mistral.ai/vibe/install.sh | bash" },
@@ -124,8 +120,6 @@ export const additionalAcpHarnesses: ReadonlyArray<HarnessDefinition> = [
       ]
     }
   }),
-  // Registry quarantine is for missing Windows builds. Our macOS/Linux CLI
-  // installs use the vendor's supported script or Homebrew tap.
   executableHarness("vtcode", "VT Code", "v.square", ["vtcode"], "vtcode", ["acp"], {
     installMethods: [
       {
@@ -136,7 +130,6 @@ export const additionalAcpHarnesses: ReadonlyArray<HarnessDefinition> = [
       { kind: "brew", formula: "vinhnx/tap/vtcode" }
     ]
   }),
-  // Listed in ACP's public agent directory, outside the release registry.
   executableHarness("kiro", "Kiro CLI", "k.square", ["kiro-cli"], "kiro-cli", ["acp"], {
     installMethods: [
       { kind: "curl", command: "curl -fsSL https://cli.kiro.dev/install | bash" },

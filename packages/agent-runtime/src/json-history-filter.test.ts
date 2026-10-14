@@ -41,8 +41,6 @@ describe("Codex history filtering", () => {
     expect(filter.push('{"result":{"thread":{"turns":[')).toBe('{"result":{"thread":{"turns":[]')
     const retainedBytes = JSON.stringify(filter).length
     const chunk = JSON.stringify({ output: "x".repeat(1024) }) + ","
-    // Inspect retained state directly: a large throughput fixture only tests
-    // runner speed under coverage and doesn't detect a hidden history buffer.
     for (let index = 0; index < 64; index++) {
       expect(filter.push(chunk)).toBe("")
       expect(JSON.stringify(filter).length).toBeLessThanOrEqual(retainedBytes)

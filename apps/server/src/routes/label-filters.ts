@@ -1,8 +1,5 @@
 import { HttpFailure } from "../server-context.js"
 
-/// Whether `labels` satisfies every `label=key=value` query parameter on
-/// `url`. Repeated parameters must all match; a bare `label=key` matches any
-/// value for that key.
 export const matchesLabelFilters = (
   labels: Readonly<Record<string, string>> | undefined,
   url: URL

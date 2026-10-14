@@ -1,13 +1,6 @@
 import Foundation
 import ACPKit
 
-/// Applies streamed `SessionUpdate`s to an `AssistantTurn`, preserving arrival
-/// order and merging tool-call updates. Pure and synchronous so it is trivially
-/// unit-testable; the view model wraps it with the async update stream.
-///
-/// Updates carrying a `parentToolCallId` belong to a subagent's thread and are
-/// routed into `turn.subagents[parent]` instead of the main entry list; they
-/// never affect the main turn's thinking state.
 public enum TranscriptReducer {
   public static func apply(_ update: SessionUpdate, to turn: inout AssistantTurn) {
     defer { orderEntries(&turn) }
@@ -36,7 +29,7 @@ public enum TranscriptReducer {
       TranscriptTextReduction.applyThought(parentToolCallId: parentToolCallId, to: &turn)
 
     case .userMessageChunk(_, _):
-      break  // Echo of the user's own input.
+      break
 
     case let .toolCall(call):
       TranscriptToolReduction.applyCall(call, to: &turn)
@@ -53,8 +46,6 @@ public enum TranscriptReducer {
       turn.planResource = resource
       turn.isThinking = false
       turn.planDocument = markdown
-      // Mark where the plan landed in the stream so the work that follows
-      // approval renders below the plan card, not folded in above it.
       turn.planBoundary = turn.entries.count
 
     case let .contextCompaction(id, status):
@@ -66,14 +57,10 @@ public enum TranscriptReducer {
 
     case .question, .availableCommandsUpdate, .availableSkillsUpdate, .currentModeUpdate,
       .configOptionUpdate, .usageUpdate, .goalUpdate, .goalCleared:
-      // Session-level state; handled by SessionModel, not the transcript.
       break
     }
   }
 
-  /// Replaces the streamed final span with the server's durable artifact-aware
-  /// Markdown and associates the promoted files with the turn. This is a
-  /// replacement, not another chunk, so reconnect and live delivery converge.
   public static func finalizeAssistant(
     markdown: String,
     messageId: String?,
@@ -88,15 +75,10 @@ public enum TranscriptReducer {
     TranscriptEntryOrdering.orderEntries(&turn)
   }
 
-  /// How a turn reached its end, for settling tool calls that never received
-  /// a terminal status of their own.
   public enum TurnOutcome: Sendable, Equatable {
     case completed, cancelled, failed
   }
 
-  /// Marks every non-terminal tool call in the turn — including those inside
-  /// subagent threads — with the outcome's terminal status, so in-progress
-  /// indicators can never outlive the turn.
   public static func settleToolCalls(_ turn: inout AssistantTurn, outcome: TurnOutcome) {
     TranscriptToolReduction.settleToolCalls(&turn, outcome: outcome)
   }

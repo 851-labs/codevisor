@@ -12,9 +12,6 @@ struct StreamingTextRestorationTests {
     registry.observeProjectedStreams(["summary"], animatesNewStreams: true)
     let summarySettlement = registry.presentation.settlementToken(for: "summary")
 
-    // The compact snapshot is already presented. Hydration introduces
-    // historical rows and can replace text in an existing summary row.
-    // Another provider revision may already be awaiting projection.
     registry.observeProjectedStreams(
       ["summary", "work"],
       animatesNewStreams: true,
@@ -39,8 +36,6 @@ struct StreamingTextRestorationTests {
     #expect(restored.latestAnimationEnd == nil)
     #expect(mount.activate(token: baseline.activationToken))
 
-    // Hydration provenance stays on the turn during subsequent live
-    // updates. It must not repeatedly settle its growing text or new rows.
     registry.observeProjectedStreams(
       ["summary", "work", "live"],
       animatesNewStreams: true,

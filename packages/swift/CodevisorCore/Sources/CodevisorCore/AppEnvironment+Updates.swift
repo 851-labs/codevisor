@@ -1,11 +1,6 @@
 import Foundation
 
-/// Environment surface split from the class body to keep
-/// AppEnvironment.swift within size limits.
 extension AppEnvironment {
-  /// The machine used to seed a standalone composer. This is the only
-  /// app-level machine default: request routing and lifecycle APIs always
-  /// require an explicit server id.
   public var defaultComposerServerId: String {
     if let remembered = composerDefaults.lastNewWorkspaceServerId,
       let canonical = machines.canonicalComposerMachineId(for: remembered)
@@ -19,14 +14,10 @@ extension AppEnvironment {
     await machines.prepareMachine(serverId)
   }
 
-  /// App bootstrap is fleet-scoped. In particular, the embedded local
-  /// server is restored even when the composer last targeted a remote.
   public func prepareAllMachines() async {
     await machines.prepareAllMachines()
   }
 
-  /// A machine's connection just came up: converge it with the config
-  /// plane now rather than on the next periodic sweep.
   func noteMachineConnected(_ machineId: String) {
     Task {
       await configSync.synchronizeMachine(machineId)
@@ -38,14 +29,6 @@ extension AppEnvironment {
 
   static let harnessCatalogSeedKey = "harnessCatalogSeed.v1"
 
-  /// One-time catch-up for installs that onboarded before onboarding wrote
-  /// the shared harness catalog: their Harnesses page showed no rows even
-  /// though chats worked, because only "Add Harness…" ever authored it.
-  /// Runs after the local machine's config sync so an existing fleet
-  /// catalog is honored — anything authored means there is nothing to
-  /// recover; nothing authored seeds from what this machine has ready and
-  /// enabled. The marker lands only once the local catalog was actually
-  /// read, so an unreachable server retries on the next connect.
   func seedHarnessCatalogIfNeeded(from serverId: String) async {
     guard settings.hasCompletedOnboarding,
       machines.persistenceStore.loadData(forKey: Self.harnessCatalogSeedKey) == nil
@@ -57,28 +40,19 @@ extension AppEnvironment {
     try? machines.persistenceStore.saveData(Data([1]), forKey: Self.harnessCatalogSeedKey)
   }
 
-  /// Change-driven application of replicated namespaces.
-  // MARK: - Harness catalog (moved from AppEnvironment.swift for the size ratchet)
-
   public func harnessService(for serverId: String) -> any HarnessServicing {
     harnessServiceOverride ?? ServerHarnessService(client: machines.client(for: serverId))
   }
 
-  /// The current catalog invalidation token for a machine. Views observe
-  /// this value and refetch only the machine whose harness state changed.
   public func harnessCatalogRevision(for serverId: String) -> UInt64 {
     harnessCatalogRevisions[serverId, default: 0]
   }
 
-  /// Publishes that authentication, enablement, or discovery changed the
-  /// harnesses available for new chats on a machine.
   public func harnessCatalogDidChange(onServer serverId: String) {
     configCache.invalidateCapabilities(forServer: serverId)
     harnessCatalogRevisions[serverId, default: 0] &+= 1
   }
 
-  /// Forces the server to re-probe harness authentication, then invalidates
-  /// every mounted consumer of that machine's catalog.
   public func refreshHarnessAuthentication(
     onServer serverId: String
   ) async throws -> [ServerHarness] {
@@ -87,9 +61,6 @@ extension AppEnvironment {
     return refreshed
   }
 
-  /// Re-probes only the harness whose authentication changed, then
-  /// invalidates mounted consumers of that machine's catalog. Pass
-  /// `onServer` identifies the machine whose authentication changed.
   public func refreshHarnessAuthentication(
     harnessId: String,
     onServer serverId: String
@@ -101,13 +72,7 @@ extension AppEnvironment {
 
   func applySyncedNamespace(_ namespace: String) {
     if namespace == "settings" { applySyncedSettings() }
-    // New skill metadata means some machine is missing the content blob
-    // behind it; ferry immediately instead of waiting for the sweep.
     if namespace == ConfigSync.skillsNamespace { Task { await configSync.synchronizeSkills() } }
-    // Fleet-wide harness state moved (enables, accounts, ferried
-    // credentials): every machine's picker catalog is now suspect. Mark
-    // them all stale — the reconcile-response hook refines per machine
-    // as applies actually land.
     if namespace == "harnesses" || namespace == "harness-accounts"
       || namespace == "harness-credentials" || namespace == "harness-shared-accounts"
     {
@@ -117,7 +82,6 @@ extension AppEnvironment {
     }
   }
 
-  /// Applies everything the local replica already knows at startup.
   func applyBootSyncState() {
     applySyncedSettings()
   }
@@ -126,27 +90,15 @@ extension AppEnvironment {
     SessionImporter(harnessService: harnessService(for: serverId))
   }
 
-  /// True while THIS app is installing its own update — the whole client is
-  /// about to restart, so the composer stops accepting new turns. A remote
-  /// machine's server update is deliberately not included: that machine's
-  /// server drains and holds its own prompts, and locking every composer in
-  /// the app for it was a regression (chats on other machines went grey).
   public var isUpdateInProgress: Bool {
     appUpdate.isUpdating
   }
 
-  /// A machine's harness lifecycle changed (install/update progress): the
-  /// catalog consumers invalidate, and the update center re-reads that
-  /// machine's inventory so its rows track the operation.
   func noteHarnessLifecycle(onServer serverId: String) {
     harnessCatalogDidChange(onServer: serverId)
     updateCenter.noteHarnessLifecycleChanged(onServer: serverId)
   }
 
-  /// Changes update channels immediately; the Settings view follows this
-  /// with a fresh check so the state updates without a relaunch. The
-  /// channel is FLEET state: it replicates through the config plane so
-  /// every machine — and every other client — follows.
   public func setAlphaUpdatesEnabled(_ enabled: Bool) {
     settings.setAlphaUpdatesEnabled(enabled)
     appUpdate.setAllowsAlphaUpdates(enabled)
@@ -165,9 +117,6 @@ extension AppEnvironment {
     }
   }
 
-  /// Applies remotely-synced settings to this client. Loop-safe: local
-  /// state changes only when it actually differs, and nothing here writes
-  /// back into the replica.
   func applySyncedSettings() {
     guard
       case let .string(channel)? = configSync.value(
@@ -183,18 +132,10 @@ extension AppEnvironment {
     reportReleaseChannel(alpha: alpha)
   }
 
-  /// The channel the cloud hub sees, which decides whether this device uses
-  /// the tunnel. Development builds always report Alpha, so local
-  /// development runs the same tunnel path as Alpha.
   func reportReleaseChannel(alpha: Bool) {
     CloudReleaseChannel.shared.isAlpha = alpha || CodevisorAppVariant.isDevelopment
   }
 
-  // MARK: - Session import discovery (moved from AppEnvironment.swift for the size ratchet)
-
-  /// Project-folder suggestions for an explicit machine. Discovery and path
-  /// validation run on that machine, which is required for remote and iOS
-  /// clients whose local filesystem cannot resolve the returned paths.
   public func recommendedProjects(
     serverId: String,
     limit: Int = 12
@@ -212,14 +153,10 @@ extension AppEnvironment {
     return recommendations
   }
 
-  /// The suggestions this machine last returned, or nil before the first
-  /// successful request. Callers show these while refreshing.
   public func cachedRecommendedProjects(serverId: String) -> [ProjectRecommendation]? {
     projectRecommendationCache[serverId]
   }
 
-  /// Older servers lack the recommendation endpoint, so retain the existing
-  /// client-side fallback on the explicitly requested machine.
   public func recommendedProjectsWithFallback(
     serverId: String,
     limit: Int = 12
@@ -228,8 +165,6 @@ extension AppEnvironment {
       return remote
     }
     let imported = await sessionImporter(for: serverId).fetchAll()
-    // Recommendation probes the filesystem per session (worktree `.git`
-    // metadata, directory checks); keep those syscalls off the main actor.
     return await Task.detached {
       ProjectRecommender.recommend(from: imported, limit: limit)
     }.value
@@ -241,17 +176,12 @@ extension AppEnvironment {
     return fractional.date(from: string) ?? ISO8601DateFormatter().date(from: string)
   }
 
-  /// Harness sessions whose working directory is the given folder and that
-  /// aren't already tracked by Codevisor.
   public func findImportableSessions(
     for folderURL: URL,
     serverId: String
   ) async -> [ImportedSession] {
     let folderPath = folderURL.standardizedFileURL.path
     let imported = await sessionImporter(for: serverId).fetchAll()
-    // Snapshot the main-actor state the filter reads, then run the
-    // O(imported × known) scan and per-item URL standardization off the
-    // main actor. All values involved are Sendable value types.
     let knownSessions = projectList.sessions
     return await Task.detached {
       imported.filter { item in

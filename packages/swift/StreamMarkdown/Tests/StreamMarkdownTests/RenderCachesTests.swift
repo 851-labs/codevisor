@@ -10,13 +10,11 @@ struct RenderCachesTests {
     let cache = MarkdownSegmentCache(limit: 2)
     _ = cache.segments(for: "one")
     _ = cache.segments(for: "two")
-    // Touch "one" so "two" becomes the eviction candidate.
     _ = cache.segments(for: "one")
     _ = cache.segments(for: "three")
     #expect(cache.cachedSegments(for: "one") != nil)
     #expect(cache.cachedSegments(for: "two") == nil)
     #expect(cache.cachedSegments(for: "three") != nil)
-    // Evicted texts still parse correctly on the next request.
     #expect(cache.segments(for: "two").isEmpty == false)
   }
 
@@ -27,7 +25,6 @@ struct RenderCachesTests {
     #expect(cache.value(for: key) == nil)
     cache.store(AttributedString("styled"), for: key)
     #expect(cache.value(for: key) == AttributedString("styled"))
-    // Same code under a different theme or language is a distinct entry.
     let otherTheme = CodeHighlightResultCache.Key(themeKey: "u", language: "swift", code: "let x = 1")
     #expect(cache.value(for: otherTheme) == nil)
   }
@@ -40,7 +37,6 @@ struct RenderCachesTests {
     let three = CodeHighlightResultCache.Key(themeKey: "t", language: nil, code: "3")
     cache.store(AttributedString("one"), for: one)
     cache.store(AttributedString("two"), for: two)
-    // Touch `one`, making `two` least recently used.
     #expect(cache.value(for: one) != nil)
     cache.store(AttributedString("three"), for: three)
     #expect(cache.value(for: one) != nil)
@@ -55,8 +51,6 @@ struct RenderCachesTests {
     cache.store(AttributedString("a"), for: key)
     cache.store(AttributedString("b"), for: key)
     #expect(cache.value(for: key) == AttributedString("b"))
-    // A second distinct key must still fit — re-storing didn't consume
-    // an extra LRU slot.
     let other = CodeHighlightResultCache.Key(themeKey: "t", language: nil, code: "2")
     cache.store(AttributedString("c"), for: other)
     #expect(cache.value(for: key) != nil)

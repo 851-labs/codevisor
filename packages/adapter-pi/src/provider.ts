@@ -18,7 +18,6 @@ import { gatewayExtension, writeTemporaryExtension, type ExtensionWriter } from 
 import { startPiSession, type PiSession } from "./session.js"
 
 export interface PiProviderConfig {
-  /// Injectable for tests: scripted Pi processes instead of a spawned binary.
   readonly connector?: PiConnector
   readonly writeExtension?: ExtensionWriter
   readonly scanAgentSessions?: (
@@ -26,8 +25,6 @@ export interface PiProviderConfig {
   ) => Promise<ReadonlyArray<AgentSessionSummary>>
 }
 
-/// Pi, driven directly over its RPC mode (`pi --mode rpc`): the user's own
-/// Pi, with its models, settings, extensions and sessions.
 export const makePiProvider = (
   environment: ProviderEnvironment,
   config: PiProviderConfig = {}
@@ -85,7 +82,6 @@ export const makePiProvider = (
       await session.cancel()
       return { runtimeState: "reusable" as const }
     }),
-    // Pi has no modes; its thinking level is a config option.
     setMode: (modeId) =>
       adapterPromise("setMode", () => Promise.reject(new Error(`Pi has no mode named ${modeId}`))),
     setConfigOption: (configId, value) =>
@@ -119,10 +115,8 @@ export const makePiProvider = (
         const session = await start(definition, cwd, emit, account, toolGateway, agentSessionId)
         return { ...created(session), sessionId: session.key }
       }),
-    // Sessions live in the account's own agent dir when it has one.
     listAgentSessions: (_definition, account) =>
       scanAgentSessions(account?.env?.PI_CODING_AGENT_DIR),
-    // Pi is signed in when it has a model to use: any provider it can reach.
     probeAuth: (definition, account) =>
       adapterPromise("probeAuth", async () => {
         const command = locate(definition)
@@ -147,8 +141,6 @@ export const makePiProvider = (
             state: "error" as const,
             methods: [],
             canLogout: false,
-            // The client rejects with Pi's error, or why Pi stopped: a Pi
-            // that can't run says so, not that its sign-in is in question.
             detail:
               clampFailureDetail(
                 cause instanceof PiExitedError

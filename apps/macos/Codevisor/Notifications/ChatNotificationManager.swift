@@ -3,10 +3,6 @@ import CodevisorCore
 import os
 import UserNotifications
 
-// ChatAttentionKind, ChatAttentionEvent, and ChatNotificationDelivering live
-// in CodevisorCore (Notifications/ChatAttentionEvent.swift) so shared session code
-// can request notification behavior; this file is the macOS delivery.
-
 extension Notification.Name {
   static let codevisorOpenChatNotification = Notification.Name("CodevisorOpenChatNotification")
 }
@@ -42,15 +38,11 @@ enum SystemSoundCatalog {
         )
       else { continue }
       for url in urls where supportedExtensions.contains(url.pathExtension.lowercased()) {
-        // These are private copies prepared for UserNotifications, not
-        // additional choices the user intentionally installed.
         guard !url.lastPathComponent.hasPrefix("Codevisor-") else { continue }
         systemPaths.insert(url.standardizedFileURL.path)
       }
     }
 
-    // Sounds the user imported through Settings; they appear in every
-    // sound menu alongside the built-in macOS sounds.
     let customDirectory = CustomSoundStore.defaultDirectory().standardizedFileURL
     var customPaths = Set(CustomSoundStore(directory: customDirectory).availableSounds().map(\.path))
 
@@ -77,9 +69,6 @@ enum SystemSoundCatalog {
   }
 }
 
-/// Owns the device-local presentation policy for chat attention events.
-/// Events carry stable ids and server/session routing metadata so the same
-/// shape can later arrive from a server-side primary-device coordinator.
 @MainActor
 final class ChatNotificationManager: NSObject, ChatNotificationDelivering, UNUserNotificationCenterDelegate {
   static let shared = ChatNotificationManager()
@@ -138,9 +127,6 @@ final class ChatNotificationManager: NSObject, ChatNotificationDelivering, UNUse
     clearNotifications(for: event.sessionId)
 
     if NSApp.isActive {
-      // The app is frontmost, so a banner would be noise — a sound is
-      // enough. The coordinator never delivers for the focused chat, so
-      // this is always about a chat the user is not looking at.
       guard settings.notificationSoundsEnabled else { return }
       playSound(at: soundPath(for: event.kind, settings: settings))
       return
@@ -166,8 +152,6 @@ final class ChatNotificationManager: NSObject, ChatNotificationDelivering, UNUse
     playSound(at: soundPath(for: kind, settings: settings))
   }
 
-  /// Plays an arbitrary sound file once — Settings uses this to audition
-  /// sounds that aren't (yet) assigned to a notification kind.
   func playSample(at path: String) {
     playSound(at: path)
   }
@@ -205,8 +189,6 @@ final class ChatNotificationManager: NSObject, ChatNotificationDelivering, UNUse
   private func schedule(_ event: ChatAttentionEvent, settings: AppSettings, isTest: Bool = false) async {
     let status = await authorizationStatus()
     guard Self.isAuthorized(status) else {
-      // The app-level sound preference remains useful even if banners
-      // were denied in System Settings.
       if settings.notificationSoundsEnabled {
         playSound(at: soundPath(for: event.kind, settings: settings))
       }
@@ -229,8 +211,6 @@ final class ChatNotificationManager: NSObject, ChatNotificationDelivering, UNUse
     ]
     if settings.notificationSoundsEnabled {
       let path = soundPath(for: event.kind, settings: settings)
-      // The sound file preparation is FileManager work; run it off the
-      // main actor and schedule the notification once it completes.
       let preparedName = await Task.detached { [self] in
         prepareNotificationSoundFile(at: path)
       }.value
@@ -245,8 +225,6 @@ final class ChatNotificationManager: NSObject, ChatNotificationDelivering, UNUse
       ? "codevisor.chat.test.\(event.id.uuidString)"
       : notificationIdentifier(sessionId: event.sessionId, kind: event.kind)
     if !isTest {
-      // Keep one current attention item per chat. A later completion
-      // supersedes an old question alert (and vice versa).
       clearNotifications(for: event.sessionId)
     }
     do {
@@ -276,11 +254,6 @@ final class ChatNotificationManager: NSObject, ChatNotificationDelivering, UNUse
     sound.play()
   }
 
-  /// UserNotifications only resolves named sounds from the app bundle or a
-  /// Library/Sounds directory. Copy the user's selected macOS sound there so
-  /// the system—not the app—plays it and can honor Focus and sound settings.
-  /// Runs off the main actor (see `schedule`); returns the prepared file's
-  /// name for the caller to wrap in `UNNotificationSound`, or nil.
   private nonisolated func prepareNotificationSoundFile(at path: String) -> String? {
     let manager = FileManager.default
     let source = URL(fileURLWithPath: path)
@@ -296,9 +269,6 @@ final class ChatNotificationManager: NSObject, ChatNotificationDelivering, UNUse
     do {
       try manager.createDirectory(at: sounds, withIntermediateDirectories: true)
       if manager.fileExists(atPath: destination.path) {
-        // copyItem preserves size and modification date, so matching
-        // values mean the prepared copy is already current — skip the
-        // per-notification delete/re-copy.
         if let sourceAttributes = try? manager.attributesOfItem(atPath: source.path),
           let destinationAttributes = try? manager.attributesOfItem(atPath: destination.path),
           let sourceSize = sourceAttributes[.size] as? UInt64,
@@ -334,8 +304,6 @@ final class ChatNotificationManager: NSObject, ChatNotificationDelivering, UNUse
     if info[Self.testKey] as? Bool == true {
       return [.banner, .list, .sound]
     }
-    // A normal chat request may race with the user returning to Codevisor.
-    // Suppress it rather than showing a stale foreground banner.
     if info[Self.sessionIdKey] != nil, NSApp.isActive {
       return []
     }

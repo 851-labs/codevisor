@@ -33,7 +33,7 @@ export const makePluginRestore = (options: {
       }
       await options.transactions.restoreKnownGood(pluginId)
       const restored = options.installedWithId(pluginId)
-      /* v8 ignore next 3 -- successful verification requires the restored plugin to scan. */
+      /* v8 ignore next 3 */
       if (restored === undefined) {
         throw new PluginsError("unavailable", `Plugin ${pluginId} restore did not remain installed`)
       }

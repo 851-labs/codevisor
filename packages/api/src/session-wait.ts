@@ -11,7 +11,6 @@ export const DEFAULT_SESSION_WAIT_UNTIL: ReadonlyArray<SessionSidebarState> = [
 export const DEFAULT_SESSION_WAIT_TIMEOUT_MS = 60_000
 export const MAX_SESSION_WAIT_TIMEOUT_MS = 300_000
 
-/// Long-poll until any listed session is in one of the `until` states.
 export const WaitForSessionsRequest = Schema.Struct({
   ids: Schema.Array(Schema.String),
   until: Schema.optional(Schema.Array(SessionSidebarState)),

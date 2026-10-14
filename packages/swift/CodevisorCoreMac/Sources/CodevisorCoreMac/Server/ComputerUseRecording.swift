@@ -2,7 +2,6 @@ import AVFoundation
 import Foundation
 import ScreenCaptureKit
 
-/// A recording owns its native stream until the file-finalized callback arrives.
 final class ComputerUseRecording: NSObject, SCStreamDelegate, @unchecked Sendable {
   let id = UUID().uuidString
   let sessionID: String
@@ -89,7 +88,6 @@ final class ComputerUseRecording: NSObject, SCStreamDelegate, @unchecked Sendabl
     if shouldStop {
       let result = ComputerUseRecordingResult<Void>()
       stream.stopCapture { error in result.complete(error.map { .failure($0) } ?? .success(())) }
-      // The output delegate is authoritative about whether the MP4 finalized.
       do { try result.wait() } catch {
         if !isFinished { fail(error); throw error }
       }

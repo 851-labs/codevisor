@@ -11,7 +11,7 @@ export const attempt = <A>(operation: string, run: () => A): Effect.Effect<A, Da
     catch: (cause) =>
       new DatabaseError({
         operation,
-        /* v8 ignore next -- better-sqlite3 and Node filesystem failures arrive as Error instances. */
+        /* v8 ignore next */
         message: cause instanceof Error ? cause.message : String(cause)
       })
   })

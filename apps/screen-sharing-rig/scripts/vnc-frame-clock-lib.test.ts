@@ -76,7 +76,6 @@ test("vnc:frame-clock reports each viewer and only the positive lags", () => {
 })
 
 test("vnc:frame-clock takes the host clock offset from the shortest round trip (851-2371)", () => {
-  // Host 5 ms ahead. The slow sample (40 ms) would skew the estimate; the 2 ms one wins.
   const offset = clockOffset([
     { sent: 100, host: 100.035, received: 100.04 },
     { sent: 200, host: 200.006, received: 200.002 }

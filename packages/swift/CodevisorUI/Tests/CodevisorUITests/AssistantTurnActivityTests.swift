@@ -20,7 +20,6 @@ struct AssistantTurnActivityTests {
     #expect(activity(turn) == "Compacting context…")
     #expect(turn.streamingItems.isEmpty)
     TranscriptReducer.apply(.contextCompaction(id: "compact", status: status), to: &turn)
-    // Waiting on the harness is the live header's timer, not a label.
     #expect(activity(turn) == nil)
     #expect(turn.workedItems.isEmpty)
     TranscriptReducer.apply(.agentThoughtChunk(.text("next step")), to: &turn)

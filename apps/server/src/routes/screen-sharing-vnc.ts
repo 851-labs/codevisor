@@ -11,14 +11,6 @@ import { type RFBClientMessageKind, RFBClientStreamFilter } from "./rfb-client-f
 import type { VNCDesktopScaler } from "./screen-sharing-vnc-scale.js"
 import { type VNCControlArbiter, vncControlArbiter } from "./vnc-control.js"
 
-/// `~/.codevisor/data/screen-sharing.json`, written by whoever set the
-/// machine up (scripts/vnc-desktop.sh), never by a client:
-///
-///     { "vnc": { "port": 5901, "name": "Desktop" } }
-///
-/// A VNC server on this machine's loopback then becomes the workspace's
-/// display. The app never learns the port or a password; it only sees a
-/// display id and the socket route below.
 export const SCREEN_SHARING_CONFIG_FILE = "screen-sharing.json"
 export const VNC_SOCKET_PATH = "/v1/screen-sharing/vnc/socket"
 
@@ -70,10 +62,6 @@ const vncReply = (status: string, message?: string): ScreenSharingReply => ({
   displays: []
 })
 
-/// The signaling helper for a VNC-backed machine. `capabilities` describes the
-/// desktop; video does not go over WebRTC here but over the socket route, and
-/// the viewer measures the desktop itself during the RFB handshake. With a
-/// `scaler` (an Xfce desktop, 851-2339) `setScale` sets the desktop's UI scale.
 export const vncScreenSharing =
   (config: ScreenSharingVNCConfig, scaler?: VNCDesktopScaler) =>
   async (request: ScreenSharingRequest): Promise<ScreenSharingReply> => {
@@ -82,7 +70,6 @@ export const vncScreenSharing =
         version: 1,
         status: "available",
         provider: "vnc",
-        // Viewers may take control through the socket's lease messages (851-2338).
         controlLease: true,
         displays: [
           {
@@ -119,10 +106,6 @@ const refuse = (socket: Socket, status: string): void => {
   socket.destroy()
 }
 
-/// Splices one machine-authenticated WebSocket onto the loopback VNC server:
-/// binary frames become RFB bytes and back. The display id must match so a
-/// pane opened against an earlier configuration cannot reach whatever now
-/// listens on that port.
 export const spliceVNCSocket = (
   config: ScreenSharingVNCConfig,
   url: URL,
@@ -132,10 +115,8 @@ export const spliceVNCSocket = (
   webSocketServer: WebSocketServer,
   dial: (port: number) => Socket = (port) => connect({ host: "127.0.0.1", port }),
   arbiter: VNCControlArbiter = vncControlArbiter(config.port),
-  /// Bytes queued on the WebSocket before the loopback read pauses.
   highWater = 4 * 1024 * 1024
 ): void => {
-  // Websites cannot use loopback trust, as with the signaling route.
   if (request.headers.origin !== undefined || request.headers["sec-fetch-site"] !== undefined) {
     refuse(socket, "403 Forbidden")
     return
@@ -146,9 +127,6 @@ export const spliceVNCSocket = (
   }
   webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
     const upstream = dial(config.port)
-    // One controller at a time (851-2338): text frames are the lease's messages, binary
-    // frames the viewer's RFB bytes, filtered so only who may control reaches the desktop.
-    // A lease message to a socket that is closing is dropped (the callback takes the error).
     const id = arbiter.join((text) => webSocket.send(text, () => undefined))
     const filter = new RFBClientStreamFilter()
     const allow = (kind: RFBClientMessageKind) =>
@@ -165,14 +143,12 @@ export const spliceVNCSocket = (
       const forward = filter.push(bytes, allow)
       if (forward.length > 0) upstream.write(forward)
     })
-    // The desktop's bytes go out as they come; a slow WebSocket pauses the loopback read.
     upstream.on("data", (chunk: Buffer) => {
       webSocket.send(chunk, { binary: true }, () => {
         if (upstream.isPaused() && webSocket.bufferedAmount < highWater) upstream.resume()
       })
       if (webSocket.bufferedAmount >= highWater) upstream.pause()
     })
-    // Closing the WebSocket first keeps the reason; its close then tears down the loopback socket.
     upstream.once("error", () => webSocket.close(1011, "VNC server unavailable"))
     upstream.once("close", () => {
       if (webSocket.readyState === WebSocket.OPEN) webSocket.close()

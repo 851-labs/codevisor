@@ -42,8 +42,6 @@ extension CodevisorServerClient {
         body: Optional<EmptyBody>.none
       )
     } catch CodevisorServerClientError.httpStatus(404, _) {
-      // Older servers predate the rescan endpoint; a plain list is the
-      // best they can do (their PATH stays frozen until they update).
       return try await listHarnesses()
     }
   }
@@ -92,15 +90,12 @@ extension CodevisorServerClient {
 
   public func checkHarnessUpdates(harnessIds: [String]?) async throws -> [ServerHarness] {
     do {
-      // Servers that predate scoping ignore the body and check everything.
       return try await send(
         "/v1/harnesses/check-updates",
         method: "POST",
         body: CheckHarnessUpdatesBody(harnessIds: harnessIds)
       )
     } catch CodevisorServerClientError.httpStatus(404, _), CodevisorServerClientError.httpStatus(501, _) {
-      // Older servers predate update checks; the plain list is the best
-      // they can do.
       return try await listHarnesses()
     }
   }

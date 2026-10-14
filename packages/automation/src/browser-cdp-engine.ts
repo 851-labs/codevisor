@@ -10,7 +10,6 @@ export interface TargetInfo {
   readonly type: string
   readonly title: string
   readonly url: string
-  /// Chrome tab group membership, reported by the user-browser extension only.
   readonly groupId?: number
 }
 
@@ -79,8 +78,6 @@ export const pageResult = async (
   value: Readonly<Record<string, unknown>>
 ): Promise<CallToolResult> => {
   const dialog = runtime.dialogs.get(page.sessionId)
-  // A modal JavaScript dialog pauses Runtime.evaluate in the page. Keep action results
-  // nonblocking so the caller can immediately inspect and accept or dismiss the dialog.
   const info =
     dialog === undefined
       ? await pageInformation(runtime, page)
@@ -171,9 +168,6 @@ export const waitForCreatedTarget = async (
     await delay(25)
   } while (Date.now() < deadline)
 
-  // Target.createTarget has already succeeded, so reporting failure here would encourage a
-  // caller to create the same tab again. Preserve the known target in the response while Chrome
-  // finishes publishing its URL through Target.getTargets.
   const created: TargetInfo = {
     targetId,
     type: "page",

@@ -1,22 +1,3 @@
-// Drives the Screen Sharing rig through the Accessibility API for
-// `bun run vnc:tophat` (VNC validation layer L4). It never
-// moves the pointer or types; presses and selections are AX actions, so the
-// rig can stay in the background. Compiled and cached by apps/screen-sharing-rig/scripts/vnc-tophat.ts.
-//
-//   rig-ax PID texts                 every static text, one per line
-//   rig-ax PID press LABEL           AXPress the first element labelled LABEL
-//   rig-ax PID pressnth ROLE N       AXPress the Nth element of ROLE (1-based)
-//   rig-ax PID select TEXT           select the sidebar row containing TEXT
-//   rig-ax PID menu TITLE            AXPress a menu bar item titled TITLE
-//   rig-ax PID window                "title<TAB>windowNumber<TAB>width<TAB>height"
-//   rig-ax PID resize W H            set the main window's size
-//   rig-ax PID wait TEXT SECONDS     until a static text contains TEXT
-//   rig-ax PID has ROLE LABEL        an element of ROLE labelled LABEL exists (e.g. a pop-up's value)
-//   rig-ax PID colours PNG           "N B": distinct colours on a grid over the image's right 3/4 and lower
-//                                    3/4 (the video, clear of sidebar and toolbar), and the larger share of
-//                                    near-black samples in that area's right half or bottom half. A blank
-//                                    frame has 1 colour; a half-repainted desktop has a half that is ~all black
-// Exit status 0 on success, 1 when the element or text isn't there.
 import AppKit
 import ApplicationServices
 
@@ -44,7 +25,6 @@ func label(_ element: AXUIElement) -> String {
     .first { !$0.isEmpty } ?? ""
 }
 
-/// Depth-first; stops when `visit` returns true.
 @discardableResult
 func walk(_ element: AXUIElement, _ visit: (AXUIElement) -> Bool) -> Bool {
   if visit(element) { return true }
@@ -92,7 +72,6 @@ case "press" where arguments.count == 4:
       return true
     }
   }
-  // Pop-up menus open outside the window tree.
   if !pressed {
     walk(app) { element in
       guard role(element) == "AXMenuItem", label(element) == wanted else { return false }
@@ -152,9 +131,7 @@ case "window":
   let title = attribute(window, kAXTitleAttribute) as? String ?? ""
   var size = CGSize.zero
   if let value = attribute(window, kAXSizeAttribute) { AXValueGetValue(value as! AXValue, .cgSize, &size) }
-  // The CGWindow number for window-only screenshots.
   let list = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] ?? []
-  // The largest normal-layer window: a popover (Connection Details) is a window of its own.
   func area(_ info: [String: Any]) -> Double {
     let bounds = info[kCGWindowBounds as String] as? [String: Double] ?? [:]
     return (bounds["Width"] ?? 0) * (bounds["Height"] ?? 0)
@@ -186,7 +163,6 @@ case "has" where arguments.count == 5:
   done(found, found ? "" : "no \(wanted) labelled \(text)")
 
 case "wait" where arguments.count == 5:
-  // A verification tool, not a unit test: polling the live app is the point.
   let wanted = arguments[3]
   let deadline = Date().addingTimeInterval(Double(arguments[4]) ?? 10)
   while Date() < deadline {
@@ -202,7 +178,6 @@ case "colours" where arguments.count == 4:
   else { done(false, "unreadable image") }
   let step = cg.bitsPerPixel / 8
   var colours = Set<UInt32>()
-  // [right half, bottom half] of the sampled area: samples and near-black samples.
   var halves = [(0, 0), (0, 0)]
   for y in stride(from: cg.height / 4, to: cg.height, by: max(1, cg.height / 60)) {
     for x in stride(from: cg.width / 4, to: cg.width, by: max(1, cg.width / 60)) {

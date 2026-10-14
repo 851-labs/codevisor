@@ -21,17 +21,14 @@ struct CloudRelayTransportTests {
     let first = Task { try await socket.receive() }
     #expect(await waitUntil { scriptedMachine.openChannelId != nil })
     scriptedMachine.push(#"{"kind":"part","data":"\#(base64("hello, "))"}"#)
-    // Unknown future kinds are skipped, never spliced into a message.
     scriptedMachine.push(#"{"kind":"future-frame","data":"ignored"}"#)
     scriptedMachine.push(#"{"kind":"text-end","data":"\#(base64("chunked world"))"}"#)
     #expect(relayMessageText(try await first.value) == "hello, chunked world")
 
-    // Plain frames pass through untouched after a chunked message.
     let second = Task { try await socket.receive() }
     scriptedMachine.push(#"{"kind":"text","data":"plain"}"#)
     #expect(relayMessageText(try await second.value) == "plain")
 
-    // Binary messages reassemble the same way.
     let third = Task { try await socket.receive() }
     scriptedMachine.push(#"{"kind":"part","data":"\#(base64("01"))"}"#)
     scriptedMachine.push(#"{"kind":"binary-end","data":"\#(base64("23"))"}"#)
@@ -49,14 +46,12 @@ struct CloudRelayTransportTests {
       ScriptedHttpMachine.ScriptedResponse(
         status: 200,
         headers: ["Content-Type": "application/json"],
-        // Two chunks prove reassembly order.
         bodyChunks: [responseBody.prefix(10), responseBody.dropFirst(10)]
       )
     }
     let (endpoint, pipe) = makeDirectEndpoint(to: scriptedMachine.scripted)
     let transport = CloudRelayRequestTransport(endpoint: endpoint)
 
-    // A body bigger than one chunk exercises request-side chunking.
     let requestBody = Data((0..<(CloudRelayRequestTransport.chunkSize + 1000)).map { UInt8($0 % 251) })
     var request = URLRequest(
       url: URL(string: "https://cloud-relay.invalid/v1/health?probe=1")!
@@ -100,7 +95,6 @@ struct CloudRelayTransportTests {
   @Test("A request whose channel never answers times out instead of hanging")
   func requestTimesOut() async throws {
     let scriptedMachine = ScriptedHttpMachine()
-    // respond stays nil: the machine accepts the open but never replies.
     let (endpoint, pipe) = makeDirectEndpoint(to: scriptedMachine.scripted)
     let clock = TestClock()
     let transport = CloudRelayRequestTransport(endpoint: endpoint, sleep: clock.sleep)

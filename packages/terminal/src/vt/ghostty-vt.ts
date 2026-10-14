@@ -1,11 +1,6 @@
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 
-/// libghostty-vt compiled to WebAssembly (ReleaseSmall), built from the
-/// pinned Ghostty revision in resources/GHOSTTY-VT-REF by
-/// scripts/build-ghostty-vt-wasm.sh. Parsing runs in wasm so the server needs
-/// no per-platform native build, and a parser fault cannot take the process
-/// down with it.
 const GHOSTTY_VT_WASM_PATH = fileURLToPath(
   new URL("../../resources/ghostty-vt.wasm", import.meta.url)
 )
@@ -72,25 +67,13 @@ interface TypeLayout {
   readonly types: Record<string, StructLayout & EnumLayout>
 }
 
-/// A (i32, i32, i32, i32) -> void wasm function that forwards to the JS
-/// import `js.cb`. JS functions cannot be placed in a wasm function table
-/// directly, so callbacks libghostty invokes through a C function pointer
-/// (the write-PTY reply callback) go through this one-function module.
 const CALLBACK_TRAMPOLINE = new Uint8Array([
-  0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
-  // type section: (i32 i32 i32 i32) -> ()
-  0x01, 0x08, 0x01, 0x60, 0x04, 0x7f, 0x7f, 0x7f, 0x7f, 0x00,
-  // import "js" "cb" as function of type 0
-  0x02, 0x09, 0x01, 0x02, 0x6a, 0x73, 0x02, 0x63, 0x62, 0x00, 0x00,
-  // one defined function of type 0
-  0x03, 0x02, 0x01, 0x00,
-  // export it as "t" (function index 1)
-  0x07, 0x05, 0x01, 0x01, 0x74, 0x00, 0x01,
-  // body: local.get 0..3; call 0; end
-  0x0a, 0x0e, 0x01, 0x0c, 0x00, 0x20, 0x00, 0x20, 0x01, 0x20, 0x02, 0x20, 0x03, 0x10, 0x00, 0x0b
+  0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x01, 0x60, 0x04, 0x7f, 0x7f, 0x7f,
+  0x7f, 0x00, 0x02, 0x09, 0x01, 0x02, 0x6a, 0x73, 0x02, 0x63, 0x62, 0x00, 0x00, 0x03, 0x02, 0x01,
+  0x00, 0x07, 0x05, 0x01, 0x01, 0x74, 0x00, 0x01, 0x0a, 0x0e, 0x01, 0x0c, 0x00, 0x20, 0x00, 0x20,
+  0x01, 0x20, 0x02, 0x20, 0x03, 0x10, 0x00, 0x0b
 ])
 
-/// Terminal state libghostty tracks that callers act on.
 export interface VtState {
   readonly cols: number
   readonly rows: number
@@ -103,41 +86,26 @@ export interface VtState {
 export interface VtTerminalOptions {
   readonly cols: number
   readonly rows: number
-  /// Replies the terminal generates for queries it parsed (device
-  /// attributes, cursor position reports, color queries).
   readonly onReply?: (reply: Uint8Array) => void
 }
 
 export interface VtTerminal {
   write(data: string | Uint8Array): void
   resize(cols: number, rows: number): void
-  /// VT bytes that rebuild this terminal's screen, scrollback, modes, and
-  /// cursor from a reset, followed by any escape sequence still unfinished at
-  /// the end of the last write, so live output can resume right after them.
   reconstruct(): Uint8Array
-  /// The screen and scrollback as plain text.
   text(): string
-  /// The title the program last set with OSC 0/2; empty when none.
   title(): string
   state(): VtState
   free(): void
 }
 
-/// Scrollback retained for reconstruction (libghostty prunes by page, so
-/// slightly more survives).
 const SCROLLBACK_LINES = 10_000
-/// Continuation tracking bound: an unfinished sequence longer than this (an
-/// enormous OSC 52 paste mid-stream) is dropped from reconstruction.
 const CONTINUATION_MAX_BYTES = 64 * 1024
-/// Full reset plus erase of saved lines, so a renderer that already shows
-/// older output starts from a blank terminal.
 const RESET_PREFIX = new TextEncoder().encode("\u001bc\u001b[3J")
 
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
 
-/// An allocator result as an unsigned address; a failed allocation (null) is
-/// an error rather than a write at address 0.
 const allocated = (ptr: number): number => {
   if (ptr === 0) throw new Error("libghostty-vt is out of memory")
   return ptr >>> 0
@@ -153,9 +121,6 @@ class GhosttyVt {
   constructor(bytes: Uint8Array<ArrayBuffer>) {
     const instance = new WebAssembly.Instance(new WebAssembly.Module(bytes), {})
     const raw = instance.exports as unknown as GhosttyExports
-    // wasm32 pointers reach JS as signed i32s: once the shared heap passes
-    // 2 GiB they arrive negative and every typed-array access with them
-    // throws. Read them as the unsigned addresses they are.
     this.exports = {
       ...raw,
       ghostty_type_json: () => raw.ghostty_type_json() >>> 0,
@@ -186,7 +151,7 @@ class GhosttyVt {
     return this.enumValue("GhosttyTerminalData", name)
   }
 
-  /* v8 ignore start -- defensive: lookups name types the checked-in build defines, which these tests exercise. */
+  /* v8 ignore start */
   enumValue(type: string, name: string): number {
     const value = this.layout.types[type]?.values[name]
     if (value === undefined) throw new Error(`libghostty-vt has no ${type}.${name}`)
@@ -204,7 +169,6 @@ class GhosttyVt {
     if (result !== 0) throw new Error(`libghostty-vt ${operation} failed (${result})`)
   }
 
-  /// Runs `fill` with a pointer slot for an opaque handle and returns it.
   takeOpaque(operation: string, fill: (slot: number) => number): number {
     const slot = this.exports.ghostty_wasm_alloc_opaque()
     try {
@@ -215,7 +179,6 @@ class GhosttyVt {
     }
   }
 
-  /// Runs an `_alloc` style call and copies the returned buffer out.
   takeBuffer(operation: string, fill: (outPtr: number, outLen: number) => number): Uint8Array {
     const outPtr = this.exports.ghostty_wasm_alloc_opaque()
     const outLen = this.exports.ghostty_wasm_alloc(4)
@@ -255,8 +218,6 @@ class GhosttyVt {
   getU32(terminal: number, data: string): number {
     const ptr = this.exports.ghostty_wasm_alloc(8)
     try {
-      // Fields are as narrow as a bool or u16: zero the slot so the unused
-      // high bytes read as zero.
       this.bytes().fill(0, ptr, ptr + 8)
       this.check(this.exports.ghostty_terminal_get(terminal, this.data(data), ptr), data)
       return this.view().getUint32(ptr, true)
@@ -265,9 +226,6 @@ class GhosttyVt {
     }
   }
 
-  /// A GhosttyString-valued datum, copied out of the terminal's memory. The
-  /// string is borrowed (valid until the next mutating call), so it is not
-  /// freed here.
   getString(terminal: number, data: string): string {
     const layout = this.struct("GhosttyString")
     const ptr = this.exports.ghostty_wasm_alloc(layout.size)
@@ -283,8 +241,6 @@ class GhosttyVt {
     }
   }
 
-  /// Registers `handler` for replies from the terminal with userdata
-  /// `handle`, installing the shared trampoline on first use.
   registerReplies(terminal: number, handle: number, handler: (reply: Uint8Array) => void): void {
     if (this.replyCallbackIndex === undefined) {
       const trampoline = new WebAssembly.Instance(new WebAssembly.Module(CALLBACK_TRAMPOLINE), {
@@ -346,8 +302,6 @@ class GhosttyVt {
       const screenPtr = extraPtr + extra.fields.screen!.offset
       view.setUint32(screenPtr, screen.size, true)
       if (emit === "VT") {
-        // Not "palette": the server's palette is libghostty's default, and
-        // emitting all 256 entries would repaint the client's theme colors.
         for (const field of ["modes", "scrolling_region", "tabstops", "pwd", "keyboard"]) {
           view.setUint8(extraPtr + extra.fields[field]!.offset, 1)
         }
@@ -380,8 +334,6 @@ class GhosttyVt {
 
 let shared: GhosttyVt | undefined
 
-/// Loads the wasm module once per process. Tests call it again to reset the
-/// shared instance after exhausting its memory.
 export const loadGhosttyVt = (): void => {
   shared = new GhosttyVt(readFileSync(GHOSTTY_VT_WASM_PATH))
 }

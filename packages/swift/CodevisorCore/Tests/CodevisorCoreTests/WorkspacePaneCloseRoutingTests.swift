@@ -38,7 +38,6 @@ struct WorkspacePaneCloseRoutingTests {
     environment.closeSession(closing)
 
     let after = try #require(environment.workspaces.workspace(id: workspace.id))
-    // Closing removes the pane; the chat row itself is untouched.
     #expect(environment.projectList.sessions.contains { $0.id == closing.id })
     #expect(after.selectedCenterTabId == selected.id)
     #expect(after.selectedCenterTab?.activeLeafId == remainingLeaf)

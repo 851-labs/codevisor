@@ -41,7 +41,6 @@ describe("native MCP and skills routes", () => {
     expect(skillsResponse.status).toBe(200)
     expect(skillsResponse.body).toEqual(skillsList)
 
-    // Unknown methods and subpaths fall through to 404.
     expect((await jsonRequest(server, "/v1/native-mcps", { method: "POST" })).status).toBe(404)
     expect((await jsonRequest(server, "/v1/native-mcps/unknown")).status).toBe(404)
     expect((await jsonRequest(server, "/v1/skills/unknown")).status).toBe(404)

@@ -13,9 +13,6 @@ export type HarnessAuthDecoration = Pick<
   readonly authSnapshot: (harnessId: string) => Promise<HarnessAuth>
 }
 
-/// The auth view over discovered harnesses: login methods, the per-harness
-/// snapshot, single-flight refreshes, and the decoration modes (passive,
-/// forced, stored) the catalog and settings surfaces use.
 export const makeHarnessAuthDecoration = (
   core: HarnessAuthCore,
   probes: HarnessAuthProbes
@@ -39,9 +36,6 @@ export const makeHarnessAuthDecoration = (
               ? "Existing OpenCode profile"
               : `Existing ${harness.name} account`,
         authState: "checking",
-        // Harnesses Codevisor drives sign-in for directly. Everything else
-        // starts false and only gains it if the generic ACP probe finds the
-        // agent advertising methods.
         canLogin:
           harness.id === "codex" ||
           harness.id === "claude-code" ||
@@ -76,10 +70,6 @@ export const makeHarnessAuthDecoration = (
           description: "Use API billing instead of a ChatGPT subscription."
         }
       ]
-      // Codex's ordinary browser handoff returns to the machine that launched
-      // it, so it cannot complete through a remote Codevisor server. Remote
-      // servers expose device code and API key only; both native clients get
-      // the same honest method list from this snapshot.
       return config.preferDeviceCode === true
         ? methods.filter((method) => method.id !== "chatgpt")
         : methods
@@ -163,8 +153,6 @@ export const makeHarnessAuthDecoration = (
       state:
         active?.authState ?? (storedAccounts === undefined ? "unavailable" : "unauthenticated"),
       ...(active === undefined ? {} : { activeAccountId: active.id }),
-      // The harness's state is its active account's, so is the why: the
-      // fleet's readiness row reads it to explain a failed check.
       ...(active?.detail ? { detail: active.detail } : {}),
       accounts,
       loginMethods: loginMethods(harnessId),
@@ -181,9 +169,6 @@ export const makeHarnessAuthDecoration = (
   const refreshAccount = (account: HarnessAccountRecord, force: boolean): Promise<void> => {
     const current = refreshes.get(account.id)
     if (current !== undefined) return current
-    // Keep the failure write inside the single-flight boundary. Otherwise every
-    // waiter on one failed probe persists the same error and emits another pair
-    // of account/auth events.
     const pending = (async () => {
       try {
         await probeAccount(account.id, force)
@@ -227,9 +212,6 @@ export const makeHarnessAuthDecoration = (
         if (mode === "force") {
           await refreshAccount(account, true)
         } else if (mode === "passive") {
-          // Capability discovery is latency-sensitive. Return the persisted
-          // auth snapshot immediately and refresh it in the background; auth
-          // events invalidate mounted catalogs when the probe finishes.
           void refreshAccount(account, false).catch(() => undefined)
         }
         const auth = await authSnapshot(harness.id)

@@ -9,16 +9,8 @@ import { parse as parseYaml } from "yaml"
 
 import { NativeMcpError } from "./native-mcp-types.js"
 
-/// Filesystem seam for reading (and, for writable formats, surgically
-/// editing) harness-owned config files. Mirrors the AgentSessionFileSystem
-/// pattern (agent-runtime/agent-sessions.ts) so scanners are unit-testable
-/// without touching a real home directory.
 export interface NativeConfigFileSystem {
-  /// Returns the file's contents, or undefined when it does not exist.
-  /// Non-ENOENT failures (permissions, I/O) throw.
   readonly readFile: (path: string) => Promise<string | undefined>
-  /// Write via temp-file-plus-rename in the same directory, creating parent
-  /// directories as needed — a crash mid-write never truncates the original.
   readonly writeFileAtomic: (
     path: string,
     content: string,
@@ -50,8 +42,6 @@ export const defaultNativeConfigFileSystem: NativeConfigFileSystem = {
         if (current !== expected.content)
           throw new NativeMcpError(`${path} changed during the edit — try again`, "conflict")
       }
-      // No application suspension between validation and publication. Other
-      // processes do not participate in our lock; detected edits are refused.
       renameSync(temp, path)
     } finally {
       await rm(temp, { force: true })
@@ -59,9 +49,6 @@ export const defaultNativeConfigFileSystem: NativeConfigFileSystem = {
   }
 }
 
-/// A native config edit Codevisor refuses to perform because it cannot be
-/// done without risking damage to the user's file (entry defined in a shape
-/// the surgical editors don't handle, or a post-edit verification mismatch).
 export class NativeConfigUnsupportedError extends Error {
   constructor(message: string) {
     super(message)
@@ -74,9 +61,6 @@ export interface NativePathEnvironment {
   readonly env?: Readonly<Record<string, string | undefined>>
 }
 
-/// Resolve a catalog `~/`-relative config path against a home directory,
-/// honoring the env overrides harnesses themselves respect: CODEX_HOME
-/// relocates `~/.codex/...` and XDG_CONFIG_HOME relocates `~/.config/...`.
 export const resolveNativeConfigPath = (
   specPath: string,
   environment: NativePathEnvironment
@@ -96,10 +80,6 @@ export const resolveNativeConfigPath = (
   return specPath
 }
 
-/// Parse a harness config file tolerantly. JSON accepts comments and trailing
-/// commas (Claude/VS Code-family configs are JSONC in practice). Throws when
-/// the content cannot be read as an object at all — callers surface that as a
-/// per-harness scan error, never a 500.
 export const parseNativeConfig = (
   content: string,
   format: "json" | "toml" | "yaml"
@@ -108,8 +88,6 @@ export const parseNativeConfig = (
   let parsed: unknown
   switch (format) {
     case "json": {
-      // Comments and trailing commas are tolerated silently; anything jsonc
-      // still reports is real malformation, not formatting looseness.
       const errors: Array<jsonc.ParseError> = []
       parsed = jsonc.parse(content, errors, { allowTrailingComma: true })
       const firstError = errors[0]
@@ -133,8 +111,6 @@ export const parseNativeConfig = (
   return parsed as Record<string, unknown>
 }
 
-/// Walk a dotted key path ("mcp_servers", "a.b.c") through nested records.
-/// Ported from add-mcp formats/utils.ts.
 export const getNestedValue = (obj: Record<string, unknown>, path: string): unknown => {
   let current: unknown = obj
   for (const key of path.split(".")) {
@@ -147,8 +123,6 @@ export const getNestedValue = (obj: Record<string, unknown>, path: string): unkn
   return current
 }
 
-/// Detect the indentation style of a JSONC document so surgical edits match
-/// the user's formatting. Ported from add-mcp formats/json.ts.
 export const detectIndent = (
   text: string
 ): { readonly tabSize: number; readonly insertSpaces: boolean } => {

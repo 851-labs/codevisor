@@ -17,7 +17,6 @@ struct SessionAttentionWorkspaceFocusTests {
     focus.update(sourceId: firstSource, workspaceId: firstWorkspace, isVisible: true, session: firstChat)
     #expect(focus.session == firstChat)
 
-    // Navigation takes effect before SwiftUI unmounts the outgoing view.
     focus.selectWorkspace(secondWorkspace)
     #expect(focus.session == nil)
     focus.update(sourceId: secondSource, workspaceId: secondWorkspace, isVisible: true, session: secondChat)
@@ -25,7 +24,6 @@ struct SessionAttentionWorkspaceFocusTests {
     focus.clear(sourceId: firstSource)
     #expect(focus.session == secondChat)
 
-    // Opening New Chat releases focus even if the old view remains cached.
     focus.selectWorkspace(nil)
     focus.update(sourceId: secondSource, workspaceId: secondWorkspace, isVisible: true, session: secondChat)
     #expect(focus.session == nil)

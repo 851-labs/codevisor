@@ -41,7 +41,6 @@ describe("session updates", () => {
     expect(turnInput({ text: "/review" }, skills.skills)).toEqual([
       { type: "skill", selector: "review" }
     ])
-    // Not a known skill: Muse sees the text as typed.
     expect(turnInput({ text: "/tmp is full" }, skills.skills)).toEqual([
       { type: "text", text: "/tmp is full" }
     ])
@@ -75,7 +74,6 @@ describe("session updates", () => {
   })
 
   it("reports running token totals and context occupancy", () => {
-    // As Muse 1.4.7 sent it mid-turn.
     expect(
       tokenUsageUpdate({
         usage: {
@@ -152,7 +150,6 @@ describe("models", () => {
         id: "thought_level",
         name: "Reasoning",
         category: "thought_level",
-        // No medium tier: the model's first.
         currentValue: "minimal",
         options: [
           { value: "minimal", name: "Minimal" },
@@ -160,7 +157,6 @@ describe("models", () => {
         ]
       }
     ])
-    // The active model when the session names none (or one gone from the catalog).
     expect(
       configOptions({ models: [lite, spark], modelId: "gone", effort: "high" })[1]
     ).toMatchObject({
@@ -198,7 +194,6 @@ describe("models", () => {
     expect(modelTiers(undefined)).toEqual([])
     expect(defaultTier({ ...spark, defaultReasoningEffort: "ultra" })).toBe("medium")
     expect(defaultTier({ ...lite, variants: ["xhigh", "low"] })).toBe("xhigh")
-    // A tier newer than Codevisor shows under Muse's own name.
     expect(
       configOptions({
         models: [{ ...lite, variants: ["turbo"] }],
@@ -253,7 +248,6 @@ describe("questions", () => {
         choiceId: "allow_session"
       }
     })
-    // Dismissed: Muse's refusal, preferring abort over a plain denial.
     expect(question.reply({ outcome: "cancelled" }).params.choiceId).toBe("deny")
     const withAbort = approvalQuestion({
       ...approval,
@@ -271,7 +265,6 @@ describe("questions", () => {
       availableChoices: approval.availableChoices.slice(0, 2)
     })
     expect(noRefusal.specs[0]!.question).toBe("Allow bash?")
-    // Only approvals on offer: dismissing never approves; it stops the turn.
     expect(noRefusal.reply({ outcome: "cancelled" })).toEqual({
       method: "turn/interrupt",
       params: { commandId: expect.any(String), sessionId: "s-1" }

@@ -4,8 +4,6 @@ import type { CanonicalModeId, SessionConfigOption } from "@codevisor/api"
 
 import { CURSOR_SUBAGENTS_CAPABILITY } from "./subagents.js"
 
-/// Asks for Cursor's parameterized model picker, and for its subagents as
-/// child sessions (see `CursorSubagents`).
 export const cursorClientCapabilities = (
   capabilities: acp.ClientCapabilities
 ): acp.ClientCapabilities => ({

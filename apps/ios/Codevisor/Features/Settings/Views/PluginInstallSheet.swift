@@ -2,12 +2,6 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// Two-stage install, mirroring macOS's PluginInstallSheet: enter a source,
-/// discover what it offers, then consent to the exact commands it will run.
-/// A registry selection arrives as `initialSource` (the entry's repo) and
-/// auto-discovers — skipping the typing, never the consent. Internal (not
-/// private) because the codevisor://install-plugin deeplink presents it
-/// straight from Home, outside any settings navigation.
 struct PluginInstallSheet: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.dismiss) private var dismiss
@@ -26,13 +20,8 @@ struct PluginInstallSheet: View {
   var body: some View {
     NavigationStack {
       Form {
-        // The source field only exists while typing one — once a
-        // plugin is found, the consent stage shows the plugin itself
-        // (Back returns here to edit).
         if discovery == nil {
           Section {
-            // Verbatim prompt: the LocalizedStringKey initializer
-            // would markdown-link a bare repo prompt.
             TextField(
               "Source",
               text: $source,
@@ -70,9 +59,6 @@ struct PluginInstallSheet: View {
           }
         }
         ToolbarItem(placement: .confirmationAction) {
-          // HIG loading state: the action is replaced by an
-          // indeterminate spinner while it runs — never a
-          // relabeled, still-tappable-looking button.
           if isWorking {
             ProgressView()
           } else if discovery == nil {
@@ -118,8 +104,6 @@ struct PluginInstallSheet: View {
     }
   }
 
-  /// The consent stage, structured like the registry detail screen: what
-  /// the plugin is, what it adds, and — verbatim — what it will run.
   @ViewBuilder
   private func discoverySections(_ discovery: ServerPluginRemoteDiscovery) -> some View {
     Section {
@@ -153,8 +137,6 @@ struct PluginInstallSheet: View {
         )
       }
     }
-    // Declared agent tools are part of what the user consents to, next
-    // to the verbatim commands below.
     if let tools = discovery.tools, !tools.isEmpty {
       Section("Agent Tools") {
         ForEach(tools) { tool in
@@ -171,8 +153,6 @@ struct PluginInstallSheet: View {
       }
     }
     Section {
-      // The verbatim manifest commands — exactly what will run, never
-      // a summary.
       if let install = discovery.installCommand {
         commandRow(title: "Install", command: install)
       }

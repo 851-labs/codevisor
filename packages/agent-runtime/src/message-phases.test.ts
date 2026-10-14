@@ -25,7 +25,6 @@ const commentary = (messageId: string) =>
     sessionUpdate: "agent_message_chunk"
   })
 
-/// Labels a stream, returning what the sink receives.
 const label = (events: ReadonlyArray<RuntimeEvent>) => {
   let next = 0
   const phases = makeMessagePhases(() => `run-${++next}`)
@@ -61,7 +60,6 @@ describe("message phases", () => {
       tool("t1"),
       text("Done.", { messageId: "run-2" })
     ])
-    // Any other update ends a run, as it ends the transcript's text span.
     expect(
       label([
         text("One"),
@@ -133,7 +131,6 @@ describe("message phases", () => {
       { kind: "session.output", subjectId: "s", payload: "opaque" },
       { kind: "session.error", subjectId: "s", payload: { message: "x" } }
     ])
-    // Other session updates don't end a turn.
     expect(
       label([
         text("Checking", { messageId: "a" }),

@@ -1,11 +1,6 @@
 import CodevisorUI
 import SwiftUI
 
-/// An active-mode pill in the composer toolbar (plan/goal). Hovering the chip
-/// swaps the mode icon for an ✕ remove button in the same slot; hovering the
-/// ✕ itself adds the circular hover wash (matching the pane tabs' close
-/// button). Replaces the always-visible toggle buttons — the modes are turned
-/// on via the /plan and /goal commands.
 struct ModeChip: View {
   @Environment(\.theme) private var theme
   let label: String
@@ -30,8 +25,6 @@ struct ModeChip: View {
     .background(Capsule().fill(Color.primary.opacity(0.82)))
     .opacity(isRemoveDisabled ? 0.5 : 1)
     .onHover { hovering in
-      // Instant swap: animating here rebuilds AppKit hover tracking
-      // mid-hover, which oscillates the state and flickers.
       var transaction = Transaction()
       transaction.disablesAnimations = true
       withTransaction(transaction) {
@@ -43,9 +36,6 @@ struct ModeChip: View {
     .accessibilityLabel("\(label) mode on")
   }
 
-  /// Always a button (so it stays reachable by assistive tech); only the
-  /// glyph is hover-driven — the mode icon at rest, ✕ while the chip is
-  /// hovered, with the tabs' circular wash while the ✕ itself is hovered.
   private var removeButton: some View {
     Button(action: onRemove) {
       Image(systemName: showsRemoveGlyph ? "xmark" : systemImage)

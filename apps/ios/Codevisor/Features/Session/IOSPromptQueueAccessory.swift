@@ -2,8 +2,6 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// A compact, touch-sized summary above the composer. Queue management lives
-/// in a sheet so editing and deletion never depend on tiny inline controls.
 struct IOSPromptQueueAccessory: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Bindable var controller: SessionController
@@ -77,7 +75,6 @@ private struct QueueGlassSurface: ViewModifier {
 
   func body(content: Content) -> some View {
     if isFormingQueue {
-      // The flying glass owns this surface until it becomes the queue card.
       content
     } else {
       content.composerGlassSurface(shape: cardStyle.shape, id: .queue, in: glassNamespace)

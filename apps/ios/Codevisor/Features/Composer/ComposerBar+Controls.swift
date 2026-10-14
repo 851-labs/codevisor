@@ -20,8 +20,6 @@ struct ComposerPasteFailureNotice: Equatable {
     } else {
       message = "Couldn't paste this file. Copy it again or choose it from Files."
     }
-    // The image message already explains the Photos fallback. Keep that
-    // banner compact and reserve an inline action for file recovery.
     recovery = kind == .image ? nil : .files
   }
 
@@ -48,9 +46,6 @@ extension ComposerBar {
     max(0, ComposerAttachments.maxAttachments - controller.composerAttachments.count)
   }
 
-  /// Routes file and image pasteboard content through the same staging paths
-  /// as the attachment menu. The paste delegate consumes these items so it
-  /// does not also insert a filename or object-replacement character.
   func handlePasteAttachmentEvent(_ event: ComposerPasteEvent) {
     switch event {
     case let .began(id, name, mimeType, kind):
@@ -136,8 +131,6 @@ extension ComposerBar {
     Button {
       submitOrAcceptSlashCommand()
     } label: {
-      // Goal creation remains the ordinary composer interaction. Only
-      // an existing goal in edit mode uses the save checkmark.
       Image(systemName: controller.isGoalEditing ? "checkmark" : "arrow.up")
         .composerCircleActionLabel(.primary, isEnabled: canSend)
     }
@@ -148,8 +141,6 @@ extension ComposerBar {
     .accessibilityHint(controller.requiresModelSelection ? "Select a model" : "")
   }
 
-  /// An active Goal chip. Goal is entered through `/goal`; this chip only
-  /// provides the matching, discoverable way to leave the mode.
   var goalModeChip: some View {
     Button {
       controller.composerText = text
@@ -176,8 +167,6 @@ extension ComposerBar {
     .accessibilityHint("Returns this draft to a regular chat message")
   }
 
-  /// An active Plan chip. Plan is entered through `/plan`; this chip only
-  /// provides the matching, discoverable way to return to build mode.
   var planModeChip: some View {
     Button {
       Task { await controller.togglePlanMode() }
@@ -300,8 +289,6 @@ extension ComposerBar {
     }
   }
 }
-
-// MARK: - Paste failure rail
 
 extension ComposerBar {
   @ViewBuilder

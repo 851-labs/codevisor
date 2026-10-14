@@ -12,8 +12,6 @@ import { MANAGED_PLUGIN_MARKER, scanPlugins } from "./plugin-store.js"
 import type { PluginProcessHandle, PluginSpawnOptions } from "./plugin-supervisor.js"
 import { exampleManifest, makeDir, writePlugin } from "./test-support.js"
 
-/// Copies whatever the "clone URL" points at — local fixture directories in
-/// these tests — so nothing touches the network.
 const copyClone = async (
   url: string,
   _ref: string | undefined,
@@ -54,8 +52,6 @@ const makeInstallSpawn = (exitCode: number | null, output = ""): InstallSpawn =>
         kill: () => undefined,
         onExit: (listener) => exitListeners.push(listener),
         pid: 7,
-        // Spawners without an output stream are legal (PluginProcessHandle
-        // marks onOutput optional); provide one only when there is output.
         ...(output === ""
           ? {}
           : { onOutput: (listener: (data: string) => void) => outputListeners.push(listener) })
@@ -158,7 +154,6 @@ describe("discoverRemote", () => {
     await expect(installer.discoverRemote({ source: "acme/tools#v2" })).rejects.toThrow(
       /\(v2\): repository not found/
     )
-    // Non-Error throwables stringify instead of vanishing.
     const stringThrow = makeInstaller({
       clone: () => Promise.reject("wire cut")
     })
@@ -173,7 +168,6 @@ describe("discoverRemote", () => {
     await expect(installer.discoverRemote({ source: empty })).rejects.toThrow(
       /No codevisor-plugin.json found/
     )
-    // The traversal check fires after staging, before any manifest read.
     const staged = makeInstaller({
       clone: (_url, ref, destination) => copyClone(empty, ref, destination)
     })
@@ -189,8 +183,6 @@ describe("discoverRemote", () => {
       join(repo, "plugins", "diff", "codevisor-plugin.json"),
       JSON.stringify({ ...exampleManifest, id: "acme.diff" })
     )
-    // The fake clone copies the fixture regardless of URL; the subpath comes
-    // from the parsed source.
     const { installer } = makeInstaller({
       clone: (_url, ref, destination) => copyClone(repo, ref, destination)
     })
@@ -206,11 +198,9 @@ describe("discoverRemote", () => {
     await expect(installer.discoverRemote({ source: "Acme/tools" })).rejects.toThrow(
       /must use ids starting with "acme\."/
     )
-    // The same manifest from a local path is a dev install: exempt.
     const local = makeInstaller()
     const discovered = await local.installer.discoverRemote({ source: impersonator })
     expect(discovered.id).toBe("somebodyelse.example")
-    // Ownerless remotes (raw git URLs) have nothing to validate against.
     const ownerless = makeInstaller({
       clone: (_url, ref, destination) => copyClone(impersonator, ref, destination)
     })
@@ -276,8 +266,6 @@ describe("importRemote", () => {
       spawnShell: spawn.spawnShell
     })
     await installer.importRemote({ source: fixture })
-    // The terminal's process handle is inert plumbing: writes and resizes
-    // no-op, kill forwards to the child.
     terminalProcess?.write("ignored")
     terminalProcess?.resize(80, 24)
     terminalProcess?.kill()
@@ -303,8 +291,6 @@ describe("importRemote", () => {
       /setup command failed: install blew up/
     )
     expect(existsSync(join(root, "owner.example"))).toBe(false)
-    // Launch failures (null exit code) fail the same way, and the terminal
-    // closes without a numeric status.
     const exits: Array<number | undefined> = []
     const spawnless = makeInstaller({
       registerExternalTerminal: () => ({
@@ -368,7 +354,6 @@ describe("importRemote", () => {
   it("refuses to overwrite directories Codevisor did not create", async () => {
     const fixture = makeFixture(exampleManifest)
     const { installer, root } = makeInstaller()
-    // A user-made directory at the destination (no managed marker).
     writePlugin(root, "owner.example", exampleManifest)
     await expect(installer.importRemote({ source: fixture })).rejects.toThrow(
       /was not installed by Codevisor/
@@ -398,8 +383,6 @@ describe("importRemote", () => {
     git("-c", "user.email=t@example.com", "-c", "user.name=t", "add", ".")
     git("-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "--quiet", "-m", "x")
     const root = makeDir("codevisor-plugins-root-")
-    // No injected clone/spawn/env: the default git clone and login-shell
-    // install runner do the work end to end.
     const installer = makePluginInstaller({
       pluginDataRoot: makeDir("codevisor-plugin-data-root-"),
       pluginsRoot: root,

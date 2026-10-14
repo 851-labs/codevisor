@@ -55,7 +55,7 @@ struct DirectMachineCloudAdoptionTests {
     case "token refused":
       world.server.respond("/v1/cloud", json: #"{"error":"unauthorized"}"#, status: 401)
     default:
-      break  // No response scripted: fails like an unreachable host.
+      break
     }
 
     await world.adoption.adoptPendingMachines(cloud: world.provider)
@@ -160,7 +160,6 @@ private final class AdoptingCloudProvider: CloudMachineProviding {
   }
 }
 
-/// The retired machine tokens' Keychain items.
 private final class TokenKeychain: @unchecked Sendable {
   private let lock = NSLock()
   private var tokens: [String: String]
@@ -184,8 +183,6 @@ private final class TokenKeychain: @unchecked Sendable {
   }
 }
 
-/// Answers a directly paired machine's requests by path; an unscripted path
-/// fails like an unreachable host.
 private final class ScriptedServerTransport: ServerRequestTransport, @unchecked Sendable {
   struct Request: Equatable {
     var url: String

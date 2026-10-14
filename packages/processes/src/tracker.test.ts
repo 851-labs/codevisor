@@ -207,6 +207,5 @@ it("stops a running child's tree when it exits, absorbing a failed stop", async 
   expect(tree.stop).not.toHaveBeenCalled()
   child.emit("exit", 0, null)
   expect(tree.stop).toHaveBeenCalledOnce()
-  // The helper's handler was attached first, so it has run once this settles.
   await expect(tree.stop.mock.results[0]!.value).rejects.toThrow("ps failed")
 })

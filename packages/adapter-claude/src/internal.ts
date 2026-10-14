@@ -1,5 +1,3 @@
-// Shared internals for the split Claude provider modules.
-
 export interface Deferred<A> {
   readonly promise: Promise<A>
   readonly resolve: (value: A) => void

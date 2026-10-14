@@ -12,7 +12,6 @@ import {
   waitForBuild
 } from "./app-store-connect.mjs"
 
-// Public test fixture. This key has never been registered with Apple.
 const privateKey = `-----BEGIN PRIVATE KEY-----
 MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgzCncWVIrLZn98Skm
 aMBqCDEJbkF+dDR7f8xgXFr4k6uhRANCAARsJMG/JX/pUF7QgVsxX30DiMyEtw3r

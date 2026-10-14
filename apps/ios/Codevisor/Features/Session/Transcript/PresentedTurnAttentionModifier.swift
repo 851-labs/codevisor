@@ -2,18 +2,12 @@ import CodevisorUI
 import CodevisorCore
 import SwiftUI
 
-/// Bridges terminal events from the live transcript stream to the independent
-/// navigation attention stream. Only the mounted foreground transcript can
-/// create a receipt; background and prewarmed surfaces remain inert.
 struct PresentedTurnAttentionModifier: ViewModifier {
   @Bindable var controller: SessionController
   let presentationRole: TranscriptPresentationRole
 
   @Environment(\.scenePhase) private var scenePhase
   @Environment(AppEnvironment.self) private var environment
-  /// Attention revision current when the foreground transcript began
-  /// presenting this live turn. Its successor identifies only this turn's
-  /// completion, even if navigation delivery or another turn races it.
   @State private var turnStartAttentionSequence: Int?
 
   func body(content: Content) -> some View {
@@ -38,9 +32,6 @@ struct PresentedTurnAttentionModifier: ViewModifier {
       }
   }
 
-  /// The server clamps this exact boundary to its current tip. A navigation
-  /// event that arrives late is therefore read, while a later autonomous
-  /// turn can never be consumed by this receipt.
   private func acknowledgeTurnEndIfNeeded() {
     guard presentationRole == .foreground,
       scenePhase == .active,

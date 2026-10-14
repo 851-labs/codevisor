@@ -1,10 +1,5 @@
 import SwiftUI
 
-/// One machine's Screen Sharing settings, in one grouped form like Apple's
-/// Screen Sharing (851-2367). How the machine is reached comes from where it's
-/// defined (the machine's codevisor-server in the app, the rig's catalog) and
-/// is read-only here; what the viewer chooses is editable. A saved password is
-/// never shown, only replaced or forgotten.
 public struct ScreenSharingMachineSettings: Equatable, Sendable {
   public struct Display: Equatable, Sendable, Identifiable {
     public var id: String
@@ -12,7 +7,6 @@ public struct ScreenSharingMachineSettings: Equatable, Sendable {
     public init(id: String, name: String) { self.id = id; self.name = name }
   }
 
-  /// Mac account sign-in for a server that asks for it (macOS Screen Sharing over VNC).
   public struct SignIn: Equatable, Sendable {
     public var userName: String
     public var hasSavedPassword: Bool
@@ -21,7 +15,6 @@ public struct ScreenSharingMachineSettings: Equatable, Sendable {
     }
   }
 
-  /// The machine's sound (851-2379): whether it plays, and how loud, 0…1.
   public struct Sound: Equatable, Sendable {
     public var enabled: Bool
     public var volume: Double
@@ -29,23 +22,16 @@ public struct ScreenSharingMachineSettings: Equatable, Sendable {
   }
 
   public var name: String
-  /// How the machine is reached, e.g. "Codevisor on this Mac" or "VNC".
   public var connection: String
   public var address: String?
-  /// Nil when this machine has no sign-in of its own (the app's machines sign in through codevisor-server).
   public var signIn: SignIn?
-  /// Nil when the connection can't resize the remote desktop.
   public var dynamicResolution: Bool?
-  /// Why Dynamic Resolution can't apply on the current connection; the toggle is then disabled.
   public var dynamicResolutionNote: String?
-  /// HDR (851-2480); nil when the connection can't carry it (VNC).
   public var highDynamicRange: Bool?
-  /// Why HDR isn't showing while it's on, e.g. the host's display or this Mac's screen can't.
   public var highDynamicRangeNote: String?
   public var displays: [Display]
   public var preferredDisplayId: String?
   public var lastConnected: Date?
-  /// Nil when the connection carries no sound (VNC).
   public var sound: Sound?
 
   public init(
@@ -59,7 +45,6 @@ public struct ScreenSharingMachineSettings: Equatable, Sendable {
   }
 }
 
-/// What Done changes. Nil and `.keep` leave a setting as it was.
 public struct ScreenSharingMachineSettingsChanges: Equatable, Sendable {
   public enum Password: Equatable, Sendable {
     case keep, forget
@@ -84,14 +69,11 @@ public struct ScreenSharingMachineSettingsChanges: Equatable, Sendable {
   }
 
   public var isEmpty: Bool { self == Self() }
-  /// A new display or new credentials take a new connection; the rest applies as it is.
   public var reconnects: Bool { preferredDisplayId != nil || userName != nil || password != .keep }
 }
 
-/// The form's editable copy of the settings, and what it changes against the original.
 public struct ScreenSharingMachineSettingsDraft: Equatable, Sendable {
   public var settings: ScreenSharingMachineSettings
-  /// The password typed after Change…; empty keeps the saved one.
   public var newPassword = ""
   public var changingPassword = false
   public var forgettingPassword = false
@@ -125,7 +107,6 @@ public struct ScreenSharingMachineSettingsDraft: Equatable, Sendable {
   }
 }
 
-/// The sheet: a grouped form, Cancel and Done. Done hands back only what changed.
 public struct ScreenSharingMachineSettingsSheet: View {
   private let original: ScreenSharingMachineSettings
   private let onDone: (ScreenSharingMachineSettingsChanges) -> Void
@@ -274,7 +255,6 @@ public struct ScreenSharingMachineSettingsSheet: View {
   }
 }
 
-/// The toolbar's gear, right of the Connection Details ⓘ in the app and the rig.
 public struct ScreenSharingMachineSettingsButton: View {
   private let settings: () -> ScreenSharingMachineSettings
   private let apply: (ScreenSharingMachineSettingsChanges) -> Void

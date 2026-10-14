@@ -43,7 +43,6 @@ describe("resolveInstallRoot", () => {
 
   it("rejects entrypoints that are not packaged runtime roots", () => {
     const root = makeTemporaryRoot()
-    // A dev checkout dist dir: main.js exists but VERSION and bin/node don't.
     const dist = join(root, "dist")
     mkdirSync(dist)
     writeFileSync(join(dist, "main.js"), "// dev")
@@ -107,7 +106,6 @@ describe("installRuntime", () => {
       installRuntime({
         installRoot: install,
         extract: (destination) => {
-          // Missing bin/node: a truncated or malformed archive.
           writeFileSync(join(destination, "main.js"), "// broken")
           return Promise.resolve()
         }
@@ -145,7 +143,6 @@ describe("installRuntime", () => {
       })
     ).rejects.toThrow("disk went away")
 
-    // Old root moved aside, swap failed, old root restored.
     expect(renames).toEqual([
       [install, `${install}.previous`],
       [`${install}.next`, install],

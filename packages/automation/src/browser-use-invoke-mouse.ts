@@ -14,9 +14,6 @@ import {
 import { releaseElement, resolveElement } from "./browser-locators.js"
 import type { BrowserToolInvocation, BrowserToolSessionState } from "./browser-use-invoke-types.js"
 
-/// Coordinate mouse input and DOM scrolling and media downloads. The session's pointer state
-/// makes mouse_down, mouse_move, and mouse_up compose into drags like Playwright's Mouse, and
-/// every move animates the presented cursor first. Returns undefined for other tool names.
 export const invokeMouseTools = async (
   invocation: BrowserToolInvocation,
   _state: BrowserToolSessionState
@@ -54,8 +51,6 @@ export const invokeMouseTools = async (
           : 1
       const held = heldButtonName(pointer.buttons)
       const from = { x: pointer.x, y: pointer.y }
-      // Free moves animate the presented pointer first; a held button follows each step so the
-      // drag reads as one continuous gesture.
       if (held === undefined) await cursor.move(x, y)
       for (let step = 1; step <= steps; step++) {
         const stepX = from.x + ((x - from.x) * step) / steps

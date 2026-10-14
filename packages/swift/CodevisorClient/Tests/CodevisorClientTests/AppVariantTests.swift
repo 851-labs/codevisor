@@ -6,9 +6,6 @@ import CodevisorProtocol
 
 @Suite("CodevisorAppVariant")
 struct AppVariantTests {
-  /// The HerdMan → Codevisor rename changed the Application Support folder
-  /// name while the app updated in place, orphaning all file-backed
-  /// preferences. The rescue copies legacy files across exactly once.
   @Test("Legacy HerdMan files are copied over without overwriting")
   func legacyApplicationSupportMigration() throws {
     let fileManager = FileManager.default
@@ -20,13 +17,10 @@ struct AppVariantTests {
     try fileManager.createDirectory(at: legacy, withIntermediateDirectories: true)
     try fileManager.createDirectory(at: destination, withIntermediateDirectories: true)
 
-    // Orphaned prefs that only exist in the legacy folder are rescued.
     try Data(#"{"lastHarnessId":"claude-code"}"#.utf8)
       .write(to: legacy.appendingPathComponent("composer-defaults.json"))
-    // Files the new install already wrote are never overwritten.
     try Data("current".utf8).write(to: destination.appendingPathComponent("settings.json"))
     try Data("stale".utf8).write(to: legacy.appendingPathComponent("settings.json"))
-    // Non-JSON artifacts stay behind.
     try Data("log".utf8).write(to: legacy.appendingPathComponent("debug.log"))
 
     CodevisorAppVariant.migrateLegacyApplicationSupport(
@@ -38,7 +32,6 @@ struct AppVariantTests {
     let kept = try Data(contentsOf: destination.appendingPathComponent("settings.json"))
     #expect(String(decoding: kept, as: UTF8.self) == "current")
     #expect(!fileManager.fileExists(atPath: destination.appendingPathComponent("debug.log").path))
-    // The legacy folder survives as a backup.
     #expect(fileManager.fileExists(atPath: legacy.appendingPathComponent("composer-defaults.json").path))
   }
 
@@ -49,7 +42,6 @@ struct AppVariantTests {
     ])
     #expect(full == CodevisorAppVariant.DevelopmentCloud(url: URL(string: "http://127.0.0.1:8787")!))
 
-    // No URL (or a blank one) means no dev cloud at all.
     #expect(CodevisorAppVariant.developmentCloud(from: [:]) == nil)
     #expect(CodevisorAppVariant.developmentCloud(from: ["CODEVISOR_DEV_CLOUD_URL": ""]) == nil)
   }
@@ -79,8 +71,6 @@ struct AppVariantTests {
       "PATH": "/usr/bin",
     ]
 
-    // A configured launch passes through and refreshes the stash with
-    // only the instance variables.
     let fromRunner = CodevisorAppVariant.resolvedDevelopmentEnvironment(
       live: configured,
       stashed: ["CODEVISOR_DEV_DATA_DIR": "/tmp/old"]
@@ -93,8 +83,6 @@ struct AppVariantTests {
         "HERDMAN_DEV_PORT": "1234",
       ])
 
-    // macOS "Quit & Reopen" launches bare: the stashed configuration is
-    // restored so the app keeps pointing at the same instance's data.
     let reopened = CodevisorAppVariant.resolvedDevelopmentEnvironment(
       live: ["PATH": "/usr/bin"],
       stashed: fromRunner.stash
@@ -104,7 +92,6 @@ struct AppVariantTests {
     #expect(reopened.environment["PATH"] == "/usr/bin")
     #expect(reopened.stash == nil)
 
-    // Nothing stashed and nothing configured: plain passthrough.
     let bare = CodevisorAppVariant.resolvedDevelopmentEnvironment(
       live: ["PATH": "/usr/bin"],
       stashed: nil

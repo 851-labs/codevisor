@@ -2,9 +2,6 @@ import ACPKit
 import CodevisorProtocol
 import Foundation
 
-/// The three wire states of a goal's token budget on update, mirroring the
-/// codex double-option: omit the key to keep the current budget, send an
-/// explicit `null` to clear it, or send a positive number to set it.
 public enum TokenBudgetUpdate: Sendable, Equatable {
   case keep
   case clear
@@ -70,8 +67,6 @@ public enum ServerAttachmentKind: String, Codable, Equatable, Sendable {
   case file
 }
 
-/// A reference to an uploaded file (`POST /v1/files`); bytes are fetched via
-/// `GET /v1/files/:id`.
 public struct ServerAttachmentRef: Codable, Identifiable, Equatable, Sendable {
   public var fileId: String
   public var name: String
@@ -172,12 +167,10 @@ public struct ServerSession: Codable, Equatable, Sendable {
   public var agentSessionId: String?
   public var title: String
   public var origin: SessionOrigin
-  /// Optional so a server predating archive timestamps still decodes.
   public var worktreeName: String?
   public var workspaceId: String? = nil
   public var cwd: String?
   public var configSelections: [String: String]? = nil
-  /// Saved `configSelections` the chat's runtime no longer offers.
   public var unavailableConfigSelections: [String: String]? = nil
   public var createdAt: String
   public var updatedAt: String?
@@ -192,13 +185,6 @@ public struct ServerSession: Codable, Equatable, Sendable {
   public var actionRequiredKind: String? = nil
   public var pendingPlanApproval: Bool? = nil
 
-  /// Maps a server-owned record into the client's machine namespace.
-  ///
-  /// A remote server commonly reports its own internal id (for example,
-  /// `"local"`), while the client addresses that same machine through a
-  /// connection-scoped id such as `"cloud:<machine-id>"`. Requiring the
-  /// scope here prevents a response from silently moving a live session into
-  /// the wrong client namespace.
   public func chatSession(serverId scopedServerId: String) throws -> ChatSession {
     guard let uuid = UUID(uuidString: id) else {
       throw CodevisorServerClientError.invalidUUID(id)
@@ -212,14 +198,9 @@ public struct ServerSession: Codable, Equatable, Sendable {
       serverId: scopedServerId,
       harnessId: harnessId,
       harnessAccountId: harnessAccountId,
-      // The server stores "" for a deferred (not-yet-created) agent;
-      // the app's "no agent yet" checks all use nil — normalize at
-      // the boundary so both spellings mean the same thing.
       agentSessionId: agentSessionId.flatMap { $0.isEmpty ? nil : $0 },
       title: title,
       origin: origin,
-      // Tolerated rather than thrown on: an unparseable archive stamp
-      // should cost ordering precision, not drop the whole chat.
       worktreeName: worktreeName,
       cwd: cwd,
       configSelections: configSelections,
@@ -298,8 +279,6 @@ public struct ServerSession: Codable, Equatable, Sendable {
   }
 }
 
-/// The update gate holding a session's prompts: the harness mid-update, or the
-/// server itself (`codevisor-server` / "Codevisor") during a restart drain.
 public struct ServerSessionUpdateGate: Decodable, Equatable, Sendable {
   public var harnessId: String
   public var harnessName: String
@@ -333,17 +312,10 @@ public struct ServerTranscriptItem: Decodable, Equatable, Sendable {
   public var stopKind: String?
   public var retryable: Bool?
   public var planDocument: String?
-  /// When the plan was proposed / when the turn resumed after it was
-  /// answered. Bound the two "Worked for…" sections around the plan.
   public var planProposedAt: String? = nil
   public var planResumedAt: String? = nil
   public var attachments: [ServerAttachmentRef]?
-  /// Provider message id of the still-streaming answer candidate. Present
-  /// only while the item is generating so a mid-stream restore can share
-  /// identity with the live deltas that continue the same span.
   public var messageId: String?
-  /// Provider-asserted finality of the candidate. `nil` remains optimistic
-  /// and must not settle the worked section during a mid-stream restore.
   public var phase: MessagePhase?
   public var textGeneration: Int?
   public var textPosition: Int? = nil
@@ -405,9 +377,6 @@ public struct ServerTranscriptItem: Decodable, Equatable, Sendable {
   }
 }
 
-/// Response of the combined `POST /v1/sessions/:id/open`: the authoritative
-/// session record plus the first transcript page, fetched in one round-trip
-/// so a chat can paint its history without waiting on discrete calls.
 public struct ServerSessionOpenResponse: Decodable, Sendable {
   public var session: ServerSession
   public var transcript: ServerTranscriptPage

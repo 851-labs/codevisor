@@ -1,7 +1,5 @@
 import handler from "@tanstack/react-start/server-entry"
 
-// Keep the former domains attached long enough for bookmarks and installers
-// to follow a permanent redirect to the Codevisor canonical host.
 export default {
   fetch(request: Request): Response | Promise<Response> {
     const url = new URL(request.url)

@@ -1,18 +1,3 @@
-/// OpenCode 2 plugin that lets a Codevisor-shared sign-in refresh without
-/// OpenCode ever holding the rotating refresh token. OpenCode refreshes an
-/// OAuth credential by calling its sign-in method's `refresh` once the token
-/// is within five minutes of expiring; this plugin replaces that `refresh`
-/// for the methods Codevisor shares. A credential Codevisor seeded carries
-/// `codevisor:<capability>` where the refresh token would be, and the
-/// capability (good only at this machine's Codevisor server) buys a fresh
-/// access token. GitHub Copilot's stored token doesn't expire, so it has
-/// nothing to refresh.
-///
-/// Loaded from a directory through OpenCode's `plugins` config, with the
-/// token service URL as its `broker` option. It replaces those methods'
-/// sign-in too: a profile Codevisor manages signs in through Codevisor.
-
-/// Integration and OAuth method ids whose refresh Codevisor provides.
 export const OPENCODE_MANAGED_METHODS: ReadonlyArray<readonly [string, string]> = [
   ["openai", "chatgpt-browser"],
   ["xai", "device"]
@@ -60,7 +45,6 @@ export default {
 };
 `
 
-/// The plugin directory's files, by name.
 export const openCodeCredentialPluginFiles: Readonly<Record<string, string>> = {
   "index.mjs": plugin,
   "package.json": `${JSON.stringify(

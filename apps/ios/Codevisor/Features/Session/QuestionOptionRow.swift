@@ -1,22 +1,11 @@
 import CodevisorUI
 import SwiftUI
 
-/// How an option row marks its state.
 enum QuestionOptionIndicator {
-  /// Radio: exactly one answer.
   case single
-  /// Checkbox: any number of answers.
   case multiple
 }
 
-/// One tappable answer tile. Sized for touch (≥ 52pt), with selection carried
-/// by tint, stroke, and an animated symbol — not by color alone.
-///
-/// Progressive disclosure: the tile shows only the answer. An option's
-/// description sits behind a trailing info button (the HIG's pattern for
-/// revealing detail about a row without activating it), shown in a popover
-/// — a popover even on iPhone, so it reads as a quick aside rather than a
-/// sheet taking over the question.
 struct QuestionOptionRow: View {
   let title: String
   let description: String?
@@ -65,17 +54,12 @@ struct QuestionOptionRow: View {
       }
     }
     .background(shape.fill(fillStyle))
-    // Inside the edge: a centered stroke puts half its width outside the
-    // tile, where the options scroll view clips it. (ConcentricRectangle
-    // isn't insettable, so inset a matching shape by half the line.)
     .overlay(
       cardStyle.insetShape(by: ComposerCardStyle.contentPadding + Self.ringWidth / 2)
         .stroke(theme.accent.opacity(isSelected ? 0.55 : 0), lineWidth: Self.ringWidth)
         .padding(Self.ringWidth / 2)
     )
     .contentShape(shape)
-    // No pointer hover effect: on iPad the system highlight scaled the
-    // whole tile under the cursor, which read as jumpy for a list.
     .hoverEffectDisabled()
   }
 
@@ -92,9 +76,6 @@ struct QuestionOptionRow: View {
     .buttonStyle(.plain)
     .padding(.trailing, 4)
     .accessibilityLabel("About \(title)")
-    // Opens above the icon: the card is pinned to the bottom of the
-    // screen, so below leaves UIKit no room (it squeezed and clipped the
-    // popover on iPad) and would cover Submit.
     .popover(isPresented: $showsInfo, arrowEdge: .bottom) {
       Text(info)
         .font(.subheadline)
@@ -127,8 +108,6 @@ struct QuestionOptionRow: View {
   }
 }
 
-/// Pressed tiles dip slightly, the system's feedback for touch-down on
-/// content-sized controls.
 private struct QuestionOptionButtonStyle: ButtonStyle {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 

@@ -4,23 +4,15 @@ import { Worker } from "node:worker_threads"
 
 import { summarizeProcessFailure } from "./process-failure.js"
 
-/// The subset of a spawned child process a stdio transport needs. An
-/// interface rather than ChildProcess itself so lifecycle RACES are unit
-/// testable with in-memory streams: the transport seam is exactly where
-/// write-after-exit bugs live (a reply to an approval/question resolves on
-/// human timescales and routinely outlives the process), and it must not
-/// require a live binary to exercise.
 export interface StdioEndpoint {
   readonly stdin: Writable
   readonly stdout: Readable
   readonly stderr: Readable | undefined
   kill: () => void
-  /// Process-level termination: `error` carries a spawn/runtime process
-  /// error when there is one, undefined for a plain exit.
   onExit: (handler: (error: Error | undefined) => void) => void
 }
 
-/* v8 ignore start -- thin adapter over a real child process; tests drive fake endpoints. */
+/* v8 ignore start */
 export const childStdioEndpoint = (child: ChildProcessWithoutNullStreams): StdioEndpoint => ({
   kill: () => child.kill(),
   onExit: (handler) => {
@@ -34,34 +26,15 @@ export const childStdioEndpoint = (child: ChildProcessWithoutNullStreams): Stdio
 /* v8 ignore stop */
 
 export interface NdjsonTransportOptions {
-  /// Failure message when the process exits without stderr output.
   readonly exitMessage?: string
   readonly isolateCodexHistory?: boolean
 }
 
-/// A newline-delimited-JSON pipe to a child process, with an explicit
-/// lifecycle. Design invariants:
-///
-/// - EVERY stream owned by the transport has an `error` listener from
-///   construction. In Node an `'error'` event with no listener is fatal to
-///   the whole process; in a multi-session server, one session's dead pipe
-///   must never be able to take every other session down. Pipe errors are
-///   session failures, reported through `onFailure`.
-/// - Writes are lifecycle-gated. A frame addressed to a dead peer is
-///   meaningless, so `send` drops it silently instead of trusting the pipe.
-/// - `close()` is deliberate teardown (session close, agent replacement):
-///   it gates writes and never reports a failure — routine teardown must
-///   not masquerade as a crash.
 export interface NdjsonTransport {
-  /// True until close() or a failure.
   isOpen: () => boolean
-  /// Writes one ndjson frame; dropped silently when the transport is not
-  /// open or the pipe can no longer accept writes.
   send: (payload: Record<string, unknown>) => void
   onLine: (handler: (line: string) => void) => void
   onMessage?: (handler: (message: Record<string, unknown>) => void) => void
-  /// Fires at most once, only for FAILURES (process exit/crash, pipe
-  /// error). Registered late, it fires immediately with the stored failure.
   onFailure: (handler: (error: Error) => void) => void
   close: () => void
 }
@@ -84,8 +57,6 @@ export const makeNdjsonTransport = (
   let processExit: Error | undefined
 
   const fail = (error: Error): void => {
-    // Includes deliberate close: the child's exit after close() (we killed
-    // it) is expected, not a failure.
     if (!open) return
     open = false
     void worker?.terminate()
@@ -97,8 +68,6 @@ export const makeNdjsonTransport = (
 
   endpoint.stdin.on("error", (error: Error) => fail(error))
   endpoint.stdout.on("error", (error: Error) => fail(error))
-  // stderr is capture-only; its pipe failing loses diagnostics, not the
-  // session. The listener still must exist (see the invariant above).
   endpoint.stderr?.on("error", () => undefined)
   worker?.on("error", fail)
   worker?.on("exit", (code) => {
@@ -124,8 +93,6 @@ export const makeNdjsonTransport = (
     })
   }
 
-  // Search each incoming chunk once. Joining only at a newline avoids the
-  // quadratic flatten/rescan loop when a provider sends a huge response.
   let fragments: string[] = []
   endpoint.stdout.setEncoding("utf8")
   endpoint.stdout.on("data", (chunk: string) => {
@@ -150,8 +117,6 @@ export const makeNdjsonTransport = (
   })
 
   endpoint.onExit((error) => {
-    // The captured tail is raw CLI output — often minified bundle text and
-    // stack frames — and this error surfaces to the user, so condense it.
     processExit =
       error ??
       new Error(summarizeProcessFailure(stderrTail, options.exitMessage ?? "process exited"))
@@ -165,9 +130,7 @@ export const makeNdjsonTransport = (
       void worker?.terminate()
       try {
         endpoint.stdin.end()
-      } catch {
-        // Already-destroyed pipe: teardown proceeds regardless.
-      }
+      } catch {}
       endpoint.kill()
     },
     isOpen: () => open,

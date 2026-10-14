@@ -121,8 +121,6 @@ describe("browser email sessions", () => {
         return Response.json({ id: "web-test-mail" })
       }
     }
-    // Cloudflare's edge sets cf-connecting-ip on every request, and Better
-    // Auth's rate limiter keys on it.
     const clientIP = "192.0.2.240"
     const request = (path: string, body: object) =>
       worker.fetch(

@@ -5,7 +5,6 @@
   import Combine
   import SwiftUI
 
-  /// A separate entry point avoids live storage, account startup, and server launches.
   struct AppStoreScreenshotApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
@@ -72,8 +71,6 @@
         initialURL: "http://localhost:3000", client: environment.machines.client(for: data.machineID),
         resolveBaseURL: { nil }
       )
-      // A data URL keeps Chromium's real renderer offline. Its address bar retains
-      // the example project's localhost URL, just as the iOS WKWebView does.
       let html = Data(AppStoreScreenshotPage.html.utf8).base64EncodedString()
       let view = CVChromiumView(
         profile: "marketing-\(ProcessInfo.processInfo.processIdentifier)",
@@ -85,7 +82,6 @@
     }()
   }
 
-  /// Fix the outer window rectangle, including the native title bar.
   private struct MarketingWindowConfiguration: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView { WindowObserver() }
     func updateNSView(_ nsView: NSView, context: Context) {}

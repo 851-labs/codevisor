@@ -1,23 +1,3 @@
-// The published Alpha prerelease is the release record. The Build workflow produces
-// signed artifacts plus a provenance file; Publish Alpha ships the newest
-// successful build and attaches that provenance to a vVERSION-alpha.BUILD
-// prerelease, publishing the release last so its existence means the macOS and
-// server artifacts shipped. Its TestFlight job then attaches a marker asset.
-// Publish Stable and Publish Beta start from an Alpha tag and read everything
-// they need from that release.
-//
-// Usage:
-//   alpha-release.mjs build-number <run-number>
-//     Prints the build number of a Build run.
-//   alpha-release.mjs next
-//     Selects the newest successful Build run on main and reports which
-//     parts (macOS/server release, TestFlight upload) still need publishing.
-//   alpha-release.mjs verify <alpha-tag | --commit SHA> [directory]
-//     Verifies a published Alpha and its Build run; writes the
-//     provenance file to directory when given.
-//
-// Results are written as step outputs when GITHUB_OUTPUT is set.
-
 import { execFileSync } from "node:child_process"
 import { appendFile, mkdir, mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -28,9 +8,6 @@ export const BUILD_WORKFLOW = ".github/workflows/build.yml"
 export const PROVENANCE_ARTIFACT = "codevisor-release-provenance"
 export const PROVENANCE_ASSET = "release-provenance.json"
 export const TESTFLIGHT_ASSET = "ios-testflight-build.json"
-// Build numbers continue the series of the retired release-candidate.yml
-// workflow (last run #788). GitHub numbers runs per workflow file, so the
-// offset keeps Sparkle, TestFlight, and server builds strictly increasing.
 export const BUILD_NUMBER_OFFSET = 1000
 const SERVER_TARGETS = ["darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64"]
 const ALPHA_TAG = /^v(\d+\.\d+\.\d+)-alpha\.([1-9]\d*)$/
@@ -43,8 +20,6 @@ export function alphaTag({ version, build }) {
   return `v${version}-alpha.${build}`
 }
 
-// Checks a Build run and the provenance it recorded, and returns the
-// build's identity. Everything downstream trusts only this identity.
 export function verifyAlphaProvenance(run, provenance, repository) {
   assertSuccessfulBuildRun(run, repository)
   const build = String(provenance.build_number ?? "")
@@ -96,24 +71,18 @@ export function releaseAssetNames({ ghostty_stamp }) {
   return [...files.flatMap((file) => [file, `${file}.sha256`]), PROVENANCE_ASSET]
 }
 
-// A release counts as published only when it is a public prerelease with
-// every asset. Publish Alpha replaces anything else.
 export function isPublishedRelease(release, identity) {
   if (!release || release.isDraft || !release.isPrerelease) return false
   const names = new Set(release.assets.map((asset) => asset.name))
   return releaseAssetNames(identity).every((name) => names.has(name))
 }
 
-// What Publish Alpha still has to do for a build. Republishing the release
-// replaces its assets, so the TestFlight marker must then be attached again.
 export function pendingPublication(release, identity) {
   const macos = !isPublishedRelease(release, identity)
   const ios = macos || !release.assets.some((asset) => asset.name === TESTFLIGHT_ASSET)
   return { macos, ios }
 }
 
-// `git ls-remote --tags` output as tag name → commit, preferring the peeled
-// commit of annotated tags.
 export function parseRemoteTags(output) {
   const tags = new Map()
   for (const line of output.split("\n").filter(Boolean)) {
@@ -125,8 +94,6 @@ export function parseRemoteTags(output) {
   return tags
 }
 
-// A commit can carry several Alpha tags (each Build run of it gets its
-// own build number); the highest build is the one to promote.
 export function newestAlphaTag(tags) {
   const builds = tags
     .map((tag) => ALPHA_TAG.exec(tag))
@@ -163,7 +130,6 @@ async function readProvenance(directory) {
 function verifiedIdentity(repository, runId, provenance) {
   const workflowRun = JSON.parse(run("gh", ["api", `repos/${repository}/actions/runs/${runId}`]))
   const identity = verifyAlphaProvenance(workflowRun, provenance, repository)
-  // Releases are cut only from main; the checkout is main at trigger time.
   if (!succeeds("git", ["merge-base", "--is-ancestor", identity.source_sha, "HEAD"]))
     throw new Error(`${identity.source_sha} is not on main.`)
   return identity
@@ -200,7 +166,6 @@ async function next(repository) {
   const publishedTag = [...tags.keys()].find((name) => ALPHA_TAG.exec(name)?.[2] === build)
   const directory = await mkdtemp(join(tmpdir(), "codevisor-alpha-"))
   try {
-    // A published release keeps its provenance after the run's artifacts expire.
     const found =
       (publishedTag &&
         succeeds("gh", [

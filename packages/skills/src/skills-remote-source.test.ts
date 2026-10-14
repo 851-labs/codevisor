@@ -50,14 +50,12 @@ describe("parseSkillSource", () => {
       subpath: "skills/find-skills",
       url: "https://github.com/vercel-labs/skills.git"
     })
-    // An explicit #ref wins over the /tree/ segment.
     expect(parseSkillSource("https://github.com/o/r/tree/main/path#pinned")).toEqual({
       kind: "git",
       ref: "pinned",
       subpath: "path",
       url: "https://github.com/o/r.git"
     })
-    // A tree URL for the repo root has a ref but no subpath.
     expect(parseSkillSource("https://github.com/o/r/tree/main")).toEqual({
       kind: "git",
       ref: "main",
@@ -135,7 +133,6 @@ describe("parseSkillSource", () => {
       ref: "main",
       url: "https://gitlab.com/o/r.git"
     })
-    // An explicit #ref wins over the /-/tree/ segment.
     expect(parseSkillSource("https://gitlab.com/o/r/-/tree/main/path#pinned")).toEqual({
       kind: "git",
       ref: "pinned",
@@ -153,7 +150,6 @@ describe("parseSkillSource", () => {
       kind: "wellKnown",
       url: "https://example.com/docs/skills"
     })
-    // Explicit git remotes still clone.
     expect(parseSkillSource("https://myhost.dev/team/repo.git#dev")).toEqual({
       kind: "git",
       ref: "dev",
@@ -165,7 +161,6 @@ describe("parseSkillSource", () => {
     expect(() => parseSkillSource("  ")).toThrow(SkillsError)
     expect(() => parseSkillSource("just-a-name")).toThrow("Unrecognized skill source")
     expect(() => parseSkillSource("https://github.com/only-owner")).toThrow("Not a repository URL")
-    // A trailing # is treated as no ref at all.
     expect(parseSkillSource("o/r#")).toEqual({
       kind: "git",
       ref: undefined,

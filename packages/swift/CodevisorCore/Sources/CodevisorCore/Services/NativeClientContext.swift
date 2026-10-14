@@ -18,7 +18,6 @@ public struct ClientNavigationRequest: Codable, Sendable {
   public var workspaceId: UUID
   public var destination: Destination?
 
-  /// Validate against a copy before changing any native navigation state.
   public func applying(to workspace: Workspace) throws -> Workspace {
     guard workspace.id == workspaceId, !workspace.isArchived else {
       throw ClientControlError("Workspace is unavailable")

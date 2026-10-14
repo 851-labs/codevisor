@@ -1,7 +1,6 @@
 import CTreeSitter
 import Foundation
 
-/// Owns the C query and per-call cursor; delegates host predicate semantics.
 final class TreeSitterQuery {
   struct Capture {
     let name: String

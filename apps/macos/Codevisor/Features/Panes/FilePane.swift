@@ -22,9 +22,6 @@ final class FilePane: Pane {
   }
 
   func makeView() -> AnyView {
-    // The picker page has no editor to report focus, so whitespace clicks
-    // activate the group here (the editor's first-responder change covers
-    // an open document).
     AnyView(
       FilePaneView(model: model)
         .simultaneousGesture(

@@ -1,9 +1,6 @@
 import type { HarnessAuthManager } from "@codevisor/harness-manager"
 import { vi } from "vitest"
 
-/// A scripted HarnessAuthManager for the harness route tests: one default
-/// account, a Pi provider flow, OpenCode provider flows, and a mutable
-/// `state` the tests flip to simulate sign-out and missing account context.
 export const makeAuthFixture = () => {
   const account = {
     id: "account-1",

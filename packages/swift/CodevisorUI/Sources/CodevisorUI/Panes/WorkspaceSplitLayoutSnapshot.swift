@@ -2,10 +2,6 @@ import CodevisorCore
 import CoreGraphics
 import Foundation
 
-/// The flat presentation of a split tree. Leaves remain siblings keyed by their
-/// persistent group ids, so wrapping or collapsing a branch changes geometry
-/// without changing the SwiftUI ownership path of surviving pane content.
-/// Shared by the macOS split view and the iPhone Duo split container.
 public struct WorkspaceSplitLayoutSnapshot: Equatable {
   public struct Leaf: Identifiable, Equatable {
     public let id: UUID
@@ -30,8 +26,6 @@ public struct WorkspaceSplitLayoutSnapshot: Equatable {
     public let afterLeafID: UUID?
   }
 
-  /// The smallest a child may render along the split axis; below this the
-  /// fractions are floored so every pane stays usable.
   public static let defaultMinChildWidth: CGFloat = 320
   public static let defaultMinChildHeight: CGFloat = 280
 
@@ -130,7 +124,6 @@ public struct WorkspaceSplitLayoutSnapshot: Equatable {
 }
 
 extension SplitNode {
-  /// The group id when this node is itself a leaf.
   public var directLeafID: UUID? {
     guard case let .group(id, _) = self else { return nil }
     return id

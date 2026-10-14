@@ -3,9 +3,6 @@ import CodevisorCore
 import CodevisorUI
 
 extension NewChatView {
-  /// New Chat owns its target machine. An explicit project wins, followed
-  /// by the last composer target. No application lifecycle or request
-  /// routing reads this preference.
   var composerServerId: String {
     if let controller { return controller.project.serverId }
     if let initialProjectTarget { return initialProjectTarget.serverId }
@@ -35,10 +32,6 @@ extension NewChatView {
     environment.harnessCatalogRevision(for: composerServerId)
   }
 
-  /// A draft restored before machine discovery can still point at the cloud
-  /// twin of a configured machine. Once the status probe links the two,
-  /// move the draft to the configured identity while preserving the exact
-  /// logical project when that machine has it.
   func canonicalProjectTarget(for controller: SessionController) -> Project? {
     let current = controller.project
     guard
@@ -68,7 +61,6 @@ extension NewChatView {
         restart: composerMachine.isLocal ? { AppRelauncher.relaunch() } : nil
       )
     } else if paneDraftId == nil {
-      // An embedded draft pane must not override the workspace title.
       content.navigationTitle("New chat")
     } else {
       content
@@ -110,8 +102,6 @@ extension NewChatView {
     environment.machines.availability(for: composerServerId)
   }
 
-  /// The local server's data upgrade is presented app-wide (see
-  /// `ServerDataUpgradePresentation`), not here.
   private var blocksComposerServerContent: Bool {
     environment.appUpdate.isUpdating
   }

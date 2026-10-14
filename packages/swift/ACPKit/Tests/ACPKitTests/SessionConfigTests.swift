@@ -77,7 +77,6 @@ struct SessionConfigTests {
     #expect(usage.outputTokens == 1_345)
     #expect(usage.totalTokens == 12_345)
     #expect(usage.cost == SessionCost(amount: 0.0123, currency: "USD", kind: .reported))
-    // Round-trips.
     let data = try JSONEncoder().encode(update)
     #expect(try JSONDecoder().decode(SessionUpdate.self, from: data) == update)
   }

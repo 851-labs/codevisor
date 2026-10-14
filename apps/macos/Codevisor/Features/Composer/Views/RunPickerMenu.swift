@@ -2,7 +2,6 @@ import Autocomplete
 import CodevisorUI
 import SwiftUI
 
-/// Shared composer trigger styling. Autocomplete owns presentation and behavior.
 struct RunPickerMenu: View {
   let chipText: String
   let chipSymbol: String

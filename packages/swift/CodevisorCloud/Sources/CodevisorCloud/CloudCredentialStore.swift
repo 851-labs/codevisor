@@ -2,46 +2,24 @@ import CodevisorClient
 import Foundation
 import Security
 
-/// Device-local storage for the cloud account's session token and (when the
-/// user points at a self-hosted instance) the custom server URL. The URL
-/// isn't a secret, but keeping the pair together in one store is simpler than
-/// splitting it across Keychain and preferences.
 public protocol CloudCredentialStore: Sendable {
   func token() throws -> String?
   func saveToken(_ token: String) throws
   func removeToken() throws
   func serverURL() throws -> URL?
-  /// Nil clears the custom server (back to the default instance).
   func saveServerURL(_ url: URL?) throws
-  /// This app install's stable cloud device id (survives sign-outs so the
-  /// hub sees one device, not a new one per session).
   func appDeviceId() throws -> String?
   func saveAppDeviceId(_ id: String) throws
-  /// The app device's static X25519 secret key (raw 32 bytes) — the
-  /// identity machines pin for end-to-end encrypted relay channels.
   func appSecretKey() throws -> Data?
   func saveAppSecretKey(_ key: Data) throws
-  /// TOFU pins for machine keys (cloud device id → base64url public key).
-  /// The app pins each machine's key on first sight and refuses relay
-  /// channels when a later presence entry conflicts with the pin — the hub
-  /// is not trusted for key continuity.
   func pinnedMachineKeys() throws -> [String: String]
   func savePinnedMachineKeys(_ pins: [String: String]) throws
-  /// The last machine list a network refresh confirmed, so launch can show
-  /// cloud machines before any request answers. Best-effort by design: a
-  /// missing or unreadable roster only costs the instant launch, never the
-  /// session, so these never throw.
   func loadRoster() -> CachedRoster?
   func saveRoster(_ roster: CachedRoster)
   func clearRoster()
 }
 
-/// A device-local snapshot of the signed-in account's machine list. It is a
-/// display cache, not an authority: the controller marks it unverified until
-/// a fresh fetch succeeds, and ignores it when it was taken against a
-/// different cloud server than the one currently selected.
 public struct CachedRoster: Codable, Equatable, Sendable {
-  /// `absoluteString` of the cloud server the roster was fetched from.
   public var serverURL: String
   public var userEmail: String?
   public var machines: [CloudMachine]
@@ -53,13 +31,9 @@ public struct CachedRoster: Codable, Equatable, Sendable {
   }
 }
 
-/// The app device's relay identity: a stable device id plus static X25519
-/// keypair, created on first use and persisted in the credential store.
 public struct CloudAppDeviceIdentity: Sendable {
   public let deviceId: String
-  /// Raw X25519 secret key (32 bytes).
   public let secretKey: Data
-  /// base64url-unpadded public key, as presented in `hello`.
   public let publicKey: String
 
   public init(deviceId: String, secretKey: Data, publicKey: String) {
@@ -69,15 +43,9 @@ public struct CloudAppDeviceIdentity: Sendable {
   }
 }
 
-/// Serializes first-use identity minting across every caller in the process.
-/// The hub, the tunnel, and direct pipes all ask for the identity at launch;
-/// unserialized, each minted its own id and key, one save lost the race, and
-/// the loser surfaced as a fatal credential failure.
 private let appDeviceIdentityLock = NSLock()
 
 extension CloudCredentialStore {
-  /// Returns the persisted app device identity, minting one on first use.
-  /// Every caller gets the same identity, including concurrent first calls.
   public func ensureAppDeviceIdentity() throws -> CloudAppDeviceIdentity {
     try appDeviceIdentityLock.withLock { try loadOrMintAppDeviceIdentity() }
   }
@@ -125,10 +93,6 @@ public final class KeychainCloudCredentialStore: CloudCredentialStore, @unchecke
   private static let machineKeyPinsAccount = "machine-key-pins"
 
   private let values: KeychainValueStore
-  // The roster is not a secret and is read synchronously on the launch path,
-  // so it lives in preferences (an in-process cache) rather than paying for
-  // a Keychain round trip before the first frame. Scoped by service so the
-  // dev and production app variants never read each other's machines.
   private let rosterDefaults: UserDefaults
   private let rosterKey: String
 
@@ -198,8 +162,6 @@ public final class KeychainCloudCredentialStore: CloudCredentialStore, @unchecke
       let data = raw.data(using: .utf8),
       let pins = try? JSONDecoder().decode([String: String].self, from: data)
     else {
-      // Absent or unreadable pins mean "no continuity knowledge yet":
-      // TOFU re-establishes on the next machine refresh.
       return [:]
     }
     return pins
@@ -212,8 +174,6 @@ public final class KeychainCloudCredentialStore: CloudCredentialStore, @unchecke
 
   public func loadRoster() -> CachedRoster? {
     guard let data = rosterDefaults.data(forKey: rosterKey) else { return nil }
-    // An undecodable roster (older schema, corruption) is just a cold
-    // launch; the next verified refresh overwrites it.
     return try? JSONDecoder().decode(CachedRoster.self, from: data)
   }
 

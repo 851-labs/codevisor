@@ -3,20 +3,13 @@ import os
 @preconcurrency import WebRTC
 import ScreenSharing
 
-/// The viewer's end of a native session: the decoded-frame mailbox fed by the
-/// remote track's renderer, and the viewer-side recovery (keyframe requests
-/// on decoder loss, verification of the host's idle notices). It is the
-/// `ScreenSharingViewingSession` a viewer feature renders from.
 @MainActor
 public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewingSession {
   public let mailbox: ScreenSharingFrameMailbox
-  /// Receiver-only diagnostic frame-delivery audit (nil = disabled); closed with the peer.
   public let frameDeliveryAudit: ScreenSharingFrameDeliveryAudit?
   private let renderer: ScreenSharingPeerRenderer
   private let recovery: ScreenSharingReceiverRecovery
 
-  /// Builds the connection, its channels and the video receiver on the transport's queue; the
-  /// caller's actor only waits.
   public init(
     configuration: ScreenSharingVideoConfiguration, metrics: ScreenSharingMetrics,
     options: ScreenSharingPeerOptions = .init(), connectivity: ScreenSharingICEConfiguration? = nil,
@@ -41,8 +34,6 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
       metrics: metrics, codecFactory: staged.codecFactory, videoRefresh: staged.videoRefresh,
       grace: options.deliveryGrace, graceExtensions: options.deliveryGraceExtensions)
     super.init(staged: staged)
-    // The remote track arrives on WebRTC's signaling thread; the transport attaches the renderer
-    // on its queue (and detaches it at teardown), never on main.
     delegate.onVideoTrack = { [transport] track in transport.attach(track, renderer: renderer) }
     codecFactory.refreshSignal.request()
     cursorChannel.onMessage = { [weak self] in self?.receiveCursor($0) }
@@ -59,7 +50,6 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
       guard available, let self, self.clipboardSharing else { return }
       self.clipboardSharingChannel.send(.viewer(sharing: true))
     }
-    // 50 packets a second go from the channel's queue to the player's decoder, never through main.
     audioChannel.deliverOffMain { [audioSink] message in
       guard case .packet(let packet) = message else { return false }
       audioSink.receive(packet)
@@ -70,30 +60,21 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
     }
   }
 
-  // MARK: ScreenSharingViewingSession
-
   public var capabilities: ScreenSharingCapabilities { [.control, .clipboard, .statistics, .systemKeys] }
   public var frames: ScreenSharingFrameMailbox { mailbox }
   public var control: (any ScreenSharingMessageChannel<ScreenSharingControlMessage>)? { controlChannel }
   public var clipboard: (any ScreenSharingMessageChannel<ScreenSharingClipboardMessage>)? { clipboardChannel }
   public var failure: String? { metrics.label("decoderError") }
 
-  /// The host's pointer arrives on its own channel once the host answered `subscribe`
-  /// (851-2377); from then on the video no longer shows it.
   public private(set) var videoShowsPointer = true
-  /// Setting it asks the host for the pointer: only a viewer that draws it subscribes, so one
-  /// that doesn't (the rig's measuring viewer) keeps the pointer in the video.
   public var onCursorChanged: ((ScreenSharingCursorUpdate) -> Void)? {
     didSet {
       subscribeToCursor()
-      // Replay what arrived before the viewer listened.
       if let shape = lastCursorShape { onCursorChanged?(shape) }
       if let position = lastCursorPosition { onCursorChanged?(position) }
     }
   }
-  // MARK: Dynamic Resolution (851-2376)
 
-  /// The host sizes a virtual display to the pane once it says it can (`ready`).
   public var resizesDesktop: Bool { true }
   public var onResizeSupportChanged: ((Bool) -> Void)? {
     didSet { if let displaySupport { onResizeSupportChanged?(displaySupport) } }
@@ -107,7 +88,6 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
 
   public func resetDesktopSize() { sendDisplay(.restore) }
 
-  /// Latest wins: what the pane wants now is sent once the host is ready, and not again.
   private func sendDisplay(_ message: ScreenSharingDisplayMessage) {
     guard message != requestedDesktop else { return }
     requestedDesktop = message
@@ -132,12 +112,9 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
     }
   }
 
-  // MARK: HDR (851-2380)
-
   public var supportsHighDynamicRange: Bool { true }
   public var onVideoFormatChanged: ((ScreenSharingDynamicRange, String?) -> Void)?
 
-  /// What the viewer's display can show, as last reported; sent when the channel opens and on each change.
   private var viewerHighDynamicRange: Bool?
 
   public func setDisplayHighDynamicRange(_ supported: Bool) {
@@ -153,9 +130,6 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
     metrics.label("hostDynamicRange", reason.map { "\(range.rawValue): \($0)" } ?? range.rawValue)
   }
 
-  // MARK: Shared clipboard
-
-  /// Whether the viewer wants the host's copies; sent when the channel opens and on each change.
   private var clipboardSharing = false
 
   public func setClipboardSharing(_ enabled: Bool) {
@@ -163,8 +137,6 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
     clipboardSharing = enabled
     clipboardSharingChannel.send(.viewer(sharing: enabled))
   }
-
-  // MARK: Audio (851-2379)
 
   public var supportsAudio: Bool { true }
   private var audioPlayer: ScreenSharingAudioPlayer? {
@@ -175,9 +147,6 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
   private var audioSubscribed = false
   private var audioSync: Task<Void, Never>?
 
-  /// Plays the host's sound: subscribes once the channel is open and keeps the sound as late as
-  /// the picture (the video's jitter-buffer delay, measured every second). Disabling unsubscribes,
-  /// so a muted viewer costs the host nothing.
   public func setAudioEnabled(_ enabled: Bool) {
     audioWanted = enabled
     if enabled {
@@ -185,7 +154,6 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
         do {
           let player = try ScreenSharingAudioPlayer()
           player.setVolume(audioVolume)
-          // The device starts on the player's own queue; one that can't start ends playback as before.
           player.start { [weak self, metrics] error in
             metrics.label("audioError", error.localizedDescription)
             Task { @MainActor in self?.audioOutputFailed(player) }
@@ -218,7 +186,6 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
     stopAudio()
   }
 
-  /// Output level for the host's sound, 0…1; kept across mute and unmute.
   public var audioVolume: Float = 1 {
     didSet { audioPlayer?.setVolume(audioVolume) }
   }
@@ -230,8 +197,6 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
     audioSubscribed = audioChannel.send(.subscribe)
   }
 
-  /// The audio target: as late as the picture, but at least 60 ms, plus a margin that grows by
-  /// 10 ms with each underrun (Wi-Fi delivers in bursts) and shrinks by 2 ms a second.
   static func audioTarget(videoDelay: Double, margin: Double) -> Double { max(0.06, videoDelay) + margin }
 
   static func audioMargin(_ margin: Double, newUnderruns: Int) -> Double {
@@ -256,11 +221,9 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
       margin = Self.audioMargin(margin, newUnderruns: counted - underruns)
       underruns = counted
       if let previous, emitted > previous.emitted {
-        // The video waits this long in its jitter buffer, plus about a frame to decode and draw.
         let videoDelay = (delay - previous.delay) / (emitted - previous.emitted) + 0.02
         let target = Self.audioTarget(videoDelay: videoDelay, margin: margin)
         player.setTargetDelay(target)
-        // Only once the host sends sound: an older host never does.
         if audioSink.packetsReceived > 0 { metrics.label("audioTargetDelayMs", String(Int(target * 1000))) }
       }
       previous = (delay, emitted)
@@ -302,10 +265,6 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
     }
   }
 
-  // MARK: Diagnostics
-
-  /// Package-only fault injection for the standalone recovery probe. The
-  /// decoder discards its VT state, then refuses deltas until a fresh keyframe.
   public func simulateDecoderLoss(
     afterFrames: Int, droppingRecoveryKeyframeFrom sender: ScreenSharingSender? = nil,
     idlingCaptureFrom idleSender: ScreenSharingSender? = nil
@@ -323,8 +282,6 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
     metrics.label("decoderRecoveryExperiment", "discard reference state after \(afterFrames) input frames")
   }
 
-  // MARK: Role hooks
-
   override func handleRefresh(_ message: ScreenSharingVideoRefreshMessage) {
     recovery.handle(message)
   }
@@ -340,18 +297,15 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
     codecFactory.refreshSignal.close()
     ownedWork.close(with: recovery.close())
     codecFactory.sourceIdleMonitor.stop()
-    // Frames still in flight are dropped from here; the transport detaches the renderer.
     renderer.stop()
   }
 
   override func didClose() {
     mailbox.clear()
-    frameDeliveryAudit?.close()  // later decoder/VT/RTC/GPU/presented callbacks are counted as late, never recorded
+    frameDeliveryAudit?.close()
   }
 }
 
-/// Where the audio channel's queue hands the host's packets: the player playing right now (if
-/// any), and how many packets arrived. Shared between that queue and the main actor.
 final class ScreenSharingAudioSink: Sendable {
   private let state = OSAllocatedUnfairLock<(player: ScreenSharingAudioPlayer?, packets: Int)>(
     initialState: (nil, 0))

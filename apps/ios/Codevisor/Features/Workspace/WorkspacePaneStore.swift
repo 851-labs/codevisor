@@ -1,11 +1,6 @@
 import CodevisorCore
 import SwiftUI
 
-/// Client-side persistence of each workspace's panes, reusing the shared
-/// `PaneGroupState`/`PaneDescriptorState` model — including the
-/// `"<sessionUuid>:<paneUuid>"` terminal-key scheme, so pane PTYs are keyed
-/// identically to macOS. Returning to a workspace restores the same panes
-/// with the same pane selected.
 @MainActor
 @Observable
 final class WorkspacePaneStore {
@@ -17,10 +12,6 @@ final class WorkspacePaneStore {
     "ios.workspace.panes.\(id.uuidString)"
   }
 
-  /// Pane state belongs to the workspace, not whichever chat happened to
-  /// route into it. `legacySessionIds` migrates layouts written before iOS
-  /// learned about multi-chat workspaces, when the storage key was the
-  /// routed session id.
   func state(for workspaceId: UUID, legacySessionIds: [UUID] = []) -> PaneGroupState {
     if let cached = cache[workspaceId] { return cached }
     if let data: Data = ClientPreferences.shared.valueIfPresent(
@@ -32,9 +23,6 @@ final class WorkspacePaneStore {
       return decoded
     }
 
-    // A later chat-row tap in an old build may have created a second,
-    // one-chat legacy state. Prefer the richest candidate so the original
-    // workspace (with its terminals and sibling chats) wins migration.
     let legacy =
       legacySessionIds
       .filter { $0 != workspaceId }
@@ -51,8 +39,6 @@ final class WorkspacePaneStore {
     return initial
   }
 
-  /// Existing state only—used to discover relationships written by older
-  /// iOS versions without manufacturing new pane groups during a backfill.
   func existingState(for id: UUID) -> PaneGroupState? {
     if let cached = cache[id] { return cached }
     guard let data: Data = ClientPreferences.shared.valueIfPresent(forKey: key(for: id)),
@@ -69,9 +55,6 @@ final class WorkspacePaneStore {
     }
   }
 
-  /// A chat-row tap is an explicit request for that chat, so select its pane
-  /// before Home pushes the workspace. If the shared workspace knows about a
-  /// chat that this device has never rendered, add its iOS tab on demand.
   func selectChat(
     _ sessionId: UUID,
     in workspaceId: UUID,

@@ -1,23 +1,16 @@
 import CodevisorCloud
 import Foundation
 
-/// What this device knows about reaching one cloud machine over the tunnel: the input to the
-/// Machines list's connection label.
 public struct CloudMachineReach: Equatable, Sendable {
   public enum Route: Equatable, Sendable {
     case peerToPeer(milliseconds: Int)
-    /// Through one of our relays (`relayURL`), because a direct path wasn't possible.
     case relayed(relayURL: String?, milliseconds: Int)
   }
 
-  /// The hub sees the machine connected.
   public var online: Bool
-  /// The machine's server can take tunnel connections (false: it predates the tunnel).
   public var hasTunnel: Bool
-  /// The live pipe's path; nil while there is no pipe.
   public var route: Route?
   public var dialing: Bool
-  /// When this device could last reach it, or when the hub last saw it.
   public var lastSeen: Date?
 
   public init(online: Bool, hasTunnel: Bool, route: Route? = nil, dialing: Bool = false, lastSeen: Date? = nil) {
@@ -34,7 +27,6 @@ extension CloudMachineReach {
   public init(presence: CloudMachine, pipes: CloudDirectPathController) {
     let path = pipes.paths[presence.deviceId]
     let reached = pipes.lastReachable[presence.deviceId]
-    // An online machine's presence timestamp is when it connected, not when it was last seen.
     let hubLastSeen = presence.online ? nil : Self.parse(presence.lastSeenAt)
     self.init(
       online: presence.online,

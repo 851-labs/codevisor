@@ -16,8 +16,6 @@ export const BUILTIN_MCP_SERVERS = [
 
 export type BuiltinMcpId = (typeof BUILTIN_MCP_SERVERS)[number]["id"]
 
-/// Skills shipped with each builtin, served by the gateway's `skills` tool
-/// while that builtin is enabled.
 const AUTOMATION_SKILLS = [
   {
     gate: "browser",

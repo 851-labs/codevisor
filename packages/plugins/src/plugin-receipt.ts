@@ -36,8 +36,6 @@ export const readPluginInstallReceipt = (
   }
 }
 
-/// Writes through a sibling temporary file so a crash cannot leave a partial
-/// receipt that loses the plugin's update provenance.
 export const writePluginInstallReceipt = async (
   pluginDirectory: string,
   receipt: PluginInstallReceipt

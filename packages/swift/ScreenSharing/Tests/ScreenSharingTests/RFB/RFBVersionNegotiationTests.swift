@@ -2,8 +2,6 @@ import Foundation
 import Testing
 @testable import ScreenSharing
 
-/// ProtocolVersion (RFC 6143 §7.1.1): the twelve bytes each side sends, which
-/// greetings parse, and which version the client answers with.
 struct RFBVersionNegotiationTests {
   @Test func supportedVersionsEncodeToTheTwelveByteGreeting() {
     #expect(RFBProtocolVersion.v3_3.encoded == Array("RFB 003.003\n".utf8))
@@ -11,7 +9,6 @@ struct RFBVersionNegotiationTests {
     #expect(RFBProtocolVersion.v3_8.encoded == Array("RFB 003.008\n".utf8))
     #expect(RFBProtocolVersion.v3_8.encoded.count == 12)
     #expect(RFBProtocolVersion(major: 3, minor: 889).description == "RFB 003.889\n")
-    // Three digits each, so a version above 999 would no longer be twelve bytes.
     #expect(RFBProtocolVersion(major: 3, minor: 7).encoded == RFBProtocolVersion.v3_7.encoded)
   }
 
@@ -24,19 +21,19 @@ struct RFBVersionNegotiationTests {
   }
 
   @Test(arguments: [
-    "",  // nothing at all
-    "RFB 003.008",  // no newline, eleven bytes
-    "RFB 03.008\n",  // eleven bytes: a digit short
-    "RFB 0003.008\n",  // thirteen bytes: a digit too many
-    "RFB 003.008\n\n",  // trailing byte
-    "RFB 003.008 ",  // terminated with a space
-    "RFB 003x008\n",  // separator is not a dot
-    "RFB abc.008\n",  // non-numeric major
-    "RFB 003.abc\n",  // non-numeric minor
-    "RFB  03.008\n",  // whitespace where a digit belongs
-    "VNC 003.008\n",  // wrong magic
-    "rfb 003.008\n",  // magic is case sensitive
-    "RFB\t003.008\n",  // magic must end in a space
+    "",
+    "RFB 003.008",
+    "RFB 03.008\n",
+    "RFB 0003.008\n",
+    "RFB 003.008\n\n",
+    "RFB 003.008 ",
+    "RFB 003x008\n",
+    "RFB abc.008\n",
+    "RFB 003.abc\n",
+    "RFB  03.008\n",
+    "VNC 003.008\n",
+    "rfb 003.008\n",
+    "RFB\t003.008\n",
   ])
   func malformedGreetingsDoNotParse(_ text: String) {
     #expect(RFBProtocolVersion.parse(Array(text.utf8)) == nil)
@@ -50,8 +47,6 @@ struct RFBVersionNegotiationTests {
     #expect(RFBProtocolVersion(major: 3, minor: 8) == .v3_8)
   }
 
-  /// The client answers with the newest version both sides speak, never with
-  /// the server's own if that is newer than 3.8.
   @Test(arguments: [
     ("RFB 003.003\n", RFBProtocolVersion.v3_3), ("RFB 003.004\n", .v3_3), ("RFB 003.006\n", .v3_3),
     ("RFB 003.007\n", .v3_7), ("RFB 003.008\n", .v3_8), ("RFB 003.889\n", .v3_8), ("RFB 004.001\n", .v3_8),
@@ -60,7 +55,6 @@ struct RFBVersionNegotiationTests {
   func theClientAnswersWithTheNewestVersionBothSidesSpeak(
     _ greeting: String, _ expected: RFBProtocolVersion
   ) async throws {
-    // None security, then the security result 3.8 alone expects.
     let security: [UInt8] = expected == .v3_3 ? u32(1) : [1, 1] + (expected == .v3_8 ? u32(0) : [])
     let transport = ScriptedTransport(RFBScript.bytes(greeting) + security + RFBScript.serverInit(), chunk: 5)
     let outcome = try await performHandshake(transport, password: nil)

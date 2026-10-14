@@ -1,10 +1,6 @@
 import SwiftUI
 import CodevisorUI
 
-/// A disclosure row for settings panes where the ENTIRE row is the toggle
-/// target, not just the chevron — the native `DisclosureGroup` in a `Form`
-/// only reacts to clicks on the disclosure indicator, which reads as broken.
-/// Supports an optional leading SF Symbol (e.g. a harness icon).
 struct SettingsDisclosureRow<Label: View, Content: View>: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.theme) private var theme
@@ -55,7 +51,6 @@ struct SettingsDisclosureRow<Label: View, Content: View>: View {
 }
 
 extension SettingsDisclosureRow where Label == SettingsDisclosureTitle {
-  /// Title-only convenience, with an optional leading SF Symbol.
   init(
     _ title: String,
     systemImage: String? = nil,

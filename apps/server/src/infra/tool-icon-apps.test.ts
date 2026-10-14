@@ -10,8 +10,6 @@ import { makeToolIconStore } from "./tool-icons.js"
 
 const PNG = new Uint8Array([1, 2, 3])
 
-/// A machine with `apps` installed (bundle path → Info.plist keys), where
-/// Spotlight knows `indexed` and `sips` converts any `.icns` that exists.
 const machine = (
   apps: Readonly<Record<string, Readonly<Record<string, string>>>>,
   indexed: ReadonlyArray<string> = []

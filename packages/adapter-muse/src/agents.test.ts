@@ -23,7 +23,6 @@ describe("Muse subagent rows", () => {
         toolCallId: "a1",
         kind: "agent",
         status: "in_progress",
-        // No agent path: the objective's first line names it.
         title: "Agent: Find the bug",
         rawInput: { prompt: "Find the bug\nin parser" }
       }
@@ -83,7 +82,6 @@ describe("Muse subagent rows", () => {
           "started"
         )
       )[0]!.title
-    // As Muse 1.4.7 reports it: the objective is the full instruction.
     const objective =
       "Review /private/tmp/ws/calc.py and /private/tmp/ws/main.py for bugs. Read both files in full, inspect for correctness, and report each bug."
     expect(
@@ -93,9 +91,7 @@ describe("Muse subagent rows", () => {
         role: "Code reviewer"
       })
     ).toBe("Agent: Review calc.py and main.py")
-    // A nested subagent's path extends its parent's; its own name is last.
     expect(title({ agentPath: "main/Audit repo/1/Check tests/2" })).toBe("Agent: Check tests")
-    // Without a usable path, the objective is cut at a word, then the role.
     expect(title({ agentPath: "main/1", objective })).toBe(
       "Agent: Review /private/tmp/ws/calc.py and /private/tmp/ws/main.py…"
     )
@@ -113,7 +109,6 @@ describe("Muse subagent rows", () => {
     }
     mapper.item({ ...agent, revision: 1, controlStatus: "accepted" }, "started")
     expect(mapper.item({ ...agent, revision: 2, controlStatus: "running" }, "updated")).toEqual([])
-    // As Muse 1.4.7 reports it: the item stays open, its control status says it answered.
     const ready = {
       ...agent,
       revision: 3,
@@ -146,7 +141,6 @@ describe("Muse subagent rows", () => {
   })
 })
 
-// The parent messaging a subagent.
 const send = (itemId: string, turnId: string, args: Record<string, unknown>) => ({
   itemId,
   kind: "toolCall",
@@ -160,7 +154,6 @@ const send = (itemId: string, turnId: string, args: Record<string, unknown>) => 
 })
 
 describe("Muse subagent follow-ups", () => {
-  // Turn 1 spawns Checker and it answers; frames as Muse 1.4.7 reports them.
   const T1 = "turn-1",
     T2 = "turn-2"
   const checker = {
@@ -218,13 +211,11 @@ describe("Muse subagent follow-ups", () => {
       }
     ])
     expect(mapper.runRow("a1")).toBe("a1")
-    // A subagent the chat never saw start streams under its own item.
     expect(mapper.runRow("elsewhere")).toBe("elsewhere")
   })
 
   it("gives a later turn's run its own chip, which the agent's work and result go to", () => {
     const mapper = spawned()
-    // Muse rejects a message sent by id once the spawning turn ended…
     const byId = send("m1", T2, { subagent_id: "subagent-1" })
     mapper.item({ ...byId, revision: 1, status: "inProgress" }, "started")
     expect(
@@ -252,7 +243,6 @@ describe("Muse subagent follow-ups", () => {
         ]
       }
     ])
-    // …and takes one sent by the agent's path.
     const byPath = send("m2", T2, {
       agent_path: "main/Checker/1",
       mode: "followup"
@@ -362,7 +352,6 @@ describe("Muse subagent follow-ups", () => {
         "started"
       )
     ).toEqual([])
-    // A rejection with no reason, and a call that failed outright.
     expect(
       delivered(
         {
@@ -381,7 +370,6 @@ describe("Muse subagent follow-ups", () => {
         content: [{ type: "content", content: { type: "text", text: "Not delivered" } }]
       }
     ])
-    // An agent with no task or objective goes by its role, else "agent".
     const unnamed = makeMuseItemMapper()
     for (const [subagentId, role] of [
       ["subagent-2", "tester"],

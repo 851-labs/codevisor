@@ -143,12 +143,8 @@ describe("activate-time account rebinding", () => {
     })
     await manager.activateAccount("gemini", fresh.id)
 
-    // Sessions pinned to an unusable account follow the activated one; a
-    // session using a working account keeps its pin.
     expect((await run(db.getSessionSummary(pinnedToDead.id))).harnessAccountId).toBe(fresh.id)
     expect((await run(db.getSessionSummary(pinnedToHealthy.id))).harnessAccountId).toBe(healthy.id)
-    // With no session referencing it anymore, the dead account can finally be
-    // removed (removal refuses while sessions reference an account).
     await manager.removeAccount(dead.id)
     expect(await run(db.getHarnessAccount(dead.id))).toBeUndefined()
   })
@@ -437,8 +433,6 @@ describe("Claude wrapped OAuth login", () => {
         canLogout: false
       })
     )
-    // The post-answer probe runs the real CLI shape: a fake binary that
-    // reports a signed-in account.
     const binary = join(directory, "claude")
     writeFileSync(
       binary,
@@ -483,8 +477,6 @@ describe("Claude wrapped OAuth login", () => {
     const probed = await manager.probeAccount(account.id)
     expect(probed.authState).toBe("authenticated")
 
-    // A fresh flow cancels by closing its client; answering it afterwards
-    // reports expiry instead of a dangling exchange.
     const second = await manager.beginLogin(account.id)
     await manager.cancelLogin(second.id)
     await expect(manager.answerLogin(second.id, "x#y")).rejects.toThrow("expired")

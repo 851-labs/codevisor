@@ -1,8 +1,6 @@
 import Foundation
 import UniformTypeIdentifiers
 
-/// A file attached to a conversation message, referencing bytes stored server-side
-/// (`GET /v1/files/:id`).
 public struct Attachment: Identifiable, Sendable, Equatable {
   public enum Kind: String, Sendable, Equatable {
     case image
@@ -26,9 +24,6 @@ public struct Attachment: Identifiable, Sendable, Equatable {
   }
 }
 
-/// A file the transcript can preview. Uploaded attachments and live paths on
-/// the session's server share one presentation path while retaining different
-/// fetch semantics.
 public struct PreviewFile: Identifiable, Sendable, Equatable {
   public enum Source: Sendable, Equatable, Hashable {
     case attachment(fileId: String)

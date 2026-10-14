@@ -26,9 +26,6 @@ const binding = (cloud: CloudCredential) =>
     .update(JSON.stringify([cloud.serverUrl, cloud.apiKey, cloud.deviceId]))
     .digest("hex")
 
-/// Local-only accounts work without a cloud login. On first cloud connection,
-/// their encrypted state is seeded once. Once a grant has entered the cloud,
-/// disconnection must never fall back to an independent local refresher.
 export const makeCredentialCoordinator = (options: {
   readonly dataDir: string
   readonly fetch?: typeof fetch
@@ -83,8 +80,6 @@ export const makeCredentialCoordinator = (options: {
           account = scope
           return (await response.json()) as CredentialCoordinationResult
         }
-        // Check account identity before sending any credential mutation. An
-        // API key can rotate, and the user can sign into a different account.
         if (account === undefined) await send({ action: "read" })
         if (stored.cloud === undefined && stored.record !== undefined) {
           if (stored.record.operation !== undefined)
@@ -94,7 +89,6 @@ export const makeCredentialCoordinator = (options: {
               ? { action: "revoke" }
               : { action: "seed", sealed: stored.record.sealed }
           )
-          // Persist the authority transition before allowing any provider I/O.
           await atomicWriteJson(path, {
             cloud: origin,
             account,

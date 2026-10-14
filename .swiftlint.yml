@@ -1,6 +1,3 @@
-# Structural lint only — formatting is swift-format's job (.swift-format).
-# Runs with --strict (scripts/swift-lint.sh), so any warning fails the check.
-
 only_rules:
   - file_length
   - type_body_length
@@ -10,13 +7,14 @@ only_rules:
 included:
   - apps/ios
   - apps/macos
+  - apps/pixelbook
+  - apps/screen-sharing-rig
   - apps/shared
   - packages
 
 excluded:
   - apps/macos/Codevisor/Vendor
   - packages/ghostty-terminal/Sources/Vendor
-  # Generated code (uniffi bindings for packages/net).
   - "**/Generated"
   - "**/.build"
   - "**/DerivedData"
@@ -36,12 +34,17 @@ type_body_length:
 
 file_name:
   severity: warning
+  excluded_paths:
+    - /apps/pixelbook/
+    - /apps/screen-sharing-rig/
 
 custom_rules:
-  # SwiftUI attaches a view's keyboard shortcut to the whole window, so a shortcut on a button in
-  # a pane fires whichever pane has focus (⌘→ in a chat's composer rotated a simulator beside it).
-  # Pane shortcuts belong in focus-scoped menu commands (`*Commands.swift`, reading
-  # `@FocusedValue`), or in AppKit key handling that checks the first responder.
+  no_comments:
+    name: No comments
+    message: Comments are not allowed. Say it in the code, or delete it.
+    regex: '(?://|/\*)(?!\s*(?:swift-tools-version:|swiftlint:(?:disable|enable)))'
+    match_kinds: [comment, comment.mark, comment.url, doccomment, doccomment.field]
+    severity: error
   pane_keyboard_shortcut:
     name: Pane keyboard shortcut
     message: >-
@@ -58,6 +61,5 @@ custom_rules:
       - apps/macos/Codevisor/Features/Session/
       - apps/macos/Codevisor/Features/Terminal/
     excluded:
-      # Menu commands, scoped to the focused pane; sheets, modal over the window.
       - Command(s|Items)\.swift$
       - Sheet\.swift$

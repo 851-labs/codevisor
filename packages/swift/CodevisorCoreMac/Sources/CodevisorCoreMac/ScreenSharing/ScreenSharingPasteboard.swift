@@ -6,8 +6,6 @@ final class ScreenSharingPasteboard {
   private let pasteboard: NSPasteboard
   var changeCount: Int { pasteboard.changeCount }
   init(_ pasteboard: NSPasteboard = .general) { self.pasteboard = pasteboard }
-  /// A password manager's concealed item, or one its app marked transient or generated
-  /// (nspasteboard.org): never shared automatically. Reading the types never reads the contents.
   var isPrivate: Bool {
     let marked: Set<NSPasteboard.PasteboardType> = [
       .init("org.nspasteboard.ConcealedType"), .init("org.nspasteboard.TransientType"),

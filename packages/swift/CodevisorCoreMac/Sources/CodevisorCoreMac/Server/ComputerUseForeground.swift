@@ -2,7 +2,6 @@ import AppKit
 import ApplicationServices
 import Foundation
 
-/// Shared across bridge instances in this native app, rather than per agent.
 final class ComputerUseForeground: @unchecked Sendable {
   static let shared = ComputerUseForeground()
   static let eventTag: Int64 = 0x434F44455649534F
@@ -61,8 +60,6 @@ final class ComputerUseForeground: @unchecked Sendable {
       try check(pid: pid, requireFocus: false)
       let focus = captureFocus()
       defer {
-        // An open menu may need another action, but never retains the lock
-        // between calls. Re-observe before continuing a multi-call sequence.
         if (try? check(pid: pid)) != nil, !hasOpenMenu() { restore(focus, pid: pid) }
       }
       try check(pid: pid, requireFocus: false)
@@ -81,8 +78,6 @@ final class ComputerUseForeground: @unchecked Sendable {
     }
   }
 
-  /// Preserve authorization across self-targeted AX work dispatched to main.
-  /// A main-queue callback may run after the originating request has expired.
   func authorization(pid: pid_t) -> (@Sendable () -> Bool)? {
     guard let token = ownership.currentToken else { return nil }
     return { [ownership] in (try? ownership.check(token, pid: pid)) != nil }
@@ -95,8 +90,6 @@ final class ComputerUseForeground: @unchecked Sendable {
       try ownership.withInput(ownership.currentToken, pid: pid) { event.post(tap: .cghidEventTap) }
     } catch {
       guard releasingInput else { throw error }
-      // Finish a key/button release in the original process without moving
-      // the human's pointer or sending more input to the global foreground.
       ownership.withCleanup(ownership.currentToken, pid: pid) { event.postToPid(pid) }
     }
   }
@@ -114,13 +107,9 @@ final class ComputerUseForeground: @unchecked Sendable {
   private func restore(_ focus: Focus, pid: pid_t) {
     guard (try? check(pid: pid)) != nil, let authorized = authorization(pid: pid) else { return }
     if let cursor = focus.cursor, authorized() {
-      // WindowServer cursor restoration is outside the mutex, just like AX
-      // restoration: a stalled OS call cannot prevent ownership expiring.
       CGWarpMouseCursorPosition(cursor)
     }
     guard let app = focus.app, !app.isTerminated else { return }
-    // Restoration is part of this bounded ownership. It cannot leave a
-    // separate "restoring" flag stuck, or run after a new agent takes over.
     computerUsePerformAccessibilityRead(targetPID: app.processIdentifier) {
       let application = AXUIElementCreateApplication(app.processIdentifier)
       AXUIElementSetMessagingTimeout(application, 1)

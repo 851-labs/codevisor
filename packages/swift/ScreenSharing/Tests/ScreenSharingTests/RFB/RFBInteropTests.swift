@@ -2,15 +2,8 @@ import Foundation
 import Testing
 @testable import ScreenSharing
 
-/// Runs only against a real server named by the environment: `bun run
-/// vnc:interop` (a pinned TigerVNC container, VNC validation layer L3) or a tunnel to a test box (`VNC_TEST_HOST=127.0.0.1
-/// VNC_TEST_PORT=5901 VNC_TEST_PASSWORD=codevisor`). Reports the handshake,
-/// the first update and the timing, so a stall can be placed.
-/// Serialized: the tests share one desktop, and one of them resizes it.
 @Suite(.serialized)
 struct RFBInteropTests {
-  /// The container's known desktop: `VNC_TEST_GEOMETRY` (WxH) and a solid
-  /// `VNC_TEST_ROOT_COLOR` (RRGGBB) arrive exactly as configured.
   @Test(.enabled(if: ProcessInfo.processInfo.environment["VNC_TEST_ROOT_COLOR"] != nil))
   func theDesktopArrivesExactlyAsTheServerConfiguredIt() async throws {
     let environment = ProcessInfo.processInfo.environment
@@ -26,9 +19,7 @@ struct RFBInteropTests {
     let run = Task {
       try await client.run(
         onUpdate: { framebuffer, update in
-          // An update may carry only pseudo-rectangles (the layout, the cursor); sample one with pixels.
           guard !update.rectangles.isEmpty else { return }
-          // A quarter in: the centre holds the pointer Xvnc draws for a client that hasn't moved it.
           let pixel = framebuffer.pixel(x: framebuffer.width / 4, y: framebuffer.height / 4)
           continuation.yield([pixel.red, pixel.green, pixel.blue])
         }, onEvent: { _ in })
@@ -39,11 +30,6 @@ struct RFBInteropTests {
     #expect(centre == [UInt8(color >> 16 & 0xFF), UInt8(color >> 8 & 0xFF), UInt8(color & 0xFF)])
   }
 
-  /// The Cursor pseudo-encoding against TigerVNC (851-2311): while this client
-  /// hasn't moved the pointer, Xvnc draws it into the framebuffer and reports
-  /// the cursor hidden (a viewer sees it where it is); once the client moves
-  /// it, as a controlling client does, the real shape arrives for the client
-  /// to draw locally.
   @Test(.enabled(if: ProcessInfo.processInfo.environment["VNC_TEST_ROOT_COLOR"] != nil))
   func theShapeArrivesOnceThisClientMovesThePointer() async throws {
     let environment = ProcessInfo.processInfo.environment
@@ -57,7 +43,6 @@ struct RFBInteropTests {
         onUpdate: { _, update in if let cursor = update.cursor { continuation.yield(cursor) } }, onEvent: { _ in })
     }
     defer { run.cancel() }
-    // The test runner's timeout guards a server that never sends a shape.
     var iterator = cursors.makeAsyncIterator()
     let beforeMoving = try #require(await iterator.next())
     #expect(beforeMoving.isHidden, "Xvnc draws the pointer itself for a client that hasn't moved it.")
@@ -69,11 +54,6 @@ struct RFBInteropTests {
       stride(from: 3, to: shape.pixels.count, by: 4).contains { shape.pixels[$0] == 255 }, "Some pixels are opaque.")
   }
 
-  /// ContinuousUpdates and Fence against TigerVNC (851-2312): the server
-  /// confirms them, the client stops requesting, the ticking clock keeps
-  /// arriving as pushed updates (which also proves the server's fences were
-  /// answered: TigerVNC's congestion control stalls otherwise), and the
-  /// client's own fence measures the round trip.
   @Test(.enabled(if: ProcessInfo.processInfo.environment["VNC_TEST_ROOT_COLOR"] != nil))
   func updatesArePushedAndFencesAnswered() async throws {
     let environment = ProcessInfo.processInfo.environment
@@ -90,7 +70,6 @@ struct RFBInteropTests {
     }
     defer { run.cancel() }
     var enabled = false, pushed = 0, roundTrip: Duration?
-    // The clock ticks once a second; the test runner's timeout guards a stall.
     for await item in seen {
       switch item {
       case .event(.continuousUpdates(true)): enabled = true
@@ -106,9 +85,6 @@ struct RFBInteropTests {
     #expect(roundTrip != nil)
   }
 
-  /// ExtendedDesktopSize against TigerVNC (851-2314): Xvnc announces its
-  /// layout and resizes through RandR on SetDesktopSize; the test restores
-  /// the configured size.
   @Test(.enabled(if: ProcessInfo.processInfo.environment["VNC_TEST_ROOT_COLOR"] != nil))
   func theDesktopResizesOnRequest() async throws {
     let environment = ProcessInfo.processInfo.environment
@@ -146,10 +122,6 @@ struct RFBInteropTests {
     #expect(restored.0.status == .ok && (restored.1, restored.2) == original)
   }
 
-  /// Extended Clipboard against TigerVNC (851-2316): UTF-8 text goes to the
-  /// server through notify → request → provide, the container's watcher
-  /// pastes it and writes "echo:<text>" back, and the text returns through
-  /// notify → request → provide, byte for byte.
   @Test(.enabled(if: ProcessInfo.processInfo.environment["VNC_TEST_ROOT_COLOR"] != nil))
   func utf8ClipboardTextRoundTrips() async throws {
     let environment = ProcessInfo.processInfo.environment
@@ -167,7 +139,6 @@ struct RFBInteropTests {
     defer { run.cancel() }
     let text = RFBExtendedClipboard.text
     var announced = false
-    // The test runner's timeout guards a server that never echoes.
     for await message in messages {
       switch message {
       case .caps(let formats, _, _):
@@ -195,10 +166,6 @@ struct RFBInteropTests {
     Issue.record("the clipboard never came back")
   }
 
-  /// Synthesized typing against TigerVNC (851-2318): text goes out as the
-  /// characters' keysyms (what `VNCInputTranslator` sends for `.text`), with
-  /// the pointer over the container's typing sink, an xterm that puts each
-  /// line on the clipboard as "typed:<line>"; it must come back verbatim.
   @Test(.enabled(if: ProcessInfo.processInfo.environment["VNC_TEST_ROOT_COLOR"] != nil))
   @MainActor
   func synthesizedTypingArrivesVerbatim() async throws {
@@ -207,9 +174,6 @@ struct RFBInteropTests {
     #expect(line == "typed:" + typed)
   }
 
-  /// ⌘ acts as Control on Linux (851-2317): ⌘U is Control+U, which the sink
-  /// terminal's line discipline takes as "kill the line", so only what follows
-  /// it arrives. As Super it would have typed a "u".
   @Test(.enabled(if: ProcessInfo.processInfo.environment["VNC_TEST_ROOT_COLOR"] != nil))
   @MainActor
   func commandActsAsControl() async throws {
@@ -225,9 +189,6 @@ struct RFBInteropTests {
     #expect(line == "typed:" + kept)
   }
 
-  /// Moves the pointer over the container's typing sink (xterm at 20,560; X
-  /// focus follows the pointer), sends `keys`, and returns the line the sink
-  /// put on the clipboard.
   @MainActor
   private func typeIntoSink(
     layout: @escaping VNCKeyTranslator.Layout = VNCKeyTranslator.currentLayout,
@@ -248,7 +209,6 @@ struct RFBInteropTests {
     let input = VNCInputTranslator(
       width: outcome.parameters.width, height: outcome.parameters.height, keys: VNCKeyTranslator(layout: layout))
     let text = RFBExtendedClipboard.text
-    // The test runner's timeout guards a sink that never answers.
     for await message in messages {
       switch message {
       case .caps:
@@ -273,9 +233,6 @@ struct RFBInteropTests {
     return nil
   }
 
-  /// Tight against TigerVNC (851-2313): the client prefers Tight; lossless,
-  /// the plasma window's pixels match what a JPEG (quality 8) connection sees
-  /// within a PSNR bound, and only the JPEG connection receives JPEG.
   @Test(.enabled(if: ProcessInfo.processInfo.environment["VNC_TEST_ROOT_COLOR"] != nil))
   func tightJPEGStaysCloseToLossless() async throws {
     let region = RFBRectangle(x: 620, y: 320, width: 280, height: 160)
@@ -308,7 +265,6 @@ struct RFBInteropTests {
     }
     let lossless = try await capture(quality: nil)
     let lossy = try await capture(quality: 8)
-    // Plain loops with explicit types: the chained closures took the x86_64 CI compiler too long to type-check.
     var squaredError: Double = 0
     for (a, b) in zip(lossless.rgb, lossy.rgb) {
       let difference = Double(Int(a) - Int(b))
@@ -367,7 +323,6 @@ struct RFBInteropTests {
     for await line in updates {
       print("interop: \(line) at \(ContinuousClock.now - started)")
       received.append(line)
-      // One update proves the path; a static desktop sends no more, so don't wait for them.
       if line.hasPrefix("update") || received.count >= 3 { break }
     }
     deadline.cancel()

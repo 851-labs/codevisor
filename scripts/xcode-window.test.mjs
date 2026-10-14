@@ -34,7 +34,6 @@ function fixture() {
 test("EOF closes only the newly opened project window even when other titles match", () => {
   const f = fixture()
   f.system.waitForShutdown = () => {
-    // Focus/order changes and a second window for the same project cannot retarget cleanup.
     f.state.windows = [{ ...f.opened }, f.other, f.opened]
   }
   ownXcodeWindow(f.system)
@@ -146,7 +145,7 @@ test("only a new task-stop dialog for the still-owned main window may be confirm
     [{ ...system, mainWindow: () => f.other }, before, current],
     [{ ...system, mainWindow: () => null }, before, current],
     [{ ...system, matchesProject: () => false }, before, current],
-    [system, current, current], // Existing dialog, including one with the same text.
+    [system, current, current],
     [system, before, { ...current, app: { ...f.app } }],
     [system, before, { ...current, windows: [...current.windows, { ...dialog }] }],
     [system, before, { ...current, windows: [...before.windows, { modal: true }] }]

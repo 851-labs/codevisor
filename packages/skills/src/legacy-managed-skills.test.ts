@@ -46,17 +46,13 @@ describe("removeLegacyManagedSkills", () => {
     writeSkill(join(home, "elsewhere/browser-use"), { name: "Mine too" })
     mkdirSync(join(home, ".claude/skills"), { recursive: true })
     mkdirSync(join(home, ".codex/skills"), { recursive: true })
-    // Relative and absolute links to managed skills.
     symlinkSync("../../.agents/skills/browser-use", join(home, ".claude/skills/browser-use"))
     symlinkSync(join(agents, "codevisor"), join(home, ".codex/skills/codevisor"))
-    // The user's own links and folders, including same-named ones.
     symlinkSync(join(agents, "my-skill"), join(home, ".claude/skills/my-skill"))
     symlinkSync(join(home, "elsewhere/browser-use"), join(home, ".codex/skills/browser-use"))
     writeSkill(join(home, ".claude/skills/codevisor"), { name: "Unmarked" })
     writeFileSync(join(home, ".claude/skills/notes.txt"), "not a skill")
-    // A copy made where linking failed carries the marker.
     managedSkill(join(home, ".gemini/skills/computer-use"))
-    // A harness folder that is the shared folder under another name.
     mkdirSync(join(home, ".config"), { recursive: true })
     symlinkSync(agents, join(home, ".config/agents"))
 
@@ -89,7 +85,6 @@ describe("removeLegacyManagedSkills", () => {
     mkdirSync(join(home, ".claude/skills"), { recursive: true })
     symlinkSync(join(home, ".agents/skills/codevisor"), join(home, ".claude/skills/codevisor"))
     symlinkSync(join(home, ".agents/skills/gone"), join(home, ".claude/skills/gone"))
-    // The user's own folder under a former managed name keeps its links.
     writeSkill(join(home, ".agents/skills/browser-use"), { name: "Mine" })
     symlinkSync(join(home, ".agents/skills/browser-use"), join(home, ".claude/skills/browser-use"))
     expect(await removeLegacyManagedSkills(environment(home))).toEqual([

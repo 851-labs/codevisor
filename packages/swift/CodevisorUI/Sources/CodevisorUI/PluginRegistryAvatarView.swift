@@ -1,9 +1,5 @@
 import SwiftUI
 
-/// Artwork for a not-yet-installed registry plugin: the repo owner's GitHub
-/// avatar in an app-icon-style rounded rect, with an SF Symbol placeholder
-/// while loading or when the entry carries no avatar. Installed plugins keep
-/// using `PluginIconView`, which renders the plugin's own served artwork.
 public struct PluginRegistryAvatarView: View {
   private let url: URL?
   private let size: CGFloat

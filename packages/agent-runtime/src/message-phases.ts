@@ -2,18 +2,6 @@ import { randomUUID } from "node:crypto"
 
 import type { RuntimeEvent } from "./types.js"
 
-/// Clients render a turn's last unlabeled text span as its answer. Text that
-/// a tool call follows was narration ("Let me check…"), so it is retro-tagged
-/// `phase: "commentary"` by `messageId` as soon as that tool call starts;
-/// otherwise the narration holds the answer slot and the tool calls after it
-/// merge into the group before it until the next text arrives. This holds
-/// for every harness, so it is applied to every provider's events here, not
-/// per adapter. Text an adapter labels itself is left alone.
-///
-/// Retro-tagging needs a `messageId`, and some agents send none. Their text
-/// gets one per run, ending at the next non-text update, which matches where
-/// the transcript already splits ID-less text into separate spans.
-
 const record = (value: unknown): Record<string, unknown> | undefined =>
   typeof value === "object" && value !== null ? (value as Record<string, unknown>) : undefined
 
@@ -34,17 +22,12 @@ const phaseCorrection = (subjectId: string, messageId: string): RuntimeEvent => 
 })
 
 export interface MessagePhases {
-  /// The events to deliver in place of `event`, in order.
   readonly label: (event: RuntimeEvent) => ReadonlyArray<RuntimeEvent>
 }
 
 export const makeMessagePhases = (newId: () => string = randomUUID): MessagePhases => {
-  /// The ID given to the ID-less text currently streaming.
   let run: string | undefined
-  /// The newest main-agent text this tracker labels, and whether a tool call
-  /// has already made it commentary.
   let latest: { readonly id: string; commentary: boolean } | undefined
-  /// Spans whose adapter labels them.
   const labeled = new Set<string>()
 
   const reset = () => {
@@ -68,7 +51,6 @@ export const makeMessagePhases = (newId: () => string = randomUUID): MessagePhas
     }
     if (labeled.has(id) || content === "") return withId
     if (latest?.id === id && latest.commentary) {
-      // The span went on after the tool call; it may be the answer after all.
       latest.commentary = false
       return { ...withId, payload: { ...(withId.payload as object), phase: "final" } }
     }

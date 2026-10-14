@@ -10,6 +10,3 @@ public enum RigJSON {
     try JSONDecoder().decode(type, from: data)
   }
 }
-
-/// Host → sampler: the host's own view of the current session, fetched by the
-/// viewer at the end of a sample so a report carries both ends.

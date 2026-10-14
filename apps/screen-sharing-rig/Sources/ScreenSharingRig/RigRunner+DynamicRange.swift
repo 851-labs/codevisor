@@ -3,9 +3,6 @@
   import ScreenSharingWebRTC
 
   extension RigRunner {
-    /// The product host's HDR (851-2380): the viewer says whether its screen can show HDR, and a
-    /// display-backed source switches the capture to 10-bit Display P3 PQ when that display has
-    /// headroom too. Other sources stay SDR.
     func installVideoFormat(in session: RigSession) {
       guard let peer = session.peer as? ScreenSharingSender else { return }
       peer.videoFormatChannel.onMessage = { [weak self, weak session] message in

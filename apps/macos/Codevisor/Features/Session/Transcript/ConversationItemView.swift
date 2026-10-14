@@ -5,7 +5,6 @@ import StreamMarkdown
 import SwiftUI
 import CodevisorUI
 
-/// Renders a single conversation item: a user prompt bubble or an assistant turn.
 struct ConversationItemView: View {
   let item: ConversationItem
   var isWaitingOnUser = false
@@ -28,8 +27,6 @@ struct ConversationItemView: View {
   }
 }
 
-/// A right-aligned user prompt bubble, with any attachments rendered as
-/// thumbnails above it.
 struct UserMessageView: View {
   @Environment(\.theme) private var theme
   @Environment(\.streamMarkdownTextLayoutWidth) private var rowLayoutWidth
@@ -60,20 +57,12 @@ struct UserMessageView: View {
           .padding(.horizontal, 12)
           .padding(.vertical, 8)
           .background { UserBubbleBackground(color: theme.bubbleBackground) }
-          // Kept in the layout (hidden until hover) so the row
-          // height doesn't jump when the pointer enters.
           MessageCopyButton(text: message.text, help: "Copy message", isRevealed: isHovered)
             .opacity(isHovered ? 1 : 0)
         }
       }
     }
-    // Whole-row hover target, full width and height: AppKit tracking
-    // (not .onHover) so the transparent regions count too.
-    // User prompts are immutable once sent, so their copy affordance stays
-    // available even while the assistant response is streaming.
     .hoverTracking($isHovered, respectsSuspension: false)
-    // The hidden copy button leaves the accessibility tree, and hover only
-    // tracks in the key window, so copying is also exposed as an action.
     .accessibilityElement(children: .contain)
     .accessibilityActions {
       if !message.text.isEmpty {

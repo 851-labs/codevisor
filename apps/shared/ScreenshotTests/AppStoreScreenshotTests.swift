@@ -3,7 +3,6 @@ import XCTest
   import AppKit
 #endif
 
-/// Both capture scripts use these scenes and readiness checks. Ordinary test runs skip capture.
 @MainActor
 final class AppStoreScreenshotTests: XCTestCase {
   func testCaptureScreenshots() async throws {
@@ -28,13 +27,10 @@ final class AppStoreScreenshotTests: XCTestCase {
         "-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-ApplePersistenceIgnoreState", "YES",
       ]
       #if os(macOS)
-        // The offline demo never needs real credentials. Rebuilt ad-hoc apps
-        // otherwise wait for Keychain authorization during Chromium shutdown.
         app.launchArguments.append("--use-mock-keychain")
       #endif
       app.launch()
       defer { app.terminate() }
-      // AppKit's transcript exposes its text as a value; UIKit uses labels.
       let content: XCUIElement
       #if os(macOS)
         if scene == "conversation" {
@@ -81,8 +77,6 @@ final class AppStoreScreenshotTests: XCTestCase {
   }
 
   #if os(macOS)
-    /// XCTest's screenshot() crops the desktop and can include overlapping windows.
-    /// The CLI captures that window by ID, with transparent corners and no shadow.
     private func captureWindow(_ element: XCUIElement) async throws -> XCTAttachment {
       let bundle = try XCTUnwrap(ProcessInfo.processInfo.environment["CODEVISOR_SCREENSHOT_BUNDLE_IDENTIFIER"])
       let application = try XCTUnwrap(NSRunningApplication.runningApplications(withBundleIdentifier: bundle).first)

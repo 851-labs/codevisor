@@ -3,7 +3,6 @@ import SwiftUI
 import CodevisorCore
 import CodevisorUI
 
-/// Sizing and motion for the workspace tab strip.
 enum PaneTabStripStyle {
   static let barHeight: CGFloat = 28
   static let minTabWidth: CGFloat = 100
@@ -12,7 +11,6 @@ enum PaneTabStripStyle {
   static let tabMotion: Animation = .snappy(duration: 0.18)
 }
 
-/// The presentation and policy needed to render one tab.
 struct PaneTabStripItem: Identifiable {
   let id: UUID
   let name: String
@@ -21,9 +19,6 @@ struct PaneTabStripItem: Identifiable {
   var shortcutHint: String? = nil
 }
 
-/// A Chrome-style tab strip. It owns sizing, overflow, scrolling, reordering,
-/// close stability, and tab insertion animation; callers own only their data
-/// and business actions.
 struct PaneTabStrip: View {
   @Environment(\.theme) private var theme
   @Environment(\.colorScheme) private var colorScheme
@@ -34,17 +29,11 @@ struct PaneTabStrip: View {
   let addButtonAccessibilityLabel: String
   let onSelect: (UUID) -> Void
   let onClose: (UUID) -> Void
-  /// A finished drag: the tab and the tab it now sits in front of (nil at
-  /// the end). Sent once, on release, so a drag across several tabs is one
-  /// move rather than one per tab crossed.
-  /// Nil leaves the tabs in place: dragging one does nothing.
   let onMove: ((_ id: UUID, _ successorId: UUID?) -> Void)?
-  /// Nil hides the add button.
   let onAdd: (() -> Void)?
   var onRename: ((UUID) -> Void)?
 
   @State private var draggingId: UUID?
-  /// The order shown while a drag is in progress. Nil otherwise.
   @State private var dragOrder: [UUID]?
   @State private var dragOffset: CGFloat = 0
   @State private var dragAdjustment: CGFloat = 0
@@ -58,7 +47,6 @@ struct PaneTabStrip: View {
 
   private var itemIds: [UUID] { items.map(\.id) }
 
-  /// The items in on-screen order: the drag's order while one is running.
   private var orderedItems: [PaneTabStripItem] {
     guard let dragOrder else { return items }
     let rank = Dictionary(uniqueKeysWithValues: dragOrder.enumerated().map { ($1, $0) })
@@ -205,8 +193,6 @@ struct PaneTabStrip: View {
             transaction.animation = nil
           }
         }
-        // `.subviews` drops only this drag; `.none` would also drop the
-        // tab's own tap.
         .highPriorityGesture(
           reorderGesture(for: item.id, slotWidth: slotWidth), including: onMove == nil ? .subviews : .all
         )
@@ -244,8 +230,6 @@ struct PaneTabStrip: View {
     withAnimation(PaneTabStripStyle.tabMotion) { scrollOffset = target }
   }
 
-  /// The dragged tab follows the pointer; its neighbours slide aside as it
-  /// crosses their midpoints. Nothing is saved until release.
   private func reorderGesture(for id: UUID, slotWidth: CGFloat) -> some Gesture {
     DragGesture(minimumDistance: 3, coordinateSpace: .global)
       .onChanged { value in
@@ -367,8 +351,6 @@ struct PaneTabStrip: View {
 }
 
 extension PaneTabStrip {
-  /// Reconstructs NSTabBar-style edge stacking. The selected tab remains at
-  /// full width and pins above the tabs folded under either edge.
   static func stripSlots(
     count: Int,
     slotWidth: CGFloat,

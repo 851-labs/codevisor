@@ -4,11 +4,7 @@ import Foundation
 enum LegacyClientArtifacts {
   private static let recoveryRetention: TimeInterval = 30 * 24 * 60 * 60
 
-  /// Disposable caches whose readers were removed. Nothing imports them, so
-  /// cleanup deletes them outright instead of moving them into recovery.
   private static let retiredCacheDirectoryNames = [
-    // iOS pane preview JPEGs (up to 64 MB), orphaned when PaneSnapshotCache
-    // was removed.
     "Pane Previews"
   ]
 
@@ -78,8 +74,6 @@ enum LegacyClientArtifacts {
           continue
         }
         let data = try Data(contentsOf: url)
-        // Directories are ordered oldest to newest, so current
-        // Codevisor state wins over a stale pre-rename copy.
         filesByKey[key] = LegacyFile(
           key: key,
           url: url,
@@ -155,7 +149,6 @@ enum LegacyClientArtifacts {
     defaults.dictionaryRepresentation().keys.filter { key in
       stringPreferenceKeys.contains(key)
         || boolPreferenceKeys.contains(key)
-        // Retired with no reader: listed only so cleanup drops it.
         || key == "remoteBrowserRecents"
         || dynamicStringPreferencePrefixes.contains(where: key.hasPrefix)
         || dynamicDataPreferencePrefixes.contains(where: key.hasPrefix)
@@ -189,8 +182,6 @@ enum LegacyClientArtifacts {
     }
   }
 
-  /// Best-effort and idempotent: runs on every launch so a directory
-  /// recreated by an older build is removed too, and never blocks startup.
   static func removeRetiredCaches(
     in directory: URL,
     fileManager: FileManager

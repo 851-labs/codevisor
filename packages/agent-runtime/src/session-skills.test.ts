@@ -9,7 +9,6 @@ describe("session skills", () => {
         { invocation: "/review", name: "review", source: "project" },
         { invocation: "/review", name: "review", source: "user" },
         { invocation: "/ship", name: "ship" },
-        // Codevisor's own browser and desktop tools replace these.
         { invocation: "/computer-use", name: "computer-use" },
         { invocation: "/anthropic-skills:chrome-browser", name: "anthropic-skills:chrome-browser" }
       ],

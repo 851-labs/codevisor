@@ -2,23 +2,13 @@ import Foundation
 import ACPKit
 
 extension SessionController {
-  // MARK: - Derived state
-
   public var conversation: [ConversationItem] { model?.conversation ?? [] }
-  /// Split accessors for the transcript: bodies that iterate rows read the
-  /// settled list; ONLY the dedicated active-row child view reads
-  /// `activeItem`, so token flushes invalidate one bubble instead of the
-  /// whole transcript. `hasActiveItem` is boundary-guarded for containers
-  /// that need existence without per-flush invalidation.
   public var settledConversation: [ConversationItem] { model?.settledConversation ?? [] }
   public var activeItem: ConversationItem? { model?.activeItem }
   public var activeItemRevision: UInt64 { model?.activeItemRevision ?? 0 }
   public var hasActiveItem: Bool { model?.hasActiveItem ?? false }
   public var transcriptProjectionKey: TranscriptProjectionKey {
     TranscriptProjectionKey(
-      // Controller lifetime, rather than the durable chat id: a cache
-      // entry from an evicted controller must never match a freshly
-      // replayed controller whose counters restarted at zero.
       sessionID: transcriptProjectionID,
       controllerRevision: transcriptProjectionRevision,
       modelRevision: model?.transcriptProjectionRevision ?? 0,
@@ -26,8 +16,6 @@ extension SessionController {
     )
   }
 
-  /// Captured on `MainActor`, then consumed by `TranscriptRowProjectionCache`
-  /// on its own actor. Array/string storage is immutable copy-on-write.
   public var transcriptProjectionInput: TranscriptProjectionInput {
     let projectionStatus: TranscriptProjectionInput.ConnectionStatus
     switch status {
@@ -64,17 +52,7 @@ extension SessionController {
   public var availableCommands: [AvailableCommand] { model?.availableCommands ?? [] }
   public var availableSkills: SessionSkills? { model?.availableSkills }
   public var isConnected: Bool { model != nil }
-  /// Whether the harness can still be chosen: only a draft that hasn't sent
-  /// anything yet. An empty conversation alone isn't enough — during the
-  /// new-chat → session handoff the promoted controller is still connecting
-  /// and its conversation is momentarily empty, which made the session
-  /// composer's inline picker flash in briefly. The pending/connecting/
-  /// session checks keep it hidden through that window.
   public var canChooseHarness: Bool {
-    // Deliberately NOT `conversation.isEmpty`: that allocates the merged
-    // array and registers Observation on `activeItem`, re-evaluating the
-    // composer's picker on every token flush. These two reads are
-    // boundary-guarded and allocation-free.
     settledConversation.isEmpty
       && !hasActiveItem
       && pendingUserMessage == nil
@@ -90,8 +68,6 @@ extension SessionController {
     return state
   }
   public var errorMessage: String? { model?.errorMessage }
-  /// Session-level failures only. A runtime failure that already lives on
-  /// the active assistant turn must not also render as a detached banner.
   public var sessionErrorMessage: String? {
     guard let error = model?.errorMessage else { return nil }
     if case let .assistant(message)? = model?.activeItem,
@@ -104,16 +80,6 @@ extension SessionController {
   public var errorRequiresHarnessAuthentication: Bool {
     model?.errorRequiresHarnessAuthentication == true
   }
-  /* Usage state only feeds the temporarily disabled usage gauge and popover.
-  public var usage: SessionUsage? { model?.usage }
-  public var usageLimits: ServerHarnessUsageLimits? { model?.usageLimits }
-  public var isLoadingUsageLimits: Bool { model?.isLoadingUsageLimits == true }
-  public var usageLimitsError: String? { model?.usageLimitsError }
-
-  public func loadUsageLimits(force: Bool = false) async {
-      await model?.loadUsageLimits(force: force)
-  }
-  */
 
   @discardableResult
   public func loadOlderHistory() async -> Int {
@@ -132,8 +98,6 @@ extension SessionController {
     return try await model.transcriptBodyPage(resource: resource, field: field, position: position)
   }
 
-  /// The harness this chat is (or will be) running on: the connected
-  /// agent's harness once a session exists, the picker selection before.
   public var activeHarnessId: String? { connectedHarnessId ?? selectedHarnessId }
 
   public var selectedHarness: ServerHarness? {
@@ -145,15 +109,11 @@ extension SessionController {
     return false
   }
 
-  /// Whether the session is actively generating a response.
   public var isSending: Bool { model?.isSending ?? false }
   public var isCancelling: Bool { model?.isCancelling ?? false }
   public var isTakingLongerThanExpected: Bool {
     model?.isTakingLongerThanExpected ?? false
   }
-  /// The chat's ephemeral connection line. Recovery is the app's job, not
-  /// the user's: the app never gives up on a machine, so this only says
-  /// it's reconnecting, and clears by itself once the machine answers again.
   public var connectionRecoveryMessage: String? {
     if model != nil, machines?.showsReconnectNotice(for: project.serverId) == true {
       return "Reconnecting…"
@@ -168,10 +128,6 @@ extension SessionController {
       ?? waitingHarnessUpdateName.map { "Waiting for \($0) to finish updating..." }
   }
 
-  /// User-facing text for a refusal-driven model swap, with both model ids
-  /// resolved to display names where the live model option still lists them.
-  /// The original usually is not listed once the swap is sticky, so its raw
-  /// id is the expected fallback rather than an error case.
   public var modelFallbackMessage: String? {
     guard let fallback = model?.modelFallback else { return nil }
     let names =
@@ -193,11 +149,8 @@ extension SessionController {
     isConnecting || isSending
   }
 
-  /// The background tasks the waiting indicator describes: subagents.
   public var waitingBackgroundTasks: [BackgroundTaskInfo] { model?.waitingBackgroundTasks ?? [] }
 
-  /// True when the turn ended but the agent still owns background work — the
-  /// chat isn't stuck; the agent will come back on its own.
   public var isWaitingOnBackgroundTasks: Bool { model?.isWaitingOnBackgroundTasks ?? false }
 
   public func canRetryTurn(_ id: UUID) -> Bool {
@@ -211,8 +164,6 @@ extension SessionController {
     } ?? false
   }
 
-  /// Harness name while the server holds this chat's prompts during an
-  /// update — drives the ephemeral "Waiting for X to finish updating…" row.
   public var waitingHarnessUpdateName: String? { model?.updateGateHarnessName }
 
   public var waitingBackgroundTaskDescription: String? {
@@ -224,17 +175,10 @@ extension SessionController {
     } ?? "background task"
   }
 
-  /// Spawning calls of the subagents a finished turn is waiting on (see
-  /// SessionModel).
   public var waitingSubagentCalls: [ToolCall] { model?.waitingSubagentCalls ?? [] }
 
-  /// Spawning calls of subagents still running in the background (see
-  /// SessionModel). Injected into the transcript so their rows keep
-  /// shimmering until the work finishes.
   public var runningSubagentToolCallIds: Set<String> { model?.runningSubagentToolCallIds ?? [] }
 
-  /// The calls that started those subagents' current runs. Injected so only
-  /// the turn holding one keeps its worked section open.
   public var runningSubagentRunToolCallIds: Set<String> { model?.runningSubagentRunToolCallIds ?? [] }
 
   public var canSend: Bool {

@@ -2,17 +2,11 @@ import Foundation
 @preconcurrency import WebRTC
 import ScreenSharing
 
-/// The host's end of a native session: the screen video track fed by
-/// `frameSender`, the encoder's bitrate/framerate ceilings, and the host-side
-/// recovery (keyframe requests answered, the latest capture announced when the
-/// source goes idle).
 @MainActor
 public final class ScreenSharingSender: ScreenSharingPeer {
   public nonisolated let frameSender: ScreenSharingFrameSender
   private let recovery: ScreenSharingSenderRecovery
 
-  /// Builds the connection, its channels and the video sender on the transport's queue; the
-  /// caller's actor only waits.
   public init(
     configuration: ScreenSharingVideoConfiguration, metrics: ScreenSharingMetrics,
     options: ScreenSharingPeerOptions = .init(), connectivity: ScreenSharingICEConfiguration? = nil
@@ -29,9 +23,6 @@ public final class ScreenSharingSender: ScreenSharingPeer {
       frameSender.configure(configuration)
       let track = factory.videoTrack(with: source, trackId: "screen")
       transport.retain(track)
-      // addTrack permits the remote viewer's offer to associate this sender
-      // with its video m-line. An explicit unassociated addTransceiver stays
-      // separate when answering, leaving ICE connected with no media sender.
       guard let sender = connection.add(track, streamIds: ["screen"]),
         let transceiver = connection.transceivers.first(where: { $0.sender.senderId == sender.senderId })
       else {
@@ -61,8 +52,6 @@ public final class ScreenSharingSender: ScreenSharingPeer {
     frameSender.onActivity { [weak self] in Task { @MainActor in self?.recovery.activate() } }
   }
 
-  /// The source format changes now (the capture's next frames must match it); the encoder's
-  /// ceilings are applied on the transport's queue, in order with any earlier change.
   public func updateVideoConfiguration(_ configuration: ScreenSharingVideoConfiguration) {
     guard !closed else { return }
     frameSender.configure(configuration)
@@ -94,7 +83,6 @@ public final class ScreenSharingSender: ScreenSharingPeer {
     codecFactory.refreshSignal.close()
     ownedWork.close(with: recovery.close())
     codecFactory.sourceIdleMonitor.stop()
-    // Releases the source on the transport's queue, ahead of the connection's teardown.
     frameSender.stop()
   }
 }

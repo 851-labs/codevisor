@@ -67,7 +67,6 @@ extension UpdateCenterTests {
     await center.refresh()
     #expect(center.components.allSatisfy { !$0.isFailed })
 
-    // Retrying can report even the same failure again.
     let row = try #require(center.components.first { $0.kind == .harness })
     await center.update(row)
     #expect(center.components.first { $0.kind == .harness }?.isFailed == true)

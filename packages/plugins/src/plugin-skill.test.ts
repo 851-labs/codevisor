@@ -54,8 +54,6 @@ describe("pluginAuthoringSkill", () => {
   })
 
   it("resolves the real packaged skill with default seams", () => {
-    // The repo layout satisfies the cwd fallback when tests run from the
-    // package directory (moduleDirectory default points at src/).
     const spec = pluginAuthoringSkill({ workingDirectory: join(process.cwd(), "..", "..") })
     expect(spec.path.endsWith(join(PLUGIN_AUTHORING_SKILL_DIRECTORY, "SKILL.md"))).toBe(true)
   })

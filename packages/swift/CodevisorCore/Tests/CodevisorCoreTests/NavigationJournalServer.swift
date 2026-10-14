@@ -6,7 +6,6 @@ import Foundation
 @testable import CodevisorCore
 
 extension ServerNavigationDelta {
-  /// A `navigation.changed` payload, exactly as a machine's journal emits it.
   static func fixture(
     cursor: Int,
     projects: [ServerProject] = [],
@@ -21,12 +20,6 @@ extension ServerNavigationDelta {
   }
 }
 
-/// A machine's navigation database and journal, reduced to what the outbox
-/// sends. Every accepted change moves the state forward and records one
-/// event, so `latestShellEventCursor` after a request always covers it --
-/// like the real server. Events reach the device only when a test calls
-/// `deliver`, which is what lets tests hold the window between a request
-/// being accepted and its event arriving.
 final class NavigationJournalServer: CodevisorServerClienting, @unchecked Sendable {
   private let lock = NSLock()
   private var state: ServerNavigationSnapshot
@@ -39,7 +32,6 @@ final class NavigationJournalServer: CodevisorServerClienting, @unchecked Sendab
     state = snapshot
   }
 
-  /// Every request the outbox made, in order (`rename:<name>`, `reorder:<revision>`, ...).
   var requests: [String] { lock.withLock { log } }
   var current: ServerNavigationSnapshot { lock.withLock { state } }
 
@@ -51,18 +43,14 @@ final class NavigationJournalServer: CodevisorServerClienting, @unchecked Sendab
     current.panes.filter { UUID(uuidString: $0.workspaceId) == workspaceId }
   }
 
-  /// Runs before each request is applied; a test can hold it or make it fail.
   func onRequest(_ hook: (@Sendable (String) async throws -> Void)?) {
     lock.withLock { requestHook = hook }
   }
 
-  /// Runs after a snapshot's contents are read but before it is returned,
-  /// so a test can hold a refresh in flight while newer events land.
   func onSnapshot(_ hook: (@Sendable () async -> Void)?) {
     lock.withLock { snapshotHook = hook }
   }
 
-  /// Commits a change made on the server (or by another device).
   @discardableResult
   func commit(
     sessions: [ServerSession] = [],
@@ -73,7 +61,6 @@ final class NavigationJournalServer: CodevisorServerClienting, @unchecked Sendab
     lock.withLock { commitLocked(sessions: sessions, workspaces: workspaces, panes: panes, deleted: deleted) }
   }
 
-  /// Delivers every event the device hasn't received yet, in order.
   func deliver(to store: NavigationStore, machineId: String) async {
     let deltas = lock.withLock {
       defer { undelivered.removeAll() }
@@ -82,7 +69,6 @@ final class NavigationJournalServer: CodevisorServerClienting, @unchecked Sendab
     for delta in deltas { _ = await store.apply(delta, machineId: machineId) }
   }
 
-  /// Delivers only the oldest undelivered event.
   func deliverNext(to store: NavigationStore, machineId: String) async {
     let delta: ServerNavigationDelta? = lock.withLock {
       undelivered.isEmpty ? nil : undelivered.removeFirst()
@@ -121,8 +107,6 @@ final class NavigationJournalServer: CodevisorServerClienting, @unchecked Sendab
     }
   }
 
-  // MARK: - Navigation requests
-
   func navigationSnapshot() async throws -> ServerNavigationSnapshot {
     let (snapshot, hook) = lock.withLock { (state, snapshotHook) }
     await hook?()
@@ -149,8 +133,6 @@ final class NavigationJournalServer: CodevisorServerClienting, @unchecked Sendab
     }
   }
 
-  /// Like the server: the latest move wins, whatever revision it was sent
-  /// with; each move bumps the revision.
   func reorderWorkspace(id: UUID, position: String, expectedRevision: Int) async throws -> ServerWorkspace {
     try await request("reorder:\(expectedRevision)")
     return try updateWorkspace(id) { record in
@@ -172,8 +154,6 @@ final class NavigationJournalServer: CodevisorServerClienting, @unchecked Sendab
     }
   }
 
-  /// Gives the listed panes ascending shared tab keys, as the server's
-  /// migration and pane creation do.
   func assignTabOrder(_ paneIds: [UUID]) {
     lock.withLock {
       var previous: String?
@@ -261,8 +241,6 @@ final class NavigationJournalServer: CodevisorServerClienting, @unchecked Sendab
   func listProjects() async throws -> [ServerProject] { current.projects }
   func listSessions() async throws -> [ServerSession] { current.sessions }
 
-  // MARK: - Unused by navigation
-
   func health() async throws -> ServerHealth { ServerHealth(ok: true, version: "0.1.0", database: "ready") }
   func info() async throws -> ServerInfo { throw CodevisorServerClientError.invalidResponse }
   func updateInfo(refresh: Bool, channel: ServerUpdateChannel) async throws -> ServerUpdateInfo {
@@ -286,10 +264,6 @@ final class NavigationJournalServer: CodevisorServerClienting, @unchecked Sendab
   }
 }
 
-/// One machine with a project, a chat, and two workspaces, installed in a
-/// `NavigationFixture` and backed by a `NavigationJournalServer` the outbox
-/// sends to. `workspace` holds the chat; `otherWorkspace` is an empty
-/// workspace on the same machine (a sidebar neighbour).
 @MainActor
 final class WorkspaceSyncFixture {
   let serverId = "local"
@@ -304,7 +278,6 @@ final class WorkspaceSyncFixture {
   var repository: ProjectedWorkspaceRepository { navigation.workspaces }
   var sync: WorkspaceSyncModel { navigation.workspaceSync }
   var projectList: ProjectListModel { navigation.projectList }
-  /// The workspace as this device shows it right now.
   var current: Workspace? { repository.workspace(id: workspace.id) }
 
   init(
@@ -336,20 +309,17 @@ final class WorkspaceSyncFixture {
     if connected { connect() }
   }
 
-  /// The machine is reachable and current: the outbox may send to it.
   func connect() {
     let server = server
     store.executor.clientProvider = { _ in server }
     store.executor.isMachineReady = { _ in true }
   }
 
-  /// Sends every waiting request that can be sent now.
   func flush() async {
     store.executor.resume(machineId: serverId)
     await store.executor.idle(machineId: serverId)
   }
 
-  /// Delivers the server's events for everything it accepted.
   func deliver() async {
     await server.deliver(to: store, machineId: serverId)
   }

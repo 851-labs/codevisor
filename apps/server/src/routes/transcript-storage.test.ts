@@ -78,8 +78,6 @@ it("pages the agent transcript tools with the cursors the route returns", async 
     async () => "unused"
   )
   const validator = new AjvJsonSchemaValidator()
-  // Agents build arguments from the published input schema (and the gateway
-  // rejects unknown ones), so every call must satisfy that schema first.
   const call = async (name: string, args: Record<string, unknown>) => {
     const tool = codevisorTools.find((candidate) => candidate.name === name)!
     expect(validator.getValidator(tool.inputSchema as JsonSchemaType)(args)).toMatchObject({

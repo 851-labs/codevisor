@@ -3,23 +3,13 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// A searchable model picker. Thinking, speed, and other parameters live
-/// in the composer’s separate native menu.
 struct ModelPickerSheet: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.dismiss) private var dismiss
   @Bindable var controller: SessionController
-  /// A pick the composer is still applying; its row shows a spinner in the
-  /// checkmark slot if the sheet is reopened before it settles.
   var pending: PendingModelSelection?
-  /// Tapping a row hands the pick to the composer chip, which owns the
-  /// in-flight state, and the sheet closes right away.
   let onChoose: (SessionConfigSelectOption, String) -> Void
 
-  /// Pushed screens live here, not in a view-destination link: the model
-  /// step re-branches whenever capabilities reload (returning from a
-  /// browser sign-in, or the sign-in itself changing the catalog), and a
-  /// link unmounted by that pops whatever it pushed — mid-auth.
   private enum Destination: Hashable {
     case manageHarnesses
   }
@@ -36,8 +26,6 @@ struct ModelPickerSheet: View {
   private var groups: [HarnessGroup] {
     let serverId = controller.project.serverId
     if controller.canChooseHarness {
-      // Derived straight from the per-machine cache — server-correct by
-      // construction; see ModelConfigMenu on macOS.
       return environment.configCache.capabilities(forServer: serverId).compactMap { capability in
         let harness = capability.harness
         let options: [SessionConfigOption]
@@ -181,7 +169,6 @@ struct ModelPickerSheet: View {
     .buttonStyle(.borderedProminent)
   }
 
-  /// A centered spinner holding a step's place while its options load.
   private func loadingStep(_ label: String) -> some View {
     VStack(spacing: 12) {
       ProgressView()

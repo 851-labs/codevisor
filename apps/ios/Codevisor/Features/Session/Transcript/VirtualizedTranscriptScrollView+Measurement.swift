@@ -6,8 +6,6 @@ import SwiftUI
 import TranscriptKit
 import UIKit
 
-// MARK: - Measurement
-
 extension VirtualizedTranscriptScrollView {
   func invalidateChangedMeasurements(
     previousRowsByKey: [String: TranscriptVirtualRow],
@@ -19,10 +17,6 @@ extension VirtualizedTranscriptScrollView {
       if let previous = previousRowsByKey[key] {
         guard previous.measurementRevision != row.measurementRevision else { continue }
       } else {
-        // A ledger height under a key absent from the previous row set
-        // came from a differently shaped row sharing the layout key
-        // (the aggregate active placeholder vs. the settled shell).
-        // Keep it for layout but never as this row's known height.
         guard measurements[key] != nil, !measurements.isStale(key) else { continue }
         measurements.markStale(key)
         continue
@@ -117,10 +111,6 @@ extension VirtualizedTranscriptScrollView {
     let previousLayout = virtualLayout
     let previousDistance = initialPositionApplied ? currentDistanceFromBottom() : nil
     let previousOffsetY = viewportGeometry.boundedOffsetY(contentOffset.y)
-    // ChatGPT follows the bottom only while the latest turn is live. An
-    // idle transcript is static even when its distance is zero, so opening
-    // a disclosure preserves the reader's viewport instead of pushing the
-    // clicked header offscreen.
     let plan = TranscriptGeometryRebuildPlan(
       previousLayout: previousLayout,
       previousDistanceFromBottom: previousDistance,
@@ -260,9 +250,6 @@ extension VirtualizedTranscriptScrollView {
           )
       } ?? measurements.needsCommit(measurement.height, for: measurement.key)
     guard needsCommit else {
-      // Cached settled rows can report the exact height already in the
-      // ledger. The host has still completed a fresh SwiftUI layout, so
-      // wake presentation gates even though no geometry commit follows.
       promoteTargetWindowIfReady()
       updateInitialPresentationReadiness()
       resolveBottomJumpIfPossible()
@@ -289,8 +276,6 @@ extension VirtualizedTranscriptScrollView {
     guard !isDetaching else { return }
     let pending = pendingMeasurements
     pendingMeasurements.removeAll(keepingCapacity: true)
-    // A corrected height moves the rows around it; during a send those
-    // moves are carried by its springs rather than painted as a jump.
     let contentShift = sendTransitions.beginContentShift()
     var committedHeights: [String: CGFloat] = [:]
     for (key, measurement) in pending {

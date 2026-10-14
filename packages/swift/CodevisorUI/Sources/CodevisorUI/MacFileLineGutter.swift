@@ -1,7 +1,6 @@
 #if canImport(AppKit)
   import AppKit
 
-  /// Shares the document's vertical coordinates, including elastic scrolling.
   final class MacFileLineGutter: NSView {
     private static let numberFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
     private var previousText = ""
@@ -9,13 +8,10 @@
     weak var textView: NSTextView?
     override var isFlipped: Bool { true }
     override var isOpaque: Bool { textView?.drawsBackground ?? false }
-    /// A transparent gutter (system themes) sits over empty inset until the
-    /// text scrolls sideways beneath it; only then does it need a backing fill.
     var scrolledHorizontally = false {
       didSet { if scrolledHorizontally != oldValue { needsDisplay = true } }
     }
 
-    // Let the text view handle scrolling and selection over the gutter too.
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     func update() {

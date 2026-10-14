@@ -96,7 +96,6 @@ describe("Browser Use direct CDP engine", () => {
       if (clicked.content[0]?.type === "text")
         expect(clicked.content[0].text).toContain('"path": "cdp"')
 
-      // The presented pointer travelled to the button and pulsed once the click landed.
       const pointer = await provider.invoke(context, "cdp.send", {
         method: "Runtime.evaluate",
         params: {

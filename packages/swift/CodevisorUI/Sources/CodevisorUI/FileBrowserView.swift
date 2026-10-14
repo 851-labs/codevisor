@@ -6,7 +6,6 @@
     @Entry var closeFileBrowser: CloseFileBrowserAction?
   }
 
-  /// Closes the file browser that hosts the current view.
   struct CloseFileBrowserAction: Sendable {
     private let handler: @MainActor @Sendable () -> Void
 
@@ -15,8 +14,6 @@
     @MainActor func callAsFunction() { handler() }
   }
 
-  /// Open File on iPhone and iPad: folder pages in a navigation stack, with
-  /// filename search on the machine that owns the files.
   struct FileBrowserSheet: View {
     let model: FilePaneModel
 
@@ -29,7 +26,6 @@
     }
   }
 
-  /// The browser as an empty pane's content, or inside the sheet above.
   struct FileBrowserView: View {
     let model: FilePaneModel
     @Environment(\.openFileDocument) private var openFile

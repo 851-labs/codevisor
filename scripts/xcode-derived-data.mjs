@@ -1,12 +1,3 @@
-// Points the Xcode app's DerivedData for each project at the worktree's
-// ignored tmp/build/, so it is deleted with the worktree instead of piling up
-// in ~/Library/Developer/Xcode/DerivedData keyed by a path that no longer
-// exists. Command-line builds already pass -derivedDataPath (xcodebuild.mjs);
-// this covers Xcode windows (indexing, package resolution, Xcode MCP builds).
-//
-// Xcode only honors this setting from the per-user workspace settings, not
-// from xcshareddata, and xcuserdata/ is ignored, so every checkout writes its
-// own. Runs from the post-checkout hook and before scripts open Xcode.
 import { execFile } from "node:child_process"
 import { access, mkdir, realpath, writeFile } from "node:fs/promises"
 import { userInfo } from "node:os"
@@ -23,16 +14,12 @@ export const xcodeProjects = {
   pixelbook: "apps/pixelbook/PixelBook.xcodeproj"
 }
 
-// Resolved by Xcode relative to the directory containing the .xcodeproj.
-// Kept apart from the command-line DerivedData so an Xcode build and a
-// scripted build never contend for the same build database.
 export function xcodeDerivedDataLocation(platform) {
   return `../../tmp/build/${platform}/XcodeDerivedData`
 }
 
 export async function ensureXcodeDerivedDataSettings(repoRoot, username = userInfo().username) {
   const written = []
-  // Xcode and plutil exist only on macOS; Linux checkouts (CI) have nothing to configure.
   if (process.platform !== "darwin") return written
   for (const [platform, project] of Object.entries(xcodeProjects)) {
     const projectPath = join(repoRoot, project)
@@ -46,7 +33,6 @@ export async function ensureXcodeDerivedDataSettings(repoRoot, username = userIn
     )
     const location = xcodeDerivedDataLocation(platform)
     if (await exists(settingsPath)) {
-      // Preserve any other per-user workspace settings.
       await plutil([
         "-replace",
         "DerivedDataLocationStyle",

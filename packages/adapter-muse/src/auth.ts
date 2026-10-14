@@ -3,9 +3,6 @@ import type { HarnessAuthInspection } from "@codevisor/agent-runtime"
 import type { MuseClient } from "./client.js"
 import { record, text, type AccountState } from "./protocol.js"
 
-/// Muse Code sign-in over MSP's (experimental) account surface: the same
-/// state and device-code flow `muse login` uses, without a terminal.
-
 const SIGNED_IN = new Set(["accountLogin", "apiKey", "envKey"])
 
 export const accountInspection = (account: AccountState): HarnessAuthInspection => {
@@ -13,7 +10,6 @@ export const accountInspection = (account: AccountState): HarnessAuthInspection 
     return {
       state: "authenticated",
       methods: [],
-      // A key from the environment isn't Muse's to remove.
       canLogout: account.state !== "envKey",
       ...(account.label === undefined ? {} : { label: account.label })
     }
@@ -37,16 +33,11 @@ export const readMuseAccount = async (client: MuseClient): Promise<AccountState>
 }
 
 export interface MuseLogin {
-  /// Where to sign in, for the device-code flow; absent for an API key,
-  /// which Muse stores before answering.
   readonly verificationUrl?: string
   readonly userCode?: string
-  /// Settles with Muse's verdict: `granted`, `denied`, `expired`, …
   readonly completed: Promise<{ readonly outcome: string; readonly message?: string }>
 }
 
-/// Starts a sign-in on a host dedicated to it: the device-code flow lives
-/// as long as that host does, so the caller keeps it open until `completed`.
 export const startMuseLogin = async (
   client: MuseClient,
   login: { readonly type: "deviceCode" } | { readonly type: "apiKey"; readonly apiKey: string }

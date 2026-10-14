@@ -1,13 +1,4 @@
 #!/usr/bin/env node
-// `bun run vnc:validate --issue 851-XXXX`: the one gate every VNC change
-// passes. Runs, in order and whatever fails:
-//   tests   L1/L2 — the VNC Swift suites and the rig package's tests
-//   interop L3    — `bun run vnc:interop` (pinned TigerVNC container)
-//   bench         — `bun run vnc:bench` against this machine's baseline
-//   tophat  L4    — `bun run vnc:tophat` (background, window-only)
-// and writes docs/measurements/vnc/<date>-<issue>/report.md. Exit 0 only if
-// every layer that ran passed. `--skip LAYER[,LAYER]` is for layers a change
-// can't affect; say why in the commit.
 import { spawn, spawnSync } from "node:child_process"
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
@@ -27,8 +18,6 @@ import {
 } from "./vnc-validate-lib.ts"
 
 const root = dirname(dirname(dirname(dirname(fileURLToPath(import.meta.url)))))
-// Same isolation as `bun run swift:test` (scripts/test-swift.mjs): suites that install a global
-// executor hook run in their own process.
 const mainSerialExecutorFilter = `(${JSON.parse(
   readFileSync(join(root, "packages/swift/main-serial-executor-suites.json"), "utf8")
 ).join("|")})/`
@@ -52,10 +41,8 @@ if (options.help) {
   process.stdout.write(usage)
   process.exit(0)
 }
-// parseValidateArguments requires --issue unless --help.
 const issue = options.issue ?? ""
 
-/// Runs a command with its output streamed and captured.
 interface StreamedRun {
   status: number | null
   output: string
@@ -137,7 +124,6 @@ await layer("bench", async () => {
       : ""
   const comparison = read("comparison.md")
   const bench = read("bench.md")
-  // Why a failed run stopped (851-2337): this build's run, or origin/main's.
   const failure = benchFailure(read("bench-error.txt"), read(join("main", "bench-error.txt")))
   return {
     ok: run.status === 0,

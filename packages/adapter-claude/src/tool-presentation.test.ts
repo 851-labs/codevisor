@@ -1,7 +1,6 @@
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { webSearchSources } from "./claude.js"
 import {
   definition,
   FakeQuery,
@@ -11,6 +10,7 @@ import {
   run,
   streamEvent
 } from "./test-support.js"
+import { webSearchSources } from "./tool-presentation.js"
 
 describe("ClaudeProvider", () => {
   afterEach(() => {
@@ -140,8 +140,6 @@ describe("ClaudeProvider", () => {
 
     const promptPromise = run(created.handle.prompt("look it up"))
     await fake.nextPrompt()
-    // The WebSearch tool_result is a plain string with an embedded Links array
-    // (verbatim shape from the Claude CLI).
     const resultText =
       'Web search results for query: "swift release"\n\n' +
       'Links: [{"title":"Swift 6.2 Released | Swift.org","url":"https://www.swift.org/blog/swift-6.2-released/"},' +

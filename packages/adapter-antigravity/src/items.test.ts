@@ -60,7 +60,6 @@ describe("agy step mapping", () => {
         }
       ]
     )
-    // A settled step agy sends again changes nothing.
     expect(mapper.step(tool("run_command", command, { output: "3 passed\r\n" }))).toEqual([])
   })
 

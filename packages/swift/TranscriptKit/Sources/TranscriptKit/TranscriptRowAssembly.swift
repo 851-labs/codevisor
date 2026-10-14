@@ -1,7 +1,6 @@
 import CodevisorProtocol
 import Foundation
 
-/// Assembles row data in transcript order without retaining projection state.
 enum TranscriptRowAssembly {
   static func assemble(
     _ input: TranscriptProjectionInput,
@@ -20,9 +19,6 @@ enum TranscriptRowAssembly {
       appendOpeningRows(input, options: options, pendingMessage: pendingMessage, hasSetup: hasSetup, to: &rows)
     }
 
-    // A failure is only actionable on the latest turn (retry, sign in,
-    // switch account). Older turns' stop details are not presented at
-    // all; a live active item makes every settled turn "older".
     let latestSettledAssistantID: UUID? =
       input.hasActiveItem
       ? nil

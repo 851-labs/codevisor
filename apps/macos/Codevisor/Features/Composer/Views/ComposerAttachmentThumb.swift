@@ -11,17 +11,12 @@ struct ComposerAttachmentThumb: View {
   let onRetry: () -> Void
 
   @State private var isHovered = false
-  /// Decoded once per attachment: `NSImage(data:)` in `body` re-decoded the
-  /// image on every re-render (every keystroke while the composer holds
-  /// attachments).
   @State private var thumbnail: NSImage?
 
   var body: some View {
     ZStack(alignment: .topTrailing) {
       Group {
         if attachment.hasVisualPreview {
-          // A tap gesture rather than a Button: buttons add their own
-          // hover/press highlight over the artwork.
           ZStack {
             RoundedRectangle(cornerRadius: 8)
               .fill(theme.bubbleBackground)
@@ -61,9 +56,6 @@ struct ComposerAttachmentThumb: View {
         stateBadge
       }
 
-      // Always mounted and toggled instantly (no animation): any
-      // animated change here rebuilds AppKit hover tracking mid-hover,
-      // which oscillates the hover state and flickers.
       removeButton
         .padding(4)
         .opacity(isHovered ? 1 : 0)
@@ -81,15 +73,10 @@ struct ComposerAttachmentThumb: View {
       }
       let isVideo = attachment.isVideo
       let isPDF = attachment.isPDF
-      // Downsample off the main thread, straight from the staged file — a
-      // pasted screenshot can be many megabytes and the thumb is 56 pt.
       thumbnail = await Task.detached(priority: .userInitiated) {
         await attachmentPreviewImage(fileURL: fileURL, isVideo: isVideo, isPDF: isPDF)
       }.value
     }
-    // The thumb's tap gesture and hover-only remove button are invisible
-    // to accessibility; expose them as actions so they work without
-    // hovering (assistive tech, background computer use).
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("Attachment \(attachment.name)")
     .accessibilityAddTraits(.isButton)
@@ -157,9 +144,6 @@ struct ComposerAttachmentThumb: View {
     } label: {
       Image(systemName: "xmark")
         .font(.system(size: Typography.IconSize.compact, weight: .bold))
-        // Fixed dark-on-light styling (not theme-derived): the button
-        // sits on arbitrary image content, so it needs contrast
-        // against white screenshots and dark thumbnails alike.
         .foregroundStyle(.white)
         .frame(width: 18, height: 18)
         .background(Circle().fill(.black.opacity(0.78)))

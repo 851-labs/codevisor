@@ -8,25 +8,11 @@ import {
 } from "@codevisor/sync"
 import { Effect } from "effect"
 
-/// Config-plane reconciliation for plugins. The "plugins" namespace holds
-/// one entry per REGISTRY-SOURCED managed plugin, keyed by plugin id and
-/// valued { enabled, source } — source being the repo/git origin recorded
-/// in the plugin's install receipt, which any machine can fetch itself (no
-/// blob ferry; the registry is the byte source). Linked dev plugins and
-/// local-path installs never sync: they are machine-bound by definition.
-/// Same three-way shape as the other planes, first contact deferring to
-/// the fleet on collisions. Missing plugins install inline from their
-/// source; failures (unmet executable requirements, network) surface as
-/// blocked and retry every pass — so a plugin held on "needs ffmpeg"
-/// installs by itself once the requirement appears. Tombstones uninstall.
 export const PLUGINS_SYNC_NAMESPACE = "plugins"
 const APPLIED_NAMESPACE = "local.plugins-applied"
 
 const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 
-/// The install source other machines can feed to their own import flow;
-/// undefined for local-path receipts (and missing receipts), which cannot
-/// be fetched elsewhere and therefore never sync.
 export const pluginSyncOrigin = (pluginPath: string): string | undefined => {
   const receipt = readPluginInstallReceipt(pluginPath)
   if (receipt === undefined) return undefined
@@ -39,7 +25,6 @@ export const pluginSyncOrigin = (pluginPath: string): string | undefined => {
 export interface LocalPluginState {
   readonly id: string
   readonly enabled: boolean
-  /// Absent for linked/dev plugins and local-path installs (machine-only).
   readonly origin?: string | undefined
 }
 
@@ -47,8 +32,6 @@ export interface PluginSyncDeps {
   readonly db: CodevisorDatabaseService
   readonly serverId: string
   readonly listPlugins: () => Promise<ReadonlyArray<LocalPluginState>>
-  /// Installs from a replicated source (registry repo or git url); throws
-  /// on unmet requirements or fetch failures (surfaced as blocked).
   readonly installFromSource: (source: string) => Promise<void>
   readonly setEnabled: (pluginId: string, enabled: boolean) => Promise<void>
   readonly removePlugin: (pluginId: string) => Promise<void>
@@ -58,10 +41,7 @@ export interface PluginSyncStatus {
   readonly published: ReadonlyArray<string>
   readonly applied: ReadonlyArray<string>
   readonly removed: ReadonlyArray<string>
-  /// Plugins installed from their source this pass.
   readonly installed: ReadonlyArray<string>
-  /// Waiting on this machine (unmet requirements, unreachable source,
-  /// refused uninstall). Retried on every pass.
   readonly blocked: ReadonlyArray<{ readonly id: string; readonly reason: string }>
 }
 
@@ -86,7 +66,6 @@ const pluginValue = (value: unknown): PluginValue | undefined => {
 const reasonFrom = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause)
 
-/// One reconcile pass; see the module doc for the model.
 export const reconcilePlugins = async (deps: PluginSyncDeps): Promise<PluginSyncResult> => {
   const locals = await deps.listPlugins()
   const localById = new Map(locals.map((plugin) => [plugin.id, plugin]))
@@ -112,8 +91,6 @@ export const reconcilePlugins = async (deps: PluginSyncDeps): Promise<PluginSync
     return clock
   }
 
-  // ── Publish: registry-sourced local plugins (edits after adoption; first
-  // contact with a live replica entry adopts below instead).
   for (const plugin of locals) {
     if (plugin.origin === undefined) continue
     const entry = replicaByKey.get(plugin.id)
@@ -128,7 +105,6 @@ export const reconcilePlugins = async (deps: PluginSyncDeps): Promise<PluginSync
     appliedByKey.set(plugin.id, fingerprint)
     published.push(plugin.id)
   }
-  // A plugin this machine once applied that is gone was uninstalled here.
   for (const [key] of appliedByKey) {
     if (localById.has(key)) continue
     if (replicaByKey.get(key)?.deleted === true) continue
@@ -143,8 +119,6 @@ export const reconcilePlugins = async (deps: PluginSyncDeps): Promise<PluginSync
       : []
   const merged = await run(deps.db.getSyncEntries(PLUGINS_SYNC_NAMESPACE))
 
-  // ── Apply. Missing plugins install inline; refusals stay blocked and
-  // retry, and the applied record only lands once the machine matches.
   for (const entry of merged) {
     if (entry.deleted === true) {
       if (localById.has(entry.key) && appliedByKey.has(entry.key)) {
@@ -175,7 +149,6 @@ export const reconcilePlugins = async (deps: PluginSyncDeps): Promise<PluginSync
         continue
       }
     } else {
-      // A linked/local plugin that happens to share the id stays sovereign.
       if (local.origin === undefined) continue
       if (local.enabled !== wanted.enabled) {
         await deps.setEnabled(entry.key, wanted.enabled)

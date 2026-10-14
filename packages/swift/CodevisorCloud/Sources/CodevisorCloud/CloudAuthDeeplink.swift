@@ -1,10 +1,6 @@
 import CodevisorClient
 import Foundation
 
-/// A parsed `codevisor://cloud-auth?ott=…` deeplink — the browser handoff's
-/// way back into the app after a cloud sign-in. The one-time token is
-/// exchanged for a session immediately; it is useless after that (and expires
-/// within minutes regardless), so no confirmation gate is needed.
 public struct CloudAuthDeeplink: Equatable, Sendable {
   public var ott: String
 
@@ -12,8 +8,6 @@ public struct CloudAuthDeeplink: Equatable, Sendable {
     self.ott = ott
   }
 
-  /// Accepts the whole Codevisor scheme family (production, dev, and
-  /// per-instance dev schemes) so a build handles any link routed to it.
   public static func parse(_ url: URL) -> CloudAuthDeeplink? {
     guard CodevisorDeeplinkScheme.matches(url.scheme),
       url.host()?.lowercased() == "cloud-auth",

@@ -1,9 +1,6 @@
 import CodevisorCore
 import SwiftUI
 
-/// Clones a git remote on a target machine and adopts it as a project. The
-/// operation is shared, while each platform keeps native sheet structure:
-/// a compact dialog form on macOS and a navigation form on iOS.
 public struct GitCloneSheet: View {
   let client: any CodevisorServerClienting
   let machineName: String
@@ -191,18 +188,12 @@ public struct GitCloneSheet: View {
     let projectName = name.trimmingCharacters(in: .whitespacesAndNewlines)
 
     Task {
-      // The machine finishes a clone even if this request is cut off, so
-      // the event stream also carries the final outcome for that case.
       let (outcomes, outcomeSink) = AsyncStream.makeStream(of: ProjectCloneOutcome.self)
-      // Only this clone's setup events are decoded and delivered here, not
-      // every session's streamed output.
       let tail = ServerSetupEventTail.follow(
         client, kinds: ["project.setup", "project.created"], subjectId: projectId.uuidString)
       let follow = Task {
         for await item in tail {
           guard case let .event(envelope) = item else {
-            // Events were missed: the outcome may be among them, so stop
-            // waiting for one (a lost request then fails as before).
             logLines.append(ServerSetupEventTail.skippedOutputLine)
             outcomeSink.finish()
             continue
@@ -235,11 +226,8 @@ public struct GitCloneSheet: View {
         )
         finish(project)
       } catch let error as CodevisorServerClientError {
-        // The machine answered: its verdict is final.
         fail(error)
       } catch {
-        // The request was lost (timed out, dropped, suspended), not refused:
-        // the clone may still be running, so wait for the machine's outcome.
         for await outcome in outcomes {
           switch outcome {
           case .created:
@@ -274,8 +262,6 @@ public struct GitCloneSheet: View {
     )
   }
 
-  /// The machine's record of a project it created after this client lost
-  /// the clone request.
   private func adoptClonedProject(id: UUID) async -> Project? {
     let machineId = serverId ?? environment.projectList.selectedServerId
     _ = await environment.projectList.refreshFromServer(serverId: machineId, client: client)

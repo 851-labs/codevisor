@@ -4,12 +4,6 @@
   import ScreenSharingRigKit
   import ScreenSharingTesting
 
-  /// `screen-sharing-rig vnc-bench`: the VNC benchmark. For every scene × network profile it runs
-  /// the reference server's scene in a separate `vnc-server` process (so this
-  /// process's CPU is the client's), connects the product's `RFBClient` and
-  /// frame publisher through `RFBShapedTransport`, and measures N runs. The
-  /// pure statistics, report and baseline comparison live in
-  /// `ScreenSharingRigKit` (`VNCBench*`).
   enum VNCBenchCommand {
     static let usage = """
       Usage: screen-sharing-rig vnc-bench [--scenes typing,scroll,photo,input] [--profiles lan,wan150]
@@ -37,7 +31,6 @@
       }
       Task {
         do { exit(try await run(options)) } catch {
-          // Always leave the reason behind (851-2337): a one-off failure must be diagnosable afterwards.
           let record = failureRecord(error, serverOutput: ServerOutput.latest.tail)
           FileHandle.standardError.write(Data("vnc-bench: \(record)\n".utf8))
           if let output = options.output {
@@ -51,7 +44,6 @@
       dispatchMain()
     }
 
-    /// The error, and what the last vnc-server printed (a crash or refusal shows up there).
     static func failureRecord(_ error: any Error, serverOutput: [String]) -> String {
       var lines = [error.localizedDescription]
       if !serverOutput.isEmpty { lines += ["", "vnc-server's last output:"] + serverOutput.map { "  \($0)" } }
@@ -106,7 +98,6 @@
       return comparison.regressions.isEmpty ? 0 : 1
     }
 
-    /// A run that stalls fails instead of hanging the benchmark (and `vnc:validate`) forever.
     private static func withWatchdog<T: Sendable>(
       _ name: String, limit: Duration = .seconds(180), _ work: @escaping @Sendable () async throws -> T
     ) async throws -> T {
@@ -123,8 +114,6 @@
       }
     }
 
-    // MARK: One run
-
     private static func measure(
       scene: String, profile: RFBNetworkProfile, options: VNCBenchOptions
     ) async throws -> [VNCBenchMetric: Double] {
@@ -132,7 +121,7 @@
       let server = try await ServerProcess.start(
         scene: input ? "idle" : scene, echo: input, seed: options.seed, pace: options.pace, width: options.width,
         height: options.height)
-      defer { server.stop() }  // `stop` doesn't wait: the next run's server takes a fresh port anyway
+      defer { server.stop() }
       let transport = RFBShapedTransport(
         try await RFBNetworkTransport.connect(host: "127.0.0.1", port: server.port), profile: profile,
         clock: ContinuousClock())
@@ -197,7 +186,6 @@
       if linkSeconds > 0 {
         measured[.linkEstimateMbps] = Double(observed.map(\.linkBytes).reduce(0, +)) * 8 / linkSeconds / 1_000_000
       }
-      // Request → applied only exists for requested updates; pushed ones (851-2312) have none.
       if latencies.count * 2 >= frames {
         measured[.updateLatencyP50Ms] = VNCBenchStatistics.median(latencies)
         measured[.updateLatencyP95Ms] = VNCBenchStatistics.percentile(latencies, 0.95)
@@ -205,7 +193,6 @@
       return measured
     }
 
-    /// Pointer events one at a time; each is timed until its echo marker is on the client's framebuffer.
     private static func measureInput(
       client: RFBClient, probe: EchoProbe, updates: inout AsyncStream<Observed>.Iterator, options: VNCBenchOptions
     ) async throws -> [VNCBenchMetric: Double] {
@@ -230,17 +217,13 @@
     }
 
     private struct Observed: Sendable {
-      /// Request → applied; nil for a pushed update (continuous updates).
       let latencyMs: Double?
       let bytes: Int
-      /// What arrived while the client waited for the network, and that wait (851-2331).
       let linkBytes: Int
       let linkSeconds: Double
-      /// The echo sequence found at the expected marker position, if any.
       let echoed: Int?
     }
 
-    /// Where the next echo marker should appear; read by the update callback.
     private final class EchoProbe: @unchecked Sendable {
       private let lock = NSLock()
       private var expected: (sequence: Int, x: Int, y: Int)?
@@ -253,13 +236,9 @@
       }
     }
 
-    // MARK: The scene server
-
-    /// `screen-sharing-rig vnc-server --scene …` in its own process, on a free port.
     private final class ServerProcess: @unchecked Sendable {
       let process: Process
       let port: UInt16
-      /// Finishes when the process has exited, from its termination handler.
       let exited: Task<Void, Never>
 
       private init(process: Process, port: UInt16, exited: Task<Void, Never>) {
@@ -277,7 +256,6 @@
           scene: scene, echo: echo, seed: seed, pace: pace, width: width, height: height)
         let output = Pipe()
         process.standardOutput = output
-        // Its errors still reach this process's stderr, and the last lines are kept for bench-error.txt.
         let errors = Pipe()
         process.standardError = errors
         let log = ServerOutput.begin()
@@ -290,8 +268,6 @@
           FileHandle.standardError.write(data)
           log.append(data)
         }
-        // Never `waitUntilExit` from a concurrency thread: it waits on a run loop those threads don't
-        // service and can hang after the process is gone (seen in 851-2328's first validation).
         let (termination, finished) = AsyncStream<Void>.makeStream()
         process.terminationHandler = { _ in finished.finish() }
         let exited = Task { for await _ in termination {} }
@@ -319,13 +295,11 @@
         return ServerProcess(process: process, port: port, exited: exited)
       }
 
-      /// Asks the server to exit. Callers that need it gone await `exited`.
       func stop() {
         if process.isRunning { process.terminate() }
       }
     }
 
-    /// The current vnc-server's stderr, last lines only.
     final class ServerOutput: @unchecked Sendable {
       private static let lock = NSLock()
       nonisolated(unsafe) private static var current = ServerOutput()
@@ -352,8 +326,6 @@
 
       var tail: [String] { lock.withLock { lines + (partial.isEmpty ? [] : [partial]) } }
     }
-
-    // MARK: Environment
 
     private static func cpuSeconds() -> Double {
       var usage = rusage()

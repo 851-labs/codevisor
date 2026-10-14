@@ -21,9 +21,6 @@ const account = (fields: Partial<HarnessAccountRecord> = {}) =>
     ...fields
   }) as HarnessAccountRecord
 
-/// A terminal whose agy shows its sign-in link as soon as it starts, and
-/// holds a sign-in once a code is typed into it (Google may refuse the code,
-/// or agy may quit before it shows a link).
 const terminals = (agy: { signedIn: boolean; refuses: boolean; quits: boolean }) => {
   const opened: Array<{ written: Array<string>; killed: boolean }> = []
   const spawn: AgyTerminalSpawner = async () => {
@@ -55,13 +52,11 @@ const terminals = (agy: { signedIn: boolean; refuses: boolean; quits: boolean })
 
 const setup = (
   options: {
-    /// The account already held a sign-in.
     signedInBefore?: boolean
     logout?: { code: number; stderr?: string }
     signedIn?: boolean
     accounts?: ReadonlyArray<HarnessAccountRecord>
     profiles?: string
-    /// Account sync is on.
     sync?: boolean
     refuses?: boolean
     quits?: boolean
@@ -169,7 +164,6 @@ describe("Antigravity sign-in", () => {
     await auth.begin(account())
     expect(tty.opened[0]!.killed).toBe(true)
     expect(auth.owns(first.id)).toBe(false)
-    // Another account's attempt carries on.
     const other = await auth.begin(account({ id: "acct-2" }))
     await auth.begin(account())
     expect(auth.owns(other.id)).toBe(true)
@@ -184,7 +178,6 @@ describe("Antigravity sign-in", () => {
       kind: "complete"
     })
     expect(tty.opened[0]!.written.at(-1)).toBe("4/0Abc\r")
-    // Not signed in when it began; signed in once the code went through.
     expect(calls).toEqual([
       ["--gemini_dir=/profile/gemini", "models"],
       ["--gemini_dir=/profile/gemini", "models"]
@@ -233,7 +226,6 @@ describe("Antigravity sign-in", () => {
     )
     expect(quit.sync.loginFailed).toHaveBeenCalledWith("acct-1")
 
-    // Without account sync there's nobody to tell.
     await expect(setup({ quits: true }).auth.begin(account())).rejects.toThrow("closed before")
   })
 

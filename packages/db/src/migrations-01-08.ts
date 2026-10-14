@@ -1,6 +1,5 @@
 import type { Migration } from "./migration-types.js"
 
-/// Schema migrations 1–8.
 export const migrations01To08: ReadonlyArray<Migration> = [
   {
     id: 1,

@@ -12,8 +12,6 @@ const codevisorSkills = readdirSync(skillsRoot)
   .filter((name) => name.startsWith("codevisor"))
   .map((name) => ({ name, text: readFileSync(join(skillsRoot, name, "SKILL.md"), "utf8") }))
 
-/// Sandbox globals share a namespace with some tools (`machines.get` is the
-/// prelude's lookup, not a Codevisor API tool).
 const sandboxGlobals = ["machines.list", "machines.get", "clients.list"]
 const toolNames = new Set([
   ...CODEVISOR_API_TOOLS.map((tool) => tool.name),
@@ -22,8 +20,6 @@ const toolNames = new Set([
 ])
 const namespaces = new Set([...toolNames].map((name) => name.split(".")[0]))
 
-/// Every Codevisor tool a skill names, whether written as a call through
-/// `tools.codevisor.*` or as a bare `namespace.tool(` reference in prose.
 const referencedTools = (text: string): string[] => {
   const viaTools = [...text.matchAll(/tools\.codevisor\.([a-z_]+\.[a-z_]+)/g)].map((m) => m[1]!)
   const bare = [...text.matchAll(/`([a-z_]+\.[a-z_]+)\(/g)]
@@ -32,7 +28,6 @@ const referencedTools = (text: string): string[] => {
   return [...viaTools, ...bare]
 }
 
-/// Each Codevisor tool's accepted argument names, as the model sees them.
 const argumentNames = new Map(
   makeCodevisorProvider(
     () => "http://unused",
@@ -43,8 +38,6 @@ const argumentNames = new Map(
   ])
 )
 
-/// Top-level keys of the object literal that opens at `start`, e.g.
-/// `{ sessionId: x, text }` yields sessionId and text.
 const objectKeys = (text: string, start: number): string[] => {
   const source = text
     .slice(start)
@@ -69,7 +62,6 @@ const objectKeys = (text: string, start: number): string[] => {
   })
 }
 
-/// Every argument object passed to a Codevisor tool in a skill.
 const toolArguments = (text: string) =>
   [...text.matchAll(/(?:tools\.codevisor\.|`)([a-z_]+\.[a-z_]+)\(\{/g)].flatMap((match) => {
     const tool = match[1]!

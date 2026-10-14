@@ -37,8 +37,6 @@ describe("@codevisor/db", () => {
   })
 
   it("adopts rows written under a former server identity", async () => {
-    // A machine that booted as the default "local" before gaining a real
-    // --serverId: its project locations and worktrees were stamped "local".
     const filename = tempDatabase()
     const before = await run(makeDatabase({ filename, serverId: "local" }))
     const project = await run(before.createProject({ folderPath: "/tmp/adopted-project" }))
@@ -77,15 +75,12 @@ describe("@codevisor/db", () => {
   })
 
   it("drops former-identity rows that collide with current-identity twins", async () => {
-    // If a location for the same folder was re-created under the new id, the
-    // stale "local" row is a duplicate and must not survive adoption.
     const filename = tempDatabase()
     const before = await run(makeDatabase({ filename, serverId: "stock-cloud" }))
     const project = await run(before.createProject({ folderPath: "/tmp/twin-project" }))
     await Effect.runPromise(before.close)
 
     const sqlite = new Database(filename)
-    // Model a database written before identity adoption was checkpointed.
     sqlite.prepare("delete from instance_meta where key = 'adopted-server-id'").run()
     sqlite
       .prepare(

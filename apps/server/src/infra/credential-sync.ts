@@ -10,16 +10,6 @@ import {
 } from "@codevisor/sync"
 import { Effect } from "effect"
 
-/// Phase 20: config-plane reconciliation for STATIC harness credentials.
-/// Same three-way shape as the other planes — a dot-named applied
-/// namespace tells local edits apart from replica lag — over the file
-/// layer's CredentialSource seam (packages/harness-manager). Values are
-/// the sources' canonical content strings; what is static enough to
-/// travel is decided entirely by the sources. First contact defers to
-/// the fleet (a joining machine's differing local file adopts rather
-/// than overwrites), and per-source failures are isolated: one broken
-/// file surfaces in `failed` and retries next pass without stopping the
-/// rest.
 export const CREDENTIALS_SYNC_NAMESPACE = "harness-credentials"
 const APPLIED_NAMESPACE = "local.credentials-applied"
 const OVERRIDES_NAMESPACE = "local.credential-overrides"
@@ -36,8 +26,6 @@ export interface CredentialSyncDeps {
     | ((content?: string) => Promise<ReadonlyArray<CredentialSource>>)
     | undefined
   readonly now?: () => number
-  /// Fired after ferried content lands locally, so the caller can force
-  /// an auth probe (and the roster republish that rides on it).
   readonly onApplied?: (sourceId: string) => void
 }
 
@@ -102,7 +90,6 @@ export const reconcileCredentials = async (
     }
   }
 
-  // ── Publish: local files into the replica.
   for (const source of sources) {
     const entry = replicaByKey.get(source.id)
     const live =
@@ -119,8 +106,6 @@ export const reconcileCredentials = async (
         Array.isArray(previous) &&
         previous.some((key) => !overrides.includes(String(key)))
       ) {
-        // Signing out of a machine-owned session returns to the shared key.
-        // Persisted IDs make this work after a server restart as well.
         await source.apply(live)
         applied.push(source.id)
         deps.onApplied?.(source.id)
@@ -136,8 +121,6 @@ export const reconcileCredentials = async (
     if (local !== undefined) {
       if (appliedByKey.get(source.id) === fingerprint(local)) continue
       if (!appliedByKey.has(source.id) && live !== undefined && live !== local) {
-        // First contact with a differing fleet value: the apply pass
-        // below adopts the fleet; a join never overwrites it.
         continue
       }
       if (live !== local) {
@@ -152,7 +135,6 @@ export const reconcileCredentials = async (
       appliedByKey.has(source.id) &&
       live !== undefined
     ) {
-      // The file was signed out here; propagate the deletion.
       replicaWrites.push({ key: source.id, value: null, deleted: true, timestamp: stamp() })
       appliedWrites.push({ key: source.id, value: null, deleted: true, timestamp: stamp() })
       appliedByKey.delete(source.id)
@@ -166,7 +148,6 @@ export const reconcileCredentials = async (
       : []
   const merged = await run(deps.db.getSyncEntries(CREDENTIALS_SYNC_NAMESPACE))
 
-  // ── Apply: replica entries into local files.
   const sourceById = new Map(sources.map((source) => [source.id, source]))
   for (const entry of merged) {
     const source = sourceById.get(entry.key)

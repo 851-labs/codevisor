@@ -6,10 +6,6 @@ import CodevisorCore
 import StreamMarkdown
 import SwiftUI
 
-/// A single tool call as a one-line title that expands to a content card
-/// (terminal output, diff, or text) with a status badge. The title shimmers
-/// while the call is running, and edit calls carry an animated +N/−N counter
-/// that rolls as streamed diff stats arrive.
 public struct ToolCallRow: View {
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   let call: ToolCall
@@ -22,23 +18,16 @@ public struct ToolCallRow: View {
   @Environment(\.theme) private var theme
   @Environment(\.transcriptDisclosure) private var disclosureStore
   @Environment(\.transcriptPerformAnchoredDisclosureChange) private var performAnchoredDisclosureChange
-  /// The content-diff fallback of `diffTotals` (a full Myers diff of the
-  /// edited file), computed off the main thread: rows re-render on every
-  /// stream flush while their turn is active, and diffing entire file
-  /// contents in `body` was a per-render main-thread cost.
   @State private var totalsCache = DiffTotalsCache()
   @State private var isHovering = false
   @Environment(\.toolRowsHighlightOnHover) private var highlightsOnHover
 
   private var hasDetails: Bool { call.hasPresentableDetails }
 
-  /// Counters render only once there is real diff data — a `+0 −0` badge on
-  /// an adapter that never streams stats is noise.
   private var counterTotals: LineDiff.Totals? {
     totalsCache.totals(for: call)
   }
 
-  // Disclosure state survives lazy row unmounts; tool cards seed collapsed.
   private var store: TranscriptDisclosureStore { disclosureStore ?? .previews }
   private var disclosureKey: TranscriptDisclosureStore.Key { .toolCall(call.toolCallId) }
   private var isExpanded: Bool { store.isExpanded(disclosureKey, default: false) }
@@ -60,13 +49,9 @@ public struct ToolCallRow: View {
       TranscriptDisclosureContentReveal(isExpanded: isExpanded && hasDetails) {
         ToolCallDetails(call: call)
           .padding(.top, 6)
-          // Details sit under the label, clear of the icon column.
           .padding(.leading, ToolIconMetrics.labelInset)
       }
     }
-    // Structural diffing is independent of syntax colors. Warm it once a
-    // call settles, while the collapsed title is already mounted, so an
-    // expansion can draw plain rows in its first frame.
     .task(id: diffPreparationRevision) {
       await prepareSettledDiffs()
     }
@@ -81,9 +66,6 @@ public struct ToolCallRow: View {
   private func rowLabel(totals: LineDiff.Totals?) -> some View {
     HStack(spacing: 6) {
       Text(call.displayTitle(diffTotals: totals))
-        // The disclosure body shows output, never the full title,
-        // so at accessibility sizes reflow instead of truncating
-        // (HIG: minimize truncation as font size increases).
         .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
         .truncationMode(.tail)
         .foregroundStyle(highlightsOnHover && hasDetails && isHovering ? .primary : .secondary)
@@ -123,14 +105,10 @@ public struct ToolCallRow: View {
   }
 }
 
-/// What a tool call opens to: its diff, its terminal, the file it read, or
-/// its output.
 struct ToolCallDetails: View {
   let call: ToolCall
 
   var body: some View {
-    // Diffs carry their own card; wrapping them in the labeled output card
-    // double-borders them for no benefit.
     if hasOnlyDiffContent {
       VStack(alignment: .leading, spacing: 8) {
         ForEach(Array((call.content ?? []).enumerated()), id: \.offset) { _, content in
@@ -142,7 +120,6 @@ struct ToolCallDetails: View {
     } else if call.kind == .execute {
       ShellToolCallDetails(call: call)
     } else if let read = call.readFileOutput {
-      // A read shows the file, not the call that fetched it.
       ReadFileBodyView(read: read)
     } else {
       ToolCallContentCard(call: call)
@@ -159,8 +136,6 @@ struct ToolCallDetails: View {
 
 }
 
-/// The +N/−N added/removed-lines counter. Digits roll up and down via
-/// `numericText` as streamed diff stats update the totals.
 public struct DiffCounter: View {
   let totals: LineDiff.Totals
 
@@ -184,8 +159,6 @@ public struct DiffCounter: View {
   }
 }
 
-/// A shell call as a terminal shows it: the command it ran, then its
-/// output, in one headerless block with the diff card's capped viewport.
 private struct ShellToolCallDetails: View {
   let call: ToolCall
 
@@ -211,7 +184,6 @@ private struct ShellToolCallDetails: View {
     return terminals.isEmpty ? nil : terminals.joined(separator: "\n")
   }
 
-  /// A terminal doesn't show the newline that ends the last line.
   private static func droppingTrailingNewlines(_ text: String) -> String {
     var end = text.endIndex
     while end > text.startIndex, text[text.index(before: end)].isNewline {
@@ -253,18 +225,14 @@ private struct ShellToolCallDetails: View {
   }
 }
 
-/// The expanded content of a tool call: its output directly under the row,
-/// and a success/failure badge.
 public struct ToolCallContentCard: View {
   let call: ToolCall
 
   public var body: some View {
     if let workflow = call.codevisorWorkflowDetails {
-      // The highlighted code block brings its own frame.
       CodevisorWorkflowDetailView(details: workflow)
         .frame(maxWidth: .infinity, alignment: .leading)
     } else if let skill = call.skillText {
-      // A skill read is the skill's text; its JSON envelope is noise.
       PlainCodeBodyView(output: skill)
     } else {
       genericCard
@@ -283,8 +251,6 @@ public struct ToolCallContentCard: View {
         contentView(content)
       }
 
-      // The status badge only earns its place on command output —
-      // reads/edits/searches signal success by their content.
       if call.isSettled, call.kind == .execute || call.status == .failed || call.status == .cancelled {
         HStack {
           Spacer(); ToolCallStatusBadge(call: call)
@@ -294,8 +260,6 @@ public struct ToolCallContentCard: View {
     .frame(maxWidth: .infinity, alignment: .leading)
   }
 
-  /// What the output is, named like a code block's language or a diff's
-  /// file: the file a read returned, or the kind of output.
   private var label: String {
     if call.kind == .read, let path = call.locations?.first?.path {
       let name = (path as NSString).lastPathComponent
@@ -318,8 +282,6 @@ public struct ToolCallContentCard: View {
       switch block {
       case let .text(text, _):
         ToolCallMonospacedText(title: label, text: text)
-      // Web-search sources arrive as resource_link blocks; render each as
-      // a tappable title over its host.
       case let .resourceLink(link):
         ToolSourceLinkView(link: link)
       default:
@@ -394,14 +356,9 @@ private struct ToolCallRawSectionView: View {
   }
 }
 
-/// Tool input and output text, shown like a code block: a header naming it
-/// with a Copy button, then lines that keep their length and scroll sideways
-/// when they overflow. Tall text scrolls within the same capped viewport as
-/// shell output.
 struct ToolCallMonospacedText: View {
   let title: String
   let text: String
-  /// What Copy copies, when the text shown is a preview of it.
   var copyText: String?
   @Environment(\.theme) private var theme
 
@@ -446,9 +403,6 @@ struct ToolCallMonospacedText: View {
   }
 }
 
-/// One web-search source: a tappable title over its host domain, opened in the
-/// default browser. Falls back to the raw URI as the label when there's no
-/// title and to plain text when the URI won't parse.
 public struct ToolSourceLinkView: View {
   let link: ResourceLink
   @Environment(\.theme) private var theme

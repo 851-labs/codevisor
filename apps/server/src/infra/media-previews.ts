@@ -84,8 +84,6 @@ const videoFrame = (path: string, output: string): Promise<void> =>
     })
   })
 
-/** Immutable previews are separate from originals. Decoders work on files,
- * with at most two jobs active; original videos never enter Node buffers. */
 export const mediaPreview = async (
   path: string,
   mimeType: string,

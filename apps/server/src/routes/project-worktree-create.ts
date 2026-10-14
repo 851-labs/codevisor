@@ -46,26 +46,17 @@ export const createProjectWorktree = async (
   const project = await getProjectOrFail(services.db, worktreeProjectId)
   const location = localLocationOrFail(serverId, project)
   assertLocationFolderExists(location)
-  // A scratch folder has no repository of its own. When the scratch root
-  // is nested inside a checkout, git would happily cut a worktree of
-  // THAT repository from here — never what a no-project chat asked for.
   if (isScratchProject(project)) {
     throw new HttpFailure(422, "A scratch workspace folder cannot have worktrees")
   }
   if (!(await isGitWorkTree(location.folderPath))) {
     throw new HttpFailure(422, `Project folder is not a git repository: ${location.folderPath}`)
   }
-  // Server data/worktree directories may be isolated, but local branches
-  // belong to the shared Git repository. Include both namespaces so an
-  // archived worktree or another development server cannot look available.
   const existing = new Set((await run(services.db.listWorktrees(project.id))).map((w) => w.name))
   for (const name of await listCodevisorWorktreeBranchNames(location.folderPath)) {
     existing.add(name)
   }
   const requested = slugifyWorktreeName(payload.name)
-  // Refresh once, outside the collision loop. The ref check above handles
-  // established conflicts; retrying `git worktree add -b` handles the race
-  // where another isolated server claims the same branch after our scan.
   const environment = await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
   const startPoint = await worktreeStartPoint(
     location.folderPath,
@@ -84,11 +75,7 @@ export const createProjectWorktree = async (
     try {
       worktree = await run(services.db.createWorktree(project.id, name, branch, payload.id))
     } catch (cause) {
-      // A concurrent request on this server can reserve the candidate after
-      // our initial scan. Retry only the name constraint; a duplicate
-      // client-supplied id or any other database failure is not recoverable
-      // by changing the branch name.
-      /* v8 ignore start -- requires a deterministic interleaving inside the database's atomic unique constraint. */
+      /* v8 ignore start */
       if (isWorktreeNameCollision(cause) && attempt < 99) {
         existing.add(name)
         continue
@@ -118,10 +105,7 @@ export const createProjectWorktree = async (
       )
       await publishSetup({ state: "completed", durationMs: Date.now() - startedAt })
     } catch (cause) {
-      // Release the reservation before retrying the same client-supplied id
-      // under a new name. Only a branch collision is retryable; other Git
-      // failures retain their terminal setup event and original response.
-      /* v8 ignore start -- requires another process to claim a branch between the preflight scan and git worktree add. */
+      /* v8 ignore start */
       await run(services.db.deleteWorktree(worktree.id)).catch(() => undefined)
       if (isWorktreeBranchCollision(cause) && attempt < 99) {
         existing.add(name)
@@ -159,7 +143,7 @@ export const createProjectWorktree = async (
     writeJson(response, 201, worktree)
     return true
   }
-  /* v8 ignore next -- the allocator's candidate bound guarantees a free name before 100 attempts absent continuous external races. */
+  /* v8 ignore next */
   throw new HttpFailure(422, "Unable to allocate an unused Git worktree branch")
 }
 
@@ -173,9 +157,6 @@ const slugifyWorktreeName = (name: string | undefined): string | undefined => {
   return slug.length > 0 ? slug : undefined
 }
 
-/// Keeps explicit names readable and only adds a sequence number when the
-/// requested name is already in use. The upper bound guarantees a free name:
-/// existing.size + 1 distinct candidates cannot all appear in `existing`.
 const availableWorktreeName = (base: string, existing: ReadonlySet<string>): string => {
   if (!existing.has(base)) {
     return base
@@ -188,11 +169,11 @@ const availableWorktreeName = (base: string, existing: ReadonlySet<string>): str
       return candidate
     }
   }
-  /* v8 ignore next -- existing.size + 1 candidates guarantee a free suffix. */
+  /* v8 ignore next */
   throw new Error("Unable to allocate a unique worktree name")
 }
 
-/* v8 ignore start -- exercised only by the deliberately timing-dependent database race above. */
+/* v8 ignore start */
 const isWorktreeNameCollision = (cause: unknown): boolean =>
   cause instanceof DatabaseError &&
   cause.operation === "createWorktree" &&
@@ -224,7 +205,7 @@ const makeWorktreeSetupPublisher = (
         await appendAndPublish(db, fanout, "worktree.setup", mirrorSubjectId, update)
       }
     })
-    /* v8 ignore next -- keeps the chain alive if the event log write fails; awaited callers still see the failure via `next`. */
+    /* v8 ignore next */
     chain = next.catch(() => undefined)
     return next
   }

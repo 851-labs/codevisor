@@ -1,15 +1,8 @@
-/// `codevisor setup` — onboarding for a freshly installed machine: start the
-/// server, then sign it into Codevisor Cloud (the `codevisor auth login`
-/// device flow) so it appears in every Codevisor app on the account. Logic
-/// lives behind the same injectable seam as the other CLI commands; the
-/// real login is wired in cli.ts.
 import { readCloudRegistration } from "./cloud-control.js"
 import { resolvePort, startCommand, type CliDeps, type CommandOptions } from "./support.js"
 
 export interface SetupDeps extends CliDeps {
   readonly isInteractive: boolean
-  /// Runs the cloud device-code login against the server on `port` and
-  /// verifies its relay connection; resolves to an exit code.
   readonly cloudLogin: (port: number) => Promise<number>
 }
 

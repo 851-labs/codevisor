@@ -12,8 +12,6 @@ import type {
 
 export const run = <A>(effect: Effect.Effect<A, unknown>): Promise<A> => Effect.runPromise(effect)
 
-/// The output and exit frames a client attaching after `lastOutputSeq`
-/// receives as replay.
 export const replayedFrames = (
   manager: TerminalManagerService,
   terminalId: string,
@@ -22,7 +20,6 @@ export const replayedFrames = (
   const frames: Array<TerminalServerFrame> = []
   return Effect.map(
     manager.connectTerminal(terminalId, lastOutputSeq, (frame) => {
-      // Size announcements aren't part of the terminal's output.
       if (frame.type !== "size") frames.push(frame)
     }),
     (disconnect) => {
@@ -36,8 +33,6 @@ export class FakeProcess implements TerminalProcess {
   readonly writes: Array<string> = []
   readonly resizes: Array<readonly [number, number]> = []
   killCount = 0
-  /// What `isShellInForeground` reports: the shell at its prompt, or a
-  /// program running in front of it.
   shellInForeground = true
 
   isShellInForeground(): boolean {

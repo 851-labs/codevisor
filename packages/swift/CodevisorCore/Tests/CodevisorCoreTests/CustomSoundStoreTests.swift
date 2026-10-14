@@ -16,7 +16,6 @@ struct CustomSoundStoreTests {
     store = CustomSoundStore(directory: workDirectory.appendingPathComponent("sounds", isDirectory: true))
   }
 
-  /// Writes a mono 440Hz sine fixture in the given container/format.
   private func makeFixture(
     named name: String,
     duration: Double,
@@ -95,7 +94,6 @@ struct CustomSoundStoreTests {
     #expect(imported.pathExtension == "caf")
     let converted = try AVAudioFile(forReading: imported)
     let duration = Double(converted.length) / converted.processingFormat.sampleRate
-    // AAC encoders pad with priming/remainder frames; allow slack.
     #expect(abs(duration - 2) < 0.2)
   }
 

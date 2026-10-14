@@ -1,12 +1,6 @@
 import CoreText
 import UIKit
 
-/// The terminal's fonts, matching Ghostty's embedded default on macOS:
-/// JetBrains Mono, falling back to the bundled Nerd Fonts symbols for the
-/// Powerline separators and icons that shell prompts (agnoster,
-/// Powerlevel10k, Starship) and TUIs draw. The system monospaced face can't
-/// be used here: CoreText ignores a cascade list on system UI fonts, so those
-/// cells would render as missing-glyph boxes.
 enum TerminalFont {
   static let size: CGFloat = 12
 

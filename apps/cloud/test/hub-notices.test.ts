@@ -45,7 +45,6 @@ describe("abandoned machine session", () => {
       resume_token_hash: "hash",
       expires_at: 1
     }
-    // Two frames on one channel and a close on another were buffered.
     const buffered = [
       encodeRelayEnvelopes([
         {
@@ -94,9 +93,7 @@ describe("abandoned machine session", () => {
     abandonSession(port, expired)
 
     expect(remove).toHaveBeenCalledWith("machine-before")
-    // Connected under its new session: no machine-wide offline notice...
     expect(port.net.broadcastMachineNotice).not.toHaveBeenCalled()
-    // ...but the opener learns its channel's frames are gone, once.
     expect(sent).toEqual([
       {
         socket: appSocket,

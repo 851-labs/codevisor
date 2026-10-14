@@ -1,7 +1,7 @@
 import type { TunnelMediaFlow } from "@codevisor/net"
 import { describe, expect, it, vi } from "vitest"
 
-import { hostCandidate, TunnelMediaRoutes } from "./tunnel-media.js"
+import { TunnelMediaRoutes } from "./tunnel-media.js"
 
 const answer = [
   "v=0",
@@ -32,7 +32,6 @@ const mediaConnection = (endpointId: string) => {
   return { connection, flows, finish }
 }
 
-/// A scripted timeout: fires only when the test says so.
 const scriptedTimeouts = () => {
   const pending: (() => void)[] = []
   return {
@@ -51,16 +50,6 @@ const scriptedTimeouts = () => {
     }
   }
 }
-
-describe("hostCandidate", () => {
-  it("picks the first routable IPv4 UDP host candidate", () => {
-    expect(hostCandidate(answer)).toBe("192.168.1.20:50004")
-  })
-
-  it("finds none in an SDP without one", () => {
-    expect(hostCandidate("v=0\na=candidate:5 1 udp 1 203.0.113.9 61000 typ srflx")).toBeUndefined()
-  })
-})
 
 describe("TunnelMediaRoutes", () => {
   it("bridges an admitted viewer's flow to the host's WebRTC candidate", async () => {
@@ -103,15 +92,18 @@ describe("TunnelMediaRoutes", () => {
     timeouts.fireAll()
     expect(await first).toBeUndefined()
     expect(await second).toBeUndefined()
-    expect(await routes.bridge({ endpointId: "absent", flowId: 3 }, "v=0")).toBeUndefined()
+    const srflxOnly = "v=0\na=candidate:5 1 udp 1 203.0.113.9 61000 typ srflx"
+    expect(await routes.bridge({ endpointId: "absent", flowId: 3 }, srflxOnly)).toBeUndefined()
+    expect(timeouts.count).toBe(0)
 
-    // An unmeasured datagram size is simply omitted.
     const unmeasured = mediaConnection("unmeasured")
     unmeasured.connection.maxMediaPayload = () => null
     routes.offer(unmeasured.connection)
     expect(await routes.bridge({ endpointId: "unmeasured", flowId: 4 }, answer)).toEqual({
       flowId: 4
     })
+    expect(await routes.bridge({ endpointId: "unmeasured", flowId: 5 }, srflxOnly)).toBeUndefined()
+    expect(unmeasured.flows.map(({ flowId }) => flowId)).toEqual([4])
   })
 
   it("uses the real timer by default, cancelling it once the connection arrives", async () => {
@@ -138,15 +130,11 @@ describe("TunnelMediaRoutes", () => {
     expect(older.flows[0]!.close).toHaveBeenCalledOnce()
     expect(older.connection.close).toHaveBeenCalledWith(0, "replaced")
 
-    // The replaced connection closing later doesn't touch the newer route.
     older.finish()
     await older.connection.closed()
     expect(newer.connection.close).not.toHaveBeenCalled()
 
-    // The current connection closing drops its route and flows.
     await routes.bridge({ endpointId: "viewer", flowId: 2 }, answer)
-    // The route's close handler was attached to this promise first, so it has
-    // run by the time this await resumes.
     newer.finish()
     await newer.connection.closed()
     expect(newer.flows[0]!.close).toHaveBeenCalledOnce()

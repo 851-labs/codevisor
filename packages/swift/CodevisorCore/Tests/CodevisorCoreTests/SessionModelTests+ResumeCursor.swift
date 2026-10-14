@@ -4,9 +4,6 @@ import ACPKit
 
 @testable import CodevisorCore
 
-/// A streaming transcript must never rewind: applied stream events advance
-/// the resume cursor, and a history snapshot older than the applied stream
-/// is never installed.
 extension SessionModelTests {
   private func chunkEnvelope(
     id: Int,
@@ -80,8 +77,6 @@ extension SessionModelTests {
     let streamedSoFar = finalMarkdown(model)
     let subscriptionsBefore = client.sessionEventSinceValues.count
 
-    // The server's durable page lags the socket: it still ends after the
-    // first list marker, at an older cursor.
     client.initialTranscriptPage = cancellationTranscriptPage(
       sessionId: sessionId,
       isGenerating: true,
@@ -98,7 +93,6 @@ extension SessionModelTests {
     await settleUntil { client.sessionEventSinceValues.count > subscriptionsBefore }
     #expect(client.sessionEventSinceValues.last == 12)
 
-    // A snapshot that is genuinely newer still wins.
     client.initialTranscriptPage = cancellationTranscriptPage(
       sessionId: sessionId,
       isGenerating: false,

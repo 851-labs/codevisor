@@ -1,9 +1,6 @@
 import CommonCrypto
 import Foundation
 
-/// VNC Authentication (security type 2): the 16-byte challenge encrypted with
-/// DES in ECB mode, keyed by the first eight bytes of the password with each
-/// byte's bits reversed — VNC's historical quirk, which every server expects.
 public enum RFBVNCAuthentication {
   public static func response(challenge: [UInt8], password: String) -> [UInt8] {
     precondition(challenge.count == 16)

@@ -1,7 +1,3 @@
-// Renders apps/relay/fly/<id>.toml for every relay in relays.json — one Fly
-// app per relay instance, so each has its own stable address
-// (docs/plans/codevisor-tunnel.md). The files are checked in for review;
-// `--check` fails when they drift from relays.json (CI).
 import { readFile, readdir, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import process from "node:process"
@@ -9,9 +5,6 @@ import { fileURLToPath } from "node:url"
 
 const here = fileURLToPath(new URL(".", import.meta.url))
 
-/// The repository formatter (oxfmt) also formats TOML: it drops indentation
-/// and puts one space before inline comments. Emit exactly that, so the
-/// committed files pass both this generator's --check and `format:check`.
 const formatted = (toml) =>
   toml
     .split("\n")

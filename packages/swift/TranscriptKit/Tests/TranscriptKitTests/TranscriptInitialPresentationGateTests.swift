@@ -122,8 +122,6 @@ struct TranscriptInitialPresentationGateTests {
 
   @Test func firstSendFlightOpensAGateItsHeldRowsKeepClosed() {
     var gate = TranscriptInitialPresentationGate()
-    // A new chat's flight holds back the active projection and a row beneath
-    // its target, so normal readiness cannot resolve until the reply lands.
     let normalReveal = gate.resolve(
       isHydrating: false,
       isActiveProjectionPending: true,

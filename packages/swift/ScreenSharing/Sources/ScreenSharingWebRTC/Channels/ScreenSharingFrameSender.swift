@@ -3,11 +3,7 @@ import Foundation
 @preconcurrency import WebRTC
 import ScreenSharing
 
-/// Capture feeds WebRTC directly on its capture queue. The lock serializes
-/// admission with shutdown; no per-frame tasks accumulate on the main actor.
 public final class ScreenSharingFrameSender: ScreenSharingFrameSink, @unchecked Sendable {
-  /// The WebRTC source and its capturer, until `stop()` hands them to `releaseQueue`: they
-  /// retain the peer's factory, whose release must never fall to the main thread.
   private var media: (source: RTCVideoSource, capturer: RTCVideoCapturer)?
   private let releaseQueue: DispatchQueue?
   private let metrics: ScreenSharingMetrics
@@ -19,8 +15,6 @@ public final class ScreenSharingFrameSender: ScreenSharingFrameSink, @unchecked 
   private var expectedSize: (width: Int, height: Int)?
   private var onActivity: (@Sendable () -> Void)?
 
-  /// `releaseQueue` (the peer's transport queue) is where `stop()` releases the source; nil
-  /// releases it in place.
   init(
     source: RTCVideoSource, metrics: ScreenSharingMetrics, idleMonitor: ScreenSharingSourceIdleMonitor,
     releaseQueue: DispatchQueue? = nil
@@ -31,7 +25,6 @@ public final class ScreenSharingFrameSender: ScreenSharingFrameSink, @unchecked 
     self.releaseQueue = releaseQueue
   }
 
-  /// Invoked once per idle-to-active transition, outside the sender's lock.
   func onActivity(_ callback: (@Sendable () -> Void)?) { lock.withLock { onActivity = callback } }
 
   public func push(_ frame: ScreenSharingVideoFrame) {
@@ -47,11 +40,8 @@ public final class ScreenSharingFrameSender: ScreenSharingFrameSink, @unchecked 
       guard let submission = refreshFrames.capture(frame) else {
         metrics.increment("captureTimestampDrops"); return nil
       }
-      // New content in a (possibly recycled) buffer: identify it before WebRTC sees it.
       ScreenSharingFrameIdentity.attach(sourceTimestampNs: frame.timestampNs, to: frame.pixelBuffer)
       metrics.increment("capturedFrames")
-      // Cache ownership events (not a reference balance): a fill of an empty
-      // cache, or a replacement that releases the previously held buffer.
       metrics.increment(wasHolding ? "refreshCacheReplacements" : "refreshCacheFills")
       metrics.label("latestCapturedTimestampNs", String(frame.timestampNs))
       let started = ScreenSharingMetrics.nowNs
@@ -65,14 +55,11 @@ public final class ScreenSharingFrameSender: ScreenSharingFrameSink, @unchecked 
     activated?()
   }
 
-  /// Transition the source format before updating SCK. Frames still arriving
-  /// at the old size are expendable raw frames and never enter the encoder.
   public func configure(_ configuration: ScreenSharingVideoConfiguration) {
     lock.withLock {
       if refreshFrames.isHolding { metrics.increment("refreshCacheReleases") }
       refreshFrames.clear()
       expectedSize = (configuration.width, configuration.height)
-      // Not a proxied call: the adapter is updated in place, under its own lock.
       media?.source.adaptOutputFormat(
         toWidth: Int32(configuration.width), height: Int32(configuration.height),
         fps: Int32(configuration.framesPerSecond))
@@ -93,7 +80,6 @@ public final class ScreenSharingFrameSender: ScreenSharingFrameSink, @unchecked 
     }
   }
 
-  /// Probe-only suspension keeps the same cached frame available for recovery.
   public func suspendCaptureDelivery() { lock.withLock { captureSuspended = true } }
 
   func stop() {
@@ -113,7 +99,6 @@ public final class ScreenSharingFrameSender: ScreenSharingFrameSink, @unchecked 
     let capturer: RTCVideoCapturer
   }
 
-  /// Whether the one-frame cache currently owns a buffer (diagnostic).
   public var isHoldingCachedFrame: Bool { lock.withLock { refreshFrames.isHolding } }
 
   private func submit(_ frame: ScreenSharingVideoFrame) {

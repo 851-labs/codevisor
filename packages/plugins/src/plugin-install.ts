@@ -33,23 +33,14 @@ import { defaultSpawnArgv, defaultSpawnShell } from "./plugin-supervisor.js"
 import { makePluginTransactionEngine } from "./plugin-transaction.js"
 import { PluginsError } from "./plugins-error.js"
 
-/// The install pipeline behind `codevisor plugin install|link|remove` and the
-/// matching /v1/plugins routes, forked from packages/skills' staged-clone
-/// approach: stage the source into a mkdtemp clone, read the manifest there,
-/// and only then touch the plugins root. All effects run through injectable
-/// seams (clone, spawnShell, registerExternalTerminal) so tests never hit the
-/// network or spawn real installs.
 export interface PluginInstallerDeps {
   readonly pluginsRoot: string
-  /// Runs the manifest install command (login shell, cwd = plugin dir).
   readonly spawnShell?: (command: string, options: PluginSpawnOptions) => PluginProcessHandle
   readonly spawnArgv?: (
     argv: ReadonlyArray<string>,
     options: PluginSpawnOptions
   ) => PluginProcessHandle
-  /// Login-shell environment for install commands; defaults to process.env.
   readonly resolveEnv?: () => Promise<NodeJS.ProcessEnv>
-  /// Staged clone; defaults to a shallow `git clone`.
   readonly clone?: (
     url: string,
     ref: string | undefined,
@@ -60,15 +51,9 @@ export interface PluginInstallerDeps {
   readonly platform?: string
   readonly codevisorVersion?: string
   readonly receiptNow?: () => Date
-  /// Persistent state root (`<server-data>/plugin-data`). Transactional
-  /// updates snapshot the plugin's directory here before starting a candidate.
   readonly pluginDataRoot: string
-  /// Starts the installed candidate and resolves only after readiness passes.
   readonly verifyInstalled: (pluginId: string) => Promise<void>
-  /// When present, install-command output streams into an attachable
-  /// external terminal (sessionId `plugin-install:{id}`).
   readonly registerExternalTerminal?: RegisterPluginTerminal | undefined
-  /// Stops the plugin's process before its directory is replaced or removed.
   readonly stop: (pluginId: string) => void
 }
 
@@ -76,24 +61,13 @@ export interface PluginInstaller extends PluginRestore {
   readonly discoverRemote: (
     request: DiscoverRemotePluginRequest
   ) => Promise<DiscoverRemotePluginResult>
-  /// Installs (or updates a managed install of) the plugin the source
-  /// provides and resolves its manifest.
   readonly importRemote: (request: ImportRemotePluginRequest) => Promise<PluginManifest>
-  /// Fetches, validates, and runs setup for an exact update candidate without
-  /// stopping or changing the installed plugin.
   readonly prepareUpdate: (request: PreparePluginUpdateRequest) => Promise<PreparedPluginUpdate>
-  /// Applies only the bytes represented by a prepared handle.
   readonly applyPreparedUpdate: (prepared: PreparedPluginUpdate) => Promise<PluginManifest>
   readonly discardPreparedUpdate: (prepared: PreparedPluginUpdate) => Promise<void>
-  /// Repairs or finishes any transaction journal left by a process crash.
   readonly recover: () => Promise<void>
-  /// Managed-marker-gated uninstall; linked plugins are never deleted.
   readonly remove: (pluginId: string) => Promise<void>
-  /// Dev mode: symlink a local plugin directory into the plugins root.
   readonly link: (request: LinkPluginRequest) => Promise<PluginManifest>
-  /// Removes a link Codevisor created, and only the link. The developer's
-  /// checkout — whatever the link points at — is never touched, so this
-  /// stays inside the same iron rule that makes `remove` refuse links.
   readonly unlink: (pluginId: string) => Promise<void>
 }
 
@@ -117,20 +91,15 @@ export const makePluginInstaller = (deps: PluginInstallerDeps): PluginInstaller 
     scanPlugins(deps.pluginsRoot).plugins.find((candidate) => candidate.id === pluginId)
   const restore = makePluginRestore({ installedWithId, transactions })
 
-  /// The plugin id doubles as the managed directory name. The manifest id
-  /// pattern already forbids separators; this guard keeps the invariant
-  /// load-bearing rather than assumed.
   const managedDirectory = (pluginId: string): string => {
     const destination = join(deps.pluginsRoot, pluginId)
-    /* v8 ignore next 3 -- unreachable: parsePluginManifest rejects ids with separators. */
+    /* v8 ignore next 3 */
     if (basename(destination) !== pluginId || !isPluginPathSafe(deps.pluginsRoot, destination)) {
       throw new PluginsError("invalid", `Invalid plugin directory name: ${pluginId}`)
     }
     return destination
   }
 
-  /// Runs one setup command in the plugin directory, streaming output through
-  /// the observability terminal. Success is a zero exit code from the spawner.
   const runSetupCommand = (
     command: ReturnType<typeof pluginSetupCommands>[number],
     manifest: PluginManifest,
@@ -196,7 +165,7 @@ export const makePluginInstaller = (deps: PluginInstallerDeps): PluginInstaller 
       throw new PluginsError("invalid", `Invalid plugin update plan id: ${planId}`)
     }
     const directory = join(updatePlansRoot, `${pluginId}.${planId}`)
-    /* v8 ignore next 3 -- the manifest and plan-id patterns make this unreachable. */
+    /* v8 ignore next 3 */
     if (!isPluginPathSafe(updatePlansRoot, directory)) {
       throw new PluginsError("invalid", `Invalid plugin update plan path: ${planId}`)
     }
@@ -327,8 +296,6 @@ export const makePluginInstaller = (deps: PluginInstallerDeps): PluginInstaller 
     },
     recover: async () => {
       await transactions.recover()
-      // Plans are process-local capabilities. They cannot be applied after a
-      // restart, so abandoned staged bytes are removed during recovery.
       await rm(updatePlansRoot, { force: true, recursive: true })
     },
     link: (request) => linkPlugin(linkDeps, request),
@@ -340,9 +307,6 @@ export const makePluginInstaller = (deps: PluginInstallerDeps): PluginInstaller 
         if (plugin === undefined) {
           throw new PluginsError("notFound", `Plugin not installed: ${pluginId}`)
         }
-        // The iron rule (same as skills): uninstall deletes only directories
-        // Codevisor provably created. Links are the developer's — even one
-        // whose target happens to contain a marker.
         const stats = await lstat(plugin.path)
         if (stats.isSymbolicLink() || plugin.source !== "managed") {
           throw new PluginsError(

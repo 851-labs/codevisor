@@ -14,9 +14,6 @@ public enum LegacyServerJobRetirementError: LocalizedError, Equatable {
   }
 }
 
-/// Removes updater-era launchd jobs before the current SMAppService takes
-/// ownership. Those jobs used KeepAlive, so merely shutting down their server
-/// process lets launchd immediately reclaim the port.
 public struct LegacyServerJobRetirer: Sendable {
   public static let labels = [
     "com.851labs.codevisor-recovery",
@@ -44,9 +41,6 @@ public struct LegacyServerJobRetirer: Sendable {
     self.commandTimeout = commandTimeout
   }
 
-  /// Idempotent: booting out a loaded job and finding no job are both the
-  /// success path. `bootout` is the modern, domain-scoped replacement for
-  /// legacy `launchctl remove`, which returns before a job has stopped.
   public func retire() async throws {
     for label in Self.labels {
       let target = "gui/\(userID)/\(label)"

@@ -70,7 +70,6 @@ describe("Claude skills", () => {
     await run(provider.createSession(definition, "/tmp", async (event) => void events.push(event)))
     expect(skillUpdates(events)).toEqual([["simplify", "teleport"]])
 
-    // `init` arrives with the first turn and names the skills exactly.
     fake.push({
       ...(initMessage() as object),
       skills: ["simplify"],
@@ -102,7 +101,6 @@ describe("Claude skills", () => {
         ]
       })
     )
-    // An unchanged list is not published again.
     fake.push(
       systemMessage("commands_changed", {
         commands: [

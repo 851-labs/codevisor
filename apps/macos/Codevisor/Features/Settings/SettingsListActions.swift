@@ -1,10 +1,5 @@
 import SwiftUI
 
-/// The one shape every settings list's actions share: trailing-aligned
-/// buttons rendered as the section footer, sitting under the list they act
-/// on (the Harnesses page's Refresh / Add Custom Harness… sets the pattern).
-/// An optional message — typically the last action's error — reads
-/// leading-aligned above the buttons.
 struct SettingsListActions<Actions: View>: View {
   var message: String?
   @ViewBuilder let actions: () -> Actions
@@ -25,7 +20,6 @@ struct SettingsListActions<Actions: View>: View {
         actions()
       }
     }
-    // Grouped-form footers default to caption text; actions keep body size.
     .font(.body)
   }
 }

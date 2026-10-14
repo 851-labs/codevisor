@@ -24,7 +24,6 @@ const reserve = (name: string) => {
   return `globalThis[${JSON.stringify(name)}]`
 }
 
-/** Async cells use explicit global bindings; declarations inside functions/blocks remain local. */
 export const computerUseCellBody = (code: string): string => {
   const source = transform(code, { transforms: ["typescript"], disableESTransforms: true }).code
   const nodes = parse(source, { sourceType: "script", allowAwaitOutsideFunction: true }).program

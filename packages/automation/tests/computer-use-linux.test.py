@@ -10,7 +10,6 @@ SOURCE = Path(__file__).parents[1] / "resources/computer-use-linux.py"
 
 def helper():
     tree = ast.parse(SOURCE.read_text())
-    # Keep the production definitions; omit desktop discovery, GI imports and stdin loop.
     tree.body = [node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.Assign))]
     namespace = {"json": json}
     exec(compile(tree, str(SOURCE), "exec"), namespace)
@@ -50,7 +49,6 @@ class ComputerUseLinuxTests(unittest.TestCase):
         h["Atspi"] = SimpleNamespace(Text=SimpleNamespace(
             get_character_count=lambda _: len(text),
             get_text=lambda _, start, end: text[start:end]))
-        # is_text can disagree with the introspected interface; the interface is authoritative.
         node = SimpleNamespace(get_role_name=lambda: "entry", is_text=lambda: False,
                                get_text_iface=lambda: object(), get_value_iface=lambda: None)
         self.assertEqual(h["element_value"](node), "x" * h["TEXT_LIMIT"] + "…")

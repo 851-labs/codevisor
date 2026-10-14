@@ -4,7 +4,6 @@ import { HttpFailure, matchRoute, matchRouteParams, run, writeJson } from "../se
 import type { CodevisorServerServices, RouteState } from "../server-context.js"
 import { withUpdateGate } from "./update-gate.js"
 
-/** Reads persisted transcript pages and item content without opening the provider. */
 export const routeSessionTranscript = async (
   services: CodevisorServerServices,
   routeState: RouteState,

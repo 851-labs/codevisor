@@ -129,8 +129,6 @@ describe("plugin transactions", () => {
     expect(existsSync(current.paths.data)).toBe(false)
     expect(text(join(current.paths.knownGoodCode, "version.txt"))).toBe("current")
 
-    // Swapping back now fails verification. The current code/data and the
-    // still-useful known-good backup both survive the rollback.
     write(join(current.paths.data, "value.txt"), "new-current-data")
     shouldFail = true
     await expect(current.engine.restoreKnownGood("owner.example")).rejects.toThrow(

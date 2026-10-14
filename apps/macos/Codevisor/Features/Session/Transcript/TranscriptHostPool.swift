@@ -1,8 +1,5 @@
 import AppKit
 
-/// Owns detached row hosts and the bounded warm pools used when rows mount again.
-/// Hosted SwiftUI rows retire incrementally so releasing an abandoned window
-/// cannot tear down all its hosting controllers during a scroll gesture.
 @MainActor
 final class TranscriptHostPool {
   private var recycledHosts: [TranscriptRowHost] = []
@@ -25,8 +22,6 @@ final class TranscriptHostPool {
       if recycledHosts.count < 8 {
         recycledHosts.append(host)
       }
-      // Dropping the final reference here releases excess hosts outside live
-      // scrolling. The caller bounds this work per display frame.
     }
   }
 

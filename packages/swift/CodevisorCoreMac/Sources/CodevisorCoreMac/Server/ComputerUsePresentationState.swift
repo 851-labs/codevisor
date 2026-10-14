@@ -21,7 +21,6 @@ final class ComputerUsePresentationState: NSObject {
   let cursorTipAnchor = ComputerUseCursorMetrics.tipAnchor
   var sessions: [String: SessionPresentation] = [:]
   private var colorIndexBySession: [String: Int] = [:]
-  /// When each session last drove the app, for idle release.
   private var lastActivityBySession: [String: Date] = [:]
   var visibilityTimer: Timer?
 
@@ -39,8 +38,6 @@ final class ComputerUsePresentationState: NSObject {
       name: NSWorkspace.didActivateApplicationNotification,
       object: nil
     )
-    // Without this, a controlled app that quits leaves its menu-bar entry,
-    // cursor panel, and 4 Hz visibility poll behind forever.
     NSWorkspace.shared.notificationCenter.addObserver(
       self,
       selector: #selector(applicationDidTerminate(_:)),
@@ -64,9 +61,6 @@ final class ComputerUsePresentationState: NSObject {
 
     if var presentation = sessions[sessionID] {
       if presentation.pid != pid {
-        // The session re-attached to a different process (a rebuilt
-        // dev app is the common case). Retire the old pid's menu-bar
-        // entry and sharing key or they would linger as duplicates.
         let staleKey = ComputerUseShareKey(sessionID: sessionID, pid: presentation.pid)
         ComputerUseControlStatusItem.shared.remove(key: staleKey)
         ComputerUseNativeSharing.shared.retire(key: staleKey)
@@ -143,7 +137,6 @@ final class ComputerUsePresentationState: NSObject {
     }
   }
 
-  /// Turn completion hides only the input indicator; viewers keep their stream.
   func hideCursor(sessionID: String) {
     ComputerUseLivePreview.shared.apply(.cursorHidden(sessionID: sessionID))
     if let presentation = sessions[sessionID] {
@@ -163,8 +156,6 @@ final class ComputerUsePresentationState: NSObject {
     stopVisibilityMonitoringIfNeeded()
   }
 
-  /// The user chose "Stop Using …" for one agent's control of one app.
-  /// Revokes exactly that session/app pairing; other agents keep going.
   func stopUsing(key: ComputerUseShareKey) {
     ComputerUseLivePreview.shared.apply(.stopped(sessionID: key.sessionID, pid: key.pid))
     ComputerUseRevocations.shared.insert(key)
@@ -178,9 +169,6 @@ final class ComputerUsePresentationState: NSObject {
     stopVisibilityMonitoringIfNeeded()
   }
 
-  /// The controlled app exited. Unlike `stopUsing`, nothing is revoked: the
-  /// quit was not a user decision about Computer Use, and the same session
-  /// may legitimately control a relaunched instance.
   func targetTerminated(pid: pid_t) {
     ComputerUseLivePreview.shared.apply(.terminated(pid: pid))
     let sessionIDs = sessions.filter { $0.value.pid == pid }.map(\.key)
@@ -195,9 +183,6 @@ final class ComputerUsePresentationState: NSObject {
     stopVisibilityMonitoringIfNeeded()
   }
 
-  /// Drops the share, cursor and menu bar entry of a session that has gone
-  /// quiet, without ending it: the next tool call re-attaches implicitly,
-  /// keeping the same cursor colour, and any revocation still stands.
   private func releaseIdle(sessionID: String) {
     ComputerUseLivePreview.shared.apply(.idled(sessionID: sessionID))
     if let presentation = sessions.removeValue(forKey: sessionID) {
@@ -225,7 +210,6 @@ final class ComputerUsePresentationState: NSObject {
     }
   }
 
-  /// Restarts a live session's idle window, e.g. when its last viewer leaves.
   func touch(sessionID: String) {
     guard sessions[sessionID] != nil else { return }
     lastActivityBySession[sessionID] = Date()
@@ -257,8 +241,6 @@ final class ComputerUsePresentationState: NSObject {
     ComputerUseNativeSharing.shared.endAll()
   }
 
-  /// Keeps the assignment stable for a session's whole lifetime while
-  /// steering concurrent sessions away from one another's colors.
   private func colorIndex(for sessionID: String) -> Int {
     if let existing = colorIndexBySession[sessionID] { return existing }
     let taken = Set(sessions.keys.compactMap { colorIndexBySession[$0] })

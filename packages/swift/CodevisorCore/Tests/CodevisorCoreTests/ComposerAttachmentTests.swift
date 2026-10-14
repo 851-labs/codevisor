@@ -118,7 +118,6 @@ struct ComposerAttachmentTests {
     #expect(!FileManager.default.fileExists(atPath: fileURL.path))
   }
 
-  /// A sparse file reports a large size without writing its bytes.
   private func sparseFile(named name: String, bytes: Int) throws -> URL {
     let directory = FileManager.default.temporaryDirectory
       .appendingPathComponent("attachment-limit-\(UUID().uuidString)", isDirectory: true)
@@ -131,8 +130,6 @@ struct ComposerAttachmentTests {
     return url
   }
 
-  /// The controller only weakly references its machines; callers keep
-  /// the returned machine controller alive.
   @MainActor
   private func controller(
     maxUploadBytes: Int?,

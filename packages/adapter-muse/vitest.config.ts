@@ -1,7 +1,5 @@
 import { defineConfig } from "vitest/config"
 
-// Spawning Muse is exercised against a live binary (tophat and e2e runs); the
-// protocol, mapping and session logic run on fakes and stay fully covered.
 export default defineConfig({
   test: {
     coverage: {

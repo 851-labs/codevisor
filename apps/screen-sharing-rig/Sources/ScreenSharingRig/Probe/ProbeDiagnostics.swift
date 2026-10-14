@@ -2,7 +2,6 @@ import ScreenSharingDiagnostics
 import Foundation
 import ScreenSharing
 
-/// Validates bounded diagnostic windows and reserves no files during option parsing.
 struct ProbeDiagnostics {
   let deliveryAuditWindow: (beginSeconds: Double, durationSeconds: Double)?
   let rtcEventLogWindow: (beginSeconds: Double, durationSeconds: Double)?

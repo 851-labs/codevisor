@@ -4,9 +4,6 @@ import Testing
 
 @testable import CodevisorClient
 
-/// The device saves the last navigation snapshot it received and reads it
-/// back on the next launch, so every record in it must survive being written
-/// and decoded again by the same decoder the client uses for the network.
 struct ServerNavigationCodingTests {
   static let wire = """
     {"eventCursor":42,

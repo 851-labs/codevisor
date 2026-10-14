@@ -3,9 +3,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// A New Tab converted in place must be persisted under its new name and kind
-/// immediately, because that persisted record is what a sidebar row re-reads.
-/// The tab's own user-given title is separate and must survive the conversion.
 @Suite("Converted pane title")
 struct ConvertedPaneTitleTests {
   private func workspace(centerTree: SplitNode) -> Workspace {
@@ -22,8 +19,6 @@ struct ConvertedPaneTitleTests {
   @Test func convertingAPlaceholderPersistsItsNewNameUnderTheSamePaneId() throws {
     let navigation = NavigationFixture()
     let repository = navigation.workspaces
-    // A server-authored placeholder: the record's title is what the sidebar
-    // shows until the conversion is persisted.
     var seeded = PaneGroupState()
     let placeholder = seeded.addNewTabPane()
     let space = workspace(centerTree: .leaf(seeded))
@@ -39,7 +34,6 @@ struct ConvertedPaneTitleTests {
     let converted = try #require(conversion)
     bridge.save(state, sessionId: nil)
 
-    // Same slot, new identity-free name: what a re-read of the record yields.
     #expect(converted.id == placeholder.id)
     let reloaded = try #require(bridge.load(sessionId: nil))
     #expect(reloaded.selectedPane?.id == placeholder.id)
@@ -49,7 +43,6 @@ struct ConvertedPaneTitleTests {
 
     let persisted = try #require(repository.workspace(id: space.id))
     #expect(persisted.centerTree.group(id: leafId)?.selectedPane?.name == "Screen Sharing")
-    // The device layout -- what the next launch shows -- has it too.
     let layout = try #require(navigation.store.layouts.layout(for: space.id))
     #expect(layout.tabs.first?.root.group(id: leafId)?.selectedPane?.name == "Screen Sharing")
   }
@@ -68,7 +61,6 @@ struct ConvertedPaneTitleTests {
     _ = try #require(conversion)
     space.centerTabs[0].root = space.centerTabs[0].root.updatingGroup(id: leafId) { _ in state }
 
-    // The pane's own name follows the conversion; the tab's user title does not.
     #expect(space.centerTabs[0].root.group(id: leafId)?.selectedPane?.name == "Screen Sharing")
     #expect(space.centerTabs[0].customTitle == "Remote screen")
   }

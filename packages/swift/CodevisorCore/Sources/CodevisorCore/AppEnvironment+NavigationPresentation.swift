@@ -1,9 +1,6 @@
 import Foundation
 
 extension AppEnvironment {
-  /// Every machine navigation can show, as the launch and sync-indicator
-  /// rules see it. The local machine counts only where this app runs one;
-  /// on iOS it is a placeholder, not a machine with workspaces.
   public var navigationPresentationMachines: [NavigationPresentation.Machine] {
     let states = machines.navigationSyncStateByMachineId
     return machines.allMachines

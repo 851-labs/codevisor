@@ -9,9 +9,6 @@ import type { UserHub } from "./user-hub.js"
 
 export const credentialRoutes = new Hono<{ Bindings: CloudEnv }>()
 
-/// A machine's own api key (the `x-api-key` header) resolved to the account
-/// and device it belongs to; undefined for a missing, invalid, or non-machine
-/// key.
 export const verifyMachineKey = async (
   env: CloudEnv,
   key: string | undefined

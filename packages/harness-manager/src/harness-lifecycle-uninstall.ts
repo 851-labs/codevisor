@@ -62,8 +62,6 @@ export const makeHarnessUninstall = (
       if (owned)
         return commandFor("brew", ["uninstall", ...(brew.cask ? ["--cask"] : []), brew.formula])
     }
-    // Infer the exact prefix from the owning global package, not the current
-    // npm default (which may belong to a different Node installation).
     for (const method of definition.installMethods ?? []) {
       if (method.kind === "npm" && method.packageName !== undefined) {
         const marker = `/lib/node_modules/${method.packageName}/`

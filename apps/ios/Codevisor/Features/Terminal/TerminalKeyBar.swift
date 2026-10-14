@@ -3,26 +3,11 @@ import GhosttyTerminal
 import SwiftUI
 import UIKit
 
-/// Bridges the SwiftUI key bar to the Ghostty terminal view: key presses
-/// (encoded by Ghostty for the program's key modes), the sticky ctrl
-/// modifier, and the keyboard's geometry.
-///
-/// The pane is laid out edge to edge and opts out of SwiftUI's own keyboard
-/// avoidance (see `EdgeToEdgePaneHost`), so the keyboard is measured here
-/// instead: where its top edge lands, and the curve it travels on, so the
-/// terminal and the key bar move with it rather than racing it.
 @MainActor
 final class TerminalKeyController: ObservableObject {
   private(set) weak var terminalView: SessionTerminalView?
 
   @Published private(set) var keyboardVisible = false
-  /// The docked keyboard's top edge in the host window's coordinate space —
-  /// the space SwiftUI reports as `.global`, so a pane can subtract its own
-  /// bottom edge from this to learn how much of it the keyboard covers.
-  ///
-  /// `nil` while the keyboard is down, and while it is floating or split:
-  /// those don't reach the window's bottom edge, so they cover nothing the
-  /// terminal has to stay clear of.
   @Published private(set) var keyboardTop: CGFloat?
   @Published var ctrlActive = false
 
@@ -30,8 +15,6 @@ final class TerminalKeyController: ObservableObject {
 
   init() {
     let center = NotificationCenter.default
-    // willChangeFrame rather than willShow: it also reports the keyboard
-    // growing, shrinking and undocking while it is already up.
     observers.append(
       center.addObserver(
         forName: UIResponder.keyboardWillChangeFrameNotification, object: nil, queue: .main
@@ -48,16 +31,11 @@ final class TerminalKeyController: ObservableObject {
       })
   }
 
-  // MARK: - Keyboard geometry
-
   private func keyboardWillChangeFrame(_ change: KeyboardChange) {
     guard
       let end = change.endFrame,
       let window = terminalView?.window
     else { return }
-    // The notification carries screen coordinates. Converting through the
-    // window is what keeps this right in Split View, Slide Over and Stage
-    // Manager, where the window is only part of the screen.
     let frame = window.convert(end, from: window.screen.coordinateSpace)
     let bounds = window.bounds
     let isDocked = frame.maxY >= bounds.maxY - 1 && frame.width >= bounds.width - 1
@@ -72,10 +50,6 @@ final class TerminalKeyController: ObservableObject {
     }
   }
 
-  /// The keyboard's own duration and curve. UIKit reports a private curve
-  /// (raw value 7) for the keyboard itself, which has no SwiftUI equivalent;
-  /// its control points are approximated here. Anything else is a curve
-  /// SwiftUI names.
   private static func animation(for change: KeyboardChange) -> Animation {
     let duration = change.duration
     guard duration > 0 else { return .linear(duration: 0) }
@@ -97,8 +71,6 @@ final class TerminalKeyController: ObservableObject {
   func attach(_ view: SessionTerminalView) {
     guard terminalView !== view else { return }
     terminalView = view
-    // The view clears a one-shot ctrl after the next keystroke; mirror its
-    // state in the button.
     view.setStickyModifierChangeHandler { [weak self, weak view] in
       guard let view else { return }
       self?.ctrlActive = view.stickyActivation(for: .ctrl) != .inactive
@@ -125,7 +97,6 @@ final class TerminalKeyController: ObservableObject {
     case up, down, left, right
   }
 
-  /// Ghostty encodes arrows for the program's cursor-key mode itself.
   func sendArrow(_ arrow: Arrow) {
     switch arrow {
     case .up: press(.arrowUp)
@@ -135,7 +106,6 @@ final class TerminalKeyController: ObservableObject {
     }
   }
 
-  /// One-shot ctrl: applies to the next key typed, then clears.
   func toggleCtrl() {
     guard let terminalView else { return }
     UIDevice.current.playInputClick()
@@ -150,8 +120,6 @@ final class TerminalKeyController: ObservableObject {
   }
 }
 
-/// What a keyboard notification carries, read where it is delivered:
-/// `Notification` is not Sendable, so only these values reach the main actor.
 nonisolated private struct KeyboardChange: Sendable {
   let endFrame: CGRect?
   let duration: Double
@@ -165,10 +133,6 @@ nonisolated private struct KeyboardChange: Sendable {
   }
 }
 
-/// Liquid Glass key bar floating above the keyboard: esc, ctrl, tab, and
-/// arrows. (Touches select text or go to the program as mouse input as
-/// Ghostty decides from the program's mouse mode.) Shown only while the keyboard is up; the keyboard is
-/// dismissed by swiping it down (interactive dismissal on the terminal).
 struct TerminalKeyBar: View {
   @ObservedObject var controller: TerminalKeyController
 
@@ -229,8 +193,6 @@ struct TerminalKeyBar: View {
   }
 }
 
-/// A key that fires on touch-down and auto-repeats while held
-/// (600ms delay, then every 100ms) — used for the arrow keys.
 private struct RepeatKeyButton: View {
   let icon: String
   let label: String
@@ -272,8 +234,6 @@ private struct RepeatKeyButton: View {
   }
 }
 
-/// Liquid Glass circular button shown while the keyboard is hidden;
-/// tapping it brings the keyboard back.
 struct ShowKeyboardButton: View {
   let action: () -> Void
 

@@ -1,7 +1,5 @@
 import Foundation
 
-/// Public plugin metadata and moderation always come from Codevisor, independently
-/// of the account's discovery server and the machine receiving an installation.
 public struct PluginCatalogClient: Sendable {
   static let officialServerURL = URL(string: "https://cloud.codevisor.dev")!
   typealias Fetch = @Sendable (URLRequest) async throws -> (Data, URLResponse)

@@ -4,10 +4,6 @@ import Testing
 
 @testable import ScreenSharing
 
-/// Audit boundaries through the real coordinator seams (main-actor commit and
-/// off-main preparation): identity carried as scalars from the selected frame
-/// to submission, GPU completion callback and presented result; nil audit = no
-/// recording and no clock reads.
 @MainActor
 struct ScreenSharingRenderCoordinatorAuditTests {
   private final class Clock: @unchecked Sendable {
@@ -100,11 +96,10 @@ struct ScreenSharingRenderCoordinatorAuditTests {
     let s = audit.snapshot()
     #expect(s.stages == [4, 9, 11, 10] && s.sequences == [42, 42, 42, 42] && s.rtpTimestamps == [900, 900, 900, 900])
     #expect(s.valueNs == [0, 0, 1_250_000_000, 1] && s.duplicateEvents == 0 && s.missingIdentityEvents == 0)
-    // a cached redraw is not a delivery: selecting the cache records nothing
     #expect(coordinator.select()?.isNewFrame == false && audit.snapshot().recorded == 4)
-    #expect(weakBuffer != nil)  // only the coordinator's redraw cache still holds the buffer …
+    #expect(weakBuffer != nil)
     coordinator.stop()
-    #expect(weakBuffer == nil && audit.snapshot().recorded == 4)  // … the audit's four records retained nothing
+    #expect(weakBuffer == nil && audit.snapshot().recorded == 4)
   }
 
   @Test func preparationPathCarriesTheIdentityToPreparedReceiptSubmissionAndCompletion() throws {
@@ -128,17 +123,16 @@ struct ScreenSharingRenderCoordinatorAuditTests {
       coordinator.prepare(
         with: preparer, geometry: .init(clearColor: .zero, drawableSize: CGSize(width: 8, height: 8))
       ))
-    #expect(preparer.lastIdentity == .some(identity))  // the worker request carries the identity as a scalar
+    #expect(preparer.lastIdentity == .some(identity))
     let submission = ControlledSubmission()
     preparer.finish { frame in
       .init(submission: submission, retained: Retained(frame), videoSize: CGSize(width: 16, height: 16))
     }
     submission.complete(true)
-    submission.present(at: 0)  // unpresented result must be declared, not skipped
+    submission.present(at: 0)
     let s = audit.snapshot()
     #expect(s.stages == [4, 8, 9, 10, 11] && s.sequences.allSatisfy { $0 == 7 } && s.valueNs == [0, 1, 0, 1, 0])
     #expect(s.coverage["presentedResultZero"] == 1)
-    // a failed preparation is still receipted (value 0) and nothing else is recorded for it
     mailbox.put(
       .init(
         pixelBuffer: try makeBuffer(), timestampNs: 2, rtpTimestamp: 71, receivedAtSeconds: 1.1,
@@ -161,7 +155,7 @@ struct ScreenSharingRenderCoordinatorAuditTests {
       mailbox: mailbox, metrics: ScreenSharingMetrics(), renderOnArrival: false,
       hop: { work in MainActor.assumeIsolated { work() } })
     coordinator.bind {}
-    #expect(coordinator.audit == nil)  // default: disabled
+    #expect(coordinator.audit == nil)
     mailbox.put(.init(pixelBuffer: try makeBuffer(), timestampNs: 1, rtpTimestamp: 5, receivedAtSeconds: 1.0))
     let selected = try #require(coordinator.select())
     let submission = ControlledSubmission()

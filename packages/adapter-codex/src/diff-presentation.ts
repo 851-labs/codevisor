@@ -3,8 +3,6 @@ import type { DiffStat } from "@codevisor/api"
 
 import { isRecord } from "./internal.js"
 
-/// For adds/deletes codex sends the raw file content in `diff`, not a unified
-/// diff — every line counts. Updates carry a real unified diff body.
 export const fileChangeStats = (changes: unknown): Array<DiffStat> => {
   if (!Array.isArray(changes)) return []
   return changes.flatMap((change) => {

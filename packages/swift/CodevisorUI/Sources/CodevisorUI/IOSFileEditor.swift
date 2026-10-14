@@ -34,7 +34,6 @@
       textView.accessibilityLabel = "File editor"
       textView.keyboardDismissMode = .interactive
       textView.contentInsetAdjustmentBehavior = .always
-      // Keep the insertion point clear of the keyboard when UIKit reveals it.
       textView.contentInset.bottom = 24
       textView.alwaysBounceVertical = true
       gutter.textView = textView
@@ -55,7 +54,6 @@
       textView.backgroundColor = UIColor(theme.windowBackground)
       gutter.isHidden = !session.showsLineNumbers
       textView.textContainerInset.left = session.showsLineNumbers ? 48 : 16
-      // Touch editing wraps; selection and Go to Line navigate compact displays.
     }
 
     func revealSelection(_ range: NSRange) {

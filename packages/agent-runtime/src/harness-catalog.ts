@@ -9,10 +9,6 @@ import {
 import { executableHarness } from "./harness-catalog-support.js"
 import type { HarnessDefinition } from "./types.js"
 
-// Install commands and ACP launch arguments audited against upstream on 2026-09-13.
-// Sources, registry revision, and exclusions: docs/harness-catalog-audit.md.
-/// Where both OpenCode installers put the binary. They add it to PATH only
-/// in ~/.bashrc, which a login shell may never read.
 export const OPENCODE_INSTALL_PATH = "~/.opencode/bin/opencode"
 
 export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
@@ -34,8 +30,6 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     },
     skills: { globalDir: "~/.gemini/skills" },
     update: {
-      // Gemini CLI has no self-update command (explicitly "not planned"
-      // upstream) — reinstall via the detected origin.
       sources: [
         {
           apply: { kind: "reinstall" },
@@ -53,8 +47,6 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
   executableHarness("opencode", "OpenCode", "curlybraces", ["opencode"], "opencode", ["acp"], {
     provider: "opencode",
     fallbackPaths: [OPENCODE_INSTALL_PATH],
-    // OpenCode 2. Its installer resolves the version from opencode.ai and
-    // downloads from npm, so it never meets GitHub's API rate limit.
     installMethods: [
       {
         command: "curl -fsSL https://opencode.ai/v2/install | bash",
@@ -64,9 +56,6 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
       { kind: "npm", packageName: "@opencode/cli" },
       { formula: "anomalyco/tap/opencode-v2", kind: "brew" }
     ],
-    // OpenCode has a real per-server `enabled` flag — the one JSON harness
-    // where a native disable toggle is honest. XDG_CONFIG_HOME is honored by
-    // the scanner.
     nativeMcp: {
       disableField: { enabledWhen: true, name: "enabled" },
       format: "json",
@@ -74,14 +63,8 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
       path: "~/.config/opencode/opencode.json",
       writable: true
     },
-    // OpenCode scans ~/.agents/skills (and ~/.claude/skills) in addition to
-    // its own directory — every global skill is ambiently available.
     skills: { alsoReadsCanonical: true, globalDir: "~/.config/opencode/skills" },
     update: {
-      // OpenCode 1's packages own the same `opencode` binary; `opencode
-      // upgrade` on OpenCode 1 never reaches 2, so its installs reinstall
-      // through OpenCode 2's own method. Every channel publishes the npm
-      // version (Homebrew's API doesn't cover taps).
       replaces: { brew: "anomalyco/tap/opencode", npm: "opencode-ai" },
       majorNotes:
         "OpenCode 2 is a new major version. Plugins written for OpenCode 1 stop working, it no longer runs language servers (LSP), and it reads instructions only from AGENTS.md, not CLAUDE.md. Your sign-ins and settings carry over.",
@@ -97,7 +80,6 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
           when: "npm"
         },
         {
-          // The v2 script installs over either version's ~/.opencode/bin.
           apply: { kind: "reinstall" },
           check: { kind: "npm", packageName: "@opencode/cli" },
           when: "curl"
@@ -119,8 +101,6 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
         kind: "curl"
       }
     ],
-    // Read-only in v1: comment-preserving YAML edits aren't wired up yet, and
-    // goose configs commonly carry hand-written comments.
     nativeMcp: {
       format: "yaml",
       key: "extensions",
@@ -130,8 +110,6 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     update: {
       sources: [
         {
-          // `goose update` blindly replaces the binary in place — on a brew
-          // install that clobbers the Cellar copy, so delegate to brew.
           apply: { kind: "reinstall" },
           check: { formula: "block-goose-cli", kind: "brew" },
           when: "brew"
@@ -158,8 +136,6 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     provider: "cursor",
     symbolName: "cursorarrow.rays"
   },
-  // Amp's adapter requires the separately installed Amp CLI. Keep detection
-  // on the adapter; the complete npm install brings in both executables.
   executableHarness("amp", "Amp", "bolt", ["amp-acp"], "amp-acp", [], {
     installHint: "npm install -g amp-acp @ampcode/cli",
     requiredBinaries: ["amp"],
@@ -170,8 +146,6 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     installMethods: [{ kind: "npm", packageName: "@augmentcode/auggie" }],
     skills: { globalDir: "~/.augment/skills" },
     update: {
-      // No self-update command; auggie's own background auto-updater covers
-      // most installs, reinstall covers the rest.
       sources: [
         {
           apply: { kind: "reinstall" },
@@ -183,8 +157,6 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
   }),
   executableHarness("cline", "Cline", "terminal", ["cline"], "cline", ["--acp"], {
     installMethods: [{ kind: "npm", packageName: "cline" }],
-    // Cline CLI stores MCPs in its data dir and has a real `disabled` flag.
-    // Its skills dir IS the canonical ~/.agents/skills store — never symlink.
     nativeMcp: {
       disableField: { enabledWhen: false, name: "disabled" },
       format: "json",
@@ -194,7 +166,6 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     },
     skills: { globalDir: "~/.agents/skills", readsCanonical: true },
     update: {
-      // `cline update` detects npm/pnpm/yarn/bun itself (npm-only distro).
       sources: [
         {
           apply: { args: ["update"], kind: "selfUpdate" },
@@ -225,8 +196,6 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
       },
       skills: { globalDir: "~/.copilot/skills" },
       update: {
-        // `copilot update` exists but is closed source; failures surface
-        // gracefully as a failed lifecycle state.
         sources: [
           { when: "brew", check: { kind: "brew" }, apply: { kind: "reinstall" } },
           {
@@ -257,7 +226,6 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
       ],
       skills: { globalDir: "~/.qwen/skills" },
       update: {
-        // Reinstall through the owner of the detected binary.
         sources: [
           { when: "brew", check: { kind: "brew" }, apply: { kind: "reinstall" } },
           {
@@ -305,15 +273,12 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
       update: {
         sources: [
           { when: "brew", check: { kind: "brew" }, apply: { kind: "reinstall" } },
-          // Droid's npm builds have auto-update disabled at build time
-          // (deliberately pinned) — reinstall is the vendor-blessed path.
           {
             apply: { kind: "reinstall" },
             check: { kind: "npm", packageName: "droid" },
             when: "npm"
           },
           {
-            // Standalone/curl installs self-update via `droid update`.
             apply: { args: ["update"], kind: "selfUpdate" },
             check: { kind: "npm", packageName: "droid" },
             when: "any"
@@ -325,8 +290,6 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
   executableHarness("devin", "Devin", "brain", ["devin"], "devin", ["acp"], {
     installMethods: [{ command: "curl -fsSL https://cli.devin.ai/install.sh | bash", kind: "curl" }]
   }),
-  // Codevisor's Build mode is full access, as for the other harnesses: without
-  // --always-approve Grok asks before every tool call.
   executableHarness(
     "grok-build",
     "Grok Build",
@@ -349,7 +312,6 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
       { kind: "brew", formula: "Kilo-Org/tap/kilo" }
     ],
     update: {
-      // `kilo upgrade` detects curl/npm/yarn/pnpm/bun/brew itself.
       sources: [
         {
           apply: { args: ["upgrade"], kind: "selfUpdate" },

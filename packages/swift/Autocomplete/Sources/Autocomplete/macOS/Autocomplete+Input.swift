@@ -3,10 +3,6 @@
   import SwiftUI
 
   public extension Autocomplete {
-    /// An imperative handle for giving inline suggestions keyboard focus: hosts call
-    /// `focus()` when their surface becomes active (a pane gaining focus, a
-    /// palette being summoned) instead of the field grabbing focus by
-    /// itself.
     @MainActor
     @Observable
     final class InputFocus {
@@ -56,9 +52,6 @@
         searchField.delegate = context.coordinator
         searchField.onKeyEquivalent = onKeyEquivalent
         searchField.isEnabled = isEnabled
-        // NSSearchField centers its own placeholder whenever it is not first
-        // responder (and ignores `centersPlaceholder`); the capsule draws a
-        // leading-aligned one with the same AppKit metrics instead.
         searchField.placeholderString = ""
         container.prompt = prompt
         container.showsPrompt = text.isEmpty
@@ -129,9 +122,6 @@
         searchCell.isBezeled = false
         searchCell.isBordered = false
         searchCell.drawsBackground = false
-        // The capsule draws its own magnifier on the rows' icon keyline. A
-        // hidden search button would still reserve its width and push the
-        // typed text away from the glyph, so drop the button altogether.
         searchCell.searchButtonCell = nil
       }
 
@@ -161,9 +151,6 @@
           text.wrappedValue = searchField.stringValue
         }
 
-        /// The surface’s key monitor keeps navigation working if focus moves away
-        /// from the input. This delegate path uses AppKit's normal
-        /// text-command routing while the input is first responder.
         func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
           guard !textView.hasMarkedText() else { return false }
           switch commandSelector {
@@ -188,10 +175,6 @@
       }
     }
 
-    /// `NSSearchFieldCell` always paints a white bezel in this presentation.
-    /// Xcode uses the same native field content inside a darker, menu-specific
-    /// capsule, so this view owns only that capsule while leaving editing to
-    /// NSSearchField.
     final class InputCapsuleView: NSView {
       let searchField = SearchField()
       private let promptLabel = NSTextField(labelWithString: "")
@@ -227,20 +210,13 @@
         NSSize(width: NSView.noIntrinsicMetric, height: height)
       }
 
-      /// NSSearchField draws its text about a point in from its leading edge;
-      /// the field is offset so the text lands on the shared keyline.
       private static let fieldTextInset: CGFloat = 1
 
-      /// The compact layout for popups without an icon column: magnifier at
-      /// the capsule's leading edge, text right after it.
       private static let compactIconLeading: CGFloat = 7
 
       init(metrics: Autocomplete.Metrics, showsCheckmarks: Bool, showsIcons: Bool) {
         height = metrics.inputHeight
         super.init(frame: .zero)
-        // With an icon column the magnifier and text sit on the rows'
-        // keylines. The capsule sits `inputHorizontalInset` in from the
-        // popup edge, so the popup-relative keylines shift by that much.
         wantsLayer = true
         layer?.addSublayer(capsuleLayer)
 
@@ -290,15 +266,9 @@
             equalTo: leadingAnchor, constant: textLeading - Self.fieldTextInset
           ),
           searchField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -1),
-          // Measured on a 2× display: the field draws its text and cancel
-          // button half a point low, and the magnifier glyph (its handle
-          // hangs below the lens) reads three quarters of a point high when
-          // its image bounds are centered. Nudge both onto the capsule's
-          // center line.
           searchField.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -0.5),
           searchField.heightAnchor.constraint(
             equalToConstant: max(16, metrics.nativeMenuFont.ascender - metrics.nativeMenuFont.descender)),
-          // The prompt sits exactly where typed text will.
           promptLabel.leadingAnchor.constraint(equalTo: searchField.leadingAnchor, constant: Self.fieldTextInset),
           promptLabel.trailingAnchor.constraint(lessThanOrEqualTo: searchField.trailingAnchor),
           promptLabel.firstBaselineAnchor.constraint(equalTo: searchField.firstBaselineAnchor),

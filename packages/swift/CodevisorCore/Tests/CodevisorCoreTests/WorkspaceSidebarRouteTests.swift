@@ -15,8 +15,6 @@ struct WorkspaceSidebarRouteTests {
     let environment = AppEnvironment.preview(
       seedProjects: [project], seedSessions: [closing, sibling]
     )
-    // Shaped like the server's copy, so the pane survives a round trip
-    // through the shared pane registry.
     let pageId = UUID()
     let page = PaneDescriptorState(
       id: pageId, kind: kind, name: "Page", terminalKey: kind == .terminal ? "page" : pageId.uuidString,
@@ -37,7 +35,6 @@ struct WorkspaceSidebarRouteTests {
       createdAt: Date(timeIntervalSince1970: 0),
       isServerSynced: true
     )
-    // The server has the workspace; this device's tab arrangement is local.
     environment.navigationStore.layouts.setLayout(DeviceLayout(workspace), for: workspace.id)
     await environment.navigationStore.replace(
       .fixture(projects: [project], sessions: [closing, sibling], workspaces: [workspace]),
@@ -49,7 +46,6 @@ struct WorkspaceSidebarRouteTests {
     #expect(updated.selectedCenterTabId == pageTab.id)
     #expect(updated.selectedCenterTab?.root.allGroups.first?.state.selectedPane?.id == page.id)
     #expect(updated.pane(containingChat: closing.id) == nil)
-    // Closing removes the pane; the chat row itself is untouched.
     #expect(environment.projectList.sessions.contains { $0.id == closing.id })
     #expect(
       environment.workspaceSync.routeDisposition(
@@ -62,8 +58,6 @@ struct WorkspaceSidebarRouteTests {
       ) == .selectSession(sibling.id)
     )
 
-    // A workspace archive still dismisses the page, even with a non-chat
-    // tab selected. Preserving a page applies only inside a live workspace.
     environment.archiveWorkspace(updated)
     #expect(
       environment.workspaceSync.routeDisposition(

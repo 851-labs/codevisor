@@ -195,7 +195,6 @@ describe("CodexProvider", () => {
         rawOutput: "release.yml"
       })
     )
-    // The streamed patch carries realtime per-file stats.
     const streamed = payloads.find(
       (payload) =>
         payload.sessionUpdate === "tool_call_update" &&
@@ -203,7 +202,6 @@ describe("CodexProvider", () => {
         payload.status === "in_progress"
     )
     expect(streamed?.diffStats).toEqual([{ added: 2, path: "release.yml", removed: 1 }])
-    // Completion carries final stats plus a renderable diff block.
     const completedEdit = payloads.find(
       (payload) =>
         payload.sessionUpdate === "tool_call_update" &&
@@ -232,8 +230,6 @@ describe("CodexProvider", () => {
       threadId: "thread-new",
       turn: { id: "turn-1", status: "inProgress" }
     })
-    // The started item has no query yet — codex fills it in as the model
-    // generates the call, so only completion carries the real query.
     client.emit("item/started", {
       item: { id: "item-ws", type: "webSearch" },
       threadId: "thread-new",
@@ -280,7 +276,6 @@ describe("CodexProvider", () => {
       threadId: "thread-new",
       turn: { id: "turn-1", status: "inProgress" }
     })
-    // Commentary preamble tagged at item/started: chunks carry the phase.
     client.emit("item/started", {
       item: { content: [], id: "item-pre", phase: "commentary", type: "agentMessage" },
       threadId: "thread-new",
@@ -297,7 +292,6 @@ describe("CodexProvider", () => {
       threadId: "thread-new",
       turnId: "turn-1"
     })
-    // Final answer tagged at item/started: chunks stream as final from the start.
     client.emit("item/started", {
       item: { content: [], id: "item-final", phase: "final_answer", type: "agentMessage" },
       threadId: "thread-new",
@@ -314,8 +308,6 @@ describe("CodexProvider", () => {
       threadId: "thread-new",
       turnId: "turn-1"
     })
-    // Untagged at start, tagged only on completion: a zero-length chunk
-    // retro-tags the already-streamed span.
     client.emit("item/started", {
       item: { content: [], id: "item-late", type: "agentMessage" },
       threadId: "thread-new",
@@ -355,18 +347,15 @@ describe("CodexProvider", () => {
         sessionUpdate: "agent_message_chunk"
       })
     )
-    // The untagged stream carried no phase…
     const lateChunks = payloads.filter(
       (payload) =>
         payload.sessionUpdate === "agent_message_chunk" && payload.messageId === "item-late"
     )
     expect(lateChunks[0]).not.toHaveProperty("phase")
-    // …and completion retro-tagged it with a zero-length correction chunk.
     expect(lateChunks.at(-1)).toMatchObject({
       content: { text: "", type: "text" },
       phase: "commentary"
     })
-    // Matching phases at start and completion emit no redundant correction.
     const finalChunks = payloads.filter(
       (payload) =>
         payload.sessionUpdate === "agent_message_chunk" && payload.messageId === "item-final"
@@ -414,7 +403,6 @@ describe("CodexProvider", () => {
       threadId: "thread-new",
       turnId: "turn-1"
     })
-    // Empty plan text emits nothing.
     client.emit("item/completed", {
       item: { id: "plan-2", text: "", type: "plan" },
       threadId: "thread-new",

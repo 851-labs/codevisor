@@ -26,8 +26,6 @@ export type HarnessLoginOperations = Pick<
   "answerLogin" | "beginLogin" | "cancelLogin" | "logout"
 >
 
-/// Interactive sign-in and sign-out per harness family: Codex browser/device
-/// flows, Claude's paste-code OAuth, API-key logins, and ACP authentication.
 export const makeHarnessLoginOperations = (
   core: HarnessAuthCore,
   probes: HarnessAuthProbes,
@@ -147,9 +145,6 @@ export const makeHarnessLoginOperations = (
   }
 
   const beginClaudeLogin = async (account: HarnessAccountRecord): Promise<HarnessAuthFlow> => {
-    // Native wrap of Claude's OAuth (Phase: replace the PTY login): the SDK
-    // yields the browser URL up front and takes the pasted code back — no
-    // terminal rendering, real input affordances on the client.
     const env = await accountEnv(account)
     const client = spawnClaudeAuth({
       claudePath: await executable("claude-code"),
@@ -169,11 +164,6 @@ export const makeHarnessLoginOperations = (
     }
   }
 
-  /// Cursor's CLI owns the whole OAuth: with `NO_OPEN_BROWSER` it prints the
-  /// URL and stays resident until the browser round-trip completes, then
-  /// writes credentials and exits. Codevisor surfaces that URL so the client
-  /// opens it locally — a remote machine's sign-in still lands in the user's
-  /// own browser — and the client's existing poll notices the result.
   const beginCursorLogin = async (account: HarnessAccountRecord): Promise<HarnessAuthFlow> => {
     const command = await executable("cursor")
     const execution = await accountCommand(account)
@@ -221,7 +211,6 @@ export const makeHarnessLoginOperations = (
     }
   }
 
-  /// Completes a pasteCode flow with the code the user pasted back.
   const answerLogin = async (flowId: string, code: string): Promise<HarnessAuthFlow> => {
     if (antigravity.owns(flowId)) return antigravity.answer(flowId, code)
     const entry = claudeLogins.get(flowId)
@@ -275,7 +264,6 @@ export const makeHarnessLoginOperations = (
       account.harnessId === "claude-code" ||
       account.harnessId === ANTIGRAVITY_HARNESS_ID
     ) {
-      // Antigravity's key reaches agy as GEMINI_API_KEY (antigravity-profile.ts).
       const path = apiKeyPath(account)
       const directory = join(path, "..")
       await mkdir(directory, { recursive: true, mode: 0o700 })
@@ -396,8 +384,6 @@ export const makeHarnessLoginOperations = (
 
   const logout = async (accountId: string, sharedScope = false): Promise<HarnessAccount> => {
     const account = await run(config.db.getHarnessAccount(accountId))
-    // A shared sign-out settles its own state without a probe; announce it so
-    // every mounted catalog — not just the client that clicked — follows.
     const shared = await config.sharedAccounts?.()?.logout(accountId)
     if (shared !== undefined) return announce(account, shared)
     if (account === undefined) throw new Error(`Harness account not found: ${accountId}`)
@@ -429,7 +415,6 @@ export const makeHarnessLoginOperations = (
     } else if (account.harnessId === MUSE_HARNESS_ID) {
       await muse.logout(account)
     } else if (account.harnessId === ANTIGRAVITY_HARNESS_ID) {
-      // An API-key account signed out with its key (removed above).
       if (account.authMethod !== "apiKey") await antigravity.logout(account)
     } else {
       await run(config.agents.logoutHarness(account.harnessId, await contextFor(account)))

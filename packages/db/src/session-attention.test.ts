@@ -55,8 +55,6 @@ describe("@codevisor/db", () => {
       sidebarState: "idle"
     })
 
-    // A stale client may acknowledge only what it rendered. That must not
-    // accidentally consume newer attention produced before its request lands.
     await run(
       db.appendEvent("session.updated", session.id, {
         initiatedBy: "user",
@@ -78,7 +76,6 @@ describe("@codevisor/db", () => {
       lastSeenAttentionSequence: 1,
       unreadCount: 1
     })
-    // Overshooting clamps to the newest revision instead of running ahead.
     await run(db.markSessionRead(session.id, 99))
     expect(await run(db.getSessionSummary(session.id))).toMatchObject({
       latestAttentionSequence: 2,
@@ -86,8 +83,6 @@ describe("@codevisor/db", () => {
       unreadCount: 0
     })
 
-    // A question is intrinsic blocking state, not unread: no revision bump,
-    // and reading the chat does not resolve it.
     const question = {
       questionId: "question-1",
       questions: [
@@ -126,7 +121,6 @@ describe("@codevisor/db", () => {
       unreadCount: 0
     })
 
-    // A manual unread reads as at least one until the next mark-read.
     await run(db.markSessionUnread(session.id))
     expect(await run(db.getSessionSummary(session.id))).toMatchObject({
       unreadCount: 1,
@@ -152,9 +146,6 @@ describe("@codevisor/db", () => {
         turnState: "started"
       })
     )
-    // A dev server left running for the user: a backgrounded task and a
-    // codex-style shell task. Neither holds the finish — whatever the agent
-    // left running is FOR the user to look at.
     await run(
       db.appendEvent("session.updated", session.id, {
         backgroundTasks: [
@@ -212,7 +203,6 @@ describe("@codevisor/db", () => {
         ]
       })
     )
-    // The main loop yields while the subagent runs: not ready for the user.
     await run(
       db.appendEvent("session.updated", session.id, {
         initiatedBy: "user",
@@ -227,8 +217,6 @@ describe("@codevisor/db", () => {
       sidebarState: "inProgress"
     })
 
-    // Subagent completes; the harness re-invokes the agent before the grace
-    // elapses. The parked finish survives the continuation without bumping.
     await run(db.appendEvent("session.updated", session.id, { backgroundTasks: [] }))
     await run(
       db.appendEvent("session.updated", session.id, {
@@ -242,7 +230,6 @@ describe("@codevisor/db", () => {
       sidebarState: "inProgress"
     })
 
-    // Second subagent in the chain, then the final clean end.
     await run(
       db.appendEvent("session.updated", session.id, {
         backgroundTasks: [
@@ -261,12 +248,9 @@ describe("@codevisor/db", () => {
     expect((await run(db.getSessionSummary(session.id))).sidebarState).toBe("inProgress")
     await run(db.appendEvent("session.updated", session.id, { backgroundTasks: [] }))
 
-    // Settling inside the grace window is refused.
     vi.setSystemTime(Date.now() + ATTENTION_SETTLE_GRACE_MS - 1)
     expect((await run(db.settleSessionAttention(session.id))).settled).toBe(false)
 
-    // The grace elapsed with no re-invocation: the whole chain settles into
-    // exactly one unread revision.
     vi.setSystemTime(Date.now() + 1)
     const settled = await run(db.settleSessionAttention(session.id))
     expect(settled.settled).toBe(true)
@@ -275,7 +259,6 @@ describe("@codevisor/db", () => {
       unreadCount: 1,
       sidebarState: "unread"
     })
-    // Settling is idempotent.
     expect((await run(db.settleSessionAttention(session.id))).settled).toBe(false)
     await Effect.runPromise(db.close)
   })
@@ -309,7 +292,6 @@ describe("@codevisor/db", () => {
     )
     await run(db.appendEvent("session.updated", session.id, { backgroundTasks: [] }))
 
-    // The hold released moments ago: the settle is armed but not due yet.
     const early = await run(db.settleSessionAttention(session.id))
     expect(early.settled).toBe(false)
     expect(early.nextDueAt).toBeDefined()
@@ -319,7 +301,6 @@ describe("@codevisor/db", () => {
       { sessionId: session.id, dueAt: early.nextDueAt }
     ])
 
-    // A new turn cancels the deadline but keeps the parked finish.
     await run(
       db.appendEvent("session.updated", session.id, {
         initiatedBy: "agent",
@@ -360,8 +341,6 @@ describe("@codevisor/db", () => {
       sidebarState: "errored"
     })
 
-    // An error is the urgent flavor of unread: reading through the latest
-    // revision acknowledges it.
     await run(db.markSessionRead(session.id, 1))
     expect(await run(db.getSessionSummary(session.id))).toMatchObject({
       hasUnreadError: false,
@@ -369,7 +348,6 @@ describe("@codevisor/db", () => {
       sidebarState: "idle"
     })
 
-    // A second error clears when the user acts in the chat instead.
     await run(
       db.appendEvent("session.error", session.id, {
         initiatedBy: "agent",
@@ -381,7 +359,6 @@ describe("@codevisor/db", () => {
       latestAttentionSequence: 2,
       sidebarState: "errored"
     })
-    // A stale mark-read from before the error must not acknowledge it.
     await run(db.markSessionRead(session.id, 1))
     expect((await run(db.getSessionSummary(session.id))).hasUnreadError).toBe(true)
     await run(
@@ -399,9 +376,6 @@ describe("@codevisor/db", () => {
     const project = await run(db.createProject({ folderPath: "/tmp/agent-completion" }))
     const session = await run(db.createSession({ projectId: project.id, harnessId: "claude-code" }))
 
-    // Autonomous work that finishes is something new to look at. Ping noise
-    // is the client's problem (edge-triggered notifications), not a reason to
-    // hide the badge.
     await run(
       db.appendEvent("session.updated", session.id, {
         initiatedBy: "agent",

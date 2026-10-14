@@ -1,7 +1,6 @@
 import CodevisorCore
 import SwiftUI
 
-/// Native Form sections shared by the iPhone account page and Mac Account tab.
 public struct CloudAccountSections: View {
   private let cloud: CloudAccountController
   private let manageConnections: () -> Void

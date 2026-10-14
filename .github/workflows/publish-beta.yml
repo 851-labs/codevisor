@@ -1,9 +1,5 @@
 name: Publish Beta
 
-# Submits a published Alpha's iOS build, already on internal TestFlight, for
-# external beta review. Nothing is rebuilt or uploaded again. The Alpha must be
-# recent enough that its Build run still has the iOS artifact (14 days).
-
 on:
   workflow_dispatch:
     inputs:
@@ -38,10 +34,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version-file: .node-version
       - name: Verify the published Alpha

@@ -4,9 +4,6 @@ import Testing
 import CodevisorTestSupport
 @testable import CodevisorCore
 
-/// Shared cloud-machine fixtures for the MachineController suites.
-/// A canned-response request transport standing in for the cloud relay:
-/// records every request and serves JSON by path.
 @Observable
 final class FakeRelayRequestTransport: ServerRequestTransport, @unchecked Sendable {
   private let lock = NSLock()
@@ -45,8 +42,6 @@ final class UnusedWebSocketTransport: ServerWebSocketTransport, @unchecked Senda
   }
 }
 
-/// Never exercised: the fake relay config's request transport answers
-/// everything, so no socket is ever opened.
 final class UnusedWebSocketConnection: ServerWebSocketConnecting, @unchecked Sendable {
   var closeCode: URLSessionWebSocketTask.CloseCode { .invalid }
 
@@ -62,15 +57,12 @@ final class FakeCloudProvider: CloudMachineProviding {
   var isCloudSignedIn = true
   var cloudMachines: [CloudMachine] = []
   var isCloudRosterVerified = true
-  /// Simulates a listening loopback bridge for a machine, like
-  /// CloudAccountController publishes once its bridge is up.
   var loopbackURLsByDeviceId: [String: URL] = [:]
   var loopbackRevisionsByDeviceId: [String: UInt64] = [:]
   var loopbackRecoverySucceeds = true
   private(set) var loopbackRecoveryRequests: [String] = []
   let requestTransport = FakeRelayRequestTransport()
   private(set) var configRequests: [String] = []
-  /// Machines asked to join account sync, in order.
   private(set) var accountSyncPreparations: [String] = []
 
   func prepareAccountSync(on client: any CodevisorServerClienting, machineId: String) async -> Bool {
@@ -99,8 +91,6 @@ final class FakeCloudProvider: CloudMachineProviding {
     return loopbackRecoverySucceeds
   }
 
-  /// The relay client production resolves for a `cloud:` machine, for
-  /// injected client factories that fake only some machines.
   func relayClient(for machine: CodevisorMachine) -> any CodevisorServerClienting {
     let deviceId = CodevisorMachine.cloudDeviceId(forMachineId: machine.id)
     let cloud = cloudMachines.first { $0.deviceId == deviceId }
@@ -125,9 +115,6 @@ func makeCloudMachine(
   )
 }
 
-/// Defaults to a working local server (the mac shape). Tests that model
-/// a client-only platform (iOS) pass `localServer: nil` explicitly —
-/// those platforms list no "Local" machine and auto-adopt real ones.
 @MainActor
 func makeController(
   store: InMemoryStore = InMemoryStore(),
@@ -148,17 +135,11 @@ func makeController(
   return (controller, projectList, provider)
 }
 
-/// An account machine as fixtures use it: the fleet entry the controller
-/// synthesizes for `makeCloudMachine(deviceId:name:)` once `signIn` lists it.
 @MainActor
 func accountMachine(_ deviceId: String, name: String? = nil) -> CodevisorMachine {
   CodevisorMachine.cloud(from: makeCloudMachine(deviceId: deviceId, name: name ?? deviceId))
 }
 
-/// Signs `controller` in to an account holding `machines` (built with
-/// `accountMachine`), so they join its fleet ready for requests — as the
-/// controller treats injected test transports, which have no connection
-/// lifecycle to await. The controller keeps the returned provider.
 @MainActor
 @discardableResult
 func signIn(_ controller: MachineController, machines: [CodevisorMachine]) -> FakeCloudProvider {

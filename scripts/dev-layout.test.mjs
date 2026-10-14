@@ -26,7 +26,6 @@ test("development layout mirrors production roots inside tmp", () => {
   assert.equal(layout.remoteCloud.data, join(root, "tmp/remote-cloud/.codevisor/data"))
   assert.equal(layout.build.macos.derivedData, join(root, "tmp/build/macos/DerivedData"))
   assert.equal(layout.build.ios.derivedData, join(root, "tmp/build/ios/DerivedData"))
-  // Shared across worktrees: node_modules are APFS clones of the bun cache.
   assert.equal(layout.build.bunCache, join(homedir(), ".codevisor-development/artifacts/bun-cache"))
   assert.equal(layout.build.nodeGyp, join(root, "tmp/build/node-gyp"))
   assert.equal(layout.wrangler, join(root, "tmp/.wrangler"))

@@ -2,19 +2,12 @@ import CodevisorClient
 import Foundation
 import ScreenSharing
 
-/// RFB bytes over the server's VNC socket route: every binary message is a
-/// run of bytes from the machine's loopback VNC server, in order. A read hands
-/// out at most `maximum` bytes and keeps the rest of the message for the next
-/// one; the peer's close surfaces as an empty read.
-/// Text frames are codevisor-server's control lease (851-2338), handed to `onControlText`.
 public final class RFBWebSocketTransport: RFBTransport, RFBControlChannel, @unchecked Sendable {
   public var name: String { "WebSocket" }
   private let socket: any ServerWebSocketConnecting
   private let lock = NSLock()
   private var buffered: [UInt8] = []
-  /// Bytes of `buffered` already handed out; compacted once it passes half (851-2320).
   private var consumed = 0
-  /// Bytes moved by compaction, for the operation-count test.
   private(set) var bytesMoved = 0
   private var closed = false
   private var controlHandler: (@Sendable (String) -> Void)?
@@ -80,10 +73,6 @@ public final class RFBWebSocketTransport: RFBTransport, RFBControlChannel, @unch
     lock.unlock()
   }
 
-  /// Hands out the next bytes by moving an offset, not by shifting the rest:
-  /// `removeFirst` made reading a 1 MiB message in 64 KiB pieces move ~8 MiB.
-  /// The consumed prefix is dropped once it is at least half the buffer, so
-  /// every byte is moved at most once on average.
   private func takeBuffered(maximum: Int) -> [UInt8]? {
     lock.lock()
     defer { lock.unlock() }

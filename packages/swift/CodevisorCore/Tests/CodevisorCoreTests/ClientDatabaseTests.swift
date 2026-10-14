@@ -172,8 +172,6 @@ struct ClientDatabaseTests {
       to: renamedLegacyDirectory.appendingPathComponent("sessions.json")
     )
 
-    // A directly paired machine (retired) with its token embedded, as the
-    // oldest builds stored it.
     try Data(
       """
       {"selectedMachineId":"remote-example-443","remoteMachines":[{"id":"remote-example-443",
@@ -250,7 +248,6 @@ struct ClientDatabaseTests {
       ) == "grid"
     )
     #expect(defaults.object(forKey: "sidebar.collapsed") == nil)
-    // A retired preference is dropped rather than imported.
     #expect(defaults.object(forKey: "remoteBrowserRecents") == nil)
     #expect(try storage.database.preference(forKey: "remoteBrowserRecents") == nil)
     #expect(
@@ -275,8 +272,6 @@ struct ClientDatabaseTests {
       ))
     let recoveredRegistry = try Data(contentsOf: recovery.appendingPathComponent("machines.json"))
     #expect(!String(decoding: recoveredRegistry, as: UTF8.self).contains("legacy-secret"))
-    // The retired machine waits to be moved onto the cloud account, with the
-    // only copy of its inline token.
     #expect(
       try pendingAdoption(in: storage.store) == [
         PendingDirectMachine(
@@ -284,7 +279,6 @@ struct ClientDatabaseTests {
           legacyToken: "legacy-secret")
       ])
 
-    // A relaunch does not re-import and overwrite current SQLite values.
     let changedProjects = try JSONEncoder().encode([Project]())
     try storage.store.saveData(changedProjects, forKey: "projects")
     let reopened = try ClientStorageBootstrap.open(
@@ -294,8 +288,6 @@ struct ClientDatabaseTests {
     )
     #expect(reopened.store.loadData(forKey: "projects") == changedProjects)
 
-    // If an older build recreates state, a later launch preserves it in
-    // recovery and removes the live legacy copy without re-importing it.
     try projectsData.write(to: directory.appendingPathComponent("projects.json"))
     defaults.set(false, forKey: "sidebar.collapsed")
     let reopenedAgain = try ClientStorageBootstrap.open(
@@ -469,8 +461,6 @@ extension ClientDatabaseTests {
       try storage.database.dataMigrationState(id: ClientStorageBootstrap.retiredDirectMachinesMigrationID)
         == "completed")
 
-    // Once: a stale list written back by an older build is left to the
-    // machine list, which ignores it, rather than queued again.
     try storage.database.setValue(
       Data(
         #"{"selectedMachineId":"local","remoteMachines":[{"id":"remote-late","name":"Late","baseURL":"http://late:1","kind":"remote"}]}"#

@@ -1,10 +1,7 @@
 import SwiftUI
 
-/// A compact section heading above a workspace's always-visible tabs.
 struct SidebarWorkspaceHeader: View {
   let name: String
-  /// Where the workspace lives: a remote machine's name, or "This Mac" for
-  /// local ones. Nil only when the workspace's machine is unknown.
   let machineName: String?
   let isReordering: Bool
   let onArchive: () -> Void
@@ -13,8 +10,6 @@ struct SidebarWorkspaceHeader: View {
 
   @State private var isHovered = false
 
-  /// Insets around the label. The reorder ghost reuses these so it can
-  /// land pixel-for-pixel on the row it was lifted from.
   static let horizontalPadding: CGFloat = 10
   static let topPadding: CGFloat = 12
   static let bottomPadding: CGFloat = 4
@@ -34,8 +29,6 @@ struct SidebarWorkspaceHeader: View {
         .help("Archive workspace")
         .accessibilityLabel("Archive \(title)")
         .frame(width: 24, height: 14, alignment: .trailing)
-        // Covered by the header's Archive action, which does not depend on
-        // hover.
         .accessibilityHidden(true)
       }
     }
@@ -60,9 +53,6 @@ struct SidebarWorkspaceHeader: View {
           .labelStyle(.titleAndIcon)
       }
     }
-    // Hover only tracks in the key window, so the menu's actions are
-    // exposed directly for assistive tech and background computer use.
-    // Plain-title buttons: SwiftUI drops Label-built ones here.
     .accessibilityElement(children: .combine)
     .accessibilityAddTraits(.isHeader)
     .accessibilityActions {
@@ -77,8 +67,6 @@ struct SidebarWorkspaceHeader: View {
   }
 }
 
-/// The header's name (and machine) text, shared with the reorder ghost so
-/// the lifted row and its stand-in never drift apart in style.
 struct SidebarWorkspaceHeaderLabel: View {
   let name: String
   let machineName: String?
@@ -90,14 +78,10 @@ struct SidebarWorkspaceHeaderLabel: View {
   private var title: String { Self.title(for: name) }
 
   var body: some View {
-    // 4pt + the glyphs' side bearings lands at ~6pt of visible gap on
-    // each side of the dot.
     HStack(spacing: 4) {
       Text(title)
         .truncationMode(.middle)
       if let machineName {
-        // Separate view so the dot gets the same spacing on both sides;
-        // inside the string it only had a ~3pt space on the right.
         Text("·")
           .foregroundStyle(.tertiary)
         Text(machineName)

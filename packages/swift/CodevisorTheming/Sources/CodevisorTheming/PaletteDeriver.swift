@@ -1,21 +1,12 @@
 import Foundation
 
 public enum PaletteDeriver {
-  // Mix weight (fraction of the surface's own foreground blended into its
-  // background) for the opaque chrome borders and separators; shared so both
-  // lines carry the same visual weight across themes.
   private static let borderMix = 0.22
 
-  /// Reads a VSCode/Shiki theme and returns the derived palette, or nil for
-  /// the degenerate case where the theme yields no parseable background or
-  /// no legible foreground — real themes always produce both.
   public static func derive(from theme: VSCodeTheme) -> DerivedPalette? {
     let raw = theme.colors ?? [:]
     let resolved = ThemeNormalizer.normalize(theme).colors ?? [:]
 
-    // The contrast pass needs the raw candidate list in design-intent
-    // order, not the collapsed sidebar fg, so it can compare each
-    // candidate against the surface.
     let sidebarBgHex = resolved["sideBar.background"]
     guard let sidebarBg = sidebarBgHex.flatMap({ RGBA(css: $0) }) else { return nil }
     guard
@@ -40,10 +31,6 @@ public enum PaletteDeriver {
       readableMuted(raw["descriptionForeground"], over: sidebarBg)
       ?? mutedFg(from: fg, over: sidebarBg)
 
-    // Hairline between content panes: when the editor surface matches the
-    // sidebar (the common case) reuse the chrome border verbatim so the
-    // separator can't drift; only when the palettes genuinely diverge
-    // derive it from the editor surface.
     let borderOpaque = fg.mixed(with: sidebarBg, weight: borderMix)
     let separator =
       ColorMath.surfacesMatch(editorBg.hexString(), sidebarBg.hexString())
@@ -54,13 +41,6 @@ public enum PaletteDeriver {
       resolved["list.focusOutline"].flatMap { RGBA(css: $0) }?.compositedOver(sidebarBg)
       ?? fg
 
-    // Accent: the first authored accent-ish key that is visible and clears
-    // the readable floor on the sidebar surface. `list.focusOutline` (the
-    // normalized focus ring) is the last authored candidate; when nothing
-    // authored qualifies the accent stays the focus-ring value, which is
-    // the pre-existing behavior. Only an AUTHORED accent may tint the
-    // hover/selection fallbacks below — the fg-fallback focus ring would
-    // just reproduce a gray mix at a different weight.
     let authoredAccent = contrastingThemeColor(
       resolved,
       keys: ["focusBorder", "textLink.foreground", "button.background", "list.focusOutline"],
@@ -69,10 +49,6 @@ public enum PaletteDeriver {
     )
     let accent = authoredAccent ?? focusRing
 
-    // Row fills: the theme's authored hover/selection when present (the
-    // normalizer already dropped unusable ones; selection is re-checked on
-    // its composite), else an accent-tinted wash — pierre's look — else
-    // the legacy gray fg-mix.
     let rowHover = hoverRowFill(
       resolved, authoredAccent: authoredAccent, isDark: isDark, text: fg, base: sidebarBg)
     let rowSelected = selectedRowFill(
@@ -81,21 +57,10 @@ public enum PaletteDeriver {
     let elevated = elevatedSurfaces(
       resolved, editorBg: editorBg, sidebarBg: sidebarBg, fg: fg)
 
-    // Status tints: the theme's own signal colors when they clear the
-    // readable floor on EVERY surface they render on, else the
-    // luminance-picked constants (same values as the web mapping).
     let statusSurfaces = [sidebarBg, editorBg, elevated.card]
     let status = statusColors(resolved, surfaces: statusSurfaces, isDark: isDark)
 
-    // Diff colors follow pierre's diffs package instead: bases from the
-    // theme's git decorations (else its ANSI green/red, else pierre's
-    // hardcoded fallbacks), and row backgrounds as an OPAQUE mix of the
-    // editor surface toward the base — 12% light / 20% dark — so
-    // highlighted code sits on exactly the surface the theme's token
-    // colors were designed for.
     let diff = diffBases(resolved, editorBg: editorBg, isDark: isDark)
-    // mixed(weight:) keeps `weight` of the receiver: rows stay 80% (dark)
-    // / 88% (light) editor bg with just a tint of the base color.
     let diffRowMix = isDark ? 0.8 : 0.88
 
     return DerivedPalette(
@@ -210,29 +175,12 @@ public enum PaletteDeriver {
   private static func elevatedSurfaces(
     _ resolved: [String: String], editorBg: RGBA, sidebarBg: RGBA, fg: RGBA
   ) -> (card: RGBA, cardHover: RGBA, code: RGBA, popover: RGBA) {
-    // Elevated surfaces: the theme's authored widget/menu surface when it
-    // is a genuinely different surface that keeps the fg legible, else the
-    // derived fg-nudge. Some dark themes author widgets DARKER than the
-    // sidebar (dracula, tokyo-night) — designer intent, honored.
     let authoredCard = authoredElevatedSurface(
       resolved, keys: ["editorWidget.background"], sidebarBg: sidebarBg, fg: fg)
     let cardBackground = authoredCard ?? fg.mixed(with: sidebarBg, weight: 0.06)
-    // Hover must always move off the card base, so when the authored
-    // surface wins the hover is derived FROM it rather than from the
-    // sidebar.
     let cardHoverBackground =
       authoredCard.map { fg.mixed(with: $0, weight: 0.06) }
       ?? fg.mixed(with: sidebarBg, weight: 0.12)
-    // A fenced code block is a card with no border: the fill IS the
-    // affordance, and it renders on the window surface rather than the
-    // sidebar. `cardBackground` alone cannot serve it — a theme may
-    // deliberately elevate its widget off the SIDEBAR while leaving it on
-    // (or within a code value or two of) the editor surface: tokyo-night,
-    // catppuccin-mocha, one-dark-pro and ayu all do. That reads fine for
-    // the bordered plan and tool-call cards, but leaves a code block
-    // invisible against the page.
-    // Keep the card fill when it genuinely reads there; else nudge the
-    // page itself, the same 6% lift the card would have taken.
     let codeBackground =
       separated(cardBackground, from: editorBg)
       ? cardBackground
@@ -250,10 +198,6 @@ public enum PaletteDeriver {
     )
   }
 
-  // First candidate among `keys` that is visible (not fully transparent) and,
-  // composited over the FIRST surface, clears `minRatio` against every listed
-  // surface; nil when none does. Used for colors that must read as signal on
-  // all the surfaces they render on (accent, status).
   private static func contrastingThemeColor(
     _ colors: [String: String], keys: [String],
     over surfaces: [RGBA], minRatio: Double
@@ -275,19 +219,12 @@ public enum PaletteDeriver {
     return nil
   }
 
-  // A row fill is usable when the row text still reads on it (>= the primary
-  // floor) and it isn't literally the base surface (an identical fill would
-  // be invisible). Deliberately NOT a luminance-closeness test: subtle
-  // authored washes on dark themes sit within a few luminance points of the
-  // surface and are exactly the look we want to preserve.
   private static func usableRowFill(_ fill: RGBA, text: RGBA, base: RGBA) -> Bool {
     guard fill != base else { return false }
     return ColorMath.contrastRatio(fill.relativeLuminance, text.relativeLuminance)
       >= ColorMath.minReadableRatio
   }
 
-  // The accent at `alpha` composited over the base surface, when that fill
-  // is usable for a row; nil otherwise so the caller falls through.
   private static func accentRowFill(
     _ accent: RGBA, alpha: Double, text: RGBA, base: RGBA
   ) -> RGBA? {
@@ -295,20 +232,6 @@ public enum PaletteDeriver {
     return usableRowFill(fill, text: text, base: base) ? fill : nil
   }
 
-  // Minimum sRGB channel separation for one surface to read as distinct
-  // from another.
-  //
-  // Deliberately a code-value delta rather than a luminance delta: relative
-  // luminance compresses to near-zero at the dark end, so a ΔL floor calls
-  // every dark theme's elevated surface identical to its page (tokyo-night's
-  // card and editor differ by 2 code values but only 0.0008 ΔL). sRGB code
-  // values are already perceptually encoded, so one threshold holds at both
-  // ends of the range.
-  //
-  // 6 is calibrated, not picked: it is the separation dracula,
-  // everforest-dark, github-dark and rose-pine-dawn already ship and read
-  // fine at. Anything below that floor is a theme we render wrong, not a
-  // subtle look we should preserve.
   private static let minSurfaceDelta = 6.0
 
   private static func separated(_ fill: RGBA, from surface: RGBA) -> Bool {
@@ -316,10 +239,6 @@ public enum PaletteDeriver {
       >= minSurfaceDelta
   }
 
-  // A surface lifted off `base` toward `fg` far enough to read as its own
-  // plane. The first rung is the 6% nudge the cards take; the ladder only
-  // advances for themes whose foreground sits unusually close to the
-  // surface, where 6% of the gap is still under the floor.
   private static func liftedSurface(from fg: RGBA, over base: RGBA) -> RGBA {
     let ladder = [0.06, 0.10, 0.16, 0.24]
     for weight in ladder {
@@ -329,10 +248,6 @@ public enum PaletteDeriver {
     return fg.mixed(with: base, weight: ladder[ladder.count - 1])
   }
 
-  // First authored elevated-surface candidate that is a genuinely different
-  // surface from the sidebar (exact-value compare on the composite — a ΔL
-  // floor would reject every dark theme's elevation, since dark luminances
-  // compress) and keeps the fg legible on it. Nil → derived fg-nudge.
   private static func authoredElevatedSurface(
     _ colors: [String: String], keys: [String], sidebarBg: RGBA, fg: RGBA
   ) -> RGBA? {
@@ -350,8 +265,6 @@ public enum PaletteDeriver {
     return nil
   }
 
-  // First parseable color among `keys`, composited over the surface it will
-  // render on; nil when the theme defines none of them.
   private static func themeColor(
     _ colors: [String: String], keys: [String], over bg: RGBA
   ) -> RGBA? {
@@ -363,9 +276,6 @@ public enum PaletteDeriver {
     return nil
   }
 
-  // Returns the theme's descriptionForeground composited over the surface
-  // when it's readable enough (>= minMutedRatio), otherwise nil so the call
-  // site falls back to a derived muted.
   private static func readableMuted(_ candidate: String?, over bg: RGBA) -> RGBA? {
     guard let candidate, let color = RGBA(css: candidate) else { return nil }
     let composited = color.compositedOver(bg)
@@ -374,8 +284,6 @@ public enum PaletteDeriver {
     return ratio >= ColorMath.minMutedRatio ? composited : nil
   }
 
-  // Mixes fg toward bg from 60% up to 90% until the result clears the muted
-  // contrast floor, else keeps fg.
   private static func mutedFg(from fg: RGBA, over bg: RGBA) -> RGBA {
     let bgL = bg.relativeLuminance
     for weight in [0.6, 0.7, 0.8, 0.9] {
@@ -425,8 +333,6 @@ public enum PaletteDeriver {
     )
   }
 
-  // Parses a compile-time hex constant; traps immediately on a typo rather
-  // than propagating an optional through every palette field.
   private static func constant(_ hex: String) -> RGBA {
     guard let color = RGBA(hex: hex) else {
       preconditionFailure("Invalid palette constant \(hex)")

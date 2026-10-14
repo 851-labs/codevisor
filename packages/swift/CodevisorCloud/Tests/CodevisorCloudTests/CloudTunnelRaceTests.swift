@@ -28,7 +28,6 @@ struct CloudTunnelRaceTests {
       await releasing.value
       await stopping.value
       await replacing.value
-      // Wait for any late binding attempt to settle through normal teardown.
       await endpoint.configure(.init(relays: [], enabled: false))
       #expect(binds.value == 1)
     }

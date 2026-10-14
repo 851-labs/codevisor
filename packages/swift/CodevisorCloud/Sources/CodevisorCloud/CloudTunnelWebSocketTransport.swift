@@ -2,17 +2,9 @@ import CodevisorClient
 import CodevisorNet
 import Foundation
 
-/// The tunnel as a WebSocket-shaped transport, so `CloudDirectConnection`
-/// (hello/welcome, sealed channels, flow control, heartbeats) runs over it
-/// unchanged: each "socket" is one QUIC connection to the machine's endpoint
-/// carrying one message stream (text = JSON control, binary = envelopes).
-/// The machine admits the connection only when the QUIC-authenticated
-/// endpoint key and the hello's device key both match its pins or the hub's
-/// vouching; the channel crypto then authenticates the machine's pinned key.
 struct CloudTunnelWebSocketTransport: ServerWebSocketTransport {
   let endpoint: CloudTunnelEndpoint
   let address: CloudTunnelInfo
-  /// Reads the path of whichever connection this transport dialed last.
   let paths = CloudTunnelPathProbe()
 
   func connect(_ request: URLRequest, maximumMessageSize: Int) -> any ServerWebSocketConnecting {
@@ -20,11 +12,8 @@ struct CloudTunnelWebSocketTransport: ServerWebSocketTransport {
   }
 }
 
-/// How a tunnel pipe reaches its machine right now: straight to it, or through one of our
-/// relays, and the round trip QUIC measured on that path.
 public struct CloudTunnelPath: Equatable, Sendable {
   public var isRelayed: Bool
-  /// The relay's URL on a relayed path.
   public var relayURL: String?
   public var roundTripMilliseconds: Int
 
@@ -35,7 +24,6 @@ public struct CloudTunnelPath: Equatable, Sendable {
   }
 }
 
-/// The live connection's path, read on demand (QUIC keeps the RTT current).
 final class CloudTunnelPathProbe: @unchecked Sendable {
   private let lock = NSLock()
   private var connection: NetConnectionHandle?
@@ -66,13 +54,7 @@ final class CloudTunnelSocket: ServerWebSocketConnecting, @unchecked Sendable {
   private var connection: NetConnectionHandle?
   private var cancelled = false
   private var recordedCloseCode: URLSessionWebSocketTask.CloseCode = .invalid
-  /// Stops the dial in Rust when the socket is cancelled mid-handshake. The
-  /// generated Swift glue never cancels a Rust future, so cancelling
-  /// `opened` alone would leave the handshake running to its timeout — and
-  /// the machine waiting on it.
   private let dialCancel = NetCancelToken()
-  /// Dials lazily and opens the connection's one message stream. Set once in
-  /// init (after every other property), read-only afterwards.
   private var opened: Task<NetMessageStreamHandle, any Error>!
 
   init(endpoint: CloudTunnelEndpoint, address: CloudTunnelInfo, paths: CloudTunnelPathProbe) {
@@ -96,7 +78,6 @@ final class CloudTunnelSocket: ServerWebSocketConnecting, @unchecked Sendable {
     }
   }
 
-  /// Keeps the dialed connection unless the socket was cancelled meanwhile.
   private func adopt(_ connection: NetConnectionHandle) -> Bool {
     lock.withLock {
       guard !cancelled else { return false }

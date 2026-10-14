@@ -1,18 +1,8 @@
-//  The Chrome-style "New tab" page: what a group shows when its last real
-//  pane closes. The empty state IS a tab (the strip never lies about what's
-//  open); this page offers what to open in its place — choosing converts
-//  the placeholder pane in place, so the tab slot and selection carry over.
-//  Everything opens in the workspace's one working directory.
-//
-//  The offer is an Autocomplete popup rendered inline: type to filter, ↑↓
-//  to move, Return to open — the same picker the composer uses for models.
-
 import Autocomplete
 import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// One thing the New Tab page can open.
 private struct NewTabOption: Identifiable, Equatable {
   enum Kind: Equatable {
     case chat
@@ -33,39 +23,24 @@ private struct NewTabOption: Identifiable, Equatable {
 struct NewTabPageView: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.theme) private var theme
-  /// The placeholder pane this page belongs to.
   let paneId: UUID
-  /// The owning group; conversion happens through it.
   let group: PaneGroupModel?
-  /// Creates the chat SESSION eagerly and converts the placeholder into
-  /// an established chat pane (wired by the container, which owns session
-  /// creation). Nil (previews) falls back to a draft conversion.
   var onNewChat: (() -> Void)? = nil
-  /// The machine's API client, for the machine-scoped plugin pane rows.
-  /// Nil (previews, machineless groups) shows no plugin rows.
   var client: (any CodevisorServerClienting)? = nil
   var iconCacheNamespace = "preview"
-  /// The machine whose cached status gates capability rows (Screen
-  /// Sharing). Nil (previews, machineless groups) shows none.
   var machineId: String? = nil
 
   @State private var pluginOptions: [NewTabOption] = []
   @State private var query = ""
-  /// Focusing this pane focuses the picker's input — never on appearance,
-  /// only when the group says the pane is the one the user is working in.
   @State private var inputFocus = Autocomplete.InputFocus()
 
   private static let popupCornerRadius: CGFloat = 18
 
-  /// Read from the machine's last status probe rather than re-probing on
-  /// every mount: the first render already has the right rows, so the
-  /// popup never grows (and re-centers) a beat after it appears.
   private var supportsScreenSharing: Bool {
     guard let machineId else { return false }
     return environment.machines.statusByMachineId[machineId]?.supportsScreenSharing == true
   }
 
-  /// A Mac with Xcode whose app streams its simulators.
   private var supportsSimulator: Bool {
     guard let machineId else { return false }
     return environment.machines.statusByMachineId[machineId]?.supportsSimulator == true
@@ -86,9 +61,6 @@ struct NewTabPageView: View {
   }
 
   var body: some View {
-    // Scrolls when the pane is too short for the popup — fixed-height
-    // content would otherwise fight the group's layout and squeeze the tab
-    // bar. Centered while it fits.
     GeometryReader { geometry in
       ScrollView {
         popup
@@ -98,8 +70,6 @@ struct NewTabPageView: View {
       }
     }
     .background(theme.paneBackground)
-    // The page has no editor of its own, so whitespace clicks explicitly
-    // activate the group, which routes focus to the picker's input.
     .simultaneousGesture(
       TapGesture().onEnded {
         group?.onActivated?()
@@ -107,8 +77,6 @@ struct NewTabPageView: View {
       }
     )
     .onAppear {
-      // The group stores this handler, so it holds the group weakly; capturing
-      // the view would keep the group alive through its own handler table.
       guard let group else { return }
       group.registerNewTabFocus(paneId: paneId) { [weak group, inputFocus, paneId] in
         inputFocus.focus {
@@ -199,9 +167,6 @@ struct NewTabPageView: View {
     environment.pluginStateRevision(for: iconCacheNamespace)
   }
 
-  /// Machine-scoped plugin pane rows. Errors (older servers without the
-  /// plugins feature, unreachable machines) just leave the rows out — the
-  /// page's built-in options never depend on the request.
   private func loadPluginOptions() async {
     guard let client else { return }
     guard let plugins = try? await client.listPlugins() else { return }

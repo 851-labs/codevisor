@@ -52,7 +52,6 @@ describe("computerResultApp", () => {
     })
     expect(computerResultApp(observation({ id: "" }))).toBeUndefined()
     expect(computerResultApp(observation(null))).toBeUndefined()
-    // Actions report delivery, not a resolved app.
     expect(
       computerResultApp(textToolResult('{"delivered":true,"app":"com.apple.Music"}'))
     ).toBeUndefined()

@@ -5,8 +5,6 @@ enum DiffViewportMetrics {
 }
 
 enum DiffScrollConsumptionPolicy {
-  /// Whether a bounded viewport can move in the requested content direction.
-  /// Negative deltas move toward the start; positive deltas move toward the end.
   static func canConsume(
     contentDelta: CGFloat,
     offset: CGFloat,

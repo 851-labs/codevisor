@@ -50,11 +50,9 @@ describe("harness lifecycle update detection", () => {
     ])
     expect(events).toHaveLength(1)
 
-    // Same knowledge on a re-check → no duplicate event.
     await lifecycle.checkForUpdates(true)
     expect(events).toHaveLength(1)
 
-    // Persisted state survives a fresh manager (server restart).
     const rebooted = makeHarnessLifecycleManager({
       agents: agentsStub([npmDefinition], []),
       db,
@@ -86,8 +84,6 @@ describe("harness lifecycle update detection", () => {
         realpath: (path) => path
       })
       const checked = (await lifecycle.checkForUpdates(true))[0]?.info
-      // Clients read update knowledge back from stored state; the notes must
-      // survive that, or a major update would run without being confirmed.
       const [stored] = await lifecycle.decorateHarnesses([
         harness("fake-cli", "/Users/dev/.local/bin/fake-cli", installed)
       ])
@@ -161,7 +157,6 @@ describe("harness lifecycle update detection", () => {
     expect(fetched).toHaveLength(1)
     expect(fetched[0]).toContain("other-cli")
 
-    // The scoped check did not satisfy the periodic full check's cache.
     const full = await lifecycle.checkForUpdates()
     expect(full.map((outcome) => outcome.harnessId).toSorted()).toEqual(["fake-cli", "other-cli"])
   })
@@ -193,7 +188,6 @@ describe("harness lifecycle update detection", () => {
       agents: agentsStub(
         [definition],
         [
-          // The CLI's own version channel runs ahead — it must NOT be used.
           harness(
             "codex-like",
             "/Applications/ChatGPT.app/Contents/Resources/codex",

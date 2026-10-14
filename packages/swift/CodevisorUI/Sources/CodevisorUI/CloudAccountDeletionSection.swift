@@ -1,7 +1,6 @@
 import CodevisorCore
 import SwiftUI
 
-/// Account deletion shared by Account and Privacy & Data settings.
 public struct CloudAccountDeletionSection: View {
   private let cloud: CloudAccountController
   @Binding private var isDeleting: Bool

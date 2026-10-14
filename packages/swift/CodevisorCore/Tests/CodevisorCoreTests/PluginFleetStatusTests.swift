@@ -3,7 +3,6 @@ import Testing
 
 @testable import CodevisorCore
 
-/// Phase 24's client half for plugins: parsing reported per-machine rows.
 @MainActor
 @Suite("PluginFleetStatus")
 struct PluginFleetStatusTests {
@@ -38,7 +37,7 @@ struct PluginFleetStatusTests {
                 "reason": .string("needs ffmpeg"),
               ]),
               .object(["id": .string("dev-linked"), "state": .string("machineOnly")]),
-              .object(["state": .string("orphan")]),  // malformed: no id
+              .object(["state": .string("orphan")]),
             ])
           ]),
           timestamp: ServerSyncTimestamp(wallMs: 1, counter: 0, deviceId: "studio")

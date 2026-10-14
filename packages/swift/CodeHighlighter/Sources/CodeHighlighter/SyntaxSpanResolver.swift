@@ -1,6 +1,5 @@
 import Foundation
 
-/// Clips overlapping captures, selects their winning styles, and joins adjacent equal spans.
 enum SyntaxSpanResolver {
   private struct Event { let offset: Int; let index: Int; let start: Bool }
 

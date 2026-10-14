@@ -1,24 +1,12 @@
 #if canImport(AppKit) || canImport(UIKit)
   import SwiftUI
 
-  /// Converts prose-only structural Markdown into one TextKit document.
-  /// Lists and quotes can recurse through each other without creating a
-  /// matching recursive SwiftUI layout tree. Truly embedded views (code,
-  /// tables, and dividers) continue through `MarkdownRecursiveListView`.
-  /// Converts prose-only structural Markdown into one TextKit document.
-  /// Lists and quotes can recurse through each other without creating a
-  /// matching recursive SwiftUI layout tree. Truly embedded views (code,
-  /// tables, and dividers) continue through `MarkdownRecursiveListView`.
-  /// Every list shape — the parser's simple bullet and ordered forms, full
-  /// lists, and task lists — renders through `appendItems`, so they share
-  /// one marker column and one hanging indent.
   enum MarkdownFlattenedListRenderer {
     private static let quoteIndent = MarkdownFragmentMetrics.quoteIndent
 
     private struct RenderContext {
       var contentIndent: CGFloat = 0
       var listDepth = 0
-      /// Blocks directly inside a list item are spaced like list items.
       var isListItemContent = false
       var quoteBarOffsets: [CGFloat] = []
 
@@ -68,7 +56,6 @@
       }
     }
 
-    /// Renders a list or quote block that `canRender` accepts.
     static func attributedString(
       _ block: MarkdownBlock,
       theme: MarkdownTheme,
@@ -121,8 +108,6 @@
           foreground: foreground,
           chipBackground: chipBackground
         )
-        // An empty item, or one that opens with a nested list, still shows
-        // its own marker on a line of its own.
         appendPendingMarkerIfNeeded(
           &pendingMarker,
           context: contentContext,

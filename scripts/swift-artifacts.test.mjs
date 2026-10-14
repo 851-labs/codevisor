@@ -16,7 +16,6 @@ import test from "node:test"
 
 import { prepareSwiftArtifacts } from "./swift-artifacts.mjs"
 
-// Sharing relies on APFS clones (cp -c), which only exist on macOS.
 const darwinOnly = { skip: process.platform !== "darwin" && "APFS clones are macOS-only" }
 const checksum = "85cfef48d8a6508af9c645a6887a13ec0ba38a71316195a1d0d9c9c3f051f013"
 
@@ -26,8 +25,6 @@ async function fixture(t) {
   return root
 }
 
-/// A worktree's SourcePackages after SwiftPM resolved one downloaded
-/// xcframework and one local (shared-cache) xcframework.
 async function worktree(
   root,
   name,
@@ -92,7 +89,6 @@ test(
     const root = await fixture(t)
     const store = join(root, "store")
     const first = await worktree(root, "biscotti")
-    // Unpacked later than the stored copy, as every other worktree's is.
     const second = await worktree(root, "grouper", { unpackedAt: new Date("2026-03-04T05:06:07Z") })
 
     assert.deepEqual((await first.prepare(store)).shared, [first.artifact])
@@ -100,7 +96,6 @@ test(
 
     for (const { binaryPath, artifact, unpackedAt } of [first, second]) {
       assert.equal(await readFile(binaryPath, "utf8"), "webrtc-binary")
-      // Unchanged timestamps keep build systems from treating the swap as an edit.
       assert.equal((await lstat(binaryPath)).mtime.getTime(), unpackedAt.getTime())
       assert.equal(
         await readlink(join(artifact, "macos-arm64/WebRTC.framework/WebRTC")),
@@ -128,7 +123,6 @@ test("unchanged pins skip resolution until they or the unpacked files change", a
   assert.equal((await checkout.prepare(store)).resolved, true)
   assert.equal(checkout.resolutions(), 2)
 
-  // SwiftPM re-extracting an artifact replaces its directory.
   await rm(checkout.artifact, { recursive: true })
   await checkout.extract()
   assert.equal((await checkout.prepare(store)).resolved, true)

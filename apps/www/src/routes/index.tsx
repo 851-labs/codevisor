@@ -84,8 +84,6 @@ function InstallCta({ placement }: { placement: "hero" | "footer" }) {
 
 type Shot = { src: string; alt: string }
 
-/// A raw iPhone screen capture (1284 × 2778) inside a thin black bezel. The
-/// elliptical radii keep the display's corner curve at any rendered width.
 function IPhone({ src, alt, eager }: Shot & { eager?: boolean }) {
   return (
     <div className="rounded-[15%/7%] bg-black p-[3%] shadow-2xl ring-1 ring-white/15">
@@ -101,10 +99,6 @@ function IPhone({ src, alt, eager }: Shot & { eager?: boolean }) {
   )
 }
 
-/// A Mac window capture with its iPhone counterpart overlapping the bottom
-/// right corner, so every scene shows both apps. Phone-sized screens show only
-/// the iPhone capture at a readable size; a shrunken Mac window would be
-/// illegible there. Hidden lazy images are never fetched.
 function DevicePair({ mac, iphone, eager }: { mac: Shot; iphone: Shot; eager?: boolean }) {
   return (
     <div className="mx-auto max-w-5xl px-6">

@@ -1,9 +1,6 @@
 import SwiftUI
 import CodevisorCore
 
-/// The workspace's top tabs as a horizontal strip above its content. Each
-/// item owns an entire split tree. Every edit is optional: without them the
-/// strip only switches tabs (an archived workspace's, read-only).
 struct WorkspaceTabBar: View {
   let items: [PaneTabStripItem]
   let selectedTabId: UUID
@@ -57,9 +54,6 @@ struct WorkspaceTabBar: View {
 }
 
 extension PaneTabIcon {
-  /// A workspace tab's icon, from the pane that names it: its chat's status
-  /// or model, a terminal's agent status, a browser's favicon, a plugin's
-  /// icon, else the pane kind's glyph.
   @MainActor
   static func workspaceTab(
     _ descriptor: PaneDescriptorState?,

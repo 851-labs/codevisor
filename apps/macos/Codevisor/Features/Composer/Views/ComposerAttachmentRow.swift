@@ -1,9 +1,6 @@
 import CodevisorCore
 import SwiftUI
 
-/// The staged-attachment strip above the composer input: image thumbnails and
-/// file chips, each with a hover-revealed remove button and an
-/// upload/failed badge.
 struct ComposerAttachmentRow: View {
   @Bindable var controller: SessionController
 

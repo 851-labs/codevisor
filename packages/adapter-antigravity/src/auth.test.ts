@@ -69,7 +69,6 @@ describe("Antigravity accounts", () => {
   it("takes the sign-in link only from agy's finished hyperlink", () => {
     expect(signInUrl(LINK)).toBe(URL_)
     expect(signInUrl(`\x1b]8;id=abc;${URL_}\x1b\\`)).toBe(URL_)
-    // Printed, the address wraps; unfinished, it's cut short.
     expect(signInUrl(`\x1b[2m${URL_}\x1b[0m\r\n`)).toBeUndefined()
     expect(signInUrl(`\x1b]8;id=abc;${URL_}`)).toBeUndefined()
     expect(signInUrl("Welcome")).toBeUndefined()
@@ -164,7 +163,6 @@ describe("Antigravity sign-in", () => {
     await spawnedTerminal(tty)
     tty.terminal.draw(LINK)
     const flow = await tty.started
-    // What agy draws once it holds the sign-in: its first-run theme preview.
     tty.wait.mockImplementationOnce(async () => {
       tty.terminal.draw(
         "tokyo night│   ⚙ tool: write_file main.go││   ✗ error: compilation failed││   ⚠ warning: deprecation warning│"

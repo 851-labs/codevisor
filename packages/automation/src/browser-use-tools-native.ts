@@ -2,7 +2,6 @@ import type { Tool } from "@modelcontextprotocol/sdk/types.js"
 
 import { objectSchema, targetProperties, tool } from "./browser-use-tool-schema.js"
 
-/// Backend selection, tab lifecycle, navigation, capture, and native element/coordinate interactions.
 export const browserUseNativeTools: ReadonlyArray<Tool> = [
   tool(
     "js",

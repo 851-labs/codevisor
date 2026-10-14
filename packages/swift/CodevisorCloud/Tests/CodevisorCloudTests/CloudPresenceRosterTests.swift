@@ -4,10 +4,6 @@ import Testing
 
 @testable import CodevisorCloud
 
-/// Presence pushed by the hub must keep the UI roster live: a machine signed
-/// in on another device appears without waiting for the next foreground or a
-/// settings screen's poll. The push is only a trigger — the REST fetch stays
-/// the single writer of `machines`.
 @Suite("Presence-driven roster refresh")
 @MainActor
 struct CloudPresenceRosterTests {
@@ -17,7 +13,6 @@ struct CloudPresenceRosterTests {
     let (controller, client, _) = await makeSignedIn(machines: [m1])
     let restCallsBefore = client.machineTokens.count
 
-    // The MacBook signs in elsewhere: the hub pushes it before any poll.
     let m2 = testMachine("m2", name: "MacBook Pro")
     client.machinesResult = .success([m1, m2])
     controller.reconcilePresence(with: [m1, m2])
@@ -33,12 +28,10 @@ struct CloudPresenceRosterTests {
     let (controller, client, _) = await makeSignedIn(machines: [online])
     let restCallsBefore = client.machineTokens.count
 
-    // Identical transport view: no fetch.
     controller.reconcilePresence(with: [online])
     #expect(controller.presenceRefreshTask == nil)
     #expect(client.machineTokens.count == restCallsBefore)
 
-    // The machine drops: the flip disagrees with the roster and refreshes.
     let offline = testMachine("m1", online: false)
     client.machinesResult = .success([offline])
     controller.reconcilePresence(with: [offline])
@@ -49,9 +42,6 @@ struct CloudPresenceRosterTests {
 
   @Test("A new tunnel address triggers a refresh even while the machine stays online")
   func tunnelAddressChangeRefreshes() async {
-    // The machine's server restarted onto a new tunnel endpoint (an update,
-    // a reinstall) without ever looking offline: the app must still learn
-    // the address it dials.
     let before = testMachine("m1")
     let (controller, client, _) = await makeSignedIn(machines: [before])
     let restCallsBefore = client.machineTokens.count

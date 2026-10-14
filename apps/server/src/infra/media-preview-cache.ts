@@ -4,7 +4,6 @@ import { join } from "node:path"
 const scans = new Map<string, Promise<void>>()
 let writes = 0
 
-/** Derived files only. Originals are never in this directory. */
 export const trimMediaPreviewCache = async (folder: string): Promise<void> => {
   if (writes++ % 64 !== 0) return
   const running = scans.get(folder)

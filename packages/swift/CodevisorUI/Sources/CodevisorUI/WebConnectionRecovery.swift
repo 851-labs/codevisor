@@ -1,7 +1,5 @@
 import Foundation
 
-/// Only replay an uncommitted, read-only navigation, once. Connection
-/// recovery must never resubmit a form or repeatedly reload a broken page.
 public struct WebConnectionRecovery {
   private var retried = false
   public init() {}

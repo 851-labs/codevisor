@@ -1,7 +1,6 @@
 import { isRenderableWorkedEvent, parseJsonRecord } from "./event-payloads.js"
 import type { Migration } from "./migration-types.js"
 
-/// Schema migrations 9–29.
 export const migrations09To29: ReadonlyArray<Migration> = [
   {
     id: 9,
@@ -209,9 +208,6 @@ export const migrations09To29: ReadonlyArray<Migration> = [
   {
     id: 21,
     name: "pane workspaces",
-    // Note: an unrelated table also named `workspaces` (the pre-migration-5
-    // spelling of projects) was dropped by migration 5, so the name is free
-    // on every database that reaches this point.
     sql: `
       create table if not exists workspaces (
         id text primary key,

@@ -19,7 +19,6 @@ describe("Codex skills", () => {
         skill("triage", { interface: { shortDescription: "Triage flaky CI" }, scope: "repo" }),
         skill("notes"),
         skill("release", { pluginId: "release@acme" }),
-        // Codevisor threads turn these off, whatever the user's config says.
         skill("skill-creator", { scope: "system" }),
         skill("pdf:pdf", { pluginId: "pdf@openai-bundled" }),
         skill("cua", { pluginId: "unified-computer-use@openai-bundled" }),

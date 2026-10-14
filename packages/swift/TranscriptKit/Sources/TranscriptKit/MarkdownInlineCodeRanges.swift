@@ -1,6 +1,5 @@
 import Foundation
 
-/// Finds inline code spans between already classified block-code ranges.
 enum MarkdownInlineCodeRanges {
   static func ranges(in markdown: NSString, excluding blockRanges: [NSRange]) -> [NSRange] {
     var result: [NSRange] = []

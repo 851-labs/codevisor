@@ -1,13 +1,5 @@
 import Foundation
 
-/// Persists pane identities and selection for a session or workspace leaf. Pane
-/// identity MUST survive app restarts: the codevisor server keeps one live PTY
-/// per pane key with no reaping, so stable keys are what let terminals
-/// reattach instead of orphaning shells.
-/// `sessionId` is the SESSION-SCOPED key. It is nil for a group whose identity
-/// comes from its workspace instead of a chat (a workspace that has never
-/// hosted one). Session-keyed stores have no key to use then and decline;
-/// workspace-keyed stores ignore the parameter entirely.
 public protocol PaneGroupRepository: Sendable {
   func load(sessionId: UUID?) -> PaneGroupState?
   func save(_ state: PaneGroupState, sessionId: UUID?)
@@ -18,9 +10,6 @@ public extension PaneGroupRepository {
   func removeAll() {}
 }
 
-/// File/in-memory storage for pre-workspace sessions and standalone groups,
-/// keyed "<session>:center". Cached decoding avoids disk reads on every
-/// selection change.
 public final class DefaultPaneGroupRepository: PaneGroupRepository, @unchecked Sendable {
   private let store: any PersistenceStore
   private let key = "paneGroups"
@@ -32,15 +21,11 @@ public final class DefaultPaneGroupRepository: PaneGroupRepository, @unchecked S
   }
 
   public func load(sessionId: UUID?) -> PaneGroupState? {
-    // No session key, no legacy entry: this store only ever held per-session
-    // states, and inventing a key here would collide with a real session's.
     guard let sessionId else { return nil }
     return lock.withLock { loadAll()["\(sessionId.uuidString):center"] }
   }
 
   public func save(_ state: PaneGroupState, sessionId: UUID?) {
-    // Same reason as `load`: without a session key there is no entry this
-    // store owns, and a substitute key would masquerade as a session.
     guard let sessionId else { return }
     lock.withLock {
       var all = loadAll()
@@ -69,15 +54,12 @@ public final class DefaultPaneGroupRepository: PaneGroupRepository, @unchecked S
   }
 
   private func loadAll() -> [String: PaneGroupState] {
-    // Caller owns the entire load/mutate/write transaction.
     if let cache { return cache }
     let loaded: [String: PaneGroupState]
     if let data = store.loadData(forKey: key) {
       do {
         loaded = try JSONDecoder().decode([String: PaneGroupState].self, from: data)
       } catch {
-        // No banner: a lost tab layout is recoverable in place; the
-        // quarantined backup and fault log keep it diagnosable.
         handleCorruptPayload(store: store, key: key, data: data, error: error)
         loaded = [:]
       }

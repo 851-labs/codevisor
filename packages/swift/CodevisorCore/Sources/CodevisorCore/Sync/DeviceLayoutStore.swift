@@ -1,11 +1,6 @@
 import Foundation
 
-/// How this device arranges one workspace: its tabs, their splits, which tab
-/// is selected, and any custom tab titles. Other devices arrange the same
-/// workspace however they like.
 public struct DeviceLayout: Codable, Equatable, Sendable {
-  /// The machine that owns the workspace, so a snapshot from that machine can
-  /// forget layouts for workspaces it no longer has.
   public var serverId: String
   public var tabs: [WorkspaceTab]
   public var selectedTabId: UUID
@@ -21,9 +16,6 @@ public struct DeviceLayout: Codable, Equatable, Sendable {
   }
 }
 
-/// A workspace the user started on this device that the server doesn't have
-/// yet. It becomes a real workspace when its first chat opens: that request
-/// creates the workspace and the chat's pane on the server in one step.
 public struct WorkspaceDraft: Codable, Equatable, Sendable {
   public var id: UUID
   public var serverId: String
@@ -32,8 +24,6 @@ public struct WorkspaceDraft: Codable, Equatable, Sendable {
   public var rootDirectory: String?
   public var worktreeName: String?
   public var createdAt: Date
-  /// Fixed when the draft is made so it stays put in the sidebar; the server
-  /// assigns the real position when it creates the workspace.
   public var sidebarPosition: String?
 
   public init(
@@ -51,11 +41,6 @@ public struct WorkspaceDraft: Codable, Equatable, Sendable {
   }
 }
 
-/// The client-owned half of navigation: per-workspace layouts and drafts.
-///
-/// Thread-safe because pane models persist layout through the workspace
-/// repository from wherever they run; the main actor reads it back when it
-/// rebuilds what the UI shows.
 public final class DeviceLayoutStore: @unchecked Sendable {
   static let storageKey = "device-layout-v1"
 
@@ -68,9 +53,6 @@ public final class DeviceLayoutStore: @unchecked Sendable {
   private let lock = NSLock()
   private let persistenceOwner = UUID()
   private var payload: Payload
-  /// Change counters, so a rebuild can tell what changed without comparing
-  /// layouts. Every mutation bumps the workspaces and machines it touched;
-  /// `removeAll` bumps everything at once.
   private var allGeneration: UInt64 = 0
   private var machineGenerations: [String: UInt64] = [:]
   private var workspaceGenerations: [UUID: UInt64] = [:]
@@ -109,7 +91,6 @@ public final class DeviceLayoutStore: @unchecked Sendable {
     lock.withLock { workspaceGenerations[workspaceId, default: 0] &+ allGeneration }
   }
 
-  /// Records a change; callers hold the lock.
   private func noteChange(workspaceId: UUID, serverIds: [String?]) {
     workspaceGenerations[workspaceId, default: 0] &+= 1
     for case let serverId? in serverIds { machineGenerations[serverId, default: 0] &+= 1 }
@@ -135,7 +116,6 @@ public final class DeviceLayoutStore: @unchecked Sendable {
     persist()
   }
 
-  /// The server now has this workspace; its layout stays, the draft goes.
   public func promoteDraft(id: UUID) {
     let changed = lock.withLock {
       guard let draft = payload.drafts.removeValue(forKey: id) else { return false }
@@ -156,9 +136,6 @@ public final class DeviceLayoutStore: @unchecked Sendable {
     if changed { persist() }
   }
 
-  /// Forgets a machine's layouts for workspaces its latest complete snapshot
-  /// no longer has. Only a full snapshot may drive this, so a machine that is
-  /// merely offline never loses its arrangements. Drafts are kept.
   public func prune(serverId: String, keeping workspaceIds: Set<UUID>) {
     let changed = lock.withLock {
       let gone = payload.layouts.filter { id, layout in
@@ -182,8 +159,6 @@ public final class DeviceLayoutStore: @unchecked Sendable {
   }
 
   private func persist() {
-    // Capture and enqueue under the same lock. An older capture can never
-    // arrive at the coalescing queue after a newer one.
     lock.withLock {
       let snapshot = payload
       let store = store

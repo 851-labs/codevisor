@@ -2,11 +2,6 @@ import ACPKit
 import CodevisorCore
 import SwiftUI
 
-/// Session goal banner: objective, usage, and the pause/resume/clear controls.
-/// Transient work belongs in the transcript alongside Thinking…, rather than
-/// competing with the objective as a badge. Mounted above the composer whenever
-/// the session has a goal; hidden entirely on harnesses without goal support.
-/// Goals are created/replaced through the composer's goal-mode toggle.
 public struct GoalBannerView: View {
   private var cardStyle = ComposerCardStyle()
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -30,8 +25,6 @@ public struct GoalBannerView: View {
       VStack(alignment: .leading, spacing: 3) {
         Text(goal.objective)
           .font(.callout.weight(.medium))
-          // The full objective isn't shown anywhere else, so give
-          // it more room at accessibility text sizes.
           .lineLimit(dynamicTypeSize.isAccessibilitySize ? 4 : 2)
         usageLine
       }

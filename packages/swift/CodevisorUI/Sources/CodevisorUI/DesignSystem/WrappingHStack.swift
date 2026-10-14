@@ -1,8 +1,5 @@
 import SwiftUI
 
-/// Lays its children out left to right at their natural size, starting a new
-/// line when the next one wouldn't fit. A child wider than the whole line gets
-/// the line's width (and truncates) instead of overflowing.
 public struct WrappingHStack: Layout {
   public var spacing: CGFloat
   public var lineSpacing: CGFloat

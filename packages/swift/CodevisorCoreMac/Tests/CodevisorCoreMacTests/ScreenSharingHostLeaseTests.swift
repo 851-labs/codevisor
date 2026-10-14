@@ -10,10 +10,10 @@ struct ScreenSharingHostLeaseTests {
     _ = lease.reserve(.init(first), now: 100)
     #expect(lease.replacementPermit(.init(request()), revision: 7, now: 110) == nil)
     let permit = try #require(lease.replacementPermit(.init(first), revision: 7, now: 110))
-    _ = lease.release(.init(first))  // The old peer has been torn down.
+    _ = lease.release(.init(first))
     #expect(permit.isValid(revision: 7, now: 124.999))
     #expect(!permit.isValid(revision: 7, now: 125))
-    #expect(!permit.isValid(revision: 8, now: 111))  // Host stop while enumeration was suspended.
+    #expect(!permit.isValid(revision: 8, now: 111))
     #expect(lease.replacementPermit(.init(first), revision: 7, now: 111) == nil)
   }
   @Test func secondViewerCannotDisplaceOrRenewAnotherLease() {

@@ -32,7 +32,7 @@ it("keeps parent tool headers across detail pages and respects the serialized by
   })
   expect(second.entries).toHaveLength(4)
   const latest = (await run(db.getTranscriptItemDetails(session.id, item.id, "latest")))!
-  expect(latest.entries).toHaveLength(33) // 32 entries plus the parent header.
+  expect(latest.entries).toHaveLength(33)
   expect(latest.entries.at(-1)?.key).toBe("tool:child33")
   expect(latest.nextAfter).toBeUndefined()
   expect(latest.previousBefore).toBeTypeOf("string")

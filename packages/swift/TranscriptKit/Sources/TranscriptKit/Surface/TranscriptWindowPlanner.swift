@@ -1,15 +1,8 @@
 import CoreGraphics
 import Foundation
 
-/// Which rows a transcript surface should keep mounted around the viewport.
-/// Wraps `TranscriptVirtualWindowPolicy` with the two rules both platforms
-/// layer on top of it: a symmetric runway until the initial presentation is
-/// ready, and the invariant that the loaded viewport is always part of the
-/// retained window.
 public struct TranscriptWindowPlanner: Sendable {
   public var policy: TranscriptVirtualWindowPolicy
-  /// Runway on either side of the viewport, in viewport heights, while the
-  /// initial presentation gate is still closed.
   public var initialRunwayViewportCount: CGFloat
 
   public init(policy: TranscriptVirtualWindowPolicy, initialRunwayViewportCount: CGFloat) {
@@ -17,7 +10,6 @@ public struct TranscriptWindowPlanner: Sendable {
     self.initialRunwayViewportCount = initialRunwayViewportCount
   }
 
-  /// The index range to mount for the current viewport.
   public func plannedRange(
     layout: VirtualTranscriptLayout,
     distanceFromBottom: CGFloat,
@@ -44,9 +36,6 @@ public struct TranscriptWindowPlanner: Sendable {
     )
   }
 
-  /// The keys to retain for a target window. A restored or rapidly changing
-  /// target should normally contain the viewport, but visible coverage is
-  /// an invariant even if it does not.
   public static func targetKeys(
     layout: VirtualTranscriptLayout,
     targetRange: Range<Int>,

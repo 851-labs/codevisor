@@ -1,13 +1,8 @@
 import Foundation
 import ACPKit
 
-/// Semantic presentation for Codevisor's tool gateway. Each harness spells MCP
-/// names differently (`codevisor.execute`, `mcp__codevisor__execute`,
-/// `codevisor__execute` from Grok, or `codevisor_execute`), but the transcript should describe the user's action,
-/// not the adapter's wire format.
 public enum CodevisorGatewayOperation: String {
   case execute
-  /// Lists Codevisor's skills, or reads one skill's instructions.
   case skills
 }
 
@@ -19,26 +14,17 @@ extension ToolCall {
       .lowercased()
 
     let prefixes = [
-      // `codevisor__` before `codevisor_`, which would leave a stray `_`.
       "mcp__codevisor__", "codevisor__", "codevisor.", "codevisor_",
-      // Persisted transcripts keep their original wire-level tool names.
       "mcp__herdman__", "herdman.", "herdman_",
     ]
     let operation = prefixes.first(where: normalized.hasPrefix).map {
       String(normalized.dropFirst($0.count))
     }
     if let operation = operation.flatMap(CodevisorGatewayOperation.init(rawValue:)) { return operation }
-    // OpenCode's Code Mode tool (plain `execute`) calling the gateway from its
-    // own code: the server attaches the workflow it ran.
     if normalized == "execute", meta?["codevisorExecution"] != nil { return .execute }
-    // Any skill read reads the same: one such code made through the gateway
-    // (the server attaches it), or a harness's own skill tool (Claude Code's
-    // `Skill`) its adapter annotated.
     return meta?["codevisorSkill"] == nil ? nil : .skills
   }
 
-  /// Codex's built-in tool discovery is part of the same integration flow
-  /// when it appears beside Codevisor calls, and deserves a readable label.
   public var isToolDiscoveryCall: Bool {
     let normalized =
       title
@@ -62,8 +48,6 @@ extension ToolCall {
       guard let description = integrationDescription else {
         return isSettled ? "Ran an integration workflow" : "Running an integration workflow…"
       }
-      // One line: a running workflow shows its latest status() in place of
-      // its description, then settles back to the description.
       if let liveStatus = integrationLiveStatus { return liveStatus }
       guard status == .failed || codevisorExecution?.state == .failed else { return description }
       guard let error = codevisorExecution?.error.flatMap(Self.shortError) else {
@@ -81,7 +65,6 @@ extension ToolCall {
     }
   }
 
-  /// The skill a gateway `skills` call reads; nil when it lists them all.
   var skillName: String? {
     guard codevisorGatewayOperation == .skills,
       let name = (rawInput?["name"]?.stringValue ?? meta?["codevisorSkill"]?["name"]?.stringValue)?
@@ -91,9 +74,6 @@ extension ToolCall {
     return name
   }
 
-  /// The model's own label for a gateway workflow (`execute`'s required
-  /// `description` argument), when the harness reported it. Only the first
-  /// line is used, capped at the label length the tool asks the model for.
   public var integrationDescription: String? {
     guard codevisorGatewayOperation == .execute,
       let firstLine = (rawInput?["description"]?.stringValue ?? codevisorExecution?.description)?
@@ -106,28 +86,19 @@ extension ToolCall {
     return String(description.prefix(limit - 1)).trimmingCharacters(in: .whitespaces) + "…"
   }
 
-  /// The subagent this call started or messaged (the harness's task id),
-  /// which the server attaches as `_meta.codevisorSubagent.taskId` to both an
-  /// agent's spawning call and each later message to it (Claude's
-  /// `SendMessage`). Stored with the transcript, it ties them together.
   public var subagentTaskId: String? {
     meta?["codevisorSubagent"]?["taskId"]?.stringValue
   }
 
-  /// A later run of an agent spawned earlier, under a chip of its own (a
-  /// Codex agent messaged in a later turn), marked
-  /// `_meta.codevisorSubagent.continues`.
   public var continuesSubagent: Bool {
     meta?["codevisorSubagent"]?["continues"]?.boolValue == true
   }
 
-  /// Live gateway state the server attaches to an `execute` row.
   public var codevisorExecution: CodevisorExecution? {
     guard codevisorGatewayOperation == .execute else { return nil }
     return meta?["codevisorExecution"].flatMap(CodevisorExecution.init(json:))
   }
 
-  /// The latest `status()` text of a workflow that is still running.
   var integrationLiveStatus: String? {
     guard !isSettled, codevisorExecution?.state != .failed,
       let status = codevisorExecution?.status?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -136,8 +107,6 @@ extension ToolCall {
     return status
   }
 
-  /// The message a person needs from an error: its first line, without an
-  /// "Error:" prefix or appended stack frames.
   static func shortError(_ error: String) -> String? {
     var line =
       error
@@ -156,7 +125,6 @@ extension ToolCall {
   }
 }
 
-/// The gateway's record of one `execute` run (`_meta.codevisorExecution`).
 public struct CodevisorExecution: Equatable, Sendable {
   public enum State: String, Sendable {
     case running, completed, failed
@@ -164,22 +132,17 @@ public struct CodevisorExecution: Equatable, Sendable {
 
   public struct Call: Equatable, Sendable {
     public var path: String
-    /// The machine the call was routed to, when it was not local.
     public var machine: String?
     public var ok: Bool
-    /// Files the call produced: screenshots, recordings, exports.
     public var files: [PreviewFile]
   }
 
   public var state: State?
-  /// The workflow's label, for rows whose own arguments don't carry it.
   public var description: String?
   public var status: String?
   public var calls: [Call]
   public var error: String?
-  /// The first thing the workflow touched, which names it once it settles.
   public var icon: CodevisorExecutionIconRef?
-  /// What the workflow is touching now, while it runs.
   public var activeIcon: CodevisorExecutionIconRef?
 
   private static func file(_ json: JSONValue) -> PreviewFile? {

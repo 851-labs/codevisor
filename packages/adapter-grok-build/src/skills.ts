@@ -26,7 +26,6 @@ const tomlFile = (
   try {
     return parseToml(content)
   } catch {
-    // Grok ignores a config it can't parse too.
     return undefined
   }
 }
@@ -48,12 +47,6 @@ export const readGrokConfigFile = (path: string): string | undefined => {
   }
 }
 
-/// Grok reads Claude's skill folders, including the claude.ai skills for
-/// Claude's own browser and desktop tools. With Codevisor's gateway attached
-/// they are disabled through Grok's `GROK_CONFIG` overlay, which then keeps
-/// them out of the model's prompt and the advertised commands. The overlay
-/// replaces arrays wholesale, so it carries the `skills.disabled` names the
-/// user and managed configs (and any existing overlay) already set.
 export const withGrokSkillsDisabled = (
   env: NodeJS.ProcessEnv,
   launch: AcpLaunchContext,

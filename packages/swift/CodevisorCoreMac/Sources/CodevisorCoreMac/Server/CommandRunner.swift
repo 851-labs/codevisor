@@ -2,7 +2,6 @@ import CodevisorCore
 import Darwin
 import Foundation
 
-/// The result of running a command to completion.
 public struct CommandResult: Sendable, Equatable {
   public var standardOutput: String
   public var standardError: String
@@ -15,9 +14,6 @@ public struct CommandResult: Sendable, Equatable {
   }
 }
 
-/// Runs a command to completion and returns its captured output.
-///
-/// Abstracted so discovery logic can be tested without spawning processes.
 public protocol CommandRunner: Sendable {
   func run(
     executableURL: URL,
@@ -38,9 +34,6 @@ public enum CommandRunnerError: LocalizedError, Equatable {
 }
 
 public extension CommandRunner {
-  /// Runs a command with a hard deadline, even if it ignores cancellation.
-  /// Unstructured tasks let the deadline return without waiting for the
-  /// losing command; cancellation still terminates a ProcessCommandRunner child.
   func run(
     executableURL: URL,
     arguments: [String],
@@ -76,17 +69,14 @@ private extension Clock where Duration == Swift.Duration {
     let deadline = now.advanced(by: timeout)
     return Task {
       do {
-        // Use Clock's typed deadline operation. Calling a captured async sleep
-        // closure here corrupts the task allocator on Swift 6.3 for Intel.
         try await sleep(until: deadline, tolerance: nil)
         try Task.checkCancellation()
         outcome.resolve(.failure(CommandRunnerError.timedOut(executable)))
-      } catch { /* The command finished first. */  }
+      } catch {}
     }
   }
 }
 
-/// A `CommandRunner` backed by `Foundation.Process`.
 public struct ProcessCommandRunner: CommandRunner {
   private let onStart: @Sendable () -> Void
   private let onExit: @Sendable () -> Void
@@ -113,9 +103,6 @@ public struct ProcessCommandRunner: CommandRunner {
     process.standardError = errPipe
 
     let cancellation = ProcessCancellationController(process: process)
-    // Subscribe before launch and buffer an immediate exit, including a
-    // short-lived launchctl command that finishes before the waiter starts.
-    // This avoids a blocking wait on another thread's Foundation run loop.
     let exit = StartupOutcome<Int32>()
     process.terminationHandler = { finished in
       cancellation.markFinished()
@@ -164,16 +151,11 @@ public struct ProcessCommandRunner: CommandRunner {
     cancellation.markStarted()
     onStart()
 
-    // The child inherited duplicates of these descriptors. Closing
-    // the parent's writers guarantees readToEnd observes EOF even
-    // when Foundation retains the Pipe objects until this call ends.
     try? outPipe.fileHandleForWriting.close()
     try? errPipe.fileHandleForWriting.close()
   }
 
   private func drainOutput(outPipe: Pipe, errPipe: Pipe) async -> (Data, Data) {
-    // Drain both pipes concurrently. Keep the readers and exit callback alive
-    // through cancellation until the process has actually terminated.
     let (out, err) = await withTaskGroup(of: (Bool, Data).self) { group in
       group.addTask { (true, await readToEnd(outPipe.fileHandleForReading)) }
       group.addTask { (false, await readToEnd(errPipe.fileHandleForReading)) }
@@ -194,8 +176,6 @@ public struct ProcessCommandRunner: CommandRunner {
         do {
           data = try handle.readToEnd() ?? Data()
         } catch {
-          // Empty output keeps the command result usable; the read
-          // failure must not masquerade as a silent command.
           Log.server.error(
             "Failed to read process output: \(String(describing: error), privacy: .public)"
           )
@@ -207,9 +187,6 @@ public struct ProcessCommandRunner: CommandRunner {
   }
 }
 
-/// Bridges cooperative Swift cancellation to Foundation.Process. SIGTERM is
-/// normally sufficient for launchctl and shell probes; SIGKILL is a bounded
-/// fallback for a child that ignores termination.
 private final class ProcessCancellationController: @unchecked Sendable {
   private let process: Process
   private let lock = NSLock()

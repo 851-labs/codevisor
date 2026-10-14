@@ -50,43 +50,22 @@ public final class LocalCodevisorServer: LocalServerControlling {
   let healthPollInterval: Duration
   let healthPollAttempts: Int
   let managedStartupPollAttempts: Int
-  /// The server timeline (server.log + unified log); see ServerLifecycleLog.
   let lifecycleLog: ServerLifecycleLog
-  /// Where `ensureRunning` currently is, for the watchdog and the failure
-  /// message: a start that never returns names the step it stalled in.
   public internal(set) var startupStep: String?
-  /// App-hosted servers are owned by exactly one app boot. The server also
-  /// watches this app's PID and exits if the app crashes, preventing an
-  /// updater backup or stale process from becoming the next launch's server.
   var process: Process?
   var activeBootId: String?
   var managedService: LocalCodevisorManagedService?
   var updateRequestMonitor: Task<Void, Never>?
-  /// Event-driven replacement for the old 1 Hz stat poll; watches the
-  /// request file's directory. The Task above survives only as the
-  /// fallback when the directory can't be opened for events.
   var updateRequestSource: (any DispatchSourceFileSystemObject)?
-  /// In-flight `ensureRunning()`; concurrent callers (onboarding and the
-  /// root view both prepare the machine on first launch) join it instead of
-  /// racing past `currentHealth()` and double-launching the server.
   var ensureTask: Task<LocalCodevisorServerState, Never>?
 
   var preparingForUpdate = false
 
   public internal(set) var state: LocalCodevisorServerState = .idle
-  /// Sidecar progress remains available while the new server is performing
-  /// its blocking migration and therefore cannot answer HTTP yet.
   public internal(set) var dataUpgradeProgress: LocalDataUpgradeProgress?
 
-  /// Invoked when the bundled server exits asking the app to take over the
-  /// update: a remote client triggered a server update, but a server that
-  /// lives inside the .app bundle can't replace that bundle, so it hands the
-  /// update back here. The app runs its full update (swap bundle + relaunch).
   public var onUpdateRequested: (@MainActor () -> Void)?
 
-  /// Exit status the bundled server uses to ask the app to perform the
-  /// update instead of self-swapping a standalone runtime. Must match
-  /// `APP_UPDATE_HANDOFF_EXIT_CODE` in apps/server/src/main.ts.
   public static let updateHandoffExitStatus: Int32 = 85
 
   @ObservationIgnored var startupScheduler: LocalServerScheduler = .continuous
@@ -179,9 +158,6 @@ public final class LocalCodevisorServer: LocalServerControlling {
     if let managedService {
       step("prepare managed service")
       do {
-        // Platform migrations must run before the first health probe:
-        // a legacy KeepAlive job can otherwise answer that probe and
-        // restart faster than the stale-listener shutdown path.
         try await managedService.prepare()
         lifecycleLog.note("ensureRunning: managed service prepared (\(clock.lap()) ms)")
       } catch {
@@ -213,10 +189,6 @@ public final class LocalCodevisorServer: LocalServerControlling {
         return state
       }
 
-      // Development runs deliberately use the standalone server started
-      // by `bun run dev`; it has no bundled VERSION and is not app-owned.
-      // Production app boots never adopt an unowned or previous app's
-      // process merely because something answered on the expected port.
       if allowsDevelopmentLaunch, bundledServerVersion() == nil, health.appOwned != true {
         dataUpgradeProgress = nil
         completeStartup()
@@ -244,9 +216,6 @@ public final class LocalCodevisorServer: LocalServerControlling {
       return fail("Codevisor server entrypoint was not found")
     }
 
-    // Relocate pre-canonical server state now that no server is serving
-    // it: any healthy-but-stale server was stopped above, and the launch
-    // below opens the database at the canonical path.
     if databasePath == Self.defaultDatabasePath() {
       step("migrate legacy data")
       Self.migrateLegacyServerData()
@@ -254,7 +223,6 @@ public final class LocalCodevisorServer: LocalServerControlling {
     }
 
     if let managedService {
-      // Production always uses the managed service.
       return await startManagedServer(managedService)
     }
 
@@ -269,10 +237,6 @@ public final class LocalCodevisorServer: LocalServerControlling {
       let bootId = UUID().uuidString
       activeBootId = bootId
       var serverEnvironment = await serverEnvironmentProvider()
-      // Marks this server as launched by (and living inside) the app
-      // bundle, so its self-updater hands app-bundle updates back to us
-      // instead of swapping a standalone runtime the next app launch
-      // would discard.
       serverEnvironment["CODEVISOR_APP_HOSTED"] = "1"
       if let computerUseConfiguration {
         serverEnvironment["CODEVISOR_COMPUTER_USE_SOCKET"] = computerUseConfiguration.socketPath
@@ -305,7 +269,6 @@ public final class LocalCodevisorServer: LocalServerControlling {
     }
   }
 
-  /// Records a startup failure in the timeline and the observable state.
   @discardableResult
   private func fail(_ message: String) -> LocalCodevisorServerState {
     lifecycleLog.error("ensureRunning: \(message)")

@@ -1,8 +1,6 @@
 #if DEBUG
   import SwiftUI
 
-  /// A bundled example of a user's project, shown inside the real browser pane.
-  /// No external fonts, assets, scripts, network requests, or live server.
   enum AppStoreScreenshotPage {
     static var html: String {
       """

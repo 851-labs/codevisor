@@ -7,9 +7,6 @@ import {
   OpenCodeSubagents
 } from "./subagents.js"
 
-/// OpenCode's additions to an ACP chat connection: its subagents' own
-/// sessions stream in (see `OpenCodeSubagents`), and its own `skill` tool
-/// reads like a Codevisor skill read (see `skillReadUpdate`).
 export const makeOpenCodeExtension: AcpStdioExtensionFactory = ({ emit }) => {
   const subagents = new OpenCodeSubagents()
   const childUpdate = (params: unknown): void => {

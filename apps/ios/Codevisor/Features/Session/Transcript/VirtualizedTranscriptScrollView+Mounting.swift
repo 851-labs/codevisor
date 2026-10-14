@@ -6,8 +6,6 @@ import SwiftUI
 import TranscriptKit
 import UIKit
 
-// MARK: - Mounting
-
 extension VirtualizedTranscriptScrollView {
   func plannedMountedRange(scrollDelta: CGFloat = 0) -> Range<Int> {
     windowPlanner.plannedRange(
@@ -110,8 +108,6 @@ extension VirtualizedTranscriptScrollView {
     guard virtualLayout.keys.indices.contains(index) else { return false }
     let key = virtualLayout.keys[index]
     if let host = mountedHosts[key] {
-      // A deferred placeholder keeps its clear root until its rows
-      // publish; forcing a layout would only measure that empty root.
       if requiresImmediatePresentation, !host.isPresentationReady,
         key != deferredActivePlaceholderKey
       {
@@ -151,17 +147,11 @@ extension VirtualizedTranscriptScrollView {
     return true
   }
 
-  /// Whether `row` is the aggregate active placeholder that the pending
-  /// first active projection is about to replace, while the document is
-  /// still hidden behind the initial presentation gate.
   func defersActivePlaceholderPresentation(for row: TranscriptVirtualRow) -> Bool {
     guard case .active = row.id else { return false }
     return isAwaitingFirstActiveProjection && !initialPresentationGate.isReady
   }
 
-  /// Gives a deferred placeholder its real content once the first active
-  /// projection has published but left the aggregate row in place (an item
-  /// that projects to no precise rows yet).
   func presentDeferredActivePlaceholderIfNeeded() {
     guard let key = deferredActivePlaceholderKey, !isAwaitingFirstActiveProjection else { return }
     deferredActivePlaceholderKey = nil
@@ -186,9 +176,6 @@ extension VirtualizedTranscriptScrollView {
   }
 
   func removeMountedHosts(excluding retainedKeys: Set<String>) {
-    // Rows mid-shift are drawn where the send's springs put them, not at
-    // their model frames. Removing one by model position would blank it
-    // mid-motion; the next pass after the springs settle reconciles.
     guard !sendTransitions.isAnimatingRows else {
       requestMountedRowsUpdateAfterSendTransition()
       return
@@ -197,9 +184,6 @@ extension VirtualizedTranscriptScrollView {
     removeMountedHosts(withKeys: obsoleteKeys)
   }
 
-  /// Deleted rows must leave the canvas in the same transaction that removes
-  /// them from geometry. The window handoff drops invalid keys before its
-  /// normal cleanup, so it cannot retire these orphaned views afterward.
   func removeDeletedMountedHosts(
     previousRowsByKey: [String: TranscriptVirtualRow]
   ) {
@@ -247,8 +231,6 @@ extension VirtualizedTranscriptScrollView {
     previousRowsByKey: [String: TranscriptVirtualRow],
   ) {
     for (key, host) in mountedHosts {
-      // The deferred placeholder is refreshed by
-      // `presentDeferredActivePlaceholderIfNeeded` once its rows publish.
       guard key != deferredActivePlaceholderKey,
         let row = rowByKey[key], let previous = previousRowsByKey[key],
         previous.content != row.content

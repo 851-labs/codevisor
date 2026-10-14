@@ -1,14 +1,3 @@
-//! UDP media flows over QUIC datagrams (`codevisor/media/1`).
-//!
-//! Screen-sharing WebRTC keeps its own ICE/RTP stack and sees the tunnel as a
-//! LAN: each side talks to a loopback UDP socket, and these flows carry the
-//! packets as unreliable QUIC datagrams, entirely in Rust (never through JS
-//! or Swift). Datagram layout:
-//!
-//! ```text
-//! [flow id: u32 BE] [UDP payload]
-//! ```
-
 use std::{
     collections::HashMap,
     net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -28,31 +17,18 @@ use tokio::{
 };
 
 pub const FLOW_HEADER_BYTES: usize = 4;
-/// Per-flow queue of datagrams waiting for the local socket. Media is
-/// real-time: when the consumer falls behind, new packets are dropped rather
-/// than queued (the RTP stack recovers; stale packets would only add delay).
 const FLOW_QUEUE: usize = 256;
 
-/// What a router did with its datagrams since the connection opened. Every
-/// drop here is silent to the RTP stack on either side (it only sees loss),
-/// so these counters are the one record of where media went missing.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct MediaStats {
-    /// Datagrams QUIC accepted for sending. It may still drop the oldest
-    /// unsent ones when its send buffer fills behind the congestion window.
     pub sent: u64,
     pub sent_bytes: u64,
-    /// Rejected as larger than the connection's current maximum datagram.
     pub too_large: u64,
-    /// The largest payload (flow header excluded) rejected as too large.
     pub largest_too_large: u64,
-    /// Rejected for any other reason (connection lost, unsupported by peer).
     pub send_failed: u64,
     pub received: u64,
     pub received_bytes: u64,
-    /// Arrived for a flow id with no open flow.
     pub unknown_flow: u64,
-    /// Dropped because the flow's local queue was full.
     pub queue_full: u64,
 }
 
@@ -122,8 +98,6 @@ impl DatagramRouter {
         self.flows.lock().unwrap().remove(&flow_id);
     }
 
-    /// Largest UDP payload a flow can carry right now (`None` when the peer
-    /// doesn't accept datagrams). Callers cap their RTP packet size by it.
     pub fn max_payload(&self) -> Option<usize> {
         self.connection
             .max_datagram_size()
@@ -146,8 +120,6 @@ impl DatagramRouter {
     }
 
     fn send(&self, flow_id: u32, payload: &[u8]) {
-        // QUIC drops a datagram too large for one packet (UDP would have
-        // fragmented it) or stuck behind congestion; only the counters see it.
         let counters = &self.counters;
         match self.connection.send_datagram(join_datagram(flow_id, payload)) {
             Ok(()) => {
@@ -188,8 +160,6 @@ pub fn split_datagram(mut datagram: Bytes) -> Option<(u32, Bytes)> {
     Some((u32::from_be_bytes([header[0], header[1], header[2], header[3]]), datagram))
 }
 
-/// A running flow; dropping or closing it stops forwarding and frees the
-/// flow id.
 pub struct MediaFlow {
     router: Arc<DatagramRouter>,
     flow_id: u32,
@@ -198,19 +168,12 @@ pub struct MediaFlow {
 }
 
 impl MediaFlow {
-    /// Host side: forward the flow to a fixed local UDP target (the host
-    /// WebRTC's own candidate). A non-loopback target is reached from a socket
-    /// on all interfaces, so its packets carry the host's LAN address and
-    /// WebRTC sees an ordinary LAN peer (libwebrtc ignores loopback networks).
     pub async fn forward(router: Arc<DatagramRouter>, flow_id: u32, target: SocketAddr) -> Result<Self> {
         let bind: IpAddr = if target.ip().is_loopback() { Ipv4Addr::LOCALHOST.into() } else { Ipv4Addr::UNSPECIFIED.into() };
         let socket = UdpSocket::bind((bind, 0)).await?;
         Self::run(router, flow_id, socket, Some(target))
     }
 
-    /// Viewer side: a local UDP port on all interfaces for the local WebRTC
-    /// stack to send to (the viewer names it with its own LAN address).
-    /// Replies go to whichever local address last sent to it.
     pub async fn bind(router: Arc<DatagramRouter>, flow_id: u32) -> Result<Self> {
         let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await?;
         Self::run(router, flow_id, socket, None)
@@ -229,7 +192,6 @@ impl MediaFlow {
                 while let Ok((len, from)) = socket.recv_from(&mut buffer).await {
                     let mut known = peer.lock().unwrap();
                     match *known {
-                        // Host side: only the configured target may inject.
                         Some(expected) if target.is_some() && expected != from => continue,
                         _ => *known = Some(from),
                     }

@@ -1,13 +1,8 @@
 #if os(macOS)
   import Foundation
 
-  /// Viewer input events to RFB PointerEvent/KeyEvent messages: normalized
-  /// pointer coordinates scaled to the framebuffer, a running button mask,
-  /// scroll deltas as wheel-button clicks, and key codes through the key
-  /// translator. Runs at input rate on the main actor.
   @MainActor
   final class VNCInputTranslator {
-    /// Pixels of scroll delta per wheel click sent.
     static let pixelsPerWheelClick = 20.0
     var width: Int
     var height: Int
@@ -29,7 +24,7 @@
         return [pointerEvent()]
       case .button(let pointer, let button, let down, _, _):
         locate(pointer)
-        let mask: UInt8 = [1, 4, 2][Int(min(button, 2))]  // left, right, middle
+        let mask: UInt8 = [1, 4, 2][Int(min(button, 2))]
         buttons = down ? buttons | mask : buttons & ~mask
         return [pointerEvent()]
       case .scroll(let pointer, let dx, let dy, _):
@@ -56,7 +51,6 @@
       }
     }
 
-    /// Control ended: release whatever is held so the server never sees a stuck button.
     func release() -> [RFBClientMessage] {
       guard buttons != 0 else { return [] }
       buttons = 0

@@ -1,8 +1,6 @@
 #if canImport(UIKit) && !canImport(AppKit)
   import UIKit
 
-  /// The menu for an inline image: the host's preview, a new-tab open, and
-  /// a copy of the original bytes. Text links keep the system menu.
   @MainActor
   func markdownImageMenuConfiguration(
     in textView: UITextView, for textItem: UITextItem, defaultMenu: UIMenu, action: MarkdownLinkAction?

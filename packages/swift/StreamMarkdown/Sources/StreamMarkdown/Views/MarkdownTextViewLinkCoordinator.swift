@@ -2,8 +2,6 @@
   import AppKit
 
   extension NSAttributedString.Key {
-    /// A session-server file reference that looks like a link but remains
-    /// owned by the host instead of AppKit's URL-opening machinery.
     static let streamMarkdownServerFileLink = NSAttributedString.Key(
       "com.codevisor.streamMarkdownServerFileLink"
     )

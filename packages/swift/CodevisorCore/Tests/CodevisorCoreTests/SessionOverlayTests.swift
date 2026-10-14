@@ -70,7 +70,7 @@ struct SessionOverlayTests {
         harnessId: "claude-code", info: SessionInfo(sessionId: "c", cwd: "/Users/x/other", title: "Docs")),
     ]
     model.importSessions(imported, serverId: "local")
-    model.importSessions(imported, serverId: "local")  // second time should not duplicate
+    model.importSessions(imported, serverId: "local")
 
     #expect(model.projects.count == 2)
     #expect(model.sessions.count == 3)
@@ -91,7 +91,7 @@ struct SessionOverlayTests {
 
     model.showsImportedSessions = false
     #expect(model.fleetSessions(in: proj).isEmpty)
-    #expect(model.fleetActiveProjects.isEmpty)  // imported-only project hidden
+    #expect(model.fleetActiveProjects.isEmpty)
 
     model.showsImportedSessions = true
     #expect(model.fleetSessions(in: proj).count == 1)
@@ -163,7 +163,6 @@ struct SessionOverlayTests {
   }
 }
 
-/// A fake harness service that returns scripted sessions for import tests.
 private struct FakeImportService: HarnessServicing {
   func readyHarnesses() async -> [ServerHarness] {
     [

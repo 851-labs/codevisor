@@ -12,8 +12,6 @@ extension CloudHubConnection {
       var publicKey: String
       var tunnelEndpointId: String?
       var releaseChannel: String
-      /// This app reaches machines over the tunnel only; the hub must turn
-      /// it on whatever the channel.
       var tunnelOnly = true
     }
 
@@ -30,14 +28,9 @@ extension CloudHubConnection {
     }
   }
 
-  /// The `/connect` upgrade request.
   static func connectRequest(url: URL, identity: CloudAppDeviceIdentity) -> URLRequest {
     var request = URLRequest(url: url)
-    // The query token is the sole credential. Never let a stale session
-    // cookie from the shared jar ride along — if the hub honored it over the
-    // token, this device would silently join the wrong account.
     request.httpShouldHandleCookies = false
-    // Registers this device's tunnel endpoint so our relays serve it.
     request.setValue(
       CloudTunnelIdentity.endpointId(for: identity), forHTTPHeaderField: "x-codevisor-tunnel-endpoint")
     return request
@@ -60,9 +53,6 @@ extension CloudHubConnection {
     try enqueueSend(hello)
   }
 
-  /// Sends one protocol ping and arms a bounded pong deadline. A half-open
-  /// URLSession socket does not necessarily make `receive()` throw, so the
-  /// deadline explicitly tears it down and lets the run loop reconnect.
   func sendKeepalivePing(on expectedSocketID: UUID) {
     guard socketID == expectedSocketID, isWelcomed else { return }
     struct Ping: Encodable {
@@ -111,12 +101,9 @@ extension CloudHubConnection {
     )
     isWelcomed = false
     resetHeartbeat()
-    // Killing the socket hands recovery to the run loop's reconnect.
     socket?.cancel(with: .goingAway, reason: nil)
   }
 
-  /// Chained sends keep wire order aligned with call order — concurrent
-  /// senders must not overtake each other on the way to the socket.
   private func enqueueSend(_ message: some Encodable) throws {
     guard let socket, let socketID else { throw CloudHubConnectionError.disconnected }
     let message = ServerWebSocketMessage.string(String(decoding: try encoder.encode(message), as: UTF8.self))

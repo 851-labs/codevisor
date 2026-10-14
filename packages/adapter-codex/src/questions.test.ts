@@ -71,7 +71,6 @@ describe("CodexProvider", () => {
       answers: { approach: { answers: ["MVP first (Recommended)"], note: "keep it small" } }
     })
 
-    // Answering again fails: the question is no longer pending.
     await expect(
       run(created!.handle.answerQuestion!("item-q1", { outcome: "answered" }))
     ).rejects.toThrow("No pending question")
@@ -116,9 +115,6 @@ describe("CodexProvider", () => {
       controller.signal
     )
     await questionAsked
-    // The process died with the question still on screen: the ask is
-    // retracted so the picker dismisses instead of collecting an answer
-    // no one will ever receive.
     controller.abort(new Error("codex app-server exited"))
     await expect(request).rejects.toThrow("codex connection closed")
     expect(events.at(-1)?.payload).toMatchObject({
@@ -126,8 +122,6 @@ describe("CodexProvider", () => {
       questionId: "item-q-dead",
       sessionUpdate: "question_resolved"
     })
-    // The retraction already emptied the pending map: answering afterwards
-    // fails, and close-time cancellation finds nothing left to do.
     await expect(
       run(created!.handle.answerQuestion!("item-q-dead", { outcome: "answered" }))
     ).rejects.toThrow("No pending question")
@@ -249,7 +243,6 @@ describe("CodexProvider", () => {
         outcome: "answered"
       })
     )
-    // Enum labels map back to const values; booleans and numbers coerce.
     await expect(request).resolves.toEqual({
       action: "accept",
       content: { confirm: true, environment: "stg", retries: 3, token: "ghp_secret" }
@@ -280,7 +273,6 @@ describe("CodexProvider", () => {
         question: "choice"
       }
     ])
-    // Dismissing resolves with the MCP cancel action (never a JSON-RPC error).
     await run(created!.handle.answerQuestion!(asked.questionId as string, { outcome: "cancelled" }))
     await expect(request).resolves.toEqual({ action: "cancel", content: null })
     expect(events.at(-1)?.payload).toMatchObject({
@@ -302,7 +294,6 @@ describe("CodexProvider", () => {
 
   it("surfaces approvals as Allow/Deny questions with item context", async () => {
     const { client, created, events, nextEvent } = await setup()
-    // The item opens first; its command becomes the approval prompt's detail.
     client.emit("item/started", {
       item: {
         command: "rm -rf build",
@@ -342,7 +333,6 @@ describe("CodexProvider", () => {
     )
     await expect(approval).resolves.toEqual({ decision: "acceptForSession" })
 
-    // Deny and dismissal map onto decline/cancel.
     const denialAsked = nextEvent(isQuestion)
     const denied = client.serverRequest("item/fileChange/requestApproval", {
       itemId: "edit-1",

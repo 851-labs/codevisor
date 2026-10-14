@@ -2,8 +2,6 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// OpenCode credentials belong to providers inside a profile. iOS represents
-/// that hierarchy with profile navigation and a focused provider setup sheet.
 struct OpenCodeProviderAuthenticationScreen: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.theme) private var theme
@@ -239,8 +237,6 @@ struct OpenCodeProviderAuthenticationScreen: View {
     }
   }
 
-  /// `label` is what the screen shows while this runs. Every blocking
-  /// operation names itself; none of them runs silently.
   private func perform(_ label: String, _ operation: () async throws -> Void) async {
     workingLabel = label
     errorMessage = nil

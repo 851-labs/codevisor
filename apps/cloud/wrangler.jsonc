@@ -8,27 +8,18 @@
   "observability": {
     "enabled": true
   },
-  // Tailwind is a source compiler, not part of Wrangler's CSS text-module
-  // handling. Build it before dev/deploy and rebuild it when page sources
-  // change. The output lives outside watch_dir so it cannot trigger itself.
   "build": {
     "command": "bun run build:css",
     "watch_dir": "src/pages"
   },
-  // Inline the generated Tailwind stylesheet as a text module so the Worker
-  // stays fully self-contained (no static-asset hosting required to self-host).
   "rules": [{ "type": "Text", "globs": ["**/*.css"], "fallthrough": true }],
   "durable_objects": {
     "bindings": [{ "name": "USER_HUB", "class_name": "UserHub" }]
   },
-  // Plugin registry poll (src/plugin-registry.ts): GitHub topic search →
-  // manifest validation → KV index served at /plugins/index.json.
   "triggers": { "crons": ["*/15 * * * *"] },
   "kv_namespaces": [
     {
       "binding": "PLUGIN_INDEX",
-      // Self-hosters: replace with the id from `wrangler kv namespace create
-      // PLUGIN_INDEX` on your account. The id is unused in dev and tests.
       "id": "85743d49d3a241f99548cd6ad3179f3e"
     }
   ],
@@ -37,21 +28,13 @@
     {
       "binding": "DB",
       "database_name": "codevisor-cloud",
-      // Self-hosters: replace with the id from `wrangler d1 create
-      // codevisor-cloud` on your account (and change `routes` above).
       "database_id": "3daedd29-b7cb-4b07-bc92-a49c239cc4bc",
       "migrations_dir": "drizzle"
     }
   ],
-  // Production values. Local dev overrides these with --var flags (see
-  // scripts/dev.mjs and the package `dev` script); tests override them via
-  // miniflare bindings in vitest.config.ts. DEV_AUTH is deliberately absent
-  // here — it must never be set on a deployed instance.
   "vars": {
     "APPLE_NATIVE_CLIENT_ID": "com.dylanplayer.codevisor.ios",
     "PUBLIC_BASE_URL": "https://cloud.codevisor.dev",
     "INSTANCE_NAME": "Codevisor Cloud"
-    // RELAY_MAP (the tunnel relays handed to devices) is not set here:
-    // deploy-cloud.yml builds it from apps/relay/relays.json at deploy time.
   }
 }

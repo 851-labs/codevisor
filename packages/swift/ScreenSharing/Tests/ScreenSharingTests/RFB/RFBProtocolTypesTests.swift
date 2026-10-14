@@ -2,10 +2,7 @@ import Foundation
 import Testing
 @testable import ScreenSharing
 
-/// The wire constants and the messages a user is shown when they go wrong.
 struct RFBProtocolTypesTests {
-  /// The numbers are the protocol's, not ours: changing one silently talks to
-  /// a different encoding.
   @Test func encodingsUseTheirRegisteredNumbers() {
     #expect(RFBEncoding.raw.rawValue == 0)
     #expect(RFBEncoding.copyRect.rawValue == 1)
@@ -25,8 +22,6 @@ struct RFBProtocolTypesTests {
       ])
   }
 
-  /// SetEncodings is a preference list, so the order is meaningful: the
-  /// cheapest-to-decode real encoding first, pseudo-encodings last.
   @Test func supportedEncodingsAreAdvertisedInPreferenceOrder() {
     #expect(
       RFBEncoding.supported == [
@@ -48,20 +43,15 @@ struct RFBProtocolTypesTests {
     #expect(RFBSecurityType.appleRemoteDesktop.rawValue == 30)
   }
 
-  /// 0 is "connection failed" rather than a security type, and 16/18/19 are
-  /// Tight, TLS and VeNCrypt — real types this client does not implement.
   @Test(arguments: [UInt8(0), 3, 5, 16, 18, 19, 20, 29, 31, 255])
   func unimplementedSecurityTypesHaveNoCase(_ raw: UInt8) {
     #expect(RFBSecurityType(rawValue: raw) == nil)
   }
 
-  /// A Mac offering only type 30 needs a settings change, not a better
-  /// password, so it gets its own instruction.
   @Test func appleRemoteDesktopGetsItsOwnAdvice() {
     let message = RFBError.securityUnsupported([30]).errorDescription
     #expect(message?.contains("Apple Remote Desktop") == true)
     #expect(message?.contains("Screen Sharing settings") == true)
-    // Still the right advice when it is one of several offered types.
     #expect(RFBError.securityUnsupported([16, 30, 18]).errorDescription == message)
   }
 
@@ -74,8 +64,6 @@ struct RFBProtocolTypesTests {
         == "The VNC server requires an unsupported authentication method ().")
   }
 
-  /// An authentication failure shows the server's own words, so the user sees
-  /// "password expired" rather than a generic refusal.
   @Test func everyErrorHasAUserFacingDescription() {
     #expect(RFBError.connectionClosed.errorDescription == "The VNC server closed the connection.")
     #expect(RFBError.protocolMismatch("no RFB greeting").errorDescription == "Not a VNC server: no RFB greeting")
@@ -99,8 +87,6 @@ struct RFBProtocolTypesTests {
     #expect(!rect.isEmpty)
   }
 
-  /// A zero-width or zero-height rectangle is legal on the wire and means "no
-  /// pixels", which CopyRect must treat as a no-op rather than a fault.
   @Test(arguments: [(0, 5), (5, 0), (0, 0), (-1, 5), (5, -1)])
   func rectanglesWithNoAreaAreEmpty(_ width: Int, _ height: Int) {
     #expect(RFBRectangle(x: 0, y: 0, width: width, height: height).isEmpty)

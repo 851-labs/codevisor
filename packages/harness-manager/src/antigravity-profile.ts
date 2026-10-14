@@ -3,17 +3,10 @@ import { join } from "node:path"
 
 import { AGY_GEMINI_DIR_ENV } from "@codevisor/adapter-antigravity"
 
-/// A Codevisor-managed Antigravity account: agy runs on a data root of its
-/// own (`--gemini_dir`), where its file sign-in lives. The user's own agy
-/// config — rules, skills, MCP servers, plugins, settings — is linked in
-/// around it, so a managed account works the way their agy does; only the
-/// sign-in (and, for an API key, the model provider) is the account's own.
-
 export const ANTIGRAVITY_HARNESS_ID = "antigravity"
 
 export const antigravityGeminiDir = (profile: string): string => join(profile, "gemini")
 
-/// What never comes across from the user's own data root.
 const PRIVATE = /token|cred|auth|oauth|secret|keyring/i
 
 const linkEntries = async (
@@ -50,9 +43,6 @@ const settingsDocument = async (path: string): Promise<Record<string, unknown>> 
   }
 }
 
-/// Lays out the account's data root and returns the environment that points
-/// agy at it. A Gemini API key also needs agy's `modelProvider` set, so that
-/// account gets its own settings file (the user's, plus the provider).
 export const prepareAntigravityProfile = async (
   profile: string,
   env: NodeJS.ProcessEnv,
@@ -64,7 +54,6 @@ export const prepareAntigravityProfile = async (
   const user = env.HOME?.trim()
   const own = user ? join(user, ".gemini") : undefined
   if (own !== undefined) {
-    // Projects record where this root's conversations live: they stay put.
     await linkEntries(join(own, "config"), join(root, "config"), (name) => name !== "projects")
     await linkEntries(own, root, (name) => /^(AGENTS|GEMINI)\.md$/.test(name))
   }
@@ -77,12 +66,10 @@ export const prepareAntigravityProfile = async (
     }
     const temporary = `${settings}.${process.pid}.tmp`
     await writeFile(temporary, `${JSON.stringify(document, null, 2)}\n`, { mode: 0o600 })
-    // Replaces a link to the user's settings as well as an older copy.
     await rm(settings, { force: true })
     await rename(temporary, settings)
   } else if (userSettings !== undefined && (await lstat(userSettings).catch(() => undefined))) {
     const current = await lstat(settings).catch(() => undefined)
-    // An account that stopped using a key goes back to the user's settings.
     if (current?.isFile() === true) await rm(settings, { force: true })
     if (current === undefined || current.isFile())
       await symlink(userSettings, settings).catch(() => undefined)

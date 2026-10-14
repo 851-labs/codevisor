@@ -1,17 +1,10 @@
 import { Schema } from "effect"
 
-/// Apple simulators on a Mac with Xcode (`simulator-v1`). The server reads and
-/// changes devices with `xcrun simctl`; video and input stream through the
-/// screen-sharing route with the display id `simulator:<udid>`.
-
 export const SimulatorRuntime = Schema.Struct({
   identifier: Schema.String,
-  /// "iOS 27.0"
   name: Schema.String,
-  /// "iOS", "tvOS", "watchOS", "visionOS"
   platform: Schema.String,
   version: Schema.String,
-  /// Device types this runtime can run, for creating a simulator.
   deviceTypeIdentifiers: Schema.Array(Schema.String)
 })
 export type SimulatorRuntime = typeof SimulatorRuntime.Type
@@ -19,7 +12,6 @@ export type SimulatorRuntime = typeof SimulatorRuntime.Type
 export const SimulatorDeviceType = Schema.Struct({
   identifier: Schema.String,
   name: Schema.String,
-  /// "iPhone", "iPad", "Apple TV", "Apple Watch", "Apple Vision"
   productFamily: Schema.String
 })
 export type SimulatorDeviceType = typeof SimulatorDeviceType.Type
@@ -27,7 +19,6 @@ export type SimulatorDeviceType = typeof SimulatorDeviceType.Type
 export const SimulatorDevice = Schema.Struct({
   udid: Schema.String,
   name: Schema.String,
-  /// simctl's state: "Booted", "Shutdown", "Booting", "Shutting Down", "Creating"
   state: Schema.String,
   runtime: Schema.Struct({
     identifier: Schema.String,
@@ -47,17 +38,13 @@ export const SimulatorList = Schema.Struct({
 })
 export type SimulatorList = typeof SimulatorList.Type
 
-/// One screen of a device type (a foldable has a cover and an inner screen).
 export const SimulatorDisplay = Schema.Struct({
   name: Schema.String,
-  /// Pixels in the display's native orientation.
   width: Schema.Number,
   height: Schema.Number,
   scale: Schema.Number,
-  /// Corner radii in points: upper-left, upper-right, lower-left, lower-right.
   cornerRadii: Schema.Array(Schema.Number),
   chromeIdentifier: Schema.optional(Schema.String),
-  /// A PDF the screen is clipped to (rounded corners, cutouts), base64.
   mask: Schema.optional(Schema.String),
   hasDigitizer: Schema.Boolean
 })
@@ -67,14 +54,12 @@ export const SimulatorDeviceTypeDetail = Schema.Struct({
   identifier: Schema.String,
   name: Schema.String,
   productFamily: Schema.String,
-  /// The profile's supported features that are on ("com.apple.hid.touch-screen", ...).
   features: Schema.Array(Schema.String),
   chromeIdentifier: Schema.optional(Schema.String),
   displays: Schema.Array(SimulatorDisplay)
 })
 export type SimulatorDeviceTypeDetail = typeof SimulatorDeviceTypeDetail.Type
 
-/// A DeviceKit chrome bundle: its chrome.json and every PDF it names, base64.
 export const SimulatorChrome = Schema.Struct({
   identifier: Schema.String,
   definition: Schema.Unknown,
@@ -124,7 +109,6 @@ export const SimulatorLocation = Schema.Literals([
   "freeway-drive"
 ])
 
-/// A color filter for color blindness, or none (Device Hub's choices; CoreDevice's names).
 export const SimulatorColorFilter = Schema.Literals([
   "none",
   "protanopia",
@@ -133,23 +117,19 @@ export const SimulatorColorFilter = Schema.Literals([
   "grayscale"
 ])
 
-/// How opaque Liquid Glass is drawn: 0 fully clear, 1 fully tinted.
 export const SimulatorLiquidGlass = Schema.Number.check(
   Schema.isBetween({ minimum: 0, maximum: 1 })
 )
 
-/// One of the Mac's audio devices the simulator's sound can play through or record from.
 export const SimulatorAudioDevice = Schema.Struct({
   uid: Schema.String,
   name: Schema.String
 })
 export type SimulatorAudioDevice = typeof SimulatorAudioDevice.Type
 
-/// `"system"` follows the Mac's default device; otherwise a device's `uid`.
 export const SimulatorAudioRoute = Schema.String.check(Schema.isMaxLength(512))
 export const SimulatorVolume = Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 100 }))
 
-/// What the device reports; a setting the runtime (or this Xcode) doesn't support is absent.
 export const SimulatorSettings = Schema.Struct({
   appearance: Schema.optional(SimulatorAppearance),
   liquidGlass: Schema.optional(SimulatorLiquidGlass),

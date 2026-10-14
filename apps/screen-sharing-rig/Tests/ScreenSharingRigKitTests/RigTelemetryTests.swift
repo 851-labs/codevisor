@@ -38,7 +38,6 @@ struct RigTelemetryTests {
     #expect(next.presentedFramesPerSecond == 60)
     #expect(next.receiveMegabitsPerSecond == 12)
     #expect(next.mailboxDrops == 1)
-    // jitterBufferDelay did not advance between samples: no interval mean.
     #expect(next.jitterBufferMeanMilliseconds == nil)
   }
 

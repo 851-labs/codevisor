@@ -4,10 +4,6 @@ import Testing
 import ScreenSharingTesting
 @testable import ScreenSharing
 
-/// ContinuousUpdates (-313) and Fence (-312), 851-2312: once the server
-/// confirms continuous updates the client stops requesting and the server
-/// pushes changes; fence requests are answered, and the client's own fences
-/// measure the round trip.
 struct RFBContinuousUpdatesTests {
   typealias Harness = RFBClientLoopbackTests.Harness
 
@@ -17,8 +13,6 @@ struct RFBContinuousUpdatesTests {
     configuration.fences = true
     return configuration
   }
-
-  // MARK: L1 — wire format
 
   @Test func messagesHaveTheirRegisteredLayouts() {
     #expect(
@@ -44,8 +38,6 @@ struct RFBContinuousUpdatesTests {
       transport: ScriptedTransport([0, 0, 0, 0, 0, 0, 0, 65] + Array(repeating: 0, count: 65)))
     await #expect(throws: RFBError.self) { _ = try await RFBFence.read(from: stream) }
   }
-
-  // MARK: L2 — against the reference server
 
   @Test func updatesArePushedWithoutRequestsOnceTheServerConfirms() async throws {
     let harness = try await Harness(configuration: Self.modernServer())
@@ -73,7 +65,6 @@ struct RFBContinuousUpdatesTests {
     let harness = try await Harness(configuration: Self.modernServer())
     defer { harness.stop() }
     _ = try #require(await harness.nextUpdate())
-    // The server asked with request + blockBefore; the reply clears request and echoes the payload.
     #expect(
       await awaitPolled {
         harness.server.fencesReceived.contains {

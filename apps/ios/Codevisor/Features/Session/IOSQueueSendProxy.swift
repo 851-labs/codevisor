@@ -1,7 +1,5 @@
 import UIKit
 
-/// The editor's text lifts in glass, then either becomes a queue summary or
-/// compresses into the existing queue's count. It never resembles a sent row.
 final class IOSQueueSendProxy: UIView {
   private let glass = UIVisualEffectView(effect: UIGlassEffect(style: .regular))
   private let message = UILabel()
@@ -53,8 +51,6 @@ final class IOSQueueSendProxy: UIView {
   }
 
   func transitionContent(formingQueue: Bool) {
-    // Different font sizes and baselines must not crossfade on top of one
-    // another. The editor glyphs leave before the compact summary appears.
     UIView.animate(withDuration: 0.12, delay: 0, options: .curveEaseOut) {
       self.message.alpha = 0
     }
@@ -69,13 +65,9 @@ final class IOSQueueSendProxy: UIView {
     glass.frame = bounds
     if !hasLanded {
       sourceTextSize = CGSize(width: max(1, bounds.width - 26), height: max(1, bounds.height - 18))
-      // Match the editor's 4pt top inset without centering short drafts in
-      // the taller multiline composer.
       let textHeight = min(sourceTextSize.height, message.sizeThatFits(sourceTextSize).height)
       message.frame = CGRect(x: 13, y: 13, width: sourceTextSize.width, height: textHeight)
     } else {
-      // Scale existing glyphs instead of rewrapping a long message into a
-      // tiny box on the way into the queue.
       let scale: CGFloat = formsQueue ? 0.76 : 0.15
       message.transform = CGAffineTransform(scaleX: scale, y: scale)
       message.center = CGPoint(x: bounds.midX, y: bounds.midY)
