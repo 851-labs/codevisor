@@ -45,7 +45,7 @@ describe("summarizeProcessFailure", () => {
     expect(minified.length).toBeGreaterThan(180)
     expect(summarizeProcessFailure(`${minified}\nError: real cause`, "FALLBACK")).toBe("real cause")
 
-    const prose = `${"the harness could not start because a required component is missing ".repeat(3)}`
+    const prose = "the harness could not start because a required component is missing ".repeat(3)
     expect(summarizeProcessFailure(prose, "FALLBACK")).toMatch(/^the harness could not start/)
   })
 

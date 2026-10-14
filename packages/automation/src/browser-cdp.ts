@@ -223,7 +223,7 @@ export class CdpConnection {
 export const delay = (milliseconds: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, milliseconds))
 
-export const evaluatedValue = <T>(response: unknown): T => {
+export const evaluatedValue = (response: unknown): unknown => {
   const result = (response as { result?: { value?: unknown; description?: unknown } }).result
   if (result === undefined) throw new Error("Browser evaluation returned no result")
   if (!("value" in result)) {
@@ -231,5 +231,5 @@ export const evaluatedValue = <T>(response: unknown): T => {
       `Browser evaluation could not be serialized: ${String(result.description ?? "unknown")}`
     )
   }
-  return result.value as T
+  return result.value
 }

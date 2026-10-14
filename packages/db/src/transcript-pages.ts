@@ -209,7 +209,7 @@ const makeTranscriptPage = (
     ...(last === undefined ? {} : { nextAfter: `after:${last}` }),
     hasNewer,
     hasMore,
-    eventCursor: Number(state.cursor),
+    eventCursor: state.cursor,
     stateUpdates: readTranscriptStateUpdates(sqlite, sessionId),
     ...(pendingQuestion === undefined ? {} : { pendingQuestion }),
     pendingPlanApproval: session.pendingPlanApproval === true,

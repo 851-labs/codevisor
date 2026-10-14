@@ -151,6 +151,7 @@ const main = async (): Promise<void> => {
 
   let terminalId: string | undefined
   let failures = 0
+  // oxlint-disable-next-line no-unmodified-loop-condition
   while (!exited) {
     try {
       const activeTerminal = await createTerminal(options)

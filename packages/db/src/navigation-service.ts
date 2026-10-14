@@ -75,15 +75,13 @@ export const makeNavigationService = (context: ServiceContext) => ({
   getNavigationSnapshot: attempt("getNavigationSnapshot", (): NavigationSnapshot => {
     const { sqlite, config, sessionSummarySelect } = context
     return sqlite.transaction(() => {
-      const eventCursor = Number(
-        (
-          sqlite
-            .prepare(
-              "select max(coalesce((select max(id) from events), 0), coalesce((select floor from sync_watermarks where subject_id = 'global'), 0)) as cursor"
-            )
-            .get() as { cursor: number }
-        ).cursor
-      )
+      const eventCursor = (
+        sqlite
+          .prepare(
+            "select max(coalesce((select max(id) from events), 0), coalesce((select floor from sync_watermarks where subject_id = 'global'), 0)) as cursor"
+          )
+          .get() as { cursor: number }
+      ).cursor
       const locations = sqlite
         .prepare("select * from project_locations")
         .all() as ProjectLocationRow[]

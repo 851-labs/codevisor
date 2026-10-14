@@ -186,7 +186,10 @@ export const parseRelayFrameHeader = (value: unknown): RelayFrameHeader | undefi
   }
 }
 
-const parseAddressedHeader = <Header>(value: unknown, addressField: string): Header | undefined => {
+const parseAddressedHeader = <Header>(
+  value: unknown,
+  addressField: keyof Header & string
+): Header | undefined => {
   if (typeof value !== "object" || value === null) return undefined
   const header = value as Record<string, unknown>
   if (typeof header[addressField] !== "string") return undefined

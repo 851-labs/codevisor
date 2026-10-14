@@ -301,7 +301,7 @@ export interface CodevisorDatabaseService extends SessionStateService {
   readonly getSessionActionResult: (
     sessionId: string,
     clientActionId: string
-  ) => Effect.Effect<unknown | undefined, DatabaseError>
+  ) => Effect.Effect<unknown, DatabaseError>
   readonly saveSessionActionResult: (
     sessionId: string,
     clientActionId: string,

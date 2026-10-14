@@ -234,13 +234,13 @@ export const evaluate = async <T>(
   page: PageHandle,
   expression: string
 ): Promise<T> =>
-  evaluatedValue<T>(
+  evaluatedValue(
     await runtime.connection.send(
       "Runtime.evaluate",
       { expression, returnByValue: true, awaitPromise: true },
       page.sessionId
     )
-  )
+  ) as T
 
 const parseEvaluationExpression = (source: string): unknown => {
   let expression: unknown

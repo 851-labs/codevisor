@@ -240,7 +240,7 @@ const makeSetupDeps = (): SetupDeps => {
   const deps = makeDeps()
   return {
     ...deps,
-    isInteractive: process.stdin.isTTY === true && process.stdout.isTTY === true,
+    isInteractive: process.stdin.isTTY && process.stdout.isTTY,
     cloudLogin: (port) => authLoginCommand(deps, { port, machineName: hostname() })
   }
 }

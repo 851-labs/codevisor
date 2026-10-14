@@ -69,7 +69,7 @@ export const invokePlaywrightTools = async (
         if (objectId === undefined) continue
         try {
           values.push(
-            evaluatedValue<string>(
+            evaluatedValue(
               await active.connection.send(
                 "Runtime.callFunctionOn",
                 {
@@ -79,7 +79,7 @@ export const invokePlaywrightTools = async (
                 },
                 page.sessionId
               )
-            )
+            ) as string
           )
         } finally {
           await active.connection

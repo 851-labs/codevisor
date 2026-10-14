@@ -70,6 +70,7 @@ export const attachSyncEventSocket = async (
           }
         }
         if (dirty) await setImmediate()
+        // oxlint-disable-next-line no-unmodified-loop-condition
       } while (dirty && !closed)
       if (!closed && heartbeat) control("keepalive", cursor)
     } catch {

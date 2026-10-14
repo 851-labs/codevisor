@@ -40,6 +40,7 @@ it.each([1, 2])(
       ).value
     )
     expect(checkpoint.offset).toBe(1 + blocksPerCheckpoint * 8192)
+    // oxlint-disable-next-line typescript/no-misused-spread
     const committedPrefix = [...source].slice(0, checkpoint.offset - 1).join("")
     expect(committedPrefix.length).toBeLessThan(source.length)
     expect(readTranscriptText(raw, item.id, "imported-text")).toBe(committedPrefix)

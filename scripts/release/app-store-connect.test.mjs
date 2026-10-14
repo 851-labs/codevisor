@@ -71,7 +71,7 @@ function deliveryFixture({ post = () => {}, membership } = {}) {
     assert.equal(options.method, "POST")
     assert.deepEqual(options.body, { data: [{ type: "builds", id: "build" }] })
     counts.posts += 1
-    await post(counts.posts, options)
+    post(counts.posts, options)
     assigned = true
   }
   const run = (options) =>

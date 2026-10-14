@@ -9,16 +9,16 @@ import { afterAll, beforeAll, describe, expect, it as baseIt, vi } from "vitest"
 import { emulateBrowserFocus, observeCdp } from "./browser-cdp-test-support.js"
 import { makeBrowserUseProvider } from "./browser-use-provider.js"
 
-const value = <T = unknown>(result: CallToolResult): T => {
+const value = (result: CallToolResult): unknown => {
   const message = result.content
     .filter((c) => c.type === "text")
     .map((c) => c.text)
     .join("\n")
   if (result.isError) throw new Error(message)
   try {
-    return JSON.parse(message) as T
+    return JSON.parse(message)
   } catch {
-    return message as T
+    return message
   }
 }
 
@@ -192,7 +192,7 @@ describe("Browser session reliability", () => {
       format: "markdown",
       tabId: await cell("first.id")
     })
-    const exported = value<{ file: { path: string } }>(result)
+    const exported = value(result) as { file: { path: string } }
     expect(readFileSync(exported.file.path, "utf8")).toContain("Source: " + origin)
     expect(result.content.some((c) => c.type === "resource")).toBe(true)
   })

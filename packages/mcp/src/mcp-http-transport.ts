@@ -1,7 +1,7 @@
 import type { Transport, TransportSendOptions } from "@modelcontextprotocol/sdk/shared/transport.js"
 import { type JSONRPCMessage, JSONRPCMessageSchema } from "@modelcontextprotocol/sdk/types.js"
 
-const messageFromSseBlock = (block: string): unknown | undefined => {
+const messageFromSseBlock = (block: string): unknown => {
   const data = block
     .split(/\r?\n/)
     .filter((line) => line.startsWith("data:"))
@@ -18,7 +18,7 @@ const messageFromSseBlock = (block: string): unknown | undefined => {
 export class NodeStreamableHttpTransport implements Transport {
   onclose?: () => void
   onerror?: (error: Error) => void
-  onmessage?: <T extends JSONRPCMessage>(message: T) => void
+  onmessage?: (message: JSONRPCMessage) => void
   sessionId?: string
 
   private controller: AbortController | undefined
