@@ -31,7 +31,9 @@ public struct ReviewPaneView: View {
           ReviewBranchSheet(model: model)
         }
       #endif
-      .task(id: scenePhase == .active) {
+      // Keyed on the model too: a preview tab swaps in another file's diff
+      // under the same view, and that new model must load.
+      .task(id: LoadKey(model: ObjectIdentifier(model), isActive: scenePhase == .active)) {
         model.loadIfNeeded()
         guard scenePhase == .active else { return }
         while !Task.isCancelled {
@@ -39,6 +41,11 @@ public struct ReviewPaneView: View {
           try? await Task.sleep(for: Self.pollInterval)
         }
       }
+  }
+
+  private struct LoadKey: Hashable {
+    let model: ObjectIdentifier
+    let isActive: Bool
   }
 
   @ViewBuilder
