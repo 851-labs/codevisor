@@ -49,7 +49,8 @@ describe("harness routes", () => {
             method,
             ...(method === "PATCH" || method === "POST" ? { body: JSON.stringify({}) } : {})
           })
-        ).status
+        ).status,
+        `${method} ${path}`
       ).toBe(501)
     }
   })
