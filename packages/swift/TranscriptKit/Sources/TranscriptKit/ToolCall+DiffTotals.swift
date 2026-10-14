@@ -23,9 +23,7 @@ extension ToolCall {
       totals.removed += t.removed
     }
   }
-}
 
-extension ToolCall {
   /// The row title, papering over adapters that report a bare tool name
   /// ("Edit") while an edit is running: without a filename or any diff data
   /// there is nothing informative to show, so use a generic progress title.

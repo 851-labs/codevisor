@@ -10,6 +10,37 @@ public enum JSONValue: Sendable, Hashable {
   case string(String)
   case array([JSONValue])
   case object([String: JSONValue])
+
+  /// Convenience accessor for object members.
+  public subscript(key: String) -> JSONValue? {
+    if case .object(let dictionary) = self { return dictionary[key] }
+    return nil
+  }
+
+  public var stringValue: String? {
+    if case .string(let value) = self { return value }
+    return nil
+  }
+
+  public var doubleValue: Double? {
+    if case .number(let value) = self { return value }
+    return nil
+  }
+
+  public var intValue: Int? {
+    if case .number(let value) = self { return Int(value) }
+    return nil
+  }
+
+  public var boolValue: Bool? {
+    if case .bool(let value) = self { return value }
+    return nil
+  }
+
+  public var arrayValue: [JSONValue]? {
+    if case .array(let value) = self { return value }
+    return nil
+  }
 }
 
 extension JSONValue: Codable {
@@ -51,39 +82,6 @@ extension JSONValue: Codable {
     case .object(let value):
       try container.encode(value)
     }
-  }
-}
-
-public extension JSONValue {
-  /// Convenience accessor for object members.
-  subscript(key: String) -> JSONValue? {
-    if case .object(let dictionary) = self { return dictionary[key] }
-    return nil
-  }
-
-  var stringValue: String? {
-    if case .string(let value) = self { return value }
-    return nil
-  }
-
-  var doubleValue: Double? {
-    if case .number(let value) = self { return value }
-    return nil
-  }
-
-  var intValue: Int? {
-    if case .number(let value) = self { return Int(value) }
-    return nil
-  }
-
-  var boolValue: Bool? {
-    if case .bool(let value) = self { return value }
-    return nil
-  }
-
-  var arrayValue: [JSONValue]? {
-    if case .array(let value) = self { return value }
-    return nil
   }
 }
 
