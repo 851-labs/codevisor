@@ -71,7 +71,7 @@ struct SidebarWorkspaceRow: View {
         }
         if let machine {
           Image(systemName: machine.systemImage)
-            .font(.system(size: SidebarRowIcon.trailingSize, weight: SidebarRowIcon.weight))
+            .font(.system(size: SidebarRowIcon.size, weight: SidebarRowIcon.weight))
             // The display's screen is a second, translucent layer even in
             // monochrome; clearing it leaves the outline the row's other
             // glyphs use.
@@ -86,7 +86,7 @@ struct SidebarWorkspaceRow: View {
         if isHovered {
           Button(action: onArchive) {
             Image(systemName: "archivebox")
-              .font(.system(size: SidebarRowIcon.trailingSize, weight: SidebarRowIcon.weight))
+              .font(.system(size: SidebarRowIcon.size, weight: SidebarRowIcon.weight))
               // The same slot as the PR and machine glyphs, so the three sit
               // evenly spaced.
               .frame(width: SidebarRowIcon.trailingSlot, height: SidebarRowIcon.trailingSlot)
@@ -210,7 +210,7 @@ struct SidebarPullRequestBadge: View {
       Image(iconName)
         .resizable()
         .scaledToFit()
-        .frame(width: SidebarRowIcon.trailingSize, height: SidebarRowIcon.trailingSize)
+        .frame(width: SidebarRowIcon.size, height: SidebarRowIcon.size)
         .foregroundStyle(color)
         .frame(width: SidebarRowIcon.trailingSlot, height: SidebarRowIcon.trailingSlot)
         .contentShape(Rectangle())
@@ -265,14 +265,13 @@ struct SidebarPullRequestBadge: View {
   }
 }
 
-/// Glyph sizes and stroke weight for a workspace row. The model icon leads
-/// at 14pt; the trailing glyphs (PR badge, machine, archive) sit 2pt smaller,
-/// each in its own slot. SF Symbols at regular weight and GitHub's 24px
-/// Octicons draw matching strokes at the same size (the 16px Octicons would
-/// be heavier, like SF's medium-to-semibold).
+/// One size and stroke weight for every glyph in a workspace row: the model
+/// logo, the PR badge, the machine, and the archive button, at 12pt. SF
+/// Symbols at regular weight and GitHub's 24px Octicons draw matching strokes
+/// at the same size (the 16px Octicons would be heavier, like SF's
+/// medium-to-semibold).
 enum SidebarRowIcon {
-  static let size: CGFloat = 14
-  static let trailingSize: CGFloat = 12
+  static let size: CGFloat = 12
   /// A trailing glyph's slot: the glyph plus 2pt either side.
   static let trailingSlot: CGFloat = 16
   static let weight: Font.Weight = .regular
