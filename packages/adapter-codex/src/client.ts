@@ -29,10 +29,6 @@ export interface CodexClient {
   onClose: (handler: (error: Error) => void) => void
   close: () => void
   closeAndWait?: () => Promise<void>
-  /// OS pid of the spawned codex app-server process, when this client wraps a
-  /// real child process. The protocol offers no way to kill an agent-run
-  /// command, so best-effort kill walks this process's descendants instead.
-  readonly pid?: number
 }
 
 export interface CodexSpawnRequest {
@@ -101,7 +97,6 @@ export const spawnCodexClient: CodexConnector = async (request) => {
   }
   return {
     ...client,
-    pid,
     closeAndWait,
     close: () => {
       void closeAndWait().catch(() => child.kill())
@@ -262,7 +257,6 @@ export const wireCodexClient = (transport: NdjsonTransport): CodexClient => {
         pending.set(id, { reject, resolve: resolve as (value: unknown) => void })
         transport.send(params === undefined ? { id, method } : { id, method, params })
       })
-    },
-    ...(transport.pid === undefined ? {} : { pid: transport.pid })
+    }
   }
 }

@@ -8,7 +8,6 @@ const transport = () => {
   let failure: ((error: Error) => void) | undefined
   const sent: Array<Record<string, unknown>> = []
   const fake: NdjsonTransport = {
-    pid: 1,
     isOpen: () => true,
     send: (payload) => void sent.push(payload),
     onLine: (handler) => {
