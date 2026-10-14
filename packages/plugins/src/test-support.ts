@@ -282,7 +282,7 @@ export const makeFakePlugin = (): FakePlugin => {
           path: request.url ?? ""
         })
         webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
-          webSocket.on("message", (data) => webSocket.send(`echo:${String(data)}`))
+          webSocket.on("message", (data: Buffer) => webSocket.send(`echo:${data.toString()}`))
         })
       })
       server.listen(Number(options.env["PORT"]), "127.0.0.1")

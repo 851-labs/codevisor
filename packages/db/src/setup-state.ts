@@ -16,7 +16,7 @@ export const projectSetupState = (
   if (payload === undefined) return
   const line =
     typeof payload.line === "string"
-      ? `[${String(payload.stream ?? "stdout")}] ${payload.line}\n`
+      ? `[${typeof payload.stream === "string" ? payload.stream : "stdout"}] ${payload.line}\n`
       : ""
   const metadata = { ...payload, line: undefined }
   db.prepare(

@@ -28,7 +28,7 @@ export const invokeMouseTools = async (
         page,
         x,
         y,
-        String(args.button ?? "left"),
+        typeof args.button === "string" ? args.button : "left",
         args.doubleClick === true ? 2 : 1,
         mouseModifierMask(args.keypress),
         cursor

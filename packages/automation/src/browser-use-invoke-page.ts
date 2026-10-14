@@ -26,7 +26,12 @@ export const invokePageTools = async (
   const { assetInventories, assetsDir } = state
   switch (toolName) {
     case "content.export":
-      return exportBrowserContent(active, page, state.assetsDir, String(args.format ?? "markdown"))
+      return exportBrowserContent(
+        active,
+        page,
+        state.assetsDir,
+        typeof args.format === "string" ? args.format : "markdown"
+      )
     case "clipboard.readText": {
       if (backend === "extension") {
         const value = await active.connection.send<{ text?: string }>(

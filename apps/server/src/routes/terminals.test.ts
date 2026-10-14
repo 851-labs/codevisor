@@ -6,7 +6,7 @@ import { jsonRequest, start } from "../test-support.js"
 const recordMessages = (socket: WebSocket) => {
   const messages: unknown[] = []
   const waiters = new Map<number, () => void>()
-  socket.on("message", (data) => {
+  socket.on("message", (data: Buffer) => {
     const message = JSON.parse(data.toString()) as { type?: string }
     if (message.type === "size") return
     messages.push(message)

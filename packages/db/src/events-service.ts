@@ -4,7 +4,12 @@ import { Effect } from "effect"
 
 import { attempt } from "./errors.js"
 import type { JsonRecord } from "./event-payloads.js"
-import { isSessionShellEvent, withChatItemId, jsonRecord } from "./event-payloads.js"
+import {
+  isSessionShellEvent,
+  withChatItemId,
+  jsonRecord,
+  payloadMarkdown
+} from "./event-payloads.js"
 import { insertSessionEvent, projectChatEvent } from "./event-projection.js"
 import { canonicalUuid } from "./ids.js"
 import { materializeNavigationDelta } from "./navigation-delta.js"
@@ -19,11 +24,12 @@ import { textPatchForEvent } from "./transcript-state.js"
 const questionResolutionDelivery = (
   sqlite: ServiceContext["sqlite"],
   chatItemId: string,
-  update: JsonRecord
+  update: JsonRecord,
+  questionId: string
 ): JsonRecord => {
   const row = sqlite
     .prepare("select position from transcript_entries where item_id = ? and entry_key = ?")
-    .get(chatItemId, `question_resolved:${update.questionId}`) as { position: number }
+    .get(chatItemId, `question_resolved:${questionId}`) as { position: number }
   return { ...update, statePosition: row.position }
 }
 
@@ -35,7 +41,7 @@ const planDocumentDelivery = (
 ): JsonRecord => {
   return {
     ...update,
-    markdown: String(update.markdown ?? "").slice(0, 24_000),
+    markdown: (payloadMarkdown(update) ?? "").slice(0, 24_000),
     stateRevision: subjectRevision,
     detailResource: transcriptTextResource(sqlite, chatItemId, "plan")
   }
@@ -64,7 +70,7 @@ const materializeSessionDelivery = (
     update?.sessionUpdate === "question_resolved" &&
     typeof update.questionId === "string"
   ) {
-    deliveredPayload = questionResolutionDelivery(sqlite, chatItemId, update)
+    deliveredPayload = questionResolutionDelivery(sqlite, chatItemId, update, update.questionId)
   }
   if (chatItemId !== undefined && update?.sessionUpdate === "plan_document") {
     deliveredPayload = planDocumentDelivery(sqlite, chatItemId, subjectRevision, update)

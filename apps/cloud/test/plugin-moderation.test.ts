@@ -53,7 +53,7 @@ describe("plugin moderation", () => {
     const token = await login()
     const sent: unknown[] = []
     const fetcher = vi.fn((_url: string, init?: RequestInit) => {
-      sent.push(JSON.parse(String(init?.body)))
+      sent.push(JSON.parse(init?.body as string))
       return Promise.resolve(new Response("unavailable", { status: 503 }))
     })
     const bindings = {

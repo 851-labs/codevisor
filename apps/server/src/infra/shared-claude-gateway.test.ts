@@ -56,10 +56,10 @@ describe("Claude shared account gateway", () => {
       fetch: (async (url, options) => {
         const headers = new Headers(options?.headers)
         requests.push({
-          url: String(url),
+          url: url instanceof Request ? url.url : url.toString(),
           authorization: headers.get("authorization"),
           beta: headers.get("anthropic-beta"),
-          body: String(options?.body)
+          body: await new Response(options?.body).text()
         })
         return requests.length === 1
           ? new Response("expired", { status: 401 })

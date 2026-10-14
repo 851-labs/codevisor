@@ -143,8 +143,8 @@ it("forwards Chromium's absolute-form WebSocket upgrade with the original host a
   const upstream = createServer()
   const ws = new WebSocketServer({ server: upstream })
   ws.on("connection", (client, req) => {
-    client.on("message", (data) =>
-      client.send(JSON.stringify({ data: String(data), headers: req.headers }))
+    client.on("message", (data: Buffer) =>
+      client.send(JSON.stringify({ data: data.toString(), headers: req.headers }))
     )
   })
   const target = await listen(upstream)

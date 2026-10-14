@@ -66,12 +66,8 @@ export const adaptDirectSocket = (socket: WebSocket): CloudSocket => {
   }
   socket.on("message", (data, isBinary) => {
     try {
-      if (isBinary) {
-        const bytes = Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data as ArrayBuffer)
-        adapted.onmessage?.(new Uint8Array(bytes))
-        return
-      }
-      adapted.onmessage?.(String(data))
+      const bytes = Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data as ArrayBuffer)
+      adapted.onmessage?.(isBinary ? new Uint8Array(bytes) : bytes.toString())
     } catch {
       socket.close(1011, "message handler failed")
     }

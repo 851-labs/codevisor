@@ -197,12 +197,15 @@ export const invokePlaywrightTools = async (
           })
         }
         const download = await eventPromise
-        const guid = String(download.guid ?? randomUUID())
+        const guid = typeof download.guid === "string" ? download.guid : randomUUID()
         const existing = active.downloads.get(guid)
         const value = {
           guid,
-          url: String(download.url ?? ""),
-          suggestedFilename: String(download.suggestedFilename ?? "download"),
+          url: typeof download.url === "string" ? download.url : "",
+          suggestedFilename:
+            typeof download.suggestedFilename === "string"
+              ? download.suggestedFilename
+              : "download",
           ...(typeof download.filePath === "string" ? { path: download.filePath } : {}),
           ...existing
         }
@@ -256,7 +259,7 @@ export const invokePlaywrightTools = async (
           page,
           element.x,
           element.y,
-          String(args.button ?? "left"),
+          typeof args.button === "string" ? args.button : "left",
           args.doubleClick === true ? 2 : 1,
           mouseModifierMask(args.modifiers),
           cursor
@@ -449,7 +452,7 @@ export const invokePlaywrightTools = async (
       return jsonResult(await browserNavigationBaseline(active, page))
     case "playwright.waitForNavigation":
       await waitForBrowserState(active, page, {
-        state: String(args.waitUntil ?? "load"),
+        state: typeof args.waitUntil === "string" ? args.waitUntil : "load",
         timeoutMs: Number(args.timeoutMs ?? 30000),
         afterSequence: Number(args.afterSequence),
         frameId: String(args.frameId),
@@ -459,13 +462,13 @@ export const invokePlaywrightTools = async (
     case "playwright.waitForURL":
       await waitForBrowserState(active, page, {
         url: stringArgument(args, "url"),
-        state: String(args.waitUntil ?? "commit"),
+        state: typeof args.waitUntil === "string" ? args.waitUntil : "commit",
         timeoutMs: Number(args.timeoutMs ?? 30000)
       })
       return jsonResult({ matched: true })
     case "playwright.waitForLoadState":
       await waitForBrowserState(active, page, {
-        state: String(args.state ?? "load"),
+        state: typeof args.state === "string" ? args.state : "load",
         timeoutMs: Number(args.timeoutMs ?? 30000)
       })
       return jsonResult({ matched: true })

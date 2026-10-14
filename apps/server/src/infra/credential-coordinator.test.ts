@@ -20,12 +20,12 @@ const fixture = async () => {
   let status = 200
   const requests: Array<{ action: string; expected?: string }> = []
   const request = vi.fn<typeof fetch>(async (url, init) => {
-    const body = JSON.parse(String(init?.body))
+    const body = JSON.parse(init?.body as string)
     const expected = new Headers(init?.headers).get("x-codevisor-account") ?? undefined
     requests.push({ action: body.action, ...(expected ? { expected } : {}) })
     if (status !== 200) return new Response(null, { status })
     if (expected && expected !== account) return new Response(null, { status: 409 })
-    const id = String(url).split("/").at(-1)!
+    const id = (url instanceof Request ? url.url : url.toString()).split("/").at(-1)!
     const next = coordinateCredential(records.get(id), body, "machine", 100)
     if (next.record) records.set(id, next.record)
     return Response.json(next.result, {

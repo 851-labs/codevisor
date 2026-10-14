@@ -35,7 +35,7 @@ export const invokeInteractionTools = async (
           page,
           element.x,
           element.y,
-          String(args.button ?? "left"),
+          typeof args.button === "string" ? args.button : "left",
           args.doubleClick === true ? 2 : 1,
           0,
           cursor

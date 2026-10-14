@@ -238,10 +238,10 @@ const connect = async (
   const messages: Array<unknown> = []
   const sizes: Array<unknown> = []
   const waiters: Array<{ count: number; resolve: () => void }> = []
-  client.on("message", (data, isBinary) => {
+  client.on("message", (data: Buffer, isBinary) => {
     const message: unknown = isBinary
-      ? decodeBinary(new Uint8Array(data as Buffer))
-      : JSON.parse(String(data))
+      ? decodeBinary(new Uint8Array(data))
+      : JSON.parse(data.toString())
     if ((message as { type?: string }).type === "size") {
       sizes.push(message)
       return

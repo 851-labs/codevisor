@@ -243,14 +243,14 @@ describe("install.sh", { concurrency: true }, () => {
     })
   }
 
-  for (const [name, options] of [
-    ["unavailable feed", { manifestStatus: 22 }],
-    ["missing version", { manifest: '{"buildNumber":422}' }],
-    ["empty response", { manifest: "" }],
-    ["HTML error", { manifest: "<html>Unavailable</html>" }],
-    ["invalid version", { manifest: '{"version":"0.1"}' }],
-    ["alpha version", { manifest: '{"version":"0.1.100-alpha.493"}' }]
-  ]) {
+  for (const [name, options] of Object.entries({
+    "unavailable feed": { manifestStatus: 22 },
+    "missing version": { manifest: '{"buildNumber":422}' },
+    "empty response": { manifest: "" },
+    "HTML error": { manifest: "<html>Unavailable</html>" },
+    "invalid version": { manifest: '{"version":"0.1"}' },
+    "alpha version": { manifest: '{"version":"0.1.100-alpha.493"}' }
+  })) {
     test(`${name} fails before changing the installation without falling back to GitHub`, async (t) => {
       const result = await install(t, options)
       assert.equal(result.status, 1)
@@ -265,19 +265,19 @@ describe("install.sh", { concurrency: true }, () => {
     })
   }
 
-  for (const [name, env, expectedVersion] of [
-    ["explicit stable", { CODEVISOR_VERSION: "0.1.98" }, "0.1.98"],
-    [
-      "explicit alpha with v prefix",
-      { CODEVISOR_VERSION: "v0.1.100-alpha.493" },
-      "0.1.100-alpha.493"
-    ],
-    ["legacy pin", { HERDMAN_VERSION: "v0.1.97" }, "0.1.97"],
-    [
-      "modern pin takes precedence",
-      { CODEVISOR_VERSION: "0.1.98", HERDMAN_VERSION: "0.1.97" },
-      "0.1.98"
-    ]
+  for (const { name, env, expectedVersion } of [
+    { name: "explicit stable", env: { CODEVISOR_VERSION: "0.1.98" }, expectedVersion: "0.1.98" },
+    {
+      name: "explicit alpha with v prefix",
+      env: { CODEVISOR_VERSION: "v0.1.100-alpha.493" },
+      expectedVersion: "0.1.100-alpha.493"
+    },
+    { name: "legacy pin", env: { HERDMAN_VERSION: "v0.1.97" }, expectedVersion: "0.1.97" },
+    {
+      name: "modern pin takes precedence",
+      env: { CODEVISOR_VERSION: "0.1.98", HERDMAN_VERSION: "0.1.97" },
+      expectedVersion: "0.1.98"
+    }
   ]) {
     test(`${name} bypasses the stable feed, even when it is unavailable`, async (t) => {
       const result = await install(t, { env, expectedVersion, manifestStatus: 22 })
@@ -290,10 +290,10 @@ describe("install.sh", { concurrency: true }, () => {
     })
   }
 
-  for (const [name, env] of [
-    ["a native shell", {}],
-    ["a Rosetta shell", { TEST_HW_ARM64: "1" }]
-  ]) {
+  for (const [name, env] of Object.entries({
+    "a native shell": {},
+    "a Rosetta shell": { TEST_HW_ARM64: "1" }
+  })) {
     test(`Apple silicon under ${name} installs the arm64 app`, async (t) => {
       const architecture = env.TEST_HW_ARM64 === undefined ? "arm64" : "x86_64"
       const result = await install(t, { platform: "Darwin", architecture, env })
@@ -332,9 +332,13 @@ describe("install.sh", { concurrency: true }, () => {
     assert.doesNotMatch(result.services, /codevisor-server\.service/)
   })
 
-  for (const [name, env, message] of [
-    ["without a terminal to confirm", {}, /CODEVISOR_INSTALL_SERVER=1/],
-    ["when declined", { CODEVISOR_INSTALL_SERVER: "0" }, /not installing codevisor-server/]
+  for (const { name, env, message } of [
+    { name: "without a terminal to confirm", env: {}, message: /CODEVISOR_INSTALL_SERVER=1/ },
+    {
+      name: "when declined",
+      env: { CODEVISOR_INSTALL_SERVER: "0" },
+      message: /not installing codevisor-server/
+    }
   ]) {
     test(`Intel Mac installs nothing ${name}`, async (t) => {
       const result = await install(t, { platform: "Darwin", architecture: "x86_64", env })

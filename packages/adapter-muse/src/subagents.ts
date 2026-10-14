@@ -59,7 +59,7 @@ export const makeMuseSubagents = (options: MuseSubagentsOptions): MuseSubagents 
     } else if (method === "item/delta" && typeof params.itemId === "string") {
       attribute(
         child,
-        child.mapper.delta(params.itemId, text(params.field) ?? "text", String(params.delta ?? ""))
+        child.mapper.delta(params.itemId, text(params.field) ?? "text", text(params.delta) ?? "")
       )
     }
   }

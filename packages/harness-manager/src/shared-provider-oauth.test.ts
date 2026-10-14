@@ -236,9 +236,9 @@ describe("shared provider OAuth contracts", () => {
       })
       const [url, init] = request.mock.calls[0] as unknown as [string, RequestInit]
       expect(url).toBe(providerTokenEndpoint(providerId))
-      expect(new URLSearchParams(String(init.body)).get("refresh_token")).toBe("refresh")
+      expect(new URLSearchParams(init.body as string).get("refresh_token")).toBe("refresh")
       expect(init.redirect).toBe("error")
-      expect(new URLSearchParams(String(init.body)).get("client_id")).toBe(
+      expect(new URLSearchParams(init.body as string).get("client_id")).toBe(
         providerId === "openai"
           ? "app_EMoamEEZ73f0CkXaXp7hrann"
           : "b1a00492-073a-47ea-816f-4c329264a828"
