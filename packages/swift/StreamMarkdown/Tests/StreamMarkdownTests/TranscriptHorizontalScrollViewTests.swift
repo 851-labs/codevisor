@@ -49,6 +49,7 @@
     private func event(_ phase: Phase, deltaY: Int32) throws -> NSEvent {
       let cgEvent = try #require(
         CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: deltaY, wheel2: 0, wheel3: 0))
+      cgEvent.flags = []
       cgEvent.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
       cgEvent.setIntegerValueField(.scrollWheelEventScrollPhase, value: phase.rawValue)
       return try #require(NSEvent(cgEvent: cgEvent))

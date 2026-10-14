@@ -62,6 +62,7 @@
     private func horizontalSwipe() throws -> NSEvent {
       let cgEvent = try #require(
         CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: 0, wheel2: -24, wheel3: 0))
+      cgEvent.flags = []
       return try #require(NSEvent(cgEvent: cgEvent))
     }
 
