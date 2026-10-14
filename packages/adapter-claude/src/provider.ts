@@ -22,7 +22,7 @@ import { isoTimestamp } from "@codevisor/api"
 import { Effect } from "effect"
 
 import { metadataFor, resolveClaudeModel } from "./models.js"
-import { makeClaudeSessionHandle } from "./session-handle.js"
+import { claudeSessionHandle } from "./session-handle.js"
 import type { ClaudeQueryFn } from "./session.js"
 import { makeStartSession } from "./start-session.js"
 import { nodeSubagentTranscripts, type SubagentTranscripts } from "./subagent-transcripts.js"
@@ -91,7 +91,6 @@ export const makeClaudeProvider = (
     readFile,
     subagentTranscripts: config.subagentTranscripts ?? nodeSubagentTranscripts
   })
-  const handleFor = makeClaudeSessionHandle()
 
   return {
     createSession: (
@@ -113,7 +112,7 @@ export const makeClaudeProvider = (
           sessionOptions
         )
         return {
-          handle: handleFor(session),
+          handle: claudeSessionHandle(session),
           metadata: {
             sessionId: session.key,
             ...metadataFor(session),
@@ -158,7 +157,7 @@ export const makeClaudeProvider = (
           sessionOptions
         )
         return {
-          handle: handleFor(session),
+          handle: claudeSessionHandle(session),
           metadata: {
             sessionId: session.key,
             ...metadataFor(session),

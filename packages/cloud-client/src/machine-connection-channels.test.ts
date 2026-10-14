@@ -352,14 +352,14 @@ const framed = (prefix: number, body: Uint8Array): Uint8Array => {
   return plaintext
 }
 
-describe("negotiated compression", () => {
-  const compressingHarness = () =>
-    harness({
-      compressPayload: (bytes) =>
-        bytes.byteLength > 64 ? new Uint8Array(deflateRawSync(bytes)) : undefined,
-      decompressPayload: (bytes) => new Uint8Array(inflateRawSync(bytes))
-    })
+const compressingHarness = () =>
+  harness({
+    compressPayload: (bytes) =>
+      bytes.byteLength > 64 ? new Uint8Array(deflateRawSync(bytes)) : undefined,
+    decompressPayload: (bytes) => new Uint8Array(inflateRawSync(bytes))
+  })
 
+describe("negotiated compression", () => {
   it("frames payloads in both directions and deflates large bodies", () => {
     const h = compressingHarness()
     const socket = connect(h)

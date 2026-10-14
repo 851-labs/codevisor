@@ -31,22 +31,22 @@ const planEntriesFromTasks = (
     status: task.status
   }))
 
-export const taskIdFromCreateResult = (content: unknown): string | undefined => {
-  const parseText = (text: string): string | undefined => {
-    try {
-      const parsed = JSON.parse(text) as unknown
-      if (isRecord(parsed) && isRecord(parsed.task) && typeof parsed.task.id === "string") {
-        return parsed.task.id
-      }
-    } catch {}
-    return /^Task #([^\s]+) created successfully\b/.exec(text)?.[1]
-  }
+const taskIdFromText = (text: string): string | undefined => {
+  try {
+    const parsed = JSON.parse(text) as unknown
+    if (isRecord(parsed) && isRecord(parsed.task) && typeof parsed.task.id === "string") {
+      return parsed.task.id
+    }
+  } catch {}
+  return /^Task #([^\s]+) created successfully\b/.exec(text)?.[1]
+}
 
-  if (typeof content === "string") return parseText(content)
+export const taskIdFromCreateResult = (content: unknown): string | undefined => {
+  if (typeof content === "string") return taskIdFromText(content)
   if (!Array.isArray(content)) return undefined
   for (const block of content) {
     if (!isRecord(block) || block.type !== "text" || typeof block.text !== "string") continue
-    const taskId = parseText(block.text)
+    const taskId = taskIdFromText(block.text)
     if (taskId !== undefined) return taskId
   }
   return undefined

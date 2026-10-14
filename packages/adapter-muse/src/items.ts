@@ -87,6 +87,48 @@ export interface MuseItemMapper {
   readonly delta: (itemId: string, field: string, delta: string) => Array<MappedEvent>
 }
 
+const toolActionEvents = (
+  item: MuseItem,
+  edge: Edge,
+  kind: string,
+  title: string
+): Array<MappedEvent> =>
+  edge === "started"
+    ? [
+        output({
+          sessionUpdate: "tool_call",
+          toolCallId: item.itemId,
+          kind,
+          title,
+          status: toolStatus(item.status)
+        })
+      ]
+    : item.status === "inProgress"
+      ? []
+      : [
+          output({
+            sessionUpdate: "tool_call_update",
+            toolCallId: item.itemId,
+            kind,
+            title,
+            status: toolStatus(item.status)
+          })
+        ]
+
+const compactionEvents = (item: MuseItem, edge: Edge): Array<MappedEvent> => {
+  const status =
+    edge === "started"
+      ? "started"
+      : item.status === "completed"
+        ? "completed"
+        : item.status === "inProgress"
+          ? undefined
+          : "failed"
+  return status === undefined
+    ? []
+    : [output({ sessionUpdate: "context_compaction", compactionId: item.itemId, status })]
+}
+
 export const makeMuseItemMapper = (scope: () => string = () => ""): MuseItemMapper => {
   const revisions = new Map<string, number>()
   const streamed = new Map<string, string>()
@@ -169,43 +211,6 @@ export const makeMuseItemMapper = (scope: () => string = () => ""): MuseItemMapp
     ]
   }
 
-  const action = (item: MuseItem, edge: Edge, kind: string, title: string): Array<MappedEvent> =>
-    edge === "started"
-      ? [
-          output({
-            sessionUpdate: "tool_call",
-            toolCallId: item.itemId,
-            kind,
-            title,
-            status: toolStatus(item.status)
-          })
-        ]
-      : item.status === "inProgress"
-        ? []
-        : [
-            output({
-              sessionUpdate: "tool_call_update",
-              toolCallId: item.itemId,
-              kind,
-              title,
-              status: toolStatus(item.status)
-            })
-          ]
-
-  const compaction = (item: MuseItem, edge: Edge): Array<MappedEvent> => {
-    const status =
-      edge === "started"
-        ? "started"
-        : item.status === "completed"
-          ? "completed"
-          : item.status === "inProgress"
-            ? undefined
-            : "failed"
-    return status === undefined
-      ? []
-      : [output({ sessionUpdate: "context_compaction", compactionId: item.itemId, status })]
-  }
-
   return {
     runRow: agents.runRow,
     item: (item, edge) => {
@@ -223,11 +228,16 @@ export const makeMuseItemMapper = (scope: () => string = () => ""): MuseItemMapp
           case "subagent":
             return agents.subagent(item, phase)
           case "webSearch":
-            return action(item, phase, "fetch", text(item.query) ?? text(item.url) ?? "Web search")
+            return toolActionEvents(
+              item,
+              phase,
+              "fetch",
+              text(item.query) ?? text(item.url) ?? "Web search"
+            )
           case "skillRead":
-            return action(item, phase, "read", `Skill: ${item.selector ?? "skill"}`)
+            return toolActionEvents(item, phase, "read", `Skill: ${item.selector ?? "skill"}`)
           case "compaction":
-            return compaction(item, phase)
+            return compactionEvents(item, phase)
           default:
             return []
         }

@@ -23,53 +23,57 @@ afterEach(async () => {
   }
 })
 
-describe("Codex login methods", () => {
-  const methodsFor = async (preferDeviceCode: boolean) => {
-    const directory = mkdtempSync(join(tmpdir(), "codevisor-codex-auth-methods-"))
-    directories.push(directory)
-    const db = await run(
-      makeDatabase({ filename: join(directory, "codevisor.sqlite"), serverId: "test" })
-    )
-    databases.push(db)
-    await run(
-      db.saveHarnessAccount({
-        id: "codex-account",
-        harnessId: "codex",
-        profileKind: "default",
-        label: "Existing Codex account",
-        authState: "unauthenticated",
-        canLogin: true,
-        canLogout: false
-      })
-    )
-    const manager = makeHarnessAuthManager({
-      agents: {} as AgentRuntimeService,
-      dataDir: directory,
-      db,
-      terminal: {} as TerminalManagerService,
-      preferDeviceCode,
-      resolveEnv: () => Promise.resolve({ HOME: directory })
+const codexMethodsFor = async (preferDeviceCode: boolean) => {
+  const directory = mkdtempSync(join(tmpdir(), "codevisor-codex-auth-methods-"))
+  directories.push(directory)
+  const db = await run(
+    makeDatabase({ filename: join(directory, "codevisor.sqlite"), serverId: "test" })
+  )
+  databases.push(db)
+  await run(
+    db.saveHarnessAccount({
+      id: "codex-account",
+      harnessId: "codex",
+      profileKind: "default",
+      label: "Existing Codex account",
+      authState: "unauthenticated",
+      canLogin: true,
+      canLogout: false
     })
-    const [decorated] = await manager.decorateHarnessesFromStoredState([
-      {
-        id: "codex",
-        name: "Codex",
-        symbolName: "terminal",
-        source: "registry",
-        launchKind: "executable",
-        enabled: true,
-        readiness: { state: "ready", path: "/usr/local/bin/codex" }
-      }
-    ])
-    return decorated?.auth?.loginMethods.map((method) => method.id)
-  }
+  )
+  const manager = makeHarnessAuthManager({
+    agents: {} as AgentRuntimeService,
+    dataDir: directory,
+    db,
+    terminal: {} as TerminalManagerService,
+    preferDeviceCode,
+    resolveEnv: () => Promise.resolve({ HOME: directory })
+  })
+  const [decorated] = await manager.decorateHarnessesFromStoredState([
+    {
+      id: "codex",
+      name: "Codex",
+      symbolName: "terminal",
+      source: "registry",
+      launchKind: "executable",
+      enabled: true,
+      readiness: { state: "ready", path: "/usr/local/bin/codex" }
+    }
+  ])
+  return decorated?.auth?.loginMethods.map((method) => method.id)
+}
 
+describe("Codex login methods", () => {
   it("omits the non-working ChatGPT browser handoff on remote machines", async () => {
-    await expect(methodsFor(true)).resolves.toEqual(["chatgptDeviceCode", "apiKey"])
+    await expect(codexMethodsFor(true)).resolves.toEqual(["chatgptDeviceCode", "apiKey"])
   })
 
   it("keeps the ChatGPT browser handoff on the local machine", async () => {
-    await expect(methodsFor(false)).resolves.toEqual(["chatgpt", "chatgptDeviceCode", "apiKey"])
+    await expect(codexMethodsFor(false)).resolves.toEqual([
+      "chatgpt",
+      "chatgptDeviceCode",
+      "apiKey"
+    ])
   })
 })
 

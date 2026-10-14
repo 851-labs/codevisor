@@ -4,6 +4,33 @@ import { makeDatabase } from "./index.js"
 import { ATTENTION_SETTLE_GRACE_MS } from "./session-attention.js"
 import { run } from "./test-support.js"
 
+const attentionFixture = async () => {
+  const db = await run(makeDatabase({ filename: ":memory:", serverId: "local" }))
+  const project = await run(db.createProject({ folderPath: "/tmp/queue-attention" }))
+  const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+  return {
+    db,
+    session,
+    summary: () => run(db.getSessionSummary(session.id)),
+    start: (turnId: string) =>
+      run(db.appendEvent("session.updated", session.id, { turnId, turnState: "started" })),
+    finish: (turnId: string) =>
+      run(
+        db.appendEvent("session.updated", session.id, {
+          turnId,
+          turnState: "ended",
+          stopReason: "end_turn"
+        })
+      ),
+    publishQueue: async () =>
+      run(
+        db.appendEvent("session.queue.updated", session.id, {
+          queue: await run(db.listPromptQueue(session.id))
+        })
+      )
+  }
+}
+
 describe("queued prompt attention", () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["Date"] })
@@ -11,35 +38,8 @@ describe("queued prompt attention", () => {
   })
   afterEach(() => vi.useRealTimers())
 
-  const fixture = async () => {
-    const db = await run(makeDatabase({ filename: ":memory:", serverId: "local" }))
-    const project = await run(db.createProject({ folderPath: "/tmp/queue-attention" }))
-    const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
-    return {
-      db,
-      session,
-      summary: () => run(db.getSessionSummary(session.id)),
-      start: (turnId: string) =>
-        run(db.appendEvent("session.updated", session.id, { turnId, turnState: "started" })),
-      finish: (turnId: string) =>
-        run(
-          db.appendEvent("session.updated", session.id, {
-            turnId,
-            turnState: "ended",
-            stopReason: "end_turn"
-          })
-        ),
-      publishQueue: async () =>
-        run(
-          db.appendEvent("session.queue.updated", session.id, {
-            queue: await run(db.listPromptQueue(session.id))
-          })
-        )
-    }
-  }
-
   it("counts an entire drain once, including the claimed last prompt", async () => {
-    const { db, session, summary, start, finish, publishQueue } = await fixture()
+    const { db, session, summary, start, finish, publishQueue } = await attentionFixture()
     try {
       const first = await run(db.createPromptQueueItem(session.id, "first"))
       const last = await run(db.createPromptQueueItem(session.id, "last"))
@@ -81,7 +81,7 @@ describe("queued prompt attention", () => {
   })
 
   it("settles when the user deletes the last pending prompt", async () => {
-    const { db, session, summary, start, finish, publishQueue } = await fixture()
+    const { db, session, summary, start, finish, publishQueue } = await attentionFixture()
     try {
       await start("autonomous")
       const pending = await run(db.createPromptQueueItem(session.id, "follow-up"))
@@ -99,7 +99,7 @@ describe("queued prompt attention", () => {
   })
 
   it("revalidates a released subagent deadline against newly queued work", async () => {
-    const { db, session, summary, start, finish, publishQueue } = await fixture()
+    const { db, session, summary, start, finish, publishQueue } = await attentionFixture()
     try {
       await start("parent")
       await run(
@@ -126,7 +126,7 @@ describe("queued prompt attention", () => {
   })
 
   it("recovers an acknowledged final claim without waiting for another event", async () => {
-    const { db, session, summary, start, finish } = await fixture()
+    const { db, session, summary, start, finish } = await attentionFixture()
     try {
       const item = await run(db.createPromptQueueItem(session.id, "last"))
       await run(db.claimPromptQueueItem(session.id))

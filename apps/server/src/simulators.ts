@@ -127,6 +127,11 @@ const contentSizes = new Set<string>([
   "accessibility-extra-extra-extra-large"
 ])
 
+const requireUDID = (udid: string): string => {
+  if (!udidPattern.test(udid)) throw new SimulatorRequestError(400, "Invalid simulator id")
+  return udid.toUpperCase()
+}
+
 export const makeSimulators = (
   environment: SimulatorEnvironment,
   nativeHost: () => boolean = () => true
@@ -155,11 +160,6 @@ export const makeSimulators = (
         })
       ).stdout.toString("utf8")
     ) as Record<string, unknown>
-
-  const requireUDID = (udid: string): string => {
-    if (!udidPattern.test(udid)) throw new SimulatorRequestError(400, "Invalid simulator id")
-    return udid.toUpperCase()
-  }
 
   const requireDevice = async (udid: string): Promise<SimulatorDevice> => {
     const id = requireUDID(udid)

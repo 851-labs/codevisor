@@ -36,6 +36,10 @@ describe("app-hosted update files", () => {
     rmSync(dataDir, { recursive: true, force: true })
   })
 
+  const writeStatus = (value: unknown) => {
+    writeFileSync(join(dataDir, APP_UPDATE_STATUS_FILE), JSON.stringify(value))
+  }
+
   describe("readMachineUpdateChannel", () => {
     it("is undefined when the host app never wrote a channel", () => {
       expect(readMachineUpdateChannel(dataDir)).toBeUndefined()
@@ -92,10 +96,6 @@ describe("app-hosted update files", () => {
   describe("readAppUpdateApplyState", () => {
     const at = "2026-08-24T00:00:00.000Z"
     const now = () => Date.parse(at) + 1000
-
-    const writeStatus = (value: unknown) => {
-      writeFileSync(join(dataDir, APP_UPDATE_STATUS_FILE), JSON.stringify(value))
-    }
 
     it("is undefined when the host app reported nothing", () => {
       expect(readAppUpdateApplyState(dataDir, now)).toBeUndefined()

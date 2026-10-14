@@ -63,6 +63,9 @@ const fakeMac = (supported = true) => {
 const devicectl = (commands: ReadonlyArray<ReadonlyArray<string>>) =>
   commands.map((command) => command.slice(1, command.indexOf("--json-output")))
 
+const parseColorFilter = (colorFilter: unknown, liquidGlassOpacity?: unknown) =>
+  parseDeviceSettings({ colorFilter, liquidGlassOpacity }, undefined, undefined, undefined)
+
 describe("simulator device settings", () => {
   it("reads accessibility, VoiceOver and audio, and the Mac's audio devices", async () => {
     const mac = fakeMac()
@@ -165,22 +168,22 @@ describe("simulator device settings", () => {
   })
 
   it("reads each color filter by name and leaves out what it can't read", () => {
-    const filter = (colorFilter: unknown, liquidGlassOpacity?: unknown) =>
-      parseDeviceSettings({ colorFilter, liquidGlassOpacity }, undefined, undefined, undefined)
-    expect(filter({ enabled: true, filterType: { name: "Protanopia" }, intensity: 0.6 })).toEqual({
+    expect(
+      parseColorFilter({ enabled: true, filterType: { name: "Protanopia" }, intensity: 0.6 })
+    ).toEqual({
       colorFilter: "protanopia"
     })
-    expect(filter({ enabled: true, filterType: { name: "Tritanopia" } }, 1)).toEqual({
+    expect(parseColorFilter({ enabled: true, filterType: { name: "Tritanopia" } }, 1)).toEqual({
       liquidGlass: 1,
       colorFilter: "tritanopia"
     })
-    expect(filter({ enabled: true, filterType: { name: "Grayscale" } }, 0)).toEqual({
+    expect(parseColorFilter({ enabled: true, filterType: { name: "Grayscale" } }, 0)).toEqual({
       liquidGlass: 0,
       colorFilter: "grayscale"
     })
-    expect(filter({ enabled: true, filterType: { name: "ColorTint" } }, 1.5)).toEqual({})
-    expect(filter({ enabled: true }, "0.5")).toEqual({})
-    expect(filter(undefined)).toEqual({})
+    expect(parseColorFilter({ enabled: true, filterType: { name: "ColorTint" } }, 1.5)).toEqual({})
+    expect(parseColorFilter({ enabled: true }, "0.5")).toEqual({})
+    expect(parseColorFilter(undefined)).toEqual({})
   })
 
   it("refuses an audio device the Mac doesn't have in that direction", async () => {

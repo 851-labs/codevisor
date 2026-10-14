@@ -18,13 +18,14 @@ describe("browserResultPageUrl", () => {
   })
 })
 
+const observationResult = (resolvedApp: unknown) =>
+  textToolResult(JSON.stringify({ snapshotId: "s", resolvedApp, text: "..." }))
+
 describe("computerResultApp", () => {
   it("reads the app an observation resolved, and nothing else", () => {
-    const observation = (resolvedApp: unknown) =>
-      textToolResult(JSON.stringify({ snapshotId: "s", resolvedApp, text: "..." }))
     expect(
       computerResultApp(
-        observation({
+        observationResult({
           id: "com.apple.Music",
           name: "Music",
           path: "/System/Applications/Music.app"
@@ -35,11 +36,11 @@ describe("computerResultApp", () => {
       name: "Music",
       path: "/System/Applications/Music.app"
     })
-    expect(computerResultApp(observation({ id: "com.apple.Notes" }))).toEqual({
+    expect(computerResultApp(observationResult({ id: "com.apple.Notes" }))).toEqual({
       bundleId: "com.apple.Notes"
     })
-    expect(computerResultApp(observation({ id: "" }))).toBeUndefined()
-    expect(computerResultApp(observation(null))).toBeUndefined()
+    expect(computerResultApp(observationResult({ id: "" }))).toBeUndefined()
+    expect(computerResultApp(observationResult(null))).toBeUndefined()
     expect(
       computerResultApp(textToolResult('{"delivered":true,"app":"com.apple.Music"}'))
     ).toBeUndefined()

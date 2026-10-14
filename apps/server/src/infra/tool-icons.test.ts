@@ -317,12 +317,12 @@ describe("site icons", () => {
   })
 })
 
-describe("MCP server icons", () => {
-  const sourcesFor =
-    (sources: Record<string, McpIconSources>) =>
-    async (id: string): Promise<McpIconSources | undefined> =>
-      sources[id]
+const iconSourcesFrom =
+  (sources: Record<string, McpIconSources>) =>
+  async (id: string): Promise<McpIconSources | undefined> =>
+    sources[id]
 
+describe("MCP server icons", () => {
   it("uses the server's own icons first, matching the appearance and its origin", async () => {
     const light = await png(64)
     const dark = await png(32)
@@ -333,7 +333,7 @@ describe("MCP server icons", () => {
         "https://tracker.example/elsewhere.png": image(light)
       },
       {
-        mcpSources: sourcesFor({
+        mcpSources: iconSourcesFrom({
           linear: {
             url: "https://mcp.linear.app/mcp",
             icons: [
@@ -359,7 +359,7 @@ describe("MCP server icons", () => {
     const harness = await store(
       {},
       {
-        mcpSources: sourcesFor({
+        mcpSources: iconSourcesFrom({
           svg: { icons: [{ src: encoded }] },
           png: { icons: [{ src: base64 }] },
           broken: { icons: [{ src: "data:image/svg+xml,%E0%A4%A" }, { src: "data:nocomma" }] },
@@ -384,7 +384,7 @@ describe("MCP server icons", () => {
     const harness = await store(
       { "https://mcp.example.dev/favicon.ico": image(ICO) },
       {
-        mcpSources: sourcesFor({
+        mcpSources: iconSourcesFrom({
           sentry: { url: "https://mcp.sentry.dev/mcp", websiteUrl: "https://docs.sentry.dev/mcp" },
           custom: { url: "https://mcp.example.dev/mcp", websiteUrl: "ftp://example.dev" },
           odd: { url: "https://mcp.example.dev/mcp", websiteUrl: "not a url" }

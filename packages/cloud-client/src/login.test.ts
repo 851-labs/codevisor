@@ -76,23 +76,25 @@ describe("requestDeviceCode", () => {
   })
 })
 
-describe("pollDeviceToken", () => {
-  const poll = (body: unknown, status: number) =>
-    pollDeviceToken(fetchStub(() => jsonResponse(body, status)).fetch, "https://c", "dc")
+const pollWithResponse = (body: unknown, status: number) =>
+  pollDeviceToken(fetchStub(() => jsonResponse(body, status)).fetch, "https://c", "dc")
 
+describe("pollDeviceToken", () => {
   it("maps every RFC outcome", async () => {
-    expect(await poll({ access_token: "session" }, 200)).toEqual({
+    expect(await pollWithResponse({ access_token: "session" }, 200)).toEqual({
       status: "granted",
       sessionToken: "session"
     })
-    expect(await poll({ error: "authorization_pending" }, 400)).toEqual({ status: "pending" })
-    expect(await poll({ error: "slow_down" }, 400)).toEqual({ status: "slow-down" })
-    expect(await poll({ error: "access_denied" }, 400)).toEqual({ status: "denied" })
-    expect(await poll({ error: "expired_token" }, 400)).toEqual({ status: "expired" })
+    expect(await pollWithResponse({ error: "authorization_pending" }, 400)).toEqual({
+      status: "pending"
+    })
+    expect(await pollWithResponse({ error: "slow_down" }, 400)).toEqual({ status: "slow-down" })
+    expect(await pollWithResponse({ error: "access_denied" }, 400)).toEqual({ status: "denied" })
+    expect(await pollWithResponse({ error: "expired_token" }, 400)).toEqual({ status: "expired" })
   })
 
   it("throws on unexpected errors, including non-JSON bodies", async () => {
-    await expect(poll({ error: "invalid_grant" }, 400)).rejects.toThrow("invalid_grant")
+    await expect(pollWithResponse({ error: "invalid_grant" }, 400)).rejects.toThrow("invalid_grant")
     const broken = fetchStub(() => new Response("gateway timeout", { status: 504 }))
     await expect(pollDeviceToken(broken.fetch, "https://c", "dc")).rejects.toThrow(
       "device token poll failed"

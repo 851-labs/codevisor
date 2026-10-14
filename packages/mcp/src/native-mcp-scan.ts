@@ -48,6 +48,42 @@ const HIDDEN_CODEX_NATIVE_MCPS = new Set(["computer-use", "node_repl", "cua_repl
 const isHiddenNativeMcp = (harnessId: string, serverName: string): boolean =>
   harnessId === "codex" && HIDDEN_CODEX_NATIVE_MCPS.has(serverName)
 
+const discoveredServer = (
+  definition: HarnessDefinition,
+  options: {
+    readonly configPath: string
+    readonly managed: ReadonlySet<string>
+    readonly normalized: NormalizedNativeServer
+    readonly scope: "global" | "project"
+    readonly serverName: string
+  }
+): DiscoveredServer => {
+  const spec = definition.nativeMcp
+  const identity = extractServerIdentity(options.normalized.raw)
+  const writable = options.scope === "global" && spec?.writable === true
+  return {
+    normalized: options.normalized,
+    row: {
+      alreadyManaged: identity !== "" && options.managed.has(identity),
+      args: options.normalized.args,
+      ...(options.normalized.command === undefined ? {} : { command: options.normalized.command }),
+      configPath: options.configPath,
+      ...(options.normalized.enabled === undefined ? {} : { enabled: options.normalized.enabled }),
+      envNames: Object.keys(options.normalized.env),
+      harnessId: definition.id,
+      harnessName: definition.name,
+      headerNames: Object.keys(options.normalized.headers),
+      identity,
+      scope: options.scope,
+      serverName: options.serverName,
+      supportsDisable: writable && spec?.disableField !== undefined,
+      supportsRemove: writable,
+      transport: options.normalized.transport,
+      ...(options.normalized.url === undefined ? {} : { url: options.normalized.url })
+    }
+  }
+}
+
 export const makeNativeMcpScanner = (
   config: NativeMcpManagerConfig,
   environment: NativeMcpEnvironment
@@ -66,46 +102,6 @@ export const makeNativeMcpScanner = (
       if (identity !== "") identities.add(identity)
     }
     return identities
-  }
-
-  const serverRow = (
-    definition: HarnessDefinition,
-    options: {
-      readonly configPath: string
-      readonly managed: ReadonlySet<string>
-      readonly normalized: NormalizedNativeServer
-      readonly scope: "global" | "project"
-      readonly serverName: string
-    }
-  ): DiscoveredServer => {
-    const spec = definition.nativeMcp
-    const identity = extractServerIdentity(options.normalized.raw)
-    const writable = options.scope === "global" && spec?.writable === true
-    return {
-      normalized: options.normalized,
-      row: {
-        alreadyManaged: identity !== "" && options.managed.has(identity),
-        args: options.normalized.args,
-        ...(options.normalized.command === undefined
-          ? {}
-          : { command: options.normalized.command }),
-        configPath: options.configPath,
-        ...(options.normalized.enabled === undefined
-          ? {}
-          : { enabled: options.normalized.enabled }),
-        envNames: Object.keys(options.normalized.env),
-        harnessId: definition.id,
-        harnessName: definition.name,
-        headerNames: Object.keys(options.normalized.headers),
-        identity,
-        scope: options.scope,
-        serverName: options.serverName,
-        supportsDisable: writable && spec?.disableField !== undefined,
-        supportsRemove: writable,
-        transport: options.normalized.transport,
-        ...(options.normalized.url === undefined ? {} : { url: options.normalized.url })
-      }
-    }
   }
 
   const readServers = async (
@@ -132,7 +128,7 @@ export const makeNativeMcpScanner = (
       const normalized = normalizeNativeServer(definition.id, raw)
       if (normalized === undefined) continue
       servers.push(
-        serverRow(definition, {
+        discoveredServer(definition, {
           configPath: options.configPath,
           managed: options.managed,
           normalized,

@@ -356,35 +356,38 @@ describe("defaultAgentSessionFileSystem", () => {
 
 const line = (entry: Record<string, unknown>): string => JSON.stringify(entry)
 
+const piSessionHeader = (id: string, cwd: string) => line({ type: "session", version: 3, id, cwd })
+
+const piUserMessage = (content: unknown) =>
+  line({ type: "message", message: { role: "user", content } })
+
 describe("listPiAgentSessions", () => {
   const home = "/home/tester"
   const root = `${home}/.pi/agent/sessions`
-  const header = (id: string, cwd: string) => line({ type: "session", version: 3, id, cwd })
-  const user = (content: unknown) => line({ type: "message", message: { role: "user", content } })
 
   it("lists sessions with their name, or else their first prompt, newest first", async () => {
     const fs = makeFakeFs(
       {
         [`${root}/--repo-a--/1_a.jsonl`]: [
-          header("pi-a", "/repo/a"),
+          piSessionHeader("pi-a", "/repo/a"),
           line({ type: "message", message: { role: "system", content: "" } }),
-          user([{ type: "image" }, { type: "text", text: "Fix the build" }]),
-          user("Ignored, not the first")
+          piUserMessage([{ type: "image" }, { type: "text", text: "Fix the build" }]),
+          piUserMessage("Ignored, not the first")
         ].join("\n"),
         [`${root}/--repo-b--/2_b.jsonl`]: [
-          header("pi-b", "/repo/b"),
-          user("First prompt"),
+          piSessionHeader("pi-b", "/repo/b"),
+          piUserMessage("First prompt"),
           line({ type: "session_info", name: "Refactor auth" }),
           line({ type: "session_info", name: "Renamed later" })
         ].join("\n"),
         [`${root}/--repo-b--/3_untitled.jsonl`]: [
-          header("pi-c", "/repo/b"),
+          piSessionHeader("pi-c", "/repo/b"),
           line({ type: "message", message: { role: "assistant", content: [] } }),
           line({ type: "message" }),
           line({ type: "message", message: { role: "user", content: 7 } })
         ].join("\n"),
         [`${root}/--repo-b--/notes.txt`]: "not a session",
-        [`${root}/stray.jsonl`]: header("stray", "/repo/a")
+        [`${root}/stray.jsonl`]: piSessionHeader("stray", "/repo/a")
       },
       ["/repo/a", "/repo/b"],
       {
@@ -415,11 +418,11 @@ describe("listPiAgentSessions", () => {
     const agentDir = "/profiles/pi"
     const fs = makeFakeFs(
       {
-        [`${agentDir}/sessions/--x--/gone.jsonl`]: header("gone", "/deleted"),
-        [`${agentDir}/sessions/--x--/no-header.jsonl`]: user("hello"),
+        [`${agentDir}/sessions/--x--/gone.jsonl`]: piSessionHeader("gone", "/deleted"),
+        [`${agentDir}/sessions/--x--/no-header.jsonl`]: piUserMessage("hello"),
         [`${agentDir}/sessions/--x--/no-id.jsonl`]: line({ type: "session", cwd: "/repo" }),
         [`${agentDir}/sessions/--x--/no-cwd.jsonl`]: line({ type: "session", id: "x" }),
-        [`${agentDir}/sessions/--x--/kept.jsonl`]: header("kept", "/repo")
+        [`${agentDir}/sessions/--x--/kept.jsonl`]: piSessionHeader("kept", "/repo")
       },
       ["/repo"]
     )

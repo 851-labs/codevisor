@@ -59,6 +59,15 @@ const makeWorld = async (serverId: string): Promise<World> => {
   return { deps, calls, state }
 }
 
+const pluginDirWithReceipt = (receipt: unknown): string => {
+  const dir = mkdtempSync(join(tmpdir(), "plugin-receipt-"))
+  tempDirs.push(dir)
+  if (receipt !== undefined) {
+    writeFileSync(join(dir, ".codevisor-install.json"), JSON.stringify(receipt))
+  }
+  return dir
+}
+
 describe("plugin sync", () => {
   it("publishes registry-sourced plugins only, idempotently", async () => {
     const world = await makeWorld("server-a")
@@ -204,14 +213,6 @@ describe("plugin sync", () => {
   })
 
   it("derives sync origins from install receipts", () => {
-    const receiptDir = (receipt: unknown): string => {
-      const dir = mkdtempSync(join(tmpdir(), "plugin-receipt-"))
-      tempDirs.push(dir)
-      if (receipt !== undefined) {
-        writeFileSync(join(dir, ".codevisor-install.json"), JSON.stringify(receipt))
-      }
-      return dir
-    }
     const base = {
       schemaVersion: 1,
       pluginId: "acme.tunes",
@@ -223,7 +224,7 @@ describe("plugin sync", () => {
 
     expect(
       pluginSyncOrigin(
-        receiptDir({
+        pluginDirWithReceipt({
           ...base,
           source: {
             kind: "github",
@@ -236,7 +237,7 @@ describe("plugin sync", () => {
     ).toBe("acme/tunes")
     expect(
       pluginSyncOrigin(
-        receiptDir({
+        pluginDirWithReceipt({
           ...base,
           source: { kind: "github", url: "https://github.com/acme/tunes", tracking: "registry" }
         })
@@ -244,7 +245,7 @@ describe("plugin sync", () => {
     ).toBe("https://github.com/acme/tunes")
     expect(
       pluginSyncOrigin(
-        receiptDir({
+        pluginDirWithReceipt({
           ...base,
           source: { kind: "git", url: "https://example.com/tunes.git", tracking: "pinned" }
         })
@@ -252,12 +253,12 @@ describe("plugin sync", () => {
     ).toBe("https://example.com/tunes.git")
     expect(
       pluginSyncOrigin(
-        receiptDir({
+        pluginDirWithReceipt({
           ...base,
           source: { kind: "local", url: "/home/dev/tunes", tracking: "pinned" }
         })
       )
     ).toBeUndefined()
-    expect(pluginSyncOrigin(receiptDir(undefined))).toBeUndefined()
+    expect(pluginSyncOrigin(pluginDirWithReceipt(undefined))).toBeUndefined()
   })
 })

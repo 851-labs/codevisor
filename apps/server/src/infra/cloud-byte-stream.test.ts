@@ -84,6 +84,16 @@ class FakeLoopbackSocket extends EventEmitter {
   }
 }
 
+const fakeConnection = (
+  channel = new FakeChannel(),
+  url = "http://127.0.0.1:9000",
+  log: (line: string) => void = () => undefined
+): { channel: FakeChannel; socket: FakeLoopbackSocket } => {
+  const socket = new FakeLoopbackSocket()
+  byteStreamChannelHandler(url, log, () => socket as unknown as Socket)(channel)
+  return { channel, socket }
+}
+
 describe("cloud byte stream loopback connector", () => {
   const cleanup: (() => Promise<void>)[] = []
 
@@ -116,16 +126,6 @@ describe("cloud byte stream loopback connector", () => {
         })
     )
     return { url: `http://127.0.0.1:${address.port}`, socket }
-  }
-
-  const fakeConnection = (
-    channel = new FakeChannel(),
-    url = "http://127.0.0.1:9000",
-    log: (line: string) => void = () => undefined
-  ): { channel: FakeChannel; socket: FakeLoopbackSocket } => {
-    const socket = new FakeLoopbackSocket()
-    byteStreamChannelHandler(url, log, () => socket as unknown as Socket)(channel)
-    return { channel, socket }
   }
 
   it("rejects arbitrary services and non-loopback targets before dialing", () => {

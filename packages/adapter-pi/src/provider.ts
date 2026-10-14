@@ -25,6 +25,30 @@ export interface PiProviderConfig {
   ) => Promise<ReadonlyArray<AgentSessionSummary>>
 }
 
+const piSessionHandle = (session: PiSession): AgentSessionHandle => ({
+  prompt: (input) => adapterPromise("prompt", () => session.prompt(input)),
+  cancel: adapterPromise("cancel", async () => {
+    await session.cancel()
+    return { runtimeState: "reusable" as const }
+  }),
+  setMode: (modeId) =>
+    adapterPromise("setMode", () => Promise.reject(new Error(`Pi has no mode named ${modeId}`))),
+  setConfigOption: (configId, value) =>
+    adapterPromise("setConfigOption", () => session.setConfigOption(configId, value)),
+  answerQuestion: (questionId, answer) =>
+    adapterPromise("answerQuestion", async () => session.answerQuestion(questionId, answer)),
+  close: Effect.sync(() => session.close())
+})
+
+const createdSession = (session: PiSession) => ({
+  handle: piSessionHandle(session),
+  metadata: {
+    sessionId: session.key,
+    configOptions: session.configOptions(),
+    ...(session.skills === undefined ? {} : { skills: session.skills })
+  }
+})
+
 export const makePiProvider = (
   environment: ProviderEnvironment,
   config: PiProviderConfig = {}
@@ -76,30 +100,6 @@ export const makePiProvider = (
     return startPiSession(client, emit)
   }
 
-  const handleFor = (session: PiSession): AgentSessionHandle => ({
-    prompt: (input) => adapterPromise("prompt", () => session.prompt(input)),
-    cancel: adapterPromise("cancel", async () => {
-      await session.cancel()
-      return { runtimeState: "reusable" as const }
-    }),
-    setMode: (modeId) =>
-      adapterPromise("setMode", () => Promise.reject(new Error(`Pi has no mode named ${modeId}`))),
-    setConfigOption: (configId, value) =>
-      adapterPromise("setConfigOption", () => session.setConfigOption(configId, value)),
-    answerQuestion: (questionId, answer) =>
-      adapterPromise("answerQuestion", async () => session.answerQuestion(questionId, answer)),
-    close: Effect.sync(() => session.close())
-  })
-
-  const created = (session: PiSession) => ({
-    handle: handleFor(session),
-    metadata: {
-      sessionId: session.key,
-      configOptions: session.configOptions(),
-      ...(session.skills === undefined ? {} : { skills: session.skills })
-    }
-  })
-
   return {
     id: "pi",
     readiness: (definition) =>
@@ -108,12 +108,12 @@ export const makePiProvider = (
         : { state: "ready" },
     createSession: (definition, cwd, emit, account, toolGateway) =>
       adapterPromise("createSession", async () =>
-        created(await start(definition, cwd, emit, account, toolGateway))
+        createdSession(await start(definition, cwd, emit, account, toolGateway))
       ),
     loadSession: (definition, agentSessionId, cwd, emit, account, toolGateway) =>
       adapterPromise("loadSession", async () => {
         const session = await start(definition, cwd, emit, account, toolGateway, agentSessionId)
-        return { ...created(session), sessionId: session.key }
+        return { ...createdSession(session), sessionId: session.key }
       }),
     listAgentSessions: (_definition, account) =>
       scanAgentSessions(account?.env?.PI_CODING_AGENT_DIR),

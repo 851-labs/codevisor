@@ -333,19 +333,20 @@ export const removeWorktree = (
 ): Promise<string> =>
   git("worktree", ["worktree", "remove", path, "--force"], repoDir, env, { priority })
 
+const canonicalPath = (candidate: string): string => {
+  try {
+    return realpathSync(candidate)
+  } catch {
+    return resolve(candidate)
+  }
+}
+
 export const rollbackFailedWorktree = async (
   repoDir: string,
   path: string,
   branch: string,
   env?: NodeJS.ProcessEnv
 ): Promise<boolean> => {
-  const canonicalPath = (candidate: string): string => {
-    try {
-      return realpathSync(candidate)
-    } catch {
-      return resolve(candidate)
-    }
-  }
   const records = (
     await gitRaw("worktree-list", ["worktree", "list", "--porcelain", "-z"], repoDir, env)
   )

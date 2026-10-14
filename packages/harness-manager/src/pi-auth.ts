@@ -106,22 +106,32 @@ const eventValue = (event: AuthEvent): PiAuthEvent => {
   }
 }
 
+const ensureAuthFile = async (path: string): Promise<void> => {
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 })
+  try {
+    await writeFile(path, "{}", { encoding: "utf8", flag: "wx", mode: 0o600 })
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code !== "EEXIST") throw cause
+  }
+  await chmod(path, 0o600)
+}
+
+const promptValue = (prompt: AuthPrompt): PiAuthPrompt => ({
+  id: randomUUID(),
+  type: prompt.type,
+  message: prompt.message,
+  ...(!("placeholder" in prompt) || prompt.placeholder === undefined
+    ? {}
+    : { placeholder: prompt.placeholder }),
+  options: prompt.type === "select" ? [...prompt.options] : []
+})
+
 export const makePiAuthManager = (config: PiAuthManagerConfig): PiAuthManager => {
   const catalog = config.providers ?? builtinProviders()
   const flows = new Map<string, InternalFlow>()
 
   const authPath = async (): Promise<string> => {
     return piAuthPath(await config.resolveEnv())
-  }
-
-  const ensureAuthFile = async (path: string): Promise<void> => {
-    await mkdir(dirname(path), { recursive: true, mode: 0o700 })
-    try {
-      await writeFile(path, "{}", { encoding: "utf8", flag: "wx", mode: 0o600 })
-    } catch (cause) {
-      if ((cause as NodeJS.ErrnoException).code !== "EEXIST") throw cause
-    }
-    await chmod(path, 0o600)
   }
 
   const readCredentials = async (): Promise<AuthFile> => {
@@ -165,16 +175,6 @@ export const makePiAuthManager = (config: PiAuthManagerConfig): PiAuthManager =>
     flow.waiters.clear()
     config.onFlowChanged?.(publicFlow(flow))
   }
-
-  const promptValue = (prompt: AuthPrompt): PiAuthPrompt => ({
-    id: randomUUID(),
-    type: prompt.type,
-    message: prompt.message,
-    ...(!("placeholder" in prompt) || prompt.placeholder === undefined
-      ? {}
-      : { placeholder: prompt.placeholder }),
-    options: prompt.type === "select" ? [...prompt.options] : []
-  })
 
   const runLogin = async (
     flow: InternalFlow,

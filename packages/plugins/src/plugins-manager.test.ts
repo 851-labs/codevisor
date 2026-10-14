@@ -272,15 +272,15 @@ describe("pane proxy", () => {
   })
 })
 
-describe("pane websockets", () => {
-  const openSocket = (url: string): Promise<WebSocket> =>
-    new Promise((resolve, reject) => {
-      const socket = new WebSocket(url)
-      cleanups.push(() => socket.close())
-      socket.on("open", () => resolve(socket))
-      socket.on("error", reject)
-    })
+const openSocket = (url: string): Promise<WebSocket> =>
+  new Promise((resolve, reject) => {
+    const socket = new WebSocket(url)
+    cleanups.push(() => socket.close())
+    socket.on("open", () => resolve(socket))
+    socket.on("error", reject)
+  })
 
+describe("pane websockets", () => {
   it("splices authenticated websocket upgrades through to the plugin", async () => {
     const { fake, manager } = makeManager()
     const outer = await makeOuterServer(manager)

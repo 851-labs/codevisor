@@ -21,6 +21,10 @@ const fakeSocket = () => {
   return socket
 }
 
+const advertisedFeatures = async (server: Awaited<ReturnType<typeof startWithApp>>) => {
+  return ((await jsonRequest(server, "/v1/info")).body as { features: Array<string> }).features
+}
+
 describe("browser preview socket", () => {
   it("relays the last tool, status, and frames, honors watch requests, and drops frames under backpressure", () => {
     let viewer: BrowserPreviewViewer | undefined
@@ -102,11 +106,10 @@ describe("browser preview socket", () => {
 
   it("advertises live-preview-v1 only when the MCP manager is present", async () => {
     const { services } = await makeServices("server-a")
-    const features = async (server: Awaited<ReturnType<typeof startWithApp>>) => {
-      return ((await jsonRequest(server, "/v1/info")).body as { features: Array<string> }).features
-    }
-    expect(await features(await startWithApp(services))).toContain("live-preview-v1")
+    expect(await advertisedFeatures(await startWithApp(services))).toContain("live-preview-v1")
     const { mcp: _mcp, ...withoutMcp } = services
-    expect(await features(await startWithApp(withoutMcp))).not.toContain("live-preview-v1")
+    expect(await advertisedFeatures(await startWithApp(withoutMcp))).not.toContain(
+      "live-preview-v1"
+    )
   })
 })

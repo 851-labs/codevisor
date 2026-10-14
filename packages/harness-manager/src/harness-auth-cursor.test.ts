@@ -23,41 +23,41 @@ afterEach(async () => {
   }
 })
 
-describe("Cursor authentication probing", () => {
-  const setup = async (
-    execute: NonNullable<Parameters<typeof makeHarnessAuthManager>[0]["execFile"]>
-  ) => {
-    const directory = mkdtempSync(join(tmpdir(), "codevisor-cursor-auth-"))
-    directories.push(directory)
-    const binary = join(directory, "cursor-agent")
-    writeFileSync(binary, "#!/bin/sh\nexit 0\n")
-    chmodSync(binary, 0o700)
-    const db = await run(
-      makeDatabase({ filename: join(directory, "codevisor.sqlite"), serverId: "test" })
-    )
-    databases.push(db)
-    const account = await run(
-      db.saveHarnessAccount({
-        id: "cursor-account",
-        harnessId: "cursor",
-        profileKind: "default",
-        label: "Existing Cursor account",
-        authState: "checking",
-        canLogin: true,
-        canLogout: false
-      })
-    )
-    const manager = makeHarnessAuthManager({
-      agents: {} as AgentRuntimeService,
-      dataDir: directory,
-      db,
-      terminal: {} as TerminalManagerService,
-      execFile: execute,
-      resolveEnv: () => Promise.resolve({ HOME: directory, PATH: directory })
+const cursorAuthSetup = async (
+  execute: NonNullable<Parameters<typeof makeHarnessAuthManager>[0]["execFile"]>
+) => {
+  const directory = mkdtempSync(join(tmpdir(), "codevisor-cursor-auth-"))
+  directories.push(directory)
+  const binary = join(directory, "cursor-agent")
+  writeFileSync(binary, "#!/bin/sh\nexit 0\n")
+  chmodSync(binary, 0o700)
+  const db = await run(
+    makeDatabase({ filename: join(directory, "codevisor.sqlite"), serverId: "test" })
+  )
+  databases.push(db)
+  const account = await run(
+    db.saveHarnessAccount({
+      id: "cursor-account",
+      harnessId: "cursor",
+      profileKind: "default",
+      label: "Existing Cursor account",
+      authState: "checking",
+      canLogin: true,
+      canLogout: false
     })
-    return { account, directory, manager }
-  }
+  )
+  const manager = makeHarnessAuthManager({
+    agents: {} as AgentRuntimeService,
+    dataDir: directory,
+    db,
+    terminal: {} as TerminalManagerService,
+    execFile: execute,
+    resolveEnv: () => Promise.resolve({ HOME: directory, PATH: directory })
+  })
+  return { account, directory, manager }
+}
 
+describe("Cursor authentication probing", () => {
   it("replaces the placeholder label with the signed-in identity and allows signing out", async () => {
     const execute = vi.fn(async () => ({
       stdout: JSON.stringify({
@@ -67,7 +67,7 @@ describe("Cursor authentication probing", () => {
       }),
       stderr: ""
     }))
-    const { account, directory, manager } = await setup(execute)
+    const { account, directory, manager } = await cursorAuthSetup(execute)
 
     await expect(manager.probeAccount(account.id, true)).resolves.toMatchObject({
       authState: "authenticated",
@@ -88,7 +88,7 @@ describe("Cursor authentication probing", () => {
       stdout: JSON.stringify({ status: "unauthenticated", isAuthenticated: false }),
       stderr: ""
     }))
-    const { account, manager } = await setup(execute)
+    const { account, manager } = await cursorAuthSetup(execute)
 
     await expect(manager.probeAccount(account.id, true)).resolves.toMatchObject({
       authState: "unauthenticated",
@@ -105,7 +105,7 @@ describe("Cursor authentication probing", () => {
         stderr: ""
       })
     })
-    const { account, manager } = await setup(execute)
+    const { account, manager } = await cursorAuthSetup(execute)
 
     await expect(manager.probeAccount(account.id, true)).resolves.toMatchObject({
       authState: "unauthenticated",
@@ -121,7 +121,7 @@ describe("Cursor authentication probing", () => {
         stderr: "ENOENT"
       })
     })
-    const { account, manager } = await setup(execute)
+    const { account, manager } = await cursorAuthSetup(execute)
 
     await expect(manager.probeAccount(account.id, true)).resolves.toMatchObject({
       authState: "error",
@@ -136,7 +136,7 @@ describe("Cursor authentication probing", () => {
         ? { stdout: "", stderr: "" }
         : { stdout: JSON.stringify({ isAuthenticated: false }), stderr: "" }
     )
-    const { account, directory, manager } = await setup(execute)
+    const { account, directory, manager } = await cursorAuthSetup(execute)
 
     await expect(manager.logout(account.id)).resolves.toMatchObject({
       authState: "unauthenticated",

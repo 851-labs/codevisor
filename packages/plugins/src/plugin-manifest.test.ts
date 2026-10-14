@@ -23,6 +23,11 @@ const expectInvalid = (manifest: unknown, messagePart: string): void => {
   }
 }
 
+const manifestWithTool = (overrides: Record<string, unknown>): Record<string, unknown> => ({
+  ...validManifest,
+  tools: [{ description: "A tool", name: "tool_a", path: "/tools/a", ...overrides }]
+})
+
 describe("parsePluginManifest", () => {
   it("parses a valid manifest", () => {
     const manifest = parsePluginManifest(JSON.stringify(validManifest))
@@ -233,14 +238,12 @@ describe("parsePluginManifest", () => {
     expect(manifest.tools?.[0]?.inputSchema).toMatchObject({ type: "object" })
   })
 
-  const tool = (overrides: Record<string, unknown>): Record<string, unknown> => ({
-    ...validManifest,
-    tools: [{ description: "A tool", name: "tool_a", path: "/tools/a", ...overrides }]
-  })
-
   it("rejects tool names outside the lowercase [a-z0-9_]+ grammar", () => {
-    expectInvalid(tool({ name: "Notes.Add" }), "lowercase letters, digits, and underscores")
-    expectInvalid(tool({ name: "" }), "lowercase letters, digits, and underscores")
+    expectInvalid(
+      manifestWithTool({ name: "Notes.Add" }),
+      "lowercase letters, digits, and underscores"
+    )
+    expectInvalid(manifestWithTool({ name: "" }), "lowercase letters, digits, and underscores")
   })
 
   it("rejects duplicate tool names", () => {
@@ -257,20 +260,20 @@ describe("parsePluginManifest", () => {
   })
 
   it("rejects blank tool descriptions", () => {
-    expectInvalid(tool({ description: "  " }), "non-empty description")
+    expectInvalid(manifestWithTool({ description: "  " }), "non-empty description")
   })
 
   it("rejects tool paths that are not plain absolute paths", () => {
-    expectInvalid(tool({ path: "tools/a" }), "plain absolute path")
-    expectInvalid(tool({ path: "/tools/../a" }), "plain absolute path")
-    expectInvalid(tool({ path: "/tools/a?x" }), "plain absolute path")
-    expectInvalid(tool({ path: "/tools/a#x" }), "plain absolute path")
+    expectInvalid(manifestWithTool({ path: "tools/a" }), "plain absolute path")
+    expectInvalid(manifestWithTool({ path: "/tools/../a" }), "plain absolute path")
+    expectInvalid(manifestWithTool({ path: "/tools/a?x" }), "plain absolute path")
+    expectInvalid(manifestWithTool({ path: "/tools/a#x" }), "plain absolute path")
   })
 
   it("rejects non-object tool input schemas", () => {
-    expectInvalid(tool({ inputSchema: "string" }), "inputSchema must be a JSON object")
-    expectInvalid(tool({ inputSchema: null }), "inputSchema must be a JSON object")
-    expectInvalid(tool({ inputSchema: ["array"] }), "inputSchema must be a JSON object")
+    expectInvalid(manifestWithTool({ inputSchema: "string" }), "inputSchema must be a JSON object")
+    expectInvalid(manifestWithTool({ inputSchema: null }), "inputSchema must be a JSON object")
+    expectInvalid(manifestWithTool({ inputSchema: ["array"] }), "inputSchema must be a JSON object")
   })
 
   it("rejects pane paths with traversal or query fragments", () => {

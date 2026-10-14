@@ -205,27 +205,27 @@ describe("gateway responder over a scripted channel", () => {
   })
 })
 
-describe("gateway exchange over a scripted channel", () => {
-  const scripted = () => {
-    const sent: unknown[] = []
-    const closes: string[] = []
-    const channel: OutgoingChannel = {
-      channelId: "ch",
-      machineId: "b",
-      send: (value) => sent.push(value),
-      close: (reason = "done") => closes.push(reason),
-      onData: null,
-      onEnded: null
-    }
-    return { channel, sent, closes }
+const scriptedChannel = () => {
+  const sent: unknown[] = []
+  const closes: string[] = []
+  const channel: OutgoingChannel = {
+    channelId: "ch",
+    machineId: "b",
+    send: (value) => sent.push(value),
+    close: (reason = "done") => closes.push(reason),
+    onData: null,
+    onEnded: null
   }
+  return { channel, sent, closes }
+}
 
+describe("gateway exchange over a scripted channel", () => {
   it.each([
     ["a non-object", 7],
     ["an unknown kind", { kind: "mystery" }],
     ["a chunk without data", { kind: "chunk" }]
   ])("closes the channel on %s answer", async (_label, frame) => {
-    const { channel, closes } = scripted()
+    const { channel, closes } = scriptedChannel()
     const pending = requestOverGatewayChannel(() => channel, "{}", {
       scheduleTimeout: timers().scheduleTimeout
     })
@@ -235,7 +235,7 @@ describe("gateway exchange over a scripted channel", () => {
   })
 
   it("stops reading an oversized answer and ignores frames after settling", async () => {
-    const { channel, closes } = scripted()
+    const { channel, closes } = scriptedChannel()
     const pending = requestOverGatewayChannel(() => channel, "{}", {
       scheduleTimeout: timers().scheduleTimeout
     })
@@ -248,7 +248,7 @@ describe("gateway exchange over a scripted channel", () => {
   })
 
   it("reports a responder protocol violation as in-flight", async () => {
-    const { channel } = scripted()
+    const { channel } = scriptedChannel()
     const pending = requestOverGatewayChannel(() => channel, "{}", {
       scheduleTimeout: timers().scheduleTimeout
     })
@@ -259,7 +259,7 @@ describe("gateway exchange over a scripted channel", () => {
   it("defaults to the global timer and clears it on acceptance or settling", async () => {
     vi.useFakeTimers()
     try {
-      const accepted = scripted()
+      const accepted = scriptedChannel()
       const streamed = requestOverGatewayChannel(() => accepted.channel, "{}")
       expect(vi.getTimerCount()).toBe(1)
       accepted.channel.onData?.({ kind: "accepted" })
@@ -267,7 +267,7 @@ describe("gateway exchange over a scripted channel", () => {
       accepted.channel.onData?.({ kind: "end", status: 200 })
       expect(await streamed).toEqual({ status: 200, body: "" })
 
-      const ended = scripted()
+      const ended = scriptedChannel()
       const pending = requestOverGatewayChannel(() => ended.channel, "{}")
       expect(vi.getTimerCount()).toBe(1)
       ended.channel.onData?.({ kind: "end", status: 204 })

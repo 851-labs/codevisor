@@ -70,6 +70,32 @@ export const museUsageLimits = (response: unknown): HarnessUsageLimits => {
   }
 }
 
+const museSessionHandle = (chat: MuseChat): AgentSessionHandle => ({
+  prompt: (input) => adapterPromise("prompt", () => chat.prompt(input)),
+  cancel: adapterPromise("cancel", async () => {
+    await chat.cancel()
+    return { runtimeState: "reusable" as const }
+  }),
+  setMode: (modeId) =>
+    adapterPromise("setMode", () =>
+      Promise.reject(new Error(`Muse Code has no mode named ${modeId}`))
+    ),
+  setConfigOption: (configId, value) =>
+    adapterPromise("setConfigOption", () => chat.setConfigOption(configId, value)),
+  answerQuestion: (questionId, answer) =>
+    adapterPromise("answerQuestion", () => chat.answerQuestion(questionId, answer)),
+  close: Effect.sync(() => chat.close())
+})
+
+const createdSession = (chat: MuseChat) => ({
+  handle: museSessionHandle(chat),
+  metadata: {
+    sessionId: chat.key,
+    configOptions: chat.configOptions(),
+    ...(chat.skills === undefined ? {} : { skills: chat.skills })
+  }
+})
+
 export const makeMuseProvider = (
   environment: ProviderEnvironment,
   config: MuseProviderConfig = {}
@@ -144,32 +170,6 @@ export const makeMuseProvider = (
     }
   }
 
-  const handleFor = (chat: MuseChat): AgentSessionHandle => ({
-    prompt: (input) => adapterPromise("prompt", () => chat.prompt(input)),
-    cancel: adapterPromise("cancel", async () => {
-      await chat.cancel()
-      return { runtimeState: "reusable" as const }
-    }),
-    setMode: (modeId) =>
-      adapterPromise("setMode", () =>
-        Promise.reject(new Error(`Muse Code has no mode named ${modeId}`))
-      ),
-    setConfigOption: (configId, value) =>
-      adapterPromise("setConfigOption", () => chat.setConfigOption(configId, value)),
-    answerQuestion: (questionId, answer) =>
-      adapterPromise("answerQuestion", () => chat.answerQuestion(questionId, answer)),
-    close: Effect.sync(() => chat.close())
-  })
-
-  const created = (chat: MuseChat) => ({
-    handle: handleFor(chat),
-    metadata: {
-      sessionId: chat.key,
-      configOptions: chat.configOptions(),
-      ...(chat.skills === undefined ? {} : { skills: chat.skills })
-    }
-  })
-
   return {
     id: "muse",
     readiness: (definition) =>
@@ -178,12 +178,12 @@ export const makeMuseProvider = (
         : { state: "ready" },
     createSession: (definition, cwd, emit, account, toolGateway) =>
       adapterPromise("createSession", async () =>
-        created(await start(definition, cwd, emit, account, toolGateway))
+        createdSession(await start(definition, cwd, emit, account, toolGateway))
       ),
     loadSession: (definition, agentSessionId, cwd, emit, account, toolGateway) =>
       adapterPromise("loadSession", async () => {
         const chat = await start(definition, cwd, emit, account, toolGateway, agentSessionId)
-        return { ...created(chat), sessionId: chat.key }
+        return { ...createdSession(chat), sessionId: chat.key }
       }),
     listAgentSessions: (definition, account) =>
       withHost(definition, account, async (client) => {
