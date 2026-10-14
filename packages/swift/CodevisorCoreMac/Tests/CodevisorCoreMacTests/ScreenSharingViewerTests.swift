@@ -412,6 +412,7 @@ final class FakeBackend {
   var discoveryFailure: String?
   private(set) var connections: [String] = []
   let terminations = LockIsolated(0)
+  let shareCalls = LockIsolated<[String]>([])
   private(set) var endpoints: [ScreenSharingViewerEndpoint] = []
   private var continuation: AsyncStream<ScreenSharingViewerEvent>.Continuation?
 
@@ -434,7 +435,10 @@ final class FakeBackend {
           if let failure = discoveryFailure { throw Failure(failure) }
           return displays
         }
-      })
+      },
+      claim: { [shareCalls] in shareCalls.withValue { $0.append("claim") } },
+      setVisible: { [shareCalls] visible in shareCalls.withValue { $0.append(visible ? "visible" : "hidden") } },
+      retire: { [shareCalls] in shareCalls.withValue { $0.append("retire") } })
   }
 
   @discardableResult

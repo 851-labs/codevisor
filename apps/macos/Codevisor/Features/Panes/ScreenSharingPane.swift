@@ -45,7 +45,8 @@ final class ScreenSharingPane: Pane {
         ScreenSharingViewer()
       } withDependencies: {
         $0[ScreenSharingViewerBackend.self] = .native(
-          client: client, workspaceId: workspaceId, paneId: descriptor.id, tunnelMedia: context.openTunnelMedia)
+          client: client, workspaceId: workspaceId, paneId: descriptor.id, machineId: context.machine.id,
+          tunnelMedia: context.openTunnelMedia)
       }
     }
     guard let store else { return }
@@ -171,6 +172,8 @@ private struct ScreenSharingPaneView: View {
       if let store = pane.store {
         if store.phase == .failed {
           failure(store)
+        } else if store.phase == .elsewhere {
+          elsewhere(store)
         } else {
           connection(store)
         }
@@ -208,6 +211,17 @@ private struct ScreenSharingPaneView: View {
         pane.focus()
       }
     )
+  }
+
+  private func elsewhere(_ store: StoreOf<ScreenSharingViewer>) -> some View {
+    VStack(spacing: 12) {
+      Image(systemName: "rectangle.on.rectangle").font(.largeTitle).foregroundStyle(.secondary)
+      Text("\(pane.connectionName) is showing in another pane.").foregroundStyle(.secondary)
+      Button("Show Here") { store.send(.showHereTapped) }
+    }
+    .padding(24)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .simultaneousGesture(TapGesture().onEnded { pane.onFocusChanged?(true) })
   }
 
   private func connection(_ store: StoreOf<ScreenSharingViewer>) -> some View {
@@ -253,8 +267,22 @@ private struct ScreenSharingPaneView: View {
 private struct ScreenSharingNativeView: NSViewRepresentable {
   let endpoint: ScreenSharingViewerEndpoint
   let letterbox: Color?
-  func makeNSView(context: Context) -> NSView { endpoint.view }
-  func updateNSView(_ nsView: NSView, context: Context) {
+
+  func makeNSView(context: Context) -> NSView { NSView() }
+
+  func updateNSView(_ container: NSView, context: Context) {
+    let video = endpoint.view
+    if video.superview !== container {
+      container.subviews.forEach { $0.removeFromSuperview() }
+      video.removeFromSuperview()
+      video.frame = container.bounds
+      video.autoresizingMask = [.width, .height]
+      container.addSubview(video)
+    }
     endpoint.letterbox(letterbox.map(NSColor.init) ?? .windowBackgroundColor)
+  }
+
+  static func dismantleNSView(_ container: NSView, coordinator: ()) {
+    container.subviews.forEach { $0.removeFromSuperview() }
   }
 }

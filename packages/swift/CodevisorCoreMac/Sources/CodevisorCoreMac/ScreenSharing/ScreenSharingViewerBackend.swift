@@ -6,6 +6,7 @@ import Foundation
 
 @CasePathable
 public enum ScreenSharingViewerEvent: Equatable, Sendable {
+  case elsewhere
   case ended(String)
   case opened(ScreenSharingViewerEndpoint)
   case ready
@@ -19,6 +20,9 @@ public struct ScreenSharingViewerBackend: Sendable {
     .finished
   }
   public var discover: @Sendable () async throws -> [ServerScreenSharingDisplay]
+  public var claim: @Sendable () async -> Void = {}
+  public var setVisible: @Sendable (_ visible: Bool) async -> Void = { _ in }
+  public var retire: @Sendable () async -> Void = {}
 }
 
 public struct ScreenSharingTunnelMedia: Sendable {
@@ -44,10 +48,11 @@ extension ScreenSharingViewerBackend {
 
   @MainActor
   public static func native(
-    client: any CodevisorServerClienting, workspaceId: UUID, paneId: UUID, tunnelMedia: TunnelMediaProvider? = nil
+    client: any CodevisorServerClienting, workspaceId: UUID, paneId: UUID, machineId: String? = nil,
+    tunnelMedia: TunnelMediaProvider? = nil
   ) -> Self {
     native(
-      client: client, workspaceId: workspaceId, paneId: paneId, tunnelMedia: tunnelMedia,
+      client: client, workspaceId: workspaceId, paneId: paneId, machineId: machineId, tunnelMedia: tunnelMedia,
       sleep: { try await Task.sleep(for: $0) },
       makeSession: { try await ScreenSharingReceiver.process(connectivity: $0) },
       makeSurface: { session in
@@ -64,7 +69,8 @@ extension ScreenSharingViewerBackend {
 
   @MainActor
   static func native(
-    client: any CodevisorServerClienting, workspaceId: UUID, paneId: UUID, tunnelMedia: TunnelMediaProvider? = nil,
+    client: any CodevisorServerClienting, workspaceId: UUID, paneId: UUID, machineId: String? = nil,
+    tunnelMedia: TunnelMediaProvider? = nil,
     sleep: @escaping @Sendable (Duration) async throws -> Void,
     makeSession:
       @escaping @MainActor (ServerScreenSharingConnectivity?) async throws -> any NativeScreenSharingMediaSession,
@@ -75,12 +81,21 @@ extension ScreenSharingViewerBackend {
     let runner = NativeScreenSharingViewerRunner(
       client: client, workspaceId: workspaceId, paneId: paneId, sleep: sleep, makeSession: makeSession,
       makeSurface: makeSurface, vncOpen: vncOpen, target: target, tunnelMedia: tunnelMedia)
-    return Self(connect: { display in await runner.connect(display) }, discover: { try await runner.discover() })
+    guard let machineId else {
+      return Self(
+        connect: { display in await runner.connect(display) }, discover: { try await runner.discover() }, claim: {},
+        setVisible: { _ in }, retire: {})
+    }
+    let share = ScreenSharingViewerRegistry.shared.share(machineId: machineId, paneId: paneId, runner: runner)
+    return Self(
+      connect: { display in await share.connect(display) }, discover: { try await runner.discover() },
+      claim: { await share.claim() }, setVisible: { visible in await share.setVisible(visible) },
+      retire: { await share.retire() })
   }
 }
 
 @MainActor
-private final class NativeScreenSharingViewerRunner {
+private final class NativeScreenSharingViewerRunner: ScreenSharingViewerConnecting {
   private let client: any CodevisorServerClienting
   private let workspaceId: UUID
   private let paneId: UUID
@@ -131,6 +146,8 @@ private final class NativeScreenSharingViewerRunner {
     controlLease = reply.controlLease == true
     return reply.displays
   }
+
+  func idle() async { await previous?.value }
 
   func connect(_ display: String) -> AsyncStream<ScreenSharingViewerEvent> {
     if provider == "vnc" || display.hasPrefix("vnc:") { return vncRunner(for: display).connect() }

@@ -8,7 +8,7 @@ import Foundation
 public struct ScreenSharingViewer {
   public enum InteractionMode: Hashable, Sendable { case control, view }
   public enum Phase: Equatable, Sendable {
-    case connecting, failed, idle, loading, reconnecting, suspended, viewing
+    case connecting, elsewhere, failed, idle, loading, reconnecting, suspended, viewing
   }
 
   @ObservableState
@@ -46,6 +46,7 @@ public struct ScreenSharingViewer {
     case paneDisappeared
     case preferencesSynced(ScreenSharingPanePreferences)
     case retryButtonTapped
+    case showHereTapped
     case systemKeyTapped(ScreenSharingSystemKey)
   }
 
@@ -63,6 +64,7 @@ public struct ScreenSharingViewer {
     Reduce { state, action in
       switch action {
       case .connectionEvent(.opened(let endpoint)):
+        if state.phase == .elsewhere { state.phase = .connecting }
         state.endpoint = endpoint
         state.lease = ControlLease.State(endpoint: endpoint.id)
         let id = endpoint.id
@@ -96,6 +98,12 @@ public struct ScreenSharingViewer {
         guard [.connecting, .reconnecting, .viewing].contains(state.phase) else { return .none }
         state.hostNotice = notice
         return .none
+
+      case .connectionEvent(.elsewhere):
+        dropEndpoint(&state)
+        state.phase = .elsewhere
+        state.message = nil
+        return .cancel(id: CancelID.controlEvents)
 
       case .connectionEvent(.ended(let message)):
         dropEndpoint(&state)
@@ -150,20 +158,23 @@ public struct ScreenSharingViewer {
       case .paneAppeared:
         guard !state.visible else { return .none }
         state.visible = true
-        guard Self.keepsConnection(state.phase) else { return refresh(&state) }
+        let shown = Effect<Action>.run { [backend] _ in await backend.setVisible(true) }
+        guard Self.keepsConnection(state.phase) else { return .merge(shown, refresh(&state)) }
         let resume: Effect<Action> =
           state.phase == .viewing && state.interactionMode == .control ? .send(.lease(.controlRequested)) : .none
-        return .merge(.cancel(id: CancelID.hiddenGrace), resume)
+        return .merge(shown, .cancel(id: CancelID.hiddenGrace), resume)
 
       case .paneClosed:
         state.visible = false
-        return disconnect(&state)
+        return .merge(.run { [backend] _ in await backend.retire() }, disconnect(&state))
 
       case .paneDisappeared:
         guard state.visible else { return .none }
         state.visible = false
-        guard Self.keepsConnection(state.phase) else { return disconnect(&state) }
+        let hidden = Effect<Action>.run { [backend] _ in await backend.setVisible(false) }
+        guard Self.keepsConnection(state.phase) else { return .merge(hidden, disconnect(&state)) }
         return .merge(
+          hidden,
           state.lease == nil ? .none : .send(.lease(.suspended)),
           .run { [clock] send in
             try await clock.sleep(for: Self.hiddenGrace)
@@ -180,6 +191,10 @@ public struct ScreenSharingViewer {
 
       case .retryButtonTapped:
         return refresh(&state)
+
+      case .showHereTapped:
+        guard state.phase == .elsewhere else { return .none }
+        return .run { [backend] _ in await backend.claim() }
       }
     }
     .ifLet(\.lease, action: \.lease) {
@@ -217,7 +232,7 @@ public struct ScreenSharingViewer {
   }
 
   static func keepsConnection(_ phase: Phase) -> Bool {
-    [.loading, .connecting, .reconnecting, .viewing].contains(phase)
+    [.loading, .connecting, .elsewhere, .reconnecting, .viewing].contains(phase)
   }
 
   private func connect(_ state: inout State) -> Effect<Action> {

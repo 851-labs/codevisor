@@ -8,30 +8,23 @@ import ScreenSharingWebRTC
 
 @MainActor
 @Observable
-public final class SimulatorStreamConnection: SimulatorConnection {
+public final class SimulatorStreamConnection: SimulatorSharedConnection {
   public private(set) var phase: SimulatorConnectionPhase = .connecting
   public private(set) var receiver: ScreenSharingReceiver?
   public private(set) var state: ScreenSharingSimulatorState?
   public private(set) var frameSize: CGSize?
 
   @ObservationIgnored let udid: String
-  @ObservationIgnored private let client: any CodevisorServerClienting
-  @ObservationIgnored private let workspaceId: UUID
-  @ObservationIgnored private let paneId: UUID
-  @ObservationIgnored private let openTunnel: (@MainActor () async -> CloudTunnelMediaRoute?)?
+  @ObservationIgnored private var sponsor: SimulatorStreamSponsor
   @ObservationIgnored private let viewerId = UUID()
   @ObservationIgnored private var runner: Task<Void, Never>?
   private static let log = Logger(subsystem: "com.codevisor.SimulatorPane", category: "Stream")
 
-  public init(
-    udid: String, client: any CodevisorServerClienting, workspaceId: UUID, paneId: UUID,
-    openTunnel: (@MainActor () async -> CloudTunnelMediaRoute?)? = nil
-  ) {
+  private var client: any CodevisorServerClienting { sponsor.client }
+
+  init(udid: String, sponsor: SimulatorStreamSponsor) {
     self.udid = udid
-    self.client = client
-    self.workspaceId = workspaceId
-    self.paneId = paneId
-    self.openTunnel = openTunnel
+    self.sponsor = sponsor
   }
 
   var target: String { "simulator:\(udid)" }
@@ -51,6 +44,13 @@ public final class SimulatorStreamConnection: SimulatorConnection {
     let request = request(.stop)
     let client = client
     Task { _ = try? await client.screenSharing(request) }
+  }
+
+  func rebind(to sponsor: SimulatorStreamSponsor) {
+    Self.log.info("rebinding to another pane")
+    stop()
+    self.sponsor = sponsor
+    start()
   }
 
   @discardableResult
@@ -119,7 +119,7 @@ public final class SimulatorStreamConnection: SimulatorConnection {
       let offer = try await receiver.makeDescription(offer: true).sdp
       try Task.checkCancellation()
       var start = request(restart ? .restart : .start, offer: offer)
-      tunnel = await openTunnel?()
+      tunnel = await sponsor.openTunnel?()
       if let tunnel {
         start.tunnelMedia = .init(endpointId: tunnel.endpointId, flowId: Int(tunnel.flowId))
       }
@@ -210,7 +210,7 @@ public final class SimulatorStreamConnection: SimulatorConnection {
     _ operation: ServerScreenSharingRequest.Operation, offer: String? = nil
   ) -> ServerScreenSharingRequest {
     .init(
-      operation: operation, workspaceId: workspaceId, paneId: paneId, viewerId: viewerId,
+      operation: operation, workspaceId: sponsor.workspaceId, paneId: sponsor.paneId, viewerId: viewerId,
       displayId: target, offer: offer)
   }
 

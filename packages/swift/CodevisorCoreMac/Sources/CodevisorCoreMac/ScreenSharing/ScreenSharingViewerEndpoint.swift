@@ -266,6 +266,11 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     return nil
   }
 
+  func relinquish() {
+    if let lease = forwarder.lease { _ = channel?.send(.release(lease: lease)) }
+    endInput()
+  }
+
   func endInput() {
     pendingSystemKey = nil
     clipboard?.setControlling(false)
@@ -300,8 +305,7 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     guard !closed else { return }
     closed = true
     ScreenSharingEndpointRegistry.shared.unregister(id)
-    if let lease = forwarder.lease { _ = channel?.send(.release(lease: lease)) }
-    endInput()
+    relinquish()
     clipboard?.close()
     tickTask?.cancel(); tickTask = nil
     clipboardTask?.cancel(); clipboardTask = nil

@@ -28,8 +28,8 @@ final class AppleSimulatorPane: Pane {
       let tunnel = context.openTunnelRoute
       let paneId = descriptor.id
       return SimulatorPaneModel(
-        client: client, preferences: descriptor.simulator, workspaceId: workspaceId, paneId: paneId,
-        openTunnel: tunnel)
+        client: client, preferences: descriptor.simulator, machineId: context.machine.id, workspaceId: workspaceId,
+        paneId: paneId, openTunnel: tunnel)
     }
   }
 

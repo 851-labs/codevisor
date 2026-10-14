@@ -25,8 +25,8 @@ extension WorkspaceScreen {
     let client = machines.client(for: serverId)
     let model = SimulatorPaneCache.shared.model(for: pane.id) {
       SimulatorPaneModel(
-        client: client, preferences: pane.simulator, workspaceId: workspace.id, paneId: pane.id,
-        openTunnel: { await machines.tunnelMediaRoute(forMachineId: serverId) })
+        client: client, preferences: pane.simulator, machineId: serverId, workspaceId: workspace.id,
+        paneId: pane.id, openTunnel: { await machines.tunnelMediaRoute(forMachineId: serverId) })
     }
     model.applyPreferences(pane.simulator ?? SimulatorPanePreferences())
     model.onPreferencesChanged = { updateSimulator(pane, preferences: $0) }

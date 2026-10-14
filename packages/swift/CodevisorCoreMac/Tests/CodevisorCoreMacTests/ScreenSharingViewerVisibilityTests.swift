@@ -49,6 +49,42 @@ struct ScreenSharingViewerVisibilityTests {
     }
   }
 
+  @Test func aPaneShowingElsewhereKeepsItsConnectionUntilItIsShownHere() async {
+    await withMainSerialExecutor {
+      let backend = FakeBackend(displays: [display])
+      let client = FakeEndpointClient()
+      let store = await viewer.makeViewingStore(backend, client, mode: .view)
+      let endpoint = backend.endpoints[0]
+      backend.emit(.elsewhere)
+      await store.receive(\.connectionEvent.elsewhere) {
+        $0.endpoint = nil
+        $0.lease = nil
+        $0.phase = .elsewhere
+      }
+      await store.send(.paneDisappeared) { $0.visible = false }
+      await store.send(.paneAppeared) { $0.visible = true }
+      await store.send(.showHereTapped)
+      backend.emit(.opened(endpoint))
+      await store.receive(\.connectionEvent.opened) {
+        $0.phase = .connecting
+        $0.endpoint = endpoint
+        $0.lease = ControlLease.State(endpoint: endpoint.id)
+      }
+      backend.emit(.ready)
+      await store.receive(\.connectionEvent.ready) { $0.phase = .viewing }
+      expectNoDifference(backend.connections, ["display"])
+      expectNoDifference(backend.terminations.value, 0)
+      await store.send(.paneClosed) {
+        $0.visible = false
+        $0.endpoint = nil
+        $0.lease = nil
+        $0.phase = .suspended
+      }
+      await store.finish()
+      expectNoDifference(backend.shareCalls.value, ["visible", "hidden", "visible", "claim", "retire"])
+    }
+  }
+
   @Test func aPaneHiddenPastTheGraceLetsItsConnectionGo() async {
     await withMainSerialExecutor {
       let backend = FakeBackend(displays: [display])

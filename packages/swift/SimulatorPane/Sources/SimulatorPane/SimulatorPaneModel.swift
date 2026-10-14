@@ -37,6 +37,7 @@ public final class SimulatorPaneModel {
 
   @ObservationIgnored let client: any SimulatorClienting
   @ObservationIgnored private let makeConnection: @MainActor (_ udid: String) -> any SimulatorConnection
+  @ObservationIgnored private let retire: @MainActor () -> Void
   @ObservationIgnored private let clock: any Clock<Duration>
   @ObservationIgnored private var visible = false
   @ObservationIgnored private var lingering: Task<Void, Never>?
@@ -44,25 +45,29 @@ public final class SimulatorPaneModel {
   @ObservationIgnored private var loadingType: String?
 
   public init(
-    client: any CodevisorServerClienting, preferences: SimulatorPanePreferences?, workspaceId: UUID, paneId: UUID,
-    openTunnel: (@MainActor () async -> CloudTunnelMediaRoute?)? = nil
+    client: any CodevisorServerClienting, preferences: SimulatorPanePreferences?, machineId: String,
+    workspaceId: UUID, paneId: UUID, openTunnel: (@MainActor () async -> CloudTunnelMediaRoute?)? = nil
   ) {
     self.client = client
+    let sponsor = SimulatorStreamSponsor(
+      workspaceId: workspaceId, paneId: paneId, client: client, openTunnel: openTunnel)
     makeConnection = { udid in
-      SimulatorStreamConnection(
-        udid: udid, client: client, workspaceId: workspaceId, paneId: paneId, openTunnel: openTunnel)
+      SimulatorStreamRegistry.shared.handle(machineId: machineId, udid: udid, sponsor: sponsor)
     }
+    retire = { SimulatorStreamRegistry.shared.retire(paneId: paneId) }
     clock = ContinuousClock()
     udid = preferences?.udid
   }
 
   init(
     client: any SimulatorClienting, preferences: SimulatorPanePreferences?, clock: any Clock<Duration>,
-    makeConnection: @escaping @MainActor (_ udid: String) -> any SimulatorConnection
+    makeConnection: @escaping @MainActor (_ udid: String) -> any SimulatorConnection,
+    retire: @escaping @MainActor () -> Void = {}
   ) {
     self.client = client
     self.clock = clock
     self.makeConnection = makeConnection
+    self.retire = retire
     udid = preferences?.udid
   }
 
@@ -117,6 +122,7 @@ public final class SimulatorPaneModel {
     poller?.cancel()
     poller = nil
     stopStream()
+    retire()
   }
 
   private func lingeringExpired() {
