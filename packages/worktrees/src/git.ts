@@ -110,12 +110,14 @@ export const gitRemoteUrl = async (
 }
 
 export const listCodevisorWorktreeBranchNames = async (
-  repoDir: string
+  repoDir: string,
+  env?: NodeJS.ProcessEnv
 ): Promise<ReadonlyArray<string>> => {
   const output = await gitRaw(
     "list-codevisor-branches",
     ["for-each-ref", "--format=%(refname:strip=3)", "refs/heads/codevisor/"],
-    repoDir
+    repoDir,
+    env
   )
   return output
     .split("\n")
