@@ -270,10 +270,17 @@ describe("gateway exchange over a scripted channel", () => {
   })
 
   it("uses a real timer by default and clears it once settled", async () => {
-    const { channel } = scripted()
-    const pending = requestOverGatewayChannel(() => channel, "{}")
-    channel.onData?.({ kind: "end", status: 204 })
-    expect(await pending).toEqual({ status: 204, body: "" })
+    vi.useFakeTimers()
+    try {
+      const { channel } = scripted()
+      const pending = requestOverGatewayChannel(() => channel, "{}")
+      expect(vi.getTimerCount()).toBe(1)
+      channel.onData?.({ kind: "end", status: 204 })
+      expect(await pending).toEqual({ status: 204, body: "" })
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("maps non-Error open failures", async () => {

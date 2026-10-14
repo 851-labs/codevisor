@@ -57,7 +57,6 @@ export interface ChannelOpenerOptions {
   peerKeyPins?: PeerKeyPinStore
   onPeerKeyMismatch?: (info: { deviceId: string; pinned: string; presented: string }) => void
   sendEnvelope: (machineId: string, frame: RelayFrameHeader, payload?: Uint8Array) => void
-  newChannelId?: () => string
 }
 
 interface LiveOutgoing {
@@ -86,7 +85,7 @@ export class ChannelOpener {
       })
       throw new ChannelKeyMismatchError(`the key for machine ${target.deviceId} changed`)
     }
-    const channelId = (this.options.newChannelId ?? (() => crypto.randomUUID()))()
+    const channelId = crypto.randomUUID()
     const opened = openChannel(this.options.secretKey, target.publicKey)
     const key = `${target.deviceId}/${channelId}`
     const channel: OutgoingChannel = {

@@ -12,7 +12,7 @@ import type { CancelTimeout } from "./machine-socket.js"
 
 /// The first IPv4 UDP host candidate in an SDP (`ip:port`), skipping loopback
 /// and link-local — the socket the host's WebRTC actually listens on.
-export const hostCandidate = (sdp: string): string | undefined => {
+const hostCandidate = (sdp: string): string | undefined => {
   for (const line of sdp.split(/\r?\n/)) {
     const match = /^a=candidate:\S+ \d+ udp \d+ (\d+\.\d+\.\d+\.\d+) (\d+) typ host\b/i.exec(line)
     if (match === null) continue
