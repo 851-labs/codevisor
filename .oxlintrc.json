@@ -43,5 +43,604 @@
     "oxc/no-map-spread": "off",
     "codevisor/no-comments": "error"
   },
-  "jsPlugins": ["./scripts/lint/no-comments.mjs"]
+  "jsPlugins": ["./scripts/lint/no-comments.mjs"],
+  "overrides": [
+    {
+      "files": [
+        "apps/cloud/src/relay-routing.ts",
+        "apps/cloud/test/cloud-test-support.ts",
+        "apps/cloud/test/cloud.test.ts",
+        "apps/screen-sharing-rig/scripts/screen-sharing-probe.ts",
+        "apps/screen-sharing-rig/scripts/screen-sharing-rig.ts",
+        "apps/screen-sharing-rig/scripts/vnc-frame-clock.ts",
+        "apps/screen-sharing-rig/scripts/vnc-interop.ts",
+        "apps/server/src/changes-test-support.ts",
+        "apps/server/src/infra/cloud-bridge.ts",
+        "apps/server/src/infra/linux-data-migration.ts",
+        "apps/server/src/infra/shared-accounts-test-support.ts",
+        "apps/server/src/infra/shared-accounts.ts",
+        "apps/server/src/infra/shared-provider-accounts.ts",
+        "apps/server/src/infra/shared-provider-store.ts",
+        "apps/server/src/infra/tool-icons.test.ts",
+        "apps/server/src/routes/sync.test.ts",
+        "apps/server/src/routes/terminal-socket.ts",
+        "packages/adapter-codex/src/skills.ts",
+        "packages/adapter-grok-build/src/extension.ts",
+        "packages/automation/src/browser-cookie-sync.test.ts",
+        "packages/automation/src/browser-improvements.chrome.test.ts",
+        "packages/automation/src/browser-native-connection.ts",
+        "packages/automation/src/browser-use-invoke-playwright.ts",
+        "packages/automation/src/browser-use-provider.ts",
+        "packages/automation/src/codevisor-parity.test.ts",
+        "packages/db/src/migrations.test.ts",
+        "packages/db/src/transcript-state-pages.ts",
+        "packages/db/src/workspaces-service.ts",
+        "packages/harness-manager/src/credential-ferry.test.ts",
+        "packages/harness-manager/src/credential-ferry.ts",
+        "packages/harness-manager/src/harness-auth.ts",
+        "packages/harness-manager/src/shared-credential-vault.ts",
+        "packages/harness-manager/src/shared-opencode-profiles.test.ts",
+        "packages/mcp/src/mcp-gateway-machines.test.ts",
+        "packages/mcp/src/mcp-manager-core.ts",
+        "packages/mcp/src/mcp-manager-servers.ts",
+        "packages/processes/src/processes.test.ts",
+        "packages/processes/src/tracker.mjs",
+        "packages/skills/src/skill-store-remote.test.ts",
+        "packages/terminal/src/terminal-manager.ts",
+        "packages/updater/src/harness-update-sources.test.ts",
+        "packages/worktrees/src/git.ts",
+        "packages/worktrees/src/worktree-archive.test.ts",
+        "scripts/build-webrtc.mjs",
+        "scripts/check-plan.mjs",
+        "scripts/chromium-artifact.mjs",
+        "scripts/dev-net.mjs",
+        "scripts/embed-chromium.mjs",
+        "scripts/release/alpha-release.mjs",
+        "scripts/typecheck-isolation.test.mjs",
+        "scripts/xcodebuild.mjs"
+      ],
+      "rules": {
+        "no-shadow": "off"
+      }
+    },
+    {
+      "files": [
+        "apps/server/src/routes/execution-annotator.test.ts",
+        "apps/server/src/routes/execution-annotator.ts",
+        "apps/www/src/routes/docs/$.tsx",
+        "apps/www/src/routes/docs/*md.ts",
+        "packages/adapter-acp/src/provider.ts",
+        "packages/adapter-acp/src/skills.ts",
+        "packages/adapter-acp/src/stdio-connector.ts",
+        "packages/adapter-antigravity/src/auth.test.ts",
+        "packages/adapter-antigravity/src/session.ts",
+        "packages/adapter-claude/src/skill-tool.test.ts",
+        "packages/adapter-cursor/src/config.ts",
+        "packages/adapter-cursor/src/subagents.ts",
+        "packages/adapter-grok-build/src/acp-model-state.ts",
+        "packages/adapter-grok-build/src/model-selection.ts",
+        "packages/adapter-grok-build/src/stream.ts",
+        "packages/adapter-grok-build/src/subagents.ts",
+        "packages/adapter-muse/src/session.test.ts",
+        "packages/adapter-muse/src/session.ts",
+        "packages/adapter-muse/src/subagents.test.ts",
+        "packages/adapter-opencode/src/extension.ts",
+        "packages/adapter-opencode/src/skill-tool.test.ts",
+        "packages/adapter-opencode/src/skill-tool.ts",
+        "packages/adapter-opencode/src/subagents.ts",
+        "packages/agent-runtime/src/index.ts",
+        "packages/automation/src/browser-cursor-overlay.ts",
+        "packages/harness-manager/src/antigravity-auth.test.ts",
+        "packages/harness-manager/src/shared-credential-vault.test.ts",
+        "packages/terminal/src/vt/ghostty-vt.ts",
+        "scripts/dev-worker.mjs",
+        "scripts/xcodebuild.test.mjs"
+      ],
+      "rules": {
+        "no-underscore-dangle": "off"
+      }
+    },
+    {
+      "files": [
+        "apps/server/src/infra/cloud-proxy-handlers.ts",
+        "apps/server/src/infra/machine-enrollment.ts",
+        "apps/server/src/routes/sync-event-socket.ts",
+        "apps/server/src/routes/sync-readiness.ts",
+        "apps/server/src/terminal-proxy.ts"
+      ],
+      "rules": {
+        "no-unmodified-loop-condition": "off"
+      }
+    },
+    {
+      "files": ["apps/server/src/routes/shared-harness-accounts.ts"],
+      "rules": {
+        "no-unused-vars": "off"
+      }
+    },
+    {
+      "files": ["apps/server/src/routes/sync.ts", "scripts/release/app-store-connect.test.mjs"],
+      "rules": {
+        "typescript/await-thenable": "off"
+      }
+    },
+    {
+      "files": [
+        "apps/screen-sharing-rig/scripts/screen-sharing-rig.ts",
+        "apps/server/src/infra/shared-accounts.ts",
+        "apps/server/src/routes/file-documents.ts",
+        "apps/server/src/routes/session-events.ts",
+        "apps/server/src/routes/sync-reconcilers.ts",
+        "apps/server/src/terminal-proxy.ts",
+        "apps/www/src/lib/llm-text.ts",
+        "packages/adapter-acp/src/provider.ts",
+        "packages/automation/resources/browser-extension/background.js",
+        "packages/db/src/event-projection.ts",
+        "packages/harness-manager/src/harness-lifecycle-detection.ts",
+        "packages/harness-manager/src/harness-lifecycle-support.ts",
+        "packages/harness-manager/src/harness-lifecycle-updates.ts",
+        "packages/harness-manager/src/pi-auth.ts",
+        "packages/terminal/src/frames.ts",
+        "packages/worktrees/src/git-review.ts",
+        "scripts/release/app-store-connect.test.mjs",
+        "scripts/release/testflight-release.test.mjs"
+      ],
+      "rules": {
+        "typescript/consistent-return": "off"
+      }
+    },
+    {
+      "files": [
+        "apps/cloud/test/plugin-moderation.test.ts",
+        "apps/screen-sharing-rig/scripts/screen-sharing-rig-client.ts",
+        "apps/server/src/cli/support.ts",
+        "apps/server/src/infra/browser-forward-proxy.test.ts",
+        "apps/server/src/infra/client-control.ts",
+        "apps/server/src/infra/cloud-bridge-socket.ts",
+        "apps/server/src/infra/cloud-proxy-handlers.ts",
+        "apps/server/src/infra/credential-coordinator.test.ts",
+        "apps/server/src/infra/linux-data-migration.test.ts",
+        "apps/server/src/infra/shared-claude-gateway.test.ts",
+        "apps/server/src/infra/tool-icons.test.ts",
+        "apps/server/src/routes/live-preview-socket.ts",
+        "apps/server/src/routes/net-direct.test.ts",
+        "apps/server/src/routes/net-direct.ts",
+        "apps/server/src/routes/terminal-socket.test.ts",
+        "apps/server/src/routes/terminal-socket.ts",
+        "apps/server/src/routes/terminals.test.ts",
+        "apps/server/src/serve-self-updater.test.ts",
+        "apps/server/src/terminal-proxy.ts",
+        "apps/server/src/test-support.ts",
+        "packages/adapter-claude/src/assistant-messages.ts",
+        "packages/adapter-claude/src/provider.test.ts",
+        "packages/adapter-claude/src/stream-events.ts",
+        "packages/adapter-codex/src/items.ts",
+        "packages/adapter-codex/src/notifications.ts",
+        "packages/adapter-muse/src/subagents.ts",
+        "packages/adapter-opencode/src/credential-plugin.test.ts",
+        "packages/adapter-pi/src/session.ts",
+        "packages/automation/src/browser-cdp.ts",
+        "packages/automation/src/browser-cookie-sync.ts",
+        "packages/automation/src/browser-locator-parse.ts",
+        "packages/automation/src/browser-locator-resolve.ts",
+        "packages/automation/src/browser-logs.ts",
+        "packages/automation/src/browser-preview.test.ts",
+        "packages/automation/src/browser-runtime-events.ts",
+        "packages/automation/src/browser-snapshot.ts",
+        "packages/automation/src/browser-use-extension-tabs.test.ts",
+        "packages/automation/src/browser-use-invoke-interaction.ts",
+        "packages/automation/src/browser-use-invoke-mouse.ts",
+        "packages/automation/src/browser-use-invoke-page.ts",
+        "packages/automation/src/browser-use-invoke-playwright.ts",
+        "packages/automation/src/browser-use-provider.ts",
+        "packages/automation/src/codevisor-provider.ts",
+        "packages/automation/src/computer-use-wait.ts",
+        "packages/db/src/events-service.ts",
+        "packages/db/src/setup-state.ts",
+        "packages/db/src/transcript-state.ts",
+        "packages/db/src/transcript-text-state.ts",
+        "packages/harness-manager/src/shared-oauth-providers.test.ts",
+        "packages/harness-manager/src/shared-provider-oauth.test.ts",
+        "packages/mcp/src/mcp-sandbox-results.ts",
+        "packages/plugins/src/plugin-icon.test.ts",
+        "packages/plugins/src/plugins-manager.test.ts",
+        "packages/plugins/src/test-support.ts",
+        "scripts/dev-macos-reuse.test.mjs",
+        "scripts/release/install.test.mjs"
+      ],
+      "rules": {
+        "typescript/no-base-to-string": "off"
+      }
+    },
+    {
+      "files": ["packages/adapter-claude/src/turn-lifecycle.ts"],
+      "rules": {
+        "typescript/no-duplicate-type-constituents": "off"
+      }
+    },
+    {
+      "files": [
+        "apps/cloud/src/user-hub.ts",
+        "apps/screen-sharing-rig/scripts/screen-sharing-bundle.test.ts",
+        "apps/screen-sharing-rig/scripts/screen-sharing-rig-lib.test.ts",
+        "apps/screen-sharing-rig/scripts/vnc-frame-clock-lib.test.ts",
+        "apps/screen-sharing-rig/scripts/vnc-interop-lib.test.ts",
+        "apps/screen-sharing-rig/scripts/vnc-tophat-lib.test.ts",
+        "apps/server/test/browser-extension-background.test.ts",
+        "apps/www/src/components/install-command.tsx",
+        "packages/adapter-claude/src/background-tasks.ts",
+        "packages/adapter-claude/src/start-session.ts",
+        "packages/adapter-claude/src/stream-recovery.ts",
+        "packages/adapter-claude/src/turn-recovery.ts",
+        "packages/adapter-grok-build/src/extension.ts",
+        "packages/harness-manager/src/antigravity-auth.test.ts",
+        "scripts/apfs-clone.test.mjs",
+        "scripts/artifact-lock.test.mjs",
+        "scripts/check-comments.test.mjs",
+        "scripts/check-plan.test.mjs",
+        "scripts/chromium-keychain.test.mjs",
+        "scripts/dev-arguments.test.mjs",
+        "scripts/dev-container-natives.test.mjs",
+        "scripts/dev-containers.test.mjs",
+        "scripts/dev-instance.test.mjs",
+        "scripts/dev-ios-target.test.mjs",
+        "scripts/dev-layout.test.mjs",
+        "scripts/dev-macos-reuse.test.mjs",
+        "scripts/dev-net.test.mjs",
+        "scripts/dev-runtime.test.mjs",
+        "scripts/ghostty-artifact.test.mjs",
+        "scripts/ios-simulator-state.test.mjs",
+        "scripts/net-artifact-rust.test.mjs",
+        "scripts/release/alpha-release.test.mjs",
+        "scripts/release/app-store-connect.test.mjs",
+        "scripts/release/build-macos-xcode.test.mjs",
+        "scripts/release/install.test.mjs",
+        "scripts/release/ios-code-signing.test.mjs",
+        "scripts/release/ios-testflight-config.test.mjs",
+        "scripts/release/macos-browser-artifact.test.mjs",
+        "scripts/release/publish-browser-extension.test.mjs",
+        "scripts/release/testflight-release.test.mjs",
+        "scripts/release/update-feeds.test.mjs",
+        "scripts/screenshots-ios.test.mjs",
+        "scripts/screenshots.test.mjs",
+        "scripts/swift-artifacts.test.mjs",
+        "scripts/test-swift.test.mjs",
+        "scripts/transcript-performance-summary.test.mjs",
+        "scripts/typecheck-isolation.test.mjs",
+        "scripts/xcode-window.test.mjs",
+        "scripts/xcodebuild.test.mjs"
+      ],
+      "rules": {
+        "typescript/no-floating-promises": "off"
+      }
+    },
+    {
+      "files": ["packages/automation/src/browser-cursor.test.ts"],
+      "rules": {
+        "typescript/no-implied-eval": "off"
+      }
+    },
+    {
+      "files": [
+        "apps/cloud/src/pages/auth-navigation.ts",
+        "apps/server/src/test-support.ts",
+        "packages/automation/src/browser-key-description.ts",
+        "packages/db/src/transcript-import-upgrade.test.ts"
+      ],
+      "rules": {
+        "typescript/no-misused-spread": "off"
+      }
+    },
+    {
+      "files": [
+        "packages/adapter-muse/src/test-support.ts",
+        "packages/db/src/service.ts",
+        "packages/mcp/src/mcp-http-transport.ts"
+      ],
+      "rules": {
+        "typescript/no-redundant-type-constituents": "off"
+      }
+    },
+    {
+      "files": [
+        "apps/cloud/src/hub-tunnel-events.ts",
+        "apps/server/src/cli.ts",
+        "apps/server/src/infra/harness-preferences.ts",
+        "packages/adapter-claude/src/result-resolution.ts",
+        "packages/mcp/src/mcp-gateway.ts",
+        "packages/mcp/src/native-mcp-edits.ts"
+      ],
+      "rules": {
+        "typescript/no-unnecessary-boolean-literal-compare": "off"
+      }
+    },
+    {
+      "files": [
+        "packages/adapter-claude/src/start-session.ts",
+        "packages/agent-runtime/src/process-failure.test.ts",
+        "packages/automation/src/browser-snapshot.ts"
+      ],
+      "rules": {
+        "typescript/no-unnecessary-template-expression": "off"
+      }
+    },
+    {
+      "files": ["packages/automation/src/browser-use-invoke.ts"],
+      "rules": {
+        "typescript/no-unnecessary-type-arguments": "off"
+      }
+    },
+    {
+      "files": [
+        "apps/cloud/src/credential-routes.ts",
+        "apps/cloud/src/index.ts",
+        "apps/cloud/src/machine-invites.ts",
+        "apps/cloud/test/cloud-hub.test.ts",
+        "apps/cloud/test/cloud-resume.test.ts",
+        "apps/cloud/test/cloud-test-support.ts",
+        "apps/cloud/test/cloud.test.ts",
+        "apps/cloud/test/credential-routes.test.ts",
+        "apps/cloud/test/email-auth.test.ts",
+        "apps/cloud/test/machine-invites.test.ts",
+        "apps/cloud/test/plugin-moderation.test.ts",
+        "apps/cloud/test/plugin-registry.test.ts",
+        "apps/server/src/cli/cloud-control.ts",
+        "apps/server/src/infra/active-work-sleep-inhibitor.test.ts",
+        "apps/server/src/infra/browser-forward-proxy.test.ts",
+        "apps/server/src/infra/credential-coordinator.test.ts",
+        "apps/server/src/infra/harness-sync.test.ts",
+        "apps/server/src/infra/media-preview-lifecycle.test.ts",
+        "apps/server/src/infra/plugin-sync.test.ts",
+        "apps/server/src/infra/shared-claude-gateway.test.ts",
+        "apps/server/src/infra/shared-provider-runtime.ts",
+        "apps/server/src/infra/terminal-persistence.ts",
+        "apps/server/src/routes/assistant-artifacts.test.ts",
+        "apps/server/src/routes/cloud.ts",
+        "apps/server/src/routes/events.test.ts",
+        "apps/server/src/routes/execution-annotator.test.ts",
+        "apps/server/src/routes/file-delivery.test.ts",
+        "apps/server/src/routes/project-repo-identity.ts",
+        "apps/server/src/routes/session-browser-cleanup.test.ts",
+        "apps/server/src/routes/transcript-storage.test.ts",
+        "apps/server/src/routes/workspaces.ts",
+        "apps/server/src/server-identity.test.ts",
+        "packages/adapter-acp/src/notifications.ts",
+        "packages/adapter-acp/src/runtime-account-handoff.test.ts",
+        "packages/adapter-acp/src/runtime-acp-inspection-config.test.ts",
+        "packages/adapter-acp/src/runtime-acp-sessions.test.ts",
+        "packages/adapter-antigravity/src/auth.ts",
+        "packages/adapter-claude/src/claude-auth.ts",
+        "packages/adapter-claude/src/models.ts",
+        "packages/adapter-claude/src/questions.test.ts",
+        "packages/adapter-claude/src/turn-recovery.ts",
+        "packages/adapter-codex/src/elicitation-schema.ts",
+        "packages/adapter-cursor/src/extension.test.ts",
+        "packages/adapter-cursor/src/extension.ts",
+        "packages/adapter-grok-build/src/extension.ts",
+        "packages/adapter-muse/src/updates.test.ts",
+        "packages/adapter-opencode/src/skill-tool.ts",
+        "packages/api/src/openapi.ts",
+        "packages/automation/src/browser-use-invoke.ts",
+        "packages/automation/src/browser-use-tool-schema.ts",
+        "packages/automation/src/code-executor-source.ts",
+        "packages/automation/src/codevisor-provider.ts",
+        "packages/automation/src/codevisor-skills.test.ts",
+        "packages/automation/src/computer-use-provider.ts",
+        "packages/cloud-crypto/src/index.ts",
+        "packages/db/src/migrations-projects.test.ts",
+        "packages/db/src/transcript-state-pages.ts",
+        "packages/harness-manager/src/credential-ferry.ts",
+        "packages/harness-manager/src/harness-auth-support.ts",
+        "packages/harness-manager/src/harness-catalog-install.test.ts",
+        "packages/harness-manager/src/harness-lifecycle-core.ts",
+        "packages/harness-manager/src/shared-oauth-providers.test.ts",
+        "packages/harness-manager/src/shared-provider-oauth.test.ts",
+        "packages/mcp/src/mcp-upstream.ts",
+        "packages/mcp/src/native-config-edits.ts",
+        "packages/mcp/src/native-config-files.test.ts",
+        "packages/mcp/src/native-mcp-import.ts",
+        "packages/plugins/src/plugin-icon.test.ts",
+        "packages/plugins/src/plugin-updates.test.ts",
+        "packages/skills/src/skills-remote-source.ts",
+        "packages/terminal/src/vt/ghostty-vt.ts"
+      ],
+      "rules": {
+        "typescript/no-unnecessary-type-assertion": "off"
+      }
+    },
+    {
+      "files": [
+        "apps/screen-sharing-rig/scripts/vnc-tophat.ts",
+        "apps/server/src/routes/screen-sharing-vnc-scale.ts",
+        "packages/adapter-claude/src/messages.ts",
+        "packages/adapter-claude/src/stream-events.ts",
+        "packages/automation/src/browser-use-invoke-page.ts",
+        "packages/db/src/data-upgrades.ts",
+        "packages/db/src/event-projection.ts",
+        "packages/db/src/files-service.ts",
+        "packages/db/src/navigation-service.ts",
+        "packages/db/src/transcript-pages.ts",
+        "packages/db/src/transcript-state-upgrade.ts"
+      ],
+      "rules": {
+        "typescript/no-unnecessary-type-conversion": "off"
+      }
+    },
+    {
+      "files": [
+        "apps/screen-sharing-rig/scripts/screen-sharing-rig.ts",
+        "packages/api/src/cloud-protocol.ts",
+        "packages/automation/src/browser-cdp.ts",
+        "packages/automation/src/browser-improvements.chrome.test.ts",
+        "packages/automation/src/browser-tab-cleanup.chrome.test.ts",
+        "packages/db/src/browser-state-service.ts",
+        "packages/mcp/src/mcp-http-transport.ts"
+      ],
+      "rules": {
+        "typescript/no-unnecessary-type-parameters": "off"
+      }
+    },
+    {
+      "files": [
+        "apps/cloud/**",
+        "apps/screen-sharing-rig/**",
+        "apps/server/**",
+        "apps/www/**",
+        "packages/adapter-acp/**",
+        "packages/adapter-antigravity/**",
+        "packages/adapter-claude/**",
+        "packages/adapter-codex/**",
+        "packages/adapter-cursor/**",
+        "packages/adapter-grok-build/**",
+        "packages/adapter-muse/**",
+        "packages/adapter-opencode/**",
+        "packages/adapter-pi/**",
+        "packages/agent-runtime/**",
+        "packages/api/**",
+        "packages/automation/**",
+        "packages/cloud-client/**",
+        "packages/cloud-crypto/**",
+        "packages/db/**",
+        "packages/harness-manager/**",
+        "packages/mcp/**",
+        "packages/net/**",
+        "packages/plugins/**",
+        "packages/processes/**",
+        "packages/skills/**",
+        "packages/terminal/**",
+        "packages/updater/**",
+        "packages/worktrees/**"
+      ],
+      "rules": {
+        "typescript/no-unsafe-type-assertion": "off"
+      }
+    },
+    {
+      "files": [
+        "apps/cloud/test/apple-native.test.ts",
+        "apps/server/src/routes/sessions.test.ts",
+        "apps/server/src/routes/shared-harness-accounts.test.ts",
+        "apps/server/src/routes/sync-reconcilers.test.ts",
+        "packages/mcp/src/mcp-secret-update.ts",
+        "packages/processes/src/processes.test.ts",
+        "scripts/check-plan.mjs",
+        "scripts/check-size-ratchet.mjs",
+        "scripts/check.mjs",
+        "scripts/test-swift.test.mjs",
+        "scripts/vendor-file-icons.mjs"
+      ],
+      "rules": {
+        "typescript/require-array-sort-compare": "off"
+      }
+    },
+    {
+      "files": [
+        "apps/cloud/src/pages/auth-navigation.ts",
+        "apps/cloud/test/web-auth.test.ts",
+        "packages/db/src/events-service.ts",
+        "packages/db/src/transcript-state.ts",
+        "packages/mcp/src/mcp-gateway-dispatch.ts",
+        "scripts/dev-cloud.mjs",
+        "scripts/dev-ios-worker.mjs",
+        "scripts/dev-macos-reuse.test.mjs",
+        "scripts/release/install.test.mjs"
+      ],
+      "rules": {
+        "typescript/restrict-template-expressions": "off"
+      }
+    },
+    {
+      "files": [
+        "apps/cloud/test/hub-notices.test.ts",
+        "apps/server/src/infra/listener-probe.test.ts",
+        "apps/server/src/server.test.ts",
+        "packages/automation/src/browser-cdp-test-support.ts",
+        "packages/harness-manager/src/grok-auth.ts",
+        "packages/harness-manager/src/pi-auth.ts",
+        "packages/mcp/src/mcp-manager-lifecycle.test.ts"
+      ],
+      "rules": {
+        "typescript/unbound-method": "off"
+      }
+    },
+    {
+      "files": [
+        "apps/cloud/test/cloud-hub.test.ts",
+        "apps/cloud/test/cloud.test.ts",
+        "apps/cloud/test/machine-invites.test.ts",
+        "apps/cloud/test/plugin-registry.test.ts",
+        "apps/server/src/infra/cloud-byte-stream.test.ts",
+        "apps/server/src/infra/config-sync-hardening.test.ts",
+        "apps/server/src/infra/machine-enrollment-ssh.test.ts",
+        "apps/server/src/infra/machine-link.ts",
+        "apps/server/src/infra/plugin-sync.test.ts",
+        "apps/server/src/infra/release-channel.test.ts",
+        "apps/server/src/infra/tool-icons.test.ts",
+        "apps/server/src/routes/events-shell.test.ts",
+        "apps/server/src/routes/execution-annotator.test.ts",
+        "apps/server/src/routes/live-preview-socket.test.ts",
+        "apps/server/src/routes/projects.test.ts",
+        "apps/server/src/routes/sync.test.ts",
+        "apps/server/src/screen-sharing.test.ts",
+        "apps/server/src/simulator-device-settings.test.ts",
+        "apps/server/src/simulators.ts",
+        "packages/adapter-acp/src/provider.ts",
+        "packages/adapter-acp/src/stdio-connector.ts",
+        "packages/adapter-antigravity/src/provider.ts",
+        "packages/adapter-claude/src/session-handle.ts",
+        "packages/adapter-claude/src/subagent-follow-ups.test.ts",
+        "packages/adapter-claude/src/tasks.ts",
+        "packages/adapter-claude/src/usage.ts",
+        "packages/adapter-grok-build/src/extension.ts",
+        "packages/adapter-muse/src/agents.test.ts",
+        "packages/adapter-muse/src/items.ts",
+        "packages/adapter-muse/src/provider.ts",
+        "packages/adapter-opencode/src/logins.test.ts",
+        "packages/adapter-pi/src/provider.ts",
+        "packages/adapter-pi/src/questions.ts",
+        "packages/agent-runtime/src/agent-sessions.test.ts",
+        "packages/automation/src/automation-provider.test.ts",
+        "packages/automation/src/browser-runtime-factory.ts",
+        "packages/automation/src/computer-use-repl.test.ts",
+        "packages/automation/src/computer-use-wait.test.ts",
+        "packages/cloud-client/src/gateway-channel.test.ts",
+        "packages/cloud-client/src/incoming-channel.test.ts",
+        "packages/cloud-client/src/login.test.ts",
+        "packages/cloud-client/src/machine-connection-channels.test.ts",
+        "packages/cloud-client/src/machine-connection-resume.test.ts",
+        "packages/cloud-client/src/machine-connection-tunnel.test.ts",
+        "packages/cloud-client/src/tunnel-host.test.ts",
+        "packages/db/src/session-attention-queue.test.ts",
+        "packages/harness-manager/src/harness-auth-cursor.test.ts",
+        "packages/harness-manager/src/harness-auth-decoration.test.ts",
+        "packages/harness-manager/src/harness-auth.test.ts",
+        "packages/harness-manager/src/harness-lifecycle-detection.test.ts",
+        "packages/harness-manager/src/pi-auth.ts",
+        "packages/mcp/src/mcp-gateway-execution.test.ts",
+        "packages/mcp/src/native-mcp-scan.ts",
+        "packages/plugins/src/plugin-manifest.test.ts",
+        "packages/plugins/src/plugin-pane-auth.test.ts",
+        "packages/plugins/src/plugin-updates.test.ts",
+        "packages/plugins/src/plugins-manager.test.ts",
+        "packages/skills/src/skill-store-remote.test.ts",
+        "packages/sync/src/tree-hash.test.ts",
+        "packages/updater/src/app-hosted.test.ts",
+        "packages/worktrees/src/git.test.ts",
+        "packages/worktrees/src/git.ts",
+        "scripts/chromium-keychain.test.mjs",
+        "scripts/dev-containers.mjs",
+        "scripts/release/ios-code-signing.test.mjs",
+        "scripts/release/macos-browser-artifact.test.mjs"
+      ],
+      "rules": {
+        "unicorn/consistent-function-scoping": "off"
+      }
+    },
+    {
+      "files": ["apps/server/src/routes/files.test.ts"],
+      "rules": {
+        "unicorn/no-array-fill-with-reference-type": "off"
+      }
+    }
+  ]
 }

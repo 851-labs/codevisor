@@ -23,7 +23,7 @@
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "typecheck:configs": "tsc -p tsconfig.configs.json --pretty false",
-    "lint": "oxlint -c .oxlintrc.json --disable-nested-config --deny-warnings --report-unused-disable-directives-severity=error .",
+    "lint": "oxlint -c .oxlintrc.json --disable-nested-config --type-aware --deny-warnings --report-unused-disable-directives-severity=error .",
     "format": "oxfmt -c .oxfmtrc.json --disable-nested-config --write .",
     "format:check": "oxfmt -c .oxfmtrc.json --disable-nested-config --check .",
     "test": "turbo run test --concurrency=4",
@@ -62,7 +62,8 @@
     "@vitest/coverage-v8": "4.1.6",
     "node-gyp": "13.0.0",
     "oxfmt": "0.68.0",
-    "oxlint": "1.42.0",
+    "oxlint": "1.88.0",
+    "oxlint-tsgolint": "7.0.2004",
     "turbo": "2.6.1",
     "typescript": "6.0.2",
     "vitest": "4.1.6"
