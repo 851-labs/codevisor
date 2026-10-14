@@ -89,38 +89,48 @@ final class TranscriptMarkdownRowDecoration: NSView {
   ) {
     style.planBackground.setFill()
     if chunk.isLastInDocument {
-      NSBezierPath(roundedRect: bounds, xRadius: 8, yRadius: 8).fill()
-      style.planBackground.setFill()
-      NSRect(x: 0, y: 0, width: bounds.width, height: min(8, bounds.height)).fill()
+      let fill = cardEndOutline(inset: 0)
+      fill.close()
+      fill.fill()
     } else {
       bounds.fill()
     }
 
     style.planBorder.setStroke()
-    let border = NSBezierPath()
-    border.lineWidth = 1
-    border.move(to: NSPoint(x: 0.5, y: 0))
+    let border: NSBezierPath
     if chunk.isLastInDocument {
-      let bottom = bounds.height - 0.5
-      border.line(to: NSPoint(x: 0.5, y: bottom - 7.5))
-      border.curve(
-        to: NSPoint(x: 8, y: bottom),
-        controlPoint1: NSPoint(x: 0.5, y: bottom - 2.5),
-        controlPoint2: NSPoint(x: 3, y: bottom)
-      )
-      border.line(to: NSPoint(x: bounds.width - 8, y: bottom))
-      border.curve(
-        to: NSPoint(x: bounds.width - 0.5, y: bottom - 7.5),
-        controlPoint1: NSPoint(x: bounds.width - 3, y: bottom),
-        controlPoint2: NSPoint(x: bounds.width - 0.5, y: bottom - 2.5)
-      )
-      border.line(to: NSPoint(x: bounds.width - 0.5, y: 0))
+      border = cardEndOutline(inset: 0.5)
     } else {
+      border = NSBezierPath()
+      border.move(to: NSPoint(x: 0.5, y: 0))
       border.line(to: NSPoint(x: 0.5, y: bounds.height))
       border.move(to: NSPoint(x: bounds.width - 0.5, y: 0))
       border.line(to: NSPoint(x: bounds.width - 0.5, y: bounds.height))
     }
+    border.lineWidth = 1
     border.stroke()
+  }
+
+  private func cardEndOutline(inset: CGFloat) -> NSBezierPath {
+    let left = inset
+    let right = bounds.width - inset
+    let bottom = bounds.height - inset
+    let path = NSBezierPath()
+    path.move(to: NSPoint(x: left, y: 0))
+    path.line(to: NSPoint(x: left, y: bounds.height - 8))
+    path.curve(
+      to: NSPoint(x: 8, y: bottom),
+      controlPoint1: NSPoint(x: left, y: bottom - 2.5),
+      controlPoint2: NSPoint(x: 3, y: bottom)
+    )
+    path.line(to: NSPoint(x: bounds.width - 8, y: bottom))
+    path.curve(
+      to: NSPoint(x: right, y: bounds.height - 8),
+      controlPoint1: NSPoint(x: bounds.width - 3, y: bottom),
+      controlPoint2: NSPoint(x: right, y: bottom - 2.5)
+    )
+    path.line(to: NSPoint(x: right, y: 0))
+    return path
   }
 
   private func drawFragment(
