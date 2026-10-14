@@ -351,9 +351,15 @@ describe("extractServerIdentity", () => {
     expect(extractServerIdentity({ serverUrl: "https://b.example.com" })).toBe(
       "https://b.example.com"
     )
+    expect(extractServerIdentity({ url: "https://a.example.com/x?y=1" })).toBe(
+      "https://a.example.com/x?y=1"
+    )
     expect(extractServerIdentity({ url: "https://a.example.com/x/?y=1" })).toBe(
       "https://a.example.com/x?y=1"
     )
+  })
+
+  it("passes non-http and unparseable url values through unchanged", () => {
     expect(extractServerIdentity({ url: "docs-mcp" })).toBe("docs-mcp")
     expect(extractServerIdentity({ url: "https://" })).toBe("https://")
   })
