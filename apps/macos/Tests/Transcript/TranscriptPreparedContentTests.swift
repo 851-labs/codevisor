@@ -18,12 +18,14 @@ struct TranscriptPreparedContentTests {
     _ = NSApplication.shared
     let host = TranscriptRowHost(frame: NSRect(x: 0, y: 0, width: 800, height: 320))
     let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
     window.contentView = host
     let content = Content()
     let (readiness, continuation) = AsyncStream<Bool>.makeStream()
     defer {
       continuation.finish()
       window.contentView = nil
+      window.close()
     }
     var reportedHeight: CGFloat = 0
     host.onHeightChange = { reportedHeight = $0 }
@@ -65,11 +67,13 @@ struct TranscriptPreparedContentTests {
     _ = NSApplication.shared
     let host = TranscriptRowHost(frame: NSRect(x: 0, y: 0, width: 800, height: 320))
     let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
     window.contentView = host
     let (readiness, continuation) = AsyncStream<Bool>.makeStream()
     defer {
       continuation.finish()
       window.contentView = nil
+      window.close()
     }
     var reportedHeight: CGFloat = 0
     host.onHeightChange = { reportedHeight = $0 }

@@ -145,11 +145,15 @@ struct TranscriptContentLayoutTests {
     let controller = TranscriptContentHostingController(rootView: AnyView(ContentView(content: content)))
     let frame = NSRect(x: 0, y: 0, width: content.width, height: 100)
     let window = NSWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
     window.contentViewController = controller
     controller.view.frame = frame
     let heights = Heights()
     controller.onLaidOutHeightChange = { heights.values.append($0) }
-    defer { window.contentViewController = nil }
+    defer {
+      window.contentViewController = nil
+      window.close()
+    }
     controller.view.layoutSubtreeIfNeeded()
     try check(controller, content, heights)
   }
