@@ -5,13 +5,6 @@ export interface SessionActivityController {
   readonly stop: () => void
 }
 
-export interface ActiveWorkSleepInhibitorOptions {
-  readonly platform?: NodeJS.Platform
-  readonly processId?: number
-  readonly spawnCaffeinate?: (processId: number) => ChildProcess
-  readonly log?: (message: string) => void
-}
-
 /// Prevents idle system sleep only while at least one locally hosted agent
 /// turn is active. `-w` also guarantees the assertion disappears if the
 /// server crashes instead of reaching `stop()`.
@@ -82,20 +75,13 @@ export class ActiveWorkSleepInhibitor implements SessionActivityController {
 }
 
 export const makeActiveWorkSleepInhibitor = (
-  options: ActiveWorkSleepInhibitorOptions = {}
+  platform: NodeJS.Platform = process.platform
 ): SessionActivityController | undefined => {
-  const platform = options.platform ?? process.platform
   if (platform !== "darwin") return undefined
-  const processId = options.processId ?? process.pid
-  const spawnCaffeinate =
-    options.spawnCaffeinate ??
-    ((ownerProcessId: number) =>
-      spawn("/usr/bin/caffeinate", ["-i", "-w", String(ownerProcessId)], {
-        stdio: "ignore"
-      }))
   return new ActiveWorkSleepInhibitor(
-    processId,
-    spawnCaffeinate,
-    options.log ?? ((message) => console.error(message))
+    process.pid,
+    (ownerProcessId) =>
+      spawn("/usr/bin/caffeinate", ["-i", "-w", String(ownerProcessId)], { stdio: "ignore" }),
+    (message) => console.error(message)
   )
 }
