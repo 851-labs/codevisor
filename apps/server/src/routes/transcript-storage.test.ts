@@ -1,4 +1,4 @@
-import { codevisorTools, makeCodevisorProvider } from "@codevisor/automation"
+import { makeCodevisorProvider } from "@codevisor/automation"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import type { JsonSchemaType } from "@modelcontextprotocol/sdk/validation"
 import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv"
@@ -79,7 +79,7 @@ it("pages the agent transcript tools with the cursors the route returns", async 
   )
   const validator = new AjvJsonSchemaValidator()
   const call = async (name: string, args: Record<string, unknown>) => {
-    const tool = codevisorTools.find((candidate) => candidate.name === name)!
+    const tool = provider.tools.find((candidate) => candidate.name === name)!
     expect(validator.getValidator(tool.inputSchema as JsonSchemaType)(args)).toMatchObject({
       valid: true
     })

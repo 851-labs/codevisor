@@ -41,6 +41,7 @@ describe("Computer Use tool contract", () => {
     const state = computerUseTools.find((tool) => tool.name === "get_app_state")!
     expect(state.inputSchema.properties).toHaveProperty("screenshot")
     expect(state.inputSchema.properties).toHaveProperty("view")
+    expect(state.inputSchema.properties).toHaveProperty("disableDiff")
     expect(state.description).toContain("Actions never take hidden snapshots")
   })
 
@@ -84,15 +85,5 @@ describe("Computer Use tool contract", () => {
       expect(schema.properties ?? {}).not.toHaveProperty("deliveryMode")
       expect(schema.additionalProperties).toBe(false)
     }
-  })
-
-  it("accepts the disableDiff option and rejects undeclared arguments", () => {
-    const state = computerUseTools.find((candidate) => candidate.name === "get_app_state")
-    const schema = state?.inputSchema as unknown as {
-      additionalProperties: boolean
-      properties: Record<string, unknown>
-    }
-    expect(schema.properties).toHaveProperty("disableDiff")
-    expect(schema.additionalProperties).toBe(false)
   })
 })
