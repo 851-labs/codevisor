@@ -84,7 +84,8 @@ extension SessionContainerView {
       return PaneTabStripItem(
         id: tab.id,
         name: title,
-        icon: centerTabIcon(descriptor, title: title, in: workspace),
+        icon: .workspaceTab(
+          descriptor, title: title, serverId: workspace.serverId, environment: environment, store: store),
         canClose: true,
         shortcutHint: index < 9 ? "⌘\(index + 1)" : nil
       )
@@ -96,35 +97,6 @@ extension SessionContainerView {
     // Chat tabs follow the session's LIVE title (auto-titles, renames).
     if descriptor.kind == .chat { return paneTitle(descriptor) }
     return tab.customTitle ?? paneTitle(descriptor)
-  }
-
-  private func centerTabIcon(
-    _ descriptor: PaneDescriptorState?, title: String, in workspace: Workspace
-  ) -> PaneTabIcon {
-    let serverId = workspace.serverId
-    let chatSession = descriptor.flatMap { pane -> ChatSession? in
-      guard pane.kind == .chat, let id = pane.chatSessionId else { return nil }
-      return environment.projectList.session(id, serverId: serverId)
-    }
-    let subagentHarnessId = descriptor.flatMap { pane -> String? in
-      guard pane.kind == .subagent, let ownerId = pane.ownerChatSessionId else { return nil }
-      return environment.projectList.session(ownerId, serverId: serverId)?.harnessId
-    }
-    return PaneTabIcon(
-      kind: descriptor?.kind ?? .newTab,
-      browserFavicon: descriptor.flatMap {
-        $0.kind == .browser ? store.localBrowserModel(paneId: $0.id)?.favicon : nil
-      },
-      pluginId: descriptor?.pluginId,
-      pluginPaneType: descriptor?.pluginPaneType,
-      pluginIconClient: environment.machines.client(for: serverId),
-      pluginIconCacheNamespace: serverId,
-      chatSession: chatSession,
-      terminalStatus: descriptor?.terminalAgentStatus,
-      subagentHarnessId: subagentHarnessId,
-      documentPath: title,
-      store: store
-    )
   }
 
   /// The pane that names a tab: its active leaf's selected pane. A mounted

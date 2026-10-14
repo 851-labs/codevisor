@@ -46,20 +46,13 @@ struct ArchivedWorkspaceRouteView: View {
     let tabs = workspace.centerTabs
     let tab = tabs.first { $0.id == selectedTabId } ?? workspace.selectedCenterTab ?? tabs.first
     return VStack(spacing: 0) {
-      if tabs.count > 1 {
-        Picker(
-          "Tab",
-          selection: Binding(get: { tab?.id }, set: { selectedTabId = $0 })
-        ) {
-          ForEach(tabs) { tab in
-            Text(title(of: tab, in: workspace)).tag(Optional(tab.id))
-          }
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        Divider()
+      // The live workspace's strip, minus every edit: switching only.
+      if tabs.count > 1, let tab {
+        WorkspaceTabBar(
+          items: tabs.map { tabItem($0, in: workspace) },
+          selectedTabId: tab.id,
+          onSelect: { selectedTabId = $0 }
+        )
       }
       if let tab, let pane = selectedPane(of: tab) {
         paneContent(pane, in: workspace)
@@ -80,12 +73,19 @@ struct ArchivedWorkspaceRouteView: View {
     tab.root.group(id: tab.activeLeafId)?.selectedPane ?? tab.root.allGroups.first?.state.panes.first
   }
 
-  private func title(of tab: WorkspaceTab, in workspace: Workspace) -> String {
+  private func tabItem(_ tab: WorkspaceTab, in workspace: Workspace) -> PaneTabStripItem {
     let pane = selectedPane(of: tab)
     let chatTitle = pane?.chatSessionId.flatMap {
       environment.projectList.session($0, serverId: workspace.serverId)?.title
     }
-    return tab.displayTitle(for: pane, chatTitle: chatTitle)
+    let title = tab.displayTitle(for: pane, chatTitle: chatTitle)
+    return PaneTabStripItem(
+      id: tab.id,
+      name: title,
+      icon: .workspaceTab(
+        pane, title: title, serverId: workspace.serverId, environment: environment, store: store),
+      canClose: false
+    )
   }
 
   @ViewBuilder

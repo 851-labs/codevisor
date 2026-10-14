@@ -37,8 +37,10 @@ struct PaneTabStrip: View {
   /// A finished drag: the tab and the tab it now sits in front of (nil at
   /// the end). Sent once, on release, so a drag across several tabs is one
   /// move rather than one per tab crossed.
-  let onMove: (_ id: UUID, _ successorId: UUID?) -> Void
-  let onAdd: () -> Void
+  /// Nil leaves the tabs in place: dragging one does nothing.
+  let onMove: ((_ id: UUID, _ successorId: UUID?) -> Void)?
+  /// Nil hides the add button.
+  let onAdd: (() -> Void)?
   var onRename: ((UUID) -> Void)?
 
   @State private var draggingId: UUID?
@@ -68,7 +70,7 @@ struct PaneTabStrip: View {
   var body: some View {
     GeometryReader { geometry in
       let ordered = orderedItems
-      let reserved: CGFloat = addButtonDiameter + 4
+      let reserved: CGFloat = onAdd == nil ? 0 : addButtonDiameter + 4
       let available = max(geometry.size.width - reserved, PaneTabStripStyle.minTabWidth)
       let count = max(ordered.count, 1)
       let fitted = available / CGFloat(count)
@@ -105,7 +107,9 @@ struct PaneTabStrip: View {
             stripMaxScroll = maxScroll
           }
 
-        addButton
+        if onAdd != nil {
+          addButton
+        }
 
         Spacer(minLength: 0)
       }
@@ -201,7 +205,9 @@ struct PaneTabStrip: View {
             transaction.animation = nil
           }
         }
-        .highPriorityGesture(reorderGesture(for: item.id, slotWidth: slotWidth))
+        .highPriorityGesture(
+          reorderGesture(for: item.id, slotWidth: slotWidth), including: onMove == nil ? .none : .all
+        )
         .transition(.asymmetric(insertion: .identity, removal: .opacity))
         .modifier(PaneTabContextMenu(id: item.id, onRename: onRename))
       }
@@ -279,7 +285,7 @@ struct PaneTabStrip: View {
         let order = dragOrder ?? itemIds
         withAnimation(PaneTabStripStyle.tabMotion) {
           if order != itemIds, let index = order.firstIndex(of: id) {
-            onMove(id, order.indices.contains(index + 1) ? order[index + 1] : nil)
+            onMove?(id, order.indices.contains(index + 1) ? order[index + 1] : nil)
           }
           dragOffset = 0
           draggingId = nil
@@ -311,7 +317,7 @@ struct PaneTabStrip: View {
   private var addButton: some View {
     Button {
       frozenTabWidth = nil
-      onAdd()
+      onAdd?()
     } label: {
       Image(systemName: "plus")
         .font(.system(size: Typography.IconSize.chrome, weight: .medium))
