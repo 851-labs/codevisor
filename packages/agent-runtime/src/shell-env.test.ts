@@ -310,7 +310,7 @@ describe("runShellCommand", () => {
     await expect(runShellCommand(missingPath(), ["-c", "true"], 5000)).rejects.toThrow()
   })
 
-  it("rejects when the command exceeds the timeout", async () => {
+  it("hands its timeout to execFile and rejects with the timeout failure", async () => {
     const error = Object.assign(new Error("command timed out"), { killed: true })
     const exec = vi.spyOn(childProcess, "execFile").mockImplementation((...args: unknown[]) => {
       const callback = args.at(-1) as (error: Error, stdout: string, stderr: string) => void
