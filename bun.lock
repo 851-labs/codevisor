@@ -56,6 +56,7 @@
       },
       "dependencies": {
         "@codevisor/adapter-acp": "workspace:*",
+        "@codevisor/adapter-antigravity": "workspace:*",
         "@codevisor/adapter-claude": "workspace:*",
         "@codevisor/adapter-codex": "workspace:*",
         "@codevisor/adapter-cursor": "workspace:*",
@@ -137,6 +138,21 @@
       "devDependencies": {
         "@codevisor/adapter-claude": "workspace:*",
         "@codevisor/adapter-codex": "workspace:*",
+        "vitest": "4.1.6",
+      },
+    },
+    "packages/adapter-antigravity": {
+      "name": "@codevisor/adapter-antigravity",
+      "dependencies": {
+        "@codevisor/agent-runtime": "workspace:*",
+        "@codevisor/api": "workspace:*",
+        "@codevisor/processes": "workspace:*",
+        "better-sqlite3": "12.9.0",
+        "effect": "4.0.0-beta.92",
+        "node-pty": "1.1.0-beta34",
+      },
+      "devDependencies": {
+        "@types/better-sqlite3": "7.6.13",
         "vitest": "4.1.6",
       },
     },
@@ -306,6 +322,7 @@
     "packages/harness-manager": {
       "name": "@codevisor/harness-manager",
       "dependencies": {
+        "@codevisor/adapter-antigravity": "workspace:*",
         "@codevisor/adapter-claude": "workspace:*",
         "@codevisor/adapter-codex": "workspace:*",
         "@codevisor/adapter-muse": "workspace:*",
@@ -419,8 +436,8 @@
   },
   "trustedDependencies": [
     "better-sqlite3",
-    "ffmpeg-static",
     "node-pty",
+    "ffmpeg-static",
   ],
   "packages": {
     "@agentclientprotocol/sdk": ["@agentclientprotocol/sdk@1.1.0", "", { "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" } }, "sha512-NT2KqphUJ3w6EksUL51ZhJgIYgq/ZLGcBPkyMKgRSO5PMVwe9DnKKX+Htnvk6KHh6dUuh34UHK4gKp+4te1Mdg=="],
@@ -578,6 +595,8 @@
     "@cloudflare/workerd-windows-64": ["@cloudflare/workerd-windows-64@1.20260801.1", "", { "os": "win32", "cpu": "x64" }, "sha512-2oQz+Ksu4ji6e/+ZoYX+tWQEcxAii2p7l+iR8kx48W1llMalaufAsmVxTlk+3/vrM7D3/2c0iK448e0UQTcIMg=="],
 
     "@codevisor/adapter-acp": ["@codevisor/adapter-acp@workspace:packages/adapter-acp"],
+
+    "@codevisor/adapter-antigravity": ["@codevisor/adapter-antigravity@workspace:packages/adapter-antigravity"],
 
     "@codevisor/adapter-claude": ["@codevisor/adapter-claude@workspace:packages/adapter-claude"],
 

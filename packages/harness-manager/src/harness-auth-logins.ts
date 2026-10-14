@@ -7,6 +7,7 @@ import { spawnCodexClient } from "@codevisor/adapter-codex"
 import type { HarnessAccount, HarnessAuthFlow } from "@codevisor/api"
 import type { HarnessAccountRecord } from "@codevisor/db"
 
+import { ANTIGRAVITY_HARNESS_ID, type AntigravityAuth } from "./antigravity-auth.js"
 import type { GrokAuth } from "./grok-auth.js"
 import type { HarnessAuthCore } from "./harness-auth-core.js"
 import type { HarnessAuthProbes } from "./harness-auth-probes.js"
@@ -31,7 +32,8 @@ export const makeHarnessLoginOperations = (
   core: HarnessAuthCore,
   probes: HarnessAuthProbes,
   grok: GrokAuth,
-  muse: MuseAuth
+  muse: MuseAuth,
+  antigravity: AntigravityAuth
 ): HarnessLoginOperations => {
   const {
     accountCommand,
@@ -221,6 +223,7 @@ export const makeHarnessLoginOperations = (
 
   /// Completes a pasteCode flow with the code the user pasted back.
   const answerLogin = async (flowId: string, code: string): Promise<HarnessAuthFlow> => {
+    if (antigravity.owns(flowId)) return antigravity.answer(flowId, code)
     const entry = claudeLogins.get(flowId)
     if (entry === undefined) throw new Error("This sign-in attempt has expired — start again")
     const account = await run(config.db.getHarnessAccount(entry.accountId))
@@ -268,7 +271,11 @@ export const makeHarnessLoginOperations = (
         await accountEnv(account),
         profilePath(account) ?? (await environment()).HOME ?? process.cwd()
       )
-    } else if (account.harnessId === "claude-code") {
+    } else if (
+      account.harnessId === "claude-code" ||
+      account.harnessId === ANTIGRAVITY_HARNESS_ID
+    ) {
+      // Antigravity's key reaches agy as GEMINI_API_KEY (antigravity-profile.ts).
       const path = apiKeyPath(account)
       const directory = join(path, "..")
       await mkdir(directory, { recursive: true, mode: 0o700 })
@@ -305,11 +312,14 @@ export const makeHarnessLoginOperations = (
     shared = false
   ): Promise<HarnessAuthFlow> => {
     accountId = (await config.sharedAccounts?.()?.prepareLogin(accountId, methodId)) ?? accountId
-    const account = await run(config.db.getHarnessAccount(accountId))
-    if (account === undefined) throw new Error(`Harness account not found: ${accountId}`)
+    const found = await run(config.db.getHarnessAccount(accountId))
+    if (found === undefined) throw new Error(`Harness account not found: ${accountId}`)
+    const account =
+      found.harnessId === ANTIGRAVITY_HARNESS_ID ? await antigravity.managedAccount(found) : found
     if (account.harnessId === "grok-build") return grok.begin(account, methodId, apiKey, shared)
     if (account.harnessId === MUSE_HARNESS_ID) return muse.begin(account, methodId, apiKey)
     if (methodId === "apiKey") return beginApiKeyLogin(account, apiKey)
+    if (account.harnessId === ANTIGRAVITY_HARNESS_ID) return antigravity.begin(account)
     if (
       account.harnessId === "codex" ||
       account.harnessId === "claude-code" ||
@@ -357,6 +367,7 @@ export const makeHarnessLoginOperations = (
   const cancelLogin = async (flowId: string): Promise<void> => {
     await grok.cancel(flowId)
     await muse.cancel(flowId)
+    await antigravity.cancel(flowId)
     const codex = codexLogins.get(flowId)
     if (codex !== undefined) {
       if (codex.loginId !== undefined) {
@@ -417,6 +428,9 @@ export const makeHarnessLoginOperations = (
       })
     } else if (account.harnessId === MUSE_HARNESS_ID) {
       await muse.logout(account)
+    } else if (account.harnessId === ANTIGRAVITY_HARNESS_ID) {
+      // An API-key account signed out with its key (removed above).
+      if (account.authMethod !== "apiKey") await antigravity.logout(account)
     } else {
       await run(config.agents.logoutHarness(account.harnessId, await contextFor(account)))
     }

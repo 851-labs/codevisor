@@ -9,6 +9,7 @@
   "references": [
     { "path": "../api" },
     { "path": "../agent-runtime" },
+    { "path": "../adapter-antigravity" },
     { "path": "../adapter-claude" },
     { "path": "../adapter-codex" },
     { "path": "../adapter-muse" },

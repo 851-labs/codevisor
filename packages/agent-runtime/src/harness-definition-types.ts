@@ -1,5 +1,6 @@
 export type ProviderId =
   | "acp"
+  | "antigravity"
   | "claude"
   | "codex"
   | "cursor"

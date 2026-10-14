@@ -235,7 +235,11 @@ export const makeHarnessAuthProbes = (core: HarnessAuthCore, grok: GrokAuth) => 
           ? { label: "Existing Muse Code account" }
           : {}),
       // Muse's sign-in runs through Codevisor (muse-auth.ts), not the agent.
-      canLogin: methods.length > 0 || account.harnessId === MUSE_HARNESS_ID,
+      canLogin:
+        methods.length > 0 ||
+        account.harnessId === MUSE_HARNESS_ID ||
+        // Codevisor signs in the accounts it manages (antigravity-auth.ts).
+        (account.harnessId === "antigravity" && account.profileKind === "managed"),
       canLogout: inspection.canLogout,
       detail: inspection.detail ?? null
     })

@@ -16,6 +16,7 @@ import {
 import type { HarnessAccount, HarnessAuthMethod } from "@codevisor/api"
 import type { HarnessAccountRecord, UpdateHarnessAccountAuthRequest } from "@codevisor/db"
 
+import { ANTIGRAVITY_HARNESS_ID, prepareAntigravityProfile } from "./antigravity-profile.js"
 import {
   defaultClaudeConfigPath,
   ensureSharedClaudeConversations
@@ -168,6 +169,8 @@ export const makeHarnessAuthCore = (config: HarnessAuthManagerConfig) => {
       if (account.harnessId === "codex") env.OPENAI_API_KEY = apiKey
       if (account.harnessId === "claude-code") env.ANTHROPIC_API_KEY = apiKey
     }
+    if (path !== undefined && account.harnessId === ANTIGRAVITY_HARNESS_ID)
+      Object.assign(env, await prepareAntigravityProfile(path, await environment(), apiKey))
     const context: HarnessAccountContext = {
       id: account.id,
       profileKind: account.profileKind,
@@ -175,6 +178,9 @@ export const makeHarnessAuthCore = (config: HarnessAuthManagerConfig) => {
       // A key exported in the user's shell would outrank the account's own.
       ...(path !== undefined && account.harnessId === MUSE_HARNESS_ID
         ? { unsetEnv: ["META_API_KEY"] }
+        : {}),
+      ...(path !== undefined && account.harnessId === ANTIGRAVITY_HARNESS_ID && apiKey === undefined
+        ? { unsetEnv: ["GEMINI_API_KEY"] }
         : {})
     }
     return shared
@@ -203,6 +209,11 @@ export const makeHarnessAuthCore = (config: HarnessAuthManagerConfig) => {
     }
     if (account.profileKind === "managed" && account.harnessId === MUSE_HARNESS_ID) {
       delete base.META_API_KEY
+    }
+    // A managed Antigravity account signs in on its own: a key the user's
+    // shell exports isn't its.
+    if (account.profileKind === "managed" && account.harnessId === ANTIGRAVITY_HARNESS_ID) {
+      delete base.GEMINI_API_KEY
     }
     return { ...base, ...accountContext.env }
   }

@@ -7,6 +7,7 @@ export type SharedOAuthHarness =
   | "opencode"
   | "grok-build"
   | "muse-code"
+  | "antigravity"
 
 export interface SharedTokenBundle {
   readonly authMethod?: "apiKey"

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto"
 import { readFile, realpath } from "node:fs/promises"
 import { join, resolve } from "node:path"
 
+import { antigravityAuthPath, parseAntigravityAuth } from "./antigravity-credentials.js"
 import type { HarnessAuthExec } from "./harness-auth-types.js"
 import { museAuthPath, parseMuseAuth } from "./muse-credentials.js"
 import {
@@ -132,6 +133,13 @@ export const readNativeOAuth = async (options: {
       return sharedApiKey(harnessId, options.env.META_API_KEY)
     const document = await jsonFile(museAuthPath(directory))
     return document === undefined ? undefined : parseMuseAuth(document, ownership)
+  }
+  if (harnessId === "antigravity") {
+    // A managed profile's file sign-in. The user's own agy keeps its
+    // Keychain sign-in, and a Gemini key needs agy's settings, not just env.
+    if (options.isDefault) return undefined
+    const document = await jsonFile(antigravityAuthPath(directory))
+    return document === undefined ? undefined : parseAntigravityAuth(document, ownership)
   }
   const key = harnessId === "codex" ? options.env.OPENAI_API_KEY : options.env.ANTHROPIC_API_KEY
   if (options.isDefault && key) return sharedApiKey(harnessId, key)

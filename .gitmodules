@@ -140,3 +140,15 @@
 [submodule ".repos/vscode-icons"]
 	path = .repos/vscode-icons
 	url = https://github.com/vscode-icons/vscode-icons.git
+[submodule ".repos/antigravity-acp"]
+	path = .repos/antigravity-acp
+	url = https://github.com/shubzkothekar/antigravity-acp.git
+[submodule ".repos/google-antigravity-acp"]
+	path = .repos/google-antigravity-acp
+	url = https://github.com/sibbl/google-antigravity-acp.git
+[submodule ".repos/agy-agent-acp-dongitran"]
+	path = .repos/agy-agent-acp-dongitran
+	url = https://github.com/dongitran/agy-agent-acp.git
+[submodule ".repos/agy-acp-musicode1"]
+	path = .repos/agy-acp-musicode1
+	url = https://github.com/MusiCode1/agy-acp.git

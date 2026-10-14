@@ -12,6 +12,7 @@ import {
   type OpenCodeServerHold
 } from "@codevisor/adapter-opencode"
 
+import { makeAntigravityAuth } from "./antigravity-auth.js"
 import { makeGrokAuth } from "./grok-auth.js"
 import { makeHarnessAccountOperations } from "./harness-auth-accounts.js"
 import { makeHarnessAuthCore } from "./harness-auth-core.js"
@@ -135,7 +136,8 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
   const decoration = makeHarnessAuthDecoration(core, probes)
   const accounts = makeHarnessAccountOperations(core, probes, decoration)
   const muse = makeMuseAuth(core, probeAccount)
-  const logins = makeHarnessLoginOperations(core, probes, grok, muse)
+  const antigravity = makeAntigravityAuth(core, probeAccount)
+  const logins = makeHarnessLoginOperations(core, probes, grok, muse, antigravity)
 
   return {
     sharedOpenCodeProfiles: (content) =>

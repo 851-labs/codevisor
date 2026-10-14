@@ -171,3 +171,42 @@ export const museCodeHarness: HarnessDefinition = {
     ]
   }
 }
+
+// Antigravity is driven directly over agy's headless stream-json mode (the
+// Antigravity adapter): the user's own agy, with its sign-in, models, rules,
+// skills and conversation store.
+export const antigravityHarness: HarnessDefinition = {
+  detectBinaries: ["agy"],
+  // The installer puts agy in ~/.local/bin, which a login shell may not
+  // have on PATH.
+  fallbackPaths: ["~/.local/bin/agy"],
+  id: "antigravity",
+  installHint: "curl -fsSL https://antigravity.google/cli/install.sh | bash",
+  installMethods: [
+    { command: "curl -fsSL https://antigravity.google/cli/install.sh | bash", kind: "curl" }
+  ],
+  name: "Antigravity",
+  // agy reads its own MCP config (`agy mcp add` writes it). Read-only here:
+  // agy takes remote servers only as `serverUrl`, a shape Codevisor's
+  // editor doesn't write.
+  nativeMcp: {
+    format: "json",
+    key: "mcpServers",
+    path: "~/.gemini/config/mcp_config.json",
+    projectFile: ".agents/mcp_config.json",
+    writable: false
+  },
+  provider: "antigravity",
+  skills: { globalDir: "~/.gemini/config/skills" },
+  symbolName: "atom",
+  update: {
+    sources: [
+      {
+        // agy updates itself in place; its release tags mirror on GitHub.
+        apply: { args: ["update"], kind: "selfUpdate" },
+        check: { kind: "github", repo: "google-antigravity/antigravity-cli" },
+        when: "any"
+      }
+    ]
+  }
+}

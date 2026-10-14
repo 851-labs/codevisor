@@ -27,6 +27,9 @@ and project-specific environment setup are not one-click install methods.
 Native Claude, Codex, Cursor, Grok, and Pi providers keep their existing integrations.
 Muse Code (added 2026-10-13) is native too: Codevisor drives `muse serve`, the
 Muse Session Protocol host, through its Muse adapter; it is not in the ACP registry.
+Antigravity (added 2026-10-13) is native as well: Codevisor drives Google's `agy`
+CLI in its headless stream-json mode through its Antigravity adapter, rather than
+the ACP registry's closed-source `agy_acp_server` download.
 Registry IDs `claude-acp`, `codex-acp`, `amp-acp`, and `pi-acp` map to Codevisor's
 existing `claude-code`, `codex`, `amp`, and `pi` IDs.
 
@@ -118,13 +121,14 @@ These public-directory entries need additional integration work:
 | [Raxol](https://github.com/DROOdotFOO/raxol/blob/master/docs/features/CODING_AGENT.md)                | Requires an ACP-enabled build and provider setup; no verified general installer.                  |
 | [stdio Bus](https://github.com/stdiobus/stdiobus)                                                     | A routing kernel/worker framework rather than a single configured coding-agent command.           |
 
-Hermes Agent, Google Antigravity, Corust Agent, and Code Assistant are omitted
-from the catalog for now at the user’s request. The latter three had no
-built-in installer. Their native icon assets have also been removed.
+Hermes Agent, Corust Agent, and Code Assistant are omitted from the catalog
+for now at the user’s request. The latter two had no built-in installer. Their
+native icon assets have also been removed. Google Antigravity, omitted at first,
+returned on 2026-10-13 as a native harness (see above).
 
 ## Bundled icons
 
-Both native apps include 38 branded harness icons. Eleven were added from
+Both native apps include 39 branded harness icons. Twelve were added from
 `.repos/lobe-icons/packages/static-svg/icons` at pinned revision
 `4aaf4ee1fb2678a7f989ea570f0f6ce14a9abf75`. The SVGs retain their upstream artwork;
 web-only sizing attributes are removed to match the existing native assets.
@@ -132,6 +136,7 @@ Poolside's alpha-mask gradient stops use white so Apple's luminance-mask
 renderer preserves the artwork instead of producing an empty icon.
 They use vector preservation and template rendering for light/dark appearance.
 Muse Code uses Meta's mark (added 2026-10-13, same revision); Lobe has no Muse-specific icon.
+Antigravity uses Lobe's `antigravity.svg` (added 2026-10-13, same revision).
 LobeHub's MIT notice is included in each app's resources.
 
 | Harness                        | Lobe icon                     |
@@ -147,6 +152,7 @@ LobeHub's MIT notice is included in each app's resources.
 | Mistral Vibe                   | `mistral.svg` (vendor logo)   |
 | Poolside                       | `poolside.svg` (vendor logo)  |
 | Muse Code                      | `meta.svg` (vendor logo)      |
+| Antigravity                    | `antigravity.svg`             |
 
 Twelve more icons were sourced from official websites, upstream repositories,
 and the ACP registry. Their exact sources, modifications, and license notices

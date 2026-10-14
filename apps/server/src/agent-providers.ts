@@ -1,4 +1,5 @@
 import { makeAcpProvider } from "@codevisor/adapter-acp"
+import { makeAntigravityProvider } from "@codevisor/adapter-antigravity"
 import { makeClaudeProvider } from "@codevisor/adapter-claude"
 import { makeCodexProvider } from "@codevisor/adapter-codex"
 import { makeCursorProvider } from "@codevisor/adapter-cursor"
@@ -12,6 +13,7 @@ import type { ProviderFactory } from "@codevisor/agent-runtime"
 /// names one of these; a harness whose provider is missing can't run.
 export const agentProviderFactories: ReadonlyArray<ProviderFactory> = [
   makeAcpProvider,
+  makeAntigravityProvider,
   makeClaudeProvider,
   makeCodexProvider,
   makeCursorProvider,

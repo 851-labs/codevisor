@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto"
-import { mkdir } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
 
@@ -7,6 +6,7 @@ import { resolveShellEnv, type HarnessAccountContext } from "@codevisor/agent-ru
 import { isoTimestamp, type HarnessAccount } from "@codevisor/api"
 import type { CodevisorDatabaseService, HarnessAccountRecord } from "@codevisor/db"
 import {
+  removeAntigravityAuth,
   removeMuseAuth,
   SharedCredentialError,
   sharedApiKey,
@@ -20,19 +20,24 @@ import type {
 } from "@codevisor/harness-manager"
 import { Effect } from "effect"
 
+import { sharedAccountContext } from "./shared-account-context.js"
 import { SharedAccountLocalState } from "./shared-account-local-state.js"
 import { discoverNativeAccount, sharedAccountVault } from "./shared-account-storage.js"
 import {
   makeSharedAccountStore,
+  sharedAccountLabel,
   sharedHarness,
   type SharedHarnessAccount
 } from "./shared-account-store.js"
 import { makeSharedClaudeGateway } from "./shared-claude-gateway.js"
-import { museSharedContext } from "./shared-muse.js"
 import { makeSharedProviderAccounts } from "./shared-provider-accounts.js"
 import type { OpenCode2Deps } from "./shared-provider-opencode2.js"
 
 const run = Effect.runPromise
+/// Harnesses whose synced sign-in is a long-lived file grant each machine's
+/// CLI uses (and, for Antigravity, refreshes) itself: no refresh token for
+/// the vault to rotate.
+const FILE_GRANTS = new Set(["muse-code", "antigravity"])
 const publicAccount = (record: HarnessAccountRecord): HarnessAccount => {
   const { profileKey: _key, createdAt: _created, updatedAt: _updated, ...account } = record
   return account
@@ -137,12 +142,7 @@ export const makeSharedAccounts = (options: {
       await store.save({
         id,
         harnessId: bundle.harnessId,
-        label:
-          previous?.label ??
-          (label && label !== "New Account" ? label : undefined) ??
-          bundle.email ??
-          ({ codex: "ChatGPT", "muse-code": "Meta" } as Record<string, string>)[bundle.harnessId] ??
-          "Claude",
+        label: previous?.label ?? sharedAccountLabel(bundle, label),
         subject: bundle.subject,
         ...(bundle.email ? { email: bundle.email } : {}),
         ...(bundle.organizationId ? { organizationId: bundle.organizationId } : {}),
@@ -178,8 +178,8 @@ export const makeSharedAccounts = (options: {
     const target = await localState.loginTarget(id)
     if (!row || target === undefined) return
     const bundle = await nativeBundle(row, true)
-    // Muse's file sign-in is long-lived: it has no refresh token to require.
-    if (!bundle || (!bundle.refreshToken && bundle.harnessId !== "muse-code"))
+    // A file grant is long-lived: it has no refresh token to require.
+    if (!bundle || (!bundle.refreshToken && !FILE_GRANTS.has(bundle.harnessId)))
       throw new Error("Sign-in could not be saved. Try signing in again.")
     const account = (await importBundle(bundle, id, true, row.label))!
     if (
@@ -227,8 +227,27 @@ export const makeSharedAccounts = (options: {
           /* Existing local sign-in remains usable; shared state exposes its own errors below. */
         }
       }
+      // Antigravity accounts signed in on this machine before it shared them
+      // join the fleet as they are. The user's own agy (Keychain) never does.
+      try {
+        for (const row of await run(db.listHarnessAccounts("antigravity"))) {
+          if (
+            row.profileKind !== "managed" ||
+            row.id.startsWith("shared-") ||
+            localState.isCapturingLogin(row.id) ||
+            (await localState.hasAlias(row.id)) ||
+            (await localState.loginTarget(row.id)) !== undefined
+          )
+            continue
+          const existing = await nativeBundle(row, true)
+          if (existing) await importBundle(existing, row.id, false, row.label)
+        }
+      } catch {
+        /* The local sign-in stays usable; it joins on a later pass. */
+      }
       for (const account of await store.accounts()) await saveLocal(account)
-      for (const harnessId of ["claude-code", "codex", "muse-code"]) await applySelection(harnessId)
+      for (const harnessId of ["claude-code", "codex", "muse-code", "antigravity"])
+        await applySelection(harnessId)
       await providers.reconcile()
     })().finally(() => {
       reconciling = undefined
@@ -409,59 +428,19 @@ export const makeSharedAccounts = (options: {
         return undefined
       }
       const bundle = await token(id)
-      let path = join(dataDir, "harness-profiles", account.harnessId, account.id)
-      // Existing Codex threads stay in their original local profile. External
-      // token mode changes authentication in memory without moving transcripts.
-      if (account.harnessId === "codex" && id !== account.id) {
-        const original = await run(db.getHarnessAccount(id))
-        if (original?.profileKind === "managed")
-          path = join(dataDir, "harness-profiles", "codex", original.profileKey ?? original.id)
-        else if (original?.profileKind === "default") {
-          const env = await environment()
-          path = env.CODEX_HOME ?? join(env.HOME ?? homedir(), ".codex")
-        }
-      }
-      await mkdir(path, { recursive: true, mode: 0o700 })
-      if (account.harnessId === "muse-code")
-        return museSharedContext(account.id, path, bundle, await environment())
-      if (bundle.authMethod === "apiKey")
-        return {
-          id: account.id,
-          profileKind: "managed",
-          env:
-            account.harnessId === "codex"
-              ? { CODEX_HOME: path, OPENAI_API_KEY: bundle.accessToken }
-              : {
-                  CLAUDE_CONFIG_DIR: path,
-                  ANTHROPIC_API_KEY: bundle.accessToken
-                }
-        }
-      if (account.harnessId === "codex")
-        return {
-          id: account.id,
-          profileKind: "managed",
-          env: { CODEX_HOME: path },
-          oauth: {
-            token: async (rejected) => {
-              const current = await token(account.id, rejected)
-              return {
-                accessToken: current.accessToken,
-                ...(current.organizationId ? { accountId: current.organizationId } : {}),
-                ...(current.planType ? { planType: current.planType } : {})
-              }
-            }
-          }
-        }
-      gateway.register(account.id, bundle.accessToken)
-      return {
-        id: account.id,
-        profileKind: "managed",
-        env: {
-          CLAUDE_CONFIG_DIR: path,
-          CLAUDE_CODE_OAUTH_TOKEN: bundle.accessToken,
-          ANTHROPIC_BASE_URL: `${options.baseUrl}/harness/claude`
-        }
-      }
+      return sharedAccountContext(
+        {
+          dataDir,
+          baseUrl: options.baseUrl,
+          environment,
+          token,
+          gateway,
+          record: (recordId) => run(db.getHarnessAccount(recordId))
+        },
+        account,
+        id,
+        bundle
+      )
     },
     logout: async (id: string, shared = false): Promise<HarnessAccount | undefined> => {
       const account = await resolve(id)
@@ -471,9 +450,12 @@ export const makeSharedAccounts = (options: {
         await store.remove(account.id)
       } else await localState.setDisabled(account.id, true)
       gateway.forget(account.id)
-      // Muse reads its sign-in from disk: signed out, this machine's copy goes.
+      // Muse and agy read their sign-ins from disk: signed out, this
+      // machine's copy goes.
       if (account.harnessId === "muse-code")
         await removeMuseAuth(join(dataDir, "harness-profiles", "muse-code", account.id))
+      if (account.harnessId === "antigravity")
+        await removeAntigravityAuth(join(dataDir, "harness-profiles", "antigravity", account.id))
       return probe(account.id)
     },
     rename: async (id: string, label: string) => {

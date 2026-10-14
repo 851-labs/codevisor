@@ -1,5 +1,9 @@
 import type { CodevisorDatabaseService } from "@codevisor/db"
-import type { SharedCredentialReference, SharedOAuthHarness } from "@codevisor/harness-manager"
+import type {
+  SharedCredentialReference,
+  SharedOAuthHarness,
+  SharedTokenBundle
+} from "@codevisor/harness-manager"
 import { latestSyncTimestamp, nextSyncTimestamp, type SyncEntryRecord } from "@codevisor/sync"
 import { Effect } from "effect"
 
@@ -19,8 +23,24 @@ export interface SharedHarnessAccount {
   readonly sourceExpiresAt?: number
 }
 
+/// What a newly shared account is called: the name the user gave it, else
+/// its email, else what it is. The names Codevisor makes up for a new
+/// account ("New Account", "Account 1a2b3c") aren't a choice.
+export const sharedAccountLabel = (bundle: SharedTokenBundle, chosen?: string): string => {
+  if (chosen && chosen !== "New Account" && !/^Account [0-9a-f]{6}$/.test(chosen)) return chosen
+  if (bundle.email) return bundle.email
+  // A Gemini key isn't a Google sign-in; it's told apart by its last digits.
+  if (bundle.harnessId === "antigravity" && bundle.authMethod === "apiKey")
+    return `Gemini API key ••••${bundle.accessToken.slice(-4)}`
+  return (
+    ({ codex: "ChatGPT", "muse-code": "Meta", antigravity: "Google" } as Record<string, string>)[
+      bundle.harnessId
+    ] ?? "Claude"
+  )
+}
+
 export const sharedHarness = (id: string): id is SharedOAuthHarness =>
-  id === "claude-code" || id === "codex" || id === "muse-code"
+  id === "claude-code" || id === "codex" || id === "muse-code" || id === "antigravity"
 export const sharedAccountValue = (value: unknown): SharedHarnessAccount | undefined => {
   if (value === null || typeof value !== "object") return undefined
   const row = value as SharedHarnessAccount

@@ -84,6 +84,9 @@ public enum HarnessRegistry {
     .init(
       id: "muse-code", displayName: "Muse Code", symbolName: "sparkles",
       accountScope: .fleetAccounts, supportsMultipleAccounts: true),
+    .init(
+      id: "antigravity", displayName: "Antigravity", symbolName: "atom",
+      accountScope: .fleetAccounts, supportsMultipleAccounts: true),
     .init(id: "devin", displayName: "Devin", accountScope: .fleetCredentials(signInNeedsMachine: false)),
     .init(id: "cursor", displayName: "Cursor"),
     .init(id: "gemini", displayName: "Gemini CLI", symbolName: "diamond"),

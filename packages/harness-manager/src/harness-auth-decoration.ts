@@ -135,6 +135,21 @@ export const makeHarnessAuthDecoration = (
           description: "Use Meta API billing instead of a Muse subscription."
         }
       ]
+    if (harnessId === "antigravity")
+      return [
+        {
+          id: "google",
+          name: "Sign in with Google",
+          kind: "browser",
+          description: "Approve in your browser, then paste the code back here."
+        },
+        {
+          id: "apiKey",
+          name: "Use a Gemini API Key",
+          kind: "apiKey",
+          description: "Use Gemini API billing instead of an Antigravity plan."
+        }
+      ]
     if (harnessId === "pi") return []
     return acpLoginMethods.get(harnessId) ?? []
   }
@@ -153,9 +168,13 @@ export const makeHarnessAuthDecoration = (
       ...(active?.detail ? { detail: active.detail } : {}),
       accounts,
       loginMethods: loginMethods(harnessId),
-      supportsMultipleAccounts: ["codex", "claude-code", "opencode", "muse-code"].includes(
-        harnessId
-      )
+      supportsMultipleAccounts: [
+        "codex",
+        "claude-code",
+        "opencode",
+        "muse-code",
+        "antigravity"
+      ].includes(harnessId)
     }
   }
 

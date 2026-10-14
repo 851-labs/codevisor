@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@codevisor/adapter-acp": "workspace:*",
+    "@codevisor/adapter-antigravity": "workspace:*",
     "@codevisor/adapter-claude": "workspace:*",
     "@codevisor/adapter-codex": "workspace:*",
     "@codevisor/adapter-cursor": "workspace:*",
