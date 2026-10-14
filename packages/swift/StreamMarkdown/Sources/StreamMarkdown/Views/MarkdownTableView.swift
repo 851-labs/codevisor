@@ -77,21 +77,6 @@
       )
     }
 
-    init(
-      headers: [String],
-      alignments: [ColumnAlignment],
-      rows: [[String]],
-      theme: MarkdownTheme
-    ) {
-      let parser = MarkdownParser()
-      self.init(
-        headers: headers.map(parser.parseInline),
-        alignments: alignments,
-        rows: rows.map { $0.map(parser.parseInline) },
-        theme: theme
-      )
-    }
-
     static func == (lhs: TableModel, rhs: TableModel) -> Bool {
       lhs.contentKey == rhs.contentKey
     }

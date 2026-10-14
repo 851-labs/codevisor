@@ -20,24 +20,6 @@
     private static let horizontalPadding = MarkdownTableMetrics.horizontalPadding
     private static let verticalPadding = MarkdownTableMetrics.verticalPadding
 
-    static func make(
-      headers: [String], alignments: [ColumnAlignment], rows: [[String]],
-      theme: MarkdownTheme, width: CGFloat? = nil
-    ) -> NSAttributedString {
-      let parser = MarkdownParser()
-      let prepared = prepare(
-        headers: headers.map(parser.parseInline),
-        rows: rows.map { $0.map(parser.parseInline) },
-        theme: theme
-      )
-      return make(
-        prepared: prepared,
-        alignments: alignments,
-        theme: theme,
-        width: width
-      )
-    }
-
     static func prepare(
       headers: [MarkdownText],
       rows: [[MarkdownText]],
