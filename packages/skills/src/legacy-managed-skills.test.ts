@@ -1,4 +1,12 @@
-import { existsSync, lstatSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs"
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync
+} from "node:fs"
 import { join } from "node:path"
 
 import { makeAgentRuntime } from "@codevisor/agent-runtime"
@@ -152,7 +160,7 @@ describe("importLegacyUserSkills", () => {
 })
 
 describe("migrateLegacySkills", () => {
-  it("removes Codevisor's skills before importing the user's", async () => {
+  it("removes Codevisor's skills and imports only the user's", async () => {
     const home = makeHome()
     managedSkill(join(home, ".agents/skills/codevisor"))
     writeSkill(join(home, ".agents/skills/deploy"), { name: "Deploy" })
@@ -160,6 +168,8 @@ describe("migrateLegacySkills", () => {
       "deploy"
     ])
     expect(present(join(home, ".agents/skills/codevisor"))).toBe(false)
-    expect(present(join(storeDir(home), "codevisor"))).toBe(false)
+    expect(readdirSync(storeDir(home)).toSorted()).toEqual(
+      [LEGACY_IMPORT_MARKER, "deploy"].toSorted()
+    )
   })
 })
