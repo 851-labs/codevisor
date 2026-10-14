@@ -16,7 +16,7 @@ enum SidebarRowDetail: String, CaseIterable, Codable, Identifiable {
   case branch
 
   static let preferenceKey = "sidebar.rowDetails"
-  static let defaults: [SidebarRowDetail] = [.updated, .pullRequest, .machine, .project]
+  static let defaults: [SidebarRowDetail] = [.pullRequest, .machine, .project, .branch]
 
   /// The details after the row's name.
   static let trailingDetails: [SidebarRowDetail] = [.updated, .pullRequest, .machine]
