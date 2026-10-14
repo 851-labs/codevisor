@@ -186,6 +186,12 @@ struct SidebarWorkspaceRowLabel: View {
 struct SidebarRowMachine: Equatable {
   let name: String
   let systemImage: String
+
+  /// A machine's outline glyph in the sidebar, matching the rows' line
+  /// icons: a display for this Mac, a cloud for any other machine.
+  static func systemImage(isLocal: Bool) -> String {
+    isLocal ? "display" : "cloud"
+  }
 }
 
 /// What a workspace row's icon shows: one of its chats (the chat's status,

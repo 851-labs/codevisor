@@ -56,8 +56,7 @@ extension SidebarView {
       let machine = environment.machines.machine(for: workspace.serverId),
       let name = machineName(forServer: workspace.serverId)
     else { return nil }
-    // Outline glyphs, matching the row's other line icons.
-    return SidebarRowMachine(name: name, systemImage: machine.isLocal ? "display" : "cloud")
+    return SidebarRowMachine(name: name, systemImage: SidebarRowMachine.systemImage(isLocal: machine.isLocal))
   }
 
   /// Restarts the PR refresh loop when badges are turned on or off, or the
