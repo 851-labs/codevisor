@@ -155,7 +155,7 @@ struct SidebarWorkspaceRowLabel: View {
     // The icon sits centered across both lines.
     HStack(spacing: 7) {
       leadingIcon
-      VStack(alignment: .leading, spacing: 1) {
+      VStack(alignment: .leading, spacing: 2) {
         Text(Self.title(for: name))
           .lineLimit(1)
           .truncationMode(.middle)
