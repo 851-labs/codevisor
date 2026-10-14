@@ -1,7 +1,6 @@
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { claudeUsageLimitsFrom } from "./claude.js"
 import {
   assistantErrorMessage,
   definition,
@@ -13,6 +12,7 @@ import {
   resultWith,
   run
 } from "./test-support.js"
+import { claudeUsageLimitsFrom } from "./usage.js"
 
 describe("Claude account usage", () => {
   it("normalizes the SDK's structured plan windows", () => {

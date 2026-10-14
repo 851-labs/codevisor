@@ -8,8 +8,6 @@ import { extractAllStringFields, extractStringField } from "./partial-json-strin
 import type { ClaudeSession, ToolInputAccumulator } from "./session.js"
 import { activeToolTitle } from "./tool-presentation.js"
 
-export { extractAllStringFields, extractStringField } from "./partial-json-string.js"
-
 /// Streaming diff-stat updates are throttled per tool call; every event is
 /// persisted server-side, so unbounded input_json_delta emission would bloat
 /// the events table.
