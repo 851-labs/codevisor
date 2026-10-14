@@ -272,13 +272,13 @@ struct SidebarPullRequestBadge: View {
 }
 
 /// Glyph sizes and stroke weight for sidebar rows. Leading icons (the model
-/// logo, a group's project or machine) draw at 14pt; the trailing glyphs (PR
-/// badge, machine, archive) sit 2pt smaller, each in its own slot. SF Symbols
+/// logo, a group's project or machine) draw at 13pt; the trailing glyphs (PR
+/// badge, machine, archive) sit 1pt smaller, each in its own slot. SF Symbols
 /// at regular weight and GitHub's 24px Octicons draw matching strokes at the
 /// same size (the 16px Octicons would be heavier, like SF's
 /// medium-to-semibold).
 enum SidebarRowIcon {
-  static let size: CGFloat = 14
+  static let size: CGFloat = 13
   static let trailingSize: CGFloat = 12
   /// A trailing glyph's slot: the glyph plus 2pt either side.
   static let trailingSlot: CGFloat = 16
