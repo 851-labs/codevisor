@@ -1,7 +1,7 @@
 import type { ChildProcess } from "node:child_process"
 import { EventEmitter } from "node:events"
 
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import {
   ActiveWorkSleepInhibitor,
@@ -18,18 +18,18 @@ class FakeCaffeinateProcess extends EventEmitter {
   })
 }
 
+afterEach(() => {
+  spawnMock.mockReset()
+})
+
 describe("ActiveWorkSleepInhibitor", () => {
   it("holds one assertion until every active session settles", () => {
     const children: FakeCaffeinateProcess[] = []
-    const inhibitor = new ActiveWorkSleepInhibitor(
-      123,
-      () => {
-        const child = new FakeCaffeinateProcess()
-        children.push(child)
-        return child as unknown as ChildProcess
-      },
-      vi.fn()
-    )
+    const inhibitor = new ActiveWorkSleepInhibitor(() => {
+      const child = new FakeCaffeinateProcess()
+      children.push(child)
+      return child as unknown as ChildProcess
+    }, vi.fn())
 
     inhibitor.update("session-a", true)
     inhibitor.update("session-a", true)
@@ -51,34 +51,27 @@ describe("ActiveWorkSleepInhibitor", () => {
     expect(makeActiveWorkSleepInhibitor("linux")).toBeUndefined()
   })
 
-  it("keeps assertion failures from disrupting session events", () => {
-    for (const cause of [new Error("caffeinate unavailable"), "caffeinate unavailable"] as const) {
+  it.each([new Error("caffeinate unavailable"), "caffeinate unavailable"])(
+    "keeps assertion failures from disrupting session events (%s)",
+    (cause) => {
       const log = vi.fn()
-      const inhibitor = new ActiveWorkSleepInhibitor(
-        123,
-        () => {
-          throw cause
-        },
-        log
-      )
+      const inhibitor = new ActiveWorkSleepInhibitor(() => {
+        throw cause
+      }, log)
 
       inhibitor.update("session-a", true)
       expect(log).toHaveBeenCalledWith("Active-work sleep assertion failed: caffeinate unavailable")
     }
-  })
+  )
 
   it("handles child errors, stale callbacks, and natural exits", () => {
     const children: FakeCaffeinateProcess[] = []
     const log = vi.fn()
-    const inhibitor = new ActiveWorkSleepInhibitor(
-      123,
-      () => {
-        const child = new FakeCaffeinateProcess()
-        children.push(child)
-        return child as unknown as ChildProcess
-      },
-      log
-    )
+    const inhibitor = new ActiveWorkSleepInhibitor(() => {
+      const child = new FakeCaffeinateProcess()
+      children.push(child)
+      return child as unknown as ChildProcess
+    }, log)
 
     inhibitor.update("session-a", true)
     children[0]?.emit("error", new Error("connection lost"))
@@ -105,11 +98,7 @@ describe("ActiveWorkSleepInhibitor", () => {
       child.kill = vi.fn(() => {
         throw cause
       })
-      const inhibitor = new ActiveWorkSleepInhibitor(
-        123,
-        () => child as unknown as ChildProcess,
-        log
-      )
+      const inhibitor = new ActiveWorkSleepInhibitor(() => child as unknown as ChildProcess, log)
 
       inhibitor.update("session-a", true)
       inhibitor.update("session-a", false)
@@ -118,12 +107,11 @@ describe("ActiveWorkSleepInhibitor", () => {
   })
 
   it("holds caffeinate on this process and logs to the console on macOS", () => {
-    spawnMock.mockReset()
     const child = new FakeCaffeinateProcess()
     spawnMock.mockReturnValue(child as unknown as ChildProcess)
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+    const inhibitor = makeActiveWorkSleepInhibitor("darwin")
     try {
-      const inhibitor = makeActiveWorkSleepInhibitor("darwin")
       inhibitor?.update("session-a", true)
       expect(spawnMock).toHaveBeenCalledWith(
         "/usr/bin/caffeinate",
@@ -134,13 +122,15 @@ describe("ActiveWorkSleepInhibitor", () => {
       expect(consoleError).toHaveBeenCalledWith(
         "Active-work sleep assertion failed: default logger"
       )
-      inhibitor?.stop()
     } finally {
+      inhibitor?.stop()
       consoleError.mockRestore()
     }
+  })
 
-    // Covers the no-argument platform default on every host; the explicit
-    // Darwin case above exercises the implementation independently of CI OS.
-    makeActiveWorkSleepInhibitor()?.stop()
+  it("follows the host platform by default", () => {
+    const inhibitor = makeActiveWorkSleepInhibitor()
+    expect(inhibitor === undefined).toBe(process.platform !== "darwin")
+    inhibitor?.stop()
   })
 })

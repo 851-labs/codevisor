@@ -13,8 +13,7 @@ export class ActiveWorkSleepInhibitor implements SessionActivityController {
   private assertionProcess: ChildProcess | undefined
 
   constructor(
-    private readonly processId: number,
-    private readonly spawnCaffeinate: (processId: number) => ChildProcess,
+    private readonly spawnCaffeinate: () => ChildProcess,
     private readonly log: (message: string) => void
   ) {}
 
@@ -41,7 +40,7 @@ export class ActiveWorkSleepInhibitor implements SessionActivityController {
 
     let child: ChildProcess
     try {
-      child = this.spawnCaffeinate(this.processId)
+      child = this.spawnCaffeinate()
     } catch (cause) {
       this.log(
         `Active-work sleep assertion failed: ${cause instanceof Error ? cause.message : String(cause)}`
@@ -79,9 +78,7 @@ export const makeActiveWorkSleepInhibitor = (
 ): SessionActivityController | undefined => {
   if (platform !== "darwin") return undefined
   return new ActiveWorkSleepInhibitor(
-    process.pid,
-    (ownerProcessId) =>
-      spawn("/usr/bin/caffeinate", ["-i", "-w", String(ownerProcessId)], { stdio: "ignore" }),
+    () => spawn("/usr/bin/caffeinate", ["-i", "-w", String(process.pid)], { stdio: "ignore" }),
     (message) => console.error(message)
   )
 }
