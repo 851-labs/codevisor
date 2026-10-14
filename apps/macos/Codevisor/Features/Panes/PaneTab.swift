@@ -13,9 +13,11 @@ struct PaneTab: View {
   let canClose: Bool
   let showsTrailingSeparator: Bool
   let shortcutHint: String?
+  var isPreview = false
   let onSelect: () -> Void
   let onClose: () -> Void
   var onRename: (() -> Void)? = nil
+  var onPin: (() -> Void)? = nil
   @State private var isHovered = false
   @State private var isCloseHovered = false
 
@@ -86,6 +88,8 @@ struct PaneTab: View {
       .shadow(color: .black.opacity(isDragging ? 0.25 : 0), radius: 3, y: 1)
       .contentShape(Rectangle())
       .onTapGesture(perform: onSelect)
+      // Selecting stays on the first click; the second only pins.
+      .simultaneousGesture(TapGesture(count: 2).onEnded { onPin?() }, isEnabled: onPin != nil)
       .onHover { isHovered = $0 }
       // Tap-to-select and the hover-only close button are invisible to
       // accessibility. Expose them as actions so assistive tech and
@@ -114,6 +118,7 @@ struct PaneTab: View {
       }
       Text(name)
         .font(.tabLabel())
+        .italic(isPreview)
         .lineLimit(1)
         .truncationMode(.tail)
         .foregroundStyle(isSelected ? .primary : .secondary)
@@ -160,7 +165,7 @@ struct PaneTabIcon: View {
   var terminalStatus: AgentPaneStatus? = nil
   /// A subagent tab's harness (its chat's), for the harness icon.
   var subagentHarnessId: String? = nil
-  /// A document tab's path, for its file-type icon.
+  /// A document tab's path, or a single-file diff's file, for its file-type icon.
   var documentPath: String? = nil
   var store: SessionStore? = nil
 
@@ -187,7 +192,7 @@ struct PaneTabIcon: View {
       .frame(width: 12, height: 12)
     } else if kind == .subagent {
       HarnessIcon(harnessId: subagentHarnessId ?? "", fallbackSymbolName: systemImage)
-    } else if kind == .document, let documentPath {
+    } else if kind == .document || kind == .review, let documentPath {
       FileIcon(path: documentPath, size: 14)
     } else {
       Image(systemName: systemImage)

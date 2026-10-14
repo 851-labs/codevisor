@@ -121,6 +121,9 @@ public final class ReviewPaneModel {
 
   public var mode: ServerGitDiffMode { preferences.mode }
 
+  /// The one file this pane diffs, when source control opened it.
+  public var file: String? { preferences.file }
+
   /// The base branch a branch review compares against. Nil lets the server
   /// pick the repository's conventional default.
   public var requestedBase: String? { preferences.base ?? projectBase }
@@ -147,7 +150,7 @@ public final class ReviewPaneModel {
   }
 
   public func setMode(_ mode: ServerGitDiffMode) {
-    guard mode != preferences.mode else { return }
+    guard mode != preferences.mode, file == nil else { return }
     update(ReviewPanePreferences(mode: mode, base: preferences.base, viewed: preferences.viewed))
   }
 
@@ -156,7 +159,7 @@ public final class ReviewPaneModel {
   /// following the project setting.
   public func setBase(_ base: String) {
     let override: String? = base == projectBase ? nil : base
-    guard preferences.mode != .branch || override != preferences.base else { return }
+    guard preferences.mode != .branch || override != preferences.base, file == nil else { return }
     update(ReviewPanePreferences(mode: .branch, base: override, viewed: preferences.viewed))
   }
 
@@ -234,16 +237,18 @@ public final class ReviewPaneModel {
     loadTask?.cancel()
     generation += 1
     let generation = generation
-    let request = (path: rootPath, mode: preferences.mode, base: requestedBase)
+    let request = (path: rootPath, mode: preferences.mode, base: requestedBase, file: preferences.file)
     if !quiet { isLoading = true }
     loadTask = Task { [client] in
       let outcome: Result<(ServerGitDiff, [ReviewFileDiff]), any Error>
       do {
         let diff = try await client.gitDiff(
-          path: request.path, mode: request.mode, base: request.base, revision: knownRevision)
+          path: request.path, mode: request.mode, base: request.base, files: request.file.map { [$0] } ?? [],
+          revision: knownRevision)
         // Myers diffs over whole files are too slow for the main actor.
+        // Servers that predate `file` answer with every file; keep the one.
         let prepared = await Task.detached(priority: .userInitiated) {
-          diff.files.map(ReviewFileDiff.init(file:))
+          diff.files.filter { request.file == nil || $0.path == request.file }.map(ReviewFileDiff.init(file:))
         }.value
         outcome = .success((diff, prepared))
       } catch {

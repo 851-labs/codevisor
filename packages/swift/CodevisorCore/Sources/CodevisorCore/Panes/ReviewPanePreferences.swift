@@ -12,11 +12,18 @@ public struct ReviewPanePreferences: Codable, Equatable, Sendable {
   /// viewed. A mark only counts while the file's current change has the
   /// same fingerprint, so any newer edit makes the file unviewed again.
   public var viewed: [String: String]
+  /// A single file's diff (repository-relative), as source control opens it:
+  /// the pane shows only this file and its comparison is fixed. Nil reviews
+  /// every changed file.
+  public var file: String?
 
-  public init(mode: ServerGitDiffMode = .branch, base: String? = nil, viewed: [String: String] = [:]) {
+  public init(
+    mode: ServerGitDiffMode = .branch, base: String? = nil, viewed: [String: String] = [:], file: String? = nil
+  ) {
     self.mode = mode
     self.base = base
     self.viewed = viewed
+    self.file = file
   }
 
   /// Whether this exact change of the file was marked viewed. Nil
@@ -42,7 +49,7 @@ public struct ReviewPanePreferences: Codable, Equatable, Sendable {
 
   /// Whether two preferences compare the same thing (viewed marks aside).
   public func comparesSame(as other: ReviewPanePreferences) -> Bool {
-    mode == other.mode && base == other.base
+    mode == other.mode && base == other.base && file == other.file
   }
 
   public init(from decoder: Decoder) throws {
@@ -54,5 +61,6 @@ public struct ReviewPanePreferences: Codable, Equatable, Sendable {
     base = try container.decodeIfPresent(String.self, forKey: .base)
     // Panes published before viewed marks existed have none.
     viewed = try container.decodeIfPresent([String: String].self, forKey: .viewed) ?? [:]
+    file = try container.decodeIfPresent(String.self, forKey: .file)
   }
 }

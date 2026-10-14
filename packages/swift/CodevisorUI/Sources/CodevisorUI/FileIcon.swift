@@ -2,7 +2,10 @@ import Foundation
 import SwiftUI
 
 /// One file identity shared by browser rows, search results, and workspace panes.
+/// On an emphasized selection (a selected row in a key window) every icon
+/// turns white, as Finder's and Xcode's do.
 public struct FileIcon: View {
+  @Environment(\.backgroundProminence) private var prominence
   private let path: String
   private let isDirectory: Bool
   private let size: CGFloat
@@ -17,18 +20,21 @@ public struct FileIcon: View {
     Group {
       if isDirectory {
         Image(systemName: "folder.fill")
-          .resizable().scaledToFit().foregroundStyle(.tint)
+          .resizable().scaledToFit().foregroundStyle(isOnSelection ? AnyShapeStyle(.white) : AnyShapeStyle(.tint))
       } else if let name = FileIconCatalog.assetName(for: path) {
         Image(name, bundle: .module)
-          .resizable().scaledToFit().foregroundStyle(.secondary)
+          .renderingMode(isOnSelection ? .template : nil)
+          .resizable().scaledToFit().foregroundStyle(isOnSelection ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
       } else {
         Image(systemName: "text.document")
-          .resizable().scaledToFit().foregroundStyle(.secondary)
+          .resizable().scaledToFit().foregroundStyle(isOnSelection ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
       }
     }
     .frame(width: size, height: size)
     .accessibilityHidden(true)
   }
+
+  private var isOnSelection: Bool { prominence == .increased }
 }
 
 /// Pure filename matching; never consults the local filesystem for remote paths.

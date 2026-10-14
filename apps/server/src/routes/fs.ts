@@ -20,6 +20,7 @@ import {
 import { routeFileDocuments } from "./file-documents.js"
 import { directoryEntries } from "./fs-directory-entries.js"
 import { expandFsPath } from "./fs-paths.js"
+import { routeGitChanges } from "./git-changes.js"
 import { routeGitReview } from "./git-review.js"
 
 const filesystemMimeTypes: Readonly<Record<string, string>> = {
@@ -70,6 +71,7 @@ export const routeFs = async (
 ): Promise<boolean> => {
   if (await routeFileDocuments(request, response, url)) return true
   if (await routeGitReview(services, request, response, url)) return true
+  if (await routeGitChanges(services, request, response, url)) return true
   if (url.pathname === "/v1/fs/file" && (request.method === "GET" || request.method === "HEAD"))
     return serveFilesystemFile(services, request, response, url)
   if (url.pathname === "/v1/fs/mkdir" && request.method === "POST")

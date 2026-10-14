@@ -99,3 +99,47 @@ export const GitPullRequestLookup = Schema.Struct({
   pullRequest: Schema.NullOr(GitPullRequest)
 })
 export type GitPullRequestLookup = typeof GitPullRequestLookup.Type
+
+/// How a file differs on one side of the index, as a source control list
+/// shows it: staged (HEAD → index) or unstaged (index → working tree).
+export const GitChangeCode = Schema.Literals([
+  "added",
+  "modified",
+  "deleted",
+  "renamed",
+  "typeChanged",
+  "untracked",
+  "conflicted"
+])
+export type GitChangeCode = typeof GitChangeCode.Type
+
+/// One changed path. A path changed both in the index and after it carries
+/// both codes; an untracked or conflicted path only `unstaged`.
+export const GitStatusEntry = Schema.Struct({
+  /// Repository-relative.
+  path: Schema.String,
+  /// Staged renames only: where the file came from.
+  oldPath: Schema.optional(Schema.String),
+  staged: Schema.optional(GitChangeCode),
+  unstaged: Schema.optional(GitChangeCode)
+})
+export type GitStatusEntry = typeof GitStatusEntry.Type
+
+/// The repository's changed files, light enough to poll: names and codes only.
+export const GitStatus = Schema.Struct({
+  repositoryRoot: Schema.String,
+  /// Null when HEAD is detached.
+  branch: Schema.NullOr(Schema.String),
+  entries: Schema.Array(GitStatusEntry),
+  /// True when more paths changed than one response carries.
+  truncated: Schema.Boolean
+})
+export type GitStatus = typeof GitStatus.Type
+
+/// Stage, unstage, or discard: repository-relative files in the repository
+/// containing `path`. Staging and unstaging without files covers every change.
+export const GitFilesRequest = Schema.Struct({
+  path: Schema.String,
+  files: Schema.optional(Schema.Array(Schema.String))
+})
+export type GitFilesRequest = typeof GitFilesRequest.Type

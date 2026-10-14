@@ -5,8 +5,9 @@ import Foundation
 /// Per device; every flag is off by default, so clients keep the shipped
 /// experience until someone opts in.
 enum FeatureFlag: String, CaseIterable, Identifiable {
-  /// The workspace tab strip above the content, and a sidebar of one row
-  /// per workspace with grouping, pinning, an archive, and PR badges.
+  /// The workspace tab strip above the content, a sidebar of one row per
+  /// workspace with grouping, pinning, an archive, and PR badges, and a
+  /// per-workspace navigator on the trailing edge led by a file tree.
   case sidebarRefresh
 
   var id: String { rawValue }
@@ -21,7 +22,8 @@ enum FeatureFlag: String, CaseIterable, Identifiable {
     switch self {
     case .sidebarRefresh:
       "Workspace tabs in a strip above the content, and one sidebar row per workspace, grouped by project or "
-        + "machine, with pinning, an archive, and PR badges."
+        + "machine, with pinning, an archive, and PR badges. A navigator on the right of each workspace (⌥⌘0) "
+        + "with a file tree that opens files in preview tabs."
     }
   }
 

@@ -111,6 +111,7 @@ struct SessionContainerView: View {
   /// The container around one read of the workspace.
   private func mounted(in workspace: Workspace) -> some View {
     titledContentColumn
+      .inspector(isPresented: showsNavigator) { workspaceNavigator(in: workspace) }
       .navigationSubtitle(activePaneSubtitle)
       .toolbar(removing: paneControlsReplaceTitle ? .title : nil)
       .toolbar {
@@ -130,6 +131,7 @@ struct SessionContainerView: View {
           }
         }
       }
+      .toolbar { navigatorToolbarItem }
       .focusedSceneValue(\.browserPage, activeBrowserModel)
       .focusedSceneValue(\.filePane, activeFileModel)
       .focusedSceneValue(\.simulatorPane, activeSimulatorModel)
@@ -151,7 +153,8 @@ struct SessionContainerView: View {
           previousSplit: { focusRelativeSplit(offset: -1) },
           nextSplit: { focusRelativeSplit(offset: 1) },
           split: splitActiveLeaf,
-          focus: focusAdjacentLeaf
+          focus: focusAdjacentLeaf,
+          toggleNavigator: toggleNavigator
         )
       )
       .environment(\.openFileDocument, OpenFileDocumentAction { openFileDocument($0) })
@@ -180,6 +183,9 @@ struct SessionContainerView: View {
       }
       .onChange(of: workspace.selectedCenterTabId) { _, _ in
         openingSplit = nil
+      }
+      .onChange(of: previewDocumentIsDirty) { _, isDirty in
+        if isDirty { pinPreviewDocument() }
       }
       .onChange(of: activeLeafId) { _, leafId in
         if let openingSplit, openingSplit.leafId != leafId { self.openingSplit = nil }
@@ -268,7 +274,8 @@ struct SessionContainerView: View {
           onClose: closeCenterTab,
           onMove: moveCenterTab,
           onRename: renameCenterTab,
-          onNew: addCenterTab
+          onNew: addCenterTab,
+          onPin: { _ in pinPreviewDocument() }
         )
       }
       SessionScreen(

@@ -20,6 +20,28 @@ public struct ServerFileEntry: Decodable, Identifiable, Equatable, Sendable {
   public let path: String
   public let isDirectory: Bool
   public let isSymbolicLink: Bool
+  /// Git ignores this entry. Only directory listings report it; searches and
+  /// servers that predate it decode as false.
+  public let isIgnored: Bool
+
+  public init(name: String, path: String, isDirectory: Bool, isSymbolicLink: Bool = false, isIgnored: Bool = false) {
+    self.name = name
+    self.path = path
+    self.isDirectory = isDirectory
+    self.isSymbolicLink = isSymbolicLink
+    self.isIgnored = isIgnored
+  }
+
+  private enum CodingKeys: String, CodingKey { case name, path, isDirectory, isSymbolicLink, isIgnored }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    name = try container.decode(String.self, forKey: .name)
+    path = try container.decode(String.self, forKey: .path)
+    isDirectory = try container.decode(Bool.self, forKey: .isDirectory)
+    isSymbolicLink = try container.decode(Bool.self, forKey: .isSymbolicLink)
+    isIgnored = try container.decodeIfPresent(Bool.self, forKey: .isIgnored) ?? false
+  }
 }
 
 public struct ServerFileListing: Decodable, Sendable {

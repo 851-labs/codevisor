@@ -49,6 +49,11 @@ public struct ReviewPaneView: View {
       ProgressView()
         .controlSize(.regular)
         .accessibilityLabel("Loading changes")
+    } else if model.files.isEmpty, let file = model.file {
+      ContentUnavailableView(
+        "No Changes", systemImage: "checkmark.circle",
+        description: Text(
+          "\((file as NSString).lastPathComponent) has no \(model.mode == .staged ? "staged" : "unstaged") changes."))
     } else if model.files.isEmpty {
       ContentUnavailableView {
         Label(model.mode.emptyTitle, systemImage: "checkmark.circle")
@@ -74,36 +79,47 @@ public struct ReviewPaneView: View {
     ScrollView {
       // Files run edge to edge, back to back: hairlines separate them.
       LazyVStack(alignment: .leading, spacing: 0, pinnedViews: .sectionHeaders) {
-        ForEach(model.files) { diff in
-          let isCollapsed = model.collapsedFiles.contains(diff.id)
-          Section {
-            if !isCollapsed {
-              ReviewFileBody(diff: diff)
-                .reviewCardBody(theme: theme)
-                // The diff dissolves while the files below slide, like a
-                // native disclosure group; nothing stretches or slides in.
-                .transition(.opacity)
-            }
-          } header: {
-            ReviewFileHeader(
-              diff: diff, isCollapsed: isCollapsed, isViewed: model.isViewed(diff),
-              toggle: { withAnimation(disclosureAnimation) { model.toggleCollapsed(diff) } },
-              toggleViewed: { withAnimation(disclosureAnimation) { model.toggleViewed(diff) } }
-            )
-            .reviewCardHeader(isCollapsed: isCollapsed, theme: theme)
-          }
-        }
-        if model.truncated {
-          Text("Showing the first \(model.files.count) files.")
-            .font(.footnote)
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
+        // A single file's diff is the whole pane: no header to fold it by.
+        if model.file != nil, let diff = model.files.first {
+          ReviewFileBody(diff: diff)
+            .reviewCardBody(theme: theme)
+        } else {
+          allFiles
         }
       }
     }
     // Only the dimming animates; the new diff itself swaps in at once.
     .animation(.default) { $0.opacity(model.isStale ? 0.5 : 1) }
+  }
+
+  @ViewBuilder
+  private var allFiles: some View {
+    ForEach(model.files) { diff in
+      let isCollapsed = model.collapsedFiles.contains(diff.id)
+      Section {
+        if !isCollapsed {
+          ReviewFileBody(diff: diff)
+            .reviewCardBody(theme: theme)
+            // The diff dissolves while the files below slide, like a
+            // native disclosure group; nothing stretches or slides in.
+            .transition(.opacity)
+        }
+      } header: {
+        ReviewFileHeader(
+          diff: diff, isCollapsed: isCollapsed, isViewed: model.isViewed(diff),
+          toggle: { withAnimation(disclosureAnimation) { model.toggleCollapsed(diff) } },
+          toggleViewed: { withAnimation(disclosureAnimation) { model.toggleViewed(diff) } }
+        )
+        .reviewCardHeader(isCollapsed: isCollapsed, theme: theme)
+      }
+    }
+    if model.truncated {
+      Text("Showing the first \(model.files.count) files.")
+        .font(.footnote)
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+    }
   }
 
   @ViewBuilder

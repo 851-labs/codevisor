@@ -24,17 +24,9 @@ public struct ReviewPaneToolbar: ToolbarContent {
       }
       .sharedBackgroundVisibility(.hidden)
       ToolbarSpacer(.flexible)
+      // A single file's diff compares one fixed thing: nothing to choose.
       ToolbarItemGroup(placement: .primaryAction) {
-        Menu {
-          ReviewModePicker(model: model)
-        } label: {
-          Text(model.mode.title)
-        }
-        .accessibilityLabel("Compare, \(model.mode.title)")
-        .help("Choose Which Changes to Review")
-        if model.mode == .branch {
-          ReviewBaseAutocomplete(model: model)
-        }
+        if model.file == nil { comparisonControls }
       }
     #else
       ToolbarItem(id: "review.title", placement: .principal) {
@@ -44,10 +36,26 @@ public struct ReviewPaneToolbar: ToolbarContent {
       // Declared before the workspace toolbar's New Tab button, so it sits
       // just to that button's left.
       ToolbarItem(id: "review.options", placement: .topBarTrailing) {
-        ReviewOptionsMenu(model: model)
+        if model.file == nil { ReviewOptionsMenu(model: model) }
       }
     #endif
   }
+
+  #if canImport(AppKit)
+    @ViewBuilder
+    private var comparisonControls: some View {
+      Menu {
+        ReviewModePicker(model: model)
+      } label: {
+        Text(model.mode.title)
+      }
+      .accessibilityLabel("Compare, \(model.mode.title)")
+      .help("Choose Which Changes to Review")
+      if model.mode == .branch {
+        ReviewBaseAutocomplete(model: model)
+      }
+    }
+  #endif
 }
 
 /// The pane's title and the whole review's line totals.

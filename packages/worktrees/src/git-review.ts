@@ -36,7 +36,7 @@ export class GitReviewError extends Error {
 /// each other's snapshot.
 export const turnStartRef = "refs/worktree/codevisor/turn-start"
 
-const assertWorkTree = async (dir: string): Promise<void> => {
+export const assertWorkTree = async (dir: string): Promise<void> => {
   if (!(await isGitWorkTree(dir))) {
     throw new GitReviewError("not_git_repository", "This folder isn't a Git repository.")
   }
@@ -213,6 +213,9 @@ export const gitDiff = async (
     /// trees still match it, blob reading is skipped and no files are sent:
     /// the Review pane polls, and an unchanged folder must stay cheap.
     readonly knownRevision?: string
+    /// Repository-relative files to compare, for a single file's diff.
+    /// Every changed file when omitted.
+    readonly paths?: ReadonlyArray<string>
   } = {}
 ): Promise<GitDiff> => {
   const { env } = options
@@ -224,7 +227,7 @@ export const gitDiff = async (
   if (revision === options.knownRevision) {
     return { ...header, files: [], truncated: false, unchanged: true }
   }
-  const { files, truncated } = await diffFiles(dir, oldTree, newTree, env)
+  const { files, truncated } = await diffFiles(dir, oldTree, newTree, env, options.paths)
   return { ...header, files, truncated }
 }
 

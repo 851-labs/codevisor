@@ -12,6 +12,7 @@ struct WorkspaceTabBar: View {
   var onMove: ((_ id: UUID, _ successorId: UUID?) -> Void)? = nil
   var onRename: ((UUID, String?) -> Void)? = nil
   var onNew: (() -> Void)? = nil
+  var onPin: ((UUID) -> Void)? = nil
 
   @State private var renamingTabId: UUID?
   @State private var renameText = ""
@@ -26,7 +27,8 @@ struct WorkspaceTabBar: View {
       onClose: { onClose?($0) },
       onMove: onMove,
       onAdd: onNew,
-      onRename: onRename.map { _ in beginRename }
+      onRename: onRename.map { _ in beginRename },
+      onPin: onPin
     )
     .padding(.horizontal, 10)
     .padding(.vertical, 6)
@@ -88,7 +90,8 @@ extension PaneTabIcon {
       chatSession: chatSession,
       terminalStatus: descriptor?.terminalAgentStatus,
       subagentHarnessId: subagentHarnessId,
-      documentPath: title,
+      // A single file's diff wears that file's icon.
+      documentPath: descriptor?.kind == .review ? descriptor?.review?.file : title,
       store: store
     )
   }

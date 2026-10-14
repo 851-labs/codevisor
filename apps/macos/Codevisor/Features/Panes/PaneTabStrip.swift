@@ -19,6 +19,8 @@ struct PaneTabStripItem: Identifiable {
   let icon: PaneTabIcon
   let canClose: Bool
   var shortcutHint: String? = nil
+  /// An editor-style preview tab: italic until something keeps it.
+  var isPreview = false
 }
 
 /// A Chrome-style tab strip. It owns sizing, overflow, scrolling, reordering,
@@ -42,6 +44,8 @@ struct PaneTabStrip: View {
   /// Nil hides the add button.
   let onAdd: (() -> Void)?
   var onRename: ((UUID) -> Void)?
+  /// Double-clicking a preview tab keeps it.
+  var onPin: ((UUID) -> Void)?
 
   @State private var draggingId: UUID?
   /// The order shown while a drag is in progress. Nil otherwise.
@@ -185,12 +189,14 @@ struct PaneTabStrip: View {
             && ordered[index + 1].id != selectedId
             && draggingId == nil,
           shortcutHint: item.shortcutHint,
+          isPreview: item.isPreview,
           onSelect: { onSelect(item.id) },
           onClose: {
             frozenTabWidth = tabWidth
             onClose(item.id)
           },
-          onRename: onRename.map { rename in { rename(item.id) } }
+          onRename: onRename.map { rename in { rename(item.id) } },
+          onPin: item.isPreview ? onPin.map { pin in { pin(item.id) } } : nil
         )
         .clipped()
         .scaleEffect(x: isAppearing ? 0.01 : 1, y: 1, anchor: .trailing)

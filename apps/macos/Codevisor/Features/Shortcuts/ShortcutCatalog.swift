@@ -33,6 +33,7 @@ enum ShortcutID: String, CaseIterable, Identifiable, Sendable {
 
   // View
   case toggleDebugOverlay
+  case toggleNavigator
 
   // Browser
   case browserZoomIn
@@ -227,6 +228,10 @@ enum ShortcutCatalog {
     case .toggleDebugOverlay:
       ShortcutDefinition(
         .toggleDebugOverlay, "Toggle Debug Overlay", ShortcutCombo("`", .command), category: .view)
+    case .toggleNavigator:
+      ShortcutDefinition(
+        .toggleNavigator, "Show or Hide Navigator",
+        refreshed ? ShortcutCombo("0", [.command, .option]) : nil, category: .view)
 
     case .browserZoomIn:
       ShortcutDefinition(

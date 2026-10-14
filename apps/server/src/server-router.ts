@@ -220,6 +220,7 @@ export const handleRequest = async (
           "canonical-chat-v1",
           "session-event-stream-v1",
           "transcript-pagination-v1",
+          "git-changes-v1",
           ...(services.plugins === undefined ? [] : ["plugins-v1"]),
           ...((await simulatorsAvailable(config)) ? ["simulator-v1"] : [])
         ],

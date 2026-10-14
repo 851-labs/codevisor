@@ -1,3 +1,4 @@
+import { execFile } from "node:child_process"
 import { createHash, randomUUID } from "node:crypto"
 import {
   accessSync,
@@ -211,6 +212,22 @@ function documentEntryRows(path: string, visible: ReadonlyArray<Dirent>) {
     )
 }
 
+/// The names in `path` that git ignores. Tracked files never count, and a
+/// directory outside any repository has none: a listing never fails on git.
+function ignoredNames(path: string, names: ReadonlyArray<string>): Promise<Set<string>> {
+  return new Promise((resolve) => {
+    const child = execFile(
+      "git",
+      ["check-ignore", "-z", "--stdin"],
+      { cwd: path, maxBuffer: 16 * 1024 * 1024 },
+      // Exit 1 means none matched; 128 means `path` is not in a repository.
+      (_error, stdout) => resolve(new Set(stdout.split("\0").filter((name) => name !== "")))
+    )
+    child.stdin?.on("error", () => {})
+    child.stdin?.end(names.join("\0") + "\0")
+  })
+}
+
 async function listDocumentEntries(
   response: ServerResponse,
   url: URL,
@@ -221,7 +238,14 @@ async function listDocumentEntries(
     (entry) => url.searchParams.get("showHidden") === "true" || !entry.name.startsWith(".")
   )
   const rows = documentEntryRows(path, visible)
-  writeJson(response, 200, { path, entries: rows })
+  const ignored = await ignoredNames(
+    path,
+    rows.map((row) => row.name)
+  )
+  writeJson(response, 200, {
+    path,
+    entries: rows.map((row) => ({ ...row, isIgnored: ignored.has(row.name) }))
+  })
   return true
 }
 

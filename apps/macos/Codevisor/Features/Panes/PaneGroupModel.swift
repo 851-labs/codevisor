@@ -179,6 +179,16 @@ final class PaneGroupModel: Identifiable {
     onPaneChanged?(pane)
   }
 
+  /// Puts different content in a pane, keeping its identity and place: a
+  /// preview tab showing the next file or diff the navigator opened.
+  func replacePane(id: UUID, with descriptor: PaneDescriptorState) {
+    guard let index = state.panes.firstIndex(where: { $0.id == id }), descriptor.id == id else { return }
+    discardLivePane(id: id)
+    state.panes[index] = descriptor
+    persist()
+    onPaneChanged?(descriptor)
+  }
+
   /// The live pane for a descriptor, built on first use. New pane kinds add
   /// a factory branch here.
   func pane(for descriptor: PaneDescriptorState) -> any Pane {

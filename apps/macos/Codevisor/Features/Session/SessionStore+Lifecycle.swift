@@ -52,6 +52,8 @@ extension SessionStore {
       model.detachAll()
       centerLeafGroups[key] = nil
     }
+    fileTrees[workspaceId] = nil
+    sourceControls[workspaceId] = nil
   }
 
   func discard(_ session: ChatSession) {

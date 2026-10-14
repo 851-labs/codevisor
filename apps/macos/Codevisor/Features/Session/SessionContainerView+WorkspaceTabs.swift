@@ -87,7 +87,8 @@ extension SessionContainerView {
         icon: .workspaceTab(
           descriptor, title: title, serverId: workspace.serverId, environment: environment, store: store),
         canClose: true,
-        shortcutHint: index < 9 ? "⌘\(index + 1)" : nil
+        shortcutHint: index < 9 ? "⌘\(index + 1)" : nil,
+        isPreview: isPreviewDocument(descriptor?.id)
       )
     }
   }

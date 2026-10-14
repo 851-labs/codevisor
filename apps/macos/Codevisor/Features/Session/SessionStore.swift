@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import CodevisorCore
+import CodevisorUI
 import ACPKit
 
 /// A pane the user closed, with enough of where it lived to put it back:
@@ -145,6 +146,32 @@ final class SessionStore {
   /// this is the browser-style undo for the current run.
   @ObservationIgnored var closedPanes: [UUID: [ClosedPaneRecord]] = [:]
   static let maxClosedPanesPerWorkspace = 20
+  /// Each workspace's preview document pane: the italic tab the navigator's
+  /// next file replaces. This device's alone and never persisted, so other
+  /// devices and the next launch see an ordinary tab.
+  var previewDocumentPanes: [UUID: UUID] = [:]
+  /// Each workspace's navigator file tree, so a workspace comes back with
+  /// the same folders open.
+  @ObservationIgnored var fileTrees: [UUID: FileTreeModel] = [:]
+  /// Each workspace's navigator source control list.
+  @ObservationIgnored var sourceControls: [UUID: SourceControlModel] = [:]
+
+  /// The workspace's file tree at `root`, made on first use and remade when
+  /// the workspace's directory changes (a worktree resolving).
+  func fileTree(workspaceId: UUID, root: String, client: any CodevisorServerClienting) -> FileTreeModel {
+    if let tree = fileTrees[workspaceId], tree.root == root { return tree }
+    let tree = FileTreeModel(root: root, client: client)
+    fileTrees[workspaceId] = tree
+    return tree
+  }
+
+  /// The workspace's source control list for the repository holding `root`.
+  func sourceControl(workspaceId: UUID, root: String, client: any CodevisorServerClienting) -> SourceControlModel {
+    if let model = sourceControls[workspaceId], model.root == root { return model }
+    let model = SourceControlModel(root: root, client: client)
+    sourceControls[workspaceId] = model
+    return model
+  }
 
   func recordClosedPane(_ record: ClosedPaneRecord, workspaceId: UUID) {
     var stack = closedPanes[workspaceId, default: []]

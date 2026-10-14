@@ -15,6 +15,7 @@ struct WorkspaceLayoutActions: Equatable {
   let nextSplit: @MainActor () -> Void
   let split: @MainActor (SplitEdge) -> Void
   let focus: @MainActor (SplitEdge) -> Void
+  let toggleNavigator: @MainActor () -> Void
 
   static func == (lhs: Self, rhs: Self) -> Bool {
     lhs.workspaceId == rhs.workspaceId
@@ -64,6 +65,13 @@ struct WorkspaceLayoutCommands: Commands {
 
   var body: some Commands {
     CommandGroup(after: .sidebar) {
+      if FeatureFlag.sidebarRefresh.isEnabled {
+        ShortcutButton(.toggleNavigator) { actions?.toggleNavigator() }
+          .disabled(actions == nil)
+
+        Divider()
+      }
+
       Menu("Split") {
         ShortcutButton(.splitLeft) { actions?.split(.leading) }
           .disabled(actions == nil)

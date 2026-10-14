@@ -1,5 +1,7 @@
+import { execFileSync } from "node:child_process"
 import {
   chmodSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
@@ -11,7 +13,7 @@ import {
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, onTestFinished, vi } from "vitest"
 
 import { start, tempDirs } from "../test-support.js"
 
@@ -24,7 +26,11 @@ describe("file documents", () => {
     writeFileSync(path, "const café = 1\r\n", { mode: 0o755 })
     const endpoint = `${server.url}/v1/fs/document?path=${encodeURIComponent(path)}`
     const original = await (await fetch(endpoint)).json()
-    expect(original).toMatchObject({ path, content: "const café = 1\r\n", writable: true })
+    expect(original).toMatchObject({
+      path,
+      content: "const café = 1\r\n",
+      writable: true
+    })
     const save = (content: string, version: string) =>
       fetch(endpoint, {
         method: "PUT",
@@ -75,6 +81,60 @@ describe("file documents", () => {
     expect(lstatSync(link).isSymbolicLink()).toBe(true)
   })
 
+  it("marks the entries git ignores, never tracked files or ones outside a repository", async () => {
+    // A user's global excludes file must not decide what counts as ignored,
+    // and the unversioned folder must not find a repository above the temp dir.
+    vi.stubEnv("GIT_CONFIG_GLOBAL", "/dev/null")
+    vi.stubEnv("GIT_CONFIG_NOSYSTEM", "1")
+    vi.stubEnv("GIT_CEILING_DIRECTORIES", realpathSync(tmpdir()))
+    onTestFinished(() => {
+      vi.unstubAllEnvs()
+    })
+    const { server } = await start()
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "codevisor-document-ignored-")))
+    tempDirs.push(root)
+    execFileSync("git", ["init", "--quiet"], { cwd: root })
+    writeFileSync(join(root, ".gitignore"), "dist/\n*.log\n")
+    mkdirSync(join(root, "dist"))
+    mkdirSync(join(root, "src"))
+    writeFileSync(join(root, "debug.log"), "")
+    writeFileSync(join(root, "tracked.log"), "")
+    execFileSync("git", ["add", "--force", "tracked.log"], { cwd: root })
+    const list = async (path: string) =>
+      Object.fromEntries(
+        (
+          await (
+            await fetch(
+              `${server.url}/v1/fs/entries?path=${encodeURIComponent(path)}&showHidden=true`
+            )
+          ).json()
+        ).entries.map((entry: { name: string; isIgnored: boolean }) => [
+          entry.name,
+          entry.isIgnored
+        ])
+      )
+    expect(await list(root)).toEqual({
+      ".git": false,
+      dist: true,
+      src: false,
+      ".gitignore": false,
+      "debug.log": true,
+      "tracked.log": false
+    })
+    const outside = realpathSync(mkdtempSync(join(tmpdir(), "codevisor-document-unversioned-")))
+    tempDirs.push(outside)
+    writeFileSync(join(outside, "debug.log"), "")
+    expect(await list(outside)).toEqual({ "debug.log": false })
+    // Outside a repository git exits before reading the names; a listing
+    // larger than a pipe's buffer must not take the server down with it.
+    const long = "x".repeat(240)
+    for (let index = 0; index < 1000; index += 1)
+      writeFileSync(join(outside, `${long}${index}`), "")
+    const big = await list(outside)
+    expect(Object.keys(big)).toHaveLength(1001)
+    expect(Object.values(big).every((isIgnored) => isIgnored === false)).toBe(true)
+  })
+
   it("protects binary and read-only files and reports missing paths", async () => {
     const { server } = await start()
     const root = mkdtempSync(join(tmpdir(), "codevisor-document-formats-"))
@@ -93,7 +153,9 @@ describe("file documents", () => {
     writeFileSync(path, "read only")
     chmodSync(path, 0o444)
     try {
-      expect(await (await fetch(endpoint)).json()).toMatchObject({ writable: false })
+      expect(await (await fetch(endpoint)).json()).toMatchObject({
+        writable: false
+      })
     } finally {
       chmodSync(path, 0o644)
     }

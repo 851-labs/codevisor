@@ -14,7 +14,7 @@ import { Schema } from "effect"
 import { HttpFailure, writeJson, type CodevisorServerServices } from "../server-context.js"
 import { expandFsPath } from "./fs-paths.js"
 
-const failureStatus: Readonly<Record<GitReviewFailureCode, number>> = {
+export const gitFailureStatus: Readonly<Record<GitReviewFailureCode, number>> = {
   not_git_repository: 422,
   unknown_base: 422,
   no_turn_snapshot: 404,
@@ -25,8 +25,17 @@ const isGitDiffMode = Schema.is(GitDiffMode)
 
 /// The review pane addresses a folder the way the other fs routes do, so a
 /// missing folder reads the same everywhere.
-const requestedDirectory = (url: URL): string => {
-  const path = expandFsPath(url.searchParams.get("path") ?? "")
+export const requestedDirectory = (url: URL): string =>
+  gitDirectory(url.searchParams.get("path") ?? "")
+
+/// The environment git runs with: the machine's own, or the one the host
+/// resolved (a login shell's PATH and credentials).
+export const gitEnvironment = (services: CodevisorServerServices): Promise<NodeJS.ProcessEnv> =>
+  services.resolveGitEnvironment?.() ?? Promise.resolve(process.env)
+
+/// An existing folder for a git route, from a request's `path`.
+export const gitDirectory = (requested: string): string => {
+  const path = expandFsPath(requested)
   let isDirectory: boolean
   try {
     isDirectory = statSync(path).isDirectory()
@@ -77,7 +86,7 @@ export const routeGitReview = async (
   if (request.method !== "GET") return false
   if (!gitReviewPaths.has(url.pathname)) return false
   const directory = requestedDirectory(url)
-  const env = await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
+  const env = await gitEnvironment(services)
   try {
     if (url.pathname === "/v1/fs/git/refs") {
       writeJson(response, 200, await gitRefs(directory, env))
@@ -93,18 +102,20 @@ export const routeGitReview = async (
     }
     const base = url.searchParams.get("base") ?? undefined
     const knownRevision = url.searchParams.get("revision") ?? undefined
+    const paths = url.searchParams.getAll("file")
     writeJson(
       response,
       200,
       await gitDiff(directory, mode, {
         env,
         ...(base === undefined ? {} : { base }),
-        ...(knownRevision === undefined ? {} : { knownRevision })
+        ...(knownRevision === undefined ? {} : { knownRevision }),
+        ...(paths.length === 0 ? {} : { paths })
       })
     )
     return true
   } catch (cause) {
     if (!(cause instanceof GitReviewError)) throw cause
-    throw new HttpFailure(failureStatus[cause.code], cause.message, cause.code)
+    throw new HttpFailure(gitFailureStatus[cause.code], cause.message, cause.code)
   }
 }

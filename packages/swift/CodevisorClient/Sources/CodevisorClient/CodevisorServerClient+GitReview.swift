@@ -165,18 +165,64 @@ public struct ServerGitPullRequest: Codable, Equatable, Hashable, Sendable {
   }
 }
 
+/// How a file differs on one side of the index: staged (HEAD → index) or
+/// unstaged (index → working tree).
+public enum ServerGitChangeCode: String, Codable, Sendable {
+  case added, modified, deleted, renamed, typeChanged, untracked, conflicted
+
+  /// A code from a newer server reads as a plain modification.
+  public init(from decoder: Decoder) throws {
+    self = Self(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .modified
+  }
+}
+
+public struct ServerGitStatusEntry: Codable, Equatable, Sendable {
+  /// Repository-relative.
+  public let path: String
+  /// Staged renames only.
+  public let oldPath: String?
+  public let staged: ServerGitChangeCode?
+  public let unstaged: ServerGitChangeCode?
+
+  public init(
+    path: String, oldPath: String? = nil, staged: ServerGitChangeCode? = nil, unstaged: ServerGitChangeCode? = nil
+  ) {
+    self.path = path
+    self.oldPath = oldPath
+    self.staged = staged
+    self.unstaged = unstaged
+  }
+}
+
+/// The repository's changed files: names and codes only, light enough to poll.
+public struct ServerGitStatus: Codable, Equatable, Sendable {
+  public let repositoryRoot: String
+  /// Nil when HEAD is detached.
+  public let branch: String?
+  public let entries: [ServerGitStatusEntry]
+  public let truncated: Bool
+
+  public init(repositoryRoot: String, branch: String?, entries: [ServerGitStatusEntry], truncated: Bool = false) {
+    self.repositoryRoot = repositoryRoot
+    self.branch = branch
+    self.entries = entries
+    self.truncated = truncated
+  }
+}
+
 struct ServerGitPullRequestLookup: Decodable {
   let pullRequest: ServerGitPullRequest?
 }
 
 extension CodevisorServerClient {
   public func gitDiff(
-    path: String, mode: ServerGitDiffMode, base: String?, revision: String?
+    path: String, mode: ServerGitDiffMode, base: String?, files: [String], revision: String?
   ) async throws -> ServerGitDiff {
     var items = [URLQueryItem(name: "path", value: path), URLQueryItem(name: "mode", value: mode.rawValue)]
     if mode == .branch, let base, !base.isEmpty {
       items.append(URLQueryItem(name: "base", value: base))
     }
+    items += files.map { URLQueryItem(name: "file", value: $0) }
     if let revision {
       items.append(URLQueryItem(name: "revision", value: revision))
     }
@@ -194,6 +240,22 @@ extension CodevisorServerClient {
     return lookup.pullRequest
   }
 
+  public func gitStatus(path: String) async throws -> ServerGitStatus {
+    try await get(gitRequestPath("/v1/fs/git/status", items: [URLQueryItem(name: "path", value: path)]))
+  }
+
+  public func gitStage(path: String, files: [String]?) async throws -> ServerGitStatus {
+    try await send("/v1/fs/git/stage", method: "POST", body: GitFilesBody(path: path, files: files))
+  }
+
+  public func gitUnstage(path: String, files: [String]?) async throws -> ServerGitStatus {
+    try await send("/v1/fs/git/unstage", method: "POST", body: GitFilesBody(path: path, files: files))
+  }
+
+  public func gitDiscard(path: String, files: [String]) async throws -> ServerGitStatus {
+    try await send("/v1/fs/git/discard", method: "POST", body: GitFilesBody(path: path, files: files))
+  }
+
   private func gitRequestPath(_ endpoint: String, items: [URLQueryItem]) throws -> String {
     var components = URLComponents()
     components.path = endpoint
@@ -207,10 +269,27 @@ extension CodevisorServerClient {
   }
 }
 
+private struct GitFilesBody: Encodable {
+  let path: String
+  let files: [String]?
+}
+
 extension CodevisorServerClienting {
   public func gitDiff(
-    path: String, mode: ServerGitDiffMode, base: String?, revision: String?
+    path: String, mode: ServerGitDiffMode, base: String?, files: [String], revision: String?
   ) async throws -> ServerGitDiff {
+    throw CodevisorServerClientError.invalidResponse
+  }
+  public func gitStatus(path: String) async throws -> ServerGitStatus {
+    throw CodevisorServerClientError.invalidResponse
+  }
+  public func gitStage(path: String, files: [String]?) async throws -> ServerGitStatus {
+    throw CodevisorServerClientError.invalidResponse
+  }
+  public func gitUnstage(path: String, files: [String]?) async throws -> ServerGitStatus {
+    throw CodevisorServerClientError.invalidResponse
+  }
+  public func gitDiscard(path: String, files: [String]) async throws -> ServerGitStatus {
     throw CodevisorServerClientError.invalidResponse
   }
   public func gitRefs(path: String) async throws -> ServerGitRefs {

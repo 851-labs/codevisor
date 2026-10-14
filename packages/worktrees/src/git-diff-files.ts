@@ -218,11 +218,16 @@ export const diffFiles = async (
   dir: string,
   oldTree: string,
   newTree: string,
-  env: NodeJS.ProcessEnv | undefined
+  env: NodeJS.ProcessEnv | undefined,
+  paths?: ReadonlyArray<string>
 ): Promise<{ readonly files: ReadonlyArray<GitDiffFile>; readonly truncated: boolean }> => {
+  // Repository-relative wherever `dir` sits, and literal: a file named `*`
+  // is that file.
+  const pathspecs =
+    paths === undefined ? [] : ["--", ...paths.map((path) => `:(top,literal)${path}`)]
   const raw = await gitBytes(
     "diff-tree",
-    ["diff-tree", "-r", "-z", "-M", "--raw", oldTree, newTree],
+    ["diff-tree", "-r", "-z", "-M", "--raw", oldTree, newTree, ...pathspecs],
     dir,
     env
   )

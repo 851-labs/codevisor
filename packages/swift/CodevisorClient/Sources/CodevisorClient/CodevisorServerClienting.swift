@@ -359,12 +359,22 @@ public protocol CodevisorServerClienting: BrowserStateClienting, SimulatorClient
   func searchFileEntries(path: String, query: String) async throws -> ServerFileSearch
   func documentData(path: String) async throws -> Data
   /// `revision` is a previous response's; while it is still current the
-  /// server answers `unchanged` without resending files.
-  func gitDiff(path: String, mode: ServerGitDiffMode, base: String?, revision: String?) async throws -> ServerGitDiff
+  /// server answers `unchanged` without resending files. `files`
+  /// (repository-relative) narrows the diff; empty compares everything.
+  func gitDiff(
+    path: String, mode: ServerGitDiffMode, base: String?, files: [String], revision: String?
+  ) async throws -> ServerGitDiff
   func gitRefs(path: String) async throws -> ServerGitRefs
   /// The pull request for the current branch of the git checkout at `path`;
   /// nil when there is none or the machine's `gh` can't tell.
   func gitPullRequest(path: String) async throws -> ServerGitPullRequest?
+  /// The changed files of the repository containing `path`.
+  func gitStatus(path: String) async throws -> ServerGitStatus
+  /// Stage, unstage, and discard repository-relative files; nil stages or
+  /// unstages everything. Each answers with the status that follows.
+  func gitStage(path: String, files: [String]?) async throws -> ServerGitStatus
+  func gitUnstage(path: String, files: [String]?) async throws -> ServerGitStatus
+  func gitDiscard(path: String, files: [String]) async throws -> ServerGitStatus
   /// Reads a live file from this machine. Relative paths are resolved by the
   /// server against the specified session's authoritative working directory.
   func fileData(sessionId: UUID, path: String) async throws -> Data
