@@ -523,6 +523,18 @@ public final class CloudAccountController {
   /// `refreshMachines()` — the push is only a trigger, never a source.
   func reconcilePresence(with transportMachines: [CloudMachine]) {
     guard state.isSignedIn else { return }
+    guard presenceDiffers(from: transportMachines) else { return }
+    guard presenceRefreshTask == nil else { return }
+    let sleep = presenceSleep
+    presenceRefreshTask = Task { [weak self] in
+      try? await sleep(.milliseconds(300))
+      guard let self, !Task.isCancelled else { return }
+      self.presenceRefreshTask = nil
+      await self.refreshMachines()
+    }
+  }
+
+  private func presenceDiffers(from transportMachines: [CloudMachine]) -> Bool {
     // What a presence push can change that the app acts on: online state,
     // and the tunnel address it dials (a machine can stay online while its
     // server restarts onto a new tunnel endpoint).
@@ -535,17 +547,7 @@ public final class CloudAccountController {
     )
     // `known[...]` is nil for an unknown device, which never equals a
     // String — one comparison covers "new machine" and "changed".
-    guard transportMachines.contains(where: { known[$0.deviceId] != reach($0) }) else {
-      return
-    }
-    guard presenceRefreshTask == nil else { return }
-    let sleep = presenceSleep
-    presenceRefreshTask = Task { [weak self] in
-      try? await sleep(.milliseconds(300))
-      guard let self, !Task.isCancelled else { return }
-      self.presenceRefreshTask = nil
-      await self.refreshMachines()
-    }
+    return transportMachines.contains(where: { known[$0.deviceId] != reach($0) })
   }
 
   /// Replaces an existing hub socket after the app returns to the
